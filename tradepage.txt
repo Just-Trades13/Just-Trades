@@ -1,0 +1,85 @@
+import React from "react";
+import { BrowserRouter as Router, Route, Routes, Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+
+const Home = () => (
+  <div className="flex flex-col items-center text-center p-10 bg-gray-900 text-white min-h-screen">
+    <h1 className="text-5xl font-bold">Welcome to Just.Trades</h1>
+    <p className="text-xl mt-4 max-w-2xl">Your go-to platform for NQ & ES futures trading insights, strategies, and market updates. Join our community of traders and stay ahead of the market.</p>
+    <Button className="mt-6 bg-blue-500 text-white text-lg px-6 py-3 rounded-lg hover:bg-blue-600">Join Our Discord</Button>
+    <div className="mt-10 grid grid-cols-1 md-grid-cols-3 gap-6 w-full max-w-5xl">
+      <Card className="bg-gray-800 text-white p-6 rounded-xl shadow-lg">
+        <CardContent>
+          <h3 className="text-2xl font-bold">Real-Time Market Updates</h3>
+          <p className="mt-2">Stay informed with live updates on NQ & ES futures.</p>
+        </CardContent>
+      </Card>
+      <Card className="bg-gray-800 text-white p-6 rounded-xl shadow-lg">
+        <CardContent>
+          <h3 className="text-2xl font-bold">Expert Trading Strategies</h3>
+          <p className="mt-2">Gain insights from professional traders with proven strategies.</p>
+        </CardContent>
+      </Card>
+      <Card className="bg-gray-800 text-white p-6 rounded-xl shadow-lg">
+        <CardContent>
+          <h3 className="text-2xl font-bold">Exclusive Community Access</h3>
+          <p className="mt-2">Join our Discord to connect with top traders and learn in real time.</p>
+        </CardContent>
+      </Card>
+    </div>
+  </div>
+);
+
+const About = () => (
+  <div className="p-10 text-center bg-gray-900 text-white min-h-screen">
+    <h2 className="text-4xl font-bold">About Just.Trades</h2>
+    <p className="mt-6 text-lg max-w-3xl mx-auto">Just.Trades is dedicated to helping traders master the NQ & ES futures markets. Our platform provides in-depth market analysis, expert strategies, and a thriving community of traders.</p>
+    <div className="mt-10 grid grid-cols-1 md-grid-cols-2 gap-6 max-w-4xl mx-auto">
+      <Card className="bg-gray-800 text-white p-6 rounded-xl shadow-lg">
+        <CardContent>
+          <h3 className="text-2xl font-bold">Live Trade Calls</h3>
+          <p className="mt-2">Get real-time trade alerts and signals from experienced traders.</p>
+        </CardContent>
+      </Card>
+      <Card className="bg-gray-800 text-white p-6 rounded-xl shadow-lg">
+        <CardContent>
+          <h3 className="text-2xl font-bold">Educational Content</h3>
+          <p className="mt-2">Learn technical analysis, risk management, and trading psychology.</p>
+        </CardContent>
+      </Card>
+    </div>
+  </div>
+);
+
+const Contact = () => (
+  <div className="p-10 text-center bg-gray-900 text-white min-h-screen">
+    <h2 className="text-4xl font-bold">Get In Touch</h2>
+    <p className="mt-6 text-lg">Have questions or want to collaborate? Reach out to us anytime.</p>
+    <p className="mt-4 text-lg">📧 <a className="text-blue-400" href="mailto:just.trades.13@gmail.com">just.trades.13@gmail.com</a></p>
+  </div>
+);
+
+const Navbar = () => (
+  <nav className="flex justify-between items-center p-5 bg-gray-800 text-white shadow-lg">
+    <Link to="/" className="text-2xl font-bold">Just.Trades</Link>
+    <div className="space-x-6">
+      <Link to="/" className="hover:text-blue-400">Home</Link>
+      <Link to="/about" className="hover:text-blue-400">About</Link>
+      <Link to="/contact" className="hover:text-blue-400">Contact</Link>
+    </div>
+  </nav>
+);
+
+const App = () => (
+  <Router>
+    <Navbar />
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/about" element={<About />} />
+      <Route path="/contact" element={<Contact />} />
+    </Routes>
+  </Router>
+);
+
+export default App;
