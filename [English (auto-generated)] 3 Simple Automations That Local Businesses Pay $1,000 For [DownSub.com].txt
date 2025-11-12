@@ -1,0 +1,443 @@
+Look, most people selling AI automation
+are doing it completely wrong. I found
+three simple automations that actually
+work and get businesses to pay you
+monthly instead of just one time. And
+personally, I'm making over $22,000
+per month with this exact system. But
+here's the thing, most people try to
+sell one big complicated custom AI
+solution for thousands and thousands of
+dollars right up front. But in reality,
+if you stack different automations and
+show them the benefits of what you're
+actually building, they will be way more
+likely to pay you if it's a lower amount
+in monthly recurring revenue. Now, I'll
+show you exactly what these automations
+are, how they work, and I'll even show
+you how to set them up so that you can
+just copy and paste my entire business
+model. All right, so we have automation
+one, which is missed call text back.
+This is where you start with every
+single client because in reality, every
+single freaking business needs this and
+it's the easiest sell. You walk in and
+you say, "What happens when someone
+calls you after hours? How long does it
+take you to respond to those leads? Do
+you have an overnight staff that is
+answering the phone for you?" If the
+answer is no, cool. What do you think
+people do? Well, they're going to call
+your competitor. They're going to call
+the next business and the next business
+until someone freaking answers. But what
+if a customer calls after hours and
+instead of getting voicemail, they
+immediately get a text that is saying,
+"Hey, we missed your call. How can we
+help you today?" And now what you can do
+is start a conversation with that person
+that is calling your clients. So, will
+they call someone else? Maybe. But the
+chances increase greatly once you start
+a text message conversation. So now the
+next day when your clients walk into the
+office, they can just have a list of
+leads that have already texted them. So
+all they have to do is respond. Now, if
+you want to get fancy, you can also link
+up an AI conversation bot that will book
+that appointment for you. Meaning the
+client walks in the next morning and
+instead of them having text messages,
+they have full booked appointments that
+the AI automatically booked for them.
+This alone runs at about $300 per month
+and takes literally 5 minutes to set up
+if you use gofreetrial.com.
+Now, this is exactly how you're going to
+set that up. Right here, we have the
+launchpad. You're going to make a new
+sub account. That's what it's called for
+each client. Cool thing is you can have
+unlimited sub accounts and unlimited
+clients. Then you just connect this
+dashboard with your client. So, hit
+connect on their Google page, you hit
+connect on their Facebook page, and then
+if you're outside the US, you can also
+do WhatsApp. Now the whole thing is
+integrated with their business. You
+don't need crazy API keys. Now that
+that's in there, you can head over to
+where it says settings. You click phone
+numbers right here. And then you click
+advanced settings at the top here. And
+then you hit voicemail and mis call text
+back. And as you scroll down, here it
+is. All it is is you just check off one
+box like this. Now it's enabled. Hey,
+this is location name. That's ABC
+roofing, ABC landscaping, whatever your
+client's name is. I saw that we just
+missed your call. How can we help? And
+if you want to change that or if the
+client wants to change that, you can hit
+customize right here. And then you're
+done. And now all the text messages that
+they send out automatically are going to
+appear in a box that looks like this. So
+under conversations, they can click all
+and they can see all the different
+conversations that were started because
+of this AI bot. This is a live client,
+so I'm going to have to blur most of
+this sensitive data. Okay. Next, we have
+the AI conversation bot. This is a $500
+a month service that comes in the
+package with the previous automation.
+So, every business owner should have
+this, but really 90% of them do not. So,
+you want to have that mis call text back
+to again start that text message
+conversation and then this conversation
+bot can take over from there. You can
+also set this up as a live chat on your
+client's website. So, imagine customer
+lands on their website. Instead of an
+email, they can find or maybe they're
+not even sure if this works. They get an
+AI chat that actually helps them. And
+this is a little popup you've probably
+seen on other websites that says, "Hey,
+text us here." When someone walks into a
+car dealership, instead of feeling lost,
+looking around random cars, not knowing
+what they need, a young lady approaches
+them with a smile, offering for help.
+And that is exactly what we are doing
+here with this chatbot. Now, the best
+part is this AI is going to be trained
+on their entire website, on all their
+services, on their pricing, on their
+availability, when they're open, when
+they're closed, and it can answer
+questions 24/7, collect leads, and even
+book appointments. I showed you how to
+integrate the client with GoHigh Level.
+We can also integrate their calendar.
+So, whenever they have availability, the
+AI can automatically book that
+appointment. It'll collect their name,
+their email, phone number, any details
+your client wants about that person and
+then place it in the calendar. Best part
+is this is recurring revenue. You set it
+up once and you just get paid every
+single month. You don't wake up every
+day with a feeling that you need to go
+get more clients to put food on your
+table. You set it up one time, set up
+the chatbot, right? Link their
+calendars, but they see that service
+working every single day. So, you have
+AI agents that are essentially working
+on your behalf and you're not setting
+this up with crazy complicated tech.
+This is a live conversation that a
+chatbot had with my client. So, person
+went in here and said, "Master bathroom
+remodel." This is a remodeling client.
+So, the chatbot said, "Hey, how can we
+help?" They typed this in. Boom.
+Opportunity updated, right? This person
+moved into the main pipeline. Now, you
+can see right here it said, "This
+message was generated by conversation AI
+workflow action." So the AI said,
+"Great. Is your biggest priority for the
+master bathroom model functionality,
+style, or both?" Functionality mainly.
+Got it. We accelerate creating
+functional spaces. Are you ready to book
+an appointment to discuss your project?
+Monday 2 p.m. We have availability at
+Monday 2 p.m. Should I book the slot?
+Boom. Book it. Appointment freaking
+created. Let me show you another
+conversation. This person said,
+"Interested in getting a quote on a
+remodel. Looking to have a fiberglass
+bath shower combo removed. Walk-in
+shower installed." AI responded. Said,
+"We're definitely interested. Let's
+schedule consultation. We're flexible on
+date and time. Now, the AI went in and
+it gave them freaking different time
+slots that is available on the client's
+calendar. Monday 10 a.m. works. Great.
+I'll book you in for this time. Boom. It
+gave them an address. Sell. And then it
+also needed an email. So, that person
+put in their email. And now the
+appointment details were updated. And
+now it's even following up. Your
+appointment is confirmed for this day.
+This time, we look forward to discussing
+your project. Now the whole thing is
+done. I'm guessing that first
+conversation that person filled out a
+contact form. So we already had their
+name, email, and phone number. So the AI
+bot didn't have to ask. It already knew
+because it was integrated. If you want
+everything imported into your account
+and just copy and paste everything that
+we've built with a click, you can now do
+that. It's working like crazy. Not just
+for me, but we've proven that this works
+for people with all kinds of experience
+levels and backgrounds. In fact, Gohigh
+Level themselves rated us the number one
+course because of the results that we
+get for people and the support that we
+give. I'm going to show you a toz how to
+get clients, deliver results, grow your
+business, and then even hire employees
+to run it all for you. I'll even talk to
+you on Zoom and answer questions to make
+sure that you succeed. If you want all
+this for free, go to laptopeo.com or
+check the link in the description. I
+want you to think of these automations
+and all these clients as like many
+rental properties. These AI agents are
+working for you like a rental property.
+One client becomes two, two becomes
+five, five becomes 10. At the end, you
+have 10 rental properties that pay you a
+stable salary. Each installment makes
+you an AI expert in that area. Word
+spreads and then referrals keep coming
+in. So, out of 10 clients that are
+paying you monthly, one of them might be
+a crazy freaking referral source because
+maybe he's connected or he just loves
+you so much and he will give you clients
+or he'll give you one connection that
+has more connections and then you'll
+have more clients than you know what to
+do with. And this is exactly how you
+would set this up. You head over to your
+GoHighle account. You head over to where
+it says AI agents. You click
+conversation AI right here. And then you
+can create your first conversational AI
+agent. Then you'll see a screen that
+looks like this. You can give your bot
+any name you want. Then you want to
+select autopilot right here. Now you can
+also link this up to different social
+media platforms, Instagram, Facebook,
+WhatsApp, but we just do SMS, chat
+widget, and live chat. This will cover
+everything that we just talked about.
+Now the AI can respond via SMS on behalf
+of your clients. So you put in the
+business name right here, ABC Roofing,
+and then you go ahead and you hit save
+at the bottom there. Next is going to be
+the bot training. So under the bot
+training, what you want to do is select
+create new. And now you want to give it
+a knowledge base. Now all a knowledge
+base is really used for is just training
+the AI. And the way that we are going to
+train the AI is just give the knowledge
+base the website URL of your clients and
+it's going to go through and it will
+scan every single page. Now the way you
+would scrape all their different pages
+on their website is you would click add
+source right here. you'd select
+webcrawwler and then it's going to ask
+you and enter the domain name. So
+instead of choosing exact URL, you want
+to select all URLs with this path. So
+for example, if your client is
+abcroofing.com
+right here, you can hit extract data.
+Now this is a fake client I just made
+up. But once you have a real website URL
+in here, it's going to go through the
+about page, the services page, and the
+AI will train itself on everything they
+offer. It'll read their contact page and
+even know what time they're open, what
+time they closed, what their best email
+is, and the whole thing is done. So, you
+don't really have to train the AI that
+much. Now, you head over to where it
+says bot goals. And here, you really
+want to scroll down to where it says
+appointment booking, and you want to
+select that. So, remember how the first
+step we linked up their Google page,
+their Facebook page. This is where their
+Google calendar is going to show up. So,
+you're going to select main booking
+calendar. That's what I titled mine.
+Once you link up your client's calendar,
+it'll be in here. So, most clients do
+use Google. But even the ones that don't
+and they don't have their appointments
+booked on Google, whatever they do use,
+just link it up to a Google calendar.
+And now the AI can automatically read it
+and find time slots that are available
+and it will avoid the time slots that
+are not. And now the whole thing is done
+after you hit save. Something we even do
+on sales calls sometimes as we're
+talking to a client like live. I will
+take their website URL that they send
+me. I'll put it into this bot because it
+doesn't cost us anything extra and I
+will just train an AI agent and then I
+will show them and hit test this bot
+right here and show it to them right in
+front of them of what it could look like
+if we were to start working together.
+So, while all these other AI automation
+agencies will take weeks and weeks to
+build these $5,000 automations, I can
+show them a quick sample of how this
+will look. Same thing on a car
+dealership. You want to get into a car
+and you want to test drive it before you
+buy. This is exactly that. And clients
+love this. Look, a lot of your clients
+are going to be older. So, they're
+definitely not AI experts and a lot of
+them barely freaking use Chat GPT. So,
+they're not going to ask you about all
+the technicalities of how'd you build
+this, how you build that. They don't
+care. They just want to see that this
+thing freaking works. And if you link
+this up to their account, you can set
+this up one time and you get paid
+monthly forever because they see the
+conversations. Remember, they wake up in
+the morning and the end result for them
+is they have appointments on their
+calendar. That's all they care about. As
+long as they're getting leads in their
+dashboard, as long as it's starting
+conversations, as long as the live
+chat's working, they will gladly keep
+paying you. That's all they're seeing.
+How many appointments did the AI book?
+Cool. How much am I paying? $300 a
+month. Awesome. No problem. And when you
+work with people like roofers who charge
+$10,000 for, let's say, one roof. If you
+help them just get one customer, you
+literally paid for a year's worth of
+service, even more than that. That's
+really what makes this such a no-brainer
+offer. So, now let's cover topic number
+three, which is going to be the full
+package deal. So, this is a $1,000 per
+month package. This is really where the
+money is at. So, if you offer miss call,
+text back, AI chatbot on their website,
+like I showed you, social media
+scheduling as well. And then you can
+even have AI create those posts for you.
+And you can give that to them as a
+bonus. By the way, when we sign on
+clients, we'll say something like, "Hey
+man, if you sign up today, we will give
+you 3 months worth of free social media
+posting." This isn't even a service we
+sell. And all that is is you going into
+chat GPT or going to the built-in AI
+content creator inside how to go high
+level and just saying, "Hey, build me
+three months worth of content. Here's
+the business's details. Lead
+reactivation campaign done for you
+website with templates." Again, all of
+this is done inside of GoHigh Level as
+well as ads. And you can even use my
+custom GPT to write those. So, I show
+them the return on investment on paper.
+And really, they just can't say no once
+they see it. Let's say it's average
+fence project. This is another niche
+that I love going after. This is stuff
+you don't even think about. If you drive
+by a house, what do most houses have?
+Freaking fences. Who installs those
+fences? How much do they charge? See,
+most people go about the world and they
+just don't think about these things. But
+I did and I realized fences are freaking
+expensive. So, let's say it's $10,000.
+Let's say they get 10 missed calls per
+week. Let's say their closing rate,
+meaning how many of those people can
+they turn into customers, is only 20%.
+Meaning, if they get 10 calls, they can
+only get two clients out of those 10.
+The money left on the table is around
+$20,000
+per month. So, if your fee is $1,000,
+this is a complete no-brainer, and they
+will keep paying you every single month.
+Now, you might be wondering, "That's
+great, but how do you actually get
+clients? What do I even say to get
+clients interested in this service?
+Well, let me show you something. Hey
+name, I built you an AI employee that
+can book you three to five new
+appointments in the next few days. Do
+you want to test it? It's completely
+riskfree.
+So, what you can do for clients, if you
+have no clients, if you have no case
+studies, you have no past experience, is
+just give this to them for free. This is
+the most freaking underrated strategy.
+Give them a 7-day free trial. give them
+a 14-day free trial. Just integrate it
+with their website. You watch me do it
+live here. And if you schedule those
+posts, you also give them something to
+look forward to. And then you just
+automatically bill them after the 7-day
+free trial or the 14-day free trial. The
+same way Netflix or Amazon or all these
+other companies give you a free trial
+and then auto bill you. Another amazing
+outreach strategy that I love using is
+called AI video outreach. And
+essentially the way that works is you
+just download a spreadsheet of your
+ideal clients. And I can show you
+exactly how to download that. And then
+you use AI to take their website and
+then put a box of your face the same way
+I'm filming this video where you're
+speaking. You're talking about your
+services. You're giving them this offer,
+but it looks like you're scrolling on
+their website as you're speaking. So it
+looks fully customized. If you want to
+watch a full setup video on how we do
+this, you can check out this video

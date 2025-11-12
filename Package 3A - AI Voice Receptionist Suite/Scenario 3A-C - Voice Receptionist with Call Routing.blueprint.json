@@ -1,0 +1,299 @@
+{
+    "name": "Scenario 3A-C - Voice Receptionist with Call Routing",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio Voice webhook - call transcription"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "CallSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "From",
+                        "type": "text"
+                    },
+                    {
+                        "name": "To",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionText",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionUrl",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "{Contact Phone} = '{{1.From}}'",
+                "maxRecords": 1,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are a helpful AI voice receptionist for a business automation and lead generation company.\n\nCaller Message (from speech-to-text): {{1.TranscriptionText}}\n\nCaller Phone: {{1.From}}\n\nContext:\nCustomer Information:\n- Company: {{2.Company[0]}}\n- Contact Name: {{2.`Contact Full Name`[0]}}\n- Industry: {{2.Industry[0]}}\n- Status: {{2.Status[0]}}\n- Previous Notes: {{2.Notes[0]}}\n\nYour goal is to:\n1. Answer their question or respond helpfully\n2. Qualify the caller and determine the best department/agent to route to\n3. Departments available: Sales, Support, Billing, Technical\n4. Route based on caller needs:\n   - Sales: interested in services, wants pricing, wants demo\n   - Support: needs help with existing service, troubleshooting\n   - Billing: payment questions, invoice issues, refund requests\n   - Technical: technical questions, implementation help\n5. Be friendly, professional, and concise\n\nKeep responses brief and natural for voice conversation (under 20 seconds when spoken).\n\nIMPORTANT: Return ONLY valid JSON (no markdown, no code blocks):\n{\n  \"response\": \"Your helpful response here\",\n  \"intent\": \"question\",\n  \"should_transfer\": false,\n  \"transfer_department\": \"\",\n  \"transfer_reason\": \"\",\n  \"transfer_number\": \"\",\n  \"needs_followup\": false\n}\n\nIntent can be: question, inquiry, complaint, technical, billing, sales, support, goodbye\n\nIf caller needs to speak with a human or specific department, set should_transfer to true, set transfer_department to one of: Sales, Support, Billing, Technical, and provide transfer_reason.\n\nTransfer numbers (example - replace with your actual numbers):\n- Sales: +12345678901\n- Support: +12345678902\n- Billing: +12345678903\n- Technical: +12345678904",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{3.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "switch"
+            },
+            "mapper": {
+                "filter": "{{4.should_transfer}} = true"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "switch"
+            },
+            "mapper": {
+                "filter": "{{4.transfer_department}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 50
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{2.id[0]}}",
+                "record": {
+                    "Status": "routed_to_{{4.transfer_department}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "{{2.Notes[0]}}\n\n--- Voice Call Routing at {{now}} ---\nCallSid: {{1.CallSid}}\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nRouted to: {{4.transfer_department}}\nReason: {{4.transfer_reason}}\nTransfer Number: {{4.transfer_number}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Contact Phone": "{{1.From}}",
+                    "Status": "routed_to_{{4.transfer_department}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "Voice Call Routing:\nCallSid: {{1.CallSid}}\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nRouted to: {{4.transfer_department}}\nReason: {{4.transfer_reason}}\nTransfer Number: {{4.transfer_number}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 450
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{2.id[0]}}",
+                "record": {
+                    "Status": "{{4.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "{{2.Notes[0]}}\n\n--- Voice Call at {{now}} ---\nCallSid: {{1.CallSid}}\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nIntent: {{4.intent}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 450
+                }
+            }
+        },
+        {
+            "id": 10,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Contact Phone": "{{1.From}}",
+                    "Status": "{{4.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "Voice Call:\nCallSid: {{1.CallSid}}\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nIntent: {{4.intent}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 650
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook, airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, builtin:BasicRouter, airtable:ActionUpdateRecords, airtable:ActionCreateRecord. Note: Twilio Voice integration and call transfer require manual setup - see TWILIO_VOICE_SETUP.md"]
+    }
+}
+

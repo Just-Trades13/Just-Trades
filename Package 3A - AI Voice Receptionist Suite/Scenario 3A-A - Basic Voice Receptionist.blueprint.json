@@ -1,0 +1,230 @@
+{
+    "name": "Scenario 3A-A - Basic Voice Receptionist",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio Voice webhook - call transcription"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "CallSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "From",
+                        "type": "text"
+                    },
+                    {
+                        "name": "To",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionText",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionUrl",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "{Contact Phone} = '{{1.From}}'",
+                "maxRecords": 1,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are a helpful AI voice receptionist for a business automation and lead generation company.\n\nCaller Message (from speech-to-text): {{1.TranscriptionText}}\n\nCaller Phone: {{1.From}}\n\nContext:\nCustomer Information:\n- Company: {{2.Company[0]}}\n- Contact Name: {{2.`Contact Full Name`[0]}}\n- Industry: {{2.Industry[0]}}\n- Status: {{2.Status[0]}}\n- Previous Notes: {{2.Notes[0]}}\n\nYour goal is to:\n1. Answer their question or respond helpfully\n2. Ask qualifying questions if they're interested in services\n3. Provide value and build rapport\n4. Guide them toward booking a call or appointment\n5. Be friendly, professional, and concise\n\nKeep responses brief and natural for voice conversation (under 20 seconds when spoken).\n\nIMPORTANT: Return ONLY valid JSON (no markdown, no code blocks):\n{\n  \"response\": \"Your helpful response here\",\n  \"intent\": \"question\",\n  \"needs_followup\": false,\n  \"booking_requested\": false,\n  \"should_transfer\": false,\n  \"transfer_reason\": \"\"\n}\n\nIntent can be: question, inquiry, complaint, booking, information, goodbye\n\nIf they mention booking, appointment, meeting, call, or schedule, set booking_requested to true.\n\nIf they need to speak with a human, set should_transfer to true and provide transfer_reason.",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{3.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{2.id[0]}} is empty"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Contact Phone": "{{1.From}}",
+                    "Status": "{{4.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "Voice Call:\nCallSid: {{1.CallSid}}\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nIntent: {{4.intent}}\nBooking Requested: {{4.booking_requested}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 50
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{2.id[0]}}",
+                "record": {
+                    "Status": "{{4.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "{{2.Notes[0]}}\n\n--- Voice Call at {{now}} ---\nCallSid: {{1.CallSid}}\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nIntent: {{4.intent}}\nBooking Requested: {{4.booking_requested}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 250
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook, airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, builtin:BasicRouter, airtable:ActionCreateRecord, airtable:ActionUpdateRecords. Note: Twilio Voice integration requires manual setup - see TWILIO_VOICE_SETUP.md"]
+    }
+}
+

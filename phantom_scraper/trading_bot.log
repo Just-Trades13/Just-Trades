@@ -1,0 +1,765 @@
+2025-10-23 22:30:54,600 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:5000
+2025-10-23 22:31:04,849 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:5000
+2025-10-23 22:31:17,128 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:31:17,145 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 22:31:17,145 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 22:31:21,241 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:31:21] "GET /health HTTP/1.1" 200 -
+2025-10-23 22:31:23,147 - __main__ - INFO - Received webhook: {
+  "symbol": "ES1!",
+  "action": "buy",
+  "quantity": 1
+}
+2025-10-23 22:31:23,147 - __main__ - INFO - Parsed signal: {'symbol': 'ES1!', 'action': 'buy', 'quantity': 1, 'price': None, 'stop_loss': None, 'take_profit': None, 'strategy': '', 'timestamp': '2025-10-23T22:31:23.147261'}
+2025-10-23 22:31:23,156 - WDM - INFO - ====== WebDriver manager ======
+2025-10-23 22:31:27,477 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-23 22:31:27,585 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-23 22:31:27,660 - WDM - INFO - There is no [mac64] chromedriver "141.0.7390.122" for browser google-chrome "141.0.7390" in cache
+2025-10-23 22:31:27,666 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-23 22:31:27,861 - WDM - INFO - WebDriver version 141.0.7390.122 selected
+2025-10-23 22:31:27,863 - WDM - INFO - Modern chrome version https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.122/mac-arm64/chromedriver-mac-arm64.zip
+2025-10-23 22:31:27,863 - WDM - INFO - About to download new driver from https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.122/mac-arm64/chromedriver-mac-arm64.zip
+2025-10-23 22:31:27,953 - WDM - INFO - Driver downloading response is 200
+2025-10-23 22:31:28,157 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-23 22:31:28,321 - WDM - INFO - Driver has been saved in cache [/Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122]
+2025-10-23 22:31:30,076 - __main__ - INFO - Chrome driver setup successful
+2025-10-23 22:31:30,077 - __main__ - INFO - Attempting to login to Tradovate...
+2025-10-23 22:31:31,921 - __main__ - ERROR - Login failed: Message: no such element: Unable to locate element: {"method":"css selector","selector":"[name="password"]"}
+  (Session info: chrome=141.0.7390.123); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#nosuchelementexception
+Stacktrace:
+0   chromedriver                        0x000000010055fcf8 cxxbridge1$str$ptr + 2895872
+1   chromedriver                        0x0000000100557c34 cxxbridge1$str$ptr + 2862908
+2   chromedriver                        0x000000010007d570 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 74324
+3   chromedriver                        0x00000001000c4f34 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 367640
+4   chromedriver                        0x00000001001063d8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 635068
+5   chromedriver                        0x00000001000b90f8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 318940
+6   chromedriver                        0x000000010052381c cxxbridge1$str$ptr + 2648868
+7   chromedriver                        0x0000000100526df8 cxxbridge1$str$ptr + 2662656
+8   chromedriver                        0x0000000100504334 cxxbridge1$str$ptr + 2520636
+9   chromedriver                        0x00000001005276e0 cxxbridge1$str$ptr + 2664936
+10  chromedriver                        0x00000001004f5a80 cxxbridge1$str$ptr + 2461064
+11  chromedriver                        0x0000000100547014 cxxbridge1$str$ptr + 2794268
+12  chromedriver                        0x0000000100547198 cxxbridge1$str$ptr + 2794656
+13  chromedriver                        0x0000000100557880 cxxbridge1$str$ptr + 2861960
+14  libsystem_pthread.dylib             0x000000019bf1fc0c _pthread_start + 136
+15  libsystem_pthread.dylib             0x000000019bf1ab80 thread_start + 8
+
+2025-10-23 22:31:31,925 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:31:31] "POST /webhook HTTP/1.1" 200 -
+2025-10-23 22:32:52,453 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:32:52] "[33mGET / HTTP/1.1[0m" 404 -
+2025-10-23 22:32:52,507 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:32:52] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-10-23 22:33:11,127 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:33:16,521 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:33:16] "[33mGET / HTTP/1.1[0m" 404 -
+2025-10-23 22:33:20,856 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:33:20,867 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 22:33:20,867 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 22:33:24,893 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:33:24] "GET / HTTP/1.1" 200 -
+2025-10-23 22:33:24,954 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:33:24] "GET / HTTP/1.1" 200 -
+2025-10-23 22:33:28,037 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:33:28] "GET /health HTTP/1.1" 200 -
+2025-10-23 22:33:28,227 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:33:28] "GET / HTTP/1.1" 200 -
+2025-10-23 22:33:36,289 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:33:36] "GET / HTTP/1.1" 200 -
+2025-10-23 22:33:38,437 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:33:38] "GET / HTTP/1.1" 200 -
+2025-10-23 22:33:53,480 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:33:53] "GET / HTTP/1.1" 200 -
+2025-10-23 22:34:04,791 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:34:04] "GET /health HTTP/1.1" 200 -
+2025-10-23 22:34:04,794 - __main__ - INFO - Received webhook: {
+  "symbol": "ES1!",
+  "action": "buy",
+  "quantity": 1,
+  "price": 4500.0,
+  "strategy": "test_strategy",
+  "timestamp": "2025-10-23T22:34:04.792768"
+}
+2025-10-23 22:34:04,794 - __main__ - INFO - Parsed signal: {'symbol': 'ES1!', 'action': 'buy', 'quantity': 1, 'price': 4500.0, 'stop_loss': None, 'take_profit': None, 'strategy': 'test_strategy', 'timestamp': '2025-10-23T22:34:04.792768'}
+2025-10-23 22:34:04,806 - WDM - INFO - ====== WebDriver manager ======
+2025-10-23 22:34:04,948 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-23 22:34:05,031 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-23 22:34:05,094 - WDM - INFO - Driver [/Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122/chromedriver-mac-arm64/chromedriver] found in cache
+2025-10-23 22:34:05,791 - __main__ - INFO - Chrome driver setup successful
+2025-10-23 22:34:05,792 - __main__ - INFO - Attempting to login to Tradovate...
+2025-10-23 22:34:07,100 - __main__ - ERROR - Login failed: Message: no such element: Unable to locate element: {"method":"css selector","selector":"[name="password"]"}
+  (Session info: chrome=141.0.7390.123); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#nosuchelementexception
+Stacktrace:
+0   chromedriver                        0x0000000102c17cf8 cxxbridge1$str$ptr + 2895872
+1   chromedriver                        0x0000000102c0fc34 cxxbridge1$str$ptr + 2862908
+2   chromedriver                        0x0000000102735570 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 74324
+3   chromedriver                        0x000000010277cf34 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 367640
+4   chromedriver                        0x00000001027be3d8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 635068
+5   chromedriver                        0x00000001027710f8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 318940
+6   chromedriver                        0x0000000102bdb81c cxxbridge1$str$ptr + 2648868
+7   chromedriver                        0x0000000102bdedf8 cxxbridge1$str$ptr + 2662656
+8   chromedriver                        0x0000000102bbc334 cxxbridge1$str$ptr + 2520636
+9   chromedriver                        0x0000000102bdf6e0 cxxbridge1$str$ptr + 2664936
+10  chromedriver                        0x0000000102bada80 cxxbridge1$str$ptr + 2461064
+11  chromedriver                        0x0000000102bff014 cxxbridge1$str$ptr + 2794268
+12  chromedriver                        0x0000000102bff198 cxxbridge1$str$ptr + 2794656
+13  chromedriver                        0x0000000102c0f880 cxxbridge1$str$ptr + 2861960
+14  libsystem_pthread.dylib             0x000000019bf1fc0c _pthread_start + 136
+15  libsystem_pthread.dylib             0x000000019bf1ab80 thread_start + 8
+
+2025-10-23 22:34:07,100 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:34:07] "POST /webhook HTTP/1.1" 200 -
+2025-10-23 22:34:09,111 - __main__ - INFO - Received webhook: {
+  "symbol": "NQ1!",
+  "action": "sell",
+  "quantity": 2,
+  "price": 15000.0,
+  "stop_loss": 15100.0,
+  "take_profit": 14900.0,
+  "strategy": "test_strategy",
+  "timestamp": "2025-10-23T22:34:09.107427"
+}
+2025-10-23 22:34:09,111 - __main__ - INFO - Parsed signal: {'symbol': 'NQ1!', 'action': 'sell', 'quantity': 2, 'price': 15000.0, 'stop_loss': 15100.0, 'take_profit': 14900.0, 'strategy': 'test_strategy', 'timestamp': '2025-10-23T22:34:09.107427'}
+2025-10-23 22:34:09,111 - __main__ - INFO - Attempting to login to Tradovate...
+2025-10-23 22:34:09,921 - __main__ - ERROR - Login failed: Message: no such element: Unable to locate element: {"method":"css selector","selector":"[name="password"]"}
+  (Session info: chrome=141.0.7390.123); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#nosuchelementexception
+Stacktrace:
+0   chromedriver                        0x0000000102c17cf8 cxxbridge1$str$ptr + 2895872
+1   chromedriver                        0x0000000102c0fc34 cxxbridge1$str$ptr + 2862908
+2   chromedriver                        0x0000000102735570 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 74324
+3   chromedriver                        0x000000010277cf34 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 367640
+4   chromedriver                        0x00000001027be3d8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 635068
+5   chromedriver                        0x00000001027710f8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 318940
+6   chromedriver                        0x0000000102bdb81c cxxbridge1$str$ptr + 2648868
+7   chromedriver                        0x0000000102bdedf8 cxxbridge1$str$ptr + 2662656
+8   chromedriver                        0x0000000102bbc334 cxxbridge1$str$ptr + 2520636
+9   chromedriver                        0x0000000102bdf6e0 cxxbridge1$str$ptr + 2664936
+10  chromedriver                        0x0000000102bada80 cxxbridge1$str$ptr + 2461064
+11  chromedriver                        0x0000000102bff014 cxxbridge1$str$ptr + 2794268
+12  chromedriver                        0x0000000102bff198 cxxbridge1$str$ptr + 2794656
+13  chromedriver                        0x0000000102c0f880 cxxbridge1$str$ptr + 2861960
+14  libsystem_pthread.dylib             0x000000019bf1fc0c _pthread_start + 136
+15  libsystem_pthread.dylib             0x000000019bf1ab80 thread_start + 8
+
+2025-10-23 22:34:09,921 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:34:09] "POST /webhook HTTP/1.1" 200 -
+2025-10-23 22:34:11,929 - __main__ - INFO - Received webhook: {
+  "symbol": "ES1!",
+  "action": "close",
+  "strategy": "test_strategy",
+  "timestamp": "2025-10-23T22:34:11.926784"
+}
+2025-10-23 22:34:11,929 - __main__ - INFO - Parsed signal: {'symbol': 'ES1!', 'action': 'close', 'quantity': 1, 'price': None, 'stop_loss': None, 'take_profit': None, 'strategy': 'test_strategy', 'timestamp': '2025-10-23T22:34:11.926784'}
+2025-10-23 22:34:11,929 - __main__ - INFO - Attempting to login to Tradovate...
+2025-10-23 22:34:12,739 - __main__ - ERROR - Login failed: Message: no such element: Unable to locate element: {"method":"css selector","selector":"[name="password"]"}
+  (Session info: chrome=141.0.7390.123); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#nosuchelementexception
+Stacktrace:
+0   chromedriver                        0x0000000102c17cf8 cxxbridge1$str$ptr + 2895872
+1   chromedriver                        0x0000000102c0fc34 cxxbridge1$str$ptr + 2862908
+2   chromedriver                        0x0000000102735570 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 74324
+3   chromedriver                        0x000000010277cf34 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 367640
+4   chromedriver                        0x00000001027be3d8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 635068
+5   chromedriver                        0x00000001027710f8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 318940
+6   chromedriver                        0x0000000102bdb81c cxxbridge1$str$ptr + 2648868
+7   chromedriver                        0x0000000102bdedf8 cxxbridge1$str$ptr + 2662656
+8   chromedriver                        0x0000000102bbc334 cxxbridge1$str$ptr + 2520636
+9   chromedriver                        0x0000000102bdf6e0 cxxbridge1$str$ptr + 2664936
+10  chromedriver                        0x0000000102bada80 cxxbridge1$str$ptr + 2461064
+11  chromedriver                        0x0000000102bff014 cxxbridge1$str$ptr + 2794268
+12  chromedriver                        0x0000000102bff198 cxxbridge1$str$ptr + 2794656
+13  chromedriver                        0x0000000102c0f880 cxxbridge1$str$ptr + 2861960
+14  libsystem_pthread.dylib             0x000000019bf1fc0c _pthread_start + 136
+15  libsystem_pthread.dylib             0x000000019bf1ab80 thread_start + 8
+
+2025-10-23 22:34:12,739 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:34:12] "POST /webhook HTTP/1.1" 200 -
+2025-10-23 22:34:14,744 - __main__ - INFO - Received webhook: {
+  "invalid": "data",
+  "missing": "required_fields"
+}
+2025-10-23 22:34:14,744 - __main__ - ERROR - Missing required fields: symbol or action
+2025-10-23 22:34:14,744 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:34:14] "[31m[1mPOST /webhook HTTP/1.1[0m" 400 -
+2025-10-23 22:34:16,759 - __main__ - INFO - Attempting to login to Tradovate...
+2025-10-23 22:34:17,182 - __main__ - ERROR - Login failed: Message: no such element: Unable to locate element: {"method":"css selector","selector":"[name="password"]"}
+  (Session info: chrome=141.0.7390.123); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#nosuchelementexception
+Stacktrace:
+0   chromedriver                        0x0000000102c17cf8 cxxbridge1$str$ptr + 2895872
+1   chromedriver                        0x0000000102c0fc34 cxxbridge1$str$ptr + 2862908
+2   chromedriver                        0x0000000102735570 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 74324
+3   chromedriver                        0x000000010277cf34 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 367640
+4   chromedriver                        0x00000001027be3d8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 635068
+5   chromedriver                        0x00000001027710f8 _RNvCs47EqcsrPRmA_7___rustc35___rust_no_alloc_shim_is_unstable_v2 + 318940
+6   chromedriver                        0x0000000102bdb81c cxxbridge1$str$ptr + 2648868
+7   chromedriver                        0x0000000102bdedf8 cxxbridge1$str$ptr + 2662656
+8   chromedriver                        0x0000000102bbc334 cxxbridge1$str$ptr + 2520636
+9   chromedriver                        0x0000000102bdf6e0 cxxbridge1$str$ptr + 2664936
+10  chromedriver                        0x0000000102bada80 cxxbridge1$str$ptr + 2461064
+11  chromedriver                        0x0000000102bff014 cxxbridge1$str$ptr + 2794268
+12  chromedriver                        0x0000000102bff198 cxxbridge1$str$ptr + 2794656
+13  chromedriver                        0x0000000102c0f880 cxxbridge1$str$ptr + 2861960
+14  libsystem_pthread.dylib             0x000000019bf1fc0c _pthread_start + 136
+15  libsystem_pthread.dylib             0x000000019bf1ab80 thread_start + 8
+
+2025-10-23 22:34:17,182 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:34:17] "GET /account HTTP/1.1" 200 -
+2025-10-23 22:34:58,960 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:34:58] "GET / HTTP/1.1" 200 -
+2025-10-23 22:37:12,385 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:37:16,404 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:37:16] "[33mGET /dashboard HTTP/1.1[0m" 404 -
+2025-10-23 22:37:18,648 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:37:18] "GET / HTTP/1.1" 200 -
+2025-10-23 22:37:23,915 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:37:36,930 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:37:42,638 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:37:42,638 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:37:42,646 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 22:37:42,646 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 22:37:46,780 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:37:46] "GET /dashboard HTTP/1.1" 200 -
+2025-10-23 22:37:48,483 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:37:48] "GET / HTTP/1.1" 200 -
+2025-10-23 22:37:56,973 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:37:56] "GET /dashboard HTTP/1.1" 200 -
+2025-10-23 22:37:57,295 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:37:57] "GET /socket.io/?EIO=4&transport=polling&t=PeKIsSg HTTP/1.1" 200 -
+2025-10-23 22:37:57,309 - __main__ - INFO - Client connected to dashboard
+2025-10-23 22:37:57,309 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:37:57] "POST /socket.io/?EIO=4&transport=polling&t=PeKIsSr&sid=HUzfRndPdKGyI7OuAAAA HTTP/1.1" 200 -
+2025-10-23 22:37:57,310 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:37:57] "GET /socket.io/?EIO=4&transport=polling&t=PeKIsSs&sid=HUzfRndPdKGyI7OuAAAA HTTP/1.1" 200 -
+2025-10-23 22:37:57,322 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:37:57] "GET /socket.io/?EIO=4&transport=polling&t=PeKIsT3&sid=HUzfRndPdKGyI7OuAAAA HTTP/1.1" 200 -
+2025-10-23 22:39:15,899 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:39:15] "GET /dashboard HTTP/1.1" 200 -
+2025-10-23 22:39:55,204 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:39:55] "GET /dashboard HTTP/1.1" 200 -
+2025-10-23 22:39:55,213 - __main__ - INFO - Client disconnected from dashboard
+2025-10-23 22:39:55,215 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:39:55] "GET /socket.io/?EIO=4&transport=websocket&sid=HUzfRndPdKGyI7OuAAAA HTTP/1.1" 200 -
+2025-10-23 22:39:55,240 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:39:55] "GET /socket.io/?EIO=4&transport=polling&t=PeKJJFY HTTP/1.1" 200 -
+2025-10-23 22:39:55,249 - __main__ - INFO - Client connected to dashboard
+2025-10-23 22:39:55,249 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:39:55] "POST /socket.io/?EIO=4&transport=polling&t=PeKJJFg&sid=N3HShJB8Q86Ol6QvAAAC HTTP/1.1" 200 -
+2025-10-23 22:39:55,259 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:39:55] "GET /socket.io/?EIO=4&transport=polling&t=PeKJJFg.0&sid=N3HShJB8Q86Ol6QvAAAC HTTP/1.1" 200 -
+2025-10-23 22:39:55,273 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:39:55] "GET /socket.io/?EIO=4&transport=polling&t=PeKJJG1&sid=N3HShJB8Q86Ol6QvAAAC HTTP/1.1" 200 -
+2025-10-23 22:40:02,251 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:40:02] "GET /dashboard HTTP/1.1" 200 -
+2025-10-23 22:40:02,259 - __main__ - INFO - Client disconnected from dashboard
+2025-10-23 22:40:02,263 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:40:02] "GET /socket.io/?EIO=4&transport=websocket&sid=N3HShJB8Q86Ol6QvAAAC HTTP/1.1" 200 -
+2025-10-23 22:40:02,284 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:40:02] "GET /socket.io/?EIO=4&transport=polling&t=PeKJKzY HTTP/1.1" 200 -
+2025-10-23 22:40:02,289 - __main__ - INFO - Client connected to dashboard
+2025-10-23 22:40:02,290 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:40:02] "POST /socket.io/?EIO=4&transport=polling&t=PeKJKzj&sid=9AqnQ3-y7cImtX9mAAAE HTTP/1.1" 200 -
+2025-10-23 22:40:02,291 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:40:02] "GET /socket.io/?EIO=4&transport=polling&t=PeKJKzj.0&sid=9AqnQ3-y7cImtX9mAAAE HTTP/1.1" 200 -
+2025-10-23 22:40:14,494 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:40:14] "GET /dashboard HTTP/1.1" 200 -
+2025-10-23 22:40:14,611 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:40:14] "GET /socket.io/?EIO=4&transport=polling&t=PeKJN-B HTTP/1.1" 200 -
+2025-10-23 22:40:14,620 - __main__ - INFO - Client connected to dashboard
+2025-10-23 22:40:14,623 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:40:14] "POST /socket.io/?EIO=4&transport=polling&t=PeKJN-M&sid=IHdKWGrtJVPrtBrHAAAG HTTP/1.1" 200 -
+2025-10-23 22:40:14,623 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:40:14] "GET /socket.io/?EIO=4&transport=polling&t=PeKJN-N&sid=IHdKWGrtJVPrtBrHAAAG HTTP/1.1" 200 -
+2025-10-23 22:42:03,153 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:42:03] "GET /dashboard HTTP/1.1" 200 -
+2025-10-23 22:42:03,159 - __main__ - INFO - Client disconnected from dashboard
+2025-10-23 22:42:03,160 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:42:03] "GET /socket.io/?EIO=4&transport=websocket&sid=IHdKWGrtJVPrtBrHAAAG HTTP/1.1" 200 -
+2025-10-23 22:42:03,206 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:42:03] "GET /socket.io/?EIO=4&transport=polling&t=PeKJoUl HTTP/1.1" 200 -
+2025-10-23 22:42:03,224 - __main__ - INFO - Client connected to dashboard
+2025-10-23 22:42:03,225 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:42:03] "POST /socket.io/?EIO=4&transport=polling&t=PeKJoVG&sid=DrU1NPiOe8uCOxxgAAAI HTTP/1.1" 200 -
+2025-10-23 22:42:03,226 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:42:03] "GET /socket.io/?EIO=4&transport=polling&t=PeKJoVH&sid=DrU1NPiOe8uCOxxgAAAI HTTP/1.1" 200 -
+2025-10-23 22:42:03,233 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:42:03] "GET /socket.io/?EIO=4&transport=polling&t=PeKJoVS&sid=DrU1NPiOe8uCOxxgAAAI HTTP/1.1" 200 -
+2025-10-23 22:48:46,375 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:48:46] "[33mGET /dashboard-tab HTTP/1.1[0m" 404 -
+2025-10-23 22:48:57,506 - __main__ - INFO - Client disconnected from dashboard
+2025-10-23 22:48:57,508 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:48:57] "GET /socket.io/?EIO=4&transport=websocket&sid=9AqnQ3-y7cImtX9mAAAE HTTP/1.1" 200 -
+2025-10-23 22:49:01,164 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:49:01] "[33mGET /dashboard-tab HTTP/1.1[0m" 404 -
+2025-10-23 22:49:06,589 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:49:06,590 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:49:06,597 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 22:49:06,598 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 22:49:06,782 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:49:06] "GET /socket.io/?EIO=4&transport=polling&t=PeKLPvR HTTP/1.1" 200 -
+2025-10-23 22:49:06,787 - __main__ - INFO - Client connected to dashboard
+2025-10-23 22:49:06,788 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:49:06] "POST /socket.io/?EIO=4&transport=polling&t=PeKLPvV&sid=BvO4CdJXowVD0giNAAAA HTTP/1.1" 200 -
+2025-10-23 22:49:06,788 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:49:06] "GET /socket.io/?EIO=4&transport=polling&t=PeKLPvW&sid=BvO4CdJXowVD0giNAAAA HTTP/1.1" 200 -
+2025-10-23 22:49:06,791 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:49:06] "GET /socket.io/?EIO=4&transport=polling&t=PeKLPvb&sid=BvO4CdJXowVD0giNAAAA HTTP/1.1" 200 -
+2025-10-23 22:49:11,249 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:49:11] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:49:30,124 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:49:30] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:49:30,198 - __main__ - INFO - Client disconnected from dashboard
+2025-10-23 22:49:30,199 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:49:30] "GET /socket.io/?EIO=4&transport=websocket&sid=BvO4CdJXowVD0giNAAAA HTTP/1.1" 200 -
+2025-10-23 22:51:51,675 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:51:51] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:05,309 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:05] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:07,837 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:52:07,837 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:52:09,367 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:09] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:13,729 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:13] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:14,860 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:14] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:17,855 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:52:17,855 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:52:23,726 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:23] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:24,763 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:24] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:29,313 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:52:29,313 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:52:35,132 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:35] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:36,474 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:36] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:37,526 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:37] "GET / HTTP/1.1" 200 -
+2025-10-23 22:52:41,699 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:52:41,699 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:52:44,599 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:52:44,599 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:52:44,607 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 22:52:44,607 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 22:52:48,479 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:48] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:52:53,626 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:52:53] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:53:39,155 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:53:39] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:53:40,514 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:53:40] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:53:41,751 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:53:41] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:53:46,821 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:53:46,821 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:53:50,540 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:53:50] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:53:55,439 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:53:55,439 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:53:55,448 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 22:53:55,448 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 22:54:01,195 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:54:01] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:54:03,727 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:54:03] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:55:26,938 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:55:26] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:55:34,329 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:55:34,329 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:55:38,213 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:55:38] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:55:43,287 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 22:55:43,287 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 22:55:43,294 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 22:55:43,294 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 22:55:49,196 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:55:49] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 22:55:56,203 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 22:55:56] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:00:11,827 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:00:11] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:00:17,402 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:00:17,403 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:00:23,724 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:00:23] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:00:25,318 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:00:25] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:00:29,115 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:00:29,115 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:00:29,122 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:00:29,122 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:00:35,141 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:00:35] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:00:56,687 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:00:56] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:01:06,652 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:01:06] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:05:48,792 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:05:48] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:07:35,918 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:07:35] "[33mGET /settings HTTP/1.1[0m" 404 -
+2025-10-23 23:07:37,304 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:07:37] "[33mGET /settings HTTP/1.1[0m" 404 -
+2025-10-23 23:07:39,165 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:07:39] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:08:40,455 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:08:40,456 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:08:40,461 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:08:40,461 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:08:44,782 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:08:44] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:08:46,666 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:08:46] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:10:16,918 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:10:16] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:10:24,457 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:10:24] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:10:31,141 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:10:31] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:10:36,161 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:10:36] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:10:44,037 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:10:44] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:10:48,149 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:10:48] "[33mGET /account-management HTTP/1.1[0m" 404 -
+2025-10-23 23:11:32,210 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:11:32] "GET / HTTP/1.1" 200 -
+2025-10-23 23:11:33,700 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:11:33] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:11:34,839 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:11:34] "[33mGET /account-management HTTP/1.1[0m" 404 -
+2025-10-23 23:11:35,203 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:11:35] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:11:36,786 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:11:36] "[33mGET /account-management HTTP/1.1[0m" 404 -
+2025-10-23 23:13:40,002 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:13:40] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:14:06,601 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:06] "[33mGET /account-management HTTP/1.1[0m" 404 -
+2025-10-23 23:14:10,987 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:14:10,988 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:14:10,996 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:14:10,996 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:14:15,642 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:15] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:14:17,614 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:17] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:14:19,485 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:19] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:14:21,476 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:21] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:14:27,399 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:27] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:14:29,413 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:29] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:14:31,462 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:31] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:14:33,592 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:33] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:14:35,702 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:35] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:14:35,817 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:35] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:14:39,696 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:39] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:14:39,707 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:39] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:14:39,715 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:39] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:14:39,722 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:39] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:14:39,729 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:39] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:14:39,736 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:39] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:14:44,983 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:14:44] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:15:03,091 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:15:03] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:15:41,957 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:15:41] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:16:02,167 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:16:02] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:17:38,556 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:17:38] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:17:46,162 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:17:46,162 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:17:46,168 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:17:46,168 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:17:52,263 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:17:52] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:17:55,845 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:17:55] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:18:01,740 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:01] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:18:01,752 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:01] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:18:01,761 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:01] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:18:01,769 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:01] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:18:01,777 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:01] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:18:01,788 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:01] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:18:07,207 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:07] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:18:08,482 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:08] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:18:10,662 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:10] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:18:11,946 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:11] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:18:13,142 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:13] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:18:13,837 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:13] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:18:15,439 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:15] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:18:17,015 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:17] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:18:18,543 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:18] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:18:20,194 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:20] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:18:21,171 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:21] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:18:22,720 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:22] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:18:23,647 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:23] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:18:25,401 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:25] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:18:36,614 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:18:36] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:19:24,606 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:19:24] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:19:29,726 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:19:29] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:19:31,852 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:19:31] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:19:33,335 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:19:33] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:19:34,752 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:19:34] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:19:46,506 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:19:46] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:19:52,989 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:19:52] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:20:29,360 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:29] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:20:31,169 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:31] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:20:34,280 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:34] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:20:36,782 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:20:36,782 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:20:36,788 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:20:36,788 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:20:37,990 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:37] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:20:40,699 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:40] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:20:41,247 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:41] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:20:42,056 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:42] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:20:44,016 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:44] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:20:44,212 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:44] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:20:44,221 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:44] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:20:44,231 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:44] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:20:44,242 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:44] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:20:44,251 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:44] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:20:44,261 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:44] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:20:44,686 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:44] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:20:45,308 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:45] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:20:59,760 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:20:59] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:21:01,475 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:21:01] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:21:38,687 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:21:38] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:21:40,682 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:21:40] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:22:57,984 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:22:57] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:22:59,883 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:22:59] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:23:03,687 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:23:03,687 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:23:03,697 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:23:03,697 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:23:08,537 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:23:08] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:23:12,694 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:23:12] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:23:12,707 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:23:12] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:23:12,715 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:23:12] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:23:12,724 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:23:12] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:23:12,733 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:23:12] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:23:12,742 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:23:12] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:23:20,492 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:23:20] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:25:39,354 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:25:39] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:25:40,895 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:25:40] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:25:44,130 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:25:44,130 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:25:44,136 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:25:44,136 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:25:47,975 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:25:47] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:25:52,552 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:25:52] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:25:52,566 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:25:52] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:25:52,578 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:25:52] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:25:52,590 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:25:52] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:25:52,601 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:25:52] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:25:52,611 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:25:52] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:27:02,319 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:02] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:27:04,813 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:04] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:27:27,812 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:27] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:27:30,104 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:30] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:27:31,309 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:31] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:27:32,296 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:32] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:27:33,750 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:33] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:27:34,578 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:34] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:27:35,469 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:35] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:27:37,125 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:27:37] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:29:10,113 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:10] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:29:12,386 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:12] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:29:12,545 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:12] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:29:17,405 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:29:17,405 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:29:17,416 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:29:17,416 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:29:17,633 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:17] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:29:21,861 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:21] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:29:26,709 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:26] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:29:26,720 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:26] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:29:26,732 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:26] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:29:26,743 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:26] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:29:26,751 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:26] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:29:26,761 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:26] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:29:38,076 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:38] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:29:44,065 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:44] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:29:45,620 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:29:45] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:30:58,223 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:30:58] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:30:58,250 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:30:58] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:30:58,263 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:30:58] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:30:58,285 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:30:58] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:30:58,297 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:30:58] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:30:58,309 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:30:58] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:32:18,477 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:32:18] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:32:20,494 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:32:20] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:32:22,281 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:32:22] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:32:23,510 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:32:23] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:32:24,825 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:32:24] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:32:27,663 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:32:27] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:32:29,397 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:32:29] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:32:57,995 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:32:57] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:35:59,193 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:35:59] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:36:19,057 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:36:19] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:39:18,538 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:39:18] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:39:56,415 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:39:56] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:40:19,503 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:40:19] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:40:21,153 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:40:21] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:42:28,187 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:42:28,187 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:42:28,195 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:42:28,195 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:42:33,825 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:42:33] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:42:33,838 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:42:33] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:42:33,850 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:42:33] "GET /account-management HTTP/1.1" 200 -
+2025-10-23 23:42:33,865 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:42:33] "GET /my-traders HTTP/1.1" 200 -
+2025-10-23 23:42:33,878 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:42:33] "GET /control-center HTTP/1.1" 200 -
+2025-10-23 23:42:33,889 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:42:33] "GET /settings HTTP/1.1" 200 -
+2025-10-23 23:45:43,647 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:45:43] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-23 23:45:44,268 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:45:44] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:47:04,320 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:47:04] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:49:05,676 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-23 23:49:05,676 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-23 23:49:05,685 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-23 23:49:05,686 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-23 23:49:08,439 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:49:08] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-23 23:53:53,614 - werkzeug - INFO - 127.0.0.1 - - [23/Oct/2025 23:53:53] "GET / HTTP/1.1" 200 -
+2025-10-24 00:01:42,565 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:01:42] "GET / HTTP/1.1" 200 -
+2025-10-24 00:02:59,108 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:02:59] "GET / HTTP/1.1" 200 -
+2025-10-24 00:03:02,792 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:02] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:03:04,504 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:04] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:03:04,694 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:04] "GET /socket.io/?EIO=4&transport=polling&t=PeKcLNp HTTP/1.1" 200 -
+2025-10-24 00:03:04,715 - __main__ - INFO - Client connected to dashboard
+2025-10-24 00:03:04,717 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:04] "POST /socket.io/?EIO=4&transport=polling&t=PeKcLN_&sid=YeV8kgFxNrpi6ObXAAAA HTTP/1.1" 200 -
+2025-10-24 00:03:04,718 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:04] "GET /socket.io/?EIO=4&transport=polling&t=PeKcLO0&sid=YeV8kgFxNrpi6ObXAAAA HTTP/1.1" 200 -
+2025-10-24 00:03:04,726 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:04] "GET /socket.io/?EIO=4&transport=polling&t=PeKcLOG&sid=YeV8kgFxNrpi6ObXAAAA HTTP/1.1" 200 -
+2025-10-24 00:03:07,310 - __main__ - INFO - Client disconnected from dashboard
+2025-10-24 00:03:07,311 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:07] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:03:07,311 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:07] "GET /socket.io/?EIO=4&transport=websocket&sid=YeV8kgFxNrpi6ObXAAAA HTTP/1.1" 200 -
+2025-10-24 00:03:12,595 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:12] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:03:18,847 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:18] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:03:26,176 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:03:26] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:04:44,735 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:04:44] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:04:44,745 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:04:44] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:04:44,753 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:04:44] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:04:44,767 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:04:44] "GET /my-traders HTTP/1.1" 200 -
+2025-10-24 00:04:44,778 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:04:44] "GET /control-center HTTP/1.1" 200 -
+2025-10-24 00:04:44,788 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:04:44] "GET /settings HTTP/1.1" 200 -
+2025-10-24 00:06:02,938 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:06:02] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:06:03,031 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:06:03] "GET /socket.io/?EIO=4&transport=polling&t=PeKd0wG HTTP/1.1" 200 -
+2025-10-24 00:06:03,046 - __main__ - INFO - Client connected to dashboard
+2025-10-24 00:06:03,048 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:06:03] "POST /socket.io/?EIO=4&transport=polling&t=PeKd0wV&sid=dB2jchbLIR1E1BVdAAAC HTTP/1.1" 200 -
+2025-10-24 00:06:03,053 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:06:03] "GET /socket.io/?EIO=4&transport=polling&t=PeKd0wV.0&sid=dB2jchbLIR1E1BVdAAAC HTTP/1.1" 200 -
+2025-10-24 00:06:14,948 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:06:14] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:06:14,949 - __main__ - INFO - Client disconnected from dashboard
+2025-10-24 00:06:14,950 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:06:14] "GET /socket.io/?EIO=4&transport=websocket&sid=dB2jchbLIR1E1BVdAAAC HTTP/1.1" 200 -
+2025-10-24 00:06:24,191 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:06:24] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:14:12,398 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:14:12] "GET /health HTTP/1.1" 200 -
+2025-10-24 00:14:12,600 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-24 00:14:12,600 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-24 00:16:24,637 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:24] "[33mGET /webhook/YOUR_STRATEGY_ID HTTP/1.1[0m" 404 -
+2025-10-24 00:16:43,196 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-24 00:16:43,196 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-24 00:16:43,207 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://10.0.0.8:8080
+2025-10-24 00:16:43,207 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-10-24 00:16:47,131 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:47] "GET /health HTTP/1.1" 200 -
+2025-10-24 00:16:50,323 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:50] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:16:50,338 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:50] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:16:50,352 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:50] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:16:50,365 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:50] "GET /my-traders HTTP/1.1" 200 -
+2025-10-24 00:16:50,375 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:50] "GET /control-center HTTP/1.1" 200 -
+2025-10-24 00:16:50,387 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:50] "GET /settings HTTP/1.1" 200 -
+2025-10-24 00:16:56,929 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:56] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:16:56,978 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:56] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:16:59,735 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:16:59] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:17:05,738 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:17:05] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:17:05,762 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:17:05] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:17:43,445 - tradovate_api - ERROR - Tradovate authentication error: 404 Client Error: Not Found for url: https://demo-api.tradovate.com/v1/auth/access-token
+2025-10-24 00:17:43,447 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:17:43] "POST /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:17:45,436 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:17:45] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:20:30,485 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:20:30] "GET /health HTTP/1.1" 200 -
+2025-10-24 00:20:45,725 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:20:45] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:20:45,752 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:20:45] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:28:29,745 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:28:29] "GET /health HTTP/1.1" 200 -
+2025-10-24 00:34:20,024 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:34:20] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:34:20,081 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:34:20] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:34:52,592 - tradovate_api - ERROR - Tradovate authentication error: 404 Client Error: Not Found for url: https://demo-api.tradovate.com/v1/auth/access-token
+2025-10-24 00:34:52,594 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:34:52] "POST /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:34:54,863 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:34:54] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:35:43,055 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:35:43] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:35:43,186 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:35:43] "GET /socket.io/?EIO=4&transport=polling&t=PeKjpWR HTTP/1.1" 200 -
+2025-10-24 00:35:43,202 - __main__ - INFO - Client connected to dashboard
+2025-10-24 00:35:43,204 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:35:43] "POST /socket.io/?EIO=4&transport=polling&t=PeKjpXK&sid=V5SEUrHEyzhNzabeAAAA HTTP/1.1" 200 -
+2025-10-24 00:35:43,206 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:35:43] "GET /socket.io/?EIO=4&transport=polling&t=PeKjpXL&sid=V5SEUrHEyzhNzabeAAAA HTTP/1.1" 200 -
+2025-10-24 00:35:43,215 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:35:43] "GET /socket.io/?EIO=4&transport=polling&t=PeKjpXg&sid=V5SEUrHEyzhNzabeAAAA HTTP/1.1" 200 -
+2025-10-24 00:36:01,377 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:01] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:36:01,381 - __main__ - INFO - Client disconnected from dashboard
+2025-10-24 00:36:01,382 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:01] "GET /socket.io/?EIO=4&transport=websocket&sid=V5SEUrHEyzhNzabeAAAA HTTP/1.1" 200 -
+2025-10-24 00:36:03,702 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:03] "GET /my-traders HTTP/1.1" 200 -
+2025-10-24 00:36:15,184 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:15] "GET /settings HTTP/1.1" 200 -
+2025-10-24 00:36:18,598 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:18] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:36:21,748 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:21] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:36:21,777 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:21] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:36:33,603 - __main__ - INFO - Starting TradingView webhook server on 0.0.0.0:8080
+2025-10-24 00:36:33,603 - werkzeug - WARNING - Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+2025-10-24 00:36:38,458 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:38] "GET /health HTTP/1.1" 200 -
+2025-10-24 00:36:40,790 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:40] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:36:44,153 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:44] "POST /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:36:47,000 - __main__ - INFO - Received webhook: {
+  "message": "JADDCAVIX: SELL, Price = 150.25, Ticker = ES, Period = 1m"
+}
+2025-10-24 00:36:47,000 - __main__ - ERROR - Missing required fields: symbol or action
+2025-10-24 00:36:47,001 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:47] "[31m[1mPOST /webhook HTTP/1.1[0m" 400 -
+2025-10-24 00:36:49,744 - __main__ - INFO - Received webhook: {
+  "symbol": "ES",
+  "action": "sell",
+  "quantity": 1,
+  "price": 150.25
+}
+2025-10-24 00:36:49,744 - __main__ - INFO - Parsed signal: {'symbol': 'ES', 'action': 'sell', 'quantity': 1, 'price': 150.25, 'stop_loss': None, 'take_profit': None, 'strategy': '', 'timestamp': '2025-10-24T00:36:49.744603'}
+2025-10-24 00:36:49,769 - WDM - INFO - ====== WebDriver manager ======
+2025-10-24 00:36:50,105 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-24 00:36:50,260 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-24 00:36:50,330 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-24 00:36:50,507 - WDM - INFO - WebDriver version 141.0.7390.122 selected
+2025-10-24 00:36:50,510 - WDM - INFO - Modern chrome version https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.122/mac-arm64/chromedriver-mac-arm64.zip
+2025-10-24 00:36:50,510 - WDM - INFO - About to download new driver from https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.122/mac-arm64/chromedriver-mac-arm64.zip
+2025-10-24 00:36:50,597 - WDM - INFO - Driver downloading response is 200
+2025-10-24 00:36:50,802 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-24 00:36:50,980 - WDM - INFO - Driver has been saved in cache [/Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122]
+2025-10-24 00:36:50,998 - __main__ - ERROR - Failed to setup Chrome driver: Message: Service /Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122/chromedriver-mac-arm64/chromedriver unexpectedly exited. Status code was: -9
+
+2025-10-24 00:36:50,998 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:50] "POST /webhook HTTP/1.1" 200 -
+2025-10-24 00:36:59,021 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:59] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:36:59,031 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:59] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:36:59,047 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:59] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:36:59,056 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:59] "GET /my-traders HTTP/1.1" 200 -
+2025-10-24 00:36:59,063 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:59] "GET /control-center HTTP/1.1" 200 -
+2025-10-24 00:36:59,071 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:36:59] "GET /settings HTTP/1.1" 200 -
+2025-10-24 00:37:37,684 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:37:37] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:37:37,737 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:37:37] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:37:43,327 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:37:43] "[31m[1mGET /webhook/YOUR_STRATEGY_ID HTTP/1.1[0m" 405 -
+2025-10-24 00:38:41,082 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:38:41] "GET /health HTTP/1.1" 200 -
+2025-10-24 00:38:44,590 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:38:44] "GET /health HTTP/1.1" 200 -
+2025-10-24 00:38:44,629 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:38:44] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:38:44,656 - __main__ - INFO - Received webhook: {
+  "symbol": "ES",
+  "action": "buy",
+  "quantity": 1,
+  "price": 150.25
+}
+2025-10-24 00:38:44,656 - __main__ - INFO - Parsed signal: {'symbol': 'ES', 'action': 'buy', 'quantity': 1, 'price': 150.25, 'stop_loss': None, 'take_profit': None, 'strategy': '', 'timestamp': '2025-10-24T00:38:44.656918'}
+2025-10-24 00:38:44,657 - WDM - INFO - ====== WebDriver manager ======
+2025-10-24 00:38:44,769 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-24 00:38:44,861 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-24 00:38:44,928 - WDM - INFO - Driver [/Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122/chromedriver-mac-arm64/chromedriver] found in cache
+2025-10-24 00:39:17,558 - __main__ - ERROR - Failed to setup Chrome driver: Message: Can not connect to the Service /Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122/chromedriver-mac-arm64/chromedriver
+
+2025-10-24 00:40:17,603 - selenium.webdriver.common.service - ERROR - Service process refused to terminate gracefully with SIGTERM, escalating to SIGKILL.
+Traceback (most recent call last):
+  File "/Users/mylesjadwin/Trading Projects/phantom_scraper/venv/lib/python3.13/site-packages/selenium/webdriver/common/service.py", line 180, in _terminate_process
+    self.process.wait(60)
+    ~~~~~~~~~~~~~~~~~^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.2/Frameworks/Python.framework/Versions/3.13/lib/python3.13/subprocess.py", line 1276, in wait
+    return self._wait(timeout=timeout)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.2/Frameworks/Python.framework/Versions/3.13/lib/python3.13/subprocess.py", line 2060, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['/Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122/chromedriver-mac-arm64/chromedriver', '--enable-chrome-logs', '--port=56957']' timed out after 60 seconds
+2025-10-24 00:40:17,630 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:40:17] "POST /webhook HTTP/1.1" 200 -
+2025-10-24 00:40:35,909 - __main__ - INFO - Received webhook: {
+  "symbol": "ES",
+  "action": "buy",
+  "quantity": 1,
+  "price": 150.25
+}
+2025-10-24 00:40:35,910 - __main__ - INFO - Parsed signal: {'symbol': 'ES', 'action': 'buy', 'quantity': 1, 'price': 150.25, 'stop_loss': None, 'take_profit': None, 'strategy': '', 'timestamp': '2025-10-24T00:40:35.910444'}
+2025-10-24 00:40:35,912 - WDM - INFO - ====== WebDriver manager ======
+2025-10-24 00:40:36,125 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-24 00:40:36,215 - WDM - INFO - Get LATEST chromedriver version for google-chrome
+2025-10-24 00:40:36,285 - WDM - INFO - Driver [/Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122/chromedriver-mac-arm64/chromedriver] found in cache
+2025-10-24 00:41:08,935 - __main__ - ERROR - Failed to setup Chrome driver: Message: Can not connect to the Service /Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122/chromedriver-mac-arm64/chromedriver
+
+2025-10-24 00:41:25,159 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:25] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:41:25,267 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:25] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:41:46,120 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:46] "GET /account-management HTTP/1.1" 200 -
+2025-10-24 00:41:46,141 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:46] "GET /api/accounts HTTP/1.1" 200 -
+2025-10-24 00:41:47,469 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:47] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:41:47,537 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:47] "GET /socket.io/?EIO=4&transport=polling&t=PeKlCU8 HTTP/1.1" 200 -
+2025-10-24 00:41:47,547 - __main__ - INFO - Client connected to dashboard
+2025-10-24 00:41:47,550 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:47] "POST /socket.io/?EIO=4&transport=polling&t=PeKlCUJ&sid=81fzoYe0KQqbRqq0AAAC HTTP/1.1" 200 -
+2025-10-24 00:41:47,550 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:47] "GET /socket.io/?EIO=4&transport=polling&t=PeKlCUJ.0&sid=81fzoYe0KQqbRqq0AAAC HTTP/1.1" 200 -
+2025-10-24 00:41:47,553 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:47] "GET /socket.io/?EIO=4&transport=polling&t=PeKlCUV&sid=81fzoYe0KQqbRqq0AAAC HTTP/1.1" 200 -
+2025-10-24 00:41:48,957 - __main__ - INFO - Client disconnected from dashboard
+2025-10-24 00:41:48,957 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:48] "GET /socket.io/?EIO=4&transport=websocket&sid=81fzoYe0KQqbRqq0AAAC HTTP/1.1" 200 -
+2025-10-24 00:41:48,961 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:48] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:41:48,997 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:48] "GET /socket.io/?EIO=4&transport=polling&t=PeKlCq- HTTP/1.1" 200 -
+2025-10-24 00:41:49,007 - __main__ - INFO - Client connected to dashboard
+2025-10-24 00:41:49,008 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:49] "GET /socket.io/?EIO=4&transport=polling&t=PeKlCr9&sid=QPU7YPp4SUaSb1rkAAAE HTTP/1.1" 200 -
+2025-10-24 00:41:49,008 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:49] "POST /socket.io/?EIO=4&transport=polling&t=PeKlCr8&sid=QPU7YPp4SUaSb1rkAAAE HTTP/1.1" 200 -
+2025-10-24 00:41:49,011 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:49] "GET /socket.io/?EIO=4&transport=polling&t=PeKlCrH&sid=QPU7YPp4SUaSb1rkAAAE HTTP/1.1" 200 -
+2025-10-24 00:41:51,408 - __main__ - INFO - Client disconnected from dashboard
+2025-10-24 00:41:51,409 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:51] "GET /socket.io/?EIO=4&transport=websocket&sid=QPU7YPp4SUaSb1rkAAAE HTTP/1.1" 200 -
+2025-10-24 00:41:51,409 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:51] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:41:51,440 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:51] "GET /socket.io/?EIO=4&transport=polling&t=PeKlDRA HTTP/1.1" 200 -
+2025-10-24 00:41:51,457 - __main__ - INFO - Client connected to dashboard
+2025-10-24 00:41:51,458 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:51] "POST /socket.io/?EIO=4&transport=polling&t=PeKlDRI&sid=_AtNyPOkiPIsndPVAAAG HTTP/1.1" 200 -
+2025-10-24 00:41:51,458 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:41:51] "GET /socket.io/?EIO=4&transport=polling&t=PeKlDRJ&sid=_AtNyPOkiPIsndPVAAAG HTTP/1.1" 200 -
+2025-10-24 00:42:01,878 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:42:01] "GET /my-recorders HTTP/1.1" 200 -
+2025-10-24 00:42:01,878 - __main__ - INFO - Client disconnected from dashboard
+2025-10-24 00:42:01,878 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:42:01] "GET /socket.io/?EIO=4&transport=websocket&sid=_AtNyPOkiPIsndPVAAAG HTTP/1.1" 200 -
+2025-10-24 00:42:08,945 - selenium.webdriver.common.service - ERROR - Service process refused to terminate gracefully with SIGTERM, escalating to SIGKILL.
+Traceback (most recent call last):
+  File "/Users/mylesjadwin/Trading Projects/phantom_scraper/venv/lib/python3.13/site-packages/selenium/webdriver/common/service.py", line 180, in _terminate_process
+    self.process.wait(60)
+    ~~~~~~~~~~~~~~~~~^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.2/Frameworks/Python.framework/Versions/3.13/lib/python3.13/subprocess.py", line 1276, in wait
+    return self._wait(timeout=timeout)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.2/Frameworks/Python.framework/Versions/3.13/lib/python3.13/subprocess.py", line 2060, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['/Users/mylesjadwin/.wdm/drivers/chromedriver/mac64/141.0.7390.122/chromedriver-mac-arm64/chromedriver', '--enable-chrome-logs', '--port=57288']' timed out after 60 seconds
+2025-10-24 00:42:08,960 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:42:08] "POST /webhook HTTP/1.1" 200 -
+2025-10-24 00:42:23,965 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:42:23] "GET /dashboard-tab HTTP/1.1" 200 -
+2025-10-24 00:42:24,042 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:42:24] "GET /socket.io/?EIO=4&transport=polling&t=PeKlLOM HTTP/1.1" 200 -
+2025-10-24 00:42:24,057 - __main__ - INFO - Client connected to dashboard
+2025-10-24 00:42:24,058 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:42:24] "POST /socket.io/?EIO=4&transport=polling&t=PeKlLOj&sid=LYcnddVzsDMUvzoBAAAI HTTP/1.1" 200 -
+2025-10-24 00:42:24,058 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:42:24] "GET /socket.io/?EIO=4&transport=polling&t=PeKlLOj.0&sid=LYcnddVzsDMUvzoBAAAI HTTP/1.1" 200 -
+2025-10-24 00:42:24,062 - werkzeug - INFO - 127.0.0.1 - - [24/Oct/2025 00:42:24] "GET /socket.io/?EIO=4&transport=polling&t=PeKlLOy&sid=LYcnddVzsDMUvzoBAAAI HTTP/1.1" 200 -

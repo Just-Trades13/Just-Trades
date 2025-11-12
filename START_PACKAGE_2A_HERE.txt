@@ -1,0 +1,128 @@
+═══════════════════════════════════════════════════════════════════
+  PACKAGE 2A - START HERE (Copy this entire prompt)
+═══════════════════════════════════════════════════════════════════
+
+I need to create Package 2A - Missed Call & AI Text Response Suite for Make.com.
+
+═══════════════════════════════════════════════════════════════════
+CONTEXT & BACKGROUND:
+═══════════════════════════════════════════════════════════════════
+
+Package A (Lead Generation Automation Suite) is COMPLETE:
+- Location: "Package A - Lead Generation Automation Suite/" folder
+- Contains: 6 verified Make.com scenarios (A-F) for lead generation
+- All modules verified working, complete documentation included
+- Reference structure available for template/guidance
+
+═══════════════════════════════════════════════════════════════════
+PACKAGE 2A REQUIREMENTS:
+═══════════════════════════════════════════════════════════════════
+
+SERVICE 1: Missed Call Text-Back System
+- Trigger: Missed phone call (Twilio)
+- Action: Send immediate SMS response
+- Optional: AI-powered follow-up conversation
+- Optional: Booking link integration
+- Pricing: $300–$500/mo
+
+SERVICE 2: AI Text Response Bot
+- Trigger: Incoming SMS (Twilio)
+- Action: AI processes message, generates intelligent response
+- Features: FAQ handling, lead qualification, appointment booking
+- Integration: Google Calendar for booking, CRM for lead storage
+- Pricing: $500–$1,200/mo
+
+═══════════════════════════════════════════════════════════════════
+SCENARIOS TO CREATE:
+═══════════════════════════════════════════════════════════════════
+
+1. Scenario A - Missed Call Text-Back
+   - Twilio missed call trigger → Send SMS → Log to CRM
+
+2. Scenario B - AI Text Response Bot (Basic)
+   - Twilio incoming SMS → OpenAI → Send response → CRM
+
+3. Scenario C - AI Text Bot with Booking
+   - SMS → OpenAI → Calendar check → Offer times → Book appointment
+
+4. Scenario D - Missed Call with AI Follow-up
+   - Missed call → SMS → AI conversation → Lead qualification → CRM
+
+5. Scenario E - AI Text Bot with Knowledge Base
+   - SMS → OpenAI (with context) → FAQ/Quote → Lead scoring → CRM
+
+6. Scenario F - Analytics & Reporting (Optional)
+   - Aggregate Twilio/CRM data → Dashboard metrics
+
+═══════════════════════════════════════════════════════════════════
+TECHNICAL REQUIREMENTS:
+═══════════════════════════════════════════════════════════════════
+
+Verified Modules (from Package A):
+- ✅ twilio:CreateMessage (verified)
+- ✅ openai-gpt-3:createModelResponse (verified)
+- ✅ airtable:TriggerWatchRecords, ActionCreateRecord, etc. (verified)
+- ✅ json:ParseJSON (verified)
+- ✅ builtin:BasicRouter (verified)
+
+Need to Research & Verify:
+- [ ] Twilio missed call trigger module
+- [ ] Twilio incoming SMS trigger module
+- [ ] Google Calendar read/write modules
+- [ ] Google Calendar availability/booking modules
+
+═══════════════════════════════════════════════════════════════════
+DELIVERABLES REQUIRED:
+═══════════════════════════════════════════════════════════════════
+
+1. 5-6 Make.com blueprint JSON files (ready to import)
+2. Complete documentation suite (match Package A structure):
+   - PACKAGE_2A_README.md
+   - SETUP_INSTRUCTIONS_COMPLETE.md
+   - README_ALL_SCENARIOS.md
+   - QUICK_REFERENCE_JSON_PARSING.md
+   - VERIFIED_MAKE_COM_MODULES.md (updated with new modules)
+   - JSON_PARSING_VERIFICATION.md
+   - IMPORT_CHECKLIST.md
+3. All modules verified working (no "Module Not Found" errors)
+4. JSON parsing verified for all OpenAI modules
+5. Package saved in: "Package 2A - Missed Call & AI Text Response Suite/"
+
+═══════════════════════════════════════════════════════════════════
+KEY INSTRUCTIONS:
+═══════════════════════════════════════════════════════════════════
+
+1. FIRST: Research Twilio and Google Calendar modules in Make.com
+   - Verify exact module names/IDs
+   - Check for triggers vs webhooks
+   - Document findings in VERIFIED_MAKE_COM_MODULES.md
+
+2. FOLLOW Package A structure and quality:
+   - Use Package A blueprints as templates
+   - Match documentation format
+   - Verify all modules before finalizing
+
+3. JSON Parsing Pattern (from Package A):
+   - Standard: {{OPENAI_MODULE_ID.text.output[0].content[0].text}}
+   - Verify each scenario's OpenAI module ID matches JSON parse reference
+
+4. Complete all documentation:
+   - Setup instructions for each scenario
+   - Field mapping guides
+   - Troubleshooting sections
+
+═══════════════════════════════════════════════════════════════════
+GETTING STARTED:
+═══════════════════════════════════════════════════════════════════
+
+Please:
+1. Research Twilio missed call and SMS trigger modules
+2. Research Google Calendar integration modules
+3. Create scenarios following Package A structure
+4. Verify all modules work
+5. Create complete documentation package
+
+Reference Package A folder for structure and quality standards.
+
+═══════════════════════════════════════════════════════════════════
+

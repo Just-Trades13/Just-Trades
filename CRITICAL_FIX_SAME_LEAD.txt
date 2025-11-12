@@ -1,0 +1,65 @@
+🚨 CRITICAL: Why You Get Same Lead Every Time
+
+❌ PROBLEM FOUND:
+   Module 2 uses: {{`18.data.people[0]`}}
+   → Always processes FIRST person from array
+   → If Apollo.io always puts same person first → You get same lead!
+
+✅ QUICK FIXES TO TRY:
+
+FIX 1: Process Different Array Index
+
+Change Module 2 user message from:
+{{`18.data.people[0]`}}
+
+To (process second person):
+{{`18.data.people[1]`}}
+
+OR third person:
+{{`18.data.people[2]`}}
+
+Test each one!
+
+---
+
+FIX 2: Check Module 1 Output First
+
+1. Run scenario
+2. Click Module 1
+3. Check "Output Bundle"
+4. Look at people array
+   → How many people?
+   → Are they DIFFERENT people?
+   → Or all the same?
+
+If Module 1 shows SAME person repeated:
+→ Apollo.io plan limitation (only 1 lead available)
+
+If Module 1 shows DIFFERENT people:
+→ Problem is Module 2 always using [0]
+→ Use Fix 1 above!
+
+---
+
+FIX 3: Add Iterator (Best Long-term Solution)
+
+Add Iterator module between Module 1 and Module 2
+→ Processes ALL people from Apollo.io
+→ Gets different leads automatically
+→ No more same lead issue!
+
+I can create updated blueprint with Iterator if you want.
+
+---
+
+CHECK THESE NOW:
+
+1. Run scenario
+2. Click Module 1 → Check output
+3. Tell me:
+   - How many people in array?
+   - Are they different emails?
+   - Or all the same?
+
+This will tell us if it's Apollo.io or the blueprint!
+

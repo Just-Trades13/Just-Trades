@@ -1,0 +1,1430 @@
+{
+  "timestamp": "2025-11-06T05:52:30.703Z",
+  "url": "https://trademanagergroup.com/auth/login",
+  "page": "/auth/login",
+  "apiCalls": [],
+  "websockets": [],
+  "eventListeners": [
+    {
+      "selector": "script",
+      "id": "",
+      "class": "",
+      "tag": "script",
+      "events": [
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function(){var W;((W=v())==null?0:W.loaded)||Q()}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function(){c.onFailure()}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".login-page",
+      "id": "",
+      "class": "login-page",
+      "tag": "body",
+      "events": [
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "paste",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keyup",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerdown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerup",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointermove",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#root",
+      "id": "root",
+      "class": "",
+      "tag": "div",
+      "events": [
+        {
+          "type": "abort",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "auxclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplay",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplaythrough",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            },
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "close",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "contextmenu",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "copy",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cut",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drag",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragenter",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragexit",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragleave",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drop",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "durationchange",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "emptied",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "encrypted",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ended",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "gotpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "input",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keypress",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keyup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadeddata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadedmetadata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "lostpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousedown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousemove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "paste",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pause",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "play",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "playing",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointercancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerdown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointermove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "progress",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ratechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "reset",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "resize",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeked",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeking",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "stalled",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "submit",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "suspend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "timeupdate",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchcancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "volumechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "scroll",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "toggle",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchmove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "waiting",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "wheel",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "animationend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationiteration",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dblclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "transitionend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "change",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "textInput",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionupdate",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".navbar-brand",
+      "id": "",
+      "class": "navbar-brand",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".navbar-toggler",
+      "id": "",
+      "class": "navbar-toggler",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".nav-link",
+      "id": "",
+      "class": "nav-link",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".nav-link",
+      "id": "",
+      "class": "nav-link active",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".login-modal-overlay",
+      "id": "",
+      "class": "login-modal-overlay",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#username",
+      "id": "username",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#password",
+      "id": "password",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".login-password-toggle",
+      "id": "",
+      "class": "login-password-toggle",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#rememberMe",
+      "id": "rememberMe",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".login-forgot-password-link",
+      "id": "",
+      "class": "login-forgot-password-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "iframe",
+      "id": "",
+      "class": "",
+      "tag": "iframe",
+      "events": [
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function(t,D){(0,(t=(D=[2,1,18],C)[36](D[0],O,L[13](24,null,G[D[2]](19,D[1],V),U),mj()-U),UQ).cP)(t)}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "formSubmissions": [],
+  "componentData": {
+    "dataAttributes": {
+      "data-toggle": [
+        {
+          "value": "collapse",
+          "selector": ".navbar-toggler"
+        }
+      ],
+      "data-style": [
+        {
+          "value": "bottomright",
+          "selector": ".grecaptcha-badge"
+        }
+      ]
+    },
+    "components": {
+      "root": {
+        "tag": "div",
+        "classes": "",
+        "text": "Login Page Register LoginSign InUser Name or EmailPassword👁️Remember Me❌ User Name or Email is requ"
+      },
+      "username": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "password": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "rememberMe": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "g-recaptcha-response-100000": {
+        "tag": "textarea",
+        "classes": "g-recaptcha-response",
+        "text": ""
+      }
+    }
+  },
+  "networkRequests": [],
+  "localStorage": {
+    "lastTicker": "MES1!",
+    "_grecaptcha": "09ADiQh0fBb6P-FzhnnMZgStc2AYXLLl2-c6TdKjB3hlkm_1iw8m-4tXDaG9IbUBB96e9jK2YloCm58pMOw77S6T1r9BFjuwcZ7k6tZtgZEh365S0Qc3BdX-x2HuVkIG6FHT0",
+    "lastStrategy": "JADDCAVIXES"
+  },
+  "sessionStorage": {
+    "auth": "{\"isAuthenticated\":true,\"user\":{\"username\":\"J.T.M.J\",\"email\":\"just.trades.chicago@gmail.com\",\"admin\":false,\"DiscordID\":\"963881348039340122\",\"access\":\"full\",\"signed\":true,\"is_email_verified\":true}}"
+  },
+  "cookies": "_ga=GA1.2.1413952153.1744203650; _gid=GA1.2.739036613.1762399831; csrftoken=0JjCf9MUZjtIdqSJYVpITJmGLyPEWg34; _gat_gtag_UA_XXXXX_Y=1"
+}

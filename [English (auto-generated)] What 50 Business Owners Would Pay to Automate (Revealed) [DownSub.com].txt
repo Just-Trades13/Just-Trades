@@ -1,0 +1,809 @@
+So, I just asked 50 business owners,
+"What would you pay to automate?" And in
+this video, we're going to be talking
+about exactly what it is that they said.
+Now, how I got here was I asked a
+question in my school community
+yesterday, which is quite simple. If you
+had to take out your wallet and pay for
+one thing to automate, what would it be?
+And we got 50 responses. This is what
+we're going over. Five of them turned
+out to be fantastic. and the other five
+turned out to absolutely flop. So, if
+you guys are interested in selling AI
+automation services, then this video is
+for you because I'm going to be going
+over what is probably in your best
+interest to focus your time on and what
+is probably not in your best interest to
+well focus your time on. And so, with
+that being said, let's dive into this
+right now. Most of the blueprints that
+I'm going to be going over in this video
+are going to be completely free for you
+guys to download in the description down
+below. The first one is analytics. So,
+this one for me I absolutely love.
+However, it's not necessarily always the
+first thing that comes to mind when
+thinking about creating or running a
+business. However, once you already have
+a stable stream of leads coming in,
+you've closed quite a few deals. Well,
+you probably want to know where to
+double down on your efforts and what to
+cut because if you don't have tracking
+like a system like this, you're probably
+shooting in the dark. So in an automated
+system like this, we can build out real
+time analytic dashboards to allow people
+to understand exactly what's working and
+what's not working in their business.
+Like at a moment's notice, I can
+understand how well my sales team is
+doing, who's doing well, who's not doing
+well, who's generating revenue, who's
+sending out quotes, who's slacking,
+where the deals are coming from, all of
+that kind of stuff. And so for a system
+like this, I think it's really powerful.
+We got five votes or 10% of the people
+that took the survey. And I think that
+you could easily sell this for at least
+$5,000, probably even more depending on
+the level of sophistication. Again, with
+this video, it's going to be down below
+in the description. There will be a link
+to another video kind of going over how
+to build this as well as the free
+blueprints as well. Now, the technology
+we're using for this is Looker Studio,
+Google Sheets, and a CRM. And you can
+generate analytics not just on sales,
+but you could do it on leads over here.
+You could do it on fulfillment. you
+could do it on any part of your
+business. And so for that reason,
+obviously really powerful stuff. I would
+recommend if you're selling this to use
+it as an upsell because usually it's not
+always the first thing that people are
+looking to buy. However, once you have
+somebody on the hook because you've sold
+them an AI automation service, they're
+absolutely in love with what you've done
+and they see the ROI, then this is a
+great upsell at that point in time.
+Moving past this at rank number four out
+of 10 or the fourth best thing to sell
+is content marketing automations. So
+specifically how you can grow somebody's
+brand online. And there's a lot of ways
+to do this, right? But I'm just going to
+go over a couple here, which is
+generating blogs, social media posting,
+as well as creating AI videos. I think
+that's really cool. And also something
+that uh I think is a great idea as well
+is generating viral content ideas. Let's
+break this down. I think that all of
+these well we'll go into the pricing
+individually, but the first one is blog
+generation. Now this whole system looks
+very complicated and uh it is but it
+does a great job at generating blog
+posts like you can see here. It can
+create the page on something like
+WordPress, generate the slug. It could
+even generate the titles, descri uh
+title, metatitle, the text, it can
+generate the styling. It can generate
+the links which are internal, external,
+everything can be done automatically.
+Um, and for that reason, it's really
+powerful. And I think you could easily
+sell that for $5,000, which if you think
+about it, is really like a steal because
+any of these things, and I'm not, it's
+not just blog generation, but but this
+is a good example of that. Once you
+build it one time and somebody pays you
+$5,000, they're going to be using this
+for maybe the next five or 10 years. And
+so, the ROI is massive. On average, when
+it comes to like marketing ROIs or
+marketing automation ROIs, it's usually
+a 5x ROI or 500% for the average um like
+return on investment. But if you're
+doing a good job, you could easily get
+way higher than that. And so for that
+reason, like these kind of systems are
+almost invaluable. And no matter almost
+what you sell it for, maybe not no
+matter what no matter like what you sell
+it for, but in most instances, uh it's
+just going to be so much more valuable
+to the client because they can use it
+for a lifetime. The next thing that I
+want to go over in terms of what you
+could build here is a social media post
+system. And this is very complimentary
+to the blog post. And I use this for my
+business where not only do we generate
+these blog posts, but once we generate
+them, we take it a step further and
+generate traffic to those blog posts by
+reformatting these blog posts for things
+like Facebook or Instagram or X or
+Tumblr or if my face is blocking this,
+I'll zoom in. Pinterest or LinkedIn, all
+of that kind of stuff, right? You can
+automatically repurpose it. And again,
+$2,500. This is really really awesome
+stuff because yeah, you can just um grow
+your social media channel. And this is
+just one way of kind of doing that. Of
+course, you could generated it off of
+blog posts, but you could also generated
+off of tons of other content as well.
+Let's talk about one of those other
+pieces of content here, which could be a
+faceless video generator for Instagram,
+for YouTube, for Tik Tok, something like
+this. And again, this and the blog
+generator and the social media uh
+poster, they're all going to be down
+below for free in the description. But
+all of these, okay, um, sorry, this one
+specifically, you can generate AI
+generated content. Let's take a look at
+what this looks like. Start with
+freelance writing. All you need is a
+keyboard and creativity. Next is virtual
+assistant work, managing tasks for busy
+professionals remotely. consider digital
+marketing consulting, helping businesses
+grow online with strategy and content.
+And so with something like this, it's
+talking about the ways you can generate
+money remotely, but essentially that is
+something that could be 100% automated
+and then you can go ahead and distribute
+that to all of your different social
+media platforms over here, which again
+is just so cool. You could do it with
+videos, you could do it with photos, you
+could do it, there's a million in one
+ways to do it. And so for a system like
+that, I would say probably anywhere
+between5 to $10,000. You could use that
+as a baseline and then improve on that
+tweak and make it something absolutely
+exceptional for your clients. Lastly, in
+the content marketing, um I want to talk
+about viral content ideas. I think that
+this is just super super invaluable. I
+get a lot of people requesting this. If
+you guys create content, you know the
+struggle of a having to find good ideas
+and then b having to create content and
+all all that kind of stuff. And with
+something like this, what it does is it
+scrapes the entire internet for you. It
+scrapes Instagram. It scrapes YouTube or
+Tik Tok or X or whatever. And it will
+find you the outliers. It'll find you
+the ideas that just crush it. And what
+you could do is use those ideas as
+inspiration for your next social media
+posts. So, it will scrape the ideas
+here. Then, it'll put it into a Google
+sheet like this. And so, this is just a
+great way to speed up your brainstorming
+with validated ideas that have been that
+have a proven track record of success.
+So, this is great. It's going to help
+people grow their social media presence
+online. The cool thing about this is
+that really at the end of the day, if
+you're selling AI automations to a
+business, everyone needs an online
+presence. Everyone needs social media.
+it's only going to enhance their
+business. So, this is quite an easy sell
+to business owners because everyone,
+well, everyone needs it. The next thing
+here that I want to talk about is AI
+agents. This came in in third place with
+nine votes. And there's two examples
+that I want to go over here. The first
+one is a rag system, and the second one
+is an AI chatbot system. Now with a rag
+system, I think it's just better if I
+show you rather than just talk about it.
+So this is my CRM here. What a rag
+system does or retrieval augmented
+generation is you can think about it
+like having your own personal database
+that's just trained on everything
+related to you or everything related to
+your company. All of your contracts, all
+of your invoices, all of your standard
+operating procedures, all of that's
+going to be stored in this this vector
+database. Think about your website here.
+You could web scrape all of these pages
+and then you could throw it into that
+vector database. And the cool thing
+about a rag system is that how this
+works is that when people message you or
+your company, like asking for example,
+what company is this? It will give them
+a tailored
+response by pulling out information from
+that vector database. So it will search
+in there, pull in information relevant
+to the question that was asked and it
+will answer it very well. So in this
+response, it says, "Hey, this is ABC
+company, your professional go-to DJ
+service in Toronto and Vancouver." Next
+one, hey, what services do you offer? It
+goes into the nitty-gritty details. We
+provide quality sound, lighting, MC
+services, uh, personalized playlist, all
+that kind of stuff. How much does it
+cost? It'll go in, search your
+contracts. Well, this is on average what
+we sell it for. 750
+to,500. Do you offer wedding services?
+Yes, we offer it. Here's what it starts
+at for a price $1,500. So, it can really
+um speed up time because all of a sudden
+with a company, you don't have to depend
+on sales agents to sit there around the
+clock and reply. One of the biggest
+determining factors of whether somebody
+closes the deal or not is just being
+available. And if you have sales reps
+that leave Friday night and they come in
+Monday morning, you're going to lose
+deals for anyone who inquires on
+Saturday, on Sunday, or Friday night
+because nobody wants to wait around and
+so they'll go with an option that got
+back to them quicker. With a rag system,
+what this can do is it can book
+appointments for your sales rep so that
+on Monday morning when they're back in
+the office, they have a stacked lineup
+of appointments from people that have
+been messaging back and forth with an AI
+agent. And so for that reason, I think
+that this is incredibly powerful. The
+next one is an AI chatbot that you can
+stick onto your website. Something like
+this. And I'm just zooming in here
+because my face is conveniently blocking
+like everything. Uh it's always so
+annoying when I have to show something
+in the bottom right side of my screen
+and I just know I'm just sitting there
+being like, "Oh man, my face is going to
+block it." Not as bad as when I view
+back like look back at the videos and I
+I'm like, "Man, I just did such a good
+job on that video. I just really felt
+it. Then I see my face like blocking the
+whole screen and it's just just like my
+heart sinks because I know I have to
+refilm it or whatnot. But anyways, uh
+back away from the tangent here. You can
+create and sell AI chat bots just like
+this on your website. And so you can
+message back and forth with customers.
+And so this is an easy way to handle
+frequently asked questions. It's also an
+easy way to do tasks. Could be customer
+service tasks, could be sales tasks. You
+could set appointments. You could send
+off in invoices. you can handle customer
+queries, whatever the case may be, this
+is a great way to do it. And so, for
+that reason, I think that both of these
+would sell really well. The rag system
+is $5,000. The AI chatbot is $2.5 to
+$10,000. I guess both of these could be
+like at the same sliding scale because
+the reason why it could be way more is
+it depends on how many tools or features
+you enable it to do. So, for instance,
+if this particular chatbot here was to
+all of a sudden send invoices or was to
+schedule calls or was to book a like all
+of those additional add-ons are going to
+take you more time and will enable you
+to charge more money for that particular
+build. And so, for that reason, that's
+kind of why I gave the sliding scale
+here. But uh yeah, the purpose is the
+same nonetheless, which is to remove
+manual tasks that people are currently
+doing by hand and also doing it probably
+way more slowly. I mean, you can just
+actually take a look here as well.
+Again, with what I was saying earlier
+with people taking the weekend off, like
+our team on average takes 804 minutes to
+reply to people and we're really focused
+on on calling people right away. And
+that's just because some people inquire
+at 2 am in the morning and you're just
+not going to get a hold of them until
+like 12 or noon or 11 a.m. or whatever.
+And so for that reason, these can really
+be beneficial, either replacing manual
+tasks or just doing things that are
+otherwise swept under the rug. And
+number two, with 10 votes, we have sales
+automation. And so this is things like
+um contracts and invoices. Again, the
+same kind of rag system. Vappy, voice
+calling, and new lead workflows. These
+are just a handful of things, but
+there's really just so many more things
+that you could be doing in sales
+automation um to and and again the focus
+here is to increase conversion rates,
+speed, sales efficiency, all of that
+kind of stuff. Um, one thing that I I
+want to point out here is the contract
+invoice generator. This one saves me
+like I think it like the full-time
+equivalent of one saleserson every
+single year. Takes us about 30 minutes
+to uh this saves us 30 minutes every
+single time we run this scenario. In a
+nutshell, we generate contracts and
+invoices just like this. How this works
+in practicality is we have sales reps.
+They will get off the phone with a
+client, but on the phone they're
+furiously typing away asking questions
+like, "Hey, tell me the date. Tell me
+the start time, tell me the end time,
+where is your, you know, event located
+at all these things. And it
+automatically populates this data onto a
+contract, an invoice to send off to the
+client. This you you can see like it's
+just it's it's a beast into itself.
+There's just so much that goes into
+this. I just can't help but smile right
+now because I'm just so happy that I do
+not have to do this manually because I
+would uh really hate my life if I had to
+do this. Um, but yeah, this saves so
+much time, probably $60,000 a year in
+cost because our sales team doesn't have
+to do this. Instead, they can focus
+their time on the highest leverage
+activities, which is actually picking up
+the phone and selling. And so, all this
+kind of stuff is about winning back time
+as well, so that sales members can
+utilize their time on the highest
+productivity um tasks that will generate
+the most revenue. And so, this is a
+great example of that. Then moving past
+this, we have the Vappy Calling here.
+This I want to put in here. I don't use
+it for my business because I'm in like
+the wedding space. It's way too
+personalized to do this kind of stuff.
+However, I wanted to put it in here
+because I do get a lot of people asking
+for this kind of technology. So, because
+people are asking for it, because people
+are voting on it, I thought to include
+this in here. Um, I just want to put a
+disclaimer that usually when you're
+doing AI calling, you do have to um you
+do have to like get consent to talk to
+the person using AI calling. I guess it
+just depends on the the region that
+you're located in the country, all that
+kind of stuff. But let's go ahead. Let's
+test this out so you can see for
+yourself what this sounds like. We're
+going to be calling Elliot, my sales rep
+at Smart Pulse Agency. You for calling
+Smart Pulse Agency. This is Elliot, your
+scheduling assistant. How may I help you
+today? Hey Elliot, I came across your
+website. I'm interested in your
+services. I was just wondering if you
+could send off an invoice to me.
+Absolutely. I can help with that. Could
+you please provide me with your full
+name and email address? I'll make sure
+to get that invoice sent off to you
+right away. Of course. My name is John
+and my email is J C A T L I FF. So
+JCATliffgmail.com.
+Thank you,
+John. Just to confirm, your email is to
+catatliffgmail.com, right? If that's
+correct, I'll go ahead and set up the
+invoice. That is correct. Yep. Sounds
+good.
+Hold on a sec. No worries. All set,
+John. All set, John. The invoice has
+been successfully sent to your email. If
+you have any more questions or need
+further assistance, just let me know.
+Sweet. Okay, thanks Elliot. I got to
+take off now. Bye-bye. And obviously I'm
+being polite because that's what all
+Canadians do. Even though I know it's an
+A on the other side of the phone. It's
+like man, like it just like to my core
+I've been conditioned in Canada to
+always be polite. So it's not going to
+stop with AI agents. Um so yeah, I think
+that's pretty cool. Again, it's in its
+infancy. It does make mistakes. Um but
+it's getting better literally by the
+day. Like every time I like open this
+up, it just feels like it just gets
+better and better and better. So, yeah,
+I think that's pretty cool in terms of
+building something out like that, $2 and
+a half to $10,000. Again, it really just
+depends because you can add in so many
+things like it sent off an invoice to me
+here, but you could also schedule
+calendars uh like update or create or
+delete calendar or consultation meetings
+on the fly. You could patch in like one
+of your sales reps, you could answer
+frequently asked questions. all of these
+things that you're adding in there are
+additional complexity and of course you
+should be charging for that and making
+more money and so that is a a really
+cool system to sell. Other than that
+there's also um the inverse to this
+where instead of using an AI
+receptionist to pick up the phone you
+could have sales reps calling instead.
+And so how this works is I'm going to go
+over to my AI agency automation website
+where we provide uh where we help six,
+seven, and eight figure businesses
+automate their business. But essentially
+when somebody's interested in inquiring,
+they can fill out their information and
+click let's talk down here. When that
+happens, we could set up a automation to
+get onto a phone call within 10 seconds.
+So I'm actually just going to go ahead
+and test out this workflow. Now, this
+isn't my stat. It's a Harvard stat in
+2011 that said if you call within 60
+seconds, you can increase your
+conversion rate by up to
+391%. Now, with an automated system like
+this, what I'd like to do is call within
+10 seconds because that's even faster,
+meaning that you're going to be the
+first person to talk to the client. Jono
+Catliff just inquired about your
+services. Please press any key on the
+keypad to connect into a call with Jono.
+So I could press any key on the
+keypad and now it's going to connect in.
+So initially it called me as the sales
+rep. Then I pick up hit a key on the
+keypad and then it connects me into a
+call with the client. Obviously I'm not
+going to talk to myself right now. So
+I'm going to hang up the phone. And so
+more or less that is how a system like
+this works. You increase your conversion
+rate and then you make more deals. This
+is probably one of the lowest hanging
+fruits that you could possibly
+implement. And for that reason, I like
+using this as a good MVP project for new
+clients because right away you can
+install something that takes not too
+much time and they're going to be like,
+"Holy like that was freaking
+insane. Like you just this just changed
+my business." And there's very few
+things in the world that take 5 to 10
+minutes to to implement that are
+absolutely game-changing, but that
+happens to be one of those systems. And
+so you could take it a step further. You
+could send off text messages, emails,
+and drip that out over time as well. Um,
+if you wanted to do that and for this
+price here, that would be including
+sending off additional emails and text
+messages at a cadence cuz not everyone,
+surprisingly, even if you call in 10
+seconds, not everyone picks up the
+phone. Even if you double dial, people
+don't pick up the phone. Even when you
+text, you say, "Hey, you just inquired
+on our website here about AI automation
+services. Do you want to chat?"
+Sometimes people don't even reply to
+your texts or to emails. and they just
+inquire, but then they just vanish. Like
+it's just like a ghost or maybe it's a
+bot, I don't know. Um, and for that
+reason though, the more touch points you
+have, the more likely you are to close
+the deal. I think it's about eight touch
+points on average to close a deal. And
+so the more texts and emails within
+reason, of course, within good taste.
+The more you send out, the more likely
+you are to get a hold of that person and
+get a definitive yes or no. The next
+thing that I want to talk about here is
+moving past sales automation into rank
+number one out of all of these 10
+topics, which is I'm trying to build up
+the suspense here, but I don't have like
+a drum roll or anything I can put in
+here.
+So, the first one is lead generation,
+which I'm sure you probably guessed.
+This came in at 13 votes over here. So,
+let's talk about some of these things.
+We already talked about the lead, form
+capture, and speed to lead. That's a
+great example of um generating leads on
+your website through like SEO or through
+Google Ads or whatever. But one of the
+other really cool options here would be
+cold email and LinkedIn outreach. So
+take this workflow for example. And I
+think that um this will probably be the
+only workflow in this video that I'm not
+posting down below for free for you guys
+to download because I don't have any
+publicly available videos going over
+this. This is just in my community, but
+I wanted to point this out because I
+think this is really valuable and uh and
+for that reason, we're going to go over
+this and it's rated number one. Anyways,
+how we do this is we find lead sources
+or we find leads online through places
+like Apollo. Apollo is a lead platform.
+You can find leads here. You want to
+contact CEOs, you go to Apollo. You want
+to find the head of marketing
+departments, you go to Apollo. It's
+going to have all of these leads here.
+And what we do is we plug it into NAND
+so that we first start by scraping leads
+in uh Apollo. How we scrape
+automatically is using a platform called
+Apify. You can get started for free on
+this. And if we just type in here
+Apollo, they have these Apollo web
+scrapers here. Okay. So you can web
+scrape Apollo. You can run this from
+within NADN so that on a cadence like
+once every day, 2 days, 4 days, you find
+leads on Apollo. Okay. And then you
+generate personalized outreach outreach
+messages to them using AI and uh you you
+can grab information off their LinkedIn
+page, feed that into here to actually
+personalize the messages and then you
+can send them cold emails and also cold
+LinkedIn connect messages and messages
+after they accept the uh connection
+request. And this is kind of more or
+less what it looks like. I'm using
+instantly.ai AI for the cold email
+outreach. And so this is just an example
+of an email that I'd send. This is just
+one of multiple different split tests
+that you could run in any given email
+campaign, but we can go through this
+together. Hey, first name
+personalization, which will be what the
+AI generates. I'm Alex, founder of
+Automatable. After scaling a few
+companies, I kept running into the same
+issues. Teams losing 10 to 30% of their
+time to repetitive tasks that could
+easily be automated. Fixing just one of
+those bottlenecks consistently saved us
+10 hours a week and that's what we help
+teams like yours do right now. We
+guarantee the same results or your money
+back if you want to schedule a call. And
+so that is essentially it. We can split
+test all of these emails, send it off.
+And the cool thing about this and why I
+think this is so powerful and why so
+many people love it is because if you
+think about lead generation es
+especially for service-based businesses,
+it is literally the lifeblood of the
+business. If you don't have leads, you
+don't have a business. That's it. And so
+with that being said, when you look um
+at the options out there, when you like
+there's not a lot of easy options that
+are not going to cost an arm and a leg.
+If you look at Google Ads, it's going to
+cost an arm and a leg. You look at
+Facebook ads, it's going to cost an arm
+and a leg. If you look at SEO, which is
+free, it's going to take you a freaking
+ton of time. Sometimes years, especially
+if you don't have the right strategy and
+you have to restart. Content marketing,
+could be months, could be years. All
+these things could be months, years,
+could be cheap, could be expensive. But
+more often than not, unless you're like
+one of the top 1% of people doing this
+or just getting lucky when you start and
+just, you know, finding the winning
+strategy right away, you're going to be
+spending a lot of time or a lot of
+money. With cold email outreach, you're
+not spending a lot of time and you're
+not spending a lot of money to get
+something like this set up. You can get
+it running and then just improvise on it
+pretty quickly. And so, for that reason,
+I think this is really powerful stuff.
+And I think that you could easily sell
+this for $5,000. And again, I don't
+think you're ever going to reach out to
+a service-based business that depends on
+leads and have them say, "You know what?
+Like, we actually have too many leads.
+Like, we got to cut it back. Like, we
+we're trying to cut them out." You'll
+never hear that. doesn't
+exist anytime you like you you can
+always get more leads, always hire more
+people to fulfill it and always make
+more money. And so with that being said,
+I think that these are really powerful.
+And that is the top five types of um
+systems, AI automation systems that
+people are looking for. And these are
+the things that I'd be focusing my time
+on trying to sell to future prospects.
+With that out of the way, let's wrap up
+this video by talking about the bottom
+five that absolutely sucked, which was
+kind of surprising to me, but I want to
+go over this so that you can probably
+figure out where not to focus a ton of
+time on just because there's not as much
+attention on these things. First one is
+web scraping. So, finding web scraping
+off the internet and using that to
+enrich client data or competitive
+analysis or finding like general viral
+ideas probably not the best. Now, keep
+in mind this kind of bleeds into some of
+the other points that we're talking
+about, but web scraping as a whole
+outside of lead generation probably not
+the best use case. Project management
+automation like ClickUp, Asana,
+Monday.com, again, no votes out of the
+50. Appointments and calendar automation
+came in at the highest of these
+remaining five, but again, there's not
+much interest in there. This is for
+people looking to schedule calendar
+events and then manage no shows,
+cancellations, all of that kind of
+stuff. Next, we have accounting and
+payment automation. So whether you're
+dealing with QuickBooks or affiliates
+and commission and payouts and all that
+kind of stuff,
+only one vote over here. I feel like we
+need to have a moment of silence for the
+one vote over here that
+uh went against the grain and chose
+accounting and payments. Fortunately,
+that's not as popular. And then lastly,
+we have recruitment automation, which
+got a whole zero people interested in
+it. Now, it could be the way I worded
+this, but honestly, from the videos I've
+posted on YouTube and what I've seen in
+my community and the people I talked to,
+it seems like it's pretty universal.
+These are usually not that popular when
+it comes to um AI automation systems.
+And it's not that these aren't useful
+because they're incredibly useful. It's
+just that it's not the first thing that
+comes to mind when people are thinking,
+"Hey, I want to take out my wallet and I
+need to if I was to pay for an
+automation, what would it be?" These are
+not the first things that come to mind.
+However, they're all great upsells and
+they're usually all things that most
+companies uh will need, like most of
+these at least. And so, for that reason,
+that is the the top or the bottom five.
+Thank you guys so much for watching. I
+really hope you found value in this
+video. If you did, make sure to hit that
+subscribe button down below. if you want
+to see future videos like this one. What
+always surprises me is that only about
+20% of the people that watch my content
+actually are subscribed to me, which
+means that 80% of the people uh are not.
+And so it would be cool if you guys
+could help me out by doing me a massive
+favor and smashing that uh that uh
+subscribe button. It would mean the
+world to me. And lastly, just before we
+wrap this up, if you guys are interested
+in taking AI automation to the next
+level, highly recommend taking a look at
+my school community over here where we
+help people do one of two things. The
+first one is I guess one of two main
+things should I say, is to help them
+automate their entire business up to
+80%. I just give you the exact
+blueprints that took me like seven or
+eight years implementing in my own
+business, which replaced me from having
+to work and also scaled my business to
+seven figures. And then the next thing
+down here is helping people create AI
+automation agencies with a proven road
+map roadmap on how to find and sell
+clients. On top of that, we also have
+calendar events every single week. So,
+if you ever run into problems or issues,
+you can always jump on one of these
+calls and I'd be more than happy to help
+you out and and get past the roadblock
+that uh you're you're stuck with.
+Sometimes it's it's crazy cuz like, you
+know, you could be spending five or even
+10. And sometimes people are like, "Man,
+I've been spending 2 weeks on this
+freaking problem. Like, I cannot solve
+it. In one call in 5 minutes, we're
+done." And so, obviously, that's a
+that's a good return on investment
+because spending 2 weeks on a problem is
+not always beneficial. And then,
+obviously, there's a vibrant vibrant
+community here of like-minded
+individuals that are looking to uh to
+use AI automation to scale and grow and
+all that kind of stuff. So, thanks guys
+for watching. I hope you have a lovely
+day. Really appreciate your time and I
+will see you guys in the next video.
+Bye-bye.

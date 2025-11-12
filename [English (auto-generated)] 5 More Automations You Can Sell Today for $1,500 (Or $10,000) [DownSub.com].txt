@@ -1,0 +1,1398 @@
+hey my name is Nick I scaled my
+automation agency to 72k a month with 1
+VA and the entire way that I was able to
+do this was selling the right systems as
+an automation agency there are a ton of
+systems that you theoretically can sell
+but not a lot that I think you
+realistically should sell if you want to
+make multiples in your time so the
+purpose of this video is to show you
+five more automations that you guys
+could sell today for between $1,500 to
+$10,000 I built all these systems using
+a mixture of N and make.com and we going
+to be including all the templates Below
+in the description so feel free to
+repurpose them use them for whatever the
+hell you want if that sounds good to you
+let's get into
+it all right so I'm going to be showing
+you these systems in a second I've built
+them out in n8n and then I've also build
+a bunch out in make.com you guys are
+going to get to see both but just before
+I show you guys the actual systems I
+just want to talk a little bit about
+what makes a highy automation a high
+automation to begin with and the reason
+why we need to cover this if you think
+about it is because our industry moves
+really quickly AI is a very
+intrinsically fast-moving sort of
+technology so is a lot of these
+automation platforms that we're using
+and while learning specific systems is
+great you know if you think about it the
+systems that I and you are going to be
+selling today are not necessarily going
+to be the same ones we're going to be
+selling a year from now because business
+needs are going to change they're going
+to be new software platforms that solve
+these problems um and so what's
+important is not necessarily learning
+the exact systems uh but the underlying
+principles that enable you to choose
+good systems to sell in the future so
+briefly uh there are three components to
+a great High Roi automation the first is
+it needs to be something that produces a
+clear clear deliverable clear
+deliverable in this case is a document
+it's an email it's a CRM it's a line
+item I said email twice there sui uh Etc
+essentially this is something that like
+the customer can actually touch and feel
+or can get us close to it while
+interacting with a computer the reason
+why and I'm going to cover this in a lot
+more detail in a second is just because
+you know automations are systems right
+and that might mean something to you and
+I what the hell does that mean to like
+an average small to midsized business
+owner right they're hiring us because
+they're not very technical most of the
+time the second is that your system
+needs to solve hot button paino and this
+is something that generally just impacts
+revenue or profit and the third is you
+just need a way to template the vast
+majority of your system and this is
+typically done through no code platforms
+like nadn make.com zappier um or you
+know copying and pasting scripts
+whatever the hell you want to do so
+let's chat about this first one uh
+producing a clear deliverable
+essentially in order for your system to
+be good and in order for you to be able
+to scale it and sell and make any sort
+of meaningful amount of money with it it
+needs to produce something tangible for
+the client tangible in this case means
+you know a document means an email it
+means a CRM system some sort of asset uh
+some sort of line item Okay the reason
+why is because systems are by Nature
+immaterial they are processes and
+software infrastructure like to a lay
+person is very difficult to visualize
+your goal is to turn this from some
+weird scary intimidating Black Box sort
+of idea into something your client can
+actually imagine touching or feeling
+something they could see for themselves
+these are going to produce immediate
+results this is also going to mean that
+they are much easier to quantify than
+it's going to allow you to claim
+straight forward wins which are going to
+snowball you into being able to do
+things like at higher ticket retainers
+and so on and so forth um the reason why
+I'm harping on this guys is because
+there are tons of systems out there that
+you guys will see scrolling through
+YouTube while doing your binge system
+stuff and they're great and all but very
+few of them are systems that if you were
+able to put it in front of a client and
+ask them hey do you want this for this
+much money very few of those systems
+would get a resounding yes and the
+reason why is because they're sort of
+built for it's almost like they're built
+for like a YouTube audience they're
+built for like the developer audience
+they're not NE necessarily built for a
+small to midsize business customers that
+you know are looking to to have some
+practical need fulfilled so these points
+that I'm making here like if you if you
+really want to make money in this
+industry these are things that you just
+sort of you sort of have to get um
+here's some quick examples the first
+might be like a PDF generator okay so if
+you build a PDF generator system for the
+customer it needs to produce something
+physically that the customer can touch
+so white paper quote estimate maybe the
+customer fills out a form every single
+time a form is filled out they get
+something they receive an email says
+congratulations you just you know
+generated some new PDF right another one
+may be a comprehensive CRM that your
+client can navigate through a beautiful
+Aesthetics uh you know colors and and
+buttons and stuff like that this isn't
+just something that the customer is
+going to use okay it's something that
+every single person on their team is
+going to use every day week and month
+thereafter you get to claim the win
+every time they're staring at that thing
+which to be honest is going to be the
+vast majority of their workday the last
+might be like a cold email system that
+generates an email every time it's
+responded to right every time that you
+get a a positive response or something
+or maybe every time a response comes in
+you filter it through AI you say is this
+a good response is the customer going to
+like this okay sweet if so voila I'm
+going to send them a nicely packaged
+email maybe I'll like spend a few extra
+minutes designing it so the customer
+feels like they're getting a high
+quality product they can see feel and
+touch so even if your system doesn't
+need deliverables in order to work I
+recommend that you modify your system to
+include them um and then you know
+ideally you just find systems that
+produce deliverables as a a consequence
+of their operation
+so that's very important the second
+thing I want to talk about is it needs
+to solve some sort of hot button pain
+point that a business is experiencing um
+if it's not you're typically not going
+to be able to charge anywhere near as
+much money and uh yeah you'll just
+typically have like a worse go of it
+during the sales process you're going to
+kind of be fighting an uphill battle so
+don't fight an uphill battle fight a
+downhill battle they're way easier I'm
+just look at Obi-Wan so simply put
+businesses pay more for solutions to
+pressing problems what is a pressing
+problem uh anything that impacts your
+ability to generate Revenue save money
+or free founder time these are the three
+big ones you know if a business is
+struggling with generating revenue and
+they have like a specific need that you
+could solve to help them with that they
+will pay you a lot of money to have that
+solved same thing with bleeding money or
+same thing with the founder running all
+over the place feeling extraordinarily
+stressed and and and like their life's
+uh like their life is chaos all the time
+obviously the more urgent this need the
+easier the sale so the systems that make
+the most uh sense to sell are ones that
+deal with urgent
+needs so some examples this might be
+let's say you run uh like a B2B agency
+or something and you have a team of
+fulfillment staff and they are currently
+just waiting around kicking rocks
+because they're I don't know there's no
+design work for them to do um that means
+every single month this business is
+bleeding a few thousand per person
+paying them to just sit and wait around
+this is a very urgent need not only are
+they losing money there they're also
+losing money in opportunity costs since
+they're not making any new sales to
+begin with so you know if you could
+solve
+this and at least fill the pipeline you
+can think of it as uh the the business
+let's say this I don't know two
+fulfillment staff and you're paying them
+$3,000 each if you can at least fill the
+pipeline so that they break even on that
+you're saving a business $6,000 how much
+money is a business willing to pay you
+to save them $6,000 probably between
+like three I don't know $2 to $3,000
+realistically uh another example might
+be you're running some B2B SAS product
+maybe your support team is overwhelmed
+and getting so many inquiries and
+there's so few people and because that
+response times are lagging and and now
+there's major turn what your need is
+there is customer support you need
+systems that enable customer support or
+you need the ability to hire uh you know
+customer support staff if you could
+solve this and if you could reduce their
+turn by like 5% or whatever then
+mathematically you will have increased
+the lifetime revenue of that um mrr by I
+think 5% right like mathematically so
+they're making a million dollars a month
+or something you've just given them
+$50,000 I think unless I don't know I'm
+being dumb but you're making a lot of
+money for them so they're willing to pay
+you a fraction of that to solve it
+another might be that you I don't know
+you're running some some other business
+maybe you are a copywriter and you're
+invoicing your clients and your invoice
+processing blows and that means well you
+send a lot of invoices and you get a lot
+of work maybe like 20% of them um just
+don't pay you right or they don't pay
+you on time if that is the case your
+need is a better invoice process and if
+you solve that then you can basically
+take the portion of the amount of money
+that is in accounts receivable or
+outstanding basically and then you could
+like charge a fraction of it to solve
+that problem so yeah I'm just trying to
+harp on you guys that you know the real
+problems that you solve that make money
+in this industry like when you solve
+them you can charge a fraction or
+percentage of that price um this is
+called value based pricing it's
+something that I and many high earning
+automation companies do because every
+time that you know a problem is not
+solved it costs a business some
+theoretical sum when you build a system
+that solves that theoretical sum you're
+basically putting a bunch of money back
+in their pocket which is freaking
+amazing okay need number three or rather
+Point number three is that you need to
+be able to build this using templates
+whatever your system is you should be
+able to copy and paste 80% % of it then
+maybe make some minor tweaks the reason
+why is because this minimizes your work
+while also letting you generate a
+tangible return on client investment
+ASAP and then you're also um basically
+minimizing buyer remorse which is a
+really big one like when a customer pays
+you something especially for a
+consulting or a technical service that
+they can't really conceptualize the
+value of when your customer pays you
+something and then they don't get
+something in return for like a month
+that entire month they sort of have this
+little buyers remorse thing where
+they're like well I'm out a bunch of
+money for the service but I haven't
+actually got that like the value that
+I've been paying for it just yet um and
+the longer that goes on typically the
+harder it is to to upsell clients to get
+them on long-term retainers uh basically
+your goal as an agency any any sort of
+agency or freelancer really any service
+business just to minimize buyer Remorse
+by generating a tangible return on their
+investment and you do that using
+templates if you get a new client you
+can build a system for them in three
+days or something that solves a need
+starts actually delivering an Roi that
+situation um you those sorts of
+situations I should say are the ones
+that get you long-term client retainers
+and that you know get the clients um to
+be absolutely Overjoyed working with you
+so the cool part about systems is by
+nature they are templat right we're
+dealing with immaterial software
+products code stuff like that you can
+literally just copy and paste it and
+then voila you're done 90% of the time
+that means that all you ever need to do
+really is just build a system once and
+then you just get to like reap the
+Returns on that uh for however long
+you're selling that product um the
+theoretical ideal system just while I'm
+on that is a system that is entirely
+deliverable through a or completely
+automatically I want you to think about
+this uh if you know you are delivering
+some sort of website building service
+hypothetically and then you know you
+sign the deal when you sign the deal you
+trigger a form to be sent to the client
+that asks all the questions and then
+when they fill it out they instantly get
+their website like the the the
+scalability of this sort of business is
+theoretically infinite all you need to
+do is just get as many people in the
+front door as humanly possible the back
+end takes care of itself I mean
+obviously you're probably going to have
+some revisions or something but I think
+you guys are seeing the point that I'm
+making um so it's difficult to attain in
+practice I've personally never done this
+I've gotten reasonably close but usually
+just with lower ticket stuff um but uh
+yeah you know that's just something to
+something to shoot for here's some
+examples again uh the first might be a
+CRM template you can duplicate in the
+client environment on your platform of
+choice that might be I don't know notion
+a sauna clickup whatever um the second
+might be a series of blueprints the
+import of the client make.com or NAD
+environment that you only ever have to
+make minor tweaks to afterwards maybe
+you are trolling through upwork looking
+for uh systems so what you do is you
+don't just type systems or automations
+you actually typee like email systems or
+email automations and then you have like
+four or five uh templates or blueprints
+for these systems that like kind of
+closely match what the customer is
+looking to they're not n they're not all
+the way there but they're like 90% of
+the way there well you could just say
+hey you know like I'm I'm going to build
+you out the system and then instead of
+you having to build it from scratch now
+you you at least get 90% of the way
+there with the template you basically
+get to leverage and and and Arbitrage
+your time uh you know instead of you
+doing uh all of the work from 0% to 100%
+% you do the work from 90% to 100% but
+you get to charge as if you were going
+from 0% to
+100% the last example here might be a
+creative brief your client fills out
+which triggers a flow that generates a
+Business website sort of like my API
+example okay I think we're done with
+that dry stuff let's actually show you
+what these systems are because I know
+that's what everybody here's waiting for
+I want you to know that you can build
+these systems exactly as they are
+written down or you can produce
+variations of them they fulfill the
+requirements above or they're built in
+such a way that you can modify them to
+do so like you can swap clickup to
+notion if you're using notion instead of
+click up or whatever um I also have
+talked about and blueprints for all
+these systems scattered through my
+YouTube channel uh except for one I
+believe um and I'm going to be recording
+a video of me building that um
+momentarily and you can also find These
+Blueprints and these templates uh on my
+gum Road and there are also many that
+have been built more than once on
+different platforms so you know if
+you're working on zapier or something
+and the system is nadn that's okay you
+can absolutely just like build the
+system on zapier um you know look at the
+blueprint stare at it um and grock it
+and then just look for like equivalent
+modules at the end of the day all no
+code platforms these days are basically
+the same anyway all right so the very
+first system I'm going to show you guys
+is a deep personalization system that is
+built in n8n as I mentioned you can
+apply this to any no code platform that
+you want I'll show you how to do that in
+a second but um from a bird's eye view
+what the system is is it's a it's a
+series of prompts that allows you to
+customize the hell out of outbound
+Outreach completely automatically we are
+going to scrape the data from a web
+service that allows us to pull email
+addresses from publicly available
+profiles we're then going to Loop over
+it get LinkedIn profile data from that
+feed that into Ai and then add it to a
+spreadsheet which we can then tie into
+some cold email platform like instantly
+now the reason why this is so valuable
+is because it's not your run-of- the-
+maill personalization it's not just like
+you're doing the the first line of an
+email like most people do what we're
+doing is we're personalizing every
+aspect of the email that is going out
+and we're doing it at scale and on mass
+um so much so that the person that will
+receive this email is going to think
+holy crap this guy really did his
+research this is going to make it seem
+almost as if this is not a cold Outreach
+anymore but but like it's warm Outreach
+because you know everything about the
+person you know their whole career
+history you're asking insightful
+questions you'd only know if you'd
+actually like read them and so on and so
+forth so what you're basically doing
+with this system is you're producing an
+AI engine that reaches out to a near
+infinite number of people per day and
+you're only upper bound on how many
+people you want to reach out to um is
+going to be the email inboxes the number
+that you have using your cold email
+platform and then the um amount of money
+that you're spending on Ops here are the
+things that it solves first of all it
+solves money it solves reply rate solves
+leads these are usually the biggest
+bottlenecks in any business and they're
+the hardest ones to fulfill as well so
+right off the bat this is
+extraordinarily valuable the second is
+it produces a clear deliverable these
+are customized leads in a spreadsheet
+some sort of cold email platform it's a
+CRM it's all three and then as a
+byproduct delivers replies you actually
+get replies in your inbox right and you
+get more replies than you do with
+basically any other sort of cold email
+enrichment system uh because you're
+doing deep personalization but you're
+doing it well and I'm going to show you
+how with some some Nifty prompts that
+I've set up here you can also create
+templates to make your work easy um you
+know you can just copy this into the
+client na environment if you wanted to
+or you could just run all this on your
+own account you can build this in all
+major no code platforms and you can sell
+this from anywhere from $1,500 to 5,000
+USD fixed price that's with no add-ons
+you can also charge an hourly rate to
+implement this although I wouldn't
+recommend that um as well as some sort
+of monthly maintenance fee and many
+people in my communities which are now
+over uh almost 1,400 people as of the
+time of this this video I have sold
+systems like this for for substantially
+more than 5,000 USD a pop not to mention
+if you take into account things like
+Revenue share equity share that sort of
+stuff um you know this number a lot of
+the time can can double or even triple
+so let me actually run he guys through
+what the system looks like um as I
+mentioned built this out in n8n uh I
+know that most of my viewers are
+probably more familiar with make at this
+point just because the bulk of my videos
+have been on that on no code or
+automation platform so just to give
+everybody some context um this is a web
+hook which is basically synonymous
+across all platforms you are getting an
+event from some service the event that
+we are getting in this case is going to
+be appify appify um for those of you
+that are unfamiliar is a Marketplace
+that allows you to scrape things
+essentially and all you really need to
+do most of the time is just enter in
+like the URL of the thing you want to
+scrape and you're good to go so turns
+out there's this one um scraper called
+the Apollo scraper which allows you to
+scrape a um basically a big lead
+aggregator service called Apollo and
+then from that you can extract up to
+50,000 leads per search for a price of
+just a120 per thousand leads most of
+these are going to have email addresses
+and here's an example of the data that
+you would get pretty sweet right so all
+you need to do is you just go into
+Apollo and you you make a search you say
+I'm looking for CEOs in California or
+something and then it will actually go
+and it'll try and pull you every CEO in
+California as well as their email
+addresses their LinkedIn URLs uh it's
+kind of magical if you think about it
+that way from there what we're doing is
+we're doing another call to apiz a API
+which I'll show you guys uh when when we
+actually run this thing from start to
+finish and that just retrieves the
+actual items that we just scraped then
+We're looping over each of these items
+and in nadn when you Loop over and this
+is just sort of like saying uh you know
+for the first entry I'm going to do all
+this stuff then I'm going to Loop over
+and do the same thing for the second
+entry then I'm going to Loop over and do
+the same thing for the third entry the
+reason why we have that is just because
+some API limitations some of the apis
+that we're using some of the services
+that we're using I should say they have
+like right limits and so we just want to
+space it out after that we have an if um
+and we're basically saying hey if we got
+the email address then we can proceeded
+what we do next is we use another
+service called
+lead. lead magic is a pretty nifty
+service that essentially allows you to
+feed in a LinkedIn URL uh via API once
+you feed in a LinkedIn URL what you get
+as a result is you get the entire
+LinkedIn profile in all the fields or
+all the fields that matter I should say
+um so I just fed in my own which was
+linkedin.com
+Nicholas that handsome bass right over
+there um who that uh and then as a
+result got headlines um I got like an
+about section I obviously got a ton of
+information about you know like uh uh
+where I work and so on and so forth and
+the idea is what we do with that is we
+feed that into Ai and we basically have
+ai personalize um a bunch of Outreach
+for us and before we add to a Google
+sheet and in terms of what the data
+actually looks like at the end of it I
+have a bunch of data that I scraped here
+just 10 records um for just a bunch of
+people in I don't know I guess Aerospace
+or mechanical engineering if we scroll
+over to the right this this is basically
+what we get as a result we get subject
+lines we get ice breakers we get
+elevator pitches we get call to actions
+and then finally we even get a little PS
+field and I'll show you what all that
+looks like in our actual qu Emil
+platform so this is pretty sweet um this
+is sweet uh not necessarily just because
+it's you know built in NN or I don't
+know we're doing the personalization but
+kind of like we're we're chaining
+together three or four of these
+different services that independently
+don't really do anything but when you
+combine them all you can essentially
+completely automate something that's a
+pretty laborious part of most people's
+work now the end result from this so
+what we get is we get a lead inside of
+well we don't get a lead inside of but I
+made this General enough that you could
+just import the leads into whatever your
+platform is um but I'll show you you can
+get a lead inside of a cold email
+platform like instantly that allows you
+to then scale up the number of emails
+that you send and the way that it works
+as we fill variables like Icebreaker
+elevator pitch call to action same ones
+you saw a second ago and then PS as well
+as subject line um and then in that way
+basically all of our emails seem
+extraordinarily unique but they still
+follow a structure right of the main
+issues with AI being used in cold
+Outreach I found is just that it
+typically doesn't follow structure and
+kind of fall apart okay great and the
+last thing I want to do just before we
+wrap up here is I want to show you what
+this flow actually looks like um in n8n
+we have to just limit the number of
+items that are coming out the other side
+unfortunately otherwise it uh just gets
+a little bit weird and can be a little
+bit much so let me just do that really
+quickly uh and basically what I'm going
+to do is the way that this flow works is
+it it looks to see if there's an email
+address but because not every record is
+going to have an email address I'm just
+con going to connect this little false
+output to the um uh next module as well
+normally this would stop if there were
+no um email addresses this time it's
+going to proceed just so we could see
+what all the logic looks like but if you
+were to run this for yourself just make
+sure to take that out okay now let's
+head back over to appify Let's click
+Start and let's scrape this
+puppy uh as I mentioned this is going to
+be scraping this Apollo resource but I
+mean apify is amazing uh it sort of
+understands in their applications allow
+you to scrape anything that you freaking
+want I've used it to scrape Instagram
+before Tik Tok Twitter uh Reddit right
+use it to make like an automatic
+newsletter generator which I'll show you
+guys in a moment um it is a very very
+powerful platform and if you configure
+it right you can do basically whatever
+the hell you want with it which is quite
+nice okay great so it just found our uh
+flow it's now requesting the LinkedIn
+profile doing the five column
+personalization let me just show you
+guys what this actually looks like in
+practice I'm it's just going to add that
+to our Google
+sheet let me just make sure that this is
+oh sorry if we go back here we see that
+we've added uh person and uh what else
+we did was we went and we customized the
+hell out of the
+Outreach pretty
+neat damn that is pretty
+neat and then looks like we've just done
+that for the second lead as
+well and then uh yeah you know this
+basically just goes on and I believe I I
+set a wait of I don't know how long is
+my waight that's like 5 seconds or so so
+you can set the weight at whatever you
+want I just did 5 Seconds cuz I didn't
+want this API to get overwhelmed um
+sometimes the Google Sheets API for me
+anyway um kind of uh times out or rather
+not times out but but gets rate limited
+so the benefit there is you know once
+you have the spreadsheet um all you need
+to do is you just you know go over here
+you download it um as a CS Fe and then
+you head over to instantly which in my
+case is the service that I'm going to be
+uploading the emails to um and then you
+click uh leads you click add leads then
+you can just drag and drop this in it's
+the same thing for smart lead and for
+anything else the end result is you're
+going to essentially get an email that
+includes all of these columns right so
+if I could just show you guys an example
+on one of
+them you know this email let me just add
+to step this is basically something like
+the email that you are going to be
+sending um so this is pretty hyper
+customized right uh you know one of the
+things about this company that they keep
+on mentioning all the time is their
+focus on Innovation and this and that
+and that you basically get to slap that
+in there you got a little PS here which
+also makes it seem um kind of human
+written uh the subject line is
+customized you know if you were to send
+this to some uh and have multiple levels
+of personalization the likelihood of an
+open and of ultimately them doing
+something with it is a lot higher so I'm
+just going to turn this off because um
+it's just going through and and
+continuing to chug and consume Ops in
+the background then I'm going to
+download
+this then we're going to head back over
+to the next system okay the second
+system I want to talk about is a search
+intent lead scraper um this is something
+that I did a video on just a few weeks
+ago and it's similarly involved in cold
+email you're going to see a lot of
+things um that I build that I sell and
+make good money with to revolve around
+some sort of Outreach just because this
+is typically the most scalable way to
+employer apply Automation Services in
+such a way that you can make money with
+them but essentially what this is is
+this is a way to scrape leads but not
+just scrape leads generally using the
+same approach we did earlier but to
+scrape them with specific intent so the
+reason why it's called search intent is
+because what we're doing is we're
+actually scraping job listings instead
+of people we get these job listings for
+companies that have listed hey I want to
+hire a sales associate or a business
+development representative or an
+accounting executive and the reason why
+we're we're scraping that is because we
+know that if a company has put up a job
+post for account executive or sales
+representative or something like the
+need that they have is they need more
+leads and they need more more sales and
+they're willing to literally spend money
+to solve that problem so the second that
+you search for leads with intent like
+that you can typically multiply not only
+the average ticket price of the service
+that you're selling but also just make
+the entire interaction a lot easier so
+yeah this solves money reply rate
+unqualified leads no leads in the queue
+uh disorganized sales process unutilized
+sales team and ultimately chaos it also
+produces a clear deliverable in the form
+of um you know an email address which is
+pretty sweet and then a series of fields
+in a Google sheet or some sort of cold
+email platform um as I mentioned you can
+create blueprints on all major no code
+platforms this one's going to be
+make.com but yeah you know you could
+template out the Google Sheets template
+whatever you want and in terms of the
+price it's very similar to the previous
+system in so far that we're selling
+between 1,500 to 5,000 USD although I
+should note that you know if you are
+selling this as a super high ticket
+service if you're selling this to like
+B2B um tech companies or uh like um one
+of my community members did this with I
+think it was a manufacturing company or
+something it sold for over
+$600,000 um not this system for $600,000
+they use this system to sell one of
+their clients um a total ticket size of
+$600,000 you can you can sell this for
+substantially more especially for those
+big industrial applications so let me
+run you through what the system actually
+looks like um this is built out in
+make.com instead of NN and it again uses
+appify to get scraping results then get
+data set items so very similar what we
+saw before in NN we then search through
+a Google sheet we then add a row if the
+job is new and then we also filter the
+job before searching for a decision
+maker using a platform called any mail
+finder um after this we then retrieve
+the the enrichment results from any mail
+finder research the decision maker using
+perplexity which is quite neat generate
+an ice breaker which is similar to what
+I was showing you guys before just a
+little more shallow this time then
+automatically add it to our database and
+then instantly um so that sounds pretty
+well and good but what exactly does any
+of this stuff mean um well let me show
+you guys what uh yeah let me show you
+guys what like an actual um uh result of
+this would look like first thing I'm
+going to do is I'm going to go to my
+Google sheet here okay and what we have
+as a result is as you guys could see we
+have an ID we then have a tracking ID a
+reference ID we have the link to the
+specific job post and this is from quite
+a while ago so I don't know if this is
+actually still be valid okay yeah looks
+like they're still hiring this company
+tremendous is hiring an SDR sales
+development representative which is
+pretty sweet um you know the title the
+company name name company LinkedIn
+company logo we're getting a ton of
+fields here um the thing that matters to
+us is this description what we do is we
+take this description here and we feed
+it into Ai and say hey is this something
+that we could sell a system to
+realistically you give it a list of
+systems you say hey we sell X Y and Z is
+this a job that we could realistically
+apply to if the answer to that is yes
+what we do and as you can see this a
+pretty big database I got to scroll all
+the freaking way down to the
+right we get their email address and
+then from there we also write um you
+know an entire uh pitch basically um
+that says hey you know I dig your
+mission um it's really cool to see the
+transition from blueto to NFC within
+blue bite which is the name of their
+their business and stuff which is pretty
+cool right now let me let me show you
+what this actually looks like when you
+add this um what we do after that is we
+retrieve the result and I'm just going
+to run this once to show
+you and I believe we need oh my bad I'm
+actually out of credits which is why
+this isn't uh working wonder if I just
+ran this whole thing how many of these
+I'd realistically get uh let me just
+turn this on and see what happens screw
+it this is now going to open up a ton
+just run like a million simultaneously
+and I was just looking for one that
+actually made sense um you can see that
+we actually got a CEO of a company um
+and then after getting the co of the
+company we research this person using
+perplexity which is pretty sweet the end
+result of this is we got some content
+about this person hey you know this
+person's the CEO and co-founder of this
+here's some key points about him then we
+got a ton of information about this
+particular person which is amazing as
+I'm sure you can imagine you can combine
+this with the Icebreaker thing we did
+earlier then we generate an ice breaker
+here um then we add it to our database
+uh which was right over here right or
+actually you know we might have a I
+might have a different database actually
+for this specific one but anyway we add
+it to um our database afterwards which
+is pretty sweet then uh we also send it
+over to instantly which is cool
+instantly being our cold email platform
+so yeah lot of uh move and steps here
+but just for the sake of time I'm not
+going to go through every module like I
+did with the previous flow just because
+I think most people are familiar with
+how make.com works at least on my
+channel um suffice to say this blueprint
+will be down below in the description
+and the really cool part about systems
+like this is uh one of the reasons why
+I've sort of Niche down and I provide a
+lot of growth systems like C email is
+because the second you start selling one
+well one sort of naturally leads into
+the other so hypothetically you know
+what what if you sell this to somebody
+for 4,000 bucks or something and then
+after you sell them a deep
+personalization system on top that that
+takes the data that we generated here
+takes some additional data that we're
+generating from maybe like lead magic
+that API that requests LinkedIn profiles
+then we stick it together well now we're
+upselling them now we're selling them
+two Services as opposed to just one the
+third system I'm going to show you guys
+is a YouTube parasite plus content
+Improvement system as you guys can see
+this is a pretty long system I detailed
+it in one of my earlier YouTube videos
+but in a nutshell what this does is this
+scrapes YouTube videos it gets the
+transcripts of those YouTube videos then
+it uses AI to find gaps in that content
+to to make it better the AI then writes
+content for you using the tips that
+we've provided as well as the source
+document then it lets you repurpose that
+content for social media YouTube scripts
+and more we basically do a bunch of uh
+content types like Facebook and and
+Twitter and so on and so forth and
+automatically can even post them so this
+is a pretty sweet system to sell um
+because you know a lot of uh well I want
+to say that this it depends on the sort
+of business that you s this to but SAS
+companies tend to like this sort of
+stuff because uh they typically have
+like well to find competitors whose
+YouTube channels they could scrape um
+and you know like they could take video
+ideas and then repurpose them uh you
+know Brands tend to like the stuff like
+like influencers and stuff because they
+tend to have like five or 10 people in
+their Niche that are doing similar
+things to them you can think about me
+and and you know my my competition on
+YouTube for instance we could parasite
+them immediately the second that they're
+done recording a video and posting it I
+could immediately flip that around and
+then start creating some sort of new
+better content that solves the needs of
+the market even cooler than they did um
+but anyway the point that I'm making is
+uh this produces a clear deliverable
+social media post content scripts it
+solves some hot button needs it's
+templat and you can actually sell this
+anywhere from 1,500 to 5,000 USD fixed
+price um I know a lot of people have
+sold for for less than this amongst my
+groups um but I think that you know if
+you go anywhere less than like $1,500
+system like this you're definitely
+underpricing yourself uh and you can Al
+obviously make tweaks to the system now
+in terms of how the system works um it
+starts by triggering an appify actor to
+run and it's going and and pulling a
+specific appify actor that I think we've
+um not looked at precisely ourselves
+YouTube vide subtitles or caption
+scraper basically what we're doing is we
+have a sheet full of YouTube videos to
+scrape okay and you can populate this
+very easily using another appify actor
+if you want like there are a variety of
+systems out there that dump YouTube
+videos that you scrape into this but I'm
+just assuming you already have one
+because I didn't want this to be like 17
+scenarios long um but basically once
+once you you get a YouTube video The you
+every YouTube video has some video ID
+over here and what you do is you take
+that video
+ID you search the row so you get it and
+then you feed it into this app IFI run
+and actor module this is where you paste
+the URL or the ID I got yeah I guess the
+URL in this case not the ID of the video
+that you want to scrape this then runs a
+caption scraper so then we watch the
+actor runs we will get the data set
+items we're going to do a bunch of
+processing um to basically get the
+transcript into a reasonable format for
+us um so what I'm doing here is I'm
+calling GPT 40 with um a prompt that
+basically says something along the lines
+of hey we're in content based on YouTube
+transcripts what I want you to do is I
+want you to summarize it write an
+outline with it write some suggestions
+about it and then output it in this Json
+format here uh and then from there we're
+actually taking the suggestions and
+using them to upgrade the outline that
+we generated from a previous step and
+this is kind of neat um most people will
+try and apply it to the actual content
+itself but if you do this to an outline
+rather than the actual content itself
+like if you feed in an um an outline and
+say hey this is an outline of content I
+want you to make this outline better
+then when you take that outline and then
+feed it back into AI to have it rewrite
+the whole thing
+uh you know you end up a lot more
+flexible and there's a lot less like
+plagiarism stuff involved you're not
+just like changing the wording here or
+there you're actually like doing it with
+an outline so yeah there a bunch of
+rules there you guys feel free to check
+it out in the um in the template and
+then from here we generate social media
+posts the social media posts we start
+with are um just the Classic ones so I
+think there's Facebook brain okay so
+Twitter post Instagram Facebook yeah and
+then LinkedIn um so we generate these
+four social media posts using AI after
+that we then generate a YouTube script
+using AI as well so this is a script for
+a complimentary video that uses as input
+that outline we then smooth out the
+script and then we generate an Instagram
+post a Twitter post Facebook post
+LinkedIn post YouTube script even then
+we update our rows which is pretty cool
+so yeah this is you know obviously
+pretty involved if I go over here to uh
+sorry let's go back over here if I go
+over here to the right hand side you see
+we have the Instagram
+post we have the Twitter post oh we even
+have the YouTube script so at the end of
+it you know you get a bunch of um
+content and data now um you know is this
+stuff that I think would perform really
+well on on Facebook or Instagram as as
+is right now no I don't think this would
+perform really really well um and the
+reason why is because I typically always
+recommend that my clients have like a
+two- pass system where they basically
+have a human in the loop which make now
+has a feature for by the way where after
+it's done creating something you add it
+to your queue and then you say something
+along the lines of hey you know this is
+ready for QA human comes in you know it
+changes the wording a little bit here or
+there to try and make it a little bit
+closer what it is that your um brand
+tone of voice is and the reason why I do
+that is because in practice like while
+you know it can be quite impressive um I
+think to generate this much content all
+at once uh usually it does not
+understand brand tone of voice or Style
+Guidelines anywhere near as well as a
+human being would U but anyway yeah and
+here we have like a big long YouTube
+script so you can see 10 whole pages
+feel free to check all that stuff out um
+that is system number three system
+number four is an automated newsletter
+production system which is quite similar
+in nature I want to say instead of us
+using appify to find uh you know YouTube
+uh scripts or sorry uh YouTube videos
+and then converting those into you know
+captions and extracting the captions and
+doing fun stuff with that what we're
+doing instead is we're actually scraping
+Reddit so the system takes data from
+Reddit specific subreddits that you
+specify uses AI to process them and
+filter them then if it's within the
+realm of what we'd consider to be a
+highquality newsletter item um it
+processes them summarizes them and then
+adds them to a nicely formatted
+newsletter in MailChimp from here you
+basically have a completely automated
+newsletter production system you can run
+as often as you want you can run this
+puppy once a day you can run this puppy
+hell once an hour run this puppy once a
+year U whatever sort of you know clip
+you want to run a system like this on um
+you are free to so I'm just going to
+jump over here and show you guys what
+this looks like we'll go to Reddit post
+database in terms of the um structure of
+the database as you guys can see I just
+use Google Sheets for everything it's
+the simplest database out there what you
+do is you feed in a few few subreddits
+so we fed in uh some uh communities
+called Singularity artificial
+intelligence open AI um I think there
+was one more artificial intelligence
+like with one L or something doesn't
+look like we got any post from them
+though um and then appify will go and
+it'll it'll scrape a bunch of these give
+us a bunch of posts right which looks
+pretty
+cool what we do is we take these posts
+and then we use them to generate
+something here so we have a second
+database this database then creates
+basically um a whole pitch so um I
+pretended my newsletter like my
+newsletter was called The Loop welcome
+to Loop Cutting Edge AA news explain in
+simple English in this week's issue
+spicy thing one spicy thing two spicy
+thing three and then we actually go
+through and we we use the filtering
+logic that I've set up before to show
+you in a second to write this whole
+thing which is pretty neat um this is
+probably one of the higher value flows I
+would say um I'd sell this from anywhere
+between 1,500 to $10,000 fixed price I
+should note that I haven't actually sold
+this specific system for $10,000 fixed
+price I just put system together myself
+live on camera a few weeks ago so I have
+yet to but um I'm confident that a
+system like this could probably get even
+more for the right business just because
+the end result is like very curatable
+content and you could use this sort of
+thing for anything you don't just need
+to use it for a newsletter you could use
+this to like make YouTube short scripts
+or something um very modifiable um and
+you know it's sort of like the the
+Nugget for a variety of systems in terms
+of what it looks like if you just lay it
+out um we do watch actor runs we get the
+data set items same thing as before we
+then filter posts using AI this is kind
+of kind of like the Crux of this if you
+screw this part up the rest of it
+doesn't really work uh so what we start
+with is Q Jeopardy music we're designing
+a newsletter that contains news and
+exciting in uh developments in AI your
+task is to filter out irrelevant Reddit
+posts so they don't make it to our
+newsletter here are a bunch of rules and
+then return relevance in Json using this
+format true or false what we do is we
+then add this to the first datab base
+assuming that it is relevant and then we
+have a second half to this flow what the
+second half this flow does is however
+often we want to schedule our newsletter
+which in my case was Monday at 6 we then
+go through grab all of the posts and
+it's not just all the posts but it's all
+the posts that have our filter of post
+status equal new and this is kind of
+like an interesting hack that allows you
+to only pull from um posts that are
+posts that we have not actually created
+a newsetter for so as you can see all
+these are published on the right hand
+side these ones are all new so any ones
+that are new we um we then add to that
+Quee and then we proceed through ically
+generating headlines and Snippets
+generating introductions and titles then
+we even go as far as adding them to
+MailChimp and then sending the
+newsletter to all of the subscribers of
+that in mail champ so pretty neat stuff
+um as I mentioned I haven't actually
+sold that specific system for anywhere
+near $10,000 but I'm confident that you
+could sell systems like this very easily
+for that amount of money just given um
+how similar it is to these other systems
+that have proven success behind them so
+the first person in my community is to
+sell this particular system send me over
+a DM and maybe I'll make a video about
+it okay great last one is a copy and
+paste automatic hiring system which I
+think is pretty badass um I've been
+using this and selling this for well
+over two years now or just coming up on
+two years now and essentially what this
+is is it's a hiring system that
+eliminates the need for any sort of back
+and forth with candidates what we're
+doing is we're turning hiring from like
+this very uh I don't know like
+one-on-one timec consuming thing into an
+automated process that uses a form that
+they fill out to request the job that
+then lets you automatically accept or
+decline then if you accept proceeds
+forward with a trial request then if
+they do a good job on the trial then you
+can you know extend them an an an
+interview or an onboarding opportunity
+so this solves a bunch of hot button
+pain points hiring takes forever our
+margins suck we don't have enough staff
+everything's always disorganized hiring
+is cost efficient chaos um as you can
+see it's also very pretty which produces
+a clear deliverable we got nice colors
+we got names we got portfolios links
+it's in a
+CRM um you know you can template It Out
+by simply cop and pasting a service like
+this which is super straightforward and
+easy um in in clickup by the way which
+is the service that I used to put this
+together then you can also sell it from
+anywhere between 2K all the way up to
+10K um that's no add-ons uh if you
+wanted to like do some add-ons to this I
+don't know use AI to like run the first
+pass of the CV filters you totally could
+um you could also charge them an hourly
+rate to implement it or make tweaks and
+then a maintenance or management fee on
+the hiring system um this sort of stuff
+crushes with recruitment businesses
+because recruitment businesses despite
+having like their whole business be
+essentially this process um just for
+whatever reason cannot systematize it I
+don't know so yeah in terms of what the
+specific system looks like this is the
+CRM template that I've put together here
+as you see I've added some documentation
+called how this pipeline works so I even
+go through and this is for my own
+business I actually use this in my
+business but just to give you the tldr
+um we have a General application form
+that somebody fills out when they fill
+it out they're add another new applicant
+to show you guys what this form looks
+like if I go to type form over here this
+is basically it a nutshell what role are
+you applying for who am I because this
+is to work with my business I have
+definitely do not have that many
+subscribers oh I must have added an
+extra zero that's funny I guess I'm at
+40,000
+now thank you very much um contact
+details please enter your name and email
+address below portfolio we ask for
+portfolio location of the person start
+date as soon as they'd be able to begin
+weekly availability and this is kind of
+a Nifty thing that uh like I do and and
+have done with all of my agencies
+because my business partner at the time
+brought it up and I thought it was
+brilliant but I basically see nobody
+else do it it's where you ask the
+applicant for the hourly rate that they
+want when you ask an applicant for the
+hourly rate that they want they
+basically I mean you think of this as a
+little bit evil but they basically start
+competing against themselves and they uh
+usually you know what we do is we'll
+we'll say in the job post like on indeed
+or something um average hourly rate $25
+they see this and they'll bid 23 you're
+thinking okay well 23 versus 25 that's
+not that much but it's like that
+actually is it's 8% you you immediately
+added 8% to your uh cost of goods sorry
+you've reduced 8% to the employment part
+of your your cost of goods or services
+which is crazy um and then you know if
+there's somebody that is extraordinarily
+talented they pitch a lot of money and
+when they pitch a lot of money you know
+that shows you that shows yourself that
+they're very confident that they believe
+they're very good at what they do which
+is also a positive so anyway the way
+this hiring system works is you will
+fill out this form after you're done
+filling out this form they're added
+under the new applicant field for the
+role that they applied to so Peter Smith
+Steve and Nix for instance I mean
+obviously these are fake names but um
+yeah they're added under here with all
+of that data then what happens
+afterwards is you have the ability to
+confirm and then request a trial if you
+move them over to request a trial what
+happens is they're automatically sent a
+um templated email with a task that they
+should finish now if they're a video
+editor for instance which is what I was
+hiring for here let me show you guys
+what that form looks
+like track your time using clockify or
+another time tracking app your task is
+to create a short form 15 to 30 second
+clip here's a
+brief quite in-depth brief here's a
+Google Drive link to upload the thing to
+and then the way that our company does
+it is we pay people for trials we're not
+so that's why we ask them to
+track their time send me an invoice when
+I send them an invoice I pay them within
+48 business hours by card wise um or or
+whatever so yeah great system um this is
+pieced together with not only uh the the
+CRM here which I will provide available
+to you guys um as a clickup link you
+guys feel free to Just Produce the exact
+same one by the way um in a Google sheet
+or notion or whatever you want so you
+can see the columns here aren't
+necessarily rocket science but uh it's
+cool not necessarily just because it's
+you know a clickup thing um it's just
+cool because it's like a basically
+Universal approach to hiring that I
+think extends Beyond just
+systems all right that's that for
+uh five more systems that you could sell
+today to make between $1,500 to $110,000
+I hope you guys appreciated this if you
+guys have any questions about any of the
+systems that I put together just let me
+know drop them down below um I've done
+videos on the majority of them up until
+this point I think I'm probably going to
+have to re-record the video on the
+hiring system because I uh created it I
+think when I was at like 500 subs or a
+th000 subs or something and probably
+didn't have a lot of reach so not a lot
+of people understand the functional
+utility of something like this I'm going
+to be building out the nadn tutorial for
+that deep personalization system as well
+I'm going to be doing that live just to
+show you guys my thoughts as I put it
+together so aside from that everything
+else you can find on my YouTube channel
+uh and I'll make sure to include all the
+resources and everything else you need
+below really appreciate it if you have
+any suggestions for future videos or
+content I Source most of my ideas from
+my audience at this point thank you very
+much to everybody that has done so so
+far and I'll catch you on the next video

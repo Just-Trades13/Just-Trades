@@ -1,0 +1,157 @@
+{
+    "name": "HELOC Lead Capture - SIMPLE WORKING VERSION",
+    "flow": [
+        {
+            "id": 1,
+            "module": "http:MakeARequest",
+            "version": 1,
+            "parameters": {},
+            "mapper": {
+                "url": "https://api.apollo.io/v1/mixed_people/search",
+                "method": "POST",
+                "headers": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "X-Api-Key",
+                        "value": "DtdKb5hTo_9GTtbohlNJ-Q"
+                    }
+                ],
+                "bodyType": "raw",
+                "body": "{\"page\": 1, \"per_page\": 1}",
+                "parseResponse": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "openai-gpt-3:CreateCompletion",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "select": "chat",
+                "model": "gpt-3.5-turbo",
+                "max_tokens": "1000",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Extract person data from Apollo.io JSON. Return ONLY valid JSON with: first_name, last_name, email, phone, company, city, state, title."
+                    },
+                    {
+                        "role": "user",
+                        "content": "{{`1.body`}}"
+                    }
+                ],
+                "response_format": "text"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {},
+            "mapper": {
+                "json": "{{2.result}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 6043166
+            },
+            "mapper": {
+                "base": "appKMaYEwkkH5bCSY",
+                "table": "tblxnRcBS21l0VTgW",
+                "formula": "{Contact Email} = '{{3.email}}'",
+                "maxRecords": 1
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 150
+                }
+            },
+            "routes": [
+                {
+                    "flow": [
+                        {
+                            "id": 6,
+                            "module": "airtable:ActionCreateRecord",
+                            "version": 3,
+                            "parameters": {
+                                "__IMTCONN__": 6043166
+                            },
+                            "mapper": {
+                                "base": "appKMaYEwkkH5bCSY",
+                                "table": "tblxnRcBS21l0VTgW",
+                                "record": {
+                                    "Contact Full Name": "{{3.first_name}} {{3.last_name}}",
+                                    "Contact Email": "{{3.email}}",
+                                    "Contact Phone": "{{3.phone}}",
+                                    "Company": "{{3.company}}",
+                                    "Location City": "{{3.city}}",
+                                    "Location State": "{{3.state}}",
+                                    "Contact Role": "{{3.title}}",
+                                    "Status": "new",
+                                    "Source": "apollo_io"
+                                }
+                            },
+                            "filter": {
+                                "conditions": [
+                                    [
+                                        {
+                                            "a": "{{4.`__IMTLENGTH__`}}",
+                                            "b": "0",
+                                            "o": "text:equal"
+                                        }
+                                    ]
+                                ]
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 1500,
+                                    "y": 0
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
+

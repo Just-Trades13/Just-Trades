@@ -1,0 +1,334 @@
+{
+    "name": "Scenario 2A-D - Missed Call with AI Follow-up",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio missed call webhook"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "CallSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "From",
+                        "type": "text"
+                    },
+                    {
+                        "name": "To",
+                        "type": "text"
+                    },
+                    {
+                        "name": "CallStatus",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{1.CallStatus}} = \"no-answer\" OR {{1.CallStatus}} = \"busy\" OR {{1.CallStatus}} = \"failed\""
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.From}}",
+                "from": "{{1.To}}",
+                "body": "Hi! Sorry we missed your call. How can we help you today?"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383408,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 350
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio incoming SMS webhook (for replies to missed call)"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "MessageSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "From",
+                        "type": "text"
+                    },
+                    {
+                        "name": "Body",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 5,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "{Contact Phone} = '{{4.From}}'",
+                "maxRecords": 1,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 350
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are a helpful customer service representative.\n\nCustomer just called and we missed their call. We sent them a text saying \"Hi! Sorry we missed your call. How can we help you today?\"\n\nTheir reply: {{4.Body}}\nCustomer Phone: {{4.From}}\n\nCustomer Info:\n- Company: {{5.Company[0]}}\n- Contact Name: {{5.`Contact Full Name`[0]}}\n- Industry: {{5.Industry[0]}}\n- Status: {{5.Status[0]}}\n- Previous Notes: {{5.Notes[0]}}\n\nYour goal:\n1. Apologize for missing their call\n2. Answer their question or help them\n3. Qualify them as a lead if they're interested\n4. Guide toward booking if appropriate\n5. Be friendly and professional\n6. Keep response under 160 characters for SMS\n\nIMPORTANT: Return ONLY valid JSON (no markdown, no code blocks):\n{\n  \"response\": \"Your helpful response here\",\n  \"intent\": \"question\",\n  \"qualified\": false,\n  \"booking_requested\": false\n}\n\nIntent can be: question, inquiry, complaint, booking, qualified_lead",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 350
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{6.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 350
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{4.From}}",
+                "from": "{{1.To}}",
+                "body": "{{7.response}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 350
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{5.id[0]}} is empty"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 350
+                }
+            }
+        },
+        {
+            "id": 10,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Contact Phone": "{{1.From}}",
+                    "Status": "{{7.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "Missed call at {{now}}, followed by SMS conversation:\nCustomer: {{4.Body}}\nAI Response: {{7.response}}\nIntent: {{7.intent}}\nQualified: {{7.qualified}}\nBooking Requested: {{7.booking_requested}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 11,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{5.id[0]}}",
+                "record": {
+                    "Status": "{{7.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "{{5.Notes[0]}}\n\n--- Missed Call + SMS at {{now}} ---\nCustomer: {{4.Body}}\nAI Response: {{7.response}}\nIntent: {{7.intent}}\nQualified: {{7.qualified}}\nBooking Requested: {{7.booking_requested}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 450
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook, builtin:BasicRouter, twilio:CreateMessage, airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, airtable:ActionCreateRecord, airtable:ActionUpdateRecords"]
+    }
+}
+

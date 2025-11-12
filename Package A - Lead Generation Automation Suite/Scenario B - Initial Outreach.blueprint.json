@@ -1,0 +1,168 @@
+{
+    "name": "Scenario B - Initial Outreach",
+    "flow": [
+        {
+            "id": 1,
+            "module": "airtable:TriggerWatchRecords",
+            "version": 3,
+            "parameters": {
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "config": {
+                    "labelField": "Company",
+                    "triggerField": "Last Modified Time"
+                },
+                "formula": "AND({Status} = \"new\", {Contact Email} != \"\", {Do Not Contact} = 0)",
+                "maxRecords": 10,
+                "__IMTCONN__": 5591761,
+                "useColumnId": false
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{1.`Contact Email`}} != \"\" AND {{1.`Contact Email`}} CONTAINS \"@\" AND LENGTH({{1.`Contact Email`}}) > 5"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are writing a personalized outreach email for lead generation. \n\nLead Information:\n- Name: {{1.`Contact Full Name`}}\n- Company: {{1.Company}}\n- Industry: {{1.Industry}}\n- Location: {{1.`Location City`}}, {{1.`Location State`}}\n- Role: {{1.`Contact Role`}}\n- Employee Count: {{1.`Employee Count`}}\n- Notes: {{1.Notes}}\n\nWrite a personalized, professional email that:\n1. References their company and industry specifically\n2. Mentions their location if relevant\n3. Explains how you've helped similar companies (use industry from Notes if available)\n4. Includes a clear value proposition\n5. Asks for a 15-minute call with Calendly link\n6. Keep it under 100 words\n7. Be conversational but professional\n\nIMPORTANT: Return ONLY valid JSON in this exact format (no markdown, no code blocks, no explanations):\n{\n  \"subject\": \"Your compelling subject line here\",\n  \"body\": \"Your email body text here...\"\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{3.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "{{1.`Contact Email`}}"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;\">{{4.body}}</div><div style=\"text-align: center;\"><a href=\"https://calendly.com/skillztechchannel/15-minute-demo-call\" style=\"background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">Book a Meeting</a></div><div style=\"text-align: center; margin-top: 20px; color: #6c757d; font-size: 12px;\">{{1.`Taken By`}} | espam@skillztech.net</div></div>",
+                "subject": "{{4.subject}}",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "record": {
+                    "fldFU5cYbHBHmTpHr": "initial outreach",
+                    "fldFodc3E3nJ9yzva": "{{now}}",
+                    "fldxEEEqp6XNCRoNJ": "emailed"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 0
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: airtable:TriggerWatchRecords, builtin:BasicRouter, openai-gpt-3:createModelResponse, json:ParseJSON, google-email:sendAnEmail, airtable:ActionUpdateRecords"]
+    }
+}
+

@@ -1,0 +1,20 @@
+{
+  "GET": [
+    "/api/system/csrf-token/",
+    "/api/auth/check-auth/",
+    "/api/trades/",
+    "/api/trades/open/",
+    "/api/strategies/",
+    "/api/strategies/get-strat/",
+    "/api/profiles/get-stat-config/",
+    "/api/profiles/get-favorites/",
+    "/api/profiles/get-widget-info/",
+    "/api/profiles/get-limits/",
+    "/api/accounts/get-all-at-accounts/"
+  ],
+  "POST": [
+    "/api/auth/login/",
+    "/api/profiles/update-stat-config/",
+    "/api/profiles/set-favorites/"
+  ]
+}

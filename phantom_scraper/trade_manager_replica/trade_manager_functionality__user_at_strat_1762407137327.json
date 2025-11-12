@@ -1,0 +1,4607 @@
+{
+  "timestamp": "2025-11-06T05:32:09.877Z",
+  "url": "https://trademanagergroup.com/user/at/strat",
+  "page": "/user/at/strat",
+  "apiCalls": [],
+  "websockets": [],
+  "eventListeners": [
+    {
+      "selector": "script",
+      "id": "",
+      "class": "",
+      "tag": "script",
+      "events": [
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function(){var W;((W=v())==null?0:W.loaded)||Q()}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function(){c.onFailure()}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "body",
+      "id": "",
+      "class": "",
+      "tag": "body",
+      "events": [
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "paste",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keyup",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerdown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerup",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointermove",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#root",
+      "id": "root",
+      "class": "",
+      "tag": "div",
+      "events": [
+        {
+          "type": "abort",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "auxclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplay",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplaythrough",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            },
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "close",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "contextmenu",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "copy",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cut",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drag",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragenter",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragexit",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragleave",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drop",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "durationchange",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "emptied",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "encrypted",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ended",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "gotpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "input",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keypress",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keyup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadeddata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadedmetadata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "lostpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousedown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousemove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "paste",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pause",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "play",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "playing",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointercancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerdown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointermove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "progress",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ratechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "reset",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "resize",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeked",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeking",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "stalled",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "submit",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "suspend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "timeupdate",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchcancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "volumechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "scroll",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "toggle",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchmove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "waiting",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "wheel",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "animationend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationiteration",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dblclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "transitionend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "change",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "textInput",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionupdate",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".minimize-sidebar",
+      "id": "",
+      "class": "minimize-sidebar btn btn-link btn-just-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".simple-text",
+      "id": "",
+      "class": "simple-text logo-mini active",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".simple-text",
+      "id": "",
+      "class": "simple-text logo-normal active",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#tooltip209599",
+      "id": "tooltip209599",
+      "class": "minimize-sidebar btn-just-icon btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".navbar-toggler",
+      "id": "",
+      "class": "navbar-toggler",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".navbar-brand",
+      "id": "",
+      "class": "navbar-brand",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#darkModeToggle",
+      "id": "darkModeToggle",
+      "class": "btn-icon btn-round me-2 btn btn-dark",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".d-flex",
+      "id": "",
+      "class": "d-flex align-items-center p-0 dropdown-toggle nav-link",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".rounded-circle",
+      "id": "",
+      "class": "rounded-circle",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".dropdown-item",
+      "id": "",
+      "class": "dropdown-item",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".create-update-btn",
+      "id": "",
+      "class": "create-update-btn btn btn-info disabled",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-info",
+      "id": "",
+      "class": "text-info text-decoration-underline",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-2-input",
+      "id": "react-select-2-input",
+      "class": "react-select__input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-3-input",
+      "id": "react-select-3-input",
+      "class": "react-select__input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-info",
+      "id": "",
+      "class": "text-info text-decoration-underline",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-virtuoso",
+      "id": "",
+      "class": "account-virtuoso",
+      "tag": "div",
+      "events": [
+        {
+          "type": "scroll",
+          "listeners": [
+            {
+              "listener": "e=>{let n,o,i;const l=e.target;if(function(e){return\"body\"in e}(l)||hD(l)){const e=hD(l)?l:l.defaultView;i=s?e.scrollX:e.scrollY,n=s?e.document.documentElement.scrollWidth:e.document.documentElement.s",
+              "useCapture": false,
+              "passive": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-input",
+      "id": "",
+      "class": "account-input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-start",
+      "id": "",
+      "class": "text-start w-100 text-info btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-info",
+      "id": "",
+      "class": "text-info text-decoration-underline",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Position_Size",
+      "id": "Position_Size",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Position_Add",
+      "id": "Position_Add",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-start",
+      "id": "",
+      "class": "text-start w-100 text-info btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-info",
+      "id": "",
+      "class": "text-info text-decoration-underline",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-4-input",
+      "id": "react-select-4-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-5-input",
+      "id": "react-select-5-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".tp-add-btn",
+      "id": "",
+      "class": "tp-add-btn btn btn-secondary btn-sm",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn",
+      "id": "",
+      "class": "btn btn-danger btn-sm disabled",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-6-input",
+      "id": "react-select-6-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-7-input",
+      "id": "react-select-7-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-8-input",
+      "id": "react-select-8-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-start",
+      "id": "",
+      "class": "text-start w-100 text-info btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#walkthroughHelp",
+      "id": "walkthroughHelp",
+      "class": "text-info text-decoration-underline d-flex align-items-center",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#SubTicker",
+      "id": "SubTicker",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#SubTimeFrame",
+      "id": "SubTimeFrame",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Delay_Add",
+      "id": "Delay_Add",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Maxcons",
+      "id": "Maxcons",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#PremiumFilter",
+      "id": "PremiumFilter",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-11-input",
+      "id": "react-select-11-input",
+      "class": "react-select__input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup",
+      "id": "",
+      "class": "react-time-picker__inputGroup",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__hour",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__minute",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__amPm",
+      "tag": "select",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup",
+      "id": "",
+      "class": "react-time-picker__inputGroup",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__hour",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__minute",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__amPm",
+      "tag": "select",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup",
+      "id": "",
+      "class": "react-time-picker__inputGroup",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__hour",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__minute",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__amPm",
+      "tag": "select",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup",
+      "id": "",
+      "class": "react-time-picker__inputGroup",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__hour",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__minute",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__amPm",
+      "tag": "select",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-start",
+      "id": "",
+      "class": "text-start w-100 text-info btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-info",
+      "id": "",
+      "class": "text-info text-decoration-underline",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Alternate_Name",
+      "id": "Alternate_Name",
+      "class": "tm-input-dark  form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Description",
+      "id": "Description",
+      "class": "tm-input-dark form-control",
+      "tag": "textarea",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Discord_Channel",
+      "id": "Discord_Channel",
+      "class": "tm-input-dark form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "iframe",
+      "id": "",
+      "class": "",
+      "tag": "iframe",
+      "events": [
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function(t,D){(0,(t=(D=[2,1,18],C)[36](D[0],O,L[13](24,null,G[D[2]](19,D[1],V),U),mj()-U),UQ).cP)(t)}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "formSubmissions": [],
+  "componentData": {
+    "dataAttributes": {
+      "data-emotion": [
+        {
+          "value": "css",
+          "selector": "STYLE"
+        }
+      ],
+      "data-s": [
+        {
+          "value": "",
+          "selector": "STYLE"
+        }
+      ],
+      "data-toggle": [
+        {
+          "value": "collapse",
+          "selector": "A"
+        }
+      ],
+      "data-value": [
+        {
+          "value": "",
+          "selector": ".react-select__input-container"
+        },
+        {
+          "value": "",
+          "selector": ".react-select__input-container"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".react-select__input-container"
+        }
+      ],
+      "data-testid": [
+        {
+          "value": "virtuoso-scroller",
+          "selector": ".account-virtuoso"
+        },
+        {
+          "value": "virtuoso-item-list",
+          "selector": "DIV"
+        }
+      ],
+      "data-virtuoso-scroller": [
+        {
+          "value": "true",
+          "selector": ".account-virtuoso"
+        }
+      ],
+      "data-viewport-type": [
+        {
+          "value": "element",
+          "selector": "DIV"
+        }
+      ],
+      "data-index": [
+        {
+          "value": "0",
+          "selector": "DIV"
+        },
+        {
+          "value": "1",
+          "selector": "DIV"
+        },
+        {
+          "value": "2",
+          "selector": "DIV"
+        },
+        {
+          "value": "3",
+          "selector": "DIV"
+        },
+        {
+          "value": "4",
+          "selector": "DIV"
+        },
+        {
+          "value": "5",
+          "selector": "DIV"
+        },
+        {
+          "value": "6",
+          "selector": "DIV"
+        },
+        {
+          "value": "7",
+          "selector": "DIV"
+        },
+        {
+          "value": "8",
+          "selector": "DIV"
+        },
+        {
+          "value": "9",
+          "selector": "DIV"
+        },
+        {
+          "value": "10",
+          "selector": "DIV"
+        },
+        {
+          "value": "11",
+          "selector": "DIV"
+        },
+        {
+          "value": "12",
+          "selector": "DIV"
+        },
+        {
+          "value": "13",
+          "selector": "DIV"
+        },
+        {
+          "value": "14",
+          "selector": "DIV"
+        },
+        {
+          "value": "15",
+          "selector": "DIV"
+        },
+        {
+          "value": "16",
+          "selector": "DIV"
+        }
+      ],
+      "data-item-index": [
+        {
+          "value": "0",
+          "selector": "DIV"
+        },
+        {
+          "value": "1",
+          "selector": "DIV"
+        },
+        {
+          "value": "2",
+          "selector": "DIV"
+        },
+        {
+          "value": "3",
+          "selector": "DIV"
+        },
+        {
+          "value": "4",
+          "selector": "DIV"
+        },
+        {
+          "value": "5",
+          "selector": "DIV"
+        },
+        {
+          "value": "6",
+          "selector": "DIV"
+        },
+        {
+          "value": "7",
+          "selector": "DIV"
+        },
+        {
+          "value": "8",
+          "selector": "DIV"
+        },
+        {
+          "value": "9",
+          "selector": "DIV"
+        },
+        {
+          "value": "10",
+          "selector": "DIV"
+        },
+        {
+          "value": "11",
+          "selector": "DIV"
+        },
+        {
+          "value": "12",
+          "selector": "DIV"
+        },
+        {
+          "value": "13",
+          "selector": "DIV"
+        },
+        {
+          "value": "14",
+          "selector": "DIV"
+        },
+        {
+          "value": "15",
+          "selector": "DIV"
+        },
+        {
+          "value": "16",
+          "selector": "DIV"
+        }
+      ],
+      "data-known-size": [
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        },
+        {
+          "value": "77",
+          "selector": "DIV"
+        }
+      ],
+      "data-input": [
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        }
+      ],
+      "data-select": [
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        }
+      ],
+      "data-style": [
+        {
+          "value": "bottomright",
+          "selector": ".grecaptcha-badge"
+        }
+      ]
+    },
+    "components": {
+      "root": {
+        "tag": "div",
+        "classes": "",
+        "text": "Trade ManagerDashboardMy RecordersTraderAMAccount ManagementSSMy TradersCCControl CenterSettingsTrad"
+      },
+      "tooltip209599": {
+        "tag": "button",
+        "classes": "minimize-sidebar btn-just-icon btn btn-link",
+        "text": ""
+      },
+      "darkModeToggle": {
+        "tag": "button",
+        "classes": "btn-icon btn-round me-2 btn btn-dark",
+        "text": ""
+      },
+      "strategyName": {
+        "tag": "div",
+        "classes": "css-b62m3t-container",
+        "text": "Select strategy..."
+      },
+      "react-select-2-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-2-placeholder": {
+        "tag": "div",
+        "classes": "react-select__placeholder css-qfc1gj-placeholder",
+        "text": "Select strategy..."
+      },
+      "react-select-2-input": {
+        "tag": "input",
+        "classes": "react-select__input",
+        "text": ""
+      },
+      "strategyType": {
+        "tag": "div",
+        "classes": "css-b62m3t-container",
+        "text": "Stock"
+      },
+      "react-select-3-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-3-input": {
+        "tag": "input",
+        "classes": "react-select__input",
+        "text": ""
+      },
+      "Position_Size": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "Position_Add": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "react-select-4-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-4-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "react-select-5-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-5-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "react-select-6-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-6-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "react-select-7-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-7-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "react-select-8-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-8-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "walkthroughHelp": {
+        "tag": "a",
+        "classes": "text-info text-decoration-underline d-flex align-items-center",
+        "text": "Help"
+      },
+      "react-select-9-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "SubTicker": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "react-select-10-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "SubTimeFrame": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "Delay_Add": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "Maxcons": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "PremiumFilter": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "DirStrat": {
+        "tag": "div",
+        "classes": "css-b62m3t-container",
+        "text": "Select a strategy..."
+      },
+      "react-select-11-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-11-placeholder": {
+        "tag": "div",
+        "classes": "react-select__placeholder css-1jqq78o-placeholder",
+        "text": "Select a strategy..."
+      },
+      "react-select-11-input": {
+        "tag": "input",
+        "classes": "react-select__input",
+        "text": ""
+      },
+      "Alternate_Name": {
+        "tag": "input",
+        "classes": "tm-input-dark  form-control",
+        "text": ""
+      },
+      "Description": {
+        "tag": "textarea",
+        "classes": "tm-input-dark form-control",
+        "text": ""
+      },
+      "Discord_Channel": {
+        "tag": "input",
+        "classes": "tm-input-dark form-control",
+        "text": ""
+      },
+      "g-recaptcha-response-100000": {
+        "tag": "textarea",
+        "classes": "g-recaptcha-response",
+        "text": ""
+      }
+    }
+  },
+  "networkRequests": [],
+  "localStorage": {
+    "lastTicker": "MES1!",
+    "_grecaptcha": "09ADiQh0fBb6P-FzhnnMZgStc2AYXLLl2-c6TdKjB3hlkm_1iw8m-4tXDaG9IbUBB96e9jK2YloCm58pMOw77S6T1r9BFjuwcZ7k6tZtgZEh365S0Qc3BdX-x2HuVkIG6FHT0",
+    "lastStrategy": "JADDCAVIXES",
+    "auth": "{\"isAuthenticated\":true,\"user\":{\"username\":\"J.T.M.J\",\"email\":\"just.trades.chicago@gmail.com\",\"admin\":false,\"DiscordID\":\"963881348039340122\",\"access\":\"full\",\"signed\":true,\"is_email_verified\":true,\"sessionId\":\"2btylfl2bo4w9lqptbroqvtb103q561y\"}}"
+  },
+  "sessionStorage": {
+    "auth": "{\"isAuthenticated\":true,\"user\":{\"username\":\"J.T.M.J\",\"email\":\"just.trades.chicago@gmail.com\",\"admin\":false,\"DiscordID\":\"963881348039340122\",\"access\":\"full\",\"signed\":true,\"is_email_verified\":true}}"
+  },
+  "cookies": "csrftoken=0JjCf9MUZjtIdqSJYVpITJmGLyPEWg34; _ga=GA1.2.1413952153.1744203650; _gid=GA1.2.739036613.1762399831; _gat_gtag_UA_XXXXX_Y=1"
+}

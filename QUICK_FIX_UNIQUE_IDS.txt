@@ -1,0 +1,45 @@
+🔧 QUICK FIX: Generate Unique Lead IDs
+====================================================================================================
+
+✅ WHAT I CHANGED:
+
+Module 2 System Message:
+→ Updated lead_id instruction to append timestamp
+→ Format: {apollo_id}_run{YYYYMMDDHHmmss}
+→ Example: 62d4844bef7fac00010aa738_run20251102120000
+
+📋 WHAT YOU NEED TO DO:
+
+Option 1: Test and See if It Works (EASIEST)
+   1. Run scenario
+   2. Check Module 3 output
+   3. Look at lead_id values
+   4. Do they have timestamps now?
+   → If yes: Should work!
+   → If no: Need Option 2
+
+Option 2: Add Variable Module (MORE RELIABLE)
+   1. Add module after Module 3
+   2. Search: "Set Variable" or "Data > Set Variable"
+   3. Variable name: unique_lead_id
+   4. Variable value: {{3.lead_id}}_{{NOW}}
+   5. Update Module 4 formula to: {Lead ID} = '{{unique_lead_id}}'
+   6. Update Module 6 Lead ID field to: {{unique_lead_id}}
+
+💡 WHY THIS FIXES IT:
+
+Before:
+→ Apollo ID: 62d4844bef7fac00010aa738 (same every time)
+→ Run 1: Creates record with ID 62d4844bef7fac00010aa738
+→ Run 2: Finds existing record → Updates it
+
+After:
+→ Run 1: 62d4844bef7fac00010aa738_run20251102120000
+→ Run 2: 62d4844bef7fac00010aa738_run20251102120001 (different!)
+→ Module 4: Won't find match → Creates new record!
+
+🎯 TEST IT:
+→ Run scenario twice
+→ Check Airtable
+→ Should see 2 different records now!
+

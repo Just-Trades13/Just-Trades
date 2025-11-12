@@ -1,0 +1,11 @@
+🚀 QUICK FIX - 30 SECONDS!
+
+IN MAKE.COM:
+
+Module 2 → Messages → User message
+
+OLD: {{`18`}}
+NEW: {{`18.body.people[0]`}}
+
+SAVE & RUN AGAIN!
+

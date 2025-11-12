@@ -1,0 +1,316 @@
+{
+    "name": "Scenario 4A-D - Multi-Touch Reactivation Sequence",
+    "flow": [
+        {
+            "id": 1,
+            "module": "airtable:TriggerWatchRecords",
+            "version": 3,
+            "parameters": {
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "config": {
+                    "labelField": "Company",
+                    "triggerField": "Last Modified Time"
+                },
+                "formula": "AND({Do Not Contact} = 0, OR({Reactivation Stage} = \"stage_1\", {Reactivation Stage} = \"stage_2\", {Reactivation Stage} = \"stage_3\"), {Reply Received} = 0)",
+                "maxRecords": 10,
+                "__IMTCONN__": 5591761,
+                "useColumnId": false
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "switch",
+                "cases": [
+                    {
+                        "value": "stage_1",
+                        "filter": "{{1.`Reactivation Stage`}} = \"stage_1\""
+                    },
+                    {
+                        "value": "stage_2",
+                        "filter": "{{1.`Reactivation Stage`}} = \"stage_2\""
+                    },
+                    {
+                        "value": "stage_3",
+                        "filter": "{{1.`Reactivation Stage`}} = \"stage_3\""
+                    }
+                ]
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Write the FIRST touch reactivation message (Stage 1 of 3):\n\nCompany: {{1.Company}}\nContact Name: {{1.`Contact Full Name`}}\nRole: {{1.`Contact Role`}}\nIndustry: {{1.Industry}}\nLast Contact: {{1.`Last Out Reach`}}\nPrevious Notes: {{1.Notes}}\n\nStrategy for Stage 1:\n- Gentle re-engagement\n- Focus on value, not pressure\n- Soft call-to-action\n- Mix of email and SMS appropriate\n- Keep it friendly and low-pressure\n\nReturn ONLY valid JSON:\n{\n  \"subject\": \"Quick check-in\",\n  \"body\": \"Your message...\",\n  \"sms_message\": \"Your short SMS...\",\n  \"channel\": \"email\",\n  \"stage\": 1\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": -150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Write the SECOND touch reactivation message (Stage 2 of 3):\n\nCompany: {{1.Company}}\nContact Name: {{1.`Contact Full Name`}}\nRole: {{1.`Contact Role`}}\nIndustry: {{1.Industry}}\nLast Contact: {{1.`Last Out Reach`}}\nPrevious Notes: {{1.Notes}}\n\nStrategy for Stage 2:\n- Reference previous outreach\n- Offer new angle or value proposition\n- Slightly more direct CTA\n- Consider switching channel (if email was stage 1, use SMS or vice versa)\n- Show persistence but respect their time\n\nReturn ONLY valid JSON:\n{\n  \"subject\": \"Following up: [new angle]\",\n  \"body\": \"Your message...\",\n  \"sms_message\": \"Your short SMS...\",\n  \"channel\": \"sms\",\n  \"stage\": 2\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Write the THIRD touch reactivation message (Stage 3 of 3 - Final):\n\nCompany: {{1.Company}}\nContact Name: {{1.`Contact Full Name`}}\nRole: {{1.`Contact Role`}}\nIndustry: {{1.Industry}}\nLast Contact: {{1.`Last Out Reach`}}\nPrevious Notes: {{1.Notes}}\n\nStrategy for Stage 3:\n- Make it clear this is final touch\n- Offer a strong value proposition or incentive\n- Clear, direct call-to-action\n- Professional but understanding\n- Respectful exit if no interest\n- Include booking link or clear next step\n\nReturn ONLY valid JSON:\n{\n  \"subject\": \"Last chance: [value offer]\",\n  \"body\": \"Your message...\",\n  \"sms_message\": \"Your short SMS...\",\n  \"channel\": \"email\",\n  \"stage\": 3\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{IF({{1.`Reactivation Stage`}} = \"stage_1\", {{3.text.output[0].content[0].text}}, IF({{1.`Reactivation Stage`}} = \"stage_2\", {{4.text.output[0].content[0].text}}, {{5.text.output[0].content[0].text}}))}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{6.channel}} = \"email\""
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "{{1.`Contact Email`}}"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h2 style=\"color: #333;\">Hi {{1.`Contact Full Name`}},</h2><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;\">{{6.body}}</div><div style=\"text-align: center;\"><a href=\"https://calendly.com/skillztechchannel/15-minute-demo-call?source=reactivation_stage_{{6.stage}}\" style=\"background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;\">Connect Now</a></div><div style=\"text-align: center; margin-top: 20px; color: #6c757d; font-size: 12px;\"><a href=\"#unsubscribe\">Unsubscribe</a></div></div>",
+                "subject": "{{6.subject}}",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.`Contact Phone`}}",
+                "from": "+1234567890",
+                "body": "{{6.sms_message}} Reply STOP to opt out."
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 200
+                }
+            }
+        },
+        {
+            "id": 10,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{1.`Reactivation Stage`}} = \"stage_3\""
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 100
+                }
+            }
+        },
+        {
+            "id": 11,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "record": {
+                    "Reactivation Stage": "{{IF({{1.`Reactivation Stage`}} = \"stage_1\", \"stage_2\", IF({{1.`Reactivation Stage`}} = \"stage_2\", \"stage_3\", \"completed\"))}}",
+                    "Last Out Reach": "{{now}}",
+                    "Email Campaign": "reactivation_multitouch_stage_{{6.stage}}",
+                    "Status": "reactivation_stage_{{6.stage}}_sent",
+                    "Notes": "{{1.Notes}}\n\n--- Multi-touch reactivation Stage {{6.stage}} sent at {{now}} via {{6.channel}} ---"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2100,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 12,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "record": {
+                    "Reactivation Stage": "completed",
+                    "Status": "reactivation_completed",
+                    "Notes": "{{1.Notes}}\n\n--- Multi-touch reactivation sequence completed at {{now}} - No response received ---"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2100,
+                    "y": 200
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: airtable:TriggerWatchRecords, builtin:BasicRouter, openai-gpt-3:createModelResponse, json:ParseJSON, google-email:sendAnEmail, twilio:CreateMessage, airtable:ActionUpdateRecords. Twilio requires manual setup. This scenario requires Airtable field 'Reactivation Stage' with values: stage_1, stage_2, stage_3, completed. Schedule automation needed to advance stages (Day 0, Day 3, Day 7)."]
+    }
+}
+

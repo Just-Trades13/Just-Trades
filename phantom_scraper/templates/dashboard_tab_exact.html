@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Just.Trade - Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://use.fontawesome.com/releases/v5.0.10/css/all.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/react-big-calendar@1.8.2/lib/css/react-big-calendar.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #2cc511;
+            --primary-dark: #007a06;
+            --secondary-color: #1d2235;
+            --text-light: #f2f2f2;
+            --error-color: #ff4e4e;
+            --background-color: #000000;
+            --sidebar-color: #334155;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-light);
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 250px;
+            background-color: var(--sidebar-color);
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo h3 {
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        .nav {
+            list-style: none;
+            padding: 0;
+        }
+
+        .nav li {
+            margin-bottom: 10px;
+        }
+
+        .nav a {
+            color: var(--text-light);
+            text-decoration: none;
+            padding: 10px 15px;
+            display: block;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .nav a:hover, .nav a.active {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .main-panel {
+            margin-left: 250px;
+            flex: 1;
+            padding: 20px;
+        }
+
+        .navbar {
+            background-color: var(--secondary-color);
+            padding: 15px 0;
+            margin-bottom: 20px;
+        }
+
+        .navbar-brand {
+            color: var(--text-light);
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .card {
+            background-color: var(--secondary-color);
+            border: 1px solid #444;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            background-color: transparent;
+            border-bottom: 1px solid #444;
+            padding: 15px 20px;
+        }
+
+        .card-title {
+            color: var(--text-light);
+            margin: 0;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        .btn-blue {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-blue:hover {
+            background-color: var(--primary-dark);
+            border-color: var(--primary-dark);
+        }
+
+        .form-control {
+            background-color: #1a1a1a;
+            border: 1px solid #444;
+            color: var(--text-light);
+        }
+
+        .form-control:focus {
+            background-color: #1a1a1a;
+            border-color: var(--primary-color);
+            color: var(--text-light);
+            box-shadow: 0 0 0 0.2rem rgba(44, 197, 17, 0.25);
+        }
+
+        .card-stats {
+            background: linear-gradient(135deg, var(--secondary-color) 0%, #2a2a2a 100%);
+        }
+
+        .card-stats .card-header {
+            border-bottom: none;
+            padding: 15px 20px 10px;
+        }
+
+        .category-title-stat {
+            color: var(--text-light);
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .numbers {
+            padding: 10px 0;
+        }
+
+        .card-category {
+            color: #888;
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin: 0;
+        }
+
+        .card-title {
+            color: var(--text-light);
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin: 5px 0 0;
+        }
+
+        .info-icon {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+
+        .icon-success { color: var(--primary-color); }
+        .icon-primary { color: #3b82f6; }
+        .icon-danger { color: var(--error-color); }
+        .icon-info { color: #17a2b8; }
+        .icon-warning { color: #ffc107; }
+
+        .chart-area {
+            position: relative;
+            height: 400px;
+        }
+
+        .table {
+            color: var(--text-light);
+        }
+
+        .table th {
+            border-color: #444;
+            color: var(--text-light);
+            font-weight: 600;
+        }
+
+        .table td {
+            border-color: #444;
+        }
+
+        .table-striped tbody tr:nth-of-type(odd) {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .pagination .page-link {
+            background-color: var(--secondary-color);
+            border-color: #444;
+            color: var(--text-light);
+        }
+
+        .pagination .page-link:hover {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+
+        .pagination .page-item.disabled .page-link {
+            background-color: #333;
+            border-color: #444;
+            color: #666;
+        }
+
+        .rbc-calendar {
+            background-color: var(--secondary-color);
+            color: var(--text-light);
+        }
+
+        .rbc-header {
+            color: var(--text-light);
+            font-weight: 600;
+        }
+
+        .rbc-date-cell {
+            color: var(--text-light);
+        }
+
+        .rbc-button-link {
+            color: var(--text-light);
+        }
+
+        .rbc-button-link:hover {
+            color: var(--primary-color);
+        }
+
+        .rbc-today {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .toggle-cards-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+
+        .toggle-cards-link:hover {
+            color: var(--primary-dark);
+        }
+
+        .compact-duration {
+            font-size: 0.8rem;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="logo">
+                <h3>Just.Trade</h3>
+            </div>
+            <ul class="nav">
+                <li><a href="/dashboard-tab" class="active"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
+                <li><a href="/my-recorders"><i class="fas fa-pencil-alt"></i> My Recorders</a></li>
+                <li>
+                    <a href="#trader" data-bs-toggle="collapse" aria-expanded="true">
+                        <i class="fas fa-coins"></i> Trader <i class="fas fa-chevron-down"></i>
+                    </a>
+                    <div class="collapse show" id="trader">
+                        <ul class="nav ms-3">
+                            <li><a href="/account-management"><i class="fas fa-user-cog"></i> Account Management</a></li>
+                            <li><a href="/my-traders"><i class="fas fa-chart-line"></i> My Traders</a></li>
+                            <li><a href="/control-center"><i class="fas fa-cogs"></i> Control Center</a></li>
+                        </ul>
+                    </div>
+                </li>
+                <li><a href="/settings"><i class="fas fa-cog"></i> Settings</a></li>
+            </ul>
+        </div>
+
+        <!-- Main Panel -->
+        <div class="main-panel">
+            <!-- Navbar -->
+            <nav class="navbar navbar-expand-lg">
+                <div class="container-fluid">
+                    <div class="navbar-brand">Dashboard</div>
+                    <div class="ms-auto d-flex align-items-center gap-3">
+                        <span class="text-white font-weight-bold d-none d-md-inline" style="font-size: 0.9rem;">
+                            <span id="currentTime"></span>
+                        </span>
+                        <button type="button" class="btn btn-dark btn-sm">
+                            <i class="fas fa-moon"></i>
+                        </button>
+                        <div class="dropdown">
+                            <button class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-user"></i> J.T.M.J
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-dark">
+                                <li><a class="dropdown-item" href="#">Log out</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Content -->
+            <div class="content">
+                <!-- Filter Controls -->
+                <div class="row mb-4">
+                    <div class="col-12 col-md-2">
+                        <div class="card">
+                            <button type="button" class="w-100 btn btn-blue btn-md">
+                                <i class="fas fa-chart-bar"></i> VIEWING RECORDED STRATS
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <div class="card">
+                            <div class="card-body">
+                                <h4 class="card-title">Select User</h4>
+                                <select class="form-control">
+                                    <option value="">(optional)</option>
+                                    <option value="user1">User 1</option>
+                                    <option value="user2">User 2</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <div class="card">
+                            <div class="card-body">
+                                <h4 class="card-title">Select Strategy</h4>
+                                <select class="form-control">
+                                    <option value="">(optional)</option>
+                                    <option value="JADDCAVIXES">JADDCAVIXES</option>
+                                    <option value="JADGC">JADGC</option>
+                                    <option value="JADNQ">JADNQ</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <div class="card">
+                            <div class="card-body">
+                                <h4 class="card-title">Select Symbol</h4>
+                                <select class="form-control">
+                                    <option value="">(optional)</option>
+                                    <option value="MES1!">MES1!</option>
+                                    <option value="NQ1!">NQ1!</option>
+                                    <option value="ES1!">ES1!</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <div class="card">
+                            <div class="card-body">
+                                <h4 class="card-title">Select TimeFrame</h4>
+                                <select class="form-control">
+                                    <option value="">(optional)</option>
+                                    <option value="1m">1 Minute</option>
+                                    <option value="5m">5 Minutes</option>
+                                    <option value="1h">1 Hour</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Toggle Cards Link -->
+                <div>
+                    <a href="#" class="toggle-cards-link" onclick="toggleCards()">Hide All Cards</a>
+                </div>
+
+                <!-- Performance Cards -->
+                <div class="row" id="performanceCards">
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="card-stats card">
+                            <div class="card-body">
+                                <div class="card-header">
+                                    <h5 class="category-title-stat">Cumulative Return</h5>
+                                    <i class="fas fa-times"></i>
+                                </div>
+                                <div class="numbers">
+                                    <div class="row">
+                                        <div class="col-4">
+                                            <div class="info-icon text-center icon-success">
+                                                <i class="fas fa-coins"></i>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="numbers">
+                                                <p class="card-category">TIME TRADED</p>
+                                                <h3 class="card-title">
+                                                    <span class="compact-duration">0D</span>
+                                                </h3>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="numbers">
+                                                <p class="card-category">RETURN</p>
+                                                <h3 class="card-title">$0</h3>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="card-stats card">
+                            <div class="card-body">
+                                <div class="card-header">
+                                    <h5 class="category-title-stat">W_L_WinRate</h5>
+                                    <i class="fas fa-times"></i>
+                                </div>
+                                <div class="numbers">
+                                    <div class="row">
+                                        <div class="col-2">
+                                            <div class="info-icon text-center icon-primary">
+                                                <i class="fas fa-chart-pie"></i>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="numbers">
+                                                <p class="card-category">WINS</p>
+                                                <h3 class="card-title">0</h3>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="numbers">
+                                                <p class="card-category">LOSSES</p>
+                                                <h3 class="card-title">0</h3>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="numbers">
+                                                <p class="card-category">%WINRATE</p>
+                                                <h3 class="card-title">0%</h3>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="card-stats card">
+                            <div class="card-body">
+                                <div class="card-header">
+                                    <h5 class="category-title-stat">Drawdown</h5>
+                                    <i class="fas fa-times"></i>
+                                </div>
+                                <div class="numbers">
+                                    <div class="row">
+                                        <div class="col-2">
+                                            <div class="info-icon text-center icon-danger">
+                                                <i class="fas fa-chart-line"></i>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="numbers">
+                                                <p class="card-category">MAX DD</p>
+                                                <h3 class="card-title">$0</h3>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="numbers">
+                                                <p class="card-category">AVG DD</p>
+                                                <h3 class="card-title">$0</h3>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="numbers">
+                                                <p class="card-category">RUN DD</p>
+                                                <h3 class="card-title">$0</h3>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="card-stats card">
+                            <div class="card-body">
+                                <div class="card-header">
+                                    <h5 class="category-title-stat">Total ROI</h5>
+                                    <i class="fas fa-times"></i>
+                                </div>
+                                <div class="numbers">
+                                    <div class="row">
+                                        <div class="col-5">
+                                            <div class="info-icon text-center icon-info">
+                                                <i class="fas fa-percentage"></i>
+                                            </div>
+                                        </div>
+                                        <div class="col-7">
+                                            <div class="numbers">
+                                                <p class="card-category">TOTAL ROI</p>
+                                                <h3 class="card-title">0%</h3>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="card-stats card">
+                            <div class="card-body">
+                                <div class="card-header">
+                                    <h5 class="category-title-stat">Contracts Held</h5>
+                                    <i class="fas fa-times"></i>
+                                </div>
+                                <div class="numbers">
+                                    <div class="row">
+                                        <div class="col-2">
+                                            <div class="info-icon text-center icon-warning">
+                                                <i class="fas fa-layer-group"></i>
+                                            </div>
+                                        </div>
+                                        <div class="col-5">
+                                            <div class="numbers">
+                                                <p class="card-category">MAX SIZE</p>
+                                                <h3 class="card-title">0</h3>
+                                            </div>
+                                        </div>
+                                        <div class="col-5">
+                                            <div class="numbers">
+                                                <p class="card-category">AVG SIZE</p>
+                                                <h3 class="card-title">0</h3>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="card-stats card">
+                            <div class="card-body">
+                                <div class="card-header">
+                                    <h5 class="category-title-stat">TM Score</h5>
+                                    <i class="fas fa-times"></i>
+                                </div>
+                                <div class="numbers">
+                                    <p>No layout defined for this stat.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="card-stats card">
+                            <div class="card-body">
+                                <div class="card-header">
+                                    <h5 class="category-title-stat">Max/Avg PnL</h5>
+                                    <i class="fas fa-times"></i>
+                                </div>
+                                <div class="numbers">
+                                    <div class="row">
+                                        <div class="col-2">
+                                            <div class="info-icon text-center icon-warning">
+                                                <i class="fas fa-chart-bar"></i>
+                                            </div>
+                                        </div>
+                                        <div class="col-5">
+                                            <div class="numbers">
+                                                <p class="card-category">MAX / AVG PROFIT</p>
+                                                <h3 class="card-title">$0 / $0</h3>
+                                            </div>
+                                        </div>
+                                        <div class="col-5">
+                                            <div class="numbers">
+                                                <p class="card-category">MAX / AVG LOSS</p>
+                                                <h3 class="card-title">$0 / $0</h3>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="card-stats card">
+                            <div class="card-body">
+                                <div class="card-header">
+                                    <h5 class="category-title-stat">Profit Factor</h5>
+                                    <i class="fas fa-times"></i>
+                                </div>
+                                <div class="numbers">
+                                    <div class="row">
+                                        <div class="col-5">
+                                            <div class="info-icon text-center icon-info">
+                                                <i class="fas fa-rocket"></i>
+                                            </div>
+                                        </div>
+                                        <div class="col-7">
+                                            <div class="numbers">
+                                                <p class="card-category">PROFIT FACTOR</p>
+                                                <h3 class="card-title">0.00</h3>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart Section -->
+                <div class="row">
+                    <div class="col-12">
+                        <div class="card-chart card">
+                            <div class="card-header">
+                                <h2 class="card-title">Profit vs Drawdown</h2>
+                            </div>
+                            <div class="card-body">
+                                <div class="chart-area">
+                                    <canvas id="profitDrawdownChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trade History and Calendar -->
+                <div class="row">
+                    <div class="col-12 col-md-7">
+                        <h4 class="mb-3">Trade History</h4>
+                        <div style="overflow-x: auto;">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Status</th>
+                                        <th style="width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Open Time</th>
+                                        <th style="width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Closed Time</th>
+                                        <th>Strategy</th>
+                                        <th>Symbol</th>
+                                        <th>Side</th>
+                                        <th>Size</th>
+                                        <th>Entry</th>
+                                        <th>Exit</th>
+                                        <th>Profit</th>
+                                        <th>Drawdown</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Trade history will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination">
+                            <nav aria-label="pagination">
+                                <ul class="pagination">
+                                    <li class="page-item disabled">
+                                        <button class="page-link" aria-label="First">
+                                            <span aria-hidden="true">«</span>
+                                            <span class="sr-only">First</span>
+                                        </button>
+                                    </li>
+                                    <li class="page-item disabled">
+                                        <button class="page-link" aria-label="Previous">
+                                            <span aria-hidden="true">‹</span>
+                                            <span class="sr-only">Previous</span>
+                                        </button>
+                                    </li>
+                                    <li class="page-item">
+                                        <button class="page-link" aria-label="Next">
+                                            <span aria-hidden="true">›</span>
+                                            <span class="sr-only">Next</span>
+                                        </button>
+                                    </li>
+                                    <li class="page-item">
+                                        <button class="page-link" aria-label="Last">
+                                            <span aria-hidden="true">»</span>
+                                            <span class="sr-only">Last</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-5">
+                        <div class="content">
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="card-calendar card">
+                                        <div class="card-body" style="padding: 10px;">
+                                            <div class="calendar-wrapper" style="overflow: auto hidden; width: 100%; height: 400px;">
+                                                <div class="rbc-calendar" style="height: 100%; min-width: 100%; width: max-content;">
+                                                    <div class="rbc-toolbar">
+                                                        <span class="rbc-btn-group">
+                                                            <button type="button">Today</button>
+                                                            <button type="button">Back</button>
+                                                            <button type="button">Next</button>
+                                                        </span>
+                                                        <span class="rbc-toolbar-label">October 2025</span>
+                                                        <span class="rbc-btn-group"></span>
+                                                    </div>
+                                                    <div class="rbc-month-view" role="table" aria-label="Month View">
+                                                        <div class="rbc-row rbc-month-header" role="row">
+                                                            <div class="rbc-header"><span role="columnheader" aria-sort="none">Sun</span></div>
+                                                            <div class="rbc-header"><span role="columnheader" aria-sort="none">Mon</span></div>
+                                                            <div class="rbc-header"><span role="columnheader" aria-sort="none">Tue</span></div>
+                                                            <div class="rbc-header"><span role="columnheader" aria-sort="none">Wed</span></div>
+                                                            <div class="rbc-header"><span role="columnheader" aria-sort="none">Thu</span></div>
+                                                            <div class="rbc-header"><span role="columnheader" aria-sort="none">Fri</span></div>
+                                                            <div class="rbc-header"><span role="columnheader" aria-sort="none">Sat</span></div>
+                                                        </div>
+                                                        <!-- Calendar content will be populated here -->
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Update time
+        function updateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            document.getElementById('currentTime').textContent = timeString;
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Toggle cards functionality
+        function toggleCards() {
+            const cards = document.getElementById('performanceCards');
+            const link = document.querySelector('.toggle-cards-link');
+            
+            if (cards.style.display === 'none') {
+                cards.style.display = 'block';
+                link.textContent = 'Hide All Cards';
+            } else {
+                cards.style.display = 'none';
+                link.textContent = 'Show All Cards';
+            }
+        }
+
+        // Initialize chart
+        const ctx = document.getElementById('profitDrawdownChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Profit',
+                    data: [],
+                    borderColor: '#2cc511',
+                    backgroundColor: 'rgba(44, 197, 17, 0.1)',
+                    tension: 0.4
+                }, {
+                    label: 'Drawdown',
+                    data: [],
+                    borderColor: '#ff4e4e',
+                    backgroundColor: 'rgba(255, 78, 78, 0.1)',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#f2f2f2'
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: '#f2f2f2'
+                        },
+                        grid: {
+                            color: '#444'
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            color: '#f2f2f2'
+                        },
+                        grid: {
+                            color: '#444'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Socket.IO connection for real-time updates
+        const socket = io();
+        
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+
+        socket.on('trade_update', function(data) {
+            console.log('Trade update received:', data);
+            // Update chart and other elements with new data
+        });
+    </script>
+</body>
+</html>

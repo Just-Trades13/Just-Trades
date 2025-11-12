@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://traderspost.local/api/accounts/refresh.schema.json",
+  "title": "POST /api/accounts/{accountId}/refresh/ Contract",
+  "type": "object",
+  "description": "Contract for refreshing Tradovate sub-accounts and broker tokens.",
+  "properties": {
+    "endpoint": {
+      "const": "/api/accounts/{accountId}/refresh/",
+      "description": "Relative API path."
+    },
+    "method": {
+      "const": "POST"
+    },
+    "pathParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountId"
+      ],
+      "properties": {
+        "accountId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Identifier of the TradersPost broker account."
+        }
+      }
+    },
+    "requestBody": {
+      "type": "object",
+      "description": "No JSON payload is required; request body must be empty.",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "responses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "schema"
+        ],
+        "properties": {
+          "status": {
+            "type": "integer",
+            "enum": [
+              200,
+              400,
+              404
+            ]
+          },
+          "schema": {
+            "oneOf": [
+              {
+                "title": "200 Success",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "success",
+                  "message",
+                  "subaccounts"
+                ],
+                "properties": {
+                  "success": {
+                    "const": true
+                  },
+                  "message": {
+                    "type": "string",
+                    "const": "Subaccounts refreshed successfully"
+                  },
+                  "subaccounts": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Number of sub-accounts synced from Tradovate."
+                  },
+                  "tokens": {
+                    "type": "object",
+                    "description": "Opaque tokens persisted for reuse.",
+                    "properties": {
+                      "accessToken": {
+                        "type": ["string", "null"]
+                      },
+                      "refreshToken": {
+                        "type": ["string", "null"]
+                      },
+                      "expiresAt": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              {
+                "title": "400 Broker Error",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "success",
+                  "error"
+                ],
+                "properties": {
+                  "success": {
+                    "const": false
+                  },
+                  "error": {
+                    "type": "string",
+                    "description": "Human-readable error returned when Tradovate authentication fails."
+                  }
+                }
+              },
+              {
+                "title": "404 Not Found",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "error"
+                ],
+                "properties": {
+                  "error": {
+                    "type": "string",
+                    "const": "Account not found"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "endpoint",
+    "method",
+    "pathParams",
+    "requestBody",
+    "responses"
+  ],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "endpoint": "/api/accounts/{accountId}/refresh/",
+      "method": "POST",
+      "pathParams": {
+        "accountId": 1745
+      },
+      "requestBody": {},
+      "responses": [
+        {
+          "status": 200,
+          "schema": {
+            "success": true,
+            "message": "Subaccounts refreshed successfully",
+            "subaccounts": 2,
+            "tokens": {
+              "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+              "refreshToken": "r1-FhHMs....",
+              "expiresAt": "2025-11-08T21:30:00Z"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+

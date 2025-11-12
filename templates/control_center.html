@@ -1,0 +1,180 @@
+{% extends "layout.html" %}
+{% block title %}Control Center - Just.Trades.{% endblock %}
+{% block page_title %}CONTROL CENTER{% endblock %}
+{% block content %}
+<div class="control-center">
+    <section class="manual-trader">
+        <header>
+            <h1>Manual Trader</h1>
+            <span class="badge">RECORDER</span>
+        </header>
+        <div class="manual-form">
+            <label>
+                <span>Strategy</span>
+                <div class="select-shell">
+                    <select>
+                        <option>Select strategy...</option>
+                        <option>JADDCAVIX</option>
+                        <option>JADES</option>
+                    </select>
+                    <span class="material-icons">expand_more</span>
+                </div>
+            </label>
+            <label>
+                <span>Ticker</span>
+                <div class="select-shell">
+                    <select>
+                        <option>Select or type a ticker</option>
+                        <option>ES1!</option>
+                        <option>NQ1!</option>
+                    </select>
+                    <span class="material-icons">expand_more</span>
+                </div>
+            </label>
+            <label>
+                <span>Position Size (Qty)</span>
+                <input type="number" value="1">
+            </label>
+            <div class="manual-actions">
+                <button class="btn btn-sell" type="button">SELL</button>
+                <button class="btn btn-close" type="button">CLOSE</button>
+                <button class="btn btn-buy" type="button">BUY</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="live-panels">
+        <article class="live-trading">
+            <header>
+                <h2>Live Trading Panel</h2>
+                <div class="panel-actions">
+                    <button class="btn btn-danger">Close All</button>
+                    <button class="btn btn-warning">Clear All</button>
+                    <button class="btn btn-outline">Disable All Strats</button>
+                </div>
+            </header>
+            <table>
+                <thead>
+                    <tr>
+                        <th>STRATEGY</th>
+                        <th>ENABLES</th>
+                        <th>PROFIT / LOSS</th>
+                        <th>ACTIONS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in live_rows %}
+                    <tr>
+                        <td><a href="/recorders/{{ row.id }}">{{ row.name }}</a></td>
+                        <td class="toggle-cell">
+                            <span>ALL / ALL</span>
+                            <label class="switch">
+                                <input type="checkbox" {% if row.enabled %}checked{% endif %}>
+                                <span class="slider"></span>
+                            </label>
+                        </td>
+                        <td class="pl-cell {% if row.pnl >= 0 %}positive{% else %}negative{% endif %}"> {{ row.pnl | round(2) }} </td>
+                        <td class="action-cell">
+                            <button class="btn btn-outline btn-small">Close</button>
+                            <button class="btn btn-outline btn-small">Clear</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </article>
+
+        <article class="autotrader-logs">
+            <header>
+                <div>
+                    <h2>AutoTrader Logs</h2>
+                    <p>Realtime feed of recorder events</p>
+                </div>
+                <span class="status-dot connected">Connected</span>
+            </header>
+            <div class="log-feed">
+                {% for log in logs %}
+                <div class="log-entry">
+                    <span class="log-type {{ log.type }}">[{{ log.type | upper }}]</span>
+                    <span class="log-content">{{ log.message }}</span>
+                    <span class="log-time">{{ log.time }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+    </section>
+</div>
+{% endblock %}
+{% block styles %}
+<style>
+    .control-center { display: grid; gap: 1.5rem; }
+    .manual-trader { background: rgba(11,18,33,0.92); border-radius: 18px; border: 1px solid rgba(59,130,246,0.25); padding: 1.75rem; display: grid; gap: 1.25rem; }
+    .manual-trader header { display: flex; align-items: center; gap: 0.75rem; }
+    .manual-trader h1 { margin: 0; font-size: 1.5rem; }
+    .badge { padding: 0.25rem 0.75rem; border-radius: 999px; background: rgba(59,130,246,0.25); color: #bfdbfe; font-size: 0.75rem; letter-spacing: 0.1em; }
+    .manual-form { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); align-items: end; }
+    label { display: grid; gap: 0.35rem; color: var(--text-muted); font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    input, select { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.25); border-radius: 12px; color: #e2e8f0; padding: 0.6rem 0.75rem; font-size: 0.95rem; }
+    .select-shell { position: relative; }
+    .select-shell select { width: 100%; appearance: none; }
+    .select-shell .material-icons { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 1rem; pointer-events: none; }
+    .manual-actions { display: grid; grid-template-columns: repeat(auto-fit,minmax(100px,1fr)); gap: 0.75rem; }
+    .btn { border: none; border-radius: 12px; padding: 0.7rem 1.4rem; font-weight: 600; letter-spacing: 0.08em; cursor: pointer; text-transform: uppercase; }
+    .btn-sell { background: linear-gradient(135deg,#f87171,#ef4444); color: #0b1120; }
+    .btn-buy { background: linear-gradient(135deg,#34d399,#10b981); color: #0b1120; }
+    .btn-close { background: linear-gradient(135deg,#fb923c,#f97316); color: #0b1120; }
+
+    .live-panels { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; }
+    .live-trading { background: rgba(7,12,23,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); overflow: hidden; display: grid; }
+    .live-trading header { background: rgba(15,23,42,0.75); padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .live-trading h2 { margin: 0; font-size: 1.2rem; }
+    .panel-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .btn-danger { background: rgba(239,68,68,0.85); color: #0b1120; }
+    .btn-warning { background: rgba(234,179,8,0.85); color: #0b1120; }
+    .btn-outline { background: rgba(15,23,42,0.6); color: #e2e8f0; border: 1px solid rgba(148,163,184,0.2); }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { text-align: left; padding: 0.85rem 1.25rem; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: #94a3b8; border-bottom: 1px solid rgba(148,163,184,0.12); }
+    tbody td { padding: 1rem 1.25rem; border-bottom: 1px solid rgba(148,163,184,0.08); color: #e2e8f0; }
+    tbody tr:last-child td { border-bottom: none; }
+    .toggle-cell { display: flex; align-items: center; gap: 0.75rem; }
+    .switch { position: relative; display: inline-block; width: 48px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; background: rgba(148,163,184,0.3); border-radius: 24px; transition: 0.2s; }
+    .slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 4px; bottom: 3px; background: #0b1120; border-radius: 50%; transition: 0.2s; }
+    .switch input:checked + .slider { background: rgba(16,185,129,0.7); }
+    .switch input:checked + .slider:before { transform: translateX(22px); }
+    .pl-cell { font-weight: 600; }
+    .pl-cell.positive { color: #34d399; }
+    .pl-cell.negative { color: #f87171; }
+    .action-cell { display: flex; gap: 0.5rem; }
+    .btn-small { padding: 0.45rem 0.85rem; font-size: 0.75rem; }
+
+    .autotrader-logs { background: rgba(11,18,33,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); display: grid; grid-template-rows: auto 1fr; }
+    .autotrader-logs header { padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; }
+    .autotrader-logs h2 { margin: 0; font-size: 1.2rem; }
+    .autotrader-logs p { margin: 0; color: var(--text-muted); }
+    .status-dot { font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.3rem 0.75rem; border-radius: 999px; }
+    .status-dot.connected { background: rgba(52,211,153,0.25); color: #bbf7d0; }
+    .log-feed { padding: 0 1.25rem 1.25rem; overflow-y: auto; max-height: 480px; display: grid; gap: 0.75rem; }
+    .log-entry { background: rgba(15,23,42,0.6); border: 1px solid rgba(59,130,246,0.2); border-radius: 12px; padding: 0.75rem; display: grid; gap: 0.35rem; font-size: 0.85rem; }
+    .log-type { font-weight: 600; }
+    .log-type.open { color: #34d399; }
+    .log-type.close { color: #fb923c; }
+    .log-content { color: #e2e8f0; }
+    .log-time { color: var(--text-muted); font-size: 0.75rem; }
+
+    @media (max-width: 1100px) {
+        .live-panels { grid-template-columns: 1fr; }
+    }
+}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.log-feed').forEach(function(feed) {
+            feed.scrollTop = feed.scrollHeight;
+        });
+    });
+</script>
+{% endblock %}

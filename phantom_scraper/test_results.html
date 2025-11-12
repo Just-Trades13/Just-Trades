@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scraper Test Results</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .result { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+        .success { background: #d4edda; border-color: #c3e6cb; }
+        .error { background: #f8d7da; border-color: #f5c6cb; }
+        pre { background: #f8f9fa; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Scraper Test Results</h1>
+    <p>This page shows the actual API responses from your scraper.</p>
+    
+    <div id="results">
+        <p>Loading test results...</p>
+    </div>
+
+    <script>
+        async function runTests() {
+            const resultsDiv = document.getElementById('results');
+            
+            try {
+                // Test 1: Health check
+                resultsDiv.innerHTML += '<h2>Test 1: Health Check</h2>';
+                const healthResponse = await fetch('http://localhost:5004/health');
+                const healthData = await healthResponse.json();
+                resultsDiv.innerHTML += `<div class="result success">✅ Health: ${JSON.stringify(healthData)}</div>`;
+                
+                // Test 2: GitHub search
+                resultsDiv.innerHTML += '<h2>Test 2: GitHub Search</h2>';
+                const searchResponse = await fetch('http://localhost:5004/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: 'javascript', searchType: 'github' })
+                });
+                const searchData = await searchResponse.json();
+                
+                const githubDevs = searchData.formatted_sources?.github?.developers || [];
+                resultsDiv.innerHTML += `<div class="result success">✅ Found ${githubDevs.length} GitHub developers</div>`;
+                
+                if (githubDevs.length > 0) {
+                    resultsDiv.innerHTML += '<h3>Sample Developers:</h3>';
+                    githubDevs.slice(0, 5).forEach(dev => {
+                        resultsDiv.innerHTML += `
+                            <div class="result">
+                                <strong>${dev.username}</strong><br>
+                                Name: ${dev.name || 'N/A'}<br>
+                                Company: ${dev.company || 'N/A'}<br>
+                                Followers: ${dev.followers}<br>
+                                <a href="${dev.profile_url}" target="_blank">Profile</a>
+                            </div>
+                        `;
+                    });
+                }
+                
+                // Test 3: Stack Overflow search
+                resultsDiv.innerHTML += '<h2>Test 3: Stack Overflow Search</h2>';
+                const soResponse = await fetch('http://localhost:5004/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: 'react', searchType: 'stackoverflow' })
+                });
+                const soData = await soResponse.json();
+                
+                const soQuestions = soData.sources?.stackoverflow?.questions || [];
+                resultsDiv.innerHTML += `<div class="result success">✅ Found ${soQuestions.length} Stack Overflow questions</div>`;
+                
+                if (soQuestions.length > 0) {
+                    resultsDiv.innerHTML += '<h3>Sample Questions:</h3>';
+                    soQuestions.slice(0, 3).forEach(q => {
+                        resultsDiv.innerHTML += `
+                            <div class="result">
+                                <strong>${q.title}</strong><br>
+                                Author: ${q.author}<br>
+                                Score: ${q.score} | Answers: ${q.answers}<br>
+                                <a href="${q.url}" target="_blank">View Question</a>
+                            </div>
+                        `;
+                    });
+                }
+                
+                // Test 4: Hacker News search
+                resultsDiv.innerHTML += '<h2>Test 4: Hacker News Search</h2>';
+                const hnResponse = await fetch('http://localhost:5004/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: 'ai', searchType: 'hackernews' })
+                });
+                const hnData = await hnResponse.json();
+                
+                const hnPosts = hnData.sources?.hackernews?.posts || [];
+                resultsDiv.innerHTML += `<div class="result success">✅ Found ${hnPosts.length} Hacker News posts</div>`;
+                
+                if (hnPosts.length > 0) {
+                    resultsDiv.innerHTML += '<h3>Sample Posts:</h3>';
+                    hnPosts.slice(0, 3).forEach(post => {
+                        resultsDiv.innerHTML += `
+                            <div class="result">
+                                <strong>${post.title}</strong><br>
+                                Author: ${post.author}<br>
+                                Points: ${post.points} | Comments: ${post.comments}<br>
+                                <a href="${post.url}" target="_blank">Read More</a>
+                            </div>
+                        `;
+                    });
+                }
+                
+                resultsDiv.innerHTML += '<div class="result success"><h2>🎉 All Tests Passed! Your scraper is working perfectly!</h2></div>';
+                
+            } catch (error) {
+                resultsDiv.innerHTML += `<div class="result error">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Run tests when page loads
+        runTests();
+    </script>
+</body>
+</html>

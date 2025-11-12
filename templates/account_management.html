@@ -1,0 +1,138 @@
+{% extends "layout.html" %}
+
+{% block title %}Account Management - Just.Trades.{% endblock %}
+
+{% block page_title %}ACCOUNT MANAGEMENT{% endblock %}
+
+{% block content %}
+<div class="accounts-header">
+    <div class="accounts-title">
+        <h2>Accounts</h2>
+        <span id="account-count">0 Used / Unlimited</span>
+    </div>
+    <div class="accounts-actions">
+        <div class="search-bar">
+            <i class="material-icons">search</i>
+            <input type="text" placeholder="Search accounts...">
+        </div>
+        <button class="btn btn-delete">Delete</button>
+        <button class="btn btn-clear">Clear Trades</button>
+        <button class="btn btn-add">+ Add Account</button>
+    </div>
+</div>
+
+<div class="accounts-grid" id="accounts-grid">
+    <!-- Account cards will be dynamically inserted here -->
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .accounts-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+    .accounts-title h2 { font-size: 2.2rem; margin: 0; }
+    .accounts-title span { color: var(--text-muted); font-size: 0.9rem; }
+    .accounts-actions { display: flex; align-items: center; gap: 1rem; }
+    .search-bar {
+        display: flex;
+        align-items: center;
+        background-color: var(--background-light);
+        padding: 8px 15px;
+        border-radius: 20px;
+    }
+    .search-bar input { background: transparent; border: none; color: white; outline: none; margin-left: 10px; }
+    .btn {
+        border: none;
+        border-radius: 6px;
+        padding: 10px 20px;
+        font-weight: 500;
+        cursor: pointer;
+    }
+    .btn-delete { background-color: #f5365c; color: white; }
+    .btn-clear { background-color: var(--background-light); color: var(--text-light); border: 1px solid var(--border-color); }
+    .btn-add { background-color: var(--green); color: black; font-weight: bold; }
+    
+    .accounts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1.5rem;
+    }
+    .account-card {
+        background-color: var(--background-light);
+        border-radius: 8px;
+        padding: 1rem;
+        cursor: pointer;
+        position: relative;
+    }
+    .account-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+    .account-name { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .account-select-text { color: var(--text-muted); font-size: 0.9rem; }
+    .account-icons { display: flex; gap: 0.5rem; color: var(--text-muted); }
+    .account-subs {
+        background-color: var(--primary-color);
+        color: white;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        display: inline-block;
+        margin-top: 1rem;
+    }
+    .tradovate-logo {
+        position: absolute;
+        bottom: 1rem;
+        right: 1rem;
+        width: 35px;
+        height: 35px;
+        background-color: #2b3553;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const grid = document.getElementById('accounts-grid');
+        const dummyAccounts = [
+            { name: 'Bryan-Nolan', subs: 2 }, { name: 'Bryans-Mom', subs: 2 }, { name: 'grace', subs: 2 },
+            { name: 'Jess', subs: 2 }, { name: 'Koram', subs: 2 }, { name: 'mark', subs: 2 },
+            { name: 'Nelson', subs: 2 }, { name: 'Sam', subs: 1 }, { name: 'Tony', subs: 1 }, { name: 'whitney', subs: 1 }
+        ];
+
+        document.getElementById('account-count').textContent = `${dummyAccounts.length} Used / Unlimited`;
+
+        dummyAccounts.forEach(account => {
+            const card = document.createElement('div');
+            card.className = 'account-card';
+            card.innerHTML = `
+                <div class="account-card-header">
+                    <div>
+                        <div class="account-name">${account.name}</div>
+                        <div class="account-select-text">Double-click to select</div>
+                    </div>
+                    <div class="account-icons">
+                        <i class="material-icons" style="font-size: 18px;">edit</i>
+                        <i class="material-icons" style="font-size: 18px;">settings</i>
+                    </div>
+                </div>
+                <div class="account-subs">${account.subs} SUBS</div>
+                <div class="tradovate-logo">
+                    <i class="material-icons" style="color: #5e72e4;">trending_up</i>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    });
+</script>
+{% endblock %}

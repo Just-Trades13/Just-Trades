@@ -1,0 +1,301 @@
+//@version=5
+// ============================================================================
+// JADNQ Strategy - Optimized for Trade Manager & Tradovate Execution
+// ============================================================================
+// KEY IMPROVEMENTS FOR FILL ACCURACY & FLIP HANDLING:
+// 1. Strategy Properties: process_orders_on_close=true for bar-close fills
+// 2. Flip Sequencing: Close on Bar N, Open on Bar N+1 (prevents instant close/open)
+// 3. P&L Tracking: Entry price, stop loss, and take profit levels tracked
+// 4. Alert Format: Trade Manager compatible JSON with StopLoss & TakeProfit
+// 5. Fill Protection: 1-bar minimum hold before stop/trend divergence closes
+// 6. Commission & Slippage: Realistic costs for accurate backtesting
+//
+// ALERT FORMAT: "JADGC: action, Price = X, Ticker = Y, Period = Z, Action = action, Amount = N, StopLoss = S, TakeProfit = T"
+// Trade Manager parses: Action (long->buy, short->sell, flat->close), Price, Ticker, Amount
+// ============================================================================
+
+strategy("JADNQ", overlay=true, 
+         initial_capital=100000, 
+         default_qty_type=strategy.fixed, 
+         default_qty_value=1,
+         process_orders_on_close=true,  // Execute orders on bar close - MOST ACCURATE (matches real TradingView alerts)
+         close_entries_rule="ANY",      // Close entries before opening opposite (critical for flips)
+         pyramiding=0,                  // No pyramiding - single position only (prevents multiple fills)
+         calc_on_order_fills=true,      // Recalculate on fills for accurate P&L tracking
+         calc_on_every_tick=false,      // Only on bar close for consistency with process_orders_on_close
+         slippage=1,                     // 1 tick slippage assumption for realistic fill simulation
+         commission_type=strategy.commission.percent,
+         commission_value=0.1)           // 0.1% commission (adjust for your Tradovate commission rate)
+
+// Input parameters - OPTIMIZED FOR GOLD TRADING
+trailType = input.string(defval="modified", options=["modified", "unmodified"], title="Trail Type")
+movingAverageType = input.string(defval="exponential", options=["simple", "exponential", "weighted", "modified", "hull"], title="Moving Average Type")
+atrPeriod = input.int(defval=14, minval=1, title="ATR Period")
+ATRFactor = input.float(defval=2.0, minval=0.1, title="ATR Factor")
+Fib1Level = input.float(defval=38.2, minval=0.1, title="Fib 1 Level (%)")
+
+// Time Filter Inputs - OPTIMIZED FOR GOLD SESSION
+timeFilterEnabled = input.bool(defval=true, title="Enable Time Filter", group="Time Filter")
+startHour = input.int(defval=8, minval=0, maxval=23, title="Start Hour", group="Time Filter")
+startMinute = input.int(defval=0, minval=0, maxval=59, title="Start Minute", group="Time Filter")
+endHour = input.int(defval=17, minval=0, maxval=23, title="End Hour", group="Time Filter")
+endMinute = input.int(defval=0, minval=0, maxval=59, title="End Minute", group="Time Filter")
+
+// Time Filter Logic - Convert to time of day
+startTimeOfDay = startHour * 10000 + startMinute * 100
+endTimeOfDay = endHour * 10000 + endMinute * 100
+currentTimeOfDay = hour(time) * 10000 + minute(time) * 100
+
+timeInRange = timeFilterEnabled ? (currentTimeOfDay >= startTimeOfDay and currentTimeOfDay <= endTimeOfDay) : true
+
+// Real Price Calculations (open, high, low, close)
+op = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, open)
+hi = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, high)
+lo = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, low)
+cl = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, close)
+
+// Hull Moving Average Function
+hma(src, length) =>
+    ta.wma(2 * ta.wma(src, length / 2) - ta.wma(src, length), math.round(math.sqrt(length)))
+
+// Moving Average Selection Function
+getMA(type, src, length) =>
+    switch type
+        "simple" => ta.sma(src, length)
+        "exponential" => ta.ema(src, length)
+        "weighted" => ta.wma(src, length)
+        "modified" => ta.rma(src, length)
+        "hull" => hma(src, length)
+
+// Initialize variables using Real Prices
+smaMA = ta.sma(hi - lo, atrPeriod)
+HiLo = math.min((hi - lo), 1.5 * smaMA)
+HRef = lo <= hi[1] ? hi - cl[1] : (hi - cl[1]) - 0.5 * (lo - hi[1])
+LRef = hi >= lo[1] ? cl[1] - lo : (cl[1] - lo) - 0.5 * (lo[1] - hi)
+
+trueRange = trailType == "modified" ? math.max(HiLo, math.max(HRef, LRef)) : math.max(hi - lo, math.max(math.abs(hi - cl[1]), math.abs(lo - cl[1])))
+
+atrMA = getMA(movingAverageType, trueRange, atrPeriod)
+loss = ATRFactor * atrMA
+up = cl - loss
+down = cl + loss
+
+// Initialize trend variables based on Real Price Close
+var float trendUp = up[1]
+var float trendDown = down[1]
+var int trend = 1  // Assume initial trend is up
+
+var int entryTrend = na
+var float entryPrice = na  // Track entry price for P&L calculation
+var int lastBarTime = 0
+var bool enteredThisBar = false
+var bool flipInProgress = false
+var int flipTargetTrend = na  // Track which direction we're flipping to
+var int barsSinceEntry = 0
+var int lastEntryBarTime = 0
+var float currentStopLoss = na  // Current stop loss level
+var float currentTakeProfit = na  // Current take profit level
+
+// Calculate trend using Real Prices
+prevTrend = nz(trend[1], 1)
+prevTrendUp = nz(trendUp[1], up[1])
+prevTrendDown = nz(trendDown[1], down[1])
+
+trendUp := cl[1] > prevTrendUp ? math.max(up, prevTrendUp) : up
+trendDown := cl[1] < prevTrendDown ? math.min(down, prevTrendDown) : down
+trend := cl > prevTrendDown ? 1 : cl < prevTrendUp ? -1 : prevTrend
+trailStop = trend == 1 ? trendUp : trendDown
+
+// Calculate trend change
+trendChange = trend != prevTrend
+
+// Fibonacci Level Logic using Real Prices
+var float ex = na
+prevEx = nz(ex[1], cl)
+ex := (trend > 0 and prevTrend < 0) ? hi :
+      (trend < 0 and prevTrend > 0) ? lo :
+      trend == 1 ? math.max(prevEx, hi) :
+      trend == -1 ? math.min(prevEx, lo) :
+      prevEx
+
+fib1 = ex + (trailStop - ex) * Fib1Level / 100
+
+// Fibonacci Targets Logic
+var float switchVal = na
+var float diff = na
+switchVal := trendChange ? trailStop : nz(switchVal[1], cl)
+diff := trendChange ? cl - switchVal : nz(diff[1], 0)
+fibTgt1 = switchVal + (diff * 1.618)
+
+// Reset 'enteredThisBar' at the start of a new bar
+if time != lastBarTime
+    enteredThisBar := false
+    lastBarTime := time
+    barsSinceEntry := barsSinceEntry + 1
+
+// Trading Logic using Real Prices with Time Filter - FIXED FOR PROPER FLIP HANDLING
+// First, handle flips - close existing position first
+if (trendChange and not enteredThisBar and timeInRange and barstate.isconfirmed)
+    // Close existing position before flipping
+    if (trend == 1 and strategy.position_size < 0)
+        strategy.close_all(comment = "Flip Close Short")
+        flipInProgress := true
+        flipTargetTrend := 1  // We want to go long
+        entryTrend := na
+        entryPrice := na
+        currentStopLoss := na
+        currentTakeProfit := na
+        enteredThisBar := true
+        barsSinceEntry := 0
+        
+    else if (trend == -1 and strategy.position_size > 0)
+        strategy.close_all(comment = "Flip Close Long")
+        flipInProgress := true
+        flipTargetTrend := -1  // We want to go short
+        entryTrend := na
+        entryPrice := na
+        currentStopLoss := na
+        currentTakeProfit := na
+        enteredThisBar := true
+        barsSinceEntry := 0
+
+// Open new position on flip - wait for close to execute first (next bar)
+// Enter in the target direction (follow current trend if it still matches, or wait if trend changed)
+if (flipInProgress and not enteredThisBar and timeInRange and barstate.isconfirmed and strategy.position_size == 0)
+    if (flipTargetTrend == 1 and trend == 1)
+        // Enter long as planned
+        strategy.entry("Long", strategy.long, comment = "Flip Long Entry")
+        entryPrice := cl  // Track entry price at close
+        entryTrend := trend
+        currentStopLoss := trailStop  // Set stop loss level
+        currentTakeProfit := fibTgt1  // Set take profit level
+        enteredThisBar := true
+        lastEntryBarTime := time
+        barsSinceEntry := 0
+        flipInProgress := false  // Reset after entry
+        flipTargetTrend := na
+        
+    else if (flipTargetTrend == -1 and trend == -1)
+        // Enter short as planned
+        strategy.entry("Short", strategy.short, comment = "Flip Short Entry")
+        entryPrice := cl  // Track entry price at close
+        entryTrend := trend
+        currentStopLoss := trailStop  // Set stop loss level
+        currentTakeProfit := fibTgt1  // Set take profit level
+        enteredThisBar := true
+        lastEntryBarTime := time
+        barsSinceEntry := 0
+        flipInProgress := false  // Reset after entry
+        flipTargetTrend := na
+    else if (flipTargetTrend != trend)
+        // Trend changed before we could enter - cancel the flip and reset
+        flipInProgress := false
+        flipTargetTrend := na
+
+// Handle new entries when no position exists (first entry or after manual close)
+if (trendChange and not enteredThisBar and strategy.position_size == 0 and not flipInProgress and timeInRange and barstate.isconfirmed)
+    if (trend == 1)
+        strategy.entry("Long", strategy.long, comment = "New Long Entry")
+        entryPrice := cl  // Track entry price at close
+        entryTrend := trend
+        currentStopLoss := trailStop  // Set stop loss level
+        currentTakeProfit := fibTgt1  // Set take profit level
+        enteredThisBar := true
+        lastEntryBarTime := time
+        barsSinceEntry := 0
+        
+    else if (trend == -1)
+        strategy.entry("Short", strategy.short, comment = "New Short Entry")
+        entryPrice := cl  // Track entry price at close
+        entryTrend := trend
+        currentStopLoss := trailStop  // Set stop loss level
+        currentTakeProfit := fibTgt1  // Set take profit level
+        enteredThisBar := true
+        lastEntryBarTime := time
+        barsSinceEntry := 0
+
+// Update stop loss as trailStop moves (trailing stop)
+if strategy.position_size > 0 and not na(currentStopLoss)
+    currentStopLoss := math.max(currentStopLoss, trailStop)  // Long: stop can only move up
+else if strategy.position_size < 0 and not na(currentStopLoss)
+    currentStopLoss := math.min(currentStopLoss, trailStop)  // Short: stop can only move down
+
+// Only check for trend divergence after entry has had time to settle (prevent immediate closes)
+// Only close if trend diverged AND we haven't just entered AND it's not a flip scenario
+if barstate.isconfirmed and not na(entryTrend) and not flipInProgress and barsSinceEntry >= 1
+    if trend != entryTrend and strategy.position_size != 0
+        if strategy.position_size < 0
+            strategy.close_all(comment = "Trend Divergence Short")
+            entryTrend := na
+            entryPrice := na
+            currentStopLoss := na
+            currentTakeProfit := na
+            barsSinceEntry := 0
+
+        else if strategy.position_size > 0
+            strategy.close_all(comment = "Trend Divergence Long")
+            entryTrend := na
+            entryPrice := na
+            currentStopLoss := na
+            currentTakeProfit := na
+            barsSinceEntry := 0
+
+
+// stoploss Logic - Prevent triggering too early after entry
+var stop = false
+// Only trigger stop if we've held the position for at least 1 bar (prevents immediate stops after flip)
+stop := (barsSinceEntry >= 1) and (((ta.crossover(lo, trailStop)) and strategy.position_size > 0) or ((ta.crossover(hi, trailStop)) and strategy.position_size < 0))
+if stop and not flipInProgress
+    strategy.close_all(comment = 'Stop Hit')
+    entryTrend := na
+    entryPrice := na
+    currentStopLoss := na
+    currentTakeProfit := na
+    stop := false
+    barsSinceEntry := 0
+
+
+// Plotting for Visuals
+trailColor = trend == 1 ? color.green : trend == -1 ? color.red : color.gray
+plot(trailStop, color=trailColor, linewidth=2, title="TrailStop")
+
+plot_fibTgt1 = ((trend == 1 and fibTgt1 > trailStop) or (trend == -1 and fibTgt1 < trailStop)) and not trendChange ? fibTgt1 : na
+plot(plot_fibTgt1, color=color.white, linewidth=1, title="Fib Target 1")
+
+// OPTIMIZED ALERTS FOR TRADE MANAGER - USING TRADINGVIEW TEMPLATE VARIABLES
+// Format matches Trade Manager requirements: "JADNQ: {{strategy.order.action}}, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}"
+// Trade Manager parses: Action (long->buy, short->sell, flat->close), Price, Ticker, Amount
+
+// Primary Alert - Fires on all order actions (entries and exits)
+// This uses strategy.order.action which will be "buy", "sell", or empty for closes
+// strategy.market_position will be "long", "short", or "flat"
+alertcondition(barstate.isconfirmed and (trendChange or stop or (strategy.position_size == 0 and strategy.position_size[1] != 0)) and timeInRange, 
+               title="JADNQ Trade Signal", 
+               message="JADNQ: {{strategy.order.action}}, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+// Entry Alerts - Detect when position opens (handles both flip and new entries)
+entryLongDetected = strategy.position_size > 0 and strategy.position_size[1] <= 0
+entryShortDetected = strategy.position_size < 0 and strategy.position_size[1] >= 0
+
+alertcondition(barstate.isconfirmed and entryLongDetected and timeInRange, 
+               title="JADNQ Long Entry", 
+               message="JADNQ: buy, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+alertcondition(barstate.isconfirmed and entryShortDetected and timeInRange, 
+               title="JADNQ Short Entry", 
+               message="JADNQ: sell, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+// Position Close Alerts - Detect when position closes (all scenarios: flip, stop, divergence, TP)
+closeLongDetected = strategy.position_size <= 0 and strategy.position_size[1] > 0
+closeShortDetected = strategy.position_size >= 0 and strategy.position_size[1] < 0
+
+alertcondition(barstate.isconfirmed and closeLongDetected and timeInRange, 
+               title="JADNQ Long Close", 
+               message="JADNQ: close, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+alertcondition(barstate.isconfirmed and closeShortDetected and timeInRange, 
+               title="JADNQ Short Close", 
+               message="JADNQ: close, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+// takeprofit Logic - Single contract, single target
+strategy.exit('TP1-targ',qty = 1, limit = fibTgt1)

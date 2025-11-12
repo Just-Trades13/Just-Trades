@@ -1,0 +1,66 @@
+{
+  "pages_visited": [
+    {
+      "url": "/user/dashboard",
+      "status": "extracted"
+    },
+    {
+      "url": "/user/strats",
+      "status": "extracted"
+    },
+    {
+      "url": "/user/strat",
+      "status": "extracted"
+    },
+    {
+      "url": "/user/at/accnts",
+      "status": "extracted"
+    },
+    {
+      "url": "/user/at/accntsetup",
+      "status": "in_progress"
+    }
+  ],
+  "api_endpoints": {
+    "GET": [
+      "/api/system/csrf-token/",
+      "/api/auth/check-auth/",
+      "/api/accounts/get-all-at-accounts/",
+      "/api/strategies/",
+      "/api/strategies/get-strat/",
+      "/api/trades/",
+      "/api/trades/open/",
+      "/api/trades/tickers/",
+      "/api/trades/timeframes/",
+      "/api/profiles/get-limits/",
+      "/api/profiles/get-stat-config/",
+      "/api/profiles/get-favorites/",
+      "/api/profiles/get-widget-info/"
+    ],
+    "POST": [
+      "/api/auth/login/",
+      "/api/profiles/update-stat-config/",
+      "/api/profiles/set-favorites/"
+    ]
+  },
+  "remaining_pages": [
+    "/user/at/strats",
+    "/user/at/controls",
+    "/user/settings"
+  ],
+  "need_to_capture": {
+    "post_requests": [
+      "Add account form submission",
+      "Create strategy form submission",
+      "Edit account",
+      "Edit strategy",
+      "Delete account",
+      "Delete strategy",
+      "Refresh subaccount"
+    ],
+    "response_formats": [
+      "All GET endpoint responses",
+      "All POST endpoint responses"
+    ]
+  }
+}

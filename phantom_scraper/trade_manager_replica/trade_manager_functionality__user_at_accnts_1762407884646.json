@@ -1,0 +1,2810 @@
+{
+  "timestamp": "2025-11-06T05:44:22.015Z",
+  "url": "https://trademanagergroup.com/user/at/accnts",
+  "page": "/user/at/accnts",
+  "apiCalls": [],
+  "websockets": [
+    {
+      "url": "wss://trademanagergroup.com:5000/ws",
+      "protocols": [],
+      "timestamp": "2025-11-06T05:44:25.695Z",
+      "messages": [
+        {
+          "type": "sent",
+          "data": "{\"type\":\"AUTH\",\"user\":\"J.T.M.J\",\"token\":\"2btylfl2bo4w9lqptbroqvtb103q561y\"}",
+          "timestamp": "2025-11-06T05:44:25.793Z"
+        },
+        {
+          "type": "received",
+          "data": "{\"data\": \"\\u2705 Server Connection Established Successfully!\"}",
+          "timestamp": "2025-11-06T05:44:25.875Z"
+        },
+        {
+          "type": "sent",
+          "data": "{\"type\":\"ACCSETUP\",\"id\":1491,\"user\":\"J.T.M.J\"}",
+          "timestamp": "2025-11-06T05:44:25.876Z"
+        },
+        {
+          "type": "received",
+          "data": "{\"type\": \"ACCSETUP_COMPLETE\", \"status\": \"Success\"}",
+          "timestamp": "2025-11-06T05:44:26.141Z"
+        }
+      ],
+      "events": [
+        {
+          "type": "open",
+          "timestamp": "2025-11-06T05:44:25.793Z"
+        },
+        {
+          "type": "close",
+          "code": 1005,
+          "reason": "",
+          "timestamp": "2025-11-06T05:44:26.165Z"
+        }
+      ]
+    },
+    {
+      "url": "wss://trademanagergroup.com:5000/ws",
+      "protocols": [],
+      "timestamp": "2025-11-06T05:44:27.228Z",
+      "messages": [
+        {
+          "type": "sent",
+          "data": "{\"type\":\"AUTH\",\"user\":\"J.T.M.J\",\"token\":\"2btylfl2bo4w9lqptbroqvtb103q561y\"}",
+          "timestamp": "2025-11-06T05:44:27.325Z"
+        },
+        {
+          "type": "received",
+          "data": "{\"data\": \"\\u2705 Server Connection Established Successfully!\"}",
+          "timestamp": "2025-11-06T05:44:27.406Z"
+        },
+        {
+          "type": "sent",
+          "data": "{\"type\":\"ACCSETUP\",\"id\":1673,\"user\":\"J.T.M.J\"}",
+          "timestamp": "2025-11-06T05:44:27.406Z"
+        },
+        {
+          "type": "received",
+          "data": "{\"type\": \"ACCSETUP_COMPLETE\", \"status\": \"Success\"}",
+          "timestamp": "2025-11-06T05:44:27.658Z"
+        }
+      ],
+      "events": [
+        {
+          "type": "open",
+          "timestamp": "2025-11-06T05:44:27.325Z"
+        },
+        {
+          "type": "close",
+          "code": 1005,
+          "reason": "",
+          "timestamp": "2025-11-06T05:44:27.685Z"
+        }
+      ]
+    },
+    {
+      "url": "wss://trademanagergroup.com:5000/ws",
+      "protocols": [],
+      "timestamp": "2025-11-06T05:44:28.679Z",
+      "messages": [
+        {
+          "type": "sent",
+          "data": "{\"type\":\"AUTH\",\"user\":\"J.T.M.J\",\"token\":\"2btylfl2bo4w9lqptbroqvtb103q561y\"}",
+          "timestamp": "2025-11-06T05:44:28.767Z"
+        },
+        {
+          "type": "received",
+          "data": "{\"data\": \"\\u2705 Server Connection Established Successfully!\"}",
+          "timestamp": "2025-11-06T05:44:28.847Z"
+        },
+        {
+          "type": "sent",
+          "data": "{\"type\":\"ACCSETUP\",\"id\":1524,\"user\":\"J.T.M.J\"}",
+          "timestamp": "2025-11-06T05:44:28.847Z"
+        },
+        {
+          "type": "received",
+          "data": "{\"type\": \"ACCSETUP_COMPLETE\", \"status\": \"Success\"}",
+          "timestamp": "2025-11-06T05:44:29.231Z"
+        }
+      ],
+      "events": [
+        {
+          "type": "open",
+          "timestamp": "2025-11-06T05:44:28.767Z"
+        },
+        {
+          "type": "close",
+          "code": 1005,
+          "reason": "",
+          "timestamp": "2025-11-06T05:44:29.258Z"
+        }
+      ]
+    }
+  ],
+  "eventListeners": [
+    {
+      "selector": "script",
+      "id": "",
+      "class": "",
+      "tag": "script",
+      "events": [
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function(){var W;((W=v())==null?0:W.loaded)||Q()}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function(){c.onFailure()}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "body",
+      "id": "",
+      "class": "",
+      "tag": "body",
+      "events": [
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "paste",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keyup",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerdown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerup",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointermove",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#root",
+      "id": "root",
+      "class": "",
+      "tag": "div",
+      "events": [
+        {
+          "type": "abort",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "auxclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplay",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplaythrough",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            },
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "close",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "contextmenu",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "copy",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cut",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drag",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragenter",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragexit",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragleave",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drop",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "durationchange",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "emptied",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "encrypted",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ended",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "gotpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "input",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keypress",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keyup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadeddata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadedmetadata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "lostpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousedown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousemove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "paste",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pause",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "play",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "playing",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointercancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerdown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointermove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "progress",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ratechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "reset",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "resize",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeked",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeking",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "stalled",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "submit",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "suspend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "timeupdate",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchcancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "volumechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "scroll",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "toggle",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchmove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "waiting",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "wheel",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "animationend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationiteration",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dblclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "transitionend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "change",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "textInput",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionupdate",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".minimize-sidebar",
+      "id": "",
+      "class": "minimize-sidebar btn btn-link btn-just-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".simple-text",
+      "id": "",
+      "class": "simple-text logo-mini active",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".simple-text",
+      "id": "",
+      "class": "simple-text logo-normal active",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".active",
+      "id": "",
+      "class": "active",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#tooltip209599",
+      "id": "tooltip209599",
+      "class": "minimize-sidebar btn-just-icon btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".navbar-toggler",
+      "id": "",
+      "class": "navbar-toggler",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".navbar-brand",
+      "id": "",
+      "class": "navbar-brand",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#darkModeToggle",
+      "id": "darkModeToggle",
+      "class": "btn-icon btn-round me-2 btn btn-dark",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".d-flex",
+      "id": "",
+      "class": "d-flex align-items-center p-0 dropdown-toggle nav-link",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".rounded-circle",
+      "id": "",
+      "class": "rounded-circle",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".dropdown-item",
+      "id": "",
+      "class": "dropdown-item",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".account-add-btn",
+      "id": "",
+      "class": "account-add-btn btn btn-secondary",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".custom-search-input",
+      "id": "",
+      "class": "custom-search-input form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#deleteBtn",
+      "id": "deleteBtn",
+      "class": "btn-ghost-red btn btn-secondary",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#clearBtn",
+      "id": "clearBtn",
+      "class": "btn-ghost-blue btn btn-secondary",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card  ",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card  ",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card  ",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card  ",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card  ",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card  ",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card  ",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card  ",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card  ",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".flip-card",
+      "id": "",
+      "class": "flip-card flipped selected",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-edit-icon",
+      "id": "",
+      "class": "btn-edit-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn-refresh-icon",
+      "id": "",
+      "class": "btn-refresh-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "iframe",
+      "id": "",
+      "class": "",
+      "tag": "iframe",
+      "events": [
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function(t,D){(0,(t=(D=[2,1,18],C)[36](D[0],O,L[13](24,null,G[D[2]](19,D[1],V),U),mj()-U),UQ).cP)(t)}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "formSubmissions": [],
+  "componentData": {
+    "dataAttributes": {
+      "data-toggle": [
+        {
+          "value": "collapse",
+          "selector": "A"
+        }
+      ],
+      "data-style": [
+        {
+          "value": "bottomright",
+          "selector": ".grecaptcha-badge"
+        }
+      ]
+    },
+    "components": {
+      "root": {
+        "tag": "div",
+        "classes": "",
+        "text": "Trade ManagerDashboardMy RecordersTraderAMAccount ManagementSSMy TradersCCControl CenterSettingsAcco"
+      },
+      "tooltip209599": {
+        "tag": "button",
+        "classes": "minimize-sidebar btn-just-icon btn btn-link",
+        "text": ""
+      },
+      "darkModeToggle": {
+        "tag": "button",
+        "classes": "btn-icon btn-round me-2 btn btn-dark",
+        "text": ""
+      },
+      "deleteBtn": {
+        "tag": "button",
+        "classes": "btn-ghost-red btn btn-secondary",
+        "text": " Delete"
+      },
+      "clearBtn": {
+        "tag": "button",
+        "classes": "btn-ghost-blue btn btn-secondary",
+        "text": " Clear Trades"
+      },
+      "g-recaptcha-response-100000": {
+        "tag": "textarea",
+        "classes": "g-recaptcha-response",
+        "text": ""
+      }
+    }
+  },
+  "networkRequests": [],
+  "localStorage": {
+    "lastTicker": "MES1!",
+    "_grecaptcha": "09ADiQh0fBb6P-FzhnnMZgStc2AYXLLl2-c6TdKjB3hlkm_1iw8m-4tXDaG9IbUBB96e9jK2YloCm58pMOw77S6T1r9BFjuwcZ7k6tZtgZEh365S0Qc3BdX-x2HuVkIG6FHT0",
+    "lastStrategy": "JADDCAVIXES",
+    "auth": "{\"isAuthenticated\":true,\"user\":{\"username\":\"J.T.M.J\",\"email\":\"just.trades.chicago@gmail.com\",\"admin\":false,\"DiscordID\":\"963881348039340122\",\"access\":\"full\",\"signed\":true,\"is_email_verified\":true,\"sessionId\":\"2btylfl2bo4w9lqptbroqvtb103q561y\"}}"
+  },
+  "sessionStorage": {
+    "auth": "{\"isAuthenticated\":true,\"user\":{\"username\":\"J.T.M.J\",\"email\":\"just.trades.chicago@gmail.com\",\"admin\":false,\"DiscordID\":\"963881348039340122\",\"access\":\"full\",\"signed\":true,\"is_email_verified\":true}}"
+  },
+  "cookies": "csrftoken=0JjCf9MUZjtIdqSJYVpITJmGLyPEWg34; _ga=GA1.2.1413952153.1744203650; _gat_gtag_UA_XXXXX_Y=1; _gid=GA1.2.739036613.1762399831"
+}

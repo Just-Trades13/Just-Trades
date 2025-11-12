@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Test</title>
+</head>
+<body>
+    <h1>Debug Test</h1>
+    <button onclick="testSearch()">Test Search</button>
+    <div id="results"></div>
+
+    <script>
+        async function testSearch() {
+            try {
+                console.log('Testing search...');
+                const response = await fetch('http://localhost:5004/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: 'react', searchType: 'github' })
+                });
+                
+                const data = await response.json();
+                console.log('Response:', data);
+                
+                document.getElementById('results').innerHTML = `
+                    <h2>Raw Response:</h2>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                    
+                    <h2>GitHub Developers Found:</h2>
+                    <p>Count: ${data.formatted_sources?.github?.developers?.length || 0}</p>
+                    
+                    ${data.formatted_sources?.github?.developers?.map(dev => `
+                        <div style="border: 1px solid #ccc; padding: 10px; margin: 10px;">
+                            <strong>${dev.username}</strong><br>
+                            Name: ${dev.name || 'N/A'}<br>
+                            Company: ${dev.company || 'N/A'}<br>
+                            Followers: ${dev.followers}<br>
+                            <a href="${dev.profile_url}" target="_blank">Profile</a>
+                        </div>
+                    `).join('') || 'No developers found'}
+                `;
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('results').innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

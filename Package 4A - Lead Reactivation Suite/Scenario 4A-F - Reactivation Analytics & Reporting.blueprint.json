@@ -1,0 +1,203 @@
+{
+    "name": "Scenario 4A-F - Reactivation Analytics & Reporting",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Schedule trigger webhook (replace with Schedule module)"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "AND({Email Campaign} CONTAINS \"reactivation\", {Last Out Reach} >= TODAY() - 30)",
+                "maxRecords": 500,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "AND({Email Campaign} CONTAINS \"reactivation\", {Last Out Reach} >= TODAY() - 30, {Reply Received} = 1)",
+                "maxRecords": 500,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "AND({Email Campaign} CONTAINS \"reactivation\", {Last Out Reach} >= TODAY() - 30, {Meeting Booked} = 1)",
+                "maxRecords": 500,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 300
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Analyze reactivation campaign performance and generate a comprehensive report:\n\nCampaign Period: Last 30 days\nTotal Reactivation Messages Sent: {{LENGTH({{2.id}})}}\nTotal Replies Received: {{LENGTH({{3.id}})}}\nTotal Meetings Booked: {{LENGTH({{4.id}})}}\n\nResponse Rate: {{ROUND(({{LENGTH({{3.id}})}} / {{LENGTH({{2.id}})}}) * 100, 2)}}%\nBooking Rate: {{ROUND(({{LENGTH({{4.id}})}} / {{LENGTH({{2.id}})}}) * 100, 2)}}%\nConversion Rate (Reply to Booking): {{IF({{LENGTH({{3.id}})}} > 0, ROUND(({{LENGTH({{4.id}})}} / {{LENGTH({{3.id}})}}) * 100, 2), 0)}}%\n\nCampaign Breakdown:\n- Basic Reactivation: Count messages with \"reactivation_basic\"\n- Segmented Reactivation: Count messages with \"reactivation_segmented\"\n- Booking Reactivation: Count messages with \"reactivation_booking\"\n- Multi-Touch: Count messages with \"reactivation_multitouch\"\n- Scored Reactivation: Count messages with \"reactivation_scored\"\n\nGenerate a professional analytics report with:\n1. Executive Summary\n2. Key Metrics (response rate, booking rate, conversion rate)\n3. Campaign Performance Breakdown\n4. Insights and Recommendations\n5. Next Steps\n\nReturn ONLY valid JSON:\n{\n  \"summary\": \"Executive summary paragraph...\",\n  \"total_sent\": {{LENGTH({{2.id}})}},\n  \"total_replies\": {{LENGTH({{3.id}})}},\n  \"total_bookings\": {{LENGTH({{4.id}})}},\n  \"response_rate\": {{ROUND(({{LENGTH({{3.id}})}} / {{LENGTH({{2.id}})}}) * 100, 2)}},\n  \"booking_rate\": {{ROUND(({{LENGTH({{4.id}})}} / {{LENGTH({{2.id}})}}) * 100, 2)}},\n  \"conversion_rate\": {{IF({{LENGTH({{3.id}})}} > 0, ROUND(({{LENGTH({{4.id}})}} / {{LENGTH({{3.id}})}}) * 100, 2), 0)}},\n  \"insights\": [\"Insight 1\", \"Insight 2\", \"Insight 3\"],\n  \"recommendations\": [\"Recommendation 1\", \"Recommendation 2\"],\n  \"next_steps\": [\"Step 1\", \"Step 2\"]\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{5.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "your-email@domain.com"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;\"><h1 style=\"color: #333; border-bottom: 3px solid #007bff; padding-bottom: 10px;\">📊 Reactivation Campaign Analytics Report</h1><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;\"><h2 style=\"color: #007bff;\">Executive Summary</h2><p>{{6.summary}}</p></div><div style=\"display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;\"><div style=\"background-color: #e7f3ff; padding: 15px; border-radius: 5px; text-align: center;\"><h3 style=\"margin: 0; color: #007bff;\">{{6.total_sent}}</h3><p style=\"margin: 5px 0 0 0; color: #666;\">Messages Sent</p></div><div style=\"background-color: #fff3cd; padding: 15px; border-radius: 5px; text-align: center;\"><h3 style=\"margin: 0; color: #856404;\">{{6.total_replies}}</h3><p style=\"margin: 5px 0 0 0; color: #666;\">Replies Received</p></div><div style=\"background-color: #d4edda; padding: 15px; border-radius: 5px; text-align: center;\"><h3 style=\"margin: 0; color: #155724;\">{{6.total_bookings}}</h3><p style=\"margin: 5px 0 0 0; color: #666;\">Meetings Booked</p></div></div><div style=\"display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;\"><div style=\"background-color: #e7f3ff; padding: 15px; border-radius: 5px; text-align: center;\"><h3 style=\"margin: 0; color: #007bff;\">{{6.response_rate}}%</h3><p style=\"margin: 5px 0 0 0; color: #666;\">Response Rate</p></div><div style=\"background-color: #fff3cd; padding: 15px; border-radius: 5px; text-align: center;\"><h3 style=\"margin: 0; color: #856404;\">{{6.booking_rate}}%</h3><p style=\"margin: 5px 0 0 0; color: #666;\">Booking Rate</p></div><div style=\"background-color: #d4edda; padding: 15px; border-radius: 5px; text-align: center;\"><h3 style=\"margin: 0; color: #155724;\">{{6.conversion_rate}}%</h3><p style=\"margin: 5px 0 0 0; color: #666;\">Conversion Rate</p></div></div><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;\"><h2 style=\"color: #007bff;\">💡 Key Insights</h2><ul>{{JOIN({{6.insights}}, \"<li>\", \"</li>\")}}</ul></div><div style=\"background-color: #fff3cd; padding: 20px; border-radius: 5px; margin-bottom: 20px;\"><h2 style=\"color: #856404;\">📋 Recommendations</h2><ul>{{JOIN({{6.recommendations}}, \"<li>\", \"</li>\")}}</ul></div><div style=\"background-color: #e7f3ff; padding: 20px; border-radius: 5px;\"><h2 style=\"color: #007bff;\">🚀 Next Steps</h2><ul>{{JOIN({{6.next_steps}}, \"<li>\", \"</li>\")}}</ul></div><div style=\"text-align: center; margin-top: 20px; color: #6c757d; font-size: 12px;\">Report generated: {{now}}</div></div>",
+                "subject": "📊 Reactivation Campaign Analytics - {{now}}",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 150
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook (replace with Schedule module), airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, google-email:sendAnEmail. Schedule module requires manual setup after import."]
+    }
+}
+

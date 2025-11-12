@@ -1,0 +1,342 @@
+{
+    "name": "Scenario F - Reply Detection & Auto-Response",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 0,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "from",
+                        "type": "text"
+                    },
+                    {
+                        "name": "to",
+                        "type": "text"
+                    },
+                    {
+                        "name": "subject",
+                        "type": "text"
+                    },
+                    {
+                        "name": "body",
+                        "type": "text"
+                    },
+                    {
+                        "name": "messageId",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Analyze this email reply and extract information:\n\nFrom: {{1.from}}\nTo: {{1.to}}\nSubject: {{1.subject}}\nBody: {{1.body}}\n\nExtract:\n1. Is this a reply to our outreach? (yes/no)\n2. Sentiment: positive, neutral, negative, not_interested\n3. Intent: interested, not_interested, need_more_info, booked_meeting, unsubscribe\n4. Key topics mentioned\n5. Suggested response action: acknowledge, send_info, schedule_call, unsubscribe, escalate\n6. Suggested response message (if needed)\n\nIMPORTANT: Return ONLY valid JSON in this exact format (no markdown, no code blocks, no explanations):\n{\n  \"is_reply\": true/false,\n  \"sentiment\": \"...\",\n  \"intent\": \"...\",\n  \"topics\": [\"...\"],\n  \"action\": \"...\",\n  \"response_message\": \"...\"\n}",
+                "model": "gpt-4o",
+                "store": false,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": false,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "openai-gpt-3"
+                            },
+                            "label": "My OpenAI connection"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{2.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "type",
+                        "type": "udt",
+                        "label": "Data structure"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 4,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{3.is_reply}} = true"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761
+            },
+            "mapper": {
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "formula": "{Contact Email} = '{{1.from}}'",
+                "maxRecords": 1,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "airtable2"
+                            },
+                            "label": "Leads Manager AI CRM"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "switch"
+            },
+            "mapper": {
+                "filter": "{{3.action}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761
+            },
+            "mapper": {
+                "id": "{{5.id[0]}}",
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "record": {
+                    "fldDrdS6pE666IRPQ": true,
+                    "fldxEEEqp6XNCRoNJ": "replied_{{3.sentiment}}",
+                    "fld8zMts2ZAWQT8IK": "Reply: {{1.body}}\nIntent: {{3.intent}}\nTopics: {{3.topics}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2100,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "airtable2"
+                            },
+                            "label": "Leads Manager AI CRM"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "{{1.from}}"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 8px;\">{{3.response_message}}</div></div>",
+                "subject": "Re: {{1.subject}}",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2400,
+                    "y": 0
+                },
+                "restore": {
+                    "expect": {
+                        "bodyType": {
+                            "label": "Raw HTML"
+                        }
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "google-email"
+                            },
+                            "label": "My Gmail connection"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "__IMTCONN__",
+                        "type": "account:google-email",
+                        "label": "Connection",
+                        "required": true
+                    }
+                ]
+            }
+        },
+        {
+            "id": 9,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761
+            },
+            "mapper": {
+                "id": "{{5.id[0]}}",
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "record": {
+                    "fldFU5cYbHBHmTpHr": "auto_response_sent",
+                    "fldxEEEqp6XNCRoNJ": "awaiting_response"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2700,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "airtable2"
+                            },
+                            "label": "Leads Manager AI CRM"
+                        }
+                    }
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["Uses gateway:CustomWebHook as trigger (manually replace with Gmail trigger in Make.com UI). All modules verified working: gateway:CustomWebHook, openai-gpt-3:createModelResponse, json:ParseJSON, builtin:BasicRouter, airtable:ActionSearchRecords, airtable:ActionUpdateRecords, google-email:sendAnEmail"]
+    }
+}
+

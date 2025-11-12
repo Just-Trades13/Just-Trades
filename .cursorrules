@@ -1,0 +1,107 @@
+# Cursor AI Workflow Rules
+# Based on best practices for efficient AI-assisted development
+
+## Core Principles
+
+1. **Only modify code directly relevant to the specific request**
+   - Avoid changing unrelated functionality
+   - Don't refactor code that wasn't requested
+   - Keep changes focused and minimal
+
+2. **Never use placeholders or incomplete code**
+   - Never replace code with placeholders like `// ... rest of the processing ...` or `# TODO: implement this`
+   - Always include complete, working code
+   - If something is complex, break it into smaller steps but complete each step fully
+
+3. **Provide context-aware suggestions**
+   - Reference existing code patterns when making suggestions
+   - Match the style and structure of existing code in the project
+   - Use similar patterns found in the codebase
+
+4. **Plan before implementing**
+   - Break complex problems into smaller, manageable steps
+   - Explain the approach before making changes
+   - Consider edge cases and error handling
+
+5. **Preserve existing functionality**
+   - Don't break working code while fixing or adding features
+   - Test assumptions before making changes
+   - Maintain backward compatibility when possible
+
+## Project-Specific Guidelines
+
+### Python Files
+- Follow PEP 8 style guidelines
+- Include proper error handling with try/except blocks
+- Add docstrings for functions and classes
+- Use type hints when appropriate
+- Handle API rate limits and authentication errors gracefully
+
+### Make.com Blueprint Files (JSON)
+- Maintain valid JSON structure
+- Preserve module IDs and connections
+- Keep field mappings consistent with existing patterns
+- Validate JSON structure before suggesting changes
+- Reference existing blueprints for similar patterns
+
+### API Integrations
+- Always handle authentication properly
+- Include error handling for API failures (401, 403, 404, 429, etc.)
+- Respect rate limits and implement retry logic
+- Validate API responses before processing
+- Use environment variables for sensitive credentials (never hardcode)
+
+### Data Structures
+- Maintain consistency with existing data schemas
+- Validate data types and formats
+- Handle missing or null values appropriately
+- Use consistent field naming conventions
+
+### Testing
+- When suggesting test files, include comprehensive test cases
+- Test both success and failure scenarios
+- Include edge cases and boundary conditions
+
+## Common Patterns to Follow
+
+### When fixing errors:
+1. Identify the root cause first
+2. Explain what went wrong
+3. Provide the fix with context
+4. Suggest preventive measures if applicable
+
+### When adding features:
+1. Check for existing similar functionality first
+2. Reuse existing patterns and utilities
+3. Follow the established architecture
+4. Update related documentation if needed
+
+### When refactoring:
+1. Only refactor when explicitly requested
+2. Maintain all existing functionality
+3. Test thoroughly after refactoring
+4. Keep changes incremental and focused
+
+## Communication Style
+
+- Be clear and concise in explanations
+- Provide code examples when helpful
+- Reference specific files and line numbers when relevant
+- Suggest improvements when appropriate, but don't implement without permission
+- Acknowledge limitations and uncertainties
+
+## Error Prevention
+
+- Always validate inputs before processing
+- Check for null/undefined values
+- Handle edge cases explicitly
+- Include proper error messages
+- Log errors for debugging (but don't expose sensitive data)
+
+## Documentation
+
+- Update README files when adding new features
+- Add comments for complex logic
+- Document API endpoints and their expected inputs/outputs
+- Keep setup guides current with any changes
+

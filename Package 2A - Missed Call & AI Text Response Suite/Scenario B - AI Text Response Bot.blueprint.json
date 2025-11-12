@@ -1,0 +1,307 @@
+{
+    "name": "Scenario 2A-B - AI Text Response Bot",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio incoming SMS webhook"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "MessageSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "From",
+                        "type": "text"
+                    },
+                    {
+                        "name": "To",
+                        "type": "text"
+                    },
+                    {
+                        "name": "Body",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "UPPER({{1.Body}}) CONTAINS \"STOP\" OR UPPER({{1.Body}}) CONTAINS \"UNSUBSCRIBE\" OR UPPER({{1.Body}}) CONTAINS \"CANCEL\""
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "{Contact Phone} = '{{1.From}}'",
+                "maxRecords": 1,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 50
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are a helpful customer service representative for a business automation and lead generation company.\n\nCustomer Message: {{1.Body}}\n\nCustomer Phone: {{1.From}}\n\nContext:\nCustomer Information:\n- Company: {{3.Company[0]}}\n- Contact Name: {{3.`Contact Full Name`[0]}}\n- Industry: {{3.Industry[0]}}\n- Status: {{3.Status[0]}}\n- Previous Notes: {{3.Notes[0]}}\n\nYour goal is to:\n1. Answer their question or respond helpfully\n2. Ask qualifying questions if they're interested in services\n3. Provide value and build rapport\n4. Guide them toward booking a call or appointment\n5. Be friendly, professional, and concise\n\nKeep responses under 160 characters when possible for SMS.\n\nIMPORTANT: Return ONLY valid JSON (no markdown, no code blocks):\n{\n  \"response\": \"Your helpful response here\",\n  \"intent\": \"question\",\n  \"needs_followup\": false,\n  \"booking_requested\": false\n}\n\nIntent can be: question, inquiry, complaint, booking, opt_out\n\nIf they mention booking, appointment, meeting, call, or schedule, set booking_requested to true.",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{4.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 250
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.From}}",
+                "from": "{{1.To}}",
+                "body": "{{5.response}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{3.id[0]}} is empty"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Contact Phone": "{{1.From}}",
+                    "Status": "{{5.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "SMS Conversation:\nIncoming: {{1.Body}}\nAI Response: {{5.response}}\nIntent: {{5.intent}}\nBooking Requested: {{5.booking_requested}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 50
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{3.id[0]}}",
+                "record": {
+                    "Status": "{{5.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "{{3.Notes[0]}}\n\n--- SMS at {{now}} ---\nIncoming: {{1.Body}}\nAI Response: {{5.response}}\nIntent: {{5.intent}}\nBooking Requested: {{5.booking_requested}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 450
+                }
+            }
+        },
+        {
+            "id": 10,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.From}}",
+                "from": "{{1.To}}",
+                "body": "You have been unsubscribed. You will no longer receive messages. Reply START to resume."
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 450
+                }
+            }
+        },
+        {
+            "id": 11,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{3.id[0]}}",
+                "record": {
+                    "Status": "opted_out",
+                    "Do Not Contact": 1,
+                    "Notes": "{{3.Notes[0]}}\n\n--- Opted out via SMS at {{now}} ---"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 450
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook, builtin:BasicRouter, airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, twilio:CreateMessage, airtable:ActionCreateRecord, airtable:ActionUpdateRecords"]
+    }
+}
+

@@ -1,0 +1,167 @@
+Heres what happens when you click create new strategy when you're inside the my recorders tab//box-sizing: border-box;
+color: rgb(82, 95, 127);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 18px;
+font-weight: 400;
+height: 602px;
+line-height: 27px;
+text-align: left;
+width: 3818px;
+-webkit-font-smoothing: antialiased;
+---discord_-server: TRADE_MANAGER;
+--accent-color: #60a5fa;
+--background-color: #000000;
+--background-dark: #0f172a;
+--background-light: #fff;
+--blue: #5e72e4;
+--branding: [object Object];
+--breakpoint-lg: 992px;
+--breakpoint-md: 768px;
+--breakpoint-sm: 576px;
+--breakpoint-xl: 1200px;
+--breakpoint-xs: 0;
+--col-account: 20%;
+--col-enable: 12%;
+--col-max: 18%;
+--col-mult: 20%;
+--col-ticker: 30%;
+--company-name: Trade Manager;
+--cyan: #2bffc6;
+--danger: #fd5d93;
+--danger-color: #fd5d93;
+--dark: #212529;
+--darker: #000;
+--default: #344675;
+--error-color: #ff4e4e;
+--features: [object Object];
+--font-family-monospace: SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+--font-family-sans-serif: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans","Liberation Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
+--gray: #6c757d;
+--gray-dark: #32325d;
+--green: #2dce89;
+--indigo: #5603ad;
+--info: #1d8cf8;
+--info-color: #1d8cf8;
+--light: #adb5bd;
+--lighter: #e9ecef;
+--neutral: #fff;
+--orange: #fb6340;
+--pink: #f3a4b5;
+--primary: #e14eca;
+--primary-color: #2cc511;
+--primary-dark: #007a06;
+--purple: #8965e0;
+--red: #f5365c;
+--secondary: #f4f5f7;
+--secondary-color: #1d2235;
+--sidebar-color: #334155;
+--success: #00f2c3;
+--success-color: #00f2c3;
+--table-min-width: 720px;
+--teal: #11cdef;
+--text-light: #f2f2f2;
+--text-muted: #ccc;
+--theme: [object Object];
+--toastify-color-dark: #121212;
+--toastify-color-error: #e74d3c;
+--toastify-color-info: #3498db;
+--toastify-color-light: #fff;
+--toastify-color-progress-bgo: 0.2;
+--toastify-color-progress-dark: #bb86fc;
+--toastify-color-progress-error: #e74d3c;
+--toastify-color-progress-info: #3498db;
+--toastify-color-progress-light: linear-gradient(90deg,#4cd964,#5ac8fa,#007aff,#34aadc,#5856d6,#ff2d55);
+--toastify-color-progress-success: #07bc0c;
+--toastify-color-progress-warning: #f1c40f;
+--toastify-color-success: #07bc0c;
+--toastify-color-transparent: #ffffffb3;
+--toastify-color-warning: #f1c40f;
+--toastify-container-width: fit-content;
+--toastify-font-family: sans-serif;
+--toastify-icon-color-error: #e74d3c;
+--toastify-icon-color-info: #3498db;
+--toastify-icon-color-success: #07bc0c;
+--toastify-icon-color-warning: #f1c40f;
+--toastify-spinner-color: #616161;
+--toastify-spinner-color-empty-area: #e0e0e0;
+--toastify-text-color-dark: #fff;
+--toastify-text-color-error: #fff;
+--toastify-text-color-info: #fff;
+--toastify-text-color-light: #757575;
+--toastify-text-color-success: #fff;
+--toastify-text-color-warning: #fff;
+--toastify-toast-background: #fff;
+--toastify-toast-bd-radius: 6px;
+--toastify-toast-bottom: max(16px,0px);
+--toastify-toast-left: max(16px,0px);
+--toastify-toast-max-height: 800px;
+--toastify-toast-min-height: 64px;
+--toastify-toast-offset: 16px;
+--toastify-toast-padding: 14px;
+--toastify-toast-right: max(16px,0px);
+--toastify-toast-shadow: 0px 4px 12px #0000001a;
+--toastify-toast-top: max(16px,0px);
+--toastify-toast-width: 320px;
+--toastify-z-index: 9999;
+--user-build-strats: true;
+--warning: #ff8d72;
+--white: #fff;
+--whop: https://whop.com/autotrade;
+--yellow: #ffd600;
+
+Style Attribute {
+}
+*, :after, :before {
+box-sizing: border-box;
+}
+User Agent Style Sheetaddress, article, aside, div, footer, header, hgroup, main, nav, search, section {
+display: block;
+}
+*, :after, :before {
+box-sizing: border-box;
+}
+*, :after, :before {
+box-sizing: border-box;
+}
+body {
+-webkit-font-smoothing: antialiased;
+}
+body {
+color: #525f7f;
+font-family: Poppins,sans-serif;
+font-size: .875rem;
+font-weight: 400;
+line-height: 1.5;
+text-align: left;
+}
+body {
+color: #fff;
+font-family: Inter,sans-serif;
+}
+Style Attribute {
+Show 14 unused CSS variables
+}
+:root {
+Show 9 unused CSS variables
+}
+:root {
+Show 33 unused CSS variables
+}
+:root {
+Show 6 unused CSS variables
+}
+:root {
+Show 41 unused CSS variables
+}
+:root {
+Show 41 unused CSS variables
+}
+html {
+-webkit-text-size-adjust: 100%;
+font-family: sans-serif;
+line-height: 1.15;
+}
+User Agent Style Sheethtml {
+color: canvastext;
+}

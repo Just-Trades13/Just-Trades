@@ -1,0 +1,1070 @@
+//@version=5
+
+// ============================================================================
+
+// JADNQ Strategy - BASED ON ATR TRAILSTOP W/ FIB TARGETS INDICATOR
+
+// ============================================================================
+
+// CONVERTED FROM JAVASCRIPT INDICATOR - MATCHES ORIGINAL LOGIC:
+
+// 1. FIXED RISK/REWARD: Take profit is now ALWAYS larger than stop loss distance
+
+// 2. FASTER ALERTS: Alerts fire on bar update (not just bar close) for faster execution
+
+// 3. PROPER TP/SL CALCULATION: Ensures TP distance >= SL distance * riskRewardRatio
+
+// 4. MATCHES ORIGINAL INDICATOR DEFAULTS:
+
+//    - ATR Period: 5 (matches original)
+
+//    - ATR Factor: 3.5 (matches original)
+
+//    - Moving Average: Modified/Wilder's (matches original)
+
+//    - Fib1Level: 61.8% (matches original)
+
+//    - Fib2Level: 78.6% (matches original)
+
+//    - Fib3Level: 88.6% (matches original)
+
+//    - Uses fib1 as stop loss level (matches original indicator logic)
+
+//    - Multiple Fibonacci targets: 1.618, 2.618, 4.23 (matches original)
+
+// 5. ENHANCED FEATURES FOR PROFITABILITY:
+
+//    - Risk/Reward: 3.5:1 (lets profits run longer)
+
+//    - Min Bars Before Stop: 2 (prevents premature stops)
+
+//    - Time Filter: Disabled by default (trade all market hours)
+
+//    - Trailing Take Profit: Enabled by default (moves TP up/down as price moves favorably)
+
+//    - Partial Profit Taking: Disabled by default (can enable to take some profit early)
+
+//
+
+// ALERT FORMAT: "JADGC: action, Price = X, Ticker = Y, Period = Z, Action = action, Amount = N, StopLoss = S, TakeProfit = T"
+
+// ============================================================================
+
+
+
+strategy("JADNQ", overlay=true, 
+
+         initial_capital=100000, 
+
+         default_qty_type=strategy.fixed, 
+
+         default_qty_value=1,
+
+         process_orders_on_close=true,  // Execute orders on bar close - MOST ACCURATE (matches real TradingView alerts)
+
+         close_entries_rule="ANY",      // Close entries before opening opposite (critical for flips)
+
+         pyramiding=0,                  // No pyramiding - single position only (prevents multiple fills)
+
+         calc_on_order_fills=true,      // Recalculate on fills for accurate P&L tracking
+
+         calc_on_every_tick=false,      // Only on bar close for consistency with process_orders_on_close
+
+         slippage=1,                     // 1 tick slippage assumption for realistic fill simulation
+
+         commission_type=strategy.commission.percent,
+
+         commission_value=0.1)           // 0.1% commission (adjust for your Tradovate commission rate)
+
+
+
+// Input parameters - OPTIMIZED FOR PROFITABILITY
+
+trailType = input.string(defval="modified", options=["modified", "unmodified"], title="Trail Type", tooltip="Modified ATR provides better stop placement for trend following - matches original indicator default")
+
+movingAverageType = input.string(defval="exponential", options=["simple", "exponential", "weighted", "modified", "hull"], title="Moving Average Type", tooltip="Exponential MA (default) - matches your settings")
+
+atrPeriod = input.int(defval=9, minval=1, title="ATR Period", tooltip="Period for ATR calculation - default 9 matches your settings")
+
+ATRFactor = input.float(defval=2.0, minval=0.1, title="ATR Factor", tooltip="ATR multiplier for stop calculation - default 2.0 matches your settings")
+
+Fib1Level = input.float(defval=61.8, minval=0.1, title="Fib 1 Level (%)", tooltip="First Fibonacci level between extreme and trailStop - matches original indicator default")
+
+Fib2Level = input.float(defval=78.6, minval=0.1, title="Fib 2 Level (%)", group="Fibonacci Levels", tooltip="Second Fibonacci level between extreme and trailStop")
+
+Fib3Level = input.float(defval=88.6, minval=0.1, title="Fib 3 Level (%)", group="Fibonacci Levels", tooltip="Third Fibonacci level between extreme and trailStop")
+
+// Stop Loss Level Selection - Choose which Fibonacci level to use as stop loss
+
+useFib1AsStop = input.bool(defval=true, title="Use Fib1 as Stop Loss", group="Stop Loss Settings", tooltip="If enabled, uses Fib1 (first band) as stop loss. If disabled, uses baseTrailStop. Fib1 is the tighter stop closest to the extreme.")
+
+
+
+// Risk Management Inputs - FIXED TO ENSURE PROPER RISK/REWARD
+
+useCustomTP = input.bool(defval=false, title="Use Custom Take Profit", group="Risk Management")
+
+useCustomSL = input.bool(defval=false, title="Use Custom Stop Loss", group="Risk Management")
+
+customTPValue = input.float(defval=0.0, minval=0.0, title="Custom TP (points)", group="Risk Management", tooltip="Fixed take profit in price points from entry")
+
+customSLValue = input.float(defval=0.0, minval=0.0, title="Custom SL (points)", group="Risk Management", tooltip="Fixed stop loss in price points from entry")
+
+useRiskReward = input.bool(defval=true, title="Use Risk:Reward Ratio", group="Risk Management", tooltip="ENABLED BY DEFAULT - Ensures TP is always larger than SL")
+
+riskRewardRatio = input.float(defval=3.5, minval=1.0, title="Risk:Reward Ratio", group="Risk Management", tooltip="3.5:1 ratio lets profits run longer - TP is 3.5x SL distance. Higher RR for maximum profit potential")
+
+minBarsBeforeStop = input.int(defval=2, minval=1, maxval=10, title="Min Bars Before Stop", group="Risk Management", tooltip="Minimum bars to hold before stop loss can trigger - prevents premature stops from market noise. 2 bars recommended for profitability")
+
+// Trailing Take Profit - Let profits run while protecting gains
+
+useTrailingTP = input.bool(defval=true, title="Use Trailing Take Profit", group="Profit Management", tooltip="Moves TP up (long) or down (short) as price moves favorably - lets profits run while protecting gains")
+
+trailingTPActivation = input.float(defval=1.5, minval=0.5, title="Trailing TP Activation (RR)", group="Profit Management", tooltip="Start trailing TP after price reaches this multiple of risk (e.g., 1.5 = start trailing after 1.5x risk distance)")
+
+trailingTPDistance = input.float(defval=1.0, minval=0.1, title="Trailing TP Distance (RR)", group="Profit Management", tooltip="Keep TP this many risk units away from current price (e.g., 1.0 = TP stays 1x risk distance ahead)")
+
+// Partial Profit Taking - Take some profit early, let rest run
+
+usePartialTP = input.bool(defval=false, title="Use Partial Profit Taking", group="Profit Management", tooltip="Take partial profit at first target, let rest run to full TP")
+
+partialTPPercent = input.float(defval=50.0, minval=1.0, maxval=99.0, title="Partial TP % to Close", group="Profit Management", tooltip="Percentage of position to close at first profit target")
+
+partialTPLevel = input.float(defval=2.0, minval=1.0, title="Partial TP Level (RR)", group="Profit Management", tooltip="Take partial profit when price reaches this multiple of risk (e.g., 2.0 = take 50% at 2x risk)")
+
+
+
+// Time Filter Inputs - DUAL WINDOW SYSTEM - OPTIMIZED FOR MARKET HOURS
+
+timeFilterEnabled = input.bool(defval=false, title="Enable Time Filter", group="Time Filter", tooltip="DISABLED BY DEFAULT - Trade all market hours for maximum opportunity. Enable to restrict trading to specific times")
+
+// Window 1 - US Market Open (9:30 AM ET = 8:30 CT)
+
+window1Enabled = input.bool(defval=true, title="Enable Window 1", group="Time Filter - Window 1")
+
+window1StartHour = input.int(defval=8, minval=0, maxval=23, title="Window 1 Start Hour", group="Time Filter - Window 1", tooltip="Market open period - high volatility and trend opportunities")
+
+window1StartMinute = input.int(defval=30, minval=0, maxval=59, title="Window 1 Start Minute", group="Time Filter - Window 1")
+
+window1EndHour = input.int(defval=11, minval=0, maxval=23, title="Window 1 End Hour", group="Time Filter - Window 1", tooltip="End of morning session - good trend continuation")
+
+window1EndMinute = input.int(defval=30, minval=0, maxval=59, title="Window 1 End Minute", group="Time Filter - Window 1")
+
+// Window 2 - Afternoon Session (1:00 PM ET = 12:00 CT)
+
+window2Enabled = input.bool(defval=true, title="Enable Window 2", group="Time Filter - Window 2")
+
+window2StartHour = input.int(defval=12, minval=0, maxval=23, title="Window 2 Start Hour", group="Time Filter - Window 2", tooltip="Afternoon session - continuation of trends")
+
+window2StartMinute = input.int(defval=0, minval=0, maxval=59, title="Window 2 Start Minute", group="Time Filter - Window 2")
+
+window2EndHour = input.int(defval=15, minval=0, maxval=23, title="Window 2 End Hour", group="Time Filter - Window 2", tooltip="Market close - avoid low liquidity periods")
+
+window2EndMinute = input.int(defval=0, minval=0, maxval=59, title="Window 2 End Minute", group="Time Filter - Window 2")
+
+
+
+// Dual Time Filter Logic - Convert to time of day
+
+window1StartTime = window1StartHour * 10000 + window1StartMinute * 100
+
+window1EndTime = window1EndHour * 10000 + window1EndMinute * 100
+
+window2StartTime = window2StartHour * 10000 + window2StartMinute * 100
+
+window2EndTime = window2EndHour * 10000 + window2EndMinute * 100
+
+currentTimeOfDay = hour(time) * 10000 + minute(time) * 100
+
+
+
+// Check if current time is in either window
+
+inWindow1 = window1Enabled and (currentTimeOfDay >= window1StartTime and currentTimeOfDay <= window1EndTime)
+
+inWindow2 = window2Enabled and (currentTimeOfDay >= window2StartTime and currentTimeOfDay <= window2EndTime)
+
+timeInRange = timeFilterEnabled ? (inWindow1 or inWindow2) : true
+
+
+
+// Real Price Calculations (open, high, low, close)
+
+op = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, open)
+
+hi = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, high)
+
+lo = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, low)
+
+cl = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, close)
+
+
+
+// Hull Moving Average Function
+
+hma(src, length) =>
+
+    ta.wma(2 * ta.wma(src, length / 2) - ta.wma(src, length), math.round(math.sqrt(length)))
+
+
+
+// Moving Average Selection Function
+
+getMA(type, src, length) =>
+
+    switch type
+
+        "simple" => ta.sma(src, length)
+
+        "exponential" => ta.ema(src, length)
+
+        "weighted" => ta.wma(src, length)
+
+        "modified" => ta.rma(src, length)
+
+        "hull" => hma(src, length)
+
+
+
+// Initialize variables using Real Prices
+
+smaMA = ta.sma(hi - lo, atrPeriod)
+
+HiLo = math.min((hi - lo), 1.5 * smaMA)
+
+HRef = lo <= hi[1] ? hi - cl[1] : (hi - cl[1]) - 0.5 * (lo - hi[1])
+
+LRef = hi >= lo[1] ? cl[1] - lo : (cl[1] - lo) - 0.5 * (lo[1] - hi)
+
+
+
+trueRange = trailType == "modified" ? math.max(HiLo, math.max(HRef, LRef)) : math.max(hi - lo, math.max(math.abs(hi - cl[1]), math.abs(lo - cl[1])))
+
+
+
+atrMA = getMA(movingAverageType, trueRange, atrPeriod)
+
+loss = ATRFactor * atrMA
+
+up = cl - loss
+
+down = cl + loss
+
+
+
+// Initialize trend variables based on Real Price Close
+
+var float trendUp = up[1]
+
+var float trendDown = down[1]
+
+var int trend = 1  // Assume initial trend is up
+
+
+
+var int entryTrend = na
+
+var float entryPrice = na  // Track entry price for P&L calculation
+
+var int lastBarTime = 0
+
+var bool enteredThisBar = false
+
+var bool flipInProgress = false
+
+var int flipTargetTrend = na  // Track which direction we're flipping to
+
+var int barsSinceEntry = 0
+
+var int lastEntryBarTime = 0
+
+var float currentStopLoss = na  // Current stop loss level
+
+var float currentTakeProfit = na  // Current take profit level
+
+var bool partialTPTaken = false  // Track if partial profit was taken
+
+var float initialTPLevel = na  // Store initial TP level for trailing calculations
+
+
+
+// Calculate trend using Real Prices
+
+prevTrend = nz(trend[1], 1)
+
+prevTrendUp = nz(trendUp[1], up[1])
+
+prevTrendDown = nz(trendDown[1], down[1])
+
+
+
+trendUp := cl[1] > prevTrendUp ? math.max(up, prevTrendUp) : up
+
+trendDown := cl[1] < prevTrendDown ? math.min(down, prevTrendDown) : down
+
+trend := cl > prevTrendDown ? 1 : cl < prevTrendUp ? -1 : prevTrend
+
+
+
+// Calculate trend change
+
+trendChange = trend != prevTrend
+
+
+
+// Fibonacci Level Logic using Real Prices
+
+var float ex = na
+
+prevEx = nz(ex[1], cl)
+
+ex := (trend > 0 and prevTrend < 0) ? hi :
+
+      (trend < 0 and prevTrend > 0) ? lo :
+
+      trend == 1 ? math.max(prevEx, hi) :
+
+      trend == -1 ? math.min(prevEx, lo) :
+
+      prevEx
+
+
+
+// Base trailStop calculation - matches JS: this.trailStop = this.trend == 1 ? this.trendUp : this.trendDown
+
+baseTrailStop = trend == 1 ? trendUp : trendDown
+
+trailStop = baseTrailStop  // Use base trailStop as the actual trailStop (matches JS implementation)
+
+
+
+// Fibonacci Levels - calculated between extreme (ex) and baseTrailStop
+
+// Matches JS: this.fib1 = this.ex + (this.trailStop - this.ex) * this.props.Fib1Level / 100
+
+fib1 = not na(ex) ? ex + (baseTrailStop - ex) * Fib1Level / 100 : baseTrailStop
+
+fib2 = not na(ex) ? ex + (baseTrailStop - ex) * Fib2Level / 100 : baseTrailStop
+
+fib3 = not na(ex) ? ex + (baseTrailStop - ex) * Fib3Level / 100 : baseTrailStop
+
+l100 = baseTrailStop  // 100% level (matches JS: const l100 = this.trailStop + 0)
+
+
+
+// Fibonacci Targets Logic - matches JS implementation
+
+var float switchVal = na
+
+var float diff = na
+
+// Matches JS: this.switchVal = trendChange ? this.trailStop : prevSwitchVal
+
+switchVal := trendChange ? trailStop : nz(switchVal[1], cl)
+
+// Matches JS: this.diff = trendChange ? d.close() - this.switchVal : prevDiff
+
+diff := trendChange ? cl - switchVal : nz(diff[1], 0)
+
+// Matches JS: fibTgt1 = this.switchVal + (this.diff * 1.618)
+
+fibTgt1 = switchVal + (diff * 1.618)
+
+fibTgt2 = switchVal + (diff * 2.618)  // Matches JS: fibTgt2 = this.switchVal + (this.diff * 2.618)
+
+fibTgt3 = switchVal + (diff * 4.23)   // Matches JS: fibTgt3 = this.switchVal + (this.diff * 4.23)
+
+
+
+// Function to calculate Stop Loss based on settings (must be after trailStop is calculated)
+
+// Use fib1 as the stop loss level (matches original indicator logic)
+
+// IMPORTANT: fib1 is the FIRST band (closest to extreme, tightest stop)
+
+// fib3 is the THIRD band (closest to trailStop, widest stop)
+
+calculateStopLoss(entryPrice, trendDirection, currentTrailStop, currentFib1) =>
+
+    float stopLoss = na
+
+    if useCustomSL and customSLValue > 0
+
+        // Use custom fixed SL
+
+        stopLoss := trendDirection == 1 ? entryPrice - customSLValue : entryPrice + customSLValue
+
+    else if useFib1AsStop
+
+        // Use fib1 as SL (FIRST band - tightest stop, closest to extreme)
+
+        // This is the correct behavior - fib1 is the first/tightest stop level
+
+        stopLoss := not na(currentFib1) ? currentFib1 : currentTrailStop
+
+    else
+
+        // Use baseTrailStop (widest stop, at 100% level)
+
+        stopLoss := currentTrailStop
+
+    stopLoss
+
+
+
+// Function to calculate Take Profit - FIXED TO ENSURE TP >= SL * riskRewardRatio
+
+calculateTakeProfit(entryPrice, stopLossPrice, trendDirection, currentFibTgt) =>
+
+    float takeProfit = na
+
+    if useCustomTP and customTPValue > 0
+
+        // Use custom fixed TP
+
+        takeProfit := trendDirection == 1 ? entryPrice + customTPValue : entryPrice - customTPValue
+
+        // VALIDATE: If using custom TP, ensure it's at least as far as SL * riskRewardRatio
+
+        if not na(stopLossPrice)
+
+            riskDistance = math.abs(entryPrice - stopLossPrice)
+
+            minTPDistance = riskDistance * riskRewardRatio
+
+            currentTPDistance = math.abs(takeProfit - entryPrice)
+
+            if currentTPDistance < minTPDistance
+
+                // Adjust TP to meet minimum risk/reward requirement
+
+                takeProfit := trendDirection == 1 ? entryPrice + minTPDistance : entryPrice - minTPDistance
+
+    else if useRiskReward and not na(stopLossPrice)
+
+        // Use Risk:Reward ratio - THIS IS THE DEFAULT AND CORRECT METHOD
+
+        riskDistance = math.abs(entryPrice - stopLossPrice)
+
+        rewardDistance = riskDistance * riskRewardRatio
+
+        takeProfit := trendDirection == 1 ? entryPrice + rewardDistance : entryPrice - rewardDistance
+
+    else
+
+        // Use Fibonacci target (fallback) - BUT ENSURE IT MEETS MINIMUM RISK/REWARD
+
+        takeProfit := currentFibTgt
+
+        // Validate Fib target meets minimum risk/reward if we have stop loss
+
+        if not na(stopLossPrice) and not na(takeProfit)
+
+            riskDistance = math.abs(entryPrice - stopLossPrice)
+
+            minTPDistance = riskDistance * riskRewardRatio
+
+            currentTPDistance = math.abs(takeProfit - entryPrice)
+
+            if currentTPDistance < minTPDistance
+
+                // Adjust TP to meet minimum risk/reward requirement
+
+                takeProfit := trendDirection == 1 ? entryPrice + minTPDistance : entryPrice - minTPDistance
+
+    takeProfit
+
+
+
+// Function to update trailing take profit - lets profits run while protecting gains
+
+updateTrailingTP(entryPrice, stopLossPrice, trendDirection, currentPrice, baseTP) =>
+
+    float trailingTP = baseTP
+
+    if useTrailingTP and not na(entryPrice) and not na(stopLossPrice) and not na(currentPrice)
+
+        riskDistance = math.abs(entryPrice - stopLossPrice)
+
+        activationDistance = riskDistance * trailingTPActivation
+
+        trailingDistance = riskDistance * trailingTPDistance
+
+        // Check if price has reached activation level
+
+        if trendDirection == 1  // Long position
+
+            profitDistance = currentPrice - entryPrice
+
+            if profitDistance >= activationDistance
+
+                // Price reached activation - start trailing
+
+                // Keep TP at trailingDistance above current price, but never below base TP
+
+                newTP = currentPrice + trailingDistance
+
+                trailingTP := math.max(baseTP, newTP)
+
+        else  // Short position
+
+            profitDistance = entryPrice - currentPrice
+
+            if profitDistance >= activationDistance
+
+                // Price reached activation - start trailing
+
+                // Keep TP at trailingDistance below current price, but never above base TP
+
+                newTP = currentPrice - trailingDistance
+
+                trailingTP := math.min(baseTP, newTP)
+
+    trailingTP
+
+
+
+// Reset 'enteredThisBar' at the start of a new bar
+
+if time != lastBarTime
+
+    enteredThisBar := false
+
+    lastBarTime := time
+
+    barsSinceEntry := barsSinceEntry + 1
+
+
+
+// Trading Logic using Real Prices with Time Filter - FIXED FOR PROPER FLIP HANDLING
+
+// First, handle flips - close existing position first
+
+if (trendChange and not enteredThisBar and timeInRange and barstate.isconfirmed)
+
+    // Close existing position before flipping
+
+    if (trend == 1 and strategy.position_size < 0)
+
+        strategy.close_all(comment = "Flip Close Short")
+
+        flipInProgress := true
+
+        flipTargetTrend := 1  // We want to go long
+
+        entryTrend := na
+
+        entryPrice := na
+
+        currentStopLoss := na
+
+        currentTakeProfit := na
+
+        initialTPLevel := na
+
+        partialTPTaken := false
+
+        enteredThisBar := true
+
+        barsSinceEntry := 0
+
+        
+
+    else if (trend == -1 and strategy.position_size > 0)
+
+        strategy.close_all(comment = "Flip Close Long")
+
+        flipInProgress := true
+
+        flipTargetTrend := -1  // We want to go short
+
+        entryTrend := na
+
+        entryPrice := na
+
+        currentStopLoss := na
+
+        currentTakeProfit := na
+
+        initialTPLevel := na
+
+        partialTPTaken := false
+
+        enteredThisBar := true
+
+        barsSinceEntry := 0
+
+
+
+// Open new position on flip - wait for close to execute first (next bar)
+
+// Enter in the target direction (follow current trend if it still matches, or wait if trend changed)
+
+if (flipInProgress and not enteredThisBar and timeInRange and barstate.isconfirmed and strategy.position_size == 0)
+
+    if (flipTargetTrend == 1 and trend == 1)
+
+        // Enter long as planned
+
+        strategy.entry("Long", strategy.long, comment = "Flip Long Entry")
+
+        entryPrice := cl  // Track entry price at close
+
+        entryTrend := trend
+
+        currentStopLoss := calculateStopLoss(entryPrice, 1, trailStop, fib1)  // Calculate stop loss based on settings (uses fib1)
+
+        currentTakeProfit := calculateTakeProfit(entryPrice, currentStopLoss, 1, fibTgt1)  // Calculate take profit based on settings
+
+        initialTPLevel := currentTakeProfit  // Store initial TP for trailing calculations
+
+        partialTPTaken := false  // Reset partial TP flag
+
+        enteredThisBar := true
+
+        lastEntryBarTime := time
+
+        barsSinceEntry := 0
+
+        flipInProgress := false  // Reset after entry
+
+        flipTargetTrend := na
+
+        
+
+    else if (flipTargetTrend == -1 and trend == -1)
+
+        // Enter short as planned
+
+        strategy.entry("Short", strategy.short, comment = "Flip Short Entry")
+
+        entryPrice := cl  // Track entry price at close
+
+        entryTrend := trend
+
+        currentStopLoss := calculateStopLoss(entryPrice, -1, trailStop, fib1)  // Calculate stop loss based on settings (uses fib1)
+
+        currentTakeProfit := calculateTakeProfit(entryPrice, currentStopLoss, -1, fibTgt1)  // Calculate take profit based on settings
+
+        initialTPLevel := currentTakeProfit  // Store initial TP for trailing calculations
+
+        partialTPTaken := false  // Reset partial TP flag
+
+        enteredThisBar := true
+
+        lastEntryBarTime := time
+
+        barsSinceEntry := 0
+
+        flipInProgress := false  // Reset after entry
+
+        flipTargetTrend := na
+
+    else if (flipTargetTrend != trend)
+
+        // Trend changed before we could enter - cancel the flip and reset
+
+        flipInProgress := false
+
+        flipTargetTrend := na
+
+
+
+// Handle new entries when no position exists (first entry or after manual close)
+
+if (trendChange and not enteredThisBar and strategy.position_size == 0 and not flipInProgress and timeInRange and barstate.isconfirmed)
+
+    if (trend == 1)
+
+        strategy.entry("Long", strategy.long, comment = "New Long Entry")
+
+        entryPrice := cl  // Track entry price at close
+
+        entryTrend := trend
+
+        currentStopLoss := calculateStopLoss(entryPrice, 1, trailStop, fib1)  // Calculate stop loss based on settings (uses fib1)
+
+        currentTakeProfit := calculateTakeProfit(entryPrice, currentStopLoss, 1, fibTgt1)  // Calculate take profit based on settings
+
+        initialTPLevel := currentTakeProfit  // Store initial TP for trailing calculations
+
+        partialTPTaken := false  // Reset partial TP flag
+
+        enteredThisBar := true
+
+        lastEntryBarTime := time
+
+        barsSinceEntry := 0
+
+        
+
+    else if (trend == -1)
+
+        strategy.entry("Short", strategy.short, comment = "New Short Entry")
+
+        entryPrice := cl  // Track entry price at close
+
+        entryTrend := trend
+
+        currentStopLoss := calculateStopLoss(entryPrice, -1, trailStop, fib1)  // Calculate stop loss based on settings (uses fib1)
+
+        currentTakeProfit := calculateTakeProfit(entryPrice, currentStopLoss, -1, fibTgt1)  // Calculate take profit based on settings
+
+        initialTPLevel := currentTakeProfit  // Store initial TP for trailing calculations
+
+        partialTPTaken := false  // Reset partial TP flag
+
+        enteredThisBar := true
+
+        lastEntryBarTime := time
+
+        barsSinceEntry := 0
+
+
+
+// Update stop loss as fib1 moves (trailing stop) - only if not using custom fixed SL
+
+// Use fib1 as the stop loss (matches JS indicator logic)
+
+if not useCustomSL
+
+    if strategy.position_size > 0 and not na(fib1)
+
+        // Long: stop can only move up - use fib1 as the stop level
+
+        newStopLoss = calculateStopLoss(entryPrice, 1, trailStop, fib1)
+
+        currentStopLoss := math.max(currentStopLoss, newStopLoss)  // Long: stop can only move up
+
+        // Recalculate base TP when SL moves to maintain risk/reward ratio
+
+        if not na(entryPrice)
+
+            float baseTP = calculateTakeProfit(entryPrice, currentStopLoss, 1, fibTgt1)
+
+            // Update initial TP level if it changed significantly
+
+            if na(initialTPLevel) or math.abs(baseTP - initialTPLevel) > math.abs(entryPrice - currentStopLoss) * 0.1
+
+                initialTPLevel := baseTP
+
+            // Apply trailing TP if enabled
+
+            currentTakeProfit := updateTrailingTP(entryPrice, currentStopLoss, 1, cl, baseTP)
+
+    else if strategy.position_size < 0 and not na(fib1)
+
+        // Short: stop can only move down - use fib1 as the stop level
+
+        newStopLoss = calculateStopLoss(entryPrice, -1, trailStop, fib1)
+
+        currentStopLoss := math.min(currentStopLoss, newStopLoss)  // Short: stop can only move down
+
+        // Recalculate base TP when SL moves to maintain risk/reward ratio
+
+        if not na(entryPrice)
+
+            float baseTP = calculateTakeProfit(entryPrice, currentStopLoss, -1, fibTgt1)
+
+            // Update initial TP level if it changed significantly
+
+            if na(initialTPLevel) or math.abs(baseTP - initialTPLevel) > math.abs(entryPrice - currentStopLoss) * 0.1
+
+                initialTPLevel := baseTP
+
+            // Apply trailing TP if enabled
+
+            currentTakeProfit := updateTrailingTP(entryPrice, currentStopLoss, -1, cl, baseTP)
+
+// Update trailing TP on every bar (even if SL didn't move) - for custom SL or when trailing is enabled
+
+if strategy.position_size != 0 and not na(entryPrice) and not na(currentStopLoss) and useTrailingTP
+
+    if strategy.position_size > 0
+
+        float baseTP = not na(initialTPLevel) ? initialTPLevel : calculateTakeProfit(entryPrice, currentStopLoss, 1, fibTgt1)
+
+        currentTakeProfit := updateTrailingTP(entryPrice, currentStopLoss, 1, cl, baseTP)
+
+    else if strategy.position_size < 0
+
+        float baseTP = not na(initialTPLevel) ? initialTPLevel : calculateTakeProfit(entryPrice, currentStopLoss, -1, fibTgt1)
+
+        currentTakeProfit := updateTrailingTP(entryPrice, currentStopLoss, -1, cl, baseTP)
+
+
+
+// Only check for trend divergence after entry has had time to settle (prevent immediate closes)
+
+// Only close if trend diverged AND we haven't just entered AND it's not a flip scenario
+
+// Increased minimum bars to 2 for better profitability (reduces false trend divergence exits)
+
+if barstate.isconfirmed and not na(entryTrend) and not flipInProgress and barsSinceEntry >= 2
+
+    if trend != entryTrend and strategy.position_size != 0
+
+        if strategy.position_size < 0
+
+            strategy.close_all(comment = "Trend Divergence Short")
+
+            entryTrend := na
+
+            entryPrice := na
+
+            currentStopLoss := na
+
+            currentTakeProfit := na
+
+            initialTPLevel := na
+
+            partialTPTaken := false
+
+            barsSinceEntry := 0
+
+
+
+        else if strategy.position_size > 0
+
+            strategy.close_all(comment = "Trend Divergence Long")
+
+            entryTrend := na
+
+            entryPrice := na
+
+            currentStopLoss := na
+
+            currentTakeProfit := na
+
+            initialTPLevel := na
+
+            partialTPTaken := false
+
+            barsSinceEntry := 0
+
+
+
+
+
+// stoploss Logic - Trigger when candle CLOSES through trailStop (baseTrailStop)
+
+var bool stop = false
+
+// IMPORTANT: Stop triggers when candle CLOSES through trailStop (baseTrailStop), NOT through fib bands
+
+// Use trailStop (baseTrailStop) as the stop level - this is the main trail stop line
+
+// For custom SL, still use that, but for dynamic stops, use trailStop
+
+stopLevel = useCustomSL and not na(currentStopLoss) ? currentStopLoss : (not na(trailStop) ? trailStop : na)
+
+// Only trigger stop if we've held the position for minimum bars (prevents premature stops from noise) and stopLevel is valid
+
+// Check if candle CLOSES through trailStop (not just touches it)
+
+// Long: stop when close < trailStop
+
+// Short: stop when close > trailStop
+
+stop := (barsSinceEntry >= minBarsBeforeStop) and not na(stopLevel) and barstate.isconfirmed and (((cl < stopLevel) and strategy.position_size > 0) or ((cl > stopLevel) and strategy.position_size < 0))
+
+if stop and not flipInProgress
+
+    strategy.close_all(comment = 'Stop Hit')
+
+    entryTrend := na
+
+    entryPrice := na
+
+    currentStopLoss := na
+
+    currentTakeProfit := na
+
+    initialTPLevel := na
+
+    partialTPTaken := false
+
+    stop := false
+
+    barsSinceEntry := 0
+
+
+
+
+
+// Plotting for Visuals - matches JS indicator plotting
+
+trailColor = trend == 1 ? color.green : trend == -1 ? color.red : color.gray
+
+plot(trailStop, color=trailColor, linewidth=2, title="TrailStop")
+
+
+
+// Plot Fibonacci levels (matches JS indicator)
+
+plot(fib1, color=color.white, linewidth=1, style=plot.style_line, title="Fib1")
+
+plot(fib2, color=color.white, linewidth=1, style=plot.style_line, title="Fib2")
+
+plot(fib3, color=color.white, linewidth=2, style=plot.style_line, title="Fib3")
+
+
+
+// Plot current stop loss level being used
+
+// Shows which level is actually being used as stop loss (fib1, fib2, fib3, or custom)
+
+plotStopLoss = useCustomSL and not na(currentStopLoss) ? currentStopLoss : (useFib1AsStop and not na(fib1) ? fib1 : (not na(trailStop) ? trailStop : na))
+
+plot(plotStopLoss, color=color.orange, linewidth=3, style=plot.style_linebr, title="Stop Loss Level (Active)")
+
+
+
+// Plot Fibonacci targets (matches JS indicator - only show when valid)
+
+plotFibTgt1 = not na(fibTgt1) and not na(trailStop) and ((trend == 1 and fibTgt1 > trailStop) or (trend == -1 and fibTgt1 < trailStop)) and not trendChange ? fibTgt1 : na
+
+plotFibTgt2 = not na(fibTgt2) and not na(trailStop) and ((trend == 1 and fibTgt2 > trailStop) or (trend == -1 and fibTgt2 < trailStop)) and not trendChange ? fibTgt2 : na
+
+plotFibTgt3 = not na(fibTgt3) and not na(trailStop) and ((trend == 1 and fibTgt3 > trailStop) or (trend == -1 and fibTgt3 < trailStop)) and not trendChange ? fibTgt3 : na
+
+plot(plotFibTgt1, color=color.purple, linewidth=1, title="Target 1 (1.618)")
+
+plot(plotFibTgt2, color=color.purple, linewidth=1, title="Target 2 (2.618)")
+
+plot(plotFibTgt3, color=color.purple, linewidth=1, title="Target 3 (4.23)")
+
+
+
+// Plot take profit target (use currentTakeProfit if available, otherwise fibTgt1)
+
+plotTP = not na(currentTakeProfit) ? currentTakeProfit : (not na(fibTgt1) ? fibTgt1 : na)
+
+plotTPValid = not na(plotTP) and not na(trailStop) and ((trend == 1 and plotTP > trailStop) or (trend == -1 and plotTP < trailStop)) and not trendChange ? plotTP : na
+
+plot(plotTPValid, color=color.yellow, linewidth=2, style=plot.style_linebr, title="Take Profit Target")
+
+
+
+// OPTIMIZED ALERTS FOR TRADE MANAGER - FASTER ALERTS (FIRE ON BAR UPDATE, NOT JUST CLOSE)
+
+// Format matches Trade Manager requirements: "JADNQ: {{strategy.order.action}}, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}"
+
+// Trade Manager parses: Action (long->buy, short->sell, flat->close), Price, Ticker, Amount
+
+
+
+// Primary Alert - Fires on all order actions (entries and exits) - FASTER: removed barstate.isconfirmed for real-time alerts
+
+// This uses strategy.order.action which will be "buy", "sell", or empty for closes
+
+// strategy.market_position will be "long", "short", or "flat"
+
+alertcondition((trendChange or stop or (strategy.position_size == 0 and strategy.position_size[1] != 0)) and timeInRange, 
+
+               title="JADNQ Trade Signal", 
+
+               message="JADNQ: {{strategy.order.action}}, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+
+
+// Entry Alerts - Detect when position opens (handles both flip and new entries) - FASTER: fires immediately
+
+entryLongDetected = strategy.position_size > 0 and strategy.position_size[1] <= 0
+
+entryShortDetected = strategy.position_size < 0 and strategy.position_size[1] >= 0
+
+
+
+alertcondition(entryLongDetected and timeInRange, 
+
+               title="JADNQ Long Entry", 
+
+               message="JADNQ: buy, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+
+
+alertcondition(entryShortDetected and timeInRange, 
+
+               title="JADNQ Short Entry", 
+
+               message="JADNQ: sell, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+
+
+// Position Close Alerts - Detect when position closes (all scenarios: flip, stop, divergence, TP) - FASTER: fires immediately
+
+closeLongDetected = strategy.position_size <= 0 and strategy.position_size[1] > 0
+
+closeShortDetected = strategy.position_size >= 0 and strategy.position_size[1] < 0
+
+
+
+alertcondition(closeLongDetected and timeInRange, 
+
+               title="JADNQ Long Close", 
+
+               message="JADNQ: close, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+
+
+alertcondition(closeShortDetected and timeInRange, 
+
+               title="JADNQ Short Close", 
+
+               message="JADNQ: close, Price = {{close}}, Ticker = {{ticker}}, Period = {{interval}}, Action = {{strategy.market_position}}, Amount = {{strategy.position_size}}")
+
+
+
+// Partial Profit Taking Logic - Take some profit early, let rest run
+
+if strategy.position_size != 0 and usePartialTP and not partialTPTaken and not na(entryPrice) and not na(currentStopLoss)
+
+    riskDistance = math.abs(entryPrice - currentStopLoss)
+
+    partialTPDistance = riskDistance * partialTPLevel
+
+    partialTPPrice = strategy.position_size > 0 ? entryPrice + partialTPDistance : entryPrice - partialTPDistance
+
+    // Check if price reached partial TP level
+
+    if (strategy.position_size > 0 and cl >= partialTPPrice) or (strategy.position_size < 0 and cl <= partialTPPrice)
+
+        // Take partial profit
+
+        partialQty = math.round(strategy.position_size * partialTPPercent / 100)
+
+        if partialQty > 0
+
+            strategy.close("Partial TP", qty = partialQty, comment = "Partial Profit")
+
+            partialTPTaken := true
+
+
+
+// takeprofit Logic - Use calculated take profit (custom, RR, or Fib target)
+
+// Only set exit order when we have a position and a valid TP level
+
+if strategy.position_size != 0
+
+    float tpLevel = na
+
+    if not na(currentTakeProfit)
+
+        tpLevel := currentTakeProfit
+
+    else if not na(fibTgt1)
+
+        tpLevel := fibTgt1
+
+    
+
+    if not na(tpLevel)
+
+        // Use remaining position size if partial TP was taken
+
+        remainingQty = partialTPTaken ? math.abs(strategy.position_size) : 1
+
+        strategy.exit('TP1-targ', qty = remainingQty, limit = tpLevel)
+

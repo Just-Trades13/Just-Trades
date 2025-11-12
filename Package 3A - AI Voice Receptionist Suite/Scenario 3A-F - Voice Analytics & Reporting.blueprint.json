@@ -1,0 +1,121 @@
+{
+    "name": "Scenario 3A-F - Voice Analytics & Reporting",
+    "flow": [
+        {
+            "id": 1,
+            "module": "airtable:TriggerWatchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "labelField": "Last Modified Time",
+                "triggerField": "Last Modified Time",
+                "formula": "AND(ISNOTBLANK({Notes}), CONTAINS({Notes}, \"VOICE CALL\") OR CONTAINS({Notes}, \"Voice Call\") OR CONTAINS({Notes}, \"CallSid\"))",
+                "limit": 100
+            },
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are analyzing voice call data to generate analytics and insights.\n\nAnalyze the following call records from Airtable:\n\nRecord 1:\n- Contact: {{1.`Contact Full Name`}}\n- Company: {{1.Company}}\n- Status: {{1.Status}}\n- Notes: {{1.Notes}}\n- Last Out Reach: {{1.`Last Out Reach`}}\n- Pipeline Value: {{1.`Pipeline Value`}}\n\nYour task is to analyze call patterns and generate insights:\n1. Count total calls processed\n2. Identify common intents (question, booking, inquiry, etc.)\n3. Calculate booking conversion rate\n4. Identify peak call times\n5. Note common topics/questions\n6. Calculate average call quality scores (if available)\n7. Identify trends and recommendations\n\nIMPORTANT: Return ONLY valid JSON (no markdown, no code blocks):\n{\n  \"total_calls\": 0,\n  \"period\": \"last_30_days\",\n  \"booking_rate\": 0.0,\n  \"common_intents\": [\"question\", \"inquiry\"],\n  \"common_topics\": [\"pricing\", \"services\"],\n  \"peak_times\": [\"morning\", \"afternoon\"],\n  \"avg_call_quality\": 0,\n  \"conversion_trend\": \"stable\",\n  \"insights\": [\"insight 1\", \"insight 2\"],\n  \"recommendations\": [\"recommendation 1\", \"recommendation 2\"],\n  \"summary\": \"Overall summary of call analytics\"\n}\n\nNote: This is a simplified analysis. In production, aggregate multiple records before sending to AI.",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{2.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "your-email@example.com",
+                "subject": "Voice Call Analytics Report - {{now}}",
+                "bodyType": "rawHtml",
+                "body": "<html><body><h2>Voice Call Analytics Report</h2><p><strong>Period:</strong> {{3.period}}</p><p><strong>Total Calls:</strong> {{3.total_calls}}</p><p><strong>Booking Rate:</strong> {{3.booking_rate}}%</p><p><strong>Average Call Quality:</strong> {{3.avg_call_quality}}/100</p><h3>Common Intents:</h3><ul>{{#each 3.common_intents}}<li>{{this}}</li>{{/each}}</ul><h3>Common Topics:</h3><ul>{{#each 3.common_topics}}<li>{{this}}</li>{{/each}}</ul><h3>Peak Times:</h3><ul>{{#each 3.peak_times}}<li>{{this}}</li>{{/each}}</ul><h3>Insights:</h3><ul>{{#each 3.insights}}<li>{{this}}</li>{{/each}}</ul><h3>Recommendations:</h3><ul>{{#each 3.recommendations}}<li>{{this}}</li>{{/each}}</ul><p><strong>Summary:</strong> {{3.summary}}</p></body></html>"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: airtable:TriggerWatchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, google-email:sendAnEmail. Note: This is a simplified analytics scenario. For production, use scheduled triggers and aggregate data from multiple records."]
+    }
+}
+

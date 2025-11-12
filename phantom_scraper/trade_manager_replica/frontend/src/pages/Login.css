@@ -1,0 +1,949 @@
+/**
+ * Styles extracted from: trade_manager_extraction__auth_login_1762408332951.json
+ * Auto-generated from Trade Manager extraction
+ */
+
+#g-recaptcha-response-100000 {
+  background-color: rgb(255, 255, 255);
+  border: 1.333333px solid rgb(193, 193, 193);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(0, 0, 0);
+  display: none;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 40px;
+  margin: 10px 25px;
+  padding: 0px;
+  width: 250px;
+}
+
+#password {
+  background-color: rgb(51, 51, 51);
+  border: 1.333333px solid rgb(204, 204, 204);
+  border-radius: 4px;
+  box-shadow: none;
+  color: rgb(255, 255, 255);
+  display: inline-block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 39.666668px;
+  margin: 5px 0px;
+  padding: 8px 40px 8px 8px;
+  width: 400px;
+}
+
+#rememberMe {
+  background-color: rgb(51, 51, 51);
+  border: 0px none rgb(255, 255, 255);
+  border-radius: 4px;
+  box-shadow: none;
+  color: rgb(255, 255, 255);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 12px;
+  margin: 5px 0px;
+  padding: 0px;
+  width: 120.583336px;
+}
+
+#root {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 1257.333374px;
+  margin: 0px;
+  padding: 0px;
+  width: 2545.333252px;
+}
+
+#username {
+  background-color: rgb(51, 51, 51);
+  border: 1.333333px solid rgb(204, 204, 204);
+  border-radius: 4px;
+  box-shadow: none;
+  color: rgb(255, 255, 255);
+  display: inline-block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 39.666668px;
+  margin: 5px 0px;
+  padding: 8px;
+  width: 400px;
+}
+
+.Toastify {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 0px;
+  margin: 0px;
+  padding: 0px;
+  width: 2545.333252px;
+}
+
+.collapse {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: flex;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 36px;
+  margin: 0px;
+  padding: 0px;
+  width: 2357.604248px;
+}
+
+.container-fluid {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: flex;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 36px;
+  margin: 0px;
+  padding: 0px 15px;
+  width: 2515.333252px;
+}
+
+.full-page {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 1257.333374px;
+  margin: 0px;
+  padding: 0px;
+  width: 2545.333252px;
+}
+
+.grecaptcha-badge {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 2px;
+  box-shadow: rgb(128, 128, 128) 0px 0px 5px 0px;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 60px;
+  margin: 0px;
+  padding: 0px;
+  width: 256px;
+}
+
+.grecaptcha-error {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 0px;
+  margin: 0px;
+  padding: 0px;
+  width: 256px;
+}
+
+.grecaptcha-logo {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 65.333336px;
+  margin: 0px;
+  padding: 0px;
+  width: 256px;
+}
+
+.login-checkbox-label {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(209, 213, 219);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(209, 213, 219);
+  display: inline-block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 20px;
+  margin: 0px 0px 8px;
+  padding: 0px 0px 0px 28px;
+  width: 120.583336px;
+}
+
+.login-checkmark {
+  background-color: rgb(30, 41, 59);
+  border: 1.333333px solid rgb(107, 114, 128);
+  border-radius: 4px;
+  box-shadow: none;
+  color: rgb(209, 213, 219);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 18px;
+  margin: 0px;
+  padding: 0px;
+  width: 18px;
+}
+
+.login-disabled-reason {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(255, 78, 78);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(255, 78, 78);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  height: 18.666666px;
+  margin: 0px 0px 8px;
+  padding: 0px;
+  width: 400px;
+}
+
+.login-forgot-password {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 22.666666px;
+  margin: 12px 0px 0px;
+  padding: 0px;
+  width: 400px;
+}
+
+.login-forgot-password-link {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(44, 197, 17);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(44, 197, 17);
+  display: inline-block;
+  font-family: Poppins, sans-serif;
+  font-size: 15.2px;
+  font-weight: 500;
+  height: 22.666666px;
+  margin: 0px;
+  padding: 0px;
+  width: 121.666664px;
+}
+
+.login-form-container {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 468.333344px;
+  margin: 0px;
+  padding: 0px;
+  width: 400px;
+}
+
+.login-form-group {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 28px;
+  margin: 0px 0px 15px;
+  padding: 0px;
+  width: 400px;
+}
+
+.login-login-btn {
+  background-color: rgb(44, 197, 17);
+  border: 0px none rgb(0, 0, 0);
+  border-radius: 5px;
+  box-shadow: none;
+  color: rgb(0, 0, 0);
+  display: inline-block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  height: 40px;
+  margin: 0px;
+  padding: 10px;
+  width: 400px;
+}
+
+.login-modal-content {
+  background-color: rgb(0, 0, 0);
+  border: 1.333333px solid rgb(44, 197, 17);
+  border-radius: 10px;
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 4px 15px 0px;
+  color: rgb(82, 95, 127);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 535px;
+  margin: 0px auto;
+  padding: 32px 16px;
+  width: 600px;
+}
+
+.login-modal-overlay {
+  background-color: rgba(0, 0, 0, 0.7);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  min-height: 100vh;
+  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.login-page {
+  background-color: rgb(30, 30, 47);
+  background-image: url('/static/media/night-sky-full-of-stars-fantasy-animation-made-of-magical-sparkly-light-particles-flickering-on-a-purple-blue-gradient-background_bajacpz7x_thumbnail-full01.e6a30d27482b2b409f71.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  min-height: 100vh;
+  width: 100%;
+  margin: 0px;
+  padding: 0px;
+  position: relative;
+}
+
+.login-password-container {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 49.666668px;
+  margin: 0px;
+  padding: 0px;
+  width: 400px;
+}
+
+.login-password-toggle {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgba(0, 0, 0, 0.847);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgba(0, 0, 0, 0.847);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 25px;
+  margin: 0px;
+  padding: 2px 6px 3px;
+  width: 30.666666px;
+}
+
+.login-reg-but-container {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 93.333336px;
+  margin: 0px;
+  padding: 0px;
+  width: 400px;
+}
+
+.login-signup-link {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(44, 197, 17);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(44, 197, 17);
+  display: inline-block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 25px;
+  margin: 0px;
+  padding: 2px 6px 3px;
+  width: 61.8125px;
+}
+
+.login-signup-prompt {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 25px;
+  margin: 20px 0px 0px;
+  padding: 0px;
+  width: 400px;
+}
+
+.ml-auto {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: flex;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 36px;
+  margin: 0px 0px 0px 2143.458252px;
+  padding: 0px;
+  width: 214.145828px;
+}
+
+.nav-item {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(255, 255, 255);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(255, 255, 255);
+  display: list-item;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 36px;
+  margin: 0px;
+  padding: 0px 10px;
+  width: 96.020836px;
+}
+
+.nav-link {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(255, 255, 255);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(255, 255, 255);
+  display: inline-flex;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  height: 36px;
+  margin: 0px;
+  padding: 8px;
+  width: 76.020836px;
+}
+
+.navbar-absolute {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: flex;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 71px;
+  margin: 0px;
+  padding: 25px 15px 10px;
+  width: 2545.333252px;
+}
+
+.navbar-brand {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(255, 255, 255);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(255, 255, 255);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 16px;
+  font-weight: 300;
+  height: 34px;
+  margin: 0px 15px 0px 17px;
+  padding: 5px 0px;
+  width: 95.729164px;
+}
+
+.navbar-toggler {
+  background-color: rgba(0, 0, 0, 0);
+  border: 1.333333px solid rgba(0, 0, 0, 0);
+  border-radius: 4px;
+  box-shadow: none;
+  color: rgba(0, 0, 0, 0.847);
+  display: none;
+  font-family: Poppins, sans-serif;
+  font-size: 15.988px;
+  font-weight: 400;
+  height: auto;
+  margin: 0px;
+  padding: 4px 12px;
+  width: auto;
+}
+
+.navbar-toggler-bar {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgba(0, 0, 0, 0.847);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgba(0, 0, 0, 0.847);
+  display: inline;
+  font-family: Poppins, sans-serif;
+  font-size: 15.988px;
+  font-weight: 400;
+  height: auto;
+  margin: 0px;
+  padding: 0px;
+  width: auto;
+}
+
+.navbar-wrapper {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: flex;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 34px;
+  margin: 0px;
+  padding: 0px;
+  width: 127.729164px;
+}
+
+.tim-icons {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(255, 255, 255);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(255, 255, 255);
+  display: block;
+  font-family: Nucleo;
+  font-size: 20px;
+  font-weight: 400;
+  height: 20px;
+  margin: 0px;
+  padding: 0px 5px 0px 0px;
+  width: 25px;
+}
+
+.wrapper {
+  background-color: rgba(0, 0, 0, 0);
+  border: 0px none rgb(82, 95, 127);
+  border-radius: 0px;
+  box-shadow: none;
+  color: rgb(82, 95, 127);
+  display: block;
+  font-family: Poppins, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  height: 1257.333374px;
+  margin: 0px;
+  padding: 0px;
+  width: 2545.333252px;
+}
+
+/* Extracted styles for Login */
+#g-recaptcha-response-100000 {
+background-color: rgb(255, 255, 255);
+border: 1.333333px solid rgb(193, 193, 193);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(0, 0, 0);
+display: none;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 40px;
+margin: 10px 25px;
+padding: 0px;
+width: 250px;
+}
+
+.login-checkbox-label {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(209, 213, 219);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(209, 213, 219);
+display: inline-block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 20px;
+margin: 0px 0px 8px;
+padding: 0px 0px 0px 28px;
+width: 120.583336px;
+}
+
+.login-checkmark {
+background-color: rgb(30, 41, 59);
+border: 1.333333px solid rgb(107, 114, 128);
+border-radius: 4px;
+box-shadow: none;
+color: rgb(209, 213, 219);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 18px;
+margin: 0px;
+padding: 0px;
+width: 18px;
+}
+
+.login-disabled-reason {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(255, 78, 78);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(255, 78, 78);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 13px;
+font-weight: 400;
+height: 18.666666px;
+margin: 0px 0px 8px;
+padding: 0px;
+width: 400px;
+}
+
+.login-forgot-password {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(82, 95, 127);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(82, 95, 127);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 22.666666px;
+margin: 12px 0px 0px;
+padding: 0px;
+width: 400px;
+}
+
+.login-forgot-password-link {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(44, 197, 17);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(44, 197, 17);
+display: inline-block;
+font-family: Poppins, sans-serif;
+font-size: 15.2px;
+font-weight: 500;
+height: 22.666666px;
+margin: 0px;
+padding: 0px;
+width: 121.666664px;
+}
+
+.login-form-container {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(82, 95, 127);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(82, 95, 127);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 468.333344px;
+margin: 0px;
+padding: 0px;
+width: 400px;
+}
+
+.login-form-container h2 {
+color: rgba(255, 255, 255, 0.8);
+font-size: 27px;
+font-weight: 400;
+font-family: Poppins, sans-serif;
+margin: 0px 0px 30px;
+padding: 0px;
+}
+
+.login-form-group {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(82, 95, 127);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(82, 95, 127);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+margin: 0px 0px 15px;
+padding: 0px;
+width: 400px;
+}
+
+.login-form-group label {
+display: block;
+color: rgba(255, 255, 255, 0.8);
+font-size: 14px;
+font-weight: 400;
+margin-bottom: 5px;
+font-family: Poppins, sans-serif;
+}
+
+.login-form-group input[type="text"],
+.login-form-group input[type="password"] {
+background-color: rgb(51, 51, 51);
+border: 1.333333px solid rgb(204, 204, 204);
+border-radius: 4px;
+color: rgb(255, 255, 255);
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 39.666668px;
+margin: 5px 0px;
+padding: 8px;
+width: 100%;
+box-sizing: border-box;
+}
+
+.login-form-group input[type="text"]:focus,
+.login-form-group input[type="password"]:focus {
+outline: none;
+border-color: rgb(44, 197, 17);
+}
+
+.login-login-btn {
+background-color: rgb(44, 197, 17);
+border: 0px none rgb(0, 0, 0);
+border-radius: 5px;
+box-shadow: none;
+color: rgb(0, 0, 0);
+display: inline-block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 700;
+height: 40px;
+margin: 0px;
+padding: 10px;
+width: 400px;
+}
+
+.login-modal-content {
+background-color: rgb(0, 0, 0);
+border: 1.333333px solid rgb(44, 197, 17);
+border-radius: 10px;
+box-shadow: rgba(0, 0, 0, 0.3) 0px 4px 15px 0px;
+color: rgb(82, 95, 127);
+display: flex;
+align-items: center;
+justify-content: center;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 535px;
+margin: 0px auto;
+padding: 32px 16px;
+width: 600px;
+}
+
+.login-modal-overlay {
+background-color: rgba(0, 0, 0, 0.7);
+border: 0px none rgb(82, 95, 127);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(82, 95, 127);
+display: flex;
+align-items: center;
+justify-content: center;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+min-height: 100vh;
+width: 100%;
+position: fixed;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+}
+
+.login-page {
+background-color: rgb(30, 30, 47);
+background-image: url('/static/media/night-sky-full-of-stars-fantasy-animation-made-of-magical-sparkly-light-particles-flickering-on-a-purple-blue-gradient-background_bajacpz7x_thumbnail-full01.e6a30d27482b2b409f71.png');
+background-size: cover;
+background-position: center;
+background-repeat: no-repeat;
+border: 0px none rgb(82, 95, 127);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(82, 95, 127);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+min-height: 100vh;
+width: 100%;
+margin: 0px;
+padding: 0px;
+position: relative;
+}
+
+.login-password-container {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(82, 95, 127);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(82, 95, 127);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 49.666668px;
+margin: 0px;
+padding: 0px;
+width: 400px;
+}
+
+.login-password-toggle {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgba(0, 0, 0, 0.847);
+border-radius: 0px;
+box-shadow: none;
+color: rgba(0, 0, 0, 0.847);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 25px;
+margin: 0px;
+padding: 2px 6px 3px;
+width: 30.666666px;
+}
+
+.login-reg-but-container {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(82, 95, 127);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(82, 95, 127);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 93.333336px;
+margin: 0px;
+padding: 0px;
+width: 400px;
+}
+
+.login-signup-link {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(44, 197, 17);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(44, 197, 17);
+display: inline-block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 25px;
+margin: 0px;
+padding: 2px 6px 3px;
+width: 61.8125px;
+}
+
+.login-signup-prompt {
+background-color: rgba(0, 0, 0, 0);
+border: 0px none rgb(82, 95, 127);
+border-radius: 0px;
+box-shadow: none;
+color: rgb(82, 95, 127);
+display: block;
+font-family: Poppins, sans-serif;
+font-size: 14px;
+font-weight: 400;
+height: 25px;
+margin: 20px 0px 0px;
+padding: 0px;
+width: 400px;
+}
+

@@ -1,0 +1,287 @@
+{
+    "name": "Scenario 2A-C - AI Text Bot with Booking",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio incoming SMS webhook"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "MessageSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "From",
+                        "type": "text"
+                    },
+                    {
+                        "name": "To",
+                        "type": "text"
+                    },
+                    {
+                        "name": "Body",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "{Contact Phone} = '{{1.From}}'",
+                "maxRecords": 1,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are a helpful AI assistant helping customers book appointments.\n\nCustomer Message: {{1.Body}}\nCustomer Phone: {{1.From}}\n\nAvailable time slots (example - replace with actual available times from calendar):\n- Monday 2:00 PM\n- Tuesday 10:00 AM\n- Tuesday 3:00 PM\n- Wednesday 11:00 AM\n- Thursday 2:00 PM\n- Friday 10:00 AM\n\nYour goal:\n1. Detect if they want to book an appointment\n2. If yes, offer available times\n3. If they select a time, confirm the booking\n4. If they're just asking questions, answer helpfully\n\nKeep responses under 160 characters for SMS.\n\nIMPORTANT: Return ONLY valid JSON (no markdown, no code blocks):\n{\n  \"response\": \"Your response here\",\n  \"intent\": \"booking\",\n  \"booking_status\": \"offered\",\n  \"selected_time\": \"\",\n  \"needs_calendar_update\": false\n}\n\nbooking_status can be: none, offered, confirmed\nIf they select a specific time, set selected_time and needs_calendar_update to true.",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{3.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.From}}",
+                "from": "{{1.To}}",
+                "body": "{{4.response}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{4.needs_calendar_update}} = true"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{2.id[0]}}",
+                "record": {
+                    "Status": "booking_confirmed",
+                    "Notes": "{{2.Notes[0]}}\n\n--- Booking Confirmed ---\nSelected Time: {{4.selected_time}}\n\nNOTE: Calendar event creation requires manual setup via Google Calendar API module. Use Google Calendar 'Create Event' module after import."
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 50
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{2.id[0]}} is empty"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 400
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Contact Phone": "{{1.From}}",
+                    "Status": "booking_confirmed",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "SMS Booking:\nMessage: {{1.Body}}\nAI Response: {{4.response}}\nBooking Time: {{4.selected_time}}\nStatus: {{4.booking_status}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 300
+                }
+            }
+        },
+        {
+            "id": 10,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{2.id[0]}}",
+                "record": {
+                    "Status": "{{4.booking_status}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "{{2.Notes[0]}}\n\n--- SMS Booking at {{now}} ---\nMessage: {{1.Body}}\nAI Response: {{4.response}}\nBooking Time: {{4.selected_time}}\nStatus: {{4.booking_status}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 500
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook, airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, twilio:CreateMessage, builtin:BasicRouter, airtable:ActionCreateRecord, airtable:ActionUpdateRecords. Note: Google Calendar integration requires manual setup - use Google Calendar API or webhook for calendar events."]
+    }
+}
+

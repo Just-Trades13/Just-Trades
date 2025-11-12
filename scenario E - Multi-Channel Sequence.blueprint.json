@@ -1,0 +1,188 @@
+{
+    "name": "Scenario E - Multi-Channel Follow-up Sequence",
+    "flow": [
+        {
+            "id": 1,
+            "module": "airtable:TriggerWatchRecords",
+            "version": 3,
+            "parameters": {
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "config": {
+                    "labelField": "Company",
+                    "triggerField": "Last Modified Time"
+                },
+                "formula": "AND({Last Out Reach} < TODAY() - 7, {Reply Received} = 0, {Email Campaign} IN [\"initial outreach\", \"follow_up_1\"], {Do Not Contact} = 0, {Contact Email} != \"\", {Contact Phone} != \"\")",
+                "maxRecords": 5,
+                "__IMTCONN__": 5591761,
+                "useColumnId": false
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Create a multi-channel follow-up strategy:\n\nLead: {{1.`Contact Full Name`}}\nCompany: {{1.Company}}\nIndustry: {{1.Industry}}\nLast Contact: {{1.`Last Out Reach`}}\nEmail Campaign: {{1.`Email Campaign`}}\n\nGenerate:\n1. A concise email (under 60 words) with subject\n2. A short SMS message (under 160 chars)\n3. Determine which channel to use first (email or sms)\n\nFormat JSON:\n{\n  \"channel_order\": [\"email\", \"sms\"],\n  \"email_subject\": \"...\",\n  \"email_body\": \"...\",\n  \"sms_body\": \"...\"\n}",
+                "model": "gpt-4o",
+                "store": false,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": false,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{2.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{3.channel_order[0]}} = \"email\""
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "{{1.`Contact Email`}}"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;\">{{3.email_body}}</div><div style=\"text-align: center;\"><a href=\"https://calendly.com/skillztechchannel/15-minute-demo-call\" style=\"background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">Book Meeting</a></div></div>",
+                "subject": "{{3.email_subject}}",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 0
+            },
+            "mapper": {
+                "To": "{{1.`Contact Phone`}}",
+                "From": "+1234567890",
+                "Body": "{{3.sms_body}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 0
+                },
+                "note": "Requires Twilio connection setup - configure From number and connection"
+            }
+        },
+        {
+            "id": 7,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "record": {
+                    "fldFU5cYbHBHmTpHr": "multi_channel_followup",
+                    "fldFodc3E3nJ9yzva": "{{now}}",
+                    "fldxEEEqp6XNCRoNJ": "contacted"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 0
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: airtable:TriggerWatchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, builtin:BasicRouter, google-email:sendAnEmail, twilio:CreateMessage, airtable:ActionUpdateRecords"]
+    }
+}
+

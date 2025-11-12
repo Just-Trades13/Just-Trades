@@ -1,0 +1,910 @@
+{% extends "layout.html" %}
+{% block title %}Dashboard - Just.Trades.{% endblock %}
+{% block page_title %}Dashboard Overview{% endblock %}
+{% block content %}
+<div class="dashboard-grid">
+    <section class="hero-card">
+        <div class="hero-body">
+            <div class="hero-meta">
+                <p class="hero-kicker">Automation Control Center</p>
+                <h1 class="hero-title">Turn trading signals into executed orders, effortlessly</h1>
+                <p class="hero-copy">Just.Trades. mirrors the cloud-based, no-code, event-driven workflow your team relies on: connect brokers once, stream signals in real time, and keep strategies synchronized while you're offline.</p>
+                <div class="hero-actions">
+                    <button class="btn btn-primary">Connect Broker</button>
+                    <button class="btn btn-secondary">Explore Strategies</button>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="hero-chart">
+                    <div class="chart-line chart-line--primary"></div>
+                    <div class="chart-line chart-line--accent"></div>
+                </div>
+                <div class="hero-stat">
+                    <span class="hero-stat-label">Signal throughput</span>
+                    <span class="hero-stat-value">1.8s avg</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="onboarding-strip">
+        <header class="onboarding-header">
+            <div>
+                <h2>Getting started in four steps</h2>
+                <p class="onboarding-sub">Mirror the TradersPost-style workflow: link connections, define strategies, pair subscriptions, and route live webhooks.</p>
+            </div>
+            <button class="link-button">View setup guide</button>
+        </header>
+        <div class="onboarding-cards">
+            <article class="onboarding-card">
+                <span class="step-index">1</span>
+                <h3>Connect a broker</h3>
+                <p>Securely authorize live, paper, or prop firm accounts so executions stay cloud-based.</p>
+                <button class="inline-link">Manage connections</button>
+            </article>
+            <article class="onboarding-card">
+                <span class="step-index">2</span>
+                <h3>Create a strategy</h3>
+                <p>Define asset class, tickers, risk guardrails, and receive your unique webhook endpoint.</p>
+                <button class="inline-link">Open strategy builder</button>
+            </article>
+            <article class="onboarding-card">
+                <span class="step-index">3</span>
+                <h3>Attach subscriptions</h3>
+                <p>Map each broker account to a strategy with sizing overrides and auto-submit rules.</p>
+                <button class="inline-link">Review subscriptions</button>
+            </article>
+            <article class="onboarding-card">
+                <span class="step-index">4</span>
+                <h3>Send trade webhooks</h3>
+                <p>Stream JSON signals from TradingView, TrendSpider, or custom sources—execution stays event-driven.</p>
+                <button class="inline-link">Copy webhook URL</button>
+            </article>
+        </div>
+    </section>
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <header class="metric-header">
+                <h3 class="metric-title">Cumulative Return</h3>
+                <span class="material-icons card-close">close</span>
+            </header>
+            <div class="metric-body">
+                <div class="metric-icon metric-icon--success">
+                    <span class="material-icons">savings</span>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Time Traded</p>
+                    <p class="metric-value">1M 1D</p>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Return</p>
+                    <p class="metric-value">$20,828</p>
+                </div>
+            </div>
+        </article>
+        <article class="metric-card">
+            <header class="metric-header">
+                <h3 class="metric-title">W_L_WINRATE</h3>
+                <span class="material-icons card-close">close</span>
+            </header>
+            <div class="metric-body">
+                <div class="metric-icon metric-icon--primary">
+                    <span class="material-icons">pie_chart</span>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Wins</p>
+                    <p class="metric-value">609</p>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Losses</p>
+                    <p class="metric-value">23</p>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">% Winrate</p>
+                    <p class="metric-value">96%</p>
+                </div>
+            </div>
+        </article>
+        <article class="metric-card">
+            <header class="metric-header">
+                <h3 class="metric-title">Drawdown</h3>
+                <span class="material-icons card-close">close</span>
+            </header>
+            <div class="metric-body">
+                <div class="metric-icon metric-icon--danger">
+                    <span class="material-icons">show_chart</span>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Max DD</p>
+                    <p class="metric-value">$8,456</p>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Avg DD</p>
+                    <p class="metric-value">$123</p>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Run DD</p>
+                    <p class="metric-value">$8,456</p>
+                </div>
+            </div>
+        </article>
+        <article class="metric-card">
+            <header class="metric-header">
+                <h3 class="metric-title">Total ROI</h3>
+                <span class="material-icons card-close">close</span>
+            </header>
+            <div class="metric-body">
+                <div class="metric-icon metric-icon--info">
+                    <span class="material-icons">percent</span>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Total ROI</p>
+                    <p class="metric-value">27%</p>
+                </div>
+            </div>
+        </article>
+        <article class="metric-card">
+            <header class="metric-header">
+                <h3 class="metric-title">Contracts Held</h3>
+                <span class="material-icons card-close">close</span>
+            </header>
+            <div class="metric-body">
+                <div class="metric-icon metric-icon--warning">
+                    <span class="material-icons">donut_large</span>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Max Size</p>
+                    <p class="metric-value">30</p>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Avg Size</p>
+                    <p class="metric-value">3</p>
+                </div>
+            </div>
+        </article>
+        <article class="metric-card">
+            <header class="metric-header">
+                <h3 class="metric-title">TM Score</h3>
+                <span class="material-icons card-close">close</span>
+            </header>
+            <div class="metric-body metric-body--placeholder">
+                <p>No layout defined for this stat.</p>
+            </div>
+        </article>
+        <article class="metric-card">
+            <header class="metric-header">
+                <h3 class="metric-title">Max/Avg PNL</h3>
+                <span class="material-icons card-close">close</span>
+            </header>
+            <div class="metric-body">
+                <div class="metric-icon metric-icon--warning">
+                    <span class="material-icons">bar_chart</span>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Max/Avg Profit</p>
+                    <p class="metric-value">$1,098 / $556</p>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Max/Avg Loss</p>
+                    <p class="metric-value">-$1,643 / -$584</p>
+                </div>
+            </div>
+        </article>
+        <article class="metric-card">
+            <header class="metric-header">
+                <h3 class="metric-title">Profit Factor</h3>
+                <span class="material-icons card-close">close</span>
+            </header>
+            <div class="metric-body">
+                <div class="metric-icon metric-icon--info">
+                    <span class="material-icons">rocket_launch</span>
+                </div>
+                <div class="metric-stat">
+                    <p class="metric-label">Profit Factor</p>
+                    <p class="metric-value">2.55</p>
+                </div>
+            </div>
+        </article>
+    </section>
+
+    <section class="chart-panel">
+        <header class="chart-header">
+            <div>
+                <h2>Profit vs Drawdown</h2>
+                <p class="chart-subtitle">Rolling 30-day performance snapshot</p>
+            </div>
+            <div class="chart-legend">
+                <span class="legend-item"><span class="legend-dot legend-dot--profit"></span>Cumulative Profit</span>
+                <span class="legend-item"><span class="legend-dot legend-dot--drawdown"></span>Cumulative Drawdown</span>
+            </div>
+        </header>
+        <div class="chart-canvas">
+            <canvas id="profitDrawdownChart"></canvas>
+        </div>
+    </section>
+
+    <section class="trade-grid">
+        <article class="trade-card">
+            <header class="trade-header">
+                <h2>Trade History</h2>
+                <div class="trade-controls">
+                    <button class="trade-filter active">All</button>
+                    <button class="trade-filter">Wins</button>
+                    <button class="trade-filter">Losses</button>
+                </div>
+            </header>
+            <div class="trade-table-wrapper">
+                <table class="trade-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Open Time</th>
+                            <th>Closed Time</th>
+                            <th>Strategy</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Size</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>Profit</th>
+                            <th>Drawdown</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="status-pill status-pill--win">WIN</span></td>
+                            <td>Nov 07, 2025 02:54 PM</td>
+                            <td>Nov 07, 2025 02:56 PM</td>
+                            <td>JADES</td>
+                            <td>ES1!</td>
+                            <td><span class="badge badge--buy">BUY</span></td>
+                            <td>1</td>
+                            <td>6742.25</td>
+                            <td>6748.50</td>
+                            <td>$312.50</td>
+                            <td>-87.50</td>
+                        </tr>
+                        <tr>
+                            <td><span class="status-pill status-pill--win">WIN</span></td>
+                            <td>Nov 07, 2025 02:54 PM</td>
+                            <td>Nov 07, 2025 02:55 PM</td>
+                            <td>JADNO</td>
+                            <td>NQ1!</td>
+                            <td><span class="badge badge--buy">BUY</span></td>
+                            <td>1</td>
+                            <td>25113.50</td>
+                            <td>25143.00</td>
+                            <td>$590.00</td>
+                            <td>-305.00</td>
+                        </tr>
+                        <tr>
+                            <td><span class="status-pill status-pill--loss">LOSS</span></td>
+                            <td>Nov 07, 2025 02:50 PM</td>
+                            <td>Nov 07, 2025 02:53 PM</td>
+                            <td>JADES</td>
+                            <td>NG1!</td>
+                            <td><span class="badge badge--sell">SELL</span></td>
+                            <td>1</td>
+                            <td>25087.75</td>
+                            <td>25105.75</td>
+                            <td>-$600.00</td>
+                            <td>-625.00</td>
+                        </tr>
+                        <tr>
+                            <td><span class="status-pill status-pill--loss">LOSS</span></td>
+                            <td>Nov 07, 2025 02:31 PM</td>
+                            <td>Nov 07, 2025 02:40 PM</td>
+                            <td>JADES</td>
+                            <td>ES1!</td>
+                            <td><span class="badge badge--sell">SELL</span></td>
+                            <td>1</td>
+                            <td>6736.25</td>
+                            <td>6742.50</td>
+                            <td>-$312.50</td>
+                            <td>-287.50</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <footer class="trade-footer">
+                <button class="pager-btn" disabled>«</button>
+                <button class="pager-btn" disabled>‹</button>
+                <button class="pager-btn">›</button>
+                <button class="pager-btn">»</button>
+            </footer>
+        </article>
+
+        <article class="calendar-card">
+            <header class="calendar-header">
+                <div>
+                    <h2>November 2025</h2>
+                    <p class="calendar-subtitle">Daily trade totals</p>
+                </div>
+                <div class="calendar-nav">
+                    <button class="calendar-btn">today</button>
+                    <button class="calendar-btn">back</button>
+                    <button class="calendar-btn">next</button>
+                </div>
+            </header>
+            <div class="calendar-grid">
+                <div class="calendar-day muted">Sun<br><span>26</span></div>
+                <div class="calendar-day muted">Mon<br><span>27</span><small>$925<br>(21 trades)</small></div>
+                <div class="calendar-day muted">Tue<br><span>28</span><small>$317<br>(22 trades)</small></div>
+                <div class="calendar-day muted">Wed<br><span>29</span><small>$757<br>(27 trades)</small></div>
+                <div class="calendar-day muted">Thu<br><span>30</span><small>$466<br>(18 trades)</small></div>
+                <div class="calendar-day highlighted">Fri<br><span>01</span><small>$1,622<br>(28 trades)</small></div>
+                <div class="calendar-day muted">Sat<br><span>02</span></div>
+                <div class="calendar-day">Sun<br><span>03</span><small>$1,009<br>(34 trades)</small></div>
+                <div class="calendar-day">Mon<br><span>04</span><small>$993<br>(41 trades)</small></div>
+                <div class="calendar-day">Tue<br><span>05</span><small>$757<br>(27 trades)</small></div>
+                <div class="calendar-day">Wed<br><span>06</span><small>$3,374<br>(49 trades)</small></div>
+                <div class="calendar-day">Thu<br><span>07</span><small>$6,204<br>(73 trades)</small></div>
+                <div class="calendar-day">Fri<br><span>08</span></div>
+            </div>
+        </article>
+    </section>
+</div>
+{% endblock %}
+{% block styles %}
+<style>
+    .dashboard-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+    }
+    .hero-card {
+        background: linear-gradient(135deg, rgba(94, 114, 228, 0.2), rgba(45, 206, 137, 0.1));
+        border: 1px solid rgba(94, 114, 228, 0.2);
+        border-radius: 18px;
+        padding: 2.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .hero-body {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2rem;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .hero-meta {
+        flex: 1 1 320px;
+        max-width: 520px;
+    }
+    .hero-kicker {
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+        font-size: 0.75rem;
+    }
+    .hero-title {
+        font-size: 2.4rem;
+        line-height: 1.2;
+        margin: 0 0 1rem;
+    }
+    .hero-copy {
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
+        max-width: 480px;
+    }
+    .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    .btn {
+        border: none;
+        border-radius: 12px;
+        padding: 0.75rem 1.75rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    }
+    .btn-primary {
+        background-color: var(--primary-color);
+        color: #fff;
+    }
+    .btn-secondary {
+        background-color: rgba(255, 255, 255, 0.08);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .hero-visual {
+        flex: 1 1 260px;
+        max-width: 360px;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        align-items: flex-start;
+    }
+    .hero-chart {
+        width: 100%;
+        height: 160px;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 16px;
+        padding: 1rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .chart-line {
+        position: absolute;
+        bottom: 0;
+        width: 100%;
+        height: 58%;
+        border-radius: 999px;
+        opacity: 0.7;
+    }
+    .chart-line--primary {
+        background: linear-gradient(90deg, rgba(94, 114, 228, 0.3) 0%, rgba(94, 114, 228, 0.6) 100%);
+        transform: translateY(-10px);
+    }
+    .chart-line--accent {
+        background: linear-gradient(90deg, rgba(45, 206, 137, 0.3) 0%, rgba(45, 206, 137, 0.6) 100%);
+    }
+    .hero-stat {
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 1rem 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    .hero-stat-label {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+    }
+    .hero-stat-value {
+        font-size: 1.75rem;
+        font-weight: 600;
+    }
+    .onboarding-strip {
+        background: var(--background-light);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    .onboarding-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+    .onboarding-header h2 {
+        margin: 0 0 0.5rem;
+        font-size: 1.4rem;
+    }
+    .onboarding-sub {
+        margin: 0;
+        color: var(--text-muted);
+        max-width: 540px;
+    }
+    .onboarding-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+    }
+    .onboarding-card {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 14px;
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .step-index {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: rgba(94, 114, 228, 0.25);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        color: var(--primary-color);
+    }
+    .onboarding-card h3 {
+        margin: 0;
+        font-size: 1.05rem;
+    }
+    .onboarding-card p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1.25rem;
+    }
+    .metric-card {
+        background: #1d2338;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    .metric-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-size: 0.85rem;
+        color: #aab7d4;
+    }
+    .metric-title {
+        margin: 0;
+        color: #e2e8f0;
+        font-size: 0.95rem;
+        font-weight: 600;
+    }
+    .card-close {
+        font-size: 1.1rem;
+        color: rgba(226, 232, 240, 0.4);
+        cursor: pointer;
+    }
+    .metric-body {
+        display: grid;
+        grid-template-columns: auto repeat(3, minmax(0, 1fr));
+        align-items: center;
+        gap: 0.75rem;
+    }
+    .metric-body--placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem 1rem;
+        background: rgba(148, 163, 184, 0.05);
+        border-radius: 10px;
+        color: #94a3b8;
+        font-size: 0.9rem;
+    }
+    .metric-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        background: rgba(94, 114, 228, 0.25);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+    .metric-icon--success { background: linear-gradient(135deg, rgba(45, 206, 137, 0.35), rgba(45, 206, 137, 0.15)); }
+    .metric-icon--primary { background: linear-gradient(135deg, rgba(94, 114, 228, 0.4), rgba(94, 114, 228, 0.2)); }
+    .metric-icon--danger { background: linear-gradient(135deg, rgba(245, 54, 92, 0.35), rgba(245, 54, 92, 0.15)); }
+    .metric-icon--warning { background: linear-gradient(135deg, rgba(255, 193, 7, 0.35), rgba(255, 193, 7, 0.15)); color: #161b2f; }
+    .metric-icon--info { background: linear-gradient(135deg, rgba(0, 188, 212, 0.35), rgba(0, 188, 212, 0.15)); }
+    .metric-stat {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        min-width: 0;
+    }
+    .metric-label {
+        margin: 0;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #7c8ebb;
+    }
+    .metric-value {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #e2e8f0;
+    }
+    .chart-panel {
+        background: #111a32;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    .chart-header h2 {
+        margin: 0 0 0.35rem;
+        font-size: 1.2rem;
+    }
+    .chart-subtitle {
+        margin: 0;
+        color: #95a2c7;
+        font-size: 0.9rem;
+    }
+    .chart-legend {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        font-size: 0.85rem;
+        color: #aab7d4;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+    }
+    .legend-dot--profit { background: #22c55e; }
+    .legend-dot--drawdown { background: #f87171; }
+    .chart-canvas {
+        width: 100%;
+        height: 340px;
+    }
+    .chart-canvas canvas {
+        width: 100% !important;
+        height: 100% !important;
+    }
+    .trade-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 2.5fr) minmax(260px, 1fr);
+        gap: 1.5rem;
+    }
+    .trade-card,
+    .calendar-card {
+        background: #10162d;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        display: flex;
+        flex-direction: column;
+    }
+    .trade-header,
+    .calendar-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    .trade-header h2,
+    .calendar-header h2 {
+        margin: 0 0 0.35rem;
+        font-size: 1.2rem;
+    }
+    .trade-controls {
+        display: inline-flex;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 999px;
+        overflow: hidden;
+    }
+    .trade-filter {
+        background: none;
+        border: none;
+        color: #cbd5f5;
+        padding: 0.35rem 1rem;
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+    .trade-filter.active {
+        background: var(--primary-color);
+        color: #0f172a;
+    }
+    .trade-table-wrapper {
+        padding: 0 1.5rem 1.5rem;
+        overflow-x: auto;
+    }
+    .trade-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+        min-width: 760px;
+    }
+    .trade-table th {
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.06em;
+        color: #8fa0cb;
+        text-align: left;
+        padding: 0.75rem 0.5rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    .trade-table td {
+        padding: 0.85rem 0.5rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+        color: #e2e8f0;
+        white-space: nowrap;
+    }
+    .trade-table tr:last-child td {
+        border-bottom: none;
+    }
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+    }
+    .badge--buy { background: rgba(34, 197, 94, 0.18); color: #22c55e; }
+    .badge--sell { background: rgba(248, 113, 113, 0.18); color: #f87171; }
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 48px;
+        padding: 0.25rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+    }
+    .status-pill--win { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .status-pill--loss { background: rgba(248, 113, 113, 0.2); color: #f87171; }
+    .trade-footer {
+        padding: 1rem 1.5rem 1.5rem;
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+    .pager-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: rgba(255, 255, 255, 0.04);
+        color: #cbd5f5;
+        cursor: pointer;
+    }
+    .pager-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+    .calendar-card {
+        padding-bottom: 1.5rem;
+    }
+    .calendar-subtitle {
+        margin: 0;
+        color: #95a2c7;
+        font-size: 0.9rem;
+    }
+    .calendar-nav {
+        display: inline-flex;
+        gap: 0.5rem;
+    }
+    .calendar-btn {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 0.35rem 0.8rem;
+        color: #d1d9f0;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+    }
+    .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 0.5rem;
+        padding: 0 1.5rem;
+    }
+    .calendar-day {
+        background: rgba(34, 197, 94, 0.16);
+        border-radius: 12px;
+        padding: 0.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        align-items: flex-start;
+        color: #e2f7eb;
+        font-size: 0.8rem;
+        min-height: 110px;
+    }
+    .calendar-day small {
+        font-size: 0.75rem;
+        color: rgba(226, 232, 240, 0.8);
+    }
+    .calendar-day span {
+        font-size: 1.2rem;
+        font-weight: 600;
+    }
+    .calendar-day.muted {
+        background: rgba(148, 163, 184, 0.12);
+        color: #aebbdc;
+    }
+    .calendar-day.highlighted {
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.4), rgba(37, 99, 235, 0.2));
+    }
+
+    @media (max-width: 1200px) {
+        .trade-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    @media (max-width: 768px) {
+        .hero-body { flex-direction: column; align-items: flex-start; }
+        .hero-title { font-size: 2rem; }
+        .chart-header { flex-direction: column; align-items: flex-start; }
+        .chart-legend { flex-wrap: wrap; }
+        .trade-table { min-width: unset; }
+    }
+</style>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('profitDrawdownChart');
+    if (ctx) {
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Oct 09', 'Oct 13', 'Oct 16', 'Oct 20', 'Oct 23', 'Oct 27', 'Oct 31', 'Nov 04', 'Nov 07'],
+                datasets: [
+                    {
+                        label: 'Cumulative Profit',
+                        data: [500, 720, 960, 1500, 1840, 2260, 2680, 3290, 4120],
+                        borderColor: '#22c55e',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        tension: 0.35,
+                        pointRadius: 3,
+                        fill: true,
+                    },
+                    {
+                        label: 'Cumulative Drawdown',
+                        data: [320, 540, 460, 880, 760, 620, 580, 540, 620],
+                        borderColor: '#f87171',
+                        backgroundColor: 'rgba(248, 113, 113, 0.08)',
+                        tension: 0.35,
+                        pointRadius: 3,
+                        fill: true,
+                    }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#0f172a',
+                        borderColor: 'rgba(148, 163, 184, 0.2)',
+                        borderWidth: 1,
+                        padding: 12,
+                        displayColors: false,
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${ctx.formattedValue}`
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                        ticks: { color: '#94a3b8' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                        ticks: { color: '#94a3b8' }
+                    }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

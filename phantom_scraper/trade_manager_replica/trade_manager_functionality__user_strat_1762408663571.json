@@ -1,0 +1,6482 @@
+{
+  "timestamp": "2025-11-06T05:57:18.920Z",
+  "url": "https://trademanagergroup.com/user/strats",
+  "page": "/user/strats",
+  "apiCalls": [
+    {
+      "type": "fetch",
+      "url": "/api/auth/check-auth/",
+      "method": "GET",
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "236",
+        "content-type": "application/json",
+        "cross-origin-opener-policy": "same-origin",
+        "date": "Thu, 06 Nov 2025 05:57:22 GMT",
+        "referrer-policy": "same-origin",
+        "server": "nginx/1.18.0 (Ubuntu)",
+        "strict-transport-security": "max-age=3600; includeSubDomains; preload",
+        "vary": "origin, Cookie",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY"
+      },
+      "body": null,
+      "timestamp": "2025-11-06T05:57:21.999Z",
+      "status": 200,
+      "statusText": "OK",
+      "response": {
+        "user": {
+          "username": "J.T.M.J",
+          "email": "just.trades.chicago@gmail.com",
+          "admin": false,
+          "DiscordID": "963881348039340122",
+          "access": "full",
+          "signed": true,
+          "is_email_verified": true,
+          "sessionId": "xvr5dwrjc8maxncrgtm2vk7snr6c1h35"
+        }
+      }
+    },
+    {
+      "type": "fetch",
+      "url": "/api/strategies/?val=DirStrat",
+      "method": "GET",
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "15086",
+        "content-type": "application/json",
+        "cross-origin-opener-policy": "same-origin",
+        "date": "Thu, 06 Nov 2025 05:57:22 GMT",
+        "referrer-policy": "same-origin",
+        "server": "nginx/1.18.0 (Ubuntu)",
+        "strict-transport-security": "max-age=3600; includeSubDomains; preload",
+        "vary": "origin, Cookie",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY"
+      },
+      "body": null,
+      "timestamp": "2025-11-06T05:57:21.995Z",
+      "status": 200,
+      "statusText": "OK",
+      "response": {
+        "strategies": [
+          {
+            "name": "10TICKS-1"
+          },
+          {
+            "name": "10TICKS-2"
+          },
+          {
+            "name": "18YEAROLDBADDIE"
+          },
+          {
+            "name": "1_PORTFOLIO_BOT"
+          },
+          {
+            "name": "2FORME"
+          },
+          {
+            "name": "2MINUTEKILLER"
+          },
+          {
+            "name": "4HREMABOUNCE"
+          },
+          {
+            "name": "600EMA"
+          },
+          {
+            "name": "ACHILLES"
+          },
+          {
+            "name": "ADAY"
+          },
+          {
+            "name": "ADONAI"
+          },
+          {
+            "name": "AFLOW"
+          },
+          {
+            "name": "AFLOW-WEEKLY"
+          },
+          {
+            "name": "AFLOW1"
+          },
+          {
+            "name": "AFLOW15"
+          },
+          {
+            "name": "AFLOW240"
+          },
+          {
+            "name": "AFLOW30S"
+          },
+          {
+            "name": "AFLOW5"
+          },
+          {
+            "name": "AFLOW60"
+          },
+          {
+            "name": "AFLOWMONTHLY"
+          },
+          {
+            "name": "AIRTY3M"
+          },
+          {
+            "name": "ALERT2ALERT"
+          },
+          {
+            "name": "ALGOEXODUS4HR"
+          },
+          {
+            "name": "ALO3"
+          },
+          {
+            "name": "ALO3-PRIME"
+          },
+          {
+            "name": "ALPHA_2B"
+          },
+          {
+            "name": "ALPHA_2B_FULLSEND"
+          },
+          {
+            "name": "ALPHA_2B_MEDSEND"
+          },
+          {
+            "name": "ALPHA_4B"
+          },
+          {
+            "name": "ALPHA_4B_FULLSEND"
+          },
+          {
+            "name": "ALPHA_4B_MEDSEND"
+          },
+          {
+            "name": "ALTERNATE_ENDING"
+          },
+          {
+            "name": "AMAZON-BREAKDOWN"
+          },
+          {
+            "name": "AMAZON-BREAKOUT"
+          },
+          {
+            "name": "ANDREW"
+          },
+          {
+            "name": "ATB"
+          },
+          {
+            "name": "ATB1"
+          },
+          {
+            "name": "ATEAM"
+          },
+          {
+            "name": "ATLAS-3MINUTE"
+          },
+          {
+            "name": "ATLAS3"
+          },
+          {
+            "name": "ATMSCALP0420"
+          },
+          {
+            "name": "ATMSCALP2030"
+          },
+          {
+            "name": "BABY-SEYMOUR"
+          },
+          {
+            "name": "BAITNSWITCH"
+          },
+          {
+            "name": "BAKUGO"
+          },
+          {
+            "name": "BANG"
+          },
+          {
+            "name": "BEARKAT3"
+          },
+          {
+            "name": "BEAUTY"
+          },
+          {
+            "name": "BHFT"
+          },
+          {
+            "name": "BIGBLACKBITCHES"
+          },
+          {
+            "name": "BLIPPI"
+          },
+          {
+            "name": "BLIPPI1"
+          },
+          {
+            "name": "BLIPPIMAX"
+          },
+          {
+            "name": "BLIPPIMAX50"
+          },
+          {
+            "name": "BOCS"
+          },
+          {
+            "name": "BOCS-SCALP"
+          },
+          {
+            "name": "BOCS-SV"
+          },
+          {
+            "name": "BOOMBOOM"
+          },
+          {
+            "name": "BORG"
+          },
+          {
+            "name": "BRAVO_2B"
+          },
+          {
+            "name": "BRAVO_2B_FULLSEND"
+          },
+          {
+            "name": "BRAVO_2B_MEDSEND"
+          },
+          {
+            "name": "BRAVO_4B"
+          },
+          {
+            "name": "BRAVO_4B_FULLSEND"
+          },
+          {
+            "name": "BRAVO_4B_MEDSEND"
+          },
+          {
+            "name": "BREAKDOWN"
+          },
+          {
+            "name": "BREAKOUT"
+          },
+          {
+            "name": "BRIANGRIFFIN"
+          },
+          {
+            "name": "BRUSHFIRE"
+          },
+          {
+            "name": "BTC20M"
+          },
+          {
+            "name": "BTCBLAST"
+          },
+          {
+            "name": "BTCMAN"
+          },
+          {
+            "name": "BTCX100"
+          },
+          {
+            "name": "BUSTDOWN"
+          },
+          {
+            "name": "BUSTUP"
+          },
+          {
+            "name": "BUYONLY"
+          },
+          {
+            "name": "BUYS"
+          },
+          {
+            "name": "BUYVOLUME"
+          },
+          {
+            "name": "BVOLUMES"
+          },
+          {
+            "name": "CALM"
+          },
+          {
+            "name": "CASPER"
+          },
+          {
+            "name": "CCI-1"
+          },
+          {
+            "name": "CEDAILY"
+          },
+          {
+            "name": "CELER"
+          },
+          {
+            "name": "CELERD"
+          },
+          {
+            "name": "CELERO"
+          },
+          {
+            "name": "CHANNEL"
+          },
+          {
+            "name": "CHEAPTRICK"
+          },
+          {
+            "name": "CHEFSPY45"
+          },
+          {
+            "name": "CITABANG10"
+          },
+          {
+            "name": "CLEAR"
+          },
+          {
+            "name": "CLEDUS2"
+          },
+          {
+            "name": "CLIMAX"
+          },
+          {
+            "name": "CLIMAX-ES"
+          },
+          {
+            "name": "CLIMAX-ES1"
+          },
+          {
+            "name": "CLIMAX-NOTP"
+          },
+          {
+            "name": "CLIMAX1"
+          },
+          {
+            "name": "CLIMAX15"
+          },
+          {
+            "name": "CLIMAX240"
+          },
+          {
+            "name": "CLIMAX60"
+          },
+          {
+            "name": "CLIMAXR"
+          },
+          {
+            "name": "CLOUD"
+          },
+          {
+            "name": "CLOUD-ES"
+          },
+          {
+            "name": "CLOUD10"
+          },
+          {
+            "name": "COMO"
+          },
+          {
+            "name": "CONFLUENCE"
+          },
+          {
+            "name": "CONFLUENCE2"
+          },
+          {
+            "name": "CORINTHIANS922"
+          },
+          {
+            "name": "CR1"
+          },
+          {
+            "name": "CR1-HEDGED"
+          },
+          {
+            "name": "CR3"
+          },
+          {
+            "name": "CR30S"
+          },
+          {
+            "name": "CR5"
+          },
+          {
+            "name": "CRES30"
+          },
+          {
+            "name": "CRMES30"
+          },
+          {
+            "name": "CRUDEIT"
+          },
+          {
+            "name": "CRYO"
+          },
+          {
+            "name": "CSST"
+          },
+          {
+            "name": "CYPHER"
+          },
+          {
+            "name": "D-DAY"
+          },
+          {
+            "name": "D30"
+          },
+          {
+            "name": "D30-OPTIMIZED"
+          },
+          {
+            "name": "DAILYCALL"
+          },
+          {
+            "name": "DAILYOPEN"
+          },
+          {
+            "name": "DAILYPUT"
+          },
+          {
+            "name": "DANIEL-MES"
+          },
+          {
+            "name": "DANIEL2"
+          },
+          {
+            "name": "DBTLONG2"
+          },
+          {
+            "name": "DBTLONG_SELLSIDE"
+          },
+          {
+            "name": "DBTZAP"
+          },
+          {
+            "name": "DBTZIP"
+          },
+          {
+            "name": "DBTZIPMNQ"
+          },
+          {
+            "name": "DBZ"
+          },
+          {
+            "name": "DCA"
+          },
+          {
+            "name": "DCA-MGC"
+          },
+          {
+            "name": "DCA-MYM"
+          },
+          {
+            "name": "DCA-RTY"
+          },
+          {
+            "name": "DCA2"
+          },
+          {
+            "name": "DCA3"
+          },
+          {
+            "name": "DDOWN"
+          },
+          {
+            "name": "DEGEN"
+          },
+          {
+            "name": "DEKU"
+          },
+          {
+            "name": "DIECE"
+          },
+          {
+            "name": "DIX"
+          },
+          {
+            "name": "DMI-DAILY"
+          },
+          {
+            "name": "DOGENUT"
+          },
+          {
+            "name": "DOOMSDAY"
+          },
+          {
+            "name": "DRAGONFLY"
+          },
+          {
+            "name": "DST2M"
+          },
+          {
+            "name": "DSTBTC"
+          },
+          {
+            "name": "DUMPIT"
+          },
+          {
+            "name": "DUMPSTER_FIRE"
+          },
+          {
+            "name": "DUP"
+          },
+          {
+            "name": "DX-DAILY"
+          },
+          {
+            "name": "DYNAMO-1CR"
+          },
+          {
+            "name": "DYNAMO-1CR30"
+          },
+          {
+            "name": "DYNAMO-1CRD"
+          },
+          {
+            "name": "DYNAMO-30SCR"
+          },
+          {
+            "name": "DYNATIME"
+          },
+          {
+            "name": "DYNATIMEX"
+          },
+          {
+            "name": "EPHESIANS426"
+          },
+          {
+            "name": "EPHESIANS432"
+          },
+          {
+            "name": "ES-CE"
+          },
+          {
+            "name": "ESPIA"
+          },
+          {
+            "name": "ETHNUT"
+          },
+          {
+            "name": "EXCUSEME"
+          },
+          {
+            "name": "EXODIA"
+          },
+          {
+            "name": "EXODIA-KRE"
+          },
+          {
+            "name": "EXODIA325"
+          },
+          {
+            "name": "EXODIAGC"
+          },
+          {
+            "name": "EXODIAPRIME"
+          },
+          {
+            "name": "EXODIAPRIME2"
+          },
+          {
+            "name": "EXODIAPRIMUS"
+          },
+          {
+            "name": "EXODIAX"
+          },
+          {
+            "name": "EXODIAX2"
+          },
+          {
+            "name": "EXODIAX3"
+          },
+          {
+            "name": "EXODUS"
+          },
+          {
+            "name": "FAKE"
+          },
+          {
+            "name": "FALLEN_TWOFOLD"
+          },
+          {
+            "name": "FASTASS"
+          },
+          {
+            "name": "FIREWORKS"
+          },
+          {
+            "name": "FLASH"
+          },
+          {
+            "name": "FLOCK2M"
+          },
+          {
+            "name": "FORTUNE"
+          },
+          {
+            "name": "FOUR4FOUR"
+          },
+          {
+            "name": "FOURLOKO"
+          },
+          {
+            "name": "FOURSOME"
+          },
+          {
+            "name": "FR1M"
+          },
+          {
+            "name": "FR_RETARD"
+          },
+          {
+            "name": "FURIOSA"
+          },
+          {
+            "name": "GALLATIANS513"
+          },
+          {
+            "name": "GAMEOVER"
+          },
+          {
+            "name": "GAMEOVER2"
+          },
+          {
+            "name": "GEEKOGY"
+          },
+          {
+            "name": "GENOS"
+          },
+          {
+            "name": "GHOST"
+          },
+          {
+            "name": "GHOST2"
+          },
+          {
+            "name": "GHOST3"
+          },
+          {
+            "name": "GOGETA"
+          },
+          {
+            "name": "GOJO"
+          },
+          {
+            "name": "GOKU"
+          },
+          {
+            "name": "GOLD"
+          },
+          {
+            "name": "GOLDENCHILD"
+          },
+          {
+            "name": "GOLDMEMBER"
+          },
+          {
+            "name": "GRAIL"
+          },
+          {
+            "name": "GREVIL"
+          },
+          {
+            "name": "GRIPPY"
+          },
+          {
+            "name": "HAZEJESUSTEST"
+          },
+          {
+            "name": "HAZMAT"
+          },
+          {
+            "name": "HAZMAT-2"
+          },
+          {
+            "name": "HOT45"
+          },
+          {
+            "name": "HOT45-1CON"
+          },
+          {
+            "name": "HOT45-1CONBUYONLY"
+          },
+          {
+            "name": "HOT45-BUYONLY"
+          },
+          {
+            "name": "HOT45-NOTP"
+          },
+          {
+            "name": "ICHI"
+          },
+          {
+            "name": "IMI"
+          },
+          {
+            "name": "INVICTUS"
+          },
+          {
+            "name": "ITSSTILLYOU"
+          },
+          {
+            "name": "JADDCAVIX"
+          },
+          {
+            "name": "JADDCAVIXES"
+          },
+          {
+            "name": "JADES"
+          },
+          {
+            "name": "JADIND50"
+          },
+          {
+            "name": "JADNQ"
+          },
+          {
+            "name": "JED"
+          },
+          {
+            "name": "JESTER"
+          },
+          {
+            "name": "JESUS"
+          },
+          {
+            "name": "JESUS-ON-CRACK"
+          },
+          {
+            "name": "JFF"
+          },
+          {
+            "name": "JHCCI15M"
+          },
+          {
+            "name": "JHCCI4HR"
+          },
+          {
+            "name": "JOHN"
+          },
+          {
+            "name": "JOHN1010"
+          },
+          {
+            "name": "JOHNWICK"
+          },
+          {
+            "name": "JOHNWICK2"
+          },
+          {
+            "name": "JOKER"
+          },
+          {
+            "name": "JUICY_POOTS"
+          },
+          {
+            "name": "KDE-MNQ"
+          },
+          {
+            "name": "KILLER"
+          },
+          {
+            "name": "KILOMETER"
+          },
+          {
+            "name": "KING"
+          },
+          {
+            "name": "KRE30-1"
+          },
+          {
+            "name": "KREX30"
+          },
+          {
+            "name": "KREX5"
+          },
+          {
+            "name": "KREXMAX"
+          },
+          {
+            "name": "KRILLIN"
+          },
+          {
+            "name": "KRUN"
+          },
+          {
+            "name": "KRUN20"
+          },
+          {
+            "name": "KRUN5"
+          },
+          {
+            "name": "KRUNF"
+          },
+          {
+            "name": "KRUNSELL"
+          },
+          {
+            "name": "LAMBO"
+          },
+          {
+            "name": "LETYOURSOLGLOW"
+          },
+          {
+            "name": "LEVELS"
+          },
+          {
+            "name": "LIAMMMANUAL"
+          },
+          {
+            "name": "LIGHTMEUP"
+          },
+          {
+            "name": "LOMV"
+          },
+          {
+            "name": "LONGROAD"
+          },
+          {
+            "name": "LONGTERMTREND"
+          },
+          {
+            "name": "LOOT-5"
+          },
+          {
+            "name": "LOVELY50"
+          },
+          {
+            "name": "LOVELY50PM"
+          },
+          {
+            "name": "LUFFY"
+          },
+          {
+            "name": "LZS1M"
+          },
+          {
+            "name": "MA5OPB"
+          },
+          {
+            "name": "MA5OPBC"
+          },
+          {
+            "name": "MAGNETO"
+          },
+          {
+            "name": "MAKEITORBREAKIT"
+          },
+          {
+            "name": "MAMBA_MENTALITY"
+          },
+          {
+            "name": "MANUAL"
+          },
+          {
+            "name": "MANUAL5"
+          },
+          {
+            "name": "MANUALSWING"
+          },
+          {
+            "name": "MARK"
+          },
+          {
+            "name": "MAXIMUS"
+          },
+          {
+            "name": "MEGAMAN"
+          },
+          {
+            "name": "MERC"
+          },
+          {
+            "name": "MES-TEST"
+          },
+          {
+            "name": "MES1"
+          },
+          {
+            "name": "MES30"
+          },
+          {
+            "name": "MES30-10"
+          },
+          {
+            "name": "MES30MAX"
+          },
+          {
+            "name": "MESKING"
+          },
+          {
+            "name": "MFI-BEAR"
+          },
+          {
+            "name": "MFI-BULL"
+          },
+          {
+            "name": "MFIBEAR-R"
+          },
+          {
+            "name": "MFIBULL-R"
+          },
+          {
+            "name": "MIDAS"
+          },
+          {
+            "name": "MILLIONS"
+          },
+          {
+            "name": "MNQGODS"
+          },
+          {
+            "name": "MODDEDTERRARIA"
+          },
+          {
+            "name": "MONTHLY"
+          },
+          {
+            "name": "MORTALKOMBAT"
+          },
+          {
+            "name": "MOSES"
+          },
+          {
+            "name": "MUMENRIDER"
+          },
+          {
+            "name": "MVAGUSTA"
+          },
+          {
+            "name": "MYM"
+          },
+          {
+            "name": "NADA"
+          },
+          {
+            "name": "NADA-BULL"
+          },
+          {
+            "name": "NADA-QQQ"
+          },
+          {
+            "name": "NADA-VIX15M"
+          },
+          {
+            "name": "NADAMAX"
+          },
+          {
+            "name": "NADAX"
+          },
+          {
+            "name": "NAIL"
+          },
+          {
+            "name": "NAMGYU"
+          },
+          {
+            "name": "NAUTILUS"
+          },
+          {
+            "name": "NDQ15M2065DEF"
+          },
+          {
+            "name": "NDQ15M2065OPT"
+          },
+          {
+            "name": "NDQ15M3030DEF"
+          },
+          {
+            "name": "NDQ1M1015"
+          },
+          {
+            "name": "NES1"
+          },
+          {
+            "name": "NEURAL5"
+          },
+          {
+            "name": "NICKY"
+          },
+          {
+            "name": "NIGHTWING"
+          },
+          {
+            "name": "NOTREAL"
+          },
+          {
+            "name": "NOWAY"
+          },
+          {
+            "name": "NQ-1CR"
+          },
+          {
+            "name": "NQ-1CRD"
+          },
+          {
+            "name": "NQ-QUANTUM15"
+          },
+          {
+            "name": "NQ1"
+          },
+          {
+            "name": "NQ30SCR"
+          },
+          {
+            "name": "NQBREAKDOWN"
+          },
+          {
+            "name": "NQBREAKOUT"
+          },
+          {
+            "name": "NQIMI"
+          },
+          {
+            "name": "NQPRIME-RIB"
+          },
+          {
+            "name": "NQPRIME2"
+          },
+          {
+            "name": "NQPRIME3"
+          },
+          {
+            "name": "NQSHORT"
+          },
+          {
+            "name": "NUCLEARFOMO"
+          },
+          {
+            "name": "NUGGIES"
+          },
+          {
+            "name": "NVDA"
+          },
+          {
+            "name": "ODIN"
+          },
+          {
+            "name": "OIL"
+          },
+          {
+            "name": "ONE"
+          },
+          {
+            "name": "OPEN"
+          },
+          {
+            "name": "OPENRANGE-5MIN"
+          },
+          {
+            "name": "OPENRANGE-ES3"
+          },
+          {
+            "name": "ORB5"
+          },
+          {
+            "name": "ORB5MNQ75TICKTP"
+          },
+          {
+            "name": "ORION"
+          },
+          {
+            "name": "OSWING"
+          },
+          {
+            "name": "OVERLOAD"
+          },
+          {
+            "name": "PARADOXMES"
+          },
+          {
+            "name": "PARAWHO"
+          },
+          {
+            "name": "PAUL"
+          },
+          {
+            "name": "PAYDAY"
+          },
+          {
+            "name": "PEE-WEES-PICKS"
+          },
+          {
+            "name": "PEEWEE"
+          },
+          {
+            "name": "PEEWEES-ATM-NQ"
+          },
+          {
+            "name": "PEEWEES-BREAKOUT-ES"
+          },
+          {
+            "name": "PEEWEES-BREAKOUT-NQ"
+          },
+          {
+            "name": "PEEWEES-BREAKOUT-QQQ"
+          },
+          {
+            "name": "PEEWEES-BREAKOUT-SPY"
+          },
+          {
+            "name": "PEEWEES-DOTTIE"
+          },
+          {
+            "name": "PEEWEES-EDGE"
+          },
+          {
+            "name": "PEEWEES-GITSOME"
+          },
+          {
+            "name": "PEEWEES-GITSOME2"
+          },
+          {
+            "name": "PEEWEES-KIMI"
+          },
+          {
+            "name": "PEEWEES-MOMO"
+          },
+          {
+            "name": "PEEWEES-MOMO-QQQ"
+          },
+          {
+            "name": "PEEWEES-MOMO-SPY"
+          },
+          {
+            "name": "PEEWEES-MONSTER"
+          },
+          {
+            "name": "PEEWEES-OVERNIGHT-GITSOME15"
+          },
+          {
+            "name": "PEEWEES-OVERNIGHT-MOMO15"
+          },
+          {
+            "name": "PEEWEES-PREDICTOR"
+          },
+          {
+            "name": "PEEWEES-PREDICTOR-QQQ"
+          },
+          {
+            "name": "PEEWEES-PREDICTOR-SPY"
+          },
+          {
+            "name": "PEEWEES-PRINCESS"
+          },
+          {
+            "name": "PEEWEES-SNIPER"
+          },
+          {
+            "name": "PEEWEES-SNIPER2"
+          },
+          {
+            "name": "PEPE"
+          },
+          {
+            "name": "PEPE2"
+          },
+          {
+            "name": "PEPENUT"
+          },
+          {
+            "name": "PERSONAL"
+          },
+          {
+            "name": "PETER"
+          },
+          {
+            "name": "PHCSR"
+          },
+          {
+            "name": "PHCSR-ES"
+          },
+          {
+            "name": "PHCSR-TIMED"
+          },
+          {
+            "name": "PHILLIP"
+          },
+          {
+            "name": "PHOENIX"
+          },
+          {
+            "name": "PICOLLO"
+          },
+          {
+            "name": "PLUTO"
+          },
+          {
+            "name": "POISON_IVY"
+          },
+          {
+            "name": "POISON_OAK"
+          },
+          {
+            "name": "POPEIL"
+          },
+          {
+            "name": "POPEIL-3"
+          },
+          {
+            "name": "POPEIL-O"
+          },
+          {
+            "name": "POPEYE"
+          },
+          {
+            "name": "POPNFRESH"
+          },
+          {
+            "name": "POSEIDON"
+          },
+          {
+            "name": "POUTINE"
+          },
+          {
+            "name": "PRC"
+          },
+          {
+            "name": "PRIMECLIMAX"
+          },
+          {
+            "name": "PRIMUS"
+          },
+          {
+            "name": "PRIMUS2"
+          },
+          {
+            "name": "PRINCE"
+          },
+          {
+            "name": "PRINTER"
+          },
+          {
+            "name": "PRISM15SL"
+          },
+          {
+            "name": "PRISMNY"
+          },
+          {
+            "name": "PROJECTZ"
+          },
+          {
+            "name": "PROVERBS23-7"
+          },
+          {
+            "name": "PROVERBS28-1"
+          },
+          {
+            "name": "PROVERBS3-56"
+          },
+          {
+            "name": "PSALM119-105"
+          },
+          {
+            "name": "PTS"
+          },
+          {
+            "name": "PULLBACK"
+          },
+          {
+            "name": "PULLBACKALT"
+          },
+          {
+            "name": "PULLBACKX"
+          },
+          {
+            "name": "PUMPIT"
+          },
+          {
+            "name": "QAURKES"
+          },
+          {
+            "name": "QM1M"
+          },
+          {
+            "name": "QM3M"
+          },
+          {
+            "name": "QO1"
+          },
+          {
+            "name": "QQE"
+          },
+          {
+            "name": "QQE-MES"
+          },
+          {
+            "name": "QQE-TIMED"
+          },
+          {
+            "name": "QQE1"
+          },
+          {
+            "name": "QQE3"
+          },
+          {
+            "name": "QQQ"
+          },
+          {
+            "name": "QTF1"
+          },
+          {
+            "name": "QTF5"
+          },
+          {
+            "name": "QUANTJEW10"
+          },
+          {
+            "name": "QUANTJEW3"
+          },
+          {
+            "name": "QUANTJEW5"
+          },
+          {
+            "name": "QUANTUMES15M"
+          },
+          {
+            "name": "QUANTUMNQ15M"
+          },
+          {
+            "name": "QUARK"
+          },
+          {
+            "name": "QUARK-BUY"
+          },
+          {
+            "name": "QUARK-BUYD"
+          },
+          {
+            "name": "QUARK-BUYES"
+          },
+          {
+            "name": "QUARK-FLIPS"
+          },
+          {
+            "name": "QUARK-OPTIMIZED"
+          },
+          {
+            "name": "QUARK-OPTIMIZED1"
+          },
+          {
+            "name": "QUARK-OPTIMIZED1CON"
+          },
+          {
+            "name": "QUARK-OPTIMIZEDBUY"
+          },
+          {
+            "name": "QUARK-OPTIMIZEDF"
+          },
+          {
+            "name": "QUARK-OPTIMIZEDFAST"
+          },
+          {
+            "name": "QUARK-SHORT"
+          },
+          {
+            "name": "QUARK-SHORTD"
+          },
+          {
+            "name": "QUARK1CON"
+          },
+          {
+            "name": "QUARKD"
+          },
+          {
+            "name": "QUARKIES"
+          },
+          {
+            "name": "QUARKLIMIT"
+          },
+          {
+            "name": "QUEEN2"
+          },
+          {
+            "name": "QUICK-MES"
+          },
+          {
+            "name": "QUICKMES"
+          },
+          {
+            "name": "QUICKY"
+          },
+          {
+            "name": "RAGEQUIT"
+          },
+          {
+            "name": "RAMBO"
+          },
+          {
+            "name": "RAPTOR"
+          },
+          {
+            "name": "REAL"
+          },
+          {
+            "name": "RENKO-ORB-ASIA"
+          },
+          {
+            "name": "RENKO-ORB-LONDON"
+          },
+          {
+            "name": "RENKO-ORB-NY"
+          },
+          {
+            "name": "RENKOSPY"
+          },
+          {
+            "name": "REPEAT"
+          },
+          {
+            "name": "REQUESTONLY"
+          },
+          {
+            "name": "REV-1"
+          },
+          {
+            "name": "REV-15"
+          },
+          {
+            "name": "REV-5"
+          },
+          {
+            "name": "RIB"
+          },
+          {
+            "name": "RIGHTEOUS"
+          },
+          {
+            "name": "RIPPIES"
+          },
+          {
+            "name": "RIPPY"
+          },
+          {
+            "name": "RISK"
+          },
+          {
+            "name": "RIZZLER"
+          },
+          {
+            "name": "ROBUX"
+          },
+          {
+            "name": "ROOK"
+          },
+          {
+            "name": "RSI-SELL"
+          },
+          {
+            "name": "RTS1M"
+          },
+          {
+            "name": "RTS2M"
+          },
+          {
+            "name": "RTS3M"
+          },
+          {
+            "name": "RTSNQ"
+          },
+          {
+            "name": "RTSNQ-MES"
+          },
+          {
+            "name": "RTSNQ5"
+          },
+          {
+            "name": "RXPRIME"
+          },
+          {
+            "name": "SAFER"
+          },
+          {
+            "name": "SAMA"
+          },
+          {
+            "name": "SAMUEL"
+          },
+          {
+            "name": "SAR1"
+          },
+          {
+            "name": "SAR2"
+          },
+          {
+            "name": "SAR5MIN"
+          },
+          {
+            "name": "SARPRIME"
+          },
+          {
+            "name": "SAUL"
+          },
+          {
+            "name": "SCALP1"
+          },
+          {
+            "name": "SCALP3"
+          },
+          {
+            "name": "SCALPER"
+          },
+          {
+            "name": "SCALPIT"
+          },
+          {
+            "name": "SEAGULLS"
+          },
+          {
+            "name": "SELLS"
+          },
+          {
+            "name": "SELLSIDE"
+          },
+          {
+            "name": "SELLVOLUME"
+          },
+          {
+            "name": "SELLVOLUME-R"
+          },
+          {
+            "name": "SESSIONS"
+          },
+          {
+            "name": "SESSIONS-30S"
+          },
+          {
+            "name": "SESSIONS-BUYSIDE"
+          },
+          {
+            "name": "SESSIONS-QQQ"
+          },
+          {
+            "name": "SESSIONS-SMRT"
+          },
+          {
+            "name": "SESSIONS-SMRTBUYONLY"
+          },
+          {
+            "name": "SESSIONS-SMRTBUYS"
+          },
+          {
+            "name": "SESSIONS-SMRTSELLONLY"
+          },
+          {
+            "name": "SESSIONS-SMRTSELLS"
+          },
+          {
+            "name": "SESSIONS15"
+          },
+          {
+            "name": "SESSIONS5"
+          },
+          {
+            "name": "SESSIONS5-2"
+          },
+          {
+            "name": "SEYITALL"
+          },
+          {
+            "name": "SEYLESS"
+          },
+          {
+            "name": "SEYMOURS_REVENGE"
+          },
+          {
+            "name": "SEYR"
+          },
+          {
+            "name": "SEYR-2"
+          },
+          {
+            "name": "SFM"
+          },
+          {
+            "name": "SFMMACRO"
+          },
+          {
+            "name": "SFMMATRIX"
+          },
+          {
+            "name": "SFMSCALP"
+          },
+          {
+            "name": "SG"
+          },
+          {
+            "name": "SHAFTMANUAL"
+          },
+          {
+            "name": "SHFT"
+          },
+          {
+            "name": "SHFT1"
+          },
+          {
+            "name": "SHORT-DMI"
+          },
+          {
+            "name": "SIGMA"
+          },
+          {
+            "name": "SIMON"
+          },
+          {
+            "name": "SIMON-ADMIN"
+          },
+          {
+            "name": "SIMON-MES"
+          },
+          {
+            "name": "SIMON-PETER"
+          },
+          {
+            "name": "SIMON2"
+          },
+          {
+            "name": "SIMON3"
+          },
+          {
+            "name": "SLEEPY"
+          },
+          {
+            "name": "SLEEPY2"
+          },
+          {
+            "name": "SLEEPY3"
+          },
+          {
+            "name": "SLIME"
+          },
+          {
+            "name": "SMACL12H"
+          },
+          {
+            "name": "SMAGC4H"
+          },
+          {
+            "name": "SMALL_BLOCKES"
+          },
+          {
+            "name": "SMANQ30"
+          },
+          {
+            "name": "SMANQ30M15050"
+          },
+          {
+            "name": "SMANQ30M30050"
+          },
+          {
+            "name": "SMARTY"
+          },
+          {
+            "name": "SNAIL"
+          },
+          {
+            "name": "SNAIL2"
+          },
+          {
+            "name": "SNAKE"
+          },
+          {
+            "name": "SNAP"
+          },
+          {
+            "name": "SOLBEER"
+          },
+          {
+            "name": "SOLE"
+          },
+          {
+            "name": "SPURS"
+          },
+          {
+            "name": "SPY"
+          },
+          {
+            "name": "SPY100"
+          },
+          {
+            "name": "SPY1DAY"
+          },
+          {
+            "name": "SPYCLIMAX"
+          },
+          {
+            "name": "SPYCLIMAX-1MIN"
+          },
+          {
+            "name": "SPYCLIMAX-1MINR"
+          },
+          {
+            "name": "SPYCLIMAXR"
+          },
+          {
+            "name": "SPYFLOW"
+          },
+          {
+            "name": "SPYIT"
+          },
+          {
+            "name": "SPYLONGS"
+          },
+          {
+            "name": "SPYPORT"
+          },
+          {
+            "name": "SPYPRIME"
+          },
+          {
+            "name": "SPYSHORTS"
+          },
+          {
+            "name": "SPYSWINGS"
+          },
+          {
+            "name": "SPYTEST"
+          },
+          {
+            "name": "SQUEEZE"
+          },
+          {
+            "name": "SQUIRREL"
+          },
+          {
+            "name": "SQUIRREL-30S-NY"
+          },
+          {
+            "name": "SRDMICE30M"
+          },
+          {
+            "name": "SRDMICE5M"
+          },
+          {
+            "name": "SRF"
+          },
+          {
+            "name": "SRF1"
+          },
+          {
+            "name": "SRF2"
+          },
+          {
+            "name": "SSNQS"
+          },
+          {
+            "name": "STEPHEN"
+          },
+          {
+            "name": "STREAK"
+          },
+          {
+            "name": "STREAK2"
+          },
+          {
+            "name": "STREAK3"
+          },
+          {
+            "name": "STREAK4"
+          },
+          {
+            "name": "SUCKIT"
+          },
+          {
+            "name": "SUPER"
+          },
+          {
+            "name": "SUPER1"
+          },
+          {
+            "name": "SUPERDYNAMO"
+          },
+          {
+            "name": "SUPERMAN"
+          },
+          {
+            "name": "SUPEROSC"
+          },
+          {
+            "name": "SUPEROSC2"
+          },
+          {
+            "name": "SVOLUMES"
+          },
+          {
+            "name": "SWAN"
+          },
+          {
+            "name": "SWINGS101"
+          },
+          {
+            "name": "SWORD_SHIELD"
+          },
+          {
+            "name": "TAU"
+          },
+          {
+            "name": "TD1"
+          },
+          {
+            "name": "TEST"
+          },
+          {
+            "name": "TEST1"
+          },
+          {
+            "name": "TESTY"
+          },
+          {
+            "name": "TETH"
+          },
+          {
+            "name": "THE85"
+          },
+          {
+            "name": "THE85NQ"
+          },
+          {
+            "name": "THEBOTTOM3"
+          },
+          {
+            "name": "THEONE"
+          },
+          {
+            "name": "THEQ"
+          },
+          {
+            "name": "THESHOCKER"
+          },
+          {
+            "name": "THEZONE2"
+          },
+          {
+            "name": "THOMAS"
+          },
+          {
+            "name": "THOR"
+          },
+          {
+            "name": "THREE"
+          },
+          {
+            "name": "THUNDER"
+          },
+          {
+            "name": "TIEN"
+          },
+          {
+            "name": "TIGHTER"
+          },
+          {
+            "name": "TIGHTER2"
+          },
+          {
+            "name": "TIMBITS"
+          },
+          {
+            "name": "TINYZ"
+          },
+          {
+            "name": "TITUS"
+          },
+          {
+            "name": "TMO-TEST"
+          },
+          {
+            "name": "TOJI"
+          },
+          {
+            "name": "TOJIES"
+          },
+          {
+            "name": "TOJIGC"
+          },
+          {
+            "name": "TOJINQ"
+          },
+          {
+            "name": "TOJIRTY"
+          },
+          {
+            "name": "TOKI"
+          },
+          {
+            "name": "TONY"
+          },
+          {
+            "name": "TPT"
+          },
+          {
+            "name": "TREND30"
+          },
+          {
+            "name": "TRENDES"
+          },
+          {
+            "name": "TRES"
+          },
+          {
+            "name": "TRIAL"
+          },
+          {
+            "name": "TRIBAND"
+          },
+          {
+            "name": "TSCALP"
+          },
+          {
+            "name": "TSIQQE-1MIN"
+          },
+          {
+            "name": "TSIZA"
+          },
+          {
+            "name": "TSIZA5"
+          },
+          {
+            "name": "TSIZA5R"
+          },
+          {
+            "name": "TSLA"
+          },
+          {
+            "name": "TSLA-BREAKDOWN"
+          },
+          {
+            "name": "TSLA-BREAKOUT"
+          },
+          {
+            "name": "TSLA-TEST"
+          },
+          {
+            "name": "TST1"
+          },
+          {
+            "name": "TURBO"
+          },
+          {
+            "name": "TURBO2"
+          },
+          {
+            "name": "TWENTY47"
+          },
+          {
+            "name": "TWO"
+          },
+          {
+            "name": "UALGO"
+          },
+          {
+            "name": "UMTS"
+          },
+          {
+            "name": "UNREAL"
+          },
+          {
+            "name": "URIEL"
+          },
+          {
+            "name": "VAU"
+          },
+          {
+            "name": "VEGETA"
+          },
+          {
+            "name": "VEGETO"
+          },
+          {
+            "name": "VENGE"
+          },
+          {
+            "name": "VENGEB"
+          },
+          {
+            "name": "VICKY"
+          },
+          {
+            "name": "VID"
+          },
+          {
+            "name": "VID2"
+          },
+          {
+            "name": "VIX"
+          },
+          {
+            "name": "VOL1"
+          },
+          {
+            "name": "VOLUMATIC1MIN"
+          },
+          {
+            "name": "VOLUMATIC5MIN"
+          },
+          {
+            "name": "VOLUMES"
+          },
+          {
+            "name": "VRO"
+          },
+          {
+            "name": "WEEKLY"
+          },
+          {
+            "name": "WICKED"
+          },
+          {
+            "name": "WICKME"
+          },
+          {
+            "name": "WIN"
+          },
+          {
+            "name": "WRECKLESS"
+          },
+          {
+            "name": "XAVIER"
+          },
+          {
+            "name": "XENO"
+          },
+          {
+            "name": "XERO"
+          },
+          {
+            "name": "XFACTOR"
+          },
+          {
+            "name": "XRP"
+          },
+          {
+            "name": "XRP15M"
+          },
+          {
+            "name": "XRP18M"
+          },
+          {
+            "name": "XRP210"
+          },
+          {
+            "name": "XRP30"
+          },
+          {
+            "name": "XRP4HR"
+          },
+          {
+            "name": "XXX"
+          },
+          {
+            "name": "YAHWEH"
+          },
+          {
+            "name": "YAMCHA"
+          },
+          {
+            "name": "YDAY"
+          },
+          {
+            "name": "YESTERDAY"
+          },
+          {
+            "name": "YUM"
+          },
+          {
+            "name": "ZAIN"
+          },
+          {
+            "name": "ZAPPER"
+          },
+          {
+            "name": "ZDAY"
+          },
+          {
+            "name": "ZENO"
+          },
+          {
+            "name": "ZEUS"
+          },
+          {
+            "name": "ZILEAN"
+          },
+          {
+            "name": "ZION"
+          },
+          {
+            "name": "ZIP"
+          },
+          {
+            "name": "ZIP-MES"
+          },
+          {
+            "name": "ZIP-MES-ADDS"
+          },
+          {
+            "name": "ZIPMNQ"
+          },
+          {
+            "name": "ZIPPER"
+          },
+          {
+            "name": "ZIPPER-STOP"
+          },
+          {
+            "name": "ZPRIME"
+          },
+          {
+            "name": "ZUES-MES"
+          }
+        ]
+      }
+    },
+    {
+      "type": "fetch",
+      "url": "/api/trades/tickers/?strat=",
+      "method": "GET",
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "15",
+        "content-type": "application/json",
+        "cross-origin-opener-policy": "same-origin",
+        "date": "Thu, 06 Nov 2025 05:57:22 GMT",
+        "referrer-policy": "same-origin",
+        "server": "nginx/1.18.0 (Ubuntu)",
+        "strict-transport-security": "max-age=3600; includeSubDomains; preload",
+        "vary": "origin, Cookie",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY"
+      },
+      "body": null,
+      "timestamp": "2025-11-06T05:57:22.480Z",
+      "status": 200,
+      "statusText": "OK",
+      "response": {
+        "tickers": []
+      }
+    },
+    {
+      "type": "fetch",
+      "url": "/api/trades/timeframes/?strat=",
+      "method": "GET",
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "18",
+        "content-type": "application/json",
+        "cross-origin-opener-policy": "same-origin",
+        "date": "Thu, 06 Nov 2025 05:57:22 GMT",
+        "referrer-policy": "same-origin",
+        "server": "nginx/1.18.0 (Ubuntu)",
+        "strict-transport-security": "max-age=3600; includeSubDomains; preload",
+        "vary": "origin, Cookie",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY"
+      },
+      "body": null,
+      "timestamp": "2025-11-06T05:57:22.480Z",
+      "status": 200,
+      "statusText": "OK",
+      "response": {
+        "timeframes": []
+      }
+    },
+    {
+      "type": "fetch",
+      "url": "/api/trades/tickers/?strat=",
+      "method": "GET",
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "15",
+        "content-type": "application/json",
+        "cross-origin-opener-policy": "same-origin",
+        "date": "Thu, 06 Nov 2025 05:57:22 GMT",
+        "referrer-policy": "same-origin",
+        "server": "nginx/1.18.0 (Ubuntu)",
+        "strict-transport-security": "max-age=3600; includeSubDomains; preload",
+        "vary": "origin, Cookie",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY"
+      },
+      "body": null,
+      "timestamp": "2025-11-06T05:57:22.480Z",
+      "status": 200,
+      "statusText": "OK",
+      "response": {
+        "tickers": []
+      }
+    },
+    {
+      "type": "fetch",
+      "url": "/api/trades/timeframes/?strat=",
+      "method": "GET",
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "18",
+        "content-type": "application/json",
+        "cross-origin-opener-policy": "same-origin",
+        "date": "Thu, 06 Nov 2025 05:57:22 GMT",
+        "referrer-policy": "same-origin",
+        "server": "nginx/1.18.0 (Ubuntu)",
+        "strict-transport-security": "max-age=3600; includeSubDomains; preload",
+        "vary": "origin, Cookie",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY"
+      },
+      "body": null,
+      "timestamp": "2025-11-06T05:57:22.480Z",
+      "status": 200,
+      "statusText": "OK",
+      "response": {
+        "timeframes": []
+      }
+    },
+    {
+      "type": "fetch",
+      "url": "/api/trades/timeframes/?strat=FDSA",
+      "method": "GET",
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "18",
+        "content-type": "application/json",
+        "cross-origin-opener-policy": "same-origin",
+        "date": "Thu, 06 Nov 2025 05:57:26 GMT",
+        "referrer-policy": "same-origin",
+        "server": "nginx/1.18.0 (Ubuntu)",
+        "strict-transport-security": "max-age=3600; includeSubDomains; preload",
+        "vary": "origin, Cookie",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY"
+      },
+      "body": null,
+      "timestamp": "2025-11-06T05:57:26.771Z",
+      "status": 200,
+      "statusText": "OK",
+      "response": {
+        "timeframes": []
+      }
+    },
+    {
+      "type": "fetch",
+      "url": "/api/trades/tickers/?strat=FDSA",
+      "method": "GET",
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "15",
+        "content-type": "application/json",
+        "cross-origin-opener-policy": "same-origin",
+        "date": "Thu, 06 Nov 2025 05:57:26 GMT",
+        "referrer-policy": "same-origin",
+        "server": "nginx/1.18.0 (Ubuntu)",
+        "strict-transport-security": "max-age=3600; includeSubDomains; preload",
+        "vary": "origin, Cookie",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY"
+      },
+      "body": null,
+      "timestamp": "2025-11-06T05:57:26.770Z",
+      "status": 200,
+      "statusText": "OK",
+      "response": {
+        "tickers": []
+      }
+    },
+    {
+      "type": "fetch",
+      "url": "/api/strategies/create/",
+      "method": "POST",
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "102",
+        "content-type": "application/json",
+        "cross-origin-opener-policy": "same-origin",
+        "date": "Thu, 06 Nov 2025 05:57:28 GMT",
+        "referrer-policy": "same-origin",
+        "server": "nginx/1.18.0 (Ubuntu)",
+        "strict-transport-security": "max-age=3600; includeSubDomains; preload",
+        "vary": "origin, Cookie",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY"
+      },
+      "body": "{\"Strat_Name\":\"FDSA\",\"Strat_Type\":\"Stock\",\"Days2Expo\":0,\"Strike_Offset\":0,\"Stoploss\":0,\"Position_Size\":1,\"Position_Add\":1,\"TakeProfit\":[0],\"Trim\":[0],\"TradeTrim\":0,\"TPSL_Units\":\"Ticks\",\"DirStrat\":\"\",\"Description\":\"\",\"Discord_Channel\":\"\",\"AlgoDriven\":false,\"Private\":true,\"Enabled\":true,\"SubTicker\":\"ALL\",\"PremiumFilter\":0,\"SubTimeFrame\":\"ALL\",\"Accounts\":{\"1\":{\"TM\":[\"\",\"\",\"\"]}},\"TimeFilter\":{\"start1\":null,\"stop1\":null,\"start2\":null,\"stop2\":null},\"SLTP_Data\":{\"avgdn\":0,\"avgdnAmnt\":1,\"avgdnType\":\"Ticks\",\"SL_Type\":\"Fixed\",\"SL_Units\":\"Ticks\",\"Trim_Units\":\"Contracts\"},\"Recorder\":true,\"Manual\":false,\"Delay_Add\":1,\"Maxcons\":0,\"Linked_Strat\":\"\",\"Alternate_Name\":\"\",\"Inverse\":false,\"IgnoreAlgoSpecs\":false,\"Leverage\":1}",
+      "timestamp": "2025-11-06T05:57:28.746Z",
+      "status": 200,
+      "statusText": "OK",
+      "response": {
+        "message": "Strategy created successfully.",
+        "id": 15038,
+        "webhook_key": "IIRBECUJVCNWOCIUZZGASSMFU"
+      }
+    }
+  ],
+  "websockets": [],
+  "eventListeners": [
+    {
+      "selector": "script",
+      "id": "",
+      "class": "",
+      "tag": "script",
+      "events": [
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function(){var W;((W=v())==null?0:W.loaded)||Q()}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function(){c.onFailure()}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".modal-open",
+      "id": "",
+      "class": "modal-open",
+      "tag": "body",
+      "events": [
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "paste",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "e=>{const{index:t,lifecycle:a}=this.state,{steps:n}=this.props,r=n[t];a===i_.TOOLTIP&&\"Escape\"===e.code&&r&&!r.disableCloseOnEsc&&this.store.close(\"keyboard\")}",
+              "useCapture": false,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "keyup",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerdown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerup",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointermove",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#root",
+      "id": "root",
+      "class": "",
+      "tag": "div",
+      "events": [
+        {
+          "type": "abort",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "auxclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplay",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplaythrough",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            },
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "close",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "contextmenu",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "copy",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cut",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drag",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragenter",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragexit",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragleave",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drop",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "durationchange",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "emptied",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "encrypted",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ended",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "gotpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "input",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keypress",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keyup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadeddata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadedmetadata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "lostpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousedown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousemove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "paste",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pause",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "play",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "playing",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointercancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerdown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointermove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "progress",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ratechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "reset",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "resize",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeked",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeking",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "stalled",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "submit",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "suspend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "timeupdate",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchcancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "volumechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "scroll",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "toggle",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchmove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "waiting",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "wheel",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "animationend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationiteration",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dblclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "transitionend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "change",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "textInput",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionupdate",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".minimize-sidebar",
+      "id": "",
+      "class": "minimize-sidebar btn btn-link btn-just-icon",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".simple-text",
+      "id": "",
+      "class": "simple-text logo-mini active",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "img",
+      "id": "",
+      "class": "",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".simple-text",
+      "id": "",
+      "class": "simple-text logo-normal active",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "a",
+      "id": "",
+      "class": "",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#tooltip209599",
+      "id": "tooltip209599",
+      "class": "minimize-sidebar btn-just-icon btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".navbar-toggler",
+      "id": "",
+      "class": "navbar-toggler",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".navbar-brand",
+      "id": "",
+      "class": "navbar-brand",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#darkModeToggle",
+      "id": "darkModeToggle",
+      "class": "btn-icon btn-round me-2 btn btn-dark",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function () {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".d-flex",
+      "id": "",
+      "class": "d-flex align-items-center p-0 dropdown-toggle nav-link",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".rounded-circle",
+      "id": "",
+      "class": "rounded-circle",
+      "tag": "img",
+      "events": [
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".dropdown-item",
+      "id": "",
+      "class": "dropdown-item",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".create-update-btn",
+      "id": "",
+      "class": "create-update-btn btn btn-info",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-info",
+      "id": "",
+      "class": "text-info text-decoration-underline",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#strategyName",
+      "id": "strategyName",
+      "class": "tm-input-dark  text-uppercase   form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-2-input",
+      "id": "react-select-2-input",
+      "class": "react-select__input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-start",
+      "id": "",
+      "class": "text-start w-100 text-info btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-info",
+      "id": "",
+      "class": "text-info text-decoration-underline",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Position_Size",
+      "id": "Position_Size",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Position_Add",
+      "id": "Position_Add",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-start",
+      "id": "",
+      "class": "text-start w-100 text-info btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-info",
+      "id": "",
+      "class": "text-info text-decoration-underline",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-3-input",
+      "id": "react-select-3-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-4-input",
+      "id": "react-select-4-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".tp-add-btn",
+      "id": "",
+      "class": "tp-add-btn btn btn-secondary btn-sm",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".btn",
+      "id": "",
+      "class": "btn btn-danger btn-sm disabled",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-5-input",
+      "id": "react-select-5-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-6-input",
+      "id": "react-select-6-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".form-control",
+      "id": "",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-7-input",
+      "id": "react-select-7-input",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-start",
+      "id": "",
+      "class": "text-start w-100 text-info btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#walkthroughHelp",
+      "id": "walkthroughHelp",
+      "class": "text-info text-decoration-underline d-flex align-items-center",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Delay_Add",
+      "id": "Delay_Add",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Maxcons",
+      "id": "Maxcons",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#PremiumFilter",
+      "id": "PremiumFilter",
+      "class": "form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#react-select-8-input",
+      "id": "react-select-8-input",
+      "class": "react-select__input",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup",
+      "id": "",
+      "class": "react-time-picker__inputGroup",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__hour",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__minute",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__amPm",
+      "tag": "select",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup",
+      "id": "",
+      "class": "react-time-picker__inputGroup",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__hour",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__minute",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__amPm",
+      "tag": "select",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup",
+      "id": "",
+      "class": "react-time-picker__inputGroup",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__hour",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__minute",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__amPm",
+      "tag": "select",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup",
+      "id": "",
+      "class": "react-time-picker__inputGroup",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__hour",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__minute",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".react-time-picker__inputGroup__input",
+      "id": "",
+      "class": "react-time-picker__inputGroup__input react-time-picker__inputGroup__amPm",
+      "tag": "select",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-start",
+      "id": "",
+      "class": "text-start w-100 text-info btn btn-link",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".text-info",
+      "id": "",
+      "class": "text-info text-decoration-underline",
+      "tag": "a",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Alternate_Name",
+      "id": "Alternate_Name",
+      "class": "tm-input-dark  form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Description",
+      "id": "Description",
+      "class": "tm-input-dark form-control",
+      "tag": "textarea",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "#Discord_Channel",
+      "id": "Discord_Channel",
+      "class": "tm-input-dark form-control",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "input",
+      "id": "",
+      "class": "",
+      "tag": "input",
+      "events": [
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "iframe",
+      "id": "",
+      "class": "",
+      "tag": "iframe",
+      "events": [
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function(t,D){(0,(t=(D=[2,1,18],C)[36](D[0],O,L[13](24,null,G[D[2]](19,D[1],V),U),mj()-U),UQ).cP)(t)}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": "div",
+      "id": "",
+      "class": "",
+      "tag": "div",
+      "events": [
+        {
+          "type": "abort",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "auxclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplay",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "canplaythrough",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            },
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "close",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "contextmenu",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "copy",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "cut",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drag",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragenter",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragexit",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragleave",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dragstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "drop",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "durationchange",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "emptied",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "encrypted",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ended",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "gotpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "input",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "invalid",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keydown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keypress",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "keyup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "load",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadeddata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadedmetadata",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "loadstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "lostpointercapture",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousedown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mousemove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "mouseup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "paste",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pause",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "play",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "playing",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointercancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerdown",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointermove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerout",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerover",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "pointerup",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "progress",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "ratechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "reset",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "resize",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeked",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "seeking",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "stalled",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "submit",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "suspend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "timeupdate",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchcancel",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "volumechange",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "scroll",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "toggle",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "touchmove",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "waiting",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "wheel",
+          "listeners": [
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": true
+            },
+            {
+              "listener": "function Vt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": true
+            }
+          ]
+        },
+        {
+          "type": "animationend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationiteration",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "animationstart",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "dblclick",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusin",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "focusout",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "transitionend",
+          "listeners": [
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Gt() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "change",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionend",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "textInput",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionstart",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        },
+        {
+          "type": "compositionupdate",
+          "listeners": [
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": false,
+              "passive": false
+            },
+            {
+              "listener": "function Ut() {\n    [native code]\n}",
+              "useCapture": true,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".modal",
+      "id": "",
+      "class": "modal fade show",
+      "tag": "div",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".close",
+      "id": "",
+      "class": "close",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".w-100",
+      "id": "",
+      "class": "w-100 mt-2 btn btn-secondary",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".w-100",
+      "id": "",
+      "class": "w-100 mt-2 btn btn-secondary",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".w-100",
+      "id": "",
+      "class": "w-100 mt-2 btn btn-secondary",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selector": ".w-100",
+      "id": "",
+      "class": "w-100 mt-2 btn btn-secondary",
+      "tag": "button",
+      "events": [
+        {
+          "type": "click",
+          "listeners": [
+            {
+              "listener": "function Zn(){}",
+              "useCapture": false,
+              "passive": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "formSubmissions": [],
+  "componentData": {
+    "dataAttributes": {
+      "data-emotion": [
+        {
+          "value": "css",
+          "selector": "STYLE"
+        }
+      ],
+      "data-s": [
+        {
+          "value": "",
+          "selector": "STYLE"
+        }
+      ],
+      "data-toggle": [
+        {
+          "value": "collapse",
+          "selector": "A"
+        }
+      ],
+      "data-value": [
+        {
+          "value": "",
+          "selector": ".react-select__input-container"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".css-19bb58m"
+        },
+        {
+          "value": "",
+          "selector": ".react-select__input-container"
+        }
+      ],
+      "data-input": [
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        }
+      ],
+      "data-select": [
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        },
+        {
+          "value": "true",
+          "selector": ".react-time-picker__inputGroup__input"
+        }
+      ],
+      "data-style": [
+        {
+          "value": "bottomright",
+          "selector": ".grecaptcha-badge"
+        }
+      ]
+    },
+    "components": {
+      "root": {
+        "tag": "div",
+        "classes": "",
+        "text": "Trade ManagerDashboardMy RecordersTraderAMAccount ManagementSSMy TradersCCControl CenterSettingsTrad"
+      },
+      "tooltip209599": {
+        "tag": "button",
+        "classes": "minimize-sidebar btn-just-icon btn btn-link",
+        "text": ""
+      },
+      "darkModeToggle": {
+        "tag": "button",
+        "classes": "btn-icon btn-round me-2 btn btn-dark",
+        "text": ""
+      },
+      "strategyName": {
+        "tag": "input",
+        "classes": "tm-input-dark  text-uppercase   form-control",
+        "text": ""
+      },
+      "strategyType": {
+        "tag": "div",
+        "classes": "css-b62m3t-container",
+        "text": "Stock"
+      },
+      "react-select-2-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-2-input": {
+        "tag": "input",
+        "classes": "react-select__input",
+        "text": ""
+      },
+      "Position_Size": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "Position_Add": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "react-select-3-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-3-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "react-select-4-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-4-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "react-select-5-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-5-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "react-select-6-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-6-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "react-select-7-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-7-input": {
+        "tag": "input",
+        "classes": "",
+        "text": ""
+      },
+      "walkthroughHelp": {
+        "tag": "a",
+        "classes": "text-info text-decoration-underline d-flex align-items-center",
+        "text": "Help"
+      },
+      "Delay_Add": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "Maxcons": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "PremiumFilter": {
+        "tag": "input",
+        "classes": "form-control",
+        "text": ""
+      },
+      "DirStrat": {
+        "tag": "div",
+        "classes": "css-b62m3t-container",
+        "text": "Select a strategy..."
+      },
+      "react-select-8-live-region": {
+        "tag": "span",
+        "classes": "css-7pg0cj-a11yText",
+        "text": ""
+      },
+      "react-select-8-placeholder": {
+        "tag": "div",
+        "classes": "react-select__placeholder css-1jqq78o-placeholder",
+        "text": "Select a strategy..."
+      },
+      "react-select-8-input": {
+        "tag": "input",
+        "classes": "react-select__input",
+        "text": ""
+      },
+      "Alternate_Name": {
+        "tag": "input",
+        "classes": "tm-input-dark  form-control",
+        "text": ""
+      },
+      "Description": {
+        "tag": "textarea",
+        "classes": "tm-input-dark form-control",
+        "text": ""
+      },
+      "Discord_Channel": {
+        "tag": "input",
+        "classes": "tm-input-dark form-control",
+        "text": ""
+      },
+      "g-recaptcha-response-100000": {
+        "tag": "textarea",
+        "classes": "g-recaptcha-response",
+        "text": ""
+      }
+    }
+  },
+  "networkRequests": [],
+  "localStorage": {
+    "lastTicker": "MES1!",
+    "_grecaptcha": "09ADiQh0dHVEkbq_Dyd0ot2fd1vD4ypBlJnbM_8jgi-MRICleYdaa4sO3_WZilp1j16MsJ4aZ8aCtMm5Ntt7iHftpwL-J-m1JG1HxOiwW3M-vao6o6ID0LcxbJczXlOasmFAo",
+    "lastStrategy": "JADDCAVIXES",
+    "auth": "{\"isAuthenticated\":true,\"user\":{\"username\":\"J.T.M.J\",\"email\":\"just.trades.chicago@gmail.com\",\"admin\":false,\"DiscordID\":\"963881348039340122\",\"access\":\"full\",\"signed\":true,\"is_email_verified\":true,\"sessionId\":\"xvr5dwrjc8maxncrgtm2vk7snr6c1h35\"}}"
+  },
+  "sessionStorage": {
+    "auth": "{\"isAuthenticated\":true,\"user\":{\"username\":\"J.T.M.J\",\"email\":\"just.trades.chicago@gmail.com\",\"admin\":false,\"DiscordID\":\"963881348039340122\",\"access\":\"full\",\"signed\":true,\"is_email_verified\":true}}"
+  },
+  "cookies": "csrftoken=idXNNECLh9wb0UvRqHMNrdwMI7fXySOd; _ga=GA1.2.1413952153.1744203650; _gat_gtag_UA_XXXXX_Y=1; _gid=GA1.2.739036613.1762399831"
+}

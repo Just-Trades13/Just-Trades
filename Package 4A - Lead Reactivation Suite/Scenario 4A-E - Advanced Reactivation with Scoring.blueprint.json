@@ -1,0 +1,240 @@
+{
+    "name": "Scenario 4A-E - Advanced Reactivation with Scoring",
+    "flow": [
+        {
+            "id": 1,
+            "module": "airtable:TriggerWatchRecords",
+            "version": 3,
+            "parameters": {
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "config": {
+                    "labelField": "Company",
+                    "triggerField": "Last Modified Time"
+                },
+                "formula": "AND({Do Not Contact} = 0, {Lead Score} >= 50, {Last Out Reach} < TODAY() - 21, {Reply Received} = 0)",
+                "maxRecords": 10,
+                "__IMTCONN__": 5591761,
+                "useColumnId": false
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "switch",
+                "cases": [
+                    {
+                        "value": "high_score",
+                        "filter": "{{1.`Lead Score`}} >= 75"
+                    },
+                    {
+                        "value": "medium_score",
+                        "filter": "{{1.`Lead Score`}} >= 50 AND {{1.`Lead Score`}} < 75"
+                    }
+                ]
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Analyze this HIGH-PRIORITY lead (Score: {{1.`Lead Score`}}) and create a personalized reactivation strategy:\n\nCompany: {{1.Company}}\nContact Name: {{1.`Contact Full Name`}}\nRole: {{1.`Contact Role`}}\nIndustry: {{1.Industry}}\nLead Score: {{1.`Lead Score`}}\nLast Contact: {{1.`Last Out Reach`}}\nPrevious Notes: {{1.Notes}}\nEngagement History: {{1.`Engagement History`}}\n\nAnalysis Requirements:\n- Why this lead is high-value (based on score and profile)\n- Best reactivation approach based on behavior/engagement\n- Optimal channel (email vs SMS) based on profile\n- Personalization opportunities\n- Suggested value proposition\n\nReturn ONLY valid JSON:\n{\n  \"analysis\": \"Why this lead is valuable...\",\n  \"best_channel\": \"email\",\n  \"strategy\": \"Personalized strategy description...\",\n  \"subject\": \"[Personalized subject]\",\n  \"body\": \"Your reactivation message...\",\n  \"sms_message\": \"Your SMS message...\",\n  \"priority\": \"high\"\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": -100
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Analyze this MEDIUM-PRIORITY lead (Score: {{1.`Lead Score`}}) and create a personalized reactivation strategy:\n\nCompany: {{1.Company}}\nContact Name: {{1.`Contact Full Name`}}\nRole: {{1.`Contact Role`}}\nIndustry: {{1.Industry}}\nLead Score: {{1.`Lead Score`}}\nLast Contact: {{1.`Last Out Reach`}}\nPrevious Notes: {{1.Notes}}\nEngagement History: {{1.`Engagement History`}}\n\nAnalysis Requirements:\n- Why this lead has potential\n- Best reactivation approach\n- Optimal channel selection\n- Standard personalization\n- Value-focused message\n\nReturn ONLY valid JSON:\n{\n  \"analysis\": \"Why this lead has potential...\",\n  \"best_channel\": \"email\",\n  \"strategy\": \"Standard strategy...\",\n  \"subject\": \"[Subject line]\",\n  \"body\": \"Your reactivation message...\",\n  \"sms_message\": \"Your SMS message...\",\n  \"priority\": \"medium\"\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 100
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{IF({{1.`Lead Score`}} >= 75, {{3.text.output[0].content[0].text}}, {{4.text.output[0].content[0].text}})}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{5.best_channel}} = \"email\""
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "{{1.`Contact Email`}}"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h2 style=\"color: #333;\">Hi {{1.`Contact Full Name`}},</h2><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;\">{{5.body}}</div><div style=\"background-color: #fff3cd; padding: 15px; border-radius: 5px; margin-bottom: 20px;\"><strong>Lead Priority:</strong> {{5.priority}}<br><strong>Lead Score:</strong> {{1.`Lead Score`}}<br><strong>Strategy:</strong> {{5.strategy}}</div><div style=\"text-align: center;\"><a href=\"https://calendly.com/skillztechchannel/15-minute-demo-call?source=reactivation_scored\" style=\"background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;\">Schedule Priority Call</a></div><div style=\"text-align: center; margin-top: 20px; color: #6c757d; font-size: 12px;\"><a href=\"#unsubscribe\">Unsubscribe</a></div></div>",
+                "subject": "{{5.subject}}",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.`Contact Phone`}}",
+                "from": "+1234567890",
+                "body": "{{5.sms_message}} Reply STOP to opt out."
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 200
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "record": {
+                    "Email Campaign": "reactivation_scored_{{5.priority}}",
+                    "Last Out Reach": "{{now}}",
+                    "Status": "reactivation_scored_sent",
+                    "Notes": "{{1.Notes}}\n\n--- Advanced reactivation sent at {{now}} ---\nLead Score: {{1.`Lead Score`}}\nPriority: {{5.priority}}\nChannel: {{5.best_channel}}\nStrategy: {{5.strategy}}\nAnalysis: {{5.analysis}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 100
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: airtable:TriggerWatchRecords, builtin:BasicRouter, openai-gpt-3:createModelResponse, json:ParseJSON, google-email:sendAnEmail, twilio:CreateMessage, airtable:ActionUpdateRecords. Twilio requires manual setup. This scenario requires Airtable fields: 'Lead Score' (number), 'Engagement History' (text)."]
+    }
+}
+

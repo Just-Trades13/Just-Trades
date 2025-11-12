@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Just.Trades.{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #19b8ff;
+            --primary-color-dark: #0c6bbd;
+            --accent-teal: #2dd4bf;
+            --green: #2dce89;
+            --background-dark: #0b1221;
+            --background-light: #111a2f;
+            --border-color: rgba(148, 163, 184, 0.12);
+            --text-light: #f8fafc;
+            --text-muted: #7f8db2;
+            --sidebar-gradient-start: #0f172a;
+            --sidebar-gradient-end: #020617;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--background-dark);
+            color: var(--text-light);
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .wrapper { display: flex; }
+        .main-panel {
+            margin-left: 260px;
+            width: calc(100% - 260px);
+            min-height: 100vh;
+            background: radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.08), transparent 55%),
+                        radial-gradient(circle at 85% 10%, rgba(45, 212, 191, 0.05), transparent 45%),
+                        var(--background-dark);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: linear-gradient(180deg, var(--sidebar-gradient-start) 0%, var(--sidebar-gradient-end) 100%);
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100%;
+            z-index: 1000;
+            border-right: 1px solid rgba(148, 163, 184, 0.08);
+            box-shadow: 20px 0 40px rgba(15, 23, 42, 0.45);
+        }
+        .sidebar-wrapper {
+            padding: 20px 0;
+            height: 100%;
+            overflow-y: auto;
+        }
+        .logo {
+            padding: 0 22px 20px 22px;
+            text-align: left;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logo img { height: 44px; width: 44px; border-radius: 12px; object-fit: cover; box-shadow: 0 8px 20px rgba(25, 184, 255, 0.25); }
+        .logo a {
+            color: var(--text-light);
+            text-decoration: none;
+            font-size: 1.05rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+        }
+        .nav { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+        .nav > li { position: relative; }
+        .nav > li > a {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 24px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            transition: color 0.2s ease, background 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+        .nav > li > a:hover {
+            color: var(--text-light);
+            background: rgba(148, 163, 184, 0.08);
+        }
+        .nav > li.active > a,
+        .nav > li > a[aria-expanded="true"] {
+            color: var(--text-light);
+            background: rgba(148, 163, 184, 0.12);
+            border-left-color: var(--accent-teal);
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.07);
+        }
+        .nav i { font-size: 1rem; color: inherit; }
+        .nav .caret { margin-left: auto; font-size: 0.7rem; }
+        .collapse { padding-left: 10px; }
+        .collapse .nav { gap: 4px; }
+        .collapse .nav li a {
+            padding: 9px 18px 9px 42px;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .collapse .nav li a:hover,
+        .collapse .nav li a.active {
+            color: var(--text-light);
+        }
+        .collapse .nav .sidebar-mini-icon {
+            margin-right: 12px;
+            padding: 4px 8px;
+            background: rgba(148, 163, 184, 0.16);
+            border-radius: 999px;
+            font-size: 0.65rem;
+            letter-spacing: 0.12em;
+            color: #e2e8f0;
+        }
+        .collapse.show { display: block; }
+        .collapse:not(.show) { display: none; }
+        
+        /* Top Navbar */
+        .top-navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 32px;
+            color: var(--text-light);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            background: rgba(8, 12, 24, 0.85);
+            -webkit-backdrop-filter: blur(16px);
+            backdrop-filter: blur(16px);
+            position: sticky;
+            top: 0;
+            z-index: 900;
+        }
+        .top-navbar .page-title {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .top-navbar .page-title i {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, rgba(25, 184, 255, 0.25), rgba(15, 118, 230, 0.25));
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+        }
+        .page-breadcrumbs {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .breadcrumb-label {
+            font-size: 1.05rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .breadcrumb-sub {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .top-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .time-chip {
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.12);
+            font-size: 0.78rem;
+            letter-spacing: 0.08em;
+        }
+        .mode-toggle {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(148, 163, 184, 0.08);
+            color: var(--text-light);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .mode-toggle:hover {
+            background: rgba(148, 163, 184, 0.15);
+        }
+        .user-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0.45rem 0.85rem;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(25, 184, 255, 0.25), rgba(45, 212, 191, 0.2));
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            cursor: pointer;
+            font-size: 0.85rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .user-chip .material-icons { font-size: 1rem; }
+        .user-chip .chevron { font-size: 1.1rem; }
+        .user-name { font-weight: 600; }
+
+        /* Main Content */
+        .main-content { padding: 30px; }
+    </style>
+    {% block styles %}{% endblock %}
+</head>
+<body>
+    <div class="wrapper">
+        <div class="sidebar">
+            <div class="sidebar-wrapper">
+                <div class="logo">
+                    <img src="{{ url_for('static', filename='img/just_trades_logo.png') }}" alt="Just.Trades. logo">
+                    <a href="/dashboard">JUST.TRADES.</a>
+                </div>
+                <ul class="nav">
+                    <li class="{{ 'active' if 'dashboard' in request.path else '' }}">
+                        <a href="/dashboard"><i class="material-icons">dashboard</i><p>DASHBOARD</p></a>
+                    </li>
+                    <li class="{{ 'active' if request.path.startswith('/recorders') else '' }}">
+                        <a href="/recorders"><i class="material-icons">edit</i><p>MY RECORDERS</p></a>
+                    </li>
+                    <li class="{{ 'active' if ('traders' in request.path or 'accounts' in request.path or 'control-center' in request.path or 'strategies' in request.path) else '' }}">
+                        <a data-toggle="collapse" href="#traderSubmenu">
+                            <i class="material-icons">trending_up</i>
+                            <p>TRADER <b class="caret">&#9660;</b></p>
+                        </a>
+                        <div class="collapse {{ 'show' if ('traders' in request.path or 'accounts' in request.path or 'control-center' in request.path or 'strategies' in request.path) else '' }}" id="traderSubmenu">
+                            <ul class="nav">
+                                <li>
+                                    <a class="{{ 'active' if 'accounts' in request.path else '' }}" href="/accounts">
+                                        <span class="sidebar-mini-icon">AM</span>
+                                        <span class="sidebar-normal">ACCOUNT MANAGEMENT</span>
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="{{ 'active' if 'strategies' in request.path else '' }}" href="/strategies">
+                                        <span class="sidebar-mini-icon">ST</span>
+                                        <span class="sidebar-normal">STRATEGY GUIDE</span>
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="{{ 'active' if 'traders' in request.path else '' }}" href="/traders">
+                                        <span class="sidebar-mini-icon">MT</span>
+                                        <span class="sidebar-normal">MY TRADERS</span>
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="{{ 'active' if 'control-center' in request.path else '' }}" href="/control-center">
+                                        <span class="sidebar-mini-icon">CC</span>
+                                        <span class="sidebar-normal">CONTROL CENTER</span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                    <li class="{{ 'active' if 'settings' in request.path else '' }}"><a href="/settings"><i class="material-icons">settings</i><p>SETTINGS</p></a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="main-panel">
+            <nav class="top-navbar">
+                <div class="page-title">
+                    <i class="material-icons">dashboard</i>
+                    <div class="page-breadcrumbs">
+                        <span class="breadcrumb-label">Dashboard</span>
+                        <span class="breadcrumb-sub">Realtime automation overview</span>
+                    </div>
+                </div>
+                <div class="top-actions">
+                    <div class="time-chip">
+                        <span id="currentTime">--:--:--</span>
+                    </div>
+                    <button class="mode-toggle" type="button" aria-label="Toggle theme">
+                        <span class="material-icons">dark_mode</span>
+                    </button>
+                    <div class="user-chip" tabindex="0">
+                        <span class="material-icons">person</span>
+                        <span class="user-name">J.T.M.J</span>
+                        <span class="material-icons chevron">expand_more</span>
+                    </div>
+                </div>
+            </nav>
+            <div class="main-content">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('[data-toggle="collapse"]').forEach(function (trigger) {
+                trigger.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    const targetId = trigger.getAttribute('href') || trigger.getAttribute('data-target');
+                    if (!targetId) return;
+                    const target = document.querySelector(targetId.startsWith('#') ? targetId : `#${targetId}`);
+                    if (!target) return;
+                    target.classList.toggle('show');
+                    const parentLi = trigger.closest('li');
+                    if (parentLi) {
+                        parentLi.classList.toggle('active', target.classList.contains('show'));
+                    }
+                });
+            });
+
+            const timeTarget = document.getElementById('currentTime');
+            if (timeTarget) {
+                const updateTime = () => {
+                    const now = new Date();
+                    timeTarget.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                };
+                updateTime();
+                setInterval(updateTime, 1000);
+            }
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Phantom Scraper Configuration
+# Copy this file to .env and modify as needed
+
+# Redis Configuration (optional - for advanced scheduling)
+REDIS_URL=redis://localhost:6379/0
+
+# Database Configuration
+DATABASE_URL=sqlite:///phantom_scraper.db
+
+# Browser Configuration
+HEADLESS=True
+
+# Rate Limiting
+RATE_LIMIT_REQUESTS=100
+RATE_LIMIT_WINDOW=3600
+
+# Logging
+LOG_LEVEL=INFO

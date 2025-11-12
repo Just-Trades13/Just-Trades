@@ -1,0 +1,41 @@
+{
+  "accounts": [
+    {
+      "id": 1491,
+      "name": "Bryan-Nolan",
+      "platform": "Tradovate",
+      "status": null,
+      "disabled": false,
+      "subAccounts": [
+        {
+          "id": 6123,
+          "name": "1302271",
+          "active": true,
+          "tags": []
+        }
+      ]
+    },
+    {
+      "id": 1745,
+      "name": "Koram",
+      "platform": "Tradovate",
+      "status": null,
+      "disabled": false,
+      "subAccounts": [
+        {
+          "id": 7021,
+          "name": "1536745",
+          "active": true,
+          "tags": ["Live"]
+        },
+        {
+          "id": 7022,
+          "name": "DEMO5444480",
+          "active": true,
+          "tags": ["Demo"]
+        }
+      ]
+    }
+  ]
+}
+

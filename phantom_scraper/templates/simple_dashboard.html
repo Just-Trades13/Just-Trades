@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: #212121;
+            padding: 20px;
+            border-right: 1px solid #333;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .logo-circle {
+            width: 32px;
+            height: 32px;
+            background: #10b981;
+            border: 2px solid #000;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            margin-right: 12px;
+        }
+
+        .logo-text {
+            font-size: 16px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-menu {
+            list-style: none;
+        }
+
+        .nav-item {
+            margin-bottom: 5px;
+        }
+
+        .nav-link {
+            display: block;
+            padding: 12px 15px;
+            color: #ccc;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover {
+            background: #2a2a2a;
+            color: #ffffff;
+        }
+
+        .nav-link.active {
+            background: #1e3a8a;
+            color: #ffffff;
+        }
+
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .page-title {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .status-indicator {
+            background: #1e3a8a;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .content-section {
+            background: #2a2a2a;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #ffffff;
+        }
+
+        .webhook-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .info-card {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .info-label {
+            font-size: 12px;
+            color: #999;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .info-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        .test-section {
+            background: #2a2a2a;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .test-button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .test-button:hover {
+            background: #2563eb;
+        }
+
+        .test-button.danger {
+            background: #ef4444;
+        }
+
+        .test-button.danger:hover {
+            background: #dc2626;
+        }
+
+        .test-button.success {
+            background: #10b981;
+        }
+
+        .test-button.success:hover {
+            background: #059669;
+        }
+
+        .log-output {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #ccc;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="logo">
+            <div class="logo-circle">TM</div>
+            <div class="logo-text">Trade Manager</div>
+        </div>
+        <ul class="nav-menu">
+            <li class="nav-item">
+                <a href="#" class="nav-link active" onclick="showSection('dashboard')">Dashboard</a>
+            </li>
+            <li class="nav-item">
+                <a href="#" class="nav-link" onclick="showSection('webhooks')">Webhooks</a>
+            </li>
+            <li class="nav-item">
+                <a href="#" class="nav-link" onclick="showSection('trading')">Trading</a>
+            </li>
+            <li class="nav-item">
+                <a href="#" class="nav-link" onclick="showSection('settings')">Settings</a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Dashboard Section -->
+        <div id="dashboard-section">
+            <div class="header">
+                <h1 class="page-title">Dashboard</h1>
+                <div class="status-indicator">
+                    <div class="status-dot"></div>
+                    <span>WEBHOOK ACTIVE</span>
+                </div>
+            </div>
+
+            <div class="content-section">
+                <h2 class="section-title">Webhook Status</h2>
+                <div class="webhook-info">
+                    <div class="info-card">
+                        <div class="info-label">Webhook URL</div>
+                        <div class="info-value">http://localhost:8080/webhook</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">Status</div>
+                        <div class="info-value" style="color: #10b981;">ACTIVE</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">Last Alert</div>
+                        <div class="info-value" id="lastAlert">Never</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">Total Alerts</div>
+                        <div class="info-value" id="totalAlerts">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="test-section">
+                <h2 class="section-title">Test Webhook</h2>
+                <button class="test-button" onclick="testWebhook('buy')">Test Buy Alert</button>
+                <button class="test-button" onclick="testWebhook('sell')">Test Sell Alert</button>
+                <button class="test-button" onclick="testWebhook('close')">Test Close Alert</button>
+                <button class="test-button danger" onclick="clearLog()">Clear Log</button>
+                <div class="log-output" id="logOutput">Ready to test webhooks...</div>
+            </div>
+        </div>
+
+        <!-- Webhooks Section -->
+        <div id="webhooks-section" class="hidden">
+            <div class="header">
+                <h1 class="page-title">Webhook Configuration</h1>
+            </div>
+            <div class="content-section">
+                <h2 class="section-title">TradingView Alert Setup</h2>
+                <p>Configure your TradingView alerts to send to:</p>
+                <div class="info-card" style="margin: 15px 0;">
+                    <div class="info-label">Webhook URL</div>
+                    <div class="info-value">http://localhost:8080/webhook</div>
+                </div>
+                <p><strong>Alert Message Format:</strong></p>
+                <pre style="background: #1a1a1a; padding: 15px; border-radius: 5px; margin: 10px 0; color: #ccc;">
+{
+  "symbol": "ES1!",
+  "action": "buy",
+  "quantity": 1,
+  "price": "{{close}}",
+  "strategy": "MyStrategy"
+}</pre>
+            </div>
+        </div>
+
+        <!-- Trading Section -->
+        <div id="trading-section" class="hidden">
+            <div class="header">
+                <h1 class="page-title">Trading</h1>
+            </div>
+            <div class="content-section">
+                <h2 class="section-title">Trade History</h2>
+                <p>Recent trades will appear here when webhooks are received.</p>
+            </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div id="settings-section" class="hidden">
+            <div class="header">
+                <h1 class="page-title">Settings</h1>
+            </div>
+            <div class="content-section">
+                <h2 class="section-title">Configuration</h2>
+                <p>Configure your Tradovate credentials in the .env file:</p>
+                <pre style="background: #1a1a1a; padding: 15px; border-radius: 5px; margin: 10px 0; color: #ccc;">
+TRADOVATE_USERNAME=your_email@example.com
+TRADOVATE_PASSWORD=your_password</pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple navigation
+        function showSection(sectionName) {
+            // Hide all sections
+            const sections = document.querySelectorAll('[id$="-section"]');
+            sections.forEach(section => section.classList.add('hidden'));
+            
+            // Show selected section
+            document.getElementById(sectionName + '-section').classList.remove('hidden');
+            
+            // Update nav links
+            const navLinks = document.querySelectorAll('.nav-link');
+            navLinks.forEach(link => link.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // Test webhook function
+        async function testWebhook(action) {
+            const logOutput = document.getElementById('logOutput');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            logOutput.innerHTML += `\n[${timestamp}] Testing ${action.toUpperCase()} alert...`;
+            
+            const testData = {
+                symbol: action === 'close' ? 'ES1!' : 'ES1!',
+                action: action,
+                quantity: action === 'close' ? undefined : 1,
+                price: action === 'close' ? undefined : 4500.0,
+                strategy: 'test_strategy',
+                timestamp: new Date().toISOString()
+            };
+            
+            try {
+                const response = await fetch('/webhook', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(testData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    logOutput.innerHTML += `\n[${timestamp}] ✅ SUCCESS: ${JSON.stringify(result, null, 2)}`;
+                    updateAlertCount();
+                } else {
+                    logOutput.innerHTML += `\n[${timestamp}] ❌ ERROR: ${JSON.stringify(result, null, 2)}`;
+                }
+            } catch (error) {
+                logOutput.innerHTML += `\n[${timestamp}] ❌ NETWORK ERROR: ${error.message}`;
+            }
+            
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+
+        // Update alert count
+        function updateAlertCount() {
+            const totalAlerts = document.getElementById('totalAlerts');
+            const lastAlert = document.getElementById('lastAlert');
+            
+            const current = parseInt(totalAlerts.textContent);
+            totalAlerts.textContent = current + 1;
+            lastAlert.textContent = new Date().toLocaleTimeString();
+        }
+
+        // Clear log
+        function clearLog() {
+            document.getElementById('logOutput').innerHTML = 'Log cleared...';
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Dashboard loaded successfully');
+        });
+    </script>
+</body>
+</html>

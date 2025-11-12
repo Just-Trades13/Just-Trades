@@ -1,0 +1,21 @@
+MODULE 1 BODY - FIXED (No Token Limit Error)
+
+Use this to avoid OpenAI token limit:
+
+{
+  "page": 1,
+  "per_page": 5
+}
+
+→ Gets 5 leads per run (manageable for OpenAI)
+→ No token limit errors
+→ Run multiple times with different pages for more leads
+
+To get more leads:
+- Run 1: page 1 → 5 leads
+- Run 2: page 2 → 5 leads  
+- Run 3: page 3 → 5 leads
+- etc.
+
+10 runs = 50 leads ✅
+

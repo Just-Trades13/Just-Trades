@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trade Manager - Account Management</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Poppins:300,400,500,700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2cc511;
+            --primary-dark: #007a06;
+            --background-color: #000000;
+            --background-dark: #0f172a;
+            --sidebar-color: #334155;
+            --text-light: #f2f2f2;
+            --text-muted: #ccc;
+            --danger-color: #fd5d93;
+            --success-color: #00f2c3;
+            --info-color: #1d8cf8;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--background-color);
+            color: var(--text-light);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .wrapper {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 260px;
+            background: var(--background-dark);
+            box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.42);
+            z-index: 1000;
+            transition: all 0.3s;
+        }
+
+        .sidebar-wrapper {
+            padding: 20px 0;
+            height: 100%;
+            overflow-y: auto;
+        }
+
+        .logo {
+            padding: 0 20px;
+            margin-bottom: 30px;
+        }
+
+        .simple-text {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            text-decoration: none;
+            display: block;
+            padding: 10px 0;
+        }
+
+        .nav {
+            list-style: none;
+        }
+
+        .nav li {
+            margin: 0;
+        }
+
+        .nav a {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+
+        .nav a:hover {
+            background: rgba(44, 197, 17, 0.1);
+            color: var(--text-light);
+        }
+
+        .nav a.active {
+            background: rgba(44, 197, 17, 0.1);
+            color: var(--primary-color);
+        }
+
+        .nav a i, .nav a .material-icons {
+            margin-right: 12px;
+            font-size: 24px;
+        }
+
+        .nav a p {
+            margin: 0;
+            font-size: 0.9rem;
+        }
+
+        .caret {
+            margin-left: auto;
+            transition: transform 0.3s;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            margin-left: 260px;
+            padding: 30px;
+            min-height: 100vh;
+        }
+
+        .page-header {
+            margin-bottom: 30px;
+        }
+
+        .page-header h2 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--text-light);
+            margin-bottom: 5px;
+        }
+
+        .page-header p {
+            color: var(--text-muted);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            padding: 3rem 0;
+            margin-bottom: 3rem;
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--primary-color), var(--success-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        /* Content Section */
+        .content-section {
+            background: var(--background-dark);
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 1px solid var(--sidebar-color);
+        }
+
+        .content-section h2 {
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+
+        .content-section h3 {
+            color: var(--text-light);
+            margin: 1.5rem 0 1rem;
+            font-size: 1.2rem;
+        }
+
+        .step-list {
+            list-style: none;
+            counter-reset: step-counter;
+        }
+
+        .step-list li {
+            counter-increment: step-counter;
+            margin-bottom: 2rem;
+            padding-left: 3rem;
+            position: relative;
+        }
+
+        .step-list li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 2rem;
+            height: 2rem;
+            background: var(--primary-color);
+            color: var(--background-dark);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .highlight-box {
+            background: rgba(44, 197, 17, 0.1);
+            border-left: 4px solid var(--primary-color);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+        }
+
+        .warning-box {
+            background: rgba(253, 93, 147, 0.1);
+            border-left: 4px solid var(--danger-color);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+        }
+
+        .info-box {
+            background: rgba(29, 140, 248, 0.1);
+            border-left: 4px solid var(--info-color);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+        }
+
+        .code-block {
+            background: #1a1a1a;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+            font-size: 0.9rem;
+            border: 1px solid var(--sidebar-color);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .nav-tabs {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .main-content {
+                padding: 1rem;
+            }
+
+            .hero h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">Trade Manager</div>
+            <nav class="nav-tabs">
+                <button class="nav-tab active" onclick="showTab('overview')">Overview</button>
+                <button class="nav-tab" onclick="showTab('getting-started')">Getting Started</button>
+                <button class="nav-tab" onclick="showTab('step-by-step')">Step by Step</button>
+                <button class="nav-tab" onclick="showTab('troubleshooting')">Troubleshooting</button>
+                <button class="nav-tab" onclick="showTab('faq')">FAQ</button>
+            </nav>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Overview Tab -->
+            <div id="overview-tab" class="tab-content">
+                <div class="hero">
+                    <h1>Tradovate Integration Guide</h1>
+                    <p>Connect your Tradovate account to Trade Manager in minutes</p>
+                </div>
+
+                <div class="content-section">
+                    <h2>What You'll Need</h2>
+                    <ul class="step-list">
+                        <li>
+                            <h3>A Tradovate Account</h3>
+                            <p>You must have an active Tradovate account (Live or Demo)</p>
+                        </li>
+                        <li>
+                            <h3>Your Tradovate Credentials</h3>
+                            <p>Username and password for your Tradovate account</p>
+                        </li>
+                        <li>
+                            <h3>OAuth Application</h3>
+                            <p>We'll guide you through registering an OAuth application in your Tradovate account</p>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="info-box">
+                    <strong>⚠️ Important:</strong> You'll need to register an OAuth application in your Tradovate account to use Trade Manager. This is a one-time setup process that takes about 5 minutes.
+                </div>
+            </div>
+
+            <!-- Getting Started Tab -->
+            <div id="getting-started-tab" class="tab-content" style="display: none;">
+                <div class="content-section">
+                    <h2>Getting Started</h2>
+                    <p>Follow these simple steps to connect your Tradovate account:</p>
+                    
+                    <h3>Step 1: Log into Tradovate</h3>
+                    <p>Go to your Tradovate account and log in with your credentials.</p>
+
+                    <h3>Step 2: Navigate to Application Settings</h3>
+                    <p>Look for "Application Settings" in your account menu and click on it.</p>
+
+                    <h3>Step 3: Go to API Access Tab</h3>
+                    <p>Click on the "API Access" tab and choose "OAuth Registration".</p>
+
+                    <h3>Step 4: Fill Out the Form</h3>
+                    <p>Enter your application details and generate your credentials.</p>
+
+                    <div class="highlight-box">
+                        <strong>💡 Tip:</strong> The credentials are shown only once, so make sure to copy them immediately!
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step by Step Tab -->
+            <div id="step-by-step-tab" class="tab-content" style="display: none;">
+                <div class="content-section">
+                    <h2>Detailed Step-by-Step Instructions</h2>
+
+                    <h3>Step 1: Access Your Tradovate Account</h3>
+                    <ol class="step-list">
+                        <li>Open your web browser and go to <strong>https://tradovate.com</strong></li>
+                        <li>Log in with your Tradovate credentials</li>
+                        <li>Verify you're logged into the correct account (Live or Demo)</li>
+                    </ol>
+
+                    <h3>Step 2: Find Application Settings</h3>
+                    <ol class="step-list">
+                        <li>Look for "Application Settings" in your account menu</li>
+                        <li>This is typically found in your profile/settings area</li>
+                        <li>Click on "Application Settings"</li>
+                    </ol>
+
+                    <h3>Step 3: Navigate to API Access</h3>
+                    <ol class="step-list">
+                        <li>Click on the "API Access" tab</li>
+                        <li>Select "OAuth Registration"</li>
+                        <li>You'll see a form to register your application</li>
+                    </ol>
+
+                    <h3>Step 4: Fill Out the OAuth Registration Form</h3>
+                    <p>Fill in the following information:</p>
+                    <div class="code-block">
+<strong>App Title:</strong> Trade Manager
+<strong>Redirect URI:</strong> http://localhost:8082
+<strong>Description:</strong> (Optional) Trading automation app
+                    </div>
+
+                    <h3>Step 5: Generate Your Credentials</h3>
+                    <ol class="step-list">
+                        <li>Click the "Generate" button</li>
+                        <li>Copy your credentials immediately - they're shown only once!</li>
+                        <li>Save them in a secure location</li>
+                    </ol>
+
+                    <h3>Step 6: Add to Trade Manager</h3>
+                    <ol class="step-list">
+                        <li>Go to <strong>http://127.0.0.1:8082/accounts</strong></li>
+                        <li>Click "Add Account" or "Edit" existing account</li>
+                        <li>Enter your Tradovate credentials</li>
+                        <li>Enter your Client ID and Client Secret from Step 5</li>
+                        <li>Click "Test Connection"</li>
+                    </ol>
+
+                    <div class="success-box">
+                        <strong>✅ Success!</strong> If everything is working, you'll see your real account data instead of fake data.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Troubleshooting Tab -->
+            <div id="troubleshooting-tab" class="tab-content" style="display: none;">
+                <div class="content-section">
+                    <h2>Common Issues and Solutions</h2>
+
+                    <h3>Error: "The app is not registered"</h3>
+                    <div class="warning-box">
+                        <strong>Problem:</strong> You're trying to connect without registering an OAuth app first.
+                        <br><strong>Solution:</strong> Follow the step-by-step guide to register your OAuth application in Tradovate.
+                    </div>
+
+                    <h3>Error: "Connection test failed"</h3>
+                    <div class="warning-box">
+                        <strong>Problem:</strong> The credentials you entered don't match your Tradovate account.
+                        <br><strong>Solution:</strong> Double-check your username, password, Client ID, and Client Secret.
+                    </div>
+
+                    <h3>Can't find "Application Settings"</h3>
+                    <div class="info-box">
+                        <strong>Problem:</strong> You can't locate the Application Settings in your Tradovate account.
+                        <br><strong>Solution:</strong> Try looking in these areas:
+                        <ul>
+                            <li>Profile/Settings menu</li>
+                            <li>Account Settings</li>
+                            <li>API or Developer section</li>
+                        </ul>
+                    </div>
+
+                    <h3>Lost Your Credentials</h3>
+                    <div class="warning-box">
+                        <strong>Problem:</strong> You can't see your Client ID and Client Secret anymore.
+                        <br><strong>Solution:</strong> Regenerate them in your Tradovate Application Settings. The old credentials will be deactivated.
+                    </div>
+                </div>
+            </div>
+
+            <!-- FAQ Tab -->
+            <div id="faq-tab" class="tab-content" style="display: none;">
+                <div class="content-section">
+                    <h2>Frequently Asked Questions</h2>
+
+                    <h3>Why do I need to register an OAuth app?</h3>
+                    <p>Tradovate requires you to register an OAuth application before you can use their API. This is a security feature that allows you to control which applications have access to your account.</p>
+
+                    <h3>Is my data safe?</h3>
+                    <p>Yes! All credentials are stored securely in your local database. Trade Manager only connects to Tradovate on your behalf, just like you would manually.</p>
+
+                    <h3>Can I use multiple Tradovate accounts?</h3>
+                    <p>Yes! You can connect multiple Tradovate accounts (Live and Demo) to Trade Manager.</p>
+
+                    <h3>Do I need separate credentials for Live and Demo?</h3>
+                    <p>Yes, each Tradovate account needs its own OAuth registration and credentials.</p>
+
+                    <h3>What happens if I lose my credentials?</h3>
+                    <p>You can regenerate them in your Tradovate Application Settings. Just create a new OAuth registration with the same details.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function showTab(tabName) {
+            // Hide all tab contents
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.style.display = 'none');
+            
+            // Show selected tab
+            const selectedTab = document.getElementById(tabName + '-tab');
+            if (selectedTab) {
+                selectedTab.style.display = 'block';
+            }
+            
+            // Update active nav tab
+            const navTabs = document.querySelectorAll('.nav-tab');
+            navTabs.forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
+

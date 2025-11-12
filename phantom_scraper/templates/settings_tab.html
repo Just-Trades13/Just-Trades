@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Just.Trade</title>
+    <link href="https://use.fontawesome.com/releases/v5.0.10/css/all.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:400,700|Material+Icons" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: #000000;
+            color: #f2f2f2;
+            overflow-x: hidden;
+        }
+
+        .wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: #334155;
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-wrapper {
+            padding: 0;
+        }
+
+        .logo {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #475569;
+        }
+
+        .logo-mini {
+            display: none;
+        }
+
+        .logo-normal {
+            color: #f2f2f2;
+            font-size: 18px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .logo-normal:hover {
+            color: #2cc511;
+        }
+
+        .nav {
+            list-style: none;
+            padding: 20px 0;
+        }
+
+        .nav li {
+            margin: 0;
+        }
+
+        .nav a {
+            display: flex;
+            align-items: center;
+            padding: 15px 25px;
+            color: #cbd5e1;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .nav a:hover {
+            background: #475569;
+            color: #f2f2f2;
+            border-left-color: #2cc511;
+        }
+
+        .nav a.active {
+            background: #475569;
+            color: #2cc511;
+            border-left-color: #2cc511;
+        }
+
+        .nav a i {
+            margin-right: 15px;
+            width: 20px;
+            text-align: center;
+        }
+
+        .nav a p {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .nav .caret {
+            margin-left: auto;
+            transition: transform 0.3s ease;
+        }
+
+        .nav .collapse {
+            display: none;
+        }
+
+        .nav .collapse.show {
+            display: block;
+        }
+
+        .nav .collapse .nav {
+            padding: 0;
+            background: #1e293b;
+        }
+
+        .nav .collapse .nav a {
+            padding: 12px 25px 12px 50px;
+            font-size: 13px;
+        }
+
+        .sidebar-mini-icon {
+            display: none;
+        }
+
+        /* Main Panel */
+        .main-panel {
+            flex: 1;
+            margin-left: 260px;
+            background: #000000;
+            min-height: 100vh;
+        }
+
+        /* Navbar */
+        .navbar-absolute {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            border-bottom: 1px solid #475569;
+            padding: 15px 30px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .navbar-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .navbar-brand {
+            color: #f2f2f2;
+            font-size: 24px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .navbar-nav {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .navbar-nav .nav-item {
+            display: flex;
+            align-items: center;
+        }
+
+        .navbar-nav .nav-link {
+            color: #f2f2f2;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .navbar-nav .nav-link img {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+        }
+
+        .dark-mode-toggle {
+            background: #475569;
+            border: none;
+            color: #f2f2f2;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .dark-mode-toggle:hover {
+            background: #64748b;
+        }
+
+        .dropdown-menu {
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 10px 0;
+            min-width: 150px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .dropdown-item {
+            color: #f2f2f2;
+            padding: 10px 20px;
+            text-decoration: none;
+            display: block;
+            transition: background 0.3s ease;
+        }
+
+        .dropdown-item:hover {
+            background: #475569;
+        }
+
+        /* Content */
+        .content {
+            padding: 30px;
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            margin: -15px;
+        }
+
+        .col-12, .col-6, .col-md-6, .col-sm-12, .col-md-4, .col-lg-3, .col-md-2 {
+            padding: 15px;
+        }
+
+        .col-12 { width: 100%; }
+        .col-6 { width: 50%; }
+        .col-md-6 { width: 50%; }
+        .col-sm-12 { width: 100%; }
+        .col-md-4 { width: 33.333%; }
+        .col-lg-3 { width: 25%; }
+        .col-md-2 { width: 16.666%; }
+
+        @media (max-width: 768px) {
+            .col-md-6, .col-md-4, .col-lg-3, .col-md-2 {
+                width: 100%;
+            }
+        }
+
+        /* Cards */
+        .card {
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: #2cc511;
+            box-shadow: 0 4px 20px rgba(44, 197, 17, 0.1);
+        }
+
+        .card-body {
+            padding: 25px;
+        }
+
+        .card-title {
+            color: #f2f2f2;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-info {
+            background: #0ea5e9;
+            color: white;
+        }
+
+        .btn-info:hover {
+            background: #0284c7;
+        }
+
+        .btn-primary {
+            background: #2cc511;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #22a00a;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            color: #f2f2f2;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            background: #334155;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            color: #f2f2f2;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #2cc511;
+            box-shadow: 0 0 0 3px rgba(44, 197, 17, 0.1);
+        }
+
+        .form-control::placeholder {
+            color: #94a3b8;
+        }
+
+        .position-relative {
+            position: relative;
+        }
+
+        .position-relative span {
+            position: absolute;
+            top: 50%;
+            right: 10px;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #94a3b8;
+            font-size: 16px;
+        }
+
+        /* Progress Bar */
+        .progress {
+            height: 5px;
+            background: #334155;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: #dc2626;
+            transition: width 0.3s ease;
+        }
+
+        .progress-bar.bg-success {
+            background: #22c55e;
+        }
+
+        .progress-bar.bg-warning {
+            background: #f59e0b;
+        }
+
+        /* Discord Integration */
+        .discord-login {
+            text-align: center;
+        }
+
+        .discord-link {
+            color: #5865f2;
+            text-decoration: none;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .discord-link:hover {
+            color: #4752c4;
+        }
+
+        .discord-link img {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* Sign Out Link */
+        .sign-out-link {
+            color: #f97316;
+            text-decoration: underline;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .sign-out-link:hover {
+            color: #ea580c;
+        }
+
+        /* Footer */
+        .footer {
+            background: #1e293b;
+            border-top: 1px solid #475569;
+            padding: 20px 0;
+            margin-top: 40px;
+        }
+
+        .container-fluid {
+            padding: 0 30px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .main-panel {
+                margin-left: 0;
+            }
+
+            .content {
+                padding: 20px 15px;
+            }
+
+            .navbar-absolute {
+                padding: 15px 20px;
+            }
+        }
+
+        /* Alignments */
+        .align-items-center {
+            align-items: center;
+        }
+
+        .mt-4 {
+            margin-top: 1.5rem;
+        }
+
+        .mt-md-3 {
+            margin-top: 1rem;
+        }
+
+        .d-none {
+            display: none;
+        }
+
+        .d-md-inline {
+            display: inline;
+        }
+
+        @media (max-width: 768px) {
+            .d-md-inline {
+                display: none;
+            }
+        }
+
+        .text-white {
+            color: #f2f2f2;
+        }
+
+        .font-weight-bold {
+            font-weight: 600;
+        }
+
+        .ml-2 {
+            margin-left: 0.5rem;
+        }
+
+        .me-2 {
+            margin-right: 0.5rem;
+        }
+
+        .gap-3 {
+            gap: 1rem;
+        }
+
+        .d-flex {
+            display: flex;
+        }
+
+        .justify-content-center {
+            justify-content: center;
+        }
+
+        .separator {
+            height: 1px;
+            background: #475569;
+            margin: 10px 0;
+        }
+
+        .d-lg-none {
+            display: none;
+        }
+
+        @media (max-width: 992px) {
+            .d-lg-none {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <!-- Sidebar -->
+        <div class="sidebar" data="blue">
+            <div class="sidebar-wrapper">
+                <div class="logo">
+                    <a class="simple-text logo-mini active" href="/settings">
+                        <div class="logo-img">TM</div>
+                    </a>
+                    <a class="simple-text logo-normal active" href="/settings">Just.Trade</a>
+                </div>
+                <ul class="nav">
+                    <li><a href="/dashboard-tab"><i class="fas fa-chart-pie"></i><p>Dashboard</p></a></li>
+                    <li><a href="/my-recorders"><i class="fas fa-pencil-alt"></i><p>My Recorders</p></a></li>
+                    <li>
+                        <a href="#pablo" data-toggle="collapse" aria-expanded="true">
+                            <i class="fas fa-coins"></i><p>Trader<b class="caret">▼</b></p>
+                        </a>
+                        <div class="collapse show">
+                            <ul class="nav">
+                                <li><a href="/account-management"><span class="sidebar-mini-icon">AM</span><span class="sidebar-normal">Account Management</span></a></li>
+                                <li><a href="/my-traders"><span class="sidebar-mini-icon">SS</span><span class="sidebar-normal">My Traders</span></a></li>
+                                <li><a href="/control-center"><span class="sidebar-mini-icon">CC</span><span class="sidebar-normal">Control Center</span></a></li>
+                            </ul>
+                        </div>
+                    </li>
+                    <li class="active"><a class="active" href="/settings"><i class="fas fa-cog"></i><p>Settings</p></a></li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Main Panel -->
+        <div class="main-panel" data="blue">
+            <!-- Navbar -->
+            <nav class="navbar-absolute navbar navbar-expand-lg">
+                <div class="container-fluid">
+                    <div class="navbar-wrapper">
+                        <a href="#pablo" class="navbar-brand">Settings</a>
+                    </div>
+                    <div class="collapse navbar-collapse">
+                        <ul class="ml-auto d-flex align-items-center gap-3 navbar-nav">
+                            <span class="text-white font-weight-bold d-none d-md-inline" style="font-size: 0.9rem; margin-right: 1rem;" id="currentTime">11:04:26 PM</span>
+                            <button type="button" id="darkModeToggle" class="dark-mode-toggle me-2">
+                                <i class="fas fa-moon"></i>
+                            </button>
+                            <li class="dropdown nav-item">
+                                <a aria-haspopup="true" href="#" class="d-flex align-items-center p-0 dropdown-toggle nav-link" aria-expanded="false">
+                                    <img alt="User avatar" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQiIGhlaWdodD0iMzQiIHZpZXdCb3g9IjAgMCAzNCAzNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTciIGN5PSIxNyIgcj0iMTciIGZpbGw9IiMyY2M1MTEiLz4KPHN2ZyB4PSI4IiB5PSI4IiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHZpZXdCb3g9IjAgMCAxOCAxOCIgZmlsbD0ibm9uZSI+CjxwYXRoIGQ9Ik05IDlDMTEuMjA5MSA5IDEzIDEwLjc5MDkgMTMgMTNDMTMgMTUuMjA5MSAxMS4yMDkxIDE3IDkgMTdDNi43OTA4NiAxNyA1IDE1LjIwOTEgNSAxM0M1IDEwLjc5MDkgNi43OTA4NiA5IDkgOVoiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0xMyA2QzEzIDcuNjU2ODUgMTEuNjU2OSA5IDEwIDlDOC4zNDMxNSA5IDcgNy42NTY4NSA3IDZDNyA0LjM0MzE1IDguMzQzMTUgMyAxMCAzQzExLjY1NjkgMyAxMyA0LjM0MzE1IDEzIDZaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+" class="rounded-circle" style="height: 34px; width: 34px;">
+                                    <span class="ml-2 text-white font-weight-bold d-none d-md-inline">J.T.M.J</span>
+                                </a>
+                                <div tabindex="-1" role="menu" aria-hidden="true" class="dropdown-dark dropdown-menu dropdown-menu-right">
+                                    <button type="button" tabindex="0" role="menuitem" class="dropdown-item">Log out</button>
+                                </div>
+                            </li>
+                            <li class="separator d-lg-none"></li>
+                        </ul>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Content -->
+            <div class="content">
+                <!-- Notification Settings -->
+                <div class="row">
+                    <div class="col-12 col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h4 class="card-title">Push Notifications</h4>
+                                <button type="button" class="btn btn-danger" id="disablePushNotifications">Disable Push Notifications</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h4 class="card-title">Discord DMs</h4>
+                                <button type="button" class="btn btn-danger" id="disableDiscordDMs">Disable Discord DMs</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Discord Integration & Sign Out -->
+                <div class="row">
+                    <div class="col-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="discord-login">
+                                    <a href="#" class="discord-link" id="discordLink" style="font-size: 12px;">
+                                        <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCAyMCAyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE2Ljk0MjYgNC4yOTQ5M0MxNS4zNDU0IDMuNTQ0OTMgMTMuNzQ4MiAzLjAwNDkzIDEyLjA1MSAyLjY2NDkzTDEyIDIuNjU0OTNWMTcuMzQ1QzE0LjA0NTUgMTcuMDA1IDE2LjA0NTUgMTYuMzQ1IDE3Ljk0MjYgMTUuNTk1QzE3Ljk0MjYgMTUuNTk1IDE3Ljk0MjYgMTUuNTk1IDE3Ljk0MjYgMTUuNTk1VjQuMjk0OTNaIiBmaWxsPSIjNTg2NUYyIi8+CjxwYXRoIGQ9Ik0zLjA1NzQxIDQuMjk0OTNDNC42NTQ2MSAzLjU0NDkzIDYuMjUxODEgMy4wMDQ5MyA3Ljk0OTE5IDIuNjY0OTNMNy45OTk5OSAyLjY1NDkzVjE3LjM0NUM1Ljk1NDQ1IDE3LjAwNSA0LjA1NDQ1IDE2LjM0NSAyLjA1NzQxIDE1LjU5NUMxLjA1NzQxIDE1LjU5NSAxLjA1NzQxIDE1LjU5NSAxLjA1NzQxIDE1LjU5NVY0LjI5NDkzWiIgZmlsbD0iIzU4NjVGMiIvPgo8L3N2Zz4K" alt="Discord" style="width: 20px; margin-right: 10px;">
+                                        Discord Linked
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <a href="#" class="sign-out-link" id="signOutLink">Sign Out</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Username Change -->
+                <div class="align-items-center mt-4 row">
+                    <div class="col-sm-12 col-md-4 col-lg-3">
+                        <div class="form-group">
+                            <label for="username" class="form-label">Change Your Username</label>
+                            <input name="username" id="username" placeholder="Enter new username" type="text" class="form-control" value="" style="width: 90%;">
+                        </div>
+                    </div>
+                    <div class="mt-4 mt-md-3 col-sm-12 col-md-2">
+                        <button type="button" class="btn btn-info" id="updateUsername" style="width: 80%;">Update</button>
+                    </div>
+                </div>
+
+                <!-- Password Change -->
+                <div class="align-items-center mt-4 row">
+                    <div class="col-sm-12 col-md-4 col-lg-3">
+                        <div class="form-group">
+                            <label for="newPassword" class="">New Password</label>
+                            <div class="position-relative">
+                                <input id="newPassword" placeholder="New password" type="password" class="form-control" value="">
+                                <span style="position: absolute; top: 50%; right: 10px; transform: translateY(-50%); cursor: pointer; color: rgb(136, 136, 136);" id="toggleNewPassword">👁️</span>
+                            </div>
+                            <div class="progress mt-2" style="height: 5px;">
+                                <div class="progress-bar bg-danger" role="progressbar" id="passwordStrength" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-12 col-md-4 col-lg-3">
+                        <div class="form-group">
+                            <label for="confirmPassword" class="">Confirm Password</label>
+                            <div class="position-relative">
+                                <input id="confirmPassword" placeholder="Confirm new password" type="password" class="form-control" value="">
+                                <span style="position: absolute; top: 50%; right: 10px; transform: translateY(-50%); cursor: pointer; color: rgb(136, 136, 136);" id="toggleConfirmPassword">👁️</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-4 mt-md-3 col-sm-12 col-md-2">
+                        <button type="button" class="btn btn-primary" id="changePassword" style="width: 80%; display: flex; align-items: center; justify-content: center;">Change Password</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <footer class="footer">
+                <div class="container-fluid"></div>
+            </footer>
+        </div>
+    </div>
+
+    <script>
+        // Update time
+        function updateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { 
+                hour12: true, 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit' 
+            });
+            document.getElementById('currentTime').textContent = timeString;
+        }
+
+        // Update time every second
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Password visibility toggle
+        document.getElementById('toggleNewPassword').addEventListener('click', function() {
+            const passwordField = document.getElementById('newPassword');
+            const toggleIcon = this;
+            
+            if (passwordField.type === 'password') {
+                passwordField.type = 'text';
+                toggleIcon.textContent = '🙈';
+            } else {
+                passwordField.type = 'password';
+                toggleIcon.textContent = '👁️';
+            }
+        });
+
+        document.getElementById('toggleConfirmPassword').addEventListener('click', function() {
+            const passwordField = document.getElementById('confirmPassword');
+            const toggleIcon = this;
+            
+            if (passwordField.type === 'password') {
+                passwordField.type = 'text';
+                toggleIcon.textContent = '🙈';
+            } else {
+                passwordField.type = 'password';
+                toggleIcon.textContent = '👁️';
+            }
+        });
+
+        // Password strength indicator
+        document.getElementById('newPassword').addEventListener('input', function() {
+            const password = this.value;
+            const strengthBar = document.getElementById('passwordStrength');
+            
+            let strength = 0;
+            if (password.length >= 8) strength += 25;
+            if (password.match(/[a-z]/)) strength += 25;
+            if (password.match(/[A-Z]/)) strength += 25;
+            if (password.match(/[0-9]/)) strength += 25;
+            
+            strengthBar.style.width = strength + '%';
+            
+            if (strength < 50) {
+                strengthBar.className = 'progress-bar bg-danger';
+            } else if (strength < 75) {
+                strengthBar.className = 'progress-bar bg-warning';
+            } else {
+                strengthBar.className = 'progress-bar bg-success';
+            }
+        });
+
+        // Button event handlers
+        document.getElementById('disablePushNotifications').addEventListener('click', function() {
+            if (this.textContent === 'Disable Push Notifications') {
+                this.textContent = 'Enable Push Notifications';
+                this.className = 'btn btn-primary';
+            } else {
+                this.textContent = 'Disable Push Notifications';
+                this.className = 'btn btn-danger';
+            }
+        });
+
+        document.getElementById('disableDiscordDMs').addEventListener('click', function() {
+            if (this.textContent === 'Disable Discord DMs') {
+                this.textContent = 'Enable Discord DMs';
+                this.className = 'btn btn-primary';
+            } else {
+                this.textContent = 'Disable Discord DMs';
+                this.className = 'btn btn-danger';
+            }
+        });
+
+        document.getElementById('updateUsername').addEventListener('click', function() {
+            const username = document.getElementById('username').value;
+            if (username.trim()) {
+                alert('Username updated successfully!');
+            } else {
+                alert('Please enter a valid username.');
+            }
+        });
+
+        document.getElementById('changePassword').addEventListener('click', function() {
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            if (newPassword !== confirmPassword) {
+                alert('Passwords do not match!');
+                return;
+            }
+            
+            if (newPassword.length < 8) {
+                alert('Password must be at least 8 characters long!');
+                return;
+            }
+            
+            alert('Password changed successfully!');
+        });
+
+        document.getElementById('discordLink').addEventListener('click', function(e) {
+            e.preventDefault();
+            if (this.textContent.includes('Linked')) {
+                this.innerHTML = '<img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCAyMCAyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE2Ljk0MjYgNC4yOTQ5M0MxNS4zNDU0IDMuNTQ0OTMgMTMuNzQ4MiAzLjAwNDkzIDEyLjA1MSAyLjY2NDkzTDEyIDIuNjU0OTNWMTcuMzQ1QzE0LjA0NTUgMTcuMDA1IDE2LjA0NTUgMTYuMzQ1IDE3Ljk0MjYgMTUuNTk1QzE3Ljk0MjYgMTUuNTk1IDE3Ljk0MjYgMTUuNTk1IDE3Ljk0MjYgMTUuNTk1VjQuMjk0OTNaIiBmaWxsPSIjNTg2NUYyIi8+CjxwYXRoIGQ9Ik0zLjA1NzQxIDQuMjk0OTNDNC42NTQ2MSAzLjU0NDkzIDYuMjUxODEgMy4wMDQ5MyA3Ljk0OTE5IDIuNjY0OTNMNy45OTk5OSAyLjY1NDkzVjE3LjM0NUM1Ljk1NDQ1IDE3LjAwNSA0LjA1NDQ1IDE2LjM0NSAyLjA1NzQxIDE1LjU5NUMxLjA1NzQxIDE1LjU5NSAxLjA1NzQxIDE1LjU5NSAxLjA1NzQxIDE1LjU5NVY0LjI5NDkzWiIgZmlsbD0iIzU4NjVGMiIvPgo8L3N2Zz4K" alt="Discord" style="width: 20px; margin-right: 10px;">Connect Discord';
+                this.style.color = '#94a3b8';
+            } else {
+                this.innerHTML = '<img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCAyMCAyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE2Ljk0MjYgNC4yOTQ5M0MxNS4zNDU0IDMuNTQ0OTMgMTMuNzQ4MiAzLjAwNDkzIDEyLjA1MSAyLjY2NDkzTDEyIDIuNjU0OTNWMTcuMzQ1QzE0LjA0NTUgMTcuMDA1IDE2LjA0NTUgMTYuMzQ1IDE3Ljk0MjYgMTUuNTk1QzE3Ljk0MjYgMTUuNTk1IDE3Ljk0MjYgMTUuNTk1IDE3Ljk0MjYgMTUuNTk1VjQuMjk0OTNaIiBmaWxsPSIjNTg2NUYyIi8+CjxwYXRoIGQ9Ik0zLjA1NzQxIDQuMjk0OTNDNC42NTQ2MSAzLjU0NDkzIDYuMjUxODEgMy4wMDQ5MyA3Ljk0OTE5IDIuNjY0OTNMNy45OTk5OSAyLjY1NDkzVjE3LjM0NUM1Ljk1NDQ1IDE3LjAwNSA0LjA1NDQ1IDE2LjM0NSAyLjA1NzQxIDE1LjU5NUMxLjA1NzQxIDE1LjU5NSAxLjA1NzQxIDE1LjU5NSAxLjA1NzQxIDE1LjU5NVY0LjI5NDkzWiIgZmlsbD0iIzU4NjVGMiIvPgo8L3N2Zz4K" alt="Discord" style="width: 20px; margin-right: 10px;">Discord Linked';
+                this.style.color = '#5865f2';
+            }
+        });
+
+        document.getElementById('signOutLink').addEventListener('click', function(e) {
+            e.preventDefault();
+            if (confirm('Are you sure you want to sign out?')) {
+                alert('Signed out successfully!');
+            }
+        });
+
+        // Dark mode toggle
+        document.getElementById('darkModeToggle').addEventListener('click', function() {
+            // This would toggle dark mode in a real application
+            console.log('Dark mode toggle clicked');
+        });
+
+        // Collapsible sidebar menu
+        document.querySelector('[data-toggle="collapse"]').addEventListener('click', function(e) {
+            e.preventDefault();
+            const collapse = this.nextElementSibling;
+            const caret = this.querySelector('.caret');
+            
+            if (collapse.classList.contains('show')) {
+                collapse.classList.remove('show');
+                caret.textContent = '▶';
+            } else {
+                collapse.classList.add('show');
+                caret.textContent = '▼';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta name="csrf-token" content="{%" csrf_token %}>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"/>
+    <meta name="theme-color" content="#000000"/>
+    <meta name="description" content="Trade Manager - Automated Trading Software"/>
+    <meta name="keywords" content="trade, manager, artificial, automated, finance, stocks, trading"/>
+    <meta name="author" content="Trade Manager"/>
+    <link rel="canonical" href="https://trademanagergroup.com"/>
+    <meta property="og:title" content="Trade Manager"/>
+    <meta property="og:description" content="Trade while you sleep"/>
+    <meta property="og:image" content="/favicon.png"/>
+    <meta property="og:url" content="https://trademanagergroup.com"/>
+    <meta property="og:type" content="website"/>
+    <meta name="twitter:card" content="summary_large_image"/>
+    <meta name="twitter:title" content="Trade Manager"/>
+    <meta name="twitter:description" content="Manage your trades effectively with Trade Manager"/>
+    <meta name="twitter:image" content="/favicon.png"/>
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Trade Manager">
+    <link rel="apple-touch-icon" sizes="76x76" href="/favicon.png"/>
+    <link rel="manifest" href="/manifest.json"/>
+    <link rel="shortcut icon" href="/favicon.png"/>
+    <link rel="apple-touch-icon" sizes="76x76" href="/favicon.png"/>
+    <link rel="preload" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:400,700|Material+Icons" as="style"/>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:400,700|Material+Icons"/>
+    <link href="https://use.fontawesome.com/releases/v5.0.10/css/all.css" rel="stylesheet"/>
+    <title>Trade Manager</title>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-XXXXX-Y"></script>
+    <script>
+    function gtag() {
+        dataLayer.push(arguments)
+    }
+    window.dataLayer = window.dataLayer || [],
+    gtag("js", new Date),
+    gtag("config", "UA-XXXXX-Y")
+    </script>
+    <script type="application/ld+json">{
+          "@context": "http://schema.org",
+          "@type": "WebSite",
+          "name": "Trade Manager",
+          "url": "https://trademanagergroup.com"
+        }</script>
+    <script src="https://www.google.com/recaptcha/api.js?render=6LdKDy0rAAAAAJvcuPDHVOK897TZCfbE40-noXib"></script>
+    <script defer="defer" src="/static/js/main.d6a4e8f7.js"></script>
+    <link href="/static/css/main.edcc780c.css" rel="stylesheet">
+</head>
+<body>
+    <script src="{% static 'js/main.js' %}"></script>
+    <noscript>You need to enable JavaScript to run this app. Please enable JavaScript in your browser settings and refresh the page.</noscript>
+    <div id="root"></div>
+</body>
+</html>

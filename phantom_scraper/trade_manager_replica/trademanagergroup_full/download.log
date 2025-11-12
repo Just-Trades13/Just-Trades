@@ -1,0 +1,8 @@
+Both --no-clobber and --convert-links were specified, only --convert-links will be used.
+--2025-11-06 02:08:40--  https://trademanagergroup.com/
+Resolving trademanagergroup.com (trademanagergroup.com)... 3.146.219.175
+Connecting to trademanagergroup.com (trademanagergroup.com)|3.146.219.175|:443... connected.
+HTTP request sent, awaiting response... 304 Not Modified
+File ‘index.html’ not modified on server. Omitting download.
+
+Converted links in 0 files in 0 seconds.

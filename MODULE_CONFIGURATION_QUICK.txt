@@ -1,0 +1,38 @@
+📋 QUICK CONFIGURATION GUIDE
+
+MODULE 3 (Parse JSON):
+  JSON: {{2.result}}
+  Data Structure: AI JSON (or manual)
+
+MODULE 4 (Search):
+  Formula: {Contact Email} = '{{3.contact_email}}'
+  Max Records: 1
+  Return: Contact Email, Contact Full Name, Company, Status, id
+
+MODULE 5 (Router):
+  Type: If/Else
+  Filter: {{4.`__IMTLENGTH__`}} = 0
+  If (0 records) → Module 6 (Create)
+  Else (found duplicate) → Module 7 (Update)
+
+MODULE 6 (Create):
+  Map from Module 3:
+  Contact Email: {{3.contact_email}}
+  Contact Full Name: {{3.contact_full_name}}
+  First Name: {{3.first_name}}
+  Company: {{3.company}}
+  Contact Phone: {{3.contact_phone}}
+  Location City: {{3.location_city}}
+  Location State: {{3.location_state}}
+  Status: new
+  Source: apollo_io (hardcode)
+
+MODULE 7 (Update):
+  Record ID: {{4.id[0]}}
+  Update fields from {{3.*}}
+
+AIRTABLE TABLE:
+  Import HELOC_Leads_Airtable.csv
+  OR create fields manually (see guide)
+  MUST add "apollo_io" option to Source field!
+

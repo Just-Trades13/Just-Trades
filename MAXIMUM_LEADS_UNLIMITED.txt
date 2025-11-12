@@ -1,0 +1,100 @@
+MAXIMUM LEADS CONFIGURATION - SCAN EVERYWHERE
+====================================================================================================
+
+OPTION 1: No Restrictions (Maximum Coverage)
+====================================================================================================
+
+Copy-paste this into Module 1 (Apollo.io) Body field:
+
+{
+  "page": 1,
+  "per_page": 100
+}
+
+✅ NO location restrictions - scans entire USA
+✅ NO keyword restrictions - gets all contacts
+✅ Maximum per_page (100 is Apollo's limit)
+✅ Gets 100 leads per run
+
+⚠️  WARNING: This will hit OpenAI token limits!
+   → With per_page: 100, you'll get ~151,611 tokens
+   → OpenAI limit: 16,385 tokens
+   → Will cause errors!
+
+
+OPTION 2: Safe Maximum (Recommended)
+====================================================================================================
+
+Copy-paste this into Module 1 (Apollo.io) Body field:
+
+{
+  "page": 1,
+  "per_page": 10
+}
+
+✅ Safe for OpenAI (stays under token limit)
+✅ NO location restrictions
+✅ NO keyword restrictions
+✅ Gets 10 leads per run
+✅ Add pagination to get hundreds more!
+
+
+OPTION 3: Maximum with Pagination Loop (BEST)
+====================================================================================================
+
+Step 1: Add Variable Module (Module 0)
+- Variable name: current_page
+- Variable value: 1
+- Variable lifetime: One cycle
+
+Step 2: Copy-paste this into Module 1 Body:
+
+{
+  "page": {{0.current_page}},
+  "per_page": 10
+}
+
+Step 3: Add pagination loop (instructions in PAGINATION_SETUP_INSTRUCTIONS.md)
+
+✅ Gets 10 leads per page
+✅ Automatically cycles through pages 1-100+
+✅ Gets hundreds/thousands of leads per execution
+✅ Safe from token limits
+
+
+OPTION 4: Multiple States (Without Pagination)
+====================================================================================================
+
+If you want specific states but no other restrictions:
+
+{
+  "person_locations": ["California", "Texas", "Florida", "Arizona", "Nevada", "New York", "Illinois", "Pennsylvania", "Ohio", "Georgia"],
+  "page": 1,
+  "per_page": 10
+}
+
+✅ Scans top 10 states
+✅ Gets leads from multiple states
+✅ Safe from token limits
+
+
+RECOMMENDED SETUP FOR MAXIMUM LEADS:
+====================================================================================================
+
+1. Use Option 2 (per_page: 10, no restrictions)
+2. Add pagination loop to cycle through pages
+3. Set Router to loop up to page 100 (or more)
+4. Result: 1,000+ leads per execution!
+
+BODY TO USE:
+
+{
+  "page": {{0.current_page}},
+  "per_page": 10
+}
+
+Then add:
+- Module 0: current_page = 1
+- Module 8: Increment current_page
+- Module 9: Router (loop if page <= 100)
+

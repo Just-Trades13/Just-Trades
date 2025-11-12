@@ -1,0 +1,893 @@
+{
+    "name": "Nelson HELOC Outreach",
+    "flow": [
+        {
+            "id": 1,
+            "module": "airtable:TriggerWatchRecords",
+            "version": 3,
+            "parameters": {
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "config": {
+                    "labelField": "Status",
+                    "triggerField": "Last Modified Time"
+                },
+                "formula": "AND({Status} = 'new', {Contact Email} != '', LENGTH({Contact Email}) > 5)",
+                "maxRecords": 10,
+                "__IMTCONN__": 5837453,
+                "useColumnId": false
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "base": {
+                            "label": "Leads Manager AI CRM"
+                        },
+                        "table": {
+                            "label": "Leads"
+                        },
+                        "config": {
+                            "nested": {
+                                "labelField": {
+                                    "label": "Status"
+                                },
+                                "triggerField": {
+                                    "label": "Last Modified Time"
+                                }
+                            }
+                        },
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "airtable2"
+                            },
+                            "label": "My Airtable Token or Key connection"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "__IMTCONN__",
+                        "type": "account:airtable3,airtable2",
+                        "label": "Connection",
+                        "required": true
+                    },
+                    {
+                        "name": "base",
+                        "type": "select",
+                        "label": "Base",
+                        "required": true
+                    },
+                    {
+                        "name": "useColumnId",
+                        "type": "boolean",
+                        "label": "Use Column ID",
+                        "required": true
+                    },
+                    {
+                        "name": "table",
+                        "type": "select",
+                        "label": "Table",
+                        "required": true
+                    },
+                    {
+                        "name": "config",
+                        "spec": [
+                            {
+                                "name": "triggerField",
+                                "type": "select",
+                                "label": "Trigger field",
+                                "required": true
+                            },
+                            {
+                                "name": "triggerField",
+                                "type": "hidden"
+                            },
+                            {
+                                "name": "labelField",
+                                "type": "select",
+                                "label": "Label field",
+                                "required": true
+                            }
+                        ],
+                        "type": "collection",
+                        "label": "Trigger configuration"
+                    },
+                    {
+                        "name": "maxRecords",
+                        "type": "integer",
+                        "label": "Limit",
+                        "required": true
+                    },
+                    {
+                        "name": "view",
+                        "type": "select",
+                        "label": "View"
+                    },
+                    {
+                        "name": "formula",
+                        "type": "text",
+                        "label": "Formula"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "id",
+                        "type": "text",
+                        "label": "ID"
+                    },
+                    {
+                        "name": "createdTime",
+                        "type": "date",
+                        "label": "Created Time"
+                    },
+                    {
+                        "name": "Lead ID",
+                        "type": "text",
+                        "label": "Lead ID"
+                    },
+                    {
+                        "name": "Taken By",
+                        "type": "text",
+                        "label": "Taken By"
+                    },
+                    {
+                        "name": "Status",
+                        "type": "text",
+                        "label": "Status"
+                    },
+                    {
+                        "name": "Company",
+                        "type": "text",
+                        "label": "Company"
+                    },
+                    {
+                        "name": "Domain",
+                        "type": "text",
+                        "label": "Domain"
+                    },
+                    {
+                        "name": "Notes",
+                        "type": "text",
+                        "label": "Notes",
+                        "multiline": true
+                    },
+                    {
+                        "name": "Industry",
+                        "type": "text",
+                        "label": "Industry"
+                    },
+                    {
+                        "name": "Employee Count",
+                        "type": "number",
+                        "label": "Employee Count"
+                    },
+                    {
+                        "name": "Contact Full Name",
+                        "type": "text",
+                        "label": "Contact Full Name"
+                    },
+                    {
+                        "name": "Contact Role",
+                        "type": "text",
+                        "label": "Contact Role"
+                    },
+                    {
+                        "name": "Contact Email",
+                        "type": "text",
+                        "label": "Contact Email"
+                    },
+                    {
+                        "name": "Contact Phone",
+                        "type": "text",
+                        "label": "Contact Phone"
+                    },
+                    {
+                        "name": "Contact LinkedIN",
+                        "type": "text",
+                        "label": "Contact LinkedIN"
+                    },
+                    {
+                        "name": "Location City",
+                        "type": "text",
+                        "label": "Location City"
+                    },
+                    {
+                        "name": "Location State",
+                        "type": "text",
+                        "label": "Location State"
+                    },
+                    {
+                        "name": "Tags",
+                        "type": "array",
+                        "label": "Tags",
+                        "dynamic": true,
+                        "editable": true
+                    },
+                    {
+                        "name": "Source",
+                        "type": "text",
+                        "label": "Source"
+                    },
+                    {
+                        "name": "Acquired At",
+                        "time": false,
+                        "type": "date",
+                        "label": "Acquired At"
+                    },
+                    {
+                        "name": "Time Created",
+                        "type": "date",
+                        "label": "Time Created"
+                    },
+                    {
+                        "name": "Last Modified Time",
+                        "type": "date",
+                        "label": "Last Modified Time"
+                    },
+                    {
+                        "name": "UTM List ID",
+                        "type": "text",
+                        "label": "UTM List ID"
+                    },
+                    {
+                        "name": "Last Out Reach",
+                        "time": false,
+                        "type": "date",
+                        "label": "Last Out Reach"
+                    },
+                    {
+                        "name": "Next Step",
+                        "type": "text",
+                        "label": "Next Step"
+                    },
+                    {
+                        "name": "Meeting Link",
+                        "type": "text",
+                        "label": "Meeting Link"
+                    },
+                    {
+                        "name": "Email Campaign",
+                        "type": "text",
+                        "label": "Email Campaign"
+                    },
+                    {
+                        "name": "Reply Received",
+                        "type": "boolean",
+                        "label": "Reply Received"
+                    },
+                    {
+                        "name": "Meeting Completed",
+                        "type": "boolean",
+                        "label": "Meeting Completed"
+                    },
+                    {
+                        "name": "Pipeline Value",
+                        "type": "number",
+                        "label": "Pipeline Value"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "mapper": null,
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            },
+            "routes": [
+                {
+                    "filter": "{{and(contains([\"Mon\", \"Tue\", \"Wed\", \"Thu\", \"Fri\"]; formatDate(now(); \"E\")); ge(toNumber(formatDate(now(); \"HH\")); 9); le(toNumber(formatDate(now(); \"HH\")); 17); ne(1.[Contact Email]; \"\"); gt(length(1.[Contact Email]); 5))}}",
+                    "flow": [
+                        {
+                            "id": 3,
+                            "module": "util:SetVariable2",
+                            "version": 1,
+                            "parameters": {},
+                            "mapper": {
+                                "name": "first_name",
+                                "scope": "roundtrip",
+                                "value": "{{split(1.`Contact Full Name`; \" \")[0]}}"
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 600,
+                                    "y": 0
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "scope": {
+                                            "label": "One cycle"
+                                        }
+                                    }
+                                },
+                                "expect": [
+                                    {
+                                        "name": "name",
+                                        "type": "text",
+                                        "label": "Variable name",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "scope",
+                                        "type": "select",
+                                        "label": "Variable lifetime",
+                                        "required": true,
+                                        "validate": {
+                                            "enum": [
+                                                "roundtrip",
+                                                "execution"
+                                            ]
+                                        }
+                                    },
+                                    {
+                                        "name": "value",
+                                        "type": "any",
+                                        "label": "Variable value"
+                                    }
+                                ],
+                                "interface": [
+                                    {
+                                        "name": "first_name",
+                                        "label": "first_name",
+                                        "type": "any"
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            "id": 4,
+                            "module": "google-email:sendAnEmail",
+                            "version": 4,
+                            "parameters": {
+                                "__IMTCONN__": 5837011
+                            },
+                            "mapper": {
+                                "to": [
+                                    "{{1.[Contact Email]}}"
+                                ],
+                                "subject": "Unlock Your Home Equity - HELOC Opportunities",
+                                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;\">\n    <p>Hi {{1.`Contact Full Name`}},</p>\n    <p><strong>As easy as 1-2-3.</strong></p>\n    <ol>\n        <li><strong>Apply in 5 minutes & receive funding in as little as 5 days.</strong></li>\n        <li><strong>No impact to your credit score</strong> as a soft pull is utilized for pre-approval and your options.</li>\n        <li>A system generated <strong>Appraisal valuation</strong> means <strong>NO appraisal</strong> to order value is instant.</li>\n    </ol>\n    <p>A HELOC (Home Equity Line of Credit) allows you to use your existing equity for:</p>\n    <ul>\n        <li>Paying off high-interest credit cards</li>\n        <li>Home repairs & upgrades</li>\n        <li>Business or investment opportunities</li>\n    </ul>\n    <div style=\"text-align: center; margin: 30px 0;\">\n        <a href=\"https://axenmortgageheloc.com/account/heloc/register-v2?referrer=55ac77e7-8bb0-48c5-92a8-65960f3efe42\" style=\"background-color: #007bff; color: white; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; font-size: 16px;\">Start your secure application now</a>\n    </div>\n    <p>If you'd like me to help you personally, just reply YES.</p> <p>Nelson Morales<br>\n    Mortgage Loan Originator — NMLS #1174028<br>\n    Nexa Mortgage, LLC — NMLS #1660690<br>\n    Equal Housing Lender<br>\n    <br>\n    C: 773-592-8213<br>\n    <a href=\"mailto:nmorales@nexamortgage.com\">nmorales@nexamortgage.com</a><br>\n    <br>\n    Verify my credentials:<br>\n    <a href=\"https://nmlsconsumeraccess.org/TuringTestPage.aspx?ReturnUrl=/EntityDetails.aspx/COMPANY/1660690\">https://nmlsconsumeraccess.org/TuringTestPage.aspx?ReturnUrl=/EntityDetails.aspx/COMPANY/1660690</a></p>\n    <p style=\"font-size: 11px; color: #666; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;\">Disclosures: This is not a commitment to lend. Minimum and maximum loan amounts, rates, and terms may vary and are subject to qualification including income, credit, and property approval. All loan programs, terms, and interest rates are subject to change without notice. Conditions and restrictions apply. Equal Housing Lender. Nexa Mortgage, LLC is licensed in the states where required. If you are not the intended recipient or would like to opt out, please reply \"STOP\" to unsubscribe.</p>\n</div>",
+                                "bodyType": "rawHtml"
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 600,
+                                    "y": 0
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "cc": {
+                                            "mode": "chose"
+                                        },
+                                        "to": {
+                                            "mode": "chose",
+                                            "items": [
+                                                null
+                                            ]
+                                        },
+                                        "bcc": {
+                                            "mode": "chose"
+                                        },
+                                        "from": {
+                                            "mode": "chose"
+                                        },
+                                        "bodyType": {
+                                            "label": "Raw HTML"
+                                        },
+                                        "attachments": {
+                                            "mode": "chose"
+                                        },
+                                        "emailHeaders": {
+                                            "mode": "chose"
+                                        }
+                                    },
+                                    "parameters": {
+                                        "__IMTCONN__": {
+                                            "data": {
+                                                "scoped": "true",
+                                                "connection": "google-email"
+                                            },
+                                            "label": "My Gmail connection (mylesjadwin13@jadwinai.com)"
+                                        }
+                                    }
+                                },
+                                "parameters": [
+                                    {
+                                        "name": "__IMTCONN__",
+                                        "type": "account:google-email",
+                                        "label": "Connection",
+                                        "required": true
+                                    }
+                                ],
+                                "expect": [
+                                    {
+                                        "name": "to",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Recipient email address",
+                                            "required": true,
+                                            "validate": false
+                                        },
+                                        "type": "array",
+                                        "label": "To",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "subject",
+                                        "type": "text",
+                                        "label": "Subject"
+                                    },
+                                    {
+                                        "name": "bodyType",
+                                        "type": "select",
+                                        "label": "Body type",
+                                        "required": true,
+                                        "validate": {
+                                            "enum": [
+                                                "rawHtml",
+                                                "collection"
+                                            ]
+                                        }
+                                    },
+                                    {
+                                        "name": "content",
+                                        "type": "text",
+                                        "label": "Content"
+                                    },
+                                    {
+                                        "name": "attachments",
+                                        "spec": {
+                                            "name": "value",
+                                            "spec": [
+                                                {
+                                                    "name": "filename",
+                                                    "type": "filename",
+                                                    "label": "File name",
+                                                    "required": true,
+                                                    "semantic": "file:name"
+                                                },
+                                                {
+                                                    "name": "data",
+                                                    "type": "buffer",
+                                                    "label": "Data",
+                                                    "required": true,
+                                                    "semantic": "file:data"
+                                                }
+                                            ],
+                                            "type": "collection",
+                                            "label": "Attachment"
+                                        },
+                                        "type": "array",
+                                        "label": "Attachments"
+                                    },
+                                    {
+                                        "name": "from",
+                                        "type": "select",
+                                        "label": "From"
+                                    },
+                                    {
+                                        "name": "cc",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Recipient email address",
+                                            "required": true
+                                        },
+                                        "type": "array",
+                                        "label": "CC recipients"
+                                    },
+                                    {
+                                        "name": "bcc",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Recipient email address",
+                                            "required": true
+                                        },
+                                        "type": "array",
+                                        "label": "BCC recipients"
+                                    },
+                                    {
+                                        "name": "emailHeaders",
+                                        "spec": {
+                                            "name": "value",
+                                            "spec": [
+                                                {
+                                                    "name": "key",
+                                                    "type": "text",
+                                                    "label": "Key",
+                                                    "required": true
+                                                },
+                                                {
+                                                    "name": "value",
+                                                    "type": "text",
+                                                    "label": "Value"
+                                                }
+                                            ],
+                                            "type": "collection",
+                                            "label": "Email header"
+                                        },
+                                        "type": "array",
+                                        "label": "Additional email headers"
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "interface": []
+            }
+        },
+        {
+            "id": 10,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5837011
+            },
+            "mapper": {
+                "to": [
+                    "{{1.[Contact Email]}}"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;\">\n    <div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #007bff;\">\n        <p>Hi {{1.`Contact Full Name`}},</p>\n        <p>I wanted to reach out about HELOC opportunities that might be a great fit for homeowners in {{1.`Location City`}}.</p>\n    </div>\n    \n    <div style=\"text-align: center; margin: 30px 0;\">\n        <a href=\"https://axenmortgageheloc.com/account/heloc/register-v2?referrer=55ac77e7-8bb0-48c5-92a8-65960f3efe42\" style=\"background-color: #007bff; color: white; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; font-size: 16px;\">Sign Up for HELOC Services</a>\n    </div>\n    \n    <div style=\"margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666;\">\n        <p>Nelson Morales<br>\n        AXEN MORTGAGE / NEXA MORTGAGE LLC<br>\n        <a href=\"mailto:nmorales@nexamortgage.com\" style=\"color: #007bff;\">nmorales@nexamortgage.com</a></p>\n    </div>\n</div>",
+                "subject": "Unlock Your Home Equity - HELOC Opportunities for {{1.`Location City`}} Homeowners",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                },
+                "restore": {
+                    "expect": {
+                        "cc": {
+                            "mode": "chose"
+                        },
+                        "to": {
+                            "mode": "chose",
+                            "items": [
+                                null
+                            ]
+                        },
+                        "bcc": {
+                            "mode": "chose"
+                        },
+                        "from": {
+                            "mode": "chose"
+                        },
+                        "bodyType": {
+                            "label": "Raw HTML"
+                        },
+                        "attachments": {
+                            "mode": "chose"
+                        },
+                        "emailHeaders": {
+                            "mode": "chose"
+                        }
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "google-email"
+                            },
+                            "label": "My Gmail connection (mylesjadwin13@jadwinai.com)"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "__IMTCONN__",
+                        "type": "account:google-email",
+                        "label": "Connection",
+                        "required": true
+                    }
+                ],
+                "expect": [
+                    {
+                        "name": "to",
+                        "spec": {
+                            "name": "value",
+                            "type": "email",
+                            "label": "Recipient email address",
+                            "required": true,
+                            "validate": false
+                        },
+                        "type": "array",
+                        "label": "To",
+                        "required": true
+                    },
+                    {
+                        "name": "subject",
+                        "type": "text",
+                        "label": "Subject"
+                    },
+                    {
+                        "name": "bodyType",
+                        "type": "select",
+                        "label": "Body type",
+                        "required": true,
+                        "validate": {
+                            "enum": [
+                                "rawHtml",
+                                "collection"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "content",
+                        "type": "text",
+                        "label": "Content"
+                    },
+                    {
+                        "name": "attachments",
+                        "spec": {
+                            "name": "value",
+                            "spec": [
+                                {
+                                    "name": "filename",
+                                    "type": "filename",
+                                    "label": "File name",
+                                    "required": true,
+                                    "semantic": "file:name"
+                                },
+                                {
+                                    "name": "data",
+                                    "type": "buffer",
+                                    "label": "Data",
+                                    "required": true,
+                                    "semantic": "file:data"
+                                }
+                            ],
+                            "type": "collection",
+                            "label": "Attachment"
+                        },
+                        "type": "array",
+                        "label": "Attachments"
+                    },
+                    {
+                        "name": "from",
+                        "type": "select",
+                        "label": "From"
+                    },
+                    {
+                        "name": "cc",
+                        "spec": {
+                            "name": "value",
+                            "type": "email",
+                            "label": "Recipient email address",
+                            "required": true
+                        },
+                        "type": "array",
+                        "label": "CC recipients"
+                    },
+                    {
+                        "name": "bcc",
+                        "spec": {
+                            "name": "value",
+                            "type": "email",
+                            "label": "Recipient email address",
+                            "required": true
+                        },
+                        "type": "array",
+                        "label": "BCC recipients"
+                    },
+                    {
+                        "name": "emailHeaders",
+                        "spec": {
+                            "name": "value",
+                            "spec": [
+                                {
+                                    "name": "key",
+                                    "type": "text",
+                                    "label": "Key",
+                                    "required": true
+                                },
+                                {
+                                    "name": "value",
+                                    "type": "text",
+                                    "label": "Value"
+                                }
+                            ],
+                            "type": "collection",
+                            "label": "Email header"
+                        },
+                        "type": "array",
+                        "label": "Additional email headers"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 12,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5837453
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "record": {
+                    "fldFU5cYbHBHmTpHr": "heloc_initial_outreach",
+                    "fldFodc3E3nJ9yzva": "{{now}}",
+                    "fldxEEEqp6XNCRoNJ": "emailed",
+                    "fld231lb1J0a7CAWJ": "Initial Email"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                },
+                "restore": {
+                    "expect": {
+                        "base": {
+                            "label": "Leads Manager AI CRM"
+                        },
+                        "table": {
+                            "label": "Leads"
+                        },
+                        "record": {
+                            "nested": {
+                                "fld231lb1J0a7CAWJ": {
+                                    "mode": "edit"
+                                },
+                                "fldDrdS6pE666IRPQ": {
+                                    "mode": "chose"
+                                },
+                                "fldKJWkWraWodlNrr": {
+                                    "mode": "chose"
+                                },
+                                "fldLhxkFBFoxjlldt": {
+                                    "mode": "edit"
+                                },
+                                "fldxEEEqp6XNCRoNJ": {
+                                    "mode": "edit"
+                                },
+                                "fldFU5cYbHBHmTpHr": {
+                                    "mode": "edit"
+                                },
+                                "fldFodc3E3nJ9yzva": {
+                                    "mode": "edit"
+                                }
+                            }
+                        }
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {
+                                "scoped": "true",
+                                "connection": "airtable2"
+                            },
+                            "label": "My Airtable Token or Key connection"
+                        },
+                        "base": {
+                            "label": "Leads Manager AI CRM"
+                        },
+                        "table": {
+                            "label": "Leads"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "__IMTCONN__",
+                        "type": "account:airtable3,airtable2",
+                        "label": "Connection",
+                        "required": true
+                    },
+                    {
+                        "name": "base",
+                        "type": "select",
+                        "label": "Base",
+                        "required": true
+                    },
+                    {
+                        "name": "useColumnId",
+                        "type": "boolean",
+                        "label": "Use Column ID",
+                        "required": true
+                    },
+                    {
+                        "name": "table",
+                        "type": "select",
+                        "label": "Table",
+                        "required": true
+                    },
+                    {
+                        "name": "id",
+                        "type": "text",
+                        "label": "Record ID",
+                        "required": true
+                    },
+                    {
+                        "name": "record",
+                        "spec": [
+                            {
+                                "name": "fld231lb1J0a7CAWJ",
+                                "type": "text",
+                                "label": "Email Campaign",
+                                "editable": true
+                            },
+                            {
+                                "name": "fldDrdS6pE666IRPQ",
+                                "type": "text",
+                                "label": "Contact Phone",
+                                "editable": true
+                            },
+                            {
+                                "name": "fldKJWkWraWodlNrr",
+                                "type": "text",
+                                "label": "Contact Email",
+                                "editable": true
+                            },
+                            {
+                                "name": "fldLhxkFBFoxjlldt",
+                                "type": "date",
+                                "label": "Last Out Reach",
+                                "editable": true,
+                                "time": false
+                            },
+                            {
+                                "name": "fldxEEEqp6XNCRoNJ",
+                                "type": "select",
+                                "label": "Status",
+                                "editable": true
+                            },
+                            {
+                                "name": "fldFU5cYbHBHmTpHr",
+                                "type": "text",
+                                "label": "Source",
+                                "editable": true
+                            },
+                            {
+                                "name": "fldFodc3E3nJ9yzva",
+                                "type": "date",
+                                "label": "Time Created",
+                                "editable": true,
+                                "time": false
+                            }
+                        ],
+                        "type": "collection",
+                        "label": "Record",
+                        "required": true
+                    },
+                    {
+                        "name": "typecast",
+                        "type": "boolean",
+                        "label": "Typecast",
+                        "required": true
+                    }
+                ],
+                "expect": [
+                    {
+                        "name": "id",
+                        "type": "text",
+                        "label": "ID"
+                    },
+                    {
+                        "name": "createdTime",
+                        "type": "date",
+                        "label": "Created Time"
+                    }
+                ]
+            }
+        }
+    ]
+}

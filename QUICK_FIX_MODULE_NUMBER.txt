@@ -1,0 +1,25 @@
+QUICK FIX - Module Reference Number
+====================================
+
+YOUR HTTP MODULE IS "HTTP 18" (Module 18)
+
+❌ WRONG TEMPLATE:
+{{json(if(1.body.people; 1.body.people[0]; {}))}}
+
+✅ CORRECT TEMPLATE:
+{{json(if(18.body.people; 18.body.people[0]; {}))}}
+
+HOW TO FIX IN MAKE.COM:
+1. Click Module 2 (OpenAI)
+2. Click "Message 2"
+3. Delete the template text
+4. Paste: {{json(if(18.body.people; 18.body.people[0]; {}))}}
+5. Click OK
+
+IF YOUR HTTP MODULE HAS A DIFFERENT NUMBER:
+- Replace "18" with your actual module number
+
+Example:
+- If "HTTP 5" → use {{json(if(5.body.people; 5.body.people[0]; {}))}}
+- If "HTTP 1" → use {{json(if(1.body.people; 1.body.people[0]; {}))}}
+

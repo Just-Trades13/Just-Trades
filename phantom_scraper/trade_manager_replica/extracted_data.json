@@ -1,0 +1,421 @@
+{
+  "pages": {},
+  "api_responses": {
+    "system/csrf-token/": {
+      "method": "GET",
+      "url": "https://trademanagergroup.com/api/system/csrf-token/",
+      "status": 200,
+      "response": {
+        "csrfToken": "uKWhuEHas1abxpJLrZ6fvAMobHOeKqUZIHIbtNsdxbDBbMtx9KpDSBajdR2yA2NB"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Set-Cookie",
+          "value": "csrftoken=o7W49jVdfkDAOxUWSVtyxby5ckou0M3M; expires=Fri, 23 Oct 2026 05:30:37 GMT; Max-Age=31449600; Path=/; SameSite=Lax; Secure, sessionid=o2vjugv8vlxmxgi8pgbmpn8xkkdexgaj; expires=Sat, 25 Oct 2025 05:30:37 GMT; HttpOnly; Max-Age=86400; Path=/; SameSite=Lax; Secure"
+        },
+        {
+          "name": "Referrer-Policy",
+          "value": "same-origin"
+        },
+        {
+          "name": "Date",
+          "value": "Fri, 24 Oct 2025 05:30:37 GMT"
+        },
+        {
+          "name": "Cross-Origin-Opener-Policy",
+          "value": "same-origin"
+        },
+        {
+          "name": "Content-Length",
+          "value": "81"
+        },
+        {
+          "name": "Connection",
+          "value": "keep-alive"
+        },
+        {
+          "name": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "name": "Vary",
+          "value": "origin, Cookie"
+        },
+        {
+          "name": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "name": "Server",
+          "value": "nginx/1.18.0 (Ubuntu)"
+        },
+        {
+          "name": "Strict-Transport-Security",
+          "value": "max-age=3600; includeSubDomains; preload"
+        }
+      ]
+    },
+    "auth/check-auth/": {
+      "method": "GET",
+      "url": "https://trademanagergroup.com/api/auth/check-auth/",
+      "status": 200,
+      "response": {
+        "user": {
+          "username": "J.T.M.J",
+          "email": "just.trades.chicago@gmail.com",
+          "admin": false,
+          "DiscordID": "963881348039340122",
+          "access": "full",
+          "signed": true,
+          "is_email_verified": true,
+          "sessionId": "o2vjugv8vlxmxgi8pgbmpn8xkkdexgaj"
+        }
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Set-Cookie",
+          "value": "csrftoken=o7W49jVdfkDAOxUWSVtyxby5ckou0M3M; expires=Fri, 23 Oct 2026 05:31:07 GMT; Max-Age=31449600; Path=/; SameSite=Lax; Secure, sessionid=o2vjugv8vlxmxgi8pgbmpn8xkkdexgaj; expires=Sat, 25 Oct 2025 05:31:07 GMT; HttpOnly; Max-Age=86400; Path=/; SameSite=Lax; Secure"
+        },
+        {
+          "name": "Referrer-Policy",
+          "value": "same-origin"
+        },
+        {
+          "name": "Date",
+          "value": "Fri, 24 Oct 2025 05:31:07 GMT"
+        },
+        {
+          "name": "Cross-Origin-Opener-Policy",
+          "value": "same-origin"
+        },
+        {
+          "name": "Content-Length",
+          "value": "236"
+        },
+        {
+          "name": "Connection",
+          "value": "keep-alive"
+        },
+        {
+          "name": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "name": "Vary",
+          "value": "origin, Cookie"
+        },
+        {
+          "name": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "name": "Server",
+          "value": "nginx/1.18.0 (Ubuntu)"
+        },
+        {
+          "name": "Strict-Transport-Security",
+          "value": "max-age=3600; includeSubDomains; preload"
+        }
+      ]
+    },
+    "accounts/get-all-at-accounts/": {
+      "method": "GET",
+      "url": "https://trademanagergroup.com/api/accounts/get-all-at-accounts/",
+      "status": 200,
+      "response": [
+        {
+          "id": 1491,
+          "Name": "Bryan-Nolan",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 6123,
+              "Name": "1302271",
+              "Active": true
+            }
+          ]
+        },
+        {
+          "id": 1496,
+          "Name": "Tony",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 6131,
+              "Name": "1393592",
+              "Active": true
+            }
+          ]
+        },
+        {
+          "id": 1745,
+          "Name": "Koram",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 7021,
+              "Name": "1536745",
+              "Active": true
+            },
+            {
+              "id": 7022,
+              "Name": "DEMO5444480",
+              "Active": true
+            }
+          ]
+        },
+        {
+          "id": 1753,
+          "Name": "mark",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 7065,
+              "Name": "DEMO4419847-2",
+              "Active": true
+            },
+            {
+              "id": 7064,
+              "Name": "1381296",
+              "Active": true
+            }
+          ]
+        },
+        {
+          "id": 1524,
+          "Name": "Sam",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 6246,
+              "Name": "1367612",
+              "Active": true
+            }
+          ]
+        },
+        {
+          "id": 1584,
+          "Name": "Nelson",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 6447,
+              "Name": "1523896",
+              "Active": true
+            },
+            {
+              "id": 6448,
+              "Name": "DEMO5441727",
+              "Active": true
+            }
+          ]
+        },
+        {
+          "id": 1546,
+          "Name": "grace",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 6339,
+              "Name": "1492972",
+              "Active": true
+            },
+            {
+              "id": 6340,
+              "Name": "DEMO5253444",
+              "Active": true
+            }
+          ]
+        },
+        {
+          "id": 1519,
+          "Name": "Jess",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 6217,
+              "Name": "1500615",
+              "Active": true
+            },
+            {
+              "id": 6218,
+              "Name": "DEMO4622000",
+              "Active": true
+            }
+          ]
+        },
+        {
+          "id": 1493,
+          "Name": "Bryans-Mom",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 6125,
+              "Name": "1503862",
+              "Active": true
+            },
+            {
+              "id": 6126,
+              "Name": "DEMO5307784",
+              "Active": true
+            }
+          ]
+        },
+        {
+          "id": 1673,
+          "Name": "whitney",
+          "Platform": "Tradovate",
+          "Status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 6730,
+              "Name": "TAKEPROFIT647802407",
+              "Active": true
+            }
+          ]
+        }
+      ],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Set-Cookie",
+          "value": "csrftoken=o7W49jVdfkDAOxUWSVtyxby5ckou0M3M; expires=Fri, 23 Oct 2026 05:31:07 GMT; Max-Age=31449600; Path=/; SameSite=Lax; Secure, sessionid=o2vjugv8vlxmxgi8pgbmpn8xkkdexgaj; expires=Sat, 25 Oct 2025 05:31:07 GMT; HttpOnly; Max-Age=86400; Path=/; SameSite=Lax; Secure"
+        },
+        {
+          "name": "Referrer-Policy",
+          "value": "same-origin"
+        },
+        {
+          "name": "Date",
+          "value": "Fri, 24 Oct 2025 05:31:07 GMT"
+        },
+        {
+          "name": "Cross-Origin-Opener-Policy",
+          "value": "same-origin"
+        },
+        {
+          "name": "Content-Length",
+          "value": "1911"
+        },
+        {
+          "name": "Connection",
+          "value": "keep-alive"
+        },
+        {
+          "name": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "name": "Vary",
+          "value": "origin, Cookie"
+        },
+        {
+          "name": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "name": "Server",
+          "value": "nginx/1.18.0 (Ubuntu)"
+        },
+        {
+          "name": "Strict-Transport-Security",
+          "value": "max-age=3600; includeSubDomains; preload"
+        }
+      ]
+    },
+    "profiles/get-limits/": {
+      "method": "GET",
+      "url": "https://trademanagergroup.com/api/profiles/get-limits/",
+      "status": 200,
+      "response": {
+        "micros": false,
+        "maxAccounts": 999,
+        "totalTraderStrats": 999,
+        "totalRecorderStrats": 999
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Set-Cookie",
+          "value": "csrftoken=o7W49jVdfkDAOxUWSVtyxby5ckou0M3M; expires=Fri, 23 Oct 2026 05:31:07 GMT; Max-Age=31449600; Path=/; SameSite=Lax; Secure, sessionid=o2vjugv8vlxmxgi8pgbmpn8xkkdexgaj; expires=Sat, 25 Oct 2025 05:31:07 GMT; HttpOnly; Max-Age=86400; Path=/; SameSite=Lax; Secure"
+        },
+        {
+          "name": "Referrer-Policy",
+          "value": "same-origin"
+        },
+        {
+          "name": "Date",
+          "value": "Fri, 24 Oct 2025 05:31:07 GMT"
+        },
+        {
+          "name": "Cross-Origin-Opener-Policy",
+          "value": "same-origin"
+        },
+        {
+          "name": "Content-Length",
+          "value": "91"
+        },
+        {
+          "name": "Connection",
+          "value": "keep-alive"
+        },
+        {
+          "name": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "name": "Vary",
+          "value": "origin, Cookie"
+        },
+        {
+          "name": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "name": "Server",
+          "value": "nginx/1.18.0 (Ubuntu)"
+        },
+        {
+          "name": "Strict-Transport-Security",
+          "value": "max-age=3600; includeSubDomains; preload"
+        }
+      ]
+    }
+  },
+  "styles": {},
+  "measurements": {},
+  "functionality": {}
+}

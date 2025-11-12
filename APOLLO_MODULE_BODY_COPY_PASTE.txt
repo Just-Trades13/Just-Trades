@@ -1,0 +1,53 @@
+OPTION 1: Simple (Just Increase per_page to 10)
+====================================================================================================
+
+Copy-paste this into Module 1 (Apollo.io) Body field:
+
+{
+  "q_keywords": "property manager",
+  "person_locations": ["Texas"],
+  "page": 1,
+  "per_page": 10
+}
+
+✅ This gets 10 leads per run (instead of 5)
+✅ Works immediately - no extra modules needed
+
+
+OPTION 2: With Pagination (Requires Variable Module)
+====================================================================================================
+
+First add Variable module (Module 0) before Module 1:
+- Variable name: current_page
+- Variable value: 1
+- Variable lifetime: One cycle
+
+Then copy-paste this into Module 1 Body field:
+
+{
+  "q_keywords": "property manager",
+  "person_locations": ["Texas"],
+  "page": {{0.current_page}},
+  "per_page": 5
+}
+
+✅ This works with pagination loop (processes multiple pages)
+✅ Replace 0 with your Variable module number if different
+
+
+OPTION 3: Maximum Leads (No Pagination)
+====================================================================================================
+
+Copy-paste this into Module 1 Body field:
+
+{
+  "q_keywords": "property manager",
+  "person_locations": ["Texas"],
+  "page": 1,
+  "per_page": 20
+}
+
+⚠️  Warning: May hit OpenAI token limits with 20 leads
+✅ Gets 20 leads per run
+✅ Test first before using regularly
+

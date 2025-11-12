@@ -1,0 +1,33 @@
+PASTE THIS IN "SPECIFICATION" FIELD:
+
+[
+  {
+    "lead_id": "text",
+    "source": "text",
+    "acquired_at": "text",
+    "company": "text",
+    "contact_full_name": "text",
+    "first_name": "text",
+    "property_city": "text",
+    "contact_email": "text",
+    "contact_phone": "text",
+    "contact_linkedin": "text",
+    "location_city": "text",
+    "location_state": "text",
+    "contact_role": "text",
+    "industry": "text",
+    "referral_link": "text",
+    "channel": "text",
+    "status": "text",
+    "utm_list_id": "text",
+    "tags": ["text"],
+    "notes": "text"
+  }
+]
+
+OR IF YOU NEED TO BUILD IT MANUALLY:
+
+1. Click "+ Add item"
+2. Choose "Array" type
+3. Then add all fields listed above
+

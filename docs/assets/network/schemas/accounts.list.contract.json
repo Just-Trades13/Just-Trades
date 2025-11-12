@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://traderspost.local/api/accounts/list.schema.json",
+  "title": "GET /api/accounts/ Response Contract",
+  "type": "object",
+  "description": "Canonical response shape for fetching all broker accounts with nested sub-accounts.",
+  "properties": {
+    "accounts": {
+      "type": "array",
+      "description": "Accounts owned by the authenticated user.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "platform",
+          "disabled",
+          "subAccounts"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Internal TradersPost account identifier."
+          },
+          "name": {
+            "type": ["string", "null"],
+            "description": "Display name provided by the user."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Broker platform label (e.g. Tradovate, NinjaTrader)."
+          },
+          "status": {
+            "type": ["string", "null"],
+            "description": "Optional status string returned by the upstream broker."
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "Whether the account is temporarily disabled inside TradersPost."
+          },
+          "username": {
+            "type": ["string", "null"],
+            "description": "Broker login username, redacted when not available."
+          },
+          "subAccounts": {
+            "type": "array",
+            "description": "Child sub-accounts surfaced by the broker.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name",
+                "active"
+              ],
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Internal TradersPost sub-account identifier."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Broker-provided identifier such as account number."
+                },
+                "active": {
+                  "type": "boolean",
+                  "description": "Whether the sub-account is enabled for trading."
+                },
+                "tags": {
+                  "type": "array",
+                  "description": "Optional semantic tags (e.g. Live, Demo).",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "createdAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "Timestamp when the account was registered."
+          },
+          "updatedAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "Timestamp when the account metadata last changed."
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "accounts"
+  ],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "accounts": [
+        {
+          "id": 1491,
+          "name": "Bryan-Nolan",
+          "platform": "Tradovate",
+          "status": null,
+          "disabled": false,
+          "subAccounts": [
+            {
+              "id": 6123,
+              "name": "1302271",
+              "active": true,
+              "tags": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

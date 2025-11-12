@@ -1,0 +1,208 @@
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+🔍 Frontend build directory: /Users/mylesjadwin/Trading Projects/phantom_scraper/trade_manager_replica/frontend/dist
+🔍 Exists: True
+🔍 Contents: ['index.html', 'vite.svg', 'assets']
+============================================================
+🚀 Just.Trades Backend Server Starting...
+============================================================
+📡 Backend API: http://localhost:5001
+🔌 WebSocket: ws://localhost:5001
+📚 API Docs: http://localhost:5001/api/system/csrf-token/
+============================================================
+Press Ctrl+C to stop the server
+
+ * Serving Flask app 'app'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://10.0.0.8:5001
+[33mPress CTRL+C to quit[0m
+ * Restarting with stat
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+ * Debugger is active!
+ * Debugger PIN: 857-066-674
+127.0.0.1 - - [06/Nov/2025 02:12:56] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 370, in run_wsgi
+    execute(self.server.app)
+    ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 336, in execute
+    write(b"")
+    ~~~~~^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 261, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:12:58] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:13:55] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:03] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 370, in run_wsgi
+    execute(self.server.app)
+    ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 336, in execute
+    write(b"")
+    ~~~~~^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 261, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:04] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:14:51] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 370, in run_wsgi
+    execute(self.server.app)
+    ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 336, in execute
+    write(b"")
+    ~~~~~^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 261, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [06/Nov/2025 02:14:53] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+ * Detected change in '/Users/mylesjadwin/Trading Projects/phantom_scraper/trade_manager_replica/FIX_ALL_ISSUES.py', reloading
+🔍 Frontend build directory: /Users/mylesjadwin/Trading Projects/phantom_scraper/trade_manager_replica/frontend/dist
+🔍 Exists: True
+🔍 Contents: ['index.html', 'vite.svg', 'assets']
+============================================================
+🚀 Just.Trades Backend Server Starting...
+============================================================
+📡 Backend API: http://localhost:5001
+🔌 WebSocket: ws://localhost:5001
+📚 API Docs: http://localhost:5001/api/system/csrf-token/
+============================================================
+Press Ctrl+C to stop the server
+
+Client connected: None
+Client disconnected
+Client connected: None
+Client connected: None
+Client disconnected
+Client connected: None
+Client disconnected
+ * Restarting with stat
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+ * Debugger is active!
+ * Debugger PIN: 857-066-674
+127.0.0.1 - - [06/Nov/2025 02:15:13] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 370, in run_wsgi
+    execute(self.server.app)
+    ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 336, in execute
+    write(b"")
+    ~~~~~^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 261, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:14] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:25] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 370, in run_wsgi
+    execute(self.server.app)
+    ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 336, in execute
+    write(b"")
+    ~~~~~^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 261, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:26] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:27] "GET /api/strategies/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:29] "GET /api/trades/timeframes/?strat= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:29] "GET /api/trades/tickers/?strat= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:33] "GET /api/accounts/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:37] "GET /api/strategies/?style=at HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:15:41] "GET /api/strategies/?style=at HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:52] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 370, in run_wsgi
+    execute(self.server.app)
+    ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 336, in execute
+    write(b"")
+    ~~~~~^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 261, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/dashboard/summary/ HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/trades/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/trades/open/?usageType=true&user=J.T.M.J&strategy=&symbol=&timeframe= HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/profiles/get-stat-config HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:16:55] "GET /api/profiles/get-favorites HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 02:17:48] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 370, in run_wsgi
+    execute(self.server.app)
+    ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 336, in execute
+    write(b"")
+    ~~~~~^^^^^
+  File "/opt/homebrew/lib/python3.13/site-packages/werkzeug/serving.py", line 261, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response

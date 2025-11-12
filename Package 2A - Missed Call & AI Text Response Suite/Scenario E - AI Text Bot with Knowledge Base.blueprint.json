@@ -1,0 +1,284 @@
+{
+    "name": "Scenario 2A-E - AI Text Bot with Knowledge Base",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio incoming SMS webhook"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "MessageSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "From",
+                        "type": "text"
+                    },
+                    {
+                        "name": "To",
+                        "type": "text"
+                    },
+                    {
+                        "name": "Body",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "{Contact Phone} = '{{1.From}}'",
+                "maxRecords": 1,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are a knowledgeable AI assistant with access to company knowledge base.\n\nKNOWLEDGE BASE:\n- Services: Lead generation automation, CRM automation, email/SMS automation, AI chatbots\n- Pricing: Starter packages start at $300/mo, Enterprise packages up to $1,200/mo\n- Common FAQs:\n  * \"How much does it cost?\" → Starter: $300/mo, Professional: $600/mo, Enterprise: $1,200/mo\n  * \"What services do you offer?\" → Lead generation, CRM automation, multi-channel outreach, AI chatbots\n  * \"How long does setup take?\" → Typically 2-5 business days\n  * \"Do you work with [industry]?\" → Yes, we work with businesses across industries\n  * \"Can I see a demo?\" → Yes! Book a call at calendly.com/your-link\n\nCustomer Message: {{1.Body}}\nCustomer Phone: {{1.From}}\n\nCustomer Info:\n- Company: {{2.Company[0]}}\n- Contact Name: {{2.`Contact Full Name`[0]}}\n- Industry: {{2.Industry[0]}}\n- Status: {{2.Status[0]}}\n- Previous Notes: {{2.Notes[0]}}\n\nYour goals:\n1. Answer questions using knowledge base\n2. Provide accurate pricing information\n3. Qualify leads by asking relevant questions\n4. Guide toward booking a demo/call\n5. Be friendly, professional, concise\n6. Keep SMS responses under 160 characters when possible\n\nIMPORTANT: Return ONLY valid JSON (no markdown, no code blocks):\n{\n  \"response\": \"Your helpful response here\",\n  \"intent\": \"question\",\n  \"lead_score\": 0,\n  \"qualified\": false,\n  \"booking_requested\": false,\n  \"needs_human\": false\n}\n\nintent can be: question, pricing_inquiry, service_inquiry, booking, complaint, qualified_lead\nlead_score: 0-100 (higher = more interested)\nqualified: true if they meet criteria for sales follow-up\nneeds_human: true if complex issue requiring human\n\nLead scoring:\n- +20: Asks about pricing\n- +30: Asks about specific services\n- +40: Mentions timeline/deadline\n- +50: Requests demo/meeting\n- +60: Provides company details",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{3.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.From}}",
+                "from": "{{1.To}}",
+                "body": "{{4.response}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{4.needs_human}} = true OR {{4.lead_score}} >= 70"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "team@yourcompany.com"
+                ],
+                "subject": "High Priority Lead - SMS Conversation",
+                "content": "<h3>High Priority Lead Alert</h3><p><strong>Phone:</strong> {{1.From}}</p><p><strong>Lead Score:</strong> {{4.lead_score}}</p><p><strong>Qualified:</strong> {{4.qualified}}</p><p><strong>Customer Message:</strong> {{1.Body}}</p><p><strong>AI Response:</strong> {{4.response}}</p><p><strong>Intent:</strong> {{4.intent}}</p><p><strong>Company:</strong> {{2.Company[0]}}</p><p><strong>Status:</strong> {{2.Status[0]}}</p>",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 50
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{2.id[0]}} is empty"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 350
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Contact Phone": "{{1.From}}",
+                    "Status": "{{4.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "SMS Conversation with Knowledge Base:\nCustomer: {{1.Body}}\nAI Response: {{4.response}}\nIntent: {{4.intent}}\nLead Score: {{4.lead_score}}\nQualified: {{4.qualified}}\nBooking Requested: {{4.booking_requested}}\nNeeds Human: {{4.needs_human}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 10,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{2.id[0]}}",
+                "record": {
+                    "Status": "{{4.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Notes": "{{2.Notes[0]}}\n\n--- SMS Knowledge Base at {{now}} ---\nCustomer: {{1.Body}}\nAI Response: {{4.response}}\nIntent: {{4.intent}}\nLead Score: {{4.lead_score}}\nQualified: {{4.qualified}}\nBooking Requested: {{4.booking_requested}}\nNeeds Human: {{4.needs_human}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 450
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook, airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, twilio:CreateMessage, builtin:BasicRouter, google-email:sendAnEmail, airtable:ActionCreateRecord, airtable:ActionUpdateRecords"]
+    }
+}
+

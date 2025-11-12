@@ -1,0 +1,351 @@
+{
+    "name": "Scenario 3A-E - Voice Receptionist with Transcription",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio Voice webhook - call completed"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "CallSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "From",
+                        "type": "text"
+                    },
+                    {
+                        "name": "To",
+                        "type": "text"
+                    },
+                    {
+                        "name": "CallDuration",
+                        "type": "text"
+                    },
+                    {
+                        "name": "RecordingUrl",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionUrl",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 350
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio Voice webhook - transcription ready"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "CallSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionText",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionUrl",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionStatus",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 3,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "{Contact Phone} = '{{2.From}}'",
+                "maxRecords": 1,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are analyzing a phone call transcript to create a summary and action items.\n\nCall Transcript:\n{{2.TranscriptionText}}\n\nCall Details:\n- CallSid: {{2.CallSid}}\n- Duration: {{1.CallDuration}} seconds\n- From: {{1.From}}\n- To: {{1.To}}\n\nCustomer Information:\n- Company: {{3.Company[0]}}\n- Contact Name: {{3.`Contact Full Name`[0]}}\n- Industry: {{3.Industry[0]}}\n- Status: {{3.Status[0]}}\n\nYour task:\n1. Summarize the key points of the conversation\n2. Extract action items\n3. Identify the caller's intent and needs\n4. Note any important details (pricing discussed, deadlines, preferences)\n5. Determine next steps\n6. Rate the call quality and outcome\n\nIMPORTANT: Return ONLY valid JSON (no markdown, no code blocks):\n{\n  \"summary\": \"Brief 2-3 sentence summary of the call\",\n  \"key_points\": [\"point 1\", \"point 2\", \"point 3\"],\n  \"caller_intent\": \"question\",\n  \"action_items\": [\"action 1\", \"action 2\"],\n  \"next_steps\": \"What should happen next\",\n  \"pricing_discussed\": false,\n  \"budget_mentioned\": \"\",\n  \"decision_maker\": false,\n  \"urgency_level\": \"low\",\n  \"call_outcome\": \"informational\",\n  \"call_quality_score\": 85,\n  \"important_details\": \"Any critical information mentioned\",\n  \"followup_required\": true,\n  \"followup_method\": \"email\"\n}\n\nCaller_intent can be: question, inquiry, complaint, booking, sales, support, technical, billing\n\nCall_outcome can be: informational, booking_made, qualified_lead, routed_to_human, issue_resolved, no_action\n\nUrgency_level can be: low, medium, high, urgent",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{4.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 250
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{3.id[0]}} is empty"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Contact Phone": "{{1.From}}",
+                    "Status": "{{5.caller_intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Pipeline Value": "{{5.budget_mentioned}}",
+                    "Next Step": "{{5.next_steps}}",
+                    "Notes": "VOICE CALL TRANSCRIPTION:\n\nCall Summary: {{5.summary}}\n\nCall Details:\n- CallSid: {{2.CallSid}}\n- Duration: {{1.CallDuration}} seconds\n- Call Outcome: {{5.call_outcome}}\n- Call Quality Score: {{5.call_quality_score}}/100\n- Urgency Level: {{5.urgency_level}}\n\nKey Points:\n{{5.key_points}}\n\nCaller Intent: {{5.caller_intent}}\nDecision Maker: {{5.decision_maker}}\nPricing Discussed: {{5.pricing_discussed}}\nBudget Mentioned: {{5.budget_mentioned}}\n\nAction Items:\n{{5.action_items}}\n\nImportant Details: {{5.important_details}}\n\nFull Transcript URL: {{2.TranscriptionUrl}}\nRecording URL: {{1.RecordingUrl}}\n\nFollow-up Required: {{5.followup_required}}\nFollow-up Method: {{5.followup_method}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 50
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{3.id[0]}}",
+                "record": {
+                    "Status": "{{5.caller_intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Pipeline Value": "{{5.budget_mentioned}}",
+                    "Next Step": "{{5.next_steps}}",
+                    "Notes": "{{3.Notes[0]}}\n\n--- VOICE CALL TRANSCRIPTION at {{now}} ---\n\nCall Summary: {{5.summary}}\n\nCall Details:\n- CallSid: {{2.CallSid}}\n- Duration: {{1.CallDuration}} seconds\n- Call Outcome: {{5.call_outcome}}\n- Call Quality Score: {{5.call_quality_score}}/100\n- Urgency Level: {{5.urgency_level}}\n\nKey Points:\n{{5.key_points}}\n\nCaller Intent: {{5.caller_intent}}\nDecision Maker: {{5.decision_maker}}\nPricing Discussed: {{5.pricing_discussed}}\nBudget Mentioned: {{5.budget_mentioned}}\n\nAction Items:\n{{5.action_items}}\n\nImportant Details: {{5.important_details}}\n\nFull Transcript URL: {{2.TranscriptionUrl}}\nRecording URL: {{1.RecordingUrl}}\n\nFollow-up Required: {{5.followup_required}}\nFollow-up Method: {{5.followup_method}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 450
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{5.followup_required}} = true AND {{5.followup_method}} = \"email\""
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 10,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{3.`Contact Email`[0]}}",
+                "subject": "Follow-up: {{5.summary}}",
+                "bodyType": "rawHtml",
+                "body": "<html><body><p>Hi {{3.`Contact Full Name`[0]}},</p><p>Thanks for calling us today. Here's a summary of our conversation:</p><p><strong>Summary:</strong> {{5.summary}}</p><p><strong>Key Points:</strong><ul>{{#each 5.key_points}}<li>{{this}}</li>{{/each}}</ul></p><p><strong>Next Steps:</strong> {{5.next_steps}}</p><p>If you have any questions, feel free to reach out.</p><p>Best regards,<br>Your Team</p></body></html>"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2100,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 11,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.From}}",
+                "from": "{{1.To}}",
+                "body": "Thanks for calling! We've sent you a summary email. Here's what we discussed: {{5.summary}}. Next steps: {{5.next_steps}}. Reply STOP to opt out."
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2100,
+                    "y": 50
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook, airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, builtin:BasicRouter, airtable:ActionCreateRecord, airtable:ActionUpdateRecords, google-email:sendAnEmail, twilio:CreateMessage. Note: Twilio Voice integration requires manual setup - see TWILIO_VOICE_SETUP.md"]
+    }
+}
+

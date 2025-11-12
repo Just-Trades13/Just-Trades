@@ -1,0 +1,1520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Just.Trade - My Recorders</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+
+        .wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 250px;
+            background: #2a2a2a;
+            border-right: 1px solid #444;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #444;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+            color: white;
+        }
+
+        .app-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        .nav-menu {
+            padding: 20px 0;
+        }
+
+        .nav-item {
+            display: block;
+            padding: 12px 20px;
+            color: #cccccc;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: #3a3a3a;
+            color: #ffffff;
+            border-left-color: #3b82f6;
+        }
+
+        .nav-item.active {
+            background: #3a3a3a;
+            color: #3b82f6;
+            border-left-color: #3b82f6;
+        }
+
+        .nav-submenu {
+            background: #1f1f1f;
+            display: none;
+        }
+
+        .nav-submenu.show {
+            display: block;
+        }
+
+        .nav-submenu .nav-item {
+            padding-left: 40px;
+            font-size: 14px;
+        }
+
+        .nav-arrow {
+            float: right;
+            transition: transform 0.3s ease;
+        }
+
+        .nav-item.expanded .nav-arrow {
+            transform: rotate(90deg);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            margin-left: 250px;
+            background: #1a1a1a;
+            min-height: 100vh;
+        }
+
+        .content {
+            padding: 20px;
+        }
+
+        /* Navbar */
+        .navbar {
+            background: #2a2a2a;
+            border-bottom: 1px solid #444;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+        }
+
+        .navbar-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar-brand {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-avatar {
+            width: 35px;
+            height: 35px;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+        }
+
+        .user-name {
+            color: #ffffff;
+            font-weight: 500;
+        }
+
+        /* Page Content */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        .btn-create {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-create:hover {
+            background: linear-gradient(135deg, #2563eb, #1e40af);
+            transform: translateY(-2px);
+        }
+
+        /* Search */
+        .search-container {
+            margin-bottom: 30px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 16px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .search-input::placeholder {
+            color: #888;
+        }
+
+        /* Strategy Table */
+        .strategy-table-container {
+            background: #2a2a2a;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #444;
+        }
+
+        .table {
+            margin: 0;
+            color: #ffffff;
+        }
+
+        .table thead th {
+            background: #3a3a3a;
+            border: none;
+            padding: 15px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .table tbody tr {
+            border-bottom: 1px solid #444;
+        }
+
+        .table tbody tr:hover {
+            background: #3a3a3a;
+        }
+
+        .table tbody td {
+            border: none;
+            padding: 15px;
+            vertical-align: middle;
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-action {
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .btn-edit {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-edit:hover {
+            background: #2563eb;
+        }
+
+        .btn-refresh {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-refresh:hover {
+            background: #059669;
+        }
+
+        .btn-remove {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-remove:hover {
+            background: #dc2626;
+        }
+
+        .strategy-name {
+            background: none;
+            border: none;
+            color: #3b82f6;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 0;
+            text-decoration: none;
+        }
+
+        .strategy-name:hover {
+            color: #2563eb;
+            text-decoration: underline;
+        }
+
+        /* Strategy Details */
+        .strategy-details {
+            background: #1f1f1f;
+            border: 1px solid #444;
+            border-radius: 8px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+
+        .strategy-details-header {
+            background: #3a3a3a;
+            padding: 15px 20px;
+            border-bottom: 1px solid #444;
+        }
+
+        .strategy-details-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+            margin: 0;
+        }
+
+        .strategy-details-content {
+            padding: 20px;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .detail-item:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .detail-value {
+            color: #888;
+        }
+
+        .logs-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #1a1a1a;
+            border-radius: 8px;
+            border: 1px solid #444;
+            min-height: 200px;
+        }
+
+        .logs-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #ffffff;
+            margin-bottom: 15px;
+        }
+
+        .no-logs {
+            color: #888;
+            text-align: center;
+            padding: 40px;
+        }
+
+        /* Pagination */
+        .pagination-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .pagination {
+            display: flex;
+            list-style: none;
+            gap: 5px;
+        }
+
+        .page-item {
+            margin: 0;
+        }
+
+        .page-link {
+            display: block;
+            padding: 8px 12px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .page-link:hover {
+            background: #3a3a3a;
+            border-color: #3b82f6;
+        }
+
+        .page-item.active .page-link {
+            background: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .page-item.disabled .page-link {
+            background: #1a1a1a;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-content {
+            background: #1e1e2d;
+            margin: 2% auto;
+            padding: 20px;
+            border-radius: 10px;
+            width: 95%;
+            max-width: 1200px;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid #444;
+        }
+        
+        .validation-error-box {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 0.375rem;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        .error-header {
+            color: #721c24;
+            font-weight: bold;
+        }
+        
+        .error-list {
+            color: #721c24;
+            margin: 0;
+            padding-left: 1.5rem;
+        }
+        
+        .tm-input-dark {
+            background-color: #2b2b3d;
+            border: 1px solid #444;
+            color: #fff;
+        }
+        
+        .tm-input-dark:focus {
+            background-color: #2b2b3d;
+            border-color: #007bff;
+            color: #fff;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+        }
+        
+        .badge-secondary {
+            background-color: #6c757d;
+        }
+        
+        .badge-primary {
+            background-color: #007bff;
+        }
+        
+        .badge-warning {
+            background-color: #ffc107;
+            color: #000;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+        }
+        
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        .slider.round {
+            border-radius: 34px;
+        }
+        
+        .slider.round:before {
+            border-radius: 50%;
+        }
+        
+        .form-control:disabled {
+            background-color: #495057;
+            opacity: 0.65;
+        }
+        
+        .btn:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        .close {
+            color: #888;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            color: #ffffff;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #ffffff;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: #ffffff;
+            font-size: 14px;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .form-control::placeholder {
+            color: #888;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 200px;
+            }
+            
+            .main-content {
+                margin-left: 200px;
+            }
+            
+            .details-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <!-- Sidebar Navigation -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">JT</div>
+                <div class="app-title">JUST.TRADE</div>
+            </div>
+            
+            <nav class="nav-menu">
+                <a href="/dashboard-tab" class="nav-item">
+                    <span>DASHBOARD</span>
+                </a>
+                
+                <a href="/my-recorders" class="nav-item active">
+                    <span>MY RECORDERS</span>
+                </a>
+                
+                <div class="nav-item" onclick="toggleSubmenu(this)">
+                    <span>TRADER</span>
+                    <span class="nav-arrow">›</span>
+                </div>
+                
+                <div class="nav-submenu" id="traderSubmenu">
+                    <a href="/account-management" class="nav-item">Account Management</a>
+                    <a href="/my-traders" class="nav-item">My Traders</a>
+                    <a href="/control-center" class="nav-item">Control Center</a>
+                </div>
+                
+                <a href="/settings" class="nav-item">
+                    <span>SETTINGS</span>
+                </a>
+            </nav>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="content">
+                <!-- Navbar -->
+                <div class="navbar">
+                    <div class="navbar-content">
+                        <div class="navbar-brand">My Recorders</div>
+                        <div class="user-profile">
+                            <div class="user-avatar">J</div>
+                            <span class="user-name">J.T.M.J</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h1 class="page-title">Strategy Management</h1>
+                    <button class="btn-create" onclick="openCreateStrategyModal()">
+                        <i class="fas fa-plus"></i> Create Strategy
+                    </button>
+                </div>
+
+                <!-- Search -->
+                <div class="search-container">
+                    <input type="text" class="search-input" placeholder="Search strategy..." id="searchInput" onkeyup="filterStrategies()">
+                </div>
+
+                <!-- Strategy Table -->
+                <div class="strategy-table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th style="width: 20%;">Actions</th>
+                                <th style="width: 80%;">Strategy</th>
+                            </tr>
+                        </thead>
+                        <tbody id="strategyTableBody">
+                            <!-- Sample strategies -->
+                            <tr>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="btn-action btn-edit" onclick="editStrategy('JADDCAVIX')" title="Edit">
+                                            <i class="fas fa-pencil-alt"></i>
+                                        </button>
+                                        <button class="btn-action btn-refresh" onclick="refreshStrategy('JADDCAVIX')" title="Refresh">
+                                            <i class="fas fa-sync-alt"></i>
+                                        </button>
+                                        <button class="btn-action btn-remove" onclick="removeStrategy('JADDCAVIX')" title="Remove">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <button class="strategy-name" onclick="toggleStrategyDetails('JADDCAVIX')">JADDCAVIX</button>
+                                </td>
+                            </tr>
+                            <tr id="details-JADDCAVIX" class="strategy-details-row" style="display: none;">
+                                <td colspan="2">
+                                    <div class="strategy-details">
+                                        <div class="strategy-details-header">
+                                            <h5 class="strategy-details-title">Strategy Details</h5>
+                                        </div>
+                                        <div class="strategy-details-content">
+                                            <div class="details-grid">
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Strat Type:</span>
+                                                    <span class="detail-value">Stock</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Days to Expiry:</span>
+                                                    <span class="detail-value">-</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Strike Offset:</span>
+                                                    <span class="detail-value">-</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Position Size:</span>
+                                                    <span class="detail-value">2</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Position Add:</span>
+                                                    <span class="detail-value">2</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Take Profit:</span>
+                                                    <span class="detail-value">22</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Stop Loss:</span>
+                                                    <span class="detail-value">None</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Trim:</span>
+                                                    <span class="detail-value">All</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">TPSL Units:</span>
+                                                    <span class="detail-value">Ticks</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Directional Strategy:</span>
+                                                    <span class="detail-value">-</span>
+                                                </div>
+                                            </div>
+                                            <div class="logs-section">
+                                                <h6 class="logs-title">Logs</h6>
+                                                <div class="no-logs">No Logs available.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="btn-action btn-edit" onclick="editStrategy('JADGC')" title="Edit">
+                                            <i class="fas fa-pencil-alt"></i>
+                                        </button>
+                                        <button class="btn-action btn-refresh" onclick="refreshStrategy('JADGC')" title="Refresh">
+                                            <i class="fas fa-sync-alt"></i>
+                                        </button>
+                                        <button class="btn-action btn-remove" onclick="removeStrategy('JADGC')" title="Remove">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <button class="strategy-name" onclick="toggleStrategyDetails('JADGC')">JADGC</button>
+                                </td>
+                            </tr>
+                            <tr id="details-JADGC" class="strategy-details-row" style="display: none;">
+                                <td colspan="2">
+                                    <div class="strategy-details">
+                                        <div class="strategy-details-header">
+                                            <h5 class="strategy-details-title">Strategy Details</h5>
+                                        </div>
+                                        <div class="strategy-details-content">
+                                            <div class="details-grid">
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Strat Type:</span>
+                                                    <span class="detail-value">Stock</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Days to Expiry:</span>
+                                                    <span class="detail-value">-</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Strike Offset:</span>
+                                                    <span class="detail-value">-</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Position Size:</span>
+                                                    <span class="detail-value">1</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Position Add:</span>
+                                                    <span class="detail-value">1</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Take Profit:</span>
+                                                    <span class="detail-value">None</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Stop Loss:</span>
+                                                    <span class="detail-value">None</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Trim:</span>
+                                                    <span class="detail-value">All</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">TPSL Units:</span>
+                                                    <span class="detail-value">Ticks</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Directional Strategy:</span>
+                                                    <span class="detail-value">-</span>
+                                                </div>
+                                            </div>
+                                            <div class="logs-section">
+                                                <h6 class="logs-title">Logs</h6>
+                                                <div class="no-logs">No Logs available.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="btn-action btn-edit" onclick="editStrategy('JADNQ')" title="Edit">
+                                            <i class="fas fa-pencil-alt"></i>
+                                        </button>
+                                        <button class="btn-action btn-refresh" onclick="refreshStrategy('JADNQ')" title="Refresh">
+                                            <i class="fas fa-sync-alt"></i>
+                                        </button>
+                                        <button class="btn-action btn-remove" onclick="removeStrategy('JADNQ')" title="Remove">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <button class="strategy-name" onclick="toggleStrategyDetails('JADNQ')">JADNQ</button>
+                                </td>
+                            </tr>
+                            <tr id="details-JADNQ" class="strategy-details-row" style="display: none;">
+                                <td colspan="2">
+                                    <div class="strategy-details">
+                                        <div class="strategy-details-header">
+                                            <h5 class="strategy-details-title">Strategy Details</h5>
+                                        </div>
+                                        <div class="strategy-details-content">
+                                            <div class="details-grid">
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Strat Type:</span>
+                                                    <span class="detail-value">Stock</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Days to Expiry:</span>
+                                                    <span class="detail-value">-</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Strike Offset:</span>
+                                                    <span class="detail-value">-</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Position Size:</span>
+                                                    <span class="detail-value">1</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Position Add:</span>
+                                                    <span class="detail-value">1</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Take Profit:</span>
+                                                    <span class="detail-value">None</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Stop Loss:</span>
+                                                    <span class="detail-value">None</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Trim:</span>
+                                                    <span class="detail-value">All</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">TPSL Units:</span>
+                                                    <span class="detail-value">Ticks</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span class="detail-label">Directional Strategy:</span>
+                                                    <span class="detail-value">-</span>
+                                                </div>
+                                            </div>
+                                            <div class="logs-section">
+                                                <h6 class="logs-title">Logs</h6>
+                                                <div class="no-logs">No Logs available.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination-container">
+                    <ul class="pagination">
+                        <li class="page-item disabled">
+                            <button class="page-link" aria-label="First">
+                                <span aria-hidden="true">«</span>
+                                <span class="sr-only">First</span>
+                            </button>
+                        </li>
+                        <li class="page-item disabled">
+                            <button class="page-link" aria-label="Previous">
+                                <span aria-hidden="true">‹</span>
+                                <span class="sr-only">Previous</span>
+                            </button>
+                        </li>
+                        <li class="page-item active">
+                            <button class="page-link">1</button>
+                        </li>
+                        <li class="page-item disabled">
+                            <button class="page-link" aria-label="Next">
+                                <span aria-hidden="true">›</span>
+                                <span class="sr-only">Next</span>
+                            </button>
+                        </li>
+                        <li class="page-item disabled">
+                            <button class="page-link" aria-label="Last">
+                                <span aria-hidden="true">»</span>
+                                <span class="sr-only">Last</span>
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Strategy Modal -->
+    <div id="createStrategyModal" class="modal">
+        <div class="modal-content">
+            <div class="align-items-center justify-content-between mb-3 row">
+                <div class="col">
+                    <div class="d-flex align-items-center justify-content-center justify-content-md-start">
+                        <h2 class="mb-1">Create New Recorder</h2>
+                        <span title="This strategy records trade history only." class="badge badge-secondary badge-pill" style="margin-left: 0.75rem; font-size: 0.75rem; cursor: help;">RECORDER</span>
+                    </div>
+                    <p class="text-muted mb-0">Use this interface to configure your trading recorder, including position sizing, SLTP rules, and account routing.</p>
+                </div>
+                <div class="d-flex justify-content-end align-items-center col">
+                    <button type="button" class="create-update-btn btn btn-info disabled" disabled="">Create Recorder</button>
+                    <span style="margin-left: 16px;">
+                        <a href="#" class="text-info text-decoration-underline" style="font-size: 0.875rem;">Help</a>
+                    </span>
+                    <span class="close" onclick="closeCreateStrategyModal()">&times;</span>
+                </div>
+            </div>
+            
+            <div class="strategy-name-field">
+                <div>
+                    <div class="validation-error-box">
+                        <div class="error-header">
+                            <strong>⚠️ Please fix the following issues:</strong>
+                        </div>
+                        <ul class="error-list mb-0">
+                            <li>Strategy name is required.</li>
+                        </ul>
+                    </div>
+                    <div class="strategy-name-field form-group">
+                        <label for="strategyName" class="">Strategy Name</label>
+                        <input id="strategyName" name="Strat_Name" placeholder="Enter strategy name" type="text" class="tm-input-dark text-uppercase is-invalid form-control" aria-invalid="true" value="">
+                        <div class="invalid-feedback">Strategy name is required.</div>
+                    </div>
+                    <div class="strategy-type-select form-group">
+                        <label for="strategyType" class="">Strategy Type</label>
+                        <select id="strategyType" name="Strat_Type" class="form-control">
+                            <option value="Stock">Stock</option>
+                            <option value="Futures">Futures</option>
+                            <option value="Options">Options</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+                <!-- Positional Settings -->
+                <div class="mb-3 accordion-positional card">
+                    <div class="card-body">
+                        <button type="button" class="text-start w-100 btn btn-info" onclick="toggleAccordion('positional')">➖ Hide Positional Settings</button>
+                        <div class="collapse show" id="positionalSettings">
+                            <div class="sl-settings p-4 rounded shadow-sm position-relative" style="background-color: rgb(27, 30, 43); color: rgb(255, 255, 255);">
+                                <div class="position-settings">
+                                    <div class="d-flex justify-content-end">
+                                        <a href="#" class="text-info text-decoration-underline">Help</a>
+                                    </div>
+                                    <div class="mb-3 row">
+                                        <div class="position-initial col-md-6">
+                                            <div class="form-group">
+                                                <label for="Position_Size" class="">Initial Position Size</label>
+                                                <input name="Position_Size" id="Position_Size" min="1" step="1" type="number" class="form-control" value="1">
+                                                <div class="invalid-feedback"></div>
+                                            </div>
+                                        </div>
+                                        <div class="position-add col-md-6">
+                                            <div class="form-group">
+                                                <label for="Position_Add" class="">Add Position Size</label>
+                                                <input name="Position_Add" id="Position_Add" min="0" step="1" type="number" class="form-control" value="1">
+                                                <div class="invalid-feedback"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SLTP Settings -->
+                <div class="mb-3 accordion-sltp card">
+                    <div class="card-body">
+                        <button type="button" class="text-start w-100 btn btn-info" onclick="toggleAccordion('sltp')">➖ Hide SLTP Settings</button>
+                        <div class="collapse show" id="sltpSettings">
+                            <div class="sl-settings p-4 rounded shadow-sm position-relative" style="background-color: rgb(27, 30, 43); color: rgb(255, 255, 255);">
+                                <div class="d-flex justify-content-end mb-2">
+                                    <a href="#" class="text-info text-decoration-underline" style="font-size: 0.875rem;">Help</a>
+                                </div>
+                                
+                                <!-- Take Profit Section -->
+                                <div class="tp-section">
+                                    <h6 class="fw-bold text-light">Take Profit Targets</h6>
+                                    <div class="mb-3 row">
+                                        <div class="tp-units-select col-md-4">
+                                            <label class="fw-semibold">TP Units</label>
+                                            <select class="form-control">
+                                                <option value="Ticks">Ticks</option>
+                                                <option value="Contracts">Contracts</option>
+                                            </select>
+                                        </div>
+                                        <div class="tp-trim-select col-md-4">
+                                            <label class="fw-semibold">Trim Units</label>
+                                            <select class="form-control">
+                                                <option value="Contracts">Contracts</option>
+                                                <option value="Ticks">Ticks</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <button type="button" class="tp-add-btn btn btn-secondary btn-sm" style="background-color: rgb(40, 199, 111); border-color: rgb(40, 199, 111);">
+                                            <i class="fas fa-plus me-1"></i> Add TP
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- TP Entry -->
+                                    <div class="align-items-end mb-3 g-2 p-2 rounded tp-entry row">
+                                        <div class="tp-value tp-0 col-md-4">
+                                            <div class="form-group">
+                                                <label class="fw-semibold d-flex align-items-center">
+                                                    <span class="badge bg-warning text-dark me-2">TP#1 Value</span>
+                                                </label>
+                                                <input min="0" type="number" class="form-control" value="0">
+                                            </div>
+                                        </div>
+                                        <div class="tp-trim tp-trim-0 col-md-4">
+                                            <div class="form-group">
+                                                <label class="fw-semibold">Trim %</label>
+                                                <input min="0" type="number" class="form-control" value="0">
+                                            </div>
+                                        </div>
+                                        <div class="text-start col-md-4">
+                                            <div class="text-muted small tp-summary">This TP is disabled.</div>
+                                            <div class="text-end">
+                                                <button type="button" disabled class="btn btn-danger btn-sm disabled">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Stop Loss Section -->
+                                <div class="sl-section">
+                                    <hr class="border-secondary">
+                                    <h6 class="mt-4 d-flex align-items-center">
+                                        Stop Loss
+                                        <span class="ms-2 text-dark badge badge-warning" style="margin-left: 0.75rem; font-size: 0.7rem; cursor: help;">Disabled</span>
+                                    </h6>
+                                    <div class="g-2 row">
+                                        <div class="sl-value col-md-4">
+                                            <div class="form-group">
+                                                <label class="fw-semibold d-flex align-items-center justify-content-between">
+                                                    <span>Stop Loss Amount</span>
+                                                    <span class="text-muted small ms-2">(disabled)</span>
+                                                </label>
+                                                <input name="Stoploss" min="0" type="number" class="form-control" disabled>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Averaging Down Settings -->
+                <div class="mb-3 accordion-avgdn card">
+                    <div class="card-body">
+                        <button type="button" class="text-start w-100 btn btn-info" onclick="toggleAccordion('avgdn')">➖ Hide Averaging Down</button>
+                        <div class="collapse show" id="avgdnSettings">
+                            <div class="accordion-avgdn">
+                                <hr class="border-secondary">
+                                <h6 class="mt-4">Averaging Down<span class="ms-2 text-dark badge badge-warning" style="margin-left: 0.75rem; font-size: 0.7rem; cursor: help;">Disabled</span></h6>
+                                <div class="g-2 row">
+                                    <div class="avgdn-amount col-md-4">
+                                        <div class="form-group">
+                                            <label class="fw-semibold">Average Down Amount</label>
+                                            <input name="avgdnAmnt" min="1" type="number" class="form-control" value="1">
+                                        </div>
+                                    </div>
+                                    <div class="avgdn-point col-md-4">
+                                        <div class="form-group">
+                                            <label class="fw-semibold">Average Down Point</label>
+                                            <input name="avgdn" min="0" type="number" class="form-control" value="0">
+                                        </div>
+                                    </div>
+                                    <div class="avgdn-unit col-md-4">
+                                        <label class="fw-semibold">Avg Down Unit</label>
+                                        <select class="form-control">
+                                            <option value="Ticks">Ticks</option>
+                                            <option value="Contracts">Contracts</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter Settings -->
+                <div class="mb-3 accordion-filter card">
+                    <div class="card-body">
+                        <button type="button" class="text-start w-100 btn btn-info" onclick="toggleAccordion('filter')">➖ Hide Filter Settings</button>
+                        <div class="collapse show" id="filterSettings">
+                            <div class="sl-settings">
+                                <div class="filter-settings position-relative">
+                                    <div class="d-flex justify-content-end align-items-center mb-2 px-3">
+                                        <a href="#" class="text-info text-decoration-underline d-flex align-items-center">
+                                            <i class="fas fa-lightbulb me-2"></i>Help
+                                        </a>
+                                    </div>
+                                    <h5 class="fw-bold mb-4 border-bottom pb-2">Filter Settings</h5>
+                                    <div class="mb-3 row">
+                                        <div class="col-md-6">
+                                            <div class="filter-delay form-group">
+                                                <label for="Delay_Add" class="">Add Delay</label>
+                                                <input name="Delay_Add" id="Delay_Add" min="1" type="number" class="form-control" value="1">
+                                                <div class="invalid-feedback"></div>
+                                                <div class="text-muted small">Currently disabled</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="filter-maxcons form-group">
+                                                <label for="Maxcons" class="">Max Contracts Per Trade</label>
+                                                <input name="Maxcons" id="Maxcons" min="0" type="number" class="form-control" value="0">
+                                                <div class="invalid-feedback"></div>
+                                                <div class="text-muted small">Unlimited contracts (no limit)</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3 row">
+                                        <div class="col-md-6">
+                                            <div class="filter-premium form-group">
+                                                <label for="PremiumFilter" class="">Option Premium Filter</label>
+                                                <input name="PremiumFilter" id="PremiumFilter" min="0" disabled type="number" class="form-control" value="0">
+                                                <div class="invalid-feedback"></div>
+                                                <div class="text-muted small">Currently disabled</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="dir-strategy-filter form-group">
+                                                <label for="DirStrat" class="">Direction Filter</label>
+                                                <select id="DirStrat" name="DirStrat" class="form-control">
+                                                    <option value="">Select a strategy...</option>
+                                                    <option value="Long">Long</option>
+                                                    <option value="Short">Short</option>
+                                                    <option value="Both">Both</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Time Filter #1 -->
+                                    <fieldset class="border p-3 mb-3 rounded filter-timefilter">
+                                        <legend class="float-none w-auto px-2">Time Filter #1</legend>
+                                        <div class="row">
+                                            <div class="col-sm-6">
+                                                <div class="align-items-center mb-3 row">
+                                                    <div class="col-sm-4">
+                                                        <label class="form-label text-light mb-0">Start #1:</label>
+                                                    </div>
+                                                    <div class="col-sm-8">
+                                                        <input type="time" class="form-control" name="time1_start">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <div class="align-items-center mb-3 row">
+                                                    <div class="col-sm-4">
+                                                        <label class="form-label text-light mb-0">Stop #1:</label>
+                                                    </div>
+                                                    <div class="col-sm-8">
+                                                        <input type="time" class="form-control" name="time1_stop">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </fieldset>
+                                    
+                                    <!-- Time Filter #2 -->
+                                    <fieldset class="border p-3 rounded filter-timefilter">
+                                        <legend class="float-none w-auto px-2">Time Filter #2</legend>
+                                        <div class="row">
+                                            <div class="col-sm-6">
+                                                <div class="align-items-center mb-3 row">
+                                                    <div class="col-sm-4">
+                                                        <label class="form-label text-light mb-0">Start #2:</label>
+                                                    </div>
+                                                    <div class="col-sm-8">
+                                                        <input type="time" class="form-control" name="time2_start">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <div class="align-items-center mb-3 row">
+                                                    <div class="col-sm-4">
+                                                        <label class="form-label text-light mb-0">Stop #2:</label>
+                                                    </div>
+                                                    <div class="col-sm-8">
+                                                        <input type="time" class="form-control" name="time2_stop">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Miscellaneous Settings -->
+                <div class="mb-3 accordion-misc card">
+                    <div class="card-body">
+                        <button type="button" class="text-start w-100 btn btn-info" onclick="toggleAccordion('misc')">➖ Hide Miscellaneous Settings</button>
+                        <div class="collapse show" id="miscSettings">
+                            <div class="misc-settings">
+                                <div class="d-flex justify-content-end mb-2">
+                                    <a href="#" class="text-info text-decoration-underline" style="font-size: 0.875rem;">Help</a>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="misc-nickname form-group">
+                                            <label for="Alternate_Name" class="">Nickname</label>
+                                            <input id="Alternate_Name" name="Alternate_Name" maxlength="100" type="text" class="tm-input-dark form-control" value="">
+                                            <div class="invalid-feedback"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="misc-description form-group">
+                                            <label for="Description" class="">Strategy Description</label>
+                                            <textarea id="Description" name="Description" maxlength="200" class="tm-input-dark form-control"></textarea>
+                                            <small class="text-muted form-text text-muted">Optional. Max 200 characters.</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="misc-discord form-group">
+                                            <label for="Discord_Channel" class="">Discord Channel</label>
+                                            <input id="Discord_Channel" name="Discord_Channel" maxlength="100" type="text" class="tm-input-dark form-control" value="">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="align-items-center mb-3 misc-private row">
+                                    <div class="col-6">
+                                        <label class="text-muted fw-semibold mb-0">Private</label>
+                                    </div>
+                                    <div class="text-end col-6">
+                                        <label class="switch">
+                                            <input type="checkbox" checked>
+                                            <span class="slider round"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="align-items-center mb-3 misc-manual row">
+                                    <div class="col-6">
+                                        <label class="text-muted fw-semibold mb-0">Manual Strategy</label>
+                                    </div>
+                                    <div class="text-end col-6">
+                                        <label class="switch">
+                                            <input type="checkbox">
+                                            <span class="slider round"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="align-items-center mb-3 misc-inverse row">
+                                    <div class="col-6">
+                                        <label class="text-muted fw-semibold mb-0">Inverse Strat</label>
+                                    </div>
+                                    <div class="text-end col-6">
+                                        <label class="switch">
+                                            <input type="checkbox">
+                                            <span class="slider round"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <div class="d-flex justify-content-end align-items-center">
+                        <button type="button" class="create-update-btn btn btn-info disabled" disabled>Create Recorder</button>
+                        <span style="margin-left: 16px;">
+                            <a href="#" class="text-info text-decoration-underline" style="font-size: 0.875rem;">Help</a>
+                        </span>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Toggle submenu
+        function toggleSubmenu(element) {
+            const submenu = document.getElementById('traderSubmenu');
+            const arrow = element.querySelector('.nav-arrow');
+            
+            if (submenu.classList.contains('show')) {
+                submenu.classList.remove('show');
+                element.classList.remove('expanded');
+            } else {
+                submenu.classList.add('show');
+                element.classList.add('expanded');
+            }
+        }
+
+        // Toggle accordion sections
+        function toggleAccordion(section) {
+            const button = event.target;
+            const targetId = section + 'Settings';
+            const target = document.getElementById(targetId);
+            
+            if (target.classList.contains('show')) {
+                target.classList.remove('show');
+                button.innerHTML = '➕ Show ' + section.charAt(0).toUpperCase() + section.slice(1) + ' Settings';
+            } else {
+                target.classList.add('show');
+                button.innerHTML = '➖ Hide ' + section.charAt(0).toUpperCase() + section.slice(1) + ' Settings';
+            }
+        }
+
+        // Toggle strategy details
+        function toggleStrategyDetails(strategyName) {
+            const detailsRow = document.getElementById(`details-${strategyName}`);
+            if (detailsRow.style.display === 'none') {
+                detailsRow.style.display = 'table-row';
+            } else {
+                detailsRow.style.display = 'none';
+            }
+        }
+
+        // Filter strategies
+        function filterStrategies() {
+            const input = document.getElementById('searchInput');
+            const filter = input.value.toLowerCase();
+            const table = document.getElementById('strategyTableBody');
+            const rows = table.getElementsByTagName('tr');
+
+            for (let i = 0; i < rows.length; i++) {
+                const strategyName = rows[i].querySelector('.strategy-name');
+                if (strategyName) {
+                    const text = strategyName.textContent.toLowerCase();
+                    if (text.indexOf(filter) > -1) {
+                        rows[i].style.display = '';
+                    } else {
+                        rows[i].style.display = 'none';
+                    }
+                }
+            }
+        }
+
+        // Strategy actions
+        function editStrategy(strategyName) {
+            alert(`Edit strategy: ${strategyName}`);
+        }
+
+        function refreshStrategy(strategyName) {
+            alert(`Refresh strategy: ${strategyName}`);
+        }
+
+        function removeStrategy(strategyName) {
+            if (confirm(`Are you sure you want to remove strategy: ${strategyName}?`)) {
+                alert(`Strategy ${strategyName} removed`);
+            }
+        }
+
+        // Modal functions
+        function openCreateStrategyModal() {
+            document.getElementById('createStrategyModal').style.display = 'block';
+        }
+
+        function closeCreateStrategyModal() {
+            document.getElementById('createStrategyModal').style.display = 'none';
+            document.getElementById('createStrategyForm').reset();
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('createStrategyModal');
+            if (event.target === modal) {
+                closeCreateStrategyModal();
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('createStrategyForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const strategyData = {
+                name: document.getElementById('strategyName').value,
+                type: document.getElementById('stratType').value,
+                positionSize: document.getElementById('positionSize').value,
+                positionAdd: document.getElementById('positionAdd').value,
+                takeProfit: document.getElementById('takeProfit').value,
+                stopLoss: document.getElementById('stopLoss').value,
+                tpslUnits: document.getElementById('tpslUnits').value
+            };
+            
+            console.log('Creating strategy:', strategyData);
+            alert('Strategy created successfully!');
+            closeCreateStrategyModal();
+        });
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('My Recorders page loaded successfully');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+================================================================================
+TRADOVATE INTEGRATION GUIDE - How to Connect Your Real Account
+================================================================================
+Date: October 24, 2025
+Session: Complete Tradovate Integration Process
+
+================================================================================
+PROBLEM SOLVED
+================================================================================
+
+We successfully reverse-engineered how Trade Manager connects to Tradovate
+for thousands of users instantly.
+
+KEY INSIGHT: Trade Manager has a PRE-REGISTERED APP with Tradovate. They use
+their own Client ID/Secret for all users, so users just provide their
+Tradovate credentials and Trade Manager authenticates on their behalf.
+
+================================================================================
+HOW TO REGISTER YOUR OWN APP WITH TRADOVATE
+================================================================================
+
+Source: https://community.tradovate.com/t/how-do-i-register-an-oauth-app/2393
+
+STEP 1: LOG INTO YOUR TRADOVATE ACCOUNT
+----------------------------------------
+Username: markjad58
+Password: Greens131393!
+Website: https://tradovate.com (regular account, not API site)
+
+STEP 2: NAVIGATE TO APPLICATION SETTINGS
+----------------------------------------
+- Look for "Application Settings" in your account menu
+- Click on "Application Settings"
+
+STEP 3: GO TO API ACCESS TAB
+-----------------------------
+- Click on the "API Access" tab
+- Choose "OAuth Registration"
+
+STEP 4: FILL OUT THE OAuth REGISTRATION FORM
+---------------------------------------------
+App Title: Just.Trade
+Redirect URI: http://localhost:8082
+
+Optional fields (can leave blank):
+- Link to privacy policy
+- Link to terms and conditions
+- Upload a logo
+
+Permissions: Set the permissions you need (account access, trading, etc.)
+
+STEP 5: GENERATE YOUR CREDENTIALS
+----------------------------------
+- Click the "Generate" button
+- You'll get a key displayed ONE TIME ONLY
+- Copy and save this key immediately - you won't see it again!
+
+STEP 6: UPDATE YOUR ACCOUNT IN OUR SYSTEM
+------------------------------------------
+1. Go to: http://127.0.0.1:8082/accounts
+2. Click "Edit" on your account
+3. Enter the credentials:
+   - Client ID: The key you just generated
+   - Client Secret: (might be same key or separate)
+4. Click "Save"
+
+STEP 7: TEST THE CONNECTION
+----------------------------
+1. Click "Test Connection" on your account
+2. Should now see real account data instead of "app not registered" error
+
+IMPORTANT NOTES:
+- The key is shown only once - make sure to copy it immediately
+- Don't store the key in any public repository (keep it secure)
+- The Redirect URI should match where our server is running
+
+================================================================================
+WHAT WE DISCOVERED ABOUT TRADE MANAGER
+================================================================================
+
+Trade Manager's Secret: They Have a Pre-Registered App
+
+- Trade Manager has ONE registered app with Tradovate
+- They use their own Client ID and Secret for ALL users
+- When you link your account, they store YOUR credentials in THEIR database
+- They authenticate on your behalf using their registered app
+
+The Real Flow:
+Your Browser → Trade Manager → Trade Manager's Backend → Tradovate API
+                     ↑
+              Uses Trade Manager's
+              Client ID/Secret
+
+Result: Instant connection because they're already registered
+
+================================================================================
+ERRORS WE ENCOUNTERED AND FIXED
+================================================================================
+
+1. "The app is not registered" Error
+   Cause: Trying to use our own app ID without registering it
+   Fix: Need to register our app with Tradovate (instructions above)
+
+2. Database column missing (client_id)
+   Fix: Added client_id and client_secret columns to accounts table
+
+3. Connection test failing
+   Fix: Updated endpoint to retrieve credentials from database when testing
+
+4. Access token not being set properly
+   Fix: Added better logging and error handling for access token retrieval
+
+================================================================================
+FILES MODIFIED
+================================================================================
+
+1. tradovate_integration.py
+   - Updated login_with_credentials to try multiple app IDs
+   - Added better error handling and logging
+   - Tries different app IDs: Tradovate, TradovateAPI, TradingApp, MyApp, Just.Trade
+
+2. ultra_simple_server.py
+   - Added client_id and client_secret columns to database
+   - Updated test_connection endpoint to work with database credentials
+   - Added proper credential retrieval from database
+
+================================================================================
+KEY TECHNICAL DETAILS
+================================================================================
+
+AUTHENTICATION ENDPOINT:
+https://live.tradovateapi.com/v1/auth/accesstokenrequest
+
+DEMO ENDPOINT:
+https://demo.tradovateapi.com/v1/auth/accesstokenrequest
+
+LOGIN REQUEST FORMAT:
+{
+    "name": "username",
+    "password": "password",
+    "appId": "AppName",
+    "appVersion": "1.0.0",
+    "deviceId": "uuid-string"
+}
+
+WITH CLIENT CREDENTIALS:
+{
+    "name": "username",
+    "password": "password",
+    "appId": "Just.Trade",
+    "appVersion": "1.0.0",
+    "cid": "client_id",
+    "sec": "client_secret"
+}
+
+================================================================================
+NEXT STEPS AFTER REGISTERING APP
+================================================================================
+
+1. Complete OAuth app registration in Tradovate account
+2. Copy the generated key/credentials
+3. Update account in our system with Client ID and Client Secret
+4. Test connection - should now work with real account data
+5. Verify account information is retrieved correctly
+
+================================================================================
+RESOURCES
+================================================================================
+
+Tradovate OAuth Registration Guide:
+https://community.tradovate.com/t/how-do-i-register-an-oauth-app/2393
+
+Tradovate API Documentation:
+https://tradovateapi.com/
+
+Trade Manager Analysis:
+- Used .har file to reverse engineer authentication flow
+- Discovered Trade Manager uses backend authentication
+- Found they have pre-registered app credentials
+
+================================================================================

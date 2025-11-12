@@ -1,0 +1,190 @@
+{
+    "name": "Scenario 2A-F - Analytics & Reporting",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Manual trigger webhook or schedule (manual setup required)"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "trigger_type",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "{Status} != \"\"",
+                "maxRecords": 1000,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Analyze the following CRM data and generate a summary report.\n\nYou will receive an array of records. Count and analyze:\n1. Total leads\n2. Leads by status (missed_call_texted, booking_requested, booking_confirmed, qualified_lead, etc.)\n3. Leads by intent (question, inquiry, booking, etc.)\n4. Recent activity (last 7 days)\n5. Conversion metrics\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\n  \"total_leads\": 0,\n  \"by_status\": {},\n  \"by_intent\": {},\n  \"recent_activity\": 0,\n  \"conversion_rate\": 0.0,\n  \"summary\": \"Brief summary text\"\n}\n\nCalculate conversion rate as (bookings + qualified leads) / total leads * 100",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{3.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Notes": "=== ANALYTICS REPORT - {{now}} ===\n\nTotal Leads: {{4.total_leads}}\nConversion Rate: {{4.conversion_rate}}%\nRecent Activity (7 days): {{4.recent_activity}}\n\nStatus Breakdown:\n{{4.by_status}}\n\nIntent Breakdown:\n{{4.by_intent}}\n\nSummary:\n{{4.summary}}\n\n=== END REPORT ==="
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "team@yourcompany.com"
+                ],
+                "subject": "Weekly Analytics Report - {{now}}",
+                "content": "<h2>Analytics Report - {{now}}</h2><h3>Summary</h3><p>{{4.summary}}</p><h3>Metrics</h3><ul><li><strong>Total Leads:</strong> {{4.total_leads}}</li><li><strong>Conversion Rate:</strong> {{4.conversion_rate}}%</li><li><strong>Recent Activity (7 days):</strong> {{4.recent_activity}}</li></ul><h3>Status Breakdown</h3><pre>{{4.by_status}}</pre><h3>Intent Breakdown</h3><pre>{{4.by_intent}}</pre>",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 150
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook, airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, airtable:ActionCreateRecord, google-email:sendAnEmail. NOTE: Replace webhook with Schedule module manually after import for automated daily/weekly reports."]
+    }
+}
+

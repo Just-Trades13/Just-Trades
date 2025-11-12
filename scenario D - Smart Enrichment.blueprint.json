@@ -1,0 +1,231 @@
+{
+    "name": "Scenario D - Smart Lead Enrichment & Outreach",
+    "flow": [
+        {
+            "id": 1,
+            "module": "airtable:TriggerWatchRecords",
+            "version": 3,
+            "parameters": {
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "config": {
+                    "labelField": "Company",
+                    "triggerField": "Last Modified Time"
+                },
+                "formula": "AND({Status} = \"new\", {Contact Email} != \"\", {Domain} = \"\", {Do Not Contact} = 0)",
+                "maxRecords": 5,
+                "__IMTCONN__": 5591761,
+                "useColumnId": false
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Extract and enrich lead data:\n\nEmail: {{1.`Contact Email`}}\nCompany: {{1.Company}}\nLocation: {{1.`Location City`}}, {{1.`Location State`}}\nIndustry: {{1.Industry}}\n\nTasks:\n1. Extract domain from email (everything after @)\n2. If company name exists but is generic, suggest a better company name based on email domain\n3. If industry is missing, infer likely industry from company name/domain\n4. Generate 3-5 relevant tags based on role, industry, location (use only from allowed list: ceo, founder, vp, director, manager, construction, healthcare, technology, software, finance, marketing, sales, manufacturing, retail, consulting, real_estate, legal, hr, accounting)\n5. Suggest employee count range if missing\n\nReturn JSON:\n{\n  \"domain\": \"extracted-domain.com\",\n  \"company\": \"suggested-company-name\",\n  \"industry\": \"inferred-industry\",\n  \"tags\": [\"tag1\", \"tag2\"],\n  \"employee_count_estimate\": 50\n}",
+                "model": "gpt-4o",
+                "store": false,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": false,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{2.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "record": {
+                    "fldRXs0Dqnv9oIVcg": "{{3.domain}}",
+                    "fldqKQ1AVmSv3gFTP": "{{3.company}}",
+                    "fldc46DkqBSnY9XJv": "{{3.industry}}",
+                    "fldKJWkWraWodlNrr": "{{3.tags}}",
+                    "fldH55kH3zwJ1YJjd": "{{3.employee_count_estimate}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Write a highly personalized initial outreach email:\n\nContact: {{1.`Contact Full Name`}}\nCompany: {{1.Company}} (enriched: {{3.company}})\nDomain: {{3.domain}}\nIndustry: {{3.industry}}\nRole: {{1.`Contact Role`}}\nLocation: {{1.`Location City`}}, {{1.`Location State`}}\nEmployee Count: {{3.employee_count_estimate}}\nTags: {{3.tags}}\nNotes: {{1.Notes}}\n\nCreate a personalized email that:\n1. Shows you researched their company (mention domain/website if relevant)\n2. References their specific role and industry\n3. Provides relevant case study or stat for their industry\n4. Clear value proposition\n5. Professional but warm tone\n6. CTA for 15-min call\n\nIMPORTANT: Return ONLY valid JSON in this exact format (no markdown, no code blocks, no explanations):\n{\n  \"subject\": \"Your compelling subject line\",\n  \"body\": \"Your email body text...\"\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{5.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "{{1.`Contact Email`}}"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h2 style=\"color: #333;\">Hi {{1.`Contact Full Name`}},</h2><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;\">{{6.body}}</div><div style=\"text-align: center;\"><a href=\"https://calendly.com/skillztechchannel/15-minute-demo-call?utm_source=email&utm_medium=outreach&utm_campaign=initial&utm_content={{1.id}}\" style=\"background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">Book a Meeting</a></div><div style=\"text-align: center; margin-top: 20px; color: #6c757d; font-size: 12px;\">{{1.`Taken By`}} | espam@skillztech.net</div></div>",
+                "subject": "{{6.subject}}",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "record": {
+                    "fldFU5cYbHBHmTpHr": "initial outreach",
+                    "fldFodc3E3nJ9yzva": "{{now}}",
+                    "fldxEEEqp6XNCRoNJ": "emailed"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2100,
+                    "y": 0
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: airtable:TriggerWatchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, airtable:ActionUpdateRecords, google-email:sendAnEmail"]
+    }
+}
+

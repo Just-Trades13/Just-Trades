@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://traderspost.local/api/dashboard/summary.schema.json",
+  "title": "GET /api/dashboard/summary/ Response Contract",
+  "type": "object",
+  "description": "Aggregated broker strategy metrics rendered in the dashboard summary cards.",
+  "properties": {
+    "endpoint": {
+      "const": "/api/dashboard/summary/"
+    },
+    "method": {
+      "const": "GET"
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "schema"
+      ],
+      "properties": {
+        "status": {
+          "type": "integer",
+          "enum": [
+            200
+          ]
+        },
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "total_strategies",
+            "active_positions",
+            "total_pnl",
+            "today_pnl"
+          ],
+          "properties": {
+            "total_strategies": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of strategies owned by the authenticated user."
+            },
+            "active_positions": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Count of positions currently open across all strategies."
+            },
+            "total_pnl": {
+              "type": "number",
+              "description": "Aggregate closed profit and loss for the lifetime of the account."
+            },
+            "today_pnl": {
+              "type": "number",
+              "description": "Closed profit and loss for the current trading day."
+            },
+            "updated_at": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "description": "Timestamp of the calculation run (may be omitted in legacy payloads)."
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "endpoint",
+    "method",
+    "response"
+  ],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "endpoint": "/api/dashboard/summary/",
+      "method": "GET",
+      "response": {
+        "status": 200,
+        "schema": {
+          "total_strategies": 128,
+          "active_positions": 37,
+          "total_pnl": 15234.87,
+          "today_pnl": 642.15,
+          "updated_at": "2025-11-09T15:45:00Z"
+        }
+      }
+    }
+  ]
+}
+

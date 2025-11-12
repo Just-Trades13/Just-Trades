@@ -1,0 +1,71 @@
+//@version=5
+strategy("Advanced TradingView to Tradovate Webhook", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
+
+// Input parameters
+atr_length = input.int(14, title="ATR Length")
+atr_multiplier = input.float(2.0, title="ATR Multiplier for Stop Loss")
+risk_reward_ratio = input.float(2.0, title="Risk/Reward Ratio")
+rsi_length = input.int(14, title="RSI Length")
+rsi_overbought = input.int(70, title="RSI Overbought")
+rsi_oversold = input.int(30, title="RSI Oversold")
+
+// Calculate indicators
+rsi = ta.rsi(close, rsi_length)
+atr = ta.atr(atr_length)
+ma = ta.sma(close, 20)
+
+// Define entry conditions
+long_condition = rsi < rsi_oversold and close > ma and volume > ta.sma(volume, 20)
+short_condition = rsi > rsi_overbought and close < ma and volume > ta.sma(volume, 20)
+
+// Calculate stop loss and take profit levels
+long_stop = close - (atr * atr_multiplier)
+long_target = close + (atr * atr_multiplier * risk_reward_ratio)
+short_stop = close + (atr * atr_multiplier)
+short_target = close - (atr * atr_multiplier * risk_reward_ratio)
+
+// Strategy entries with stop loss and take profit
+if long_condition
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=long_stop, limit=long_target)
+    
+if short_condition
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=short_stop, limit=short_target)
+
+// Plot levels
+plot(long_stop, "Long Stop", color=color.red, style=plot.style_linebr)
+plot(long_target, "Long Target", color=color.green, style=plot.style_linebr)
+plot(short_stop, "Short Stop", color=color.red, style=plot.style_linebr)
+plot(short_target, "Short Target", color=color.green, style=plot.style_linebr)
+
+// Alert conditions with stop loss and take profit
+alertcondition(long_condition, 
+               title="Long Entry with SL/TP", 
+               message='{"symbol": "{{ticker}}", "action": "buy", "quantity": 1, "price": "{{close}}", "stop_loss": "' + str(long_stop) + '", "take_profit": "' + str(long_target) + '", "strategy": "Advanced_RSI_ATR"}')
+
+alertcondition(short_condition, 
+               title="Short Entry with SL/TP", 
+               message='{"symbol": "{{ticker}}", "action": "sell", "quantity": 1, "price": "{{close}}", "stop_loss": "' + str(short_stop) + '", "take_profit": "' + str(short_target) + '", "strategy": "Advanced_RSI_ATR"}')
+
+// Dynamic alerts using strategy variables
+alertcondition(strategy.position_size > 0 and strategy.position_size[1] <= 0, 
+               title="Long Position Opened", 
+               message='{"symbol": "{{ticker}}", "action": "buy", "quantity": 1, "price": "{{close}}", "stop_loss": "' + str(long_stop) + '", "take_profit": "' + str(long_target) + '", "strategy": "Advanced_RSI_ATR"}')
+
+alertcondition(strategy.position_size < 0 and strategy.position_size[1] >= 0, 
+               title="Short Position Opened", 
+               message='{"symbol": "{{ticker}}", "action": "sell", "quantity": 1, "price": "{{close}}", "stop_loss": "' + str(short_stop) + '", "take_profit": "' + str(short_target) + '", "strategy": "Advanced_RSI_ATR"}')
+
+// Position close alerts
+alertcondition(strategy.position_size == 0 and strategy.position_size[1] > 0, 
+               title="Long Position Closed", 
+               message='{"symbol": "{{ticker}}", "action": "close", "strategy": "Advanced_RSI_ATR"}')
+
+alertcondition(strategy.position_size == 0 and strategy.position_size[1] < 0, 
+               title="Short Position Closed", 
+               message='{"symbol": "{{ticker}}", "action": "close", "strategy": "Advanced_RSI_ATR"}')
+
+// Background color for signals
+bgcolor(long_condition ? color.new(color.green, 90) : na, title="Long Signal")
+bgcolor(short_condition ? color.new(color.red, 90) : na, title="Short Signal")

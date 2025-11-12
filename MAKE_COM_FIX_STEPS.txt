@@ -1,0 +1,86 @@
+🔧 COMPLETE FIX STEPS - Apollo.io in Make.com
+
+THE PROBLEM:
+✅ API works directly (Python)
+❌ Make.com returns empty results
+
+SOLUTION 1: USE SIMPLER HTTP MODULE (RECOMMENDED)
+
+In Make.com Module 18:
+
+1. DELETE the current HTTP module
+2. ADD "HTTP - Make a Request" module
+3. CONFIGURE:
+
+   URL: https://api.apollo.io/v1/mixed_people/search
+   Method: POST
+   
+   Headers:
+     Content-Type: application/json
+     X-Api-Key: DtdKb5hTo_9GTtbohlNJ-Q
+   
+   Body Type: Raw
+   Body: {"page": 1, "per_page": 1}
+   
+   Parse Response: Yes
+
+4. SAVE and TEST
+5. Check output - should see data.people array
+
+---
+
+SOLUTION 2: USE NATIVE APOLLO.IO MODULE (BEST)
+
+1. DELETE Module 18
+2. ADD "Apollo.io" module
+3. Select "Search People" or "List People"
+4. Configure with API key: DtdKb5hTo_9GTtbohlNJ-Q
+5. Set search criteria
+6. Update Module 2 to reference new module output
+
+---
+
+SOLUTION 3: FIX DATA PATH
+
+If Module 18 works but Module 2 gets null:
+
+Module 2 User Message should be:
+OLD: {{`18.data.people[0]`}}
+NEW: {{`1.body.people[0]`}} (if Module 1 is HTTP)
+
+OR try:
+{{`1.body`}} (send entire response to OpenAI)
+
+---
+
+QUICK TEST:
+
+1. Run Module 18 ONLY
+2. Check output bundle
+3. Look for:
+   - statusCode: 200 ✅
+   - body.people or data.people exists
+   - pagination.total_entries > 0
+
+If all good but still blank → Issue is data path in Module 2!
+
+---
+
+WHAT TO CHECK:
+
+□ Apollo.io plan has API access
+□ API key is valid (test directly)
+□ Module 18 shows 200 status
+□ Response has "people" array
+□ Data path is correct
+□ Try SIMPLEST search: {}
+
+---
+
+IF STILL NOT WORKING:
+
+Share:
+1. Module 18 output bundle
+2. Apollo.io plan level
+3. Make.com error messages
+

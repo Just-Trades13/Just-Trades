@@ -1,0 +1,51 @@
+MODULE 1 BODY - COPY & PASTE
+
+For MAXIMUM leads (100 per run, from anywhere):
+
+{
+  "page": 1,
+  "per_page": 100
+}
+
+================================================================================
+
+For HELOC-targeted but still broad (100 leads, HELOC-relevant):
+
+{
+  "q_keywords": "real estate property construction homeowner",
+  "page": 1,
+  "per_page": 100
+}
+
+================================================================================
+
+For multiple US states (100 leads, major HELOC markets):
+
+{
+  "person_locations": [
+    "United States",
+    "California",
+    "Texas",
+    "Florida",
+    "New York",
+    "Arizona",
+    "Nevada",
+    "Colorado",
+    "Washington",
+    "Oregon"
+  ],
+  "page": 1,
+  "per_page": 100
+}
+
+================================================================================
+
+RECOMMENDED (MAXIMUM LEADS):
+
+{
+  "page": 1,
+  "per_page": 100
+}
+
+Copy this exactly and paste into Module 1's "Body" or "Data" field!
+

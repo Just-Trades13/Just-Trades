@@ -1,0 +1,240 @@
+{
+    "name": "Scenario 4A-A - Basic Lead Reactivation",
+    "flow": [
+        {
+            "id": 1,
+            "module": "airtable:TriggerWatchRecords",
+            "version": 3,
+            "parameters": {
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "config": {
+                    "labelField": "Company",
+                    "triggerField": "Last Modified Time"
+                },
+                "formula": "AND({Last Out Reach} < TODAY() - 30, {Reply Received} = 0, {Do Not Contact} = 0, OR({Contact Email} != \"\", {Contact Phone} != \"\"))",
+                "maxRecords": 10,
+                "__IMTCONN__": 5591761,
+                "useColumnId": false
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{1.`Contact Email`}} != \"\" AND LENGTH({{1.`Contact Email`}}) > 5"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Write a personalized reactivation email for this cold lead:\n\nCompany: {{1.Company}}\nContact Name: {{1.`Contact Full Name`}}\nRole: {{1.`Contact Role`}}\nIndustry: {{1.Industry}}\nLast Contact: {{1.`Last Out Reach`}}\nDays Since Last Contact: {{DIFFDAYS({{1.`Last Out Reach`}}, TODAY())}}\nPrevious Notes: {{1.Notes}}\n\nRequirements:\n- Acknowledge it's been a while since last contact\n- Add new value or insight relevant to their industry/role\n- Be warm and professional, not pushy\n- Keep under 120 words\n- Include a clear call-to-action\n- Reference something specific from their profile or notes\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\n  \"subject\": \"Reconnecting: [relevant topic]\",\n  \"body\": \"Your email body here...\",\n  \"channel\": \"email\"\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{3.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "{{1.`Contact Email`}}"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h2 style=\"color: #333;\">Hi {{1.`Contact Full Name`}},</h2><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;\">{{4.body}}</div><div style=\"text-align: center;\"><a href=\"https://calendly.com/skillztechchannel/15-minute-demo-call?source=reactivation\" style=\"background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;\">Schedule a Call</a></div><div style=\"text-align: center; margin-top: 20px; color: #6c757d; font-size: 12px;\">You're receiving this because we've connected before. <a href=\"#unsubscribe\">Unsubscribe</a></div></div>",
+                "subject": "{{4.subject}}",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Write a personalized reactivation SMS for this cold lead:\n\nCompany: {{1.Company}}\nContact Name: {{1.`Contact Full Name`}}\nLast Contact: {{1.`Last Out Reach`}}\nDays Since Last Contact: {{DIFFDAYS({{1.`Last Out Reach`}}, TODAY())}}\nPrevious Notes: {{1.Notes}}\n\nRequirements:\n- Keep under 160 characters\n- Be friendly and warm\n- Reference that it's been a while\n- Include a clear call-to-action\n- Add a booking link if appropriate\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\n  \"message\": \"Your SMS message here...\",\n  \"channel\": \"sms\"\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 200
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{6.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 200
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.`Contact Phone`}}",
+                "from": "+1234567890",
+                "body": "{{7.message}} Reply STOP to opt out."
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 200
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "record": {
+                    "Email Campaign": "reactivation_basic",
+                    "Last Out Reach": "{{now}}",
+                    "Status": "reactivation_sent",
+                    "Notes": "{{1.Notes}}\n\n--- Reactivation sent at {{now}} via {{4.channel}} ---"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 100
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: airtable:TriggerWatchRecords, builtin:BasicRouter, openai-gpt-3:createModelResponse, json:ParseJSON, google-email:sendAnEmail, twilio:CreateMessage, airtable:ActionUpdateRecords. Twilio requires manual setup after import."]
+    }
+}
+

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trade Manager Extraction Script - Copy This</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #fff;
+        }
+        h1 {
+            color: #5e72e4;
+        }
+        .instructions {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .script-box {
+            background: #000;
+            border: 2px solid #5e72e4;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        #scriptText {
+            width: 100%;
+            height: 600px;
+            background: #000;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            border: none;
+            padding: 10px;
+            resize: vertical;
+        }
+        button {
+            background: #5e72e4;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #4a5cd4;
+        }
+        .step {
+            background: #333;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #5e72e4;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 Trade Manager Extraction Script</h1>
+    
+    <div class="instructions">
+        <h2>How to Use:</h2>
+        <div class="step">
+            <strong>Step 1:</strong> Click the "Select All" button below
+        </div>
+        <div class="step">
+            <strong>Step 2:</strong> Copy (Cmd+C or Ctrl+C)
+        </div>
+        <div class="step">
+            <strong>Step 3:</strong> Go to Trade Manager site (https://trademanagergroup.com/user/dashboard)
+        </div>
+        <div class="step">
+            <strong>Step 4:</strong> Open Browser Console (F12 or Cmd+Option+I)
+        </div>
+        <div class="step">
+            <strong>Step 5:</strong> Click "Console" tab
+        </div>
+        <div class="step">
+            <strong>Step 6:</strong> Paste the script (Cmd+V or Ctrl+V) and press Enter
+        </div>
+        <div class="step">
+            <strong>Step 7:</strong> On each page, type: <code>window.extractTradeManager.export()</code>
+        </div>
+    </div>
+    
+    <div class="script-box">
+        <h3>📋 Extraction Script (Select All Below)</h3>
+        <button onclick="selectAll()">Select All</button>
+        <button onclick="copyToClipboard()">Copy to Clipboard</button>
+        <textarea id="scriptText" readonly></textarea>
+    </div>
+    
+    <div class="instructions">
+        <h2>After Pasting Script:</h2>
+        <p>On each page (Dashboard, My Recorders, etc.), type this in the console:</p>
+        <code style="background: #000; padding: 10px; display: block; margin: 10px 0;">
+            window.extractTradeManager.export()
+        </code>
+        <p>This will download a JSON file for each page. Share those files with me!</p>
+    </div>
+
+    <script>
+        // Load the script content
+        fetch('extract_from_browser.js')
+            .then(response => response.text())
+            .then(text => {
+                document.getElementById('scriptText').value = text;
+            })
+            .catch(error => {
+                // If file doesn't load, include it directly
+                document.getElementById('scriptText').value = `// ============================================
+// COMPLETE TRADE MANAGER EXTRACTION SCRIPT
+// Run this in browser console on trademanagergroup.com
+// ============================================
+
+const extractionData = {
+    timestamp: new Date().toISOString(),
+    url: window.location.href,
+    page: window.location.pathname,
+    styles: {},
+    measurements: {},
+    elements: {},
+    apiCalls: []
+};
+
+// 1. Extract all computed styles from page
+function extractStyles() {
+    const allElements = document.querySelectorAll('*');
+    const styles = {};
+    
+    allElements.forEach((el, index) => {
+        if (el.id || el.className) {
+            const selector = el.id ? \`#\${el.id}\` : \`.\${el.className.split(' ')[0]}\`;
+            const computed = window.getComputedStyle(el);
+            
+            styles[selector] = {
+                backgroundColor: computed.backgroundColor,
+                color: computed.color,
+                fontSize: computed.fontSize,
+                fontWeight: computed.fontWeight,
+                fontFamily: computed.fontFamily,
+                padding: computed.padding,
+                margin: computed.margin,
+                width: computed.width,
+                height: computed.height,
+                borderRadius: computed.borderRadius,
+                boxShadow: computed.boxShadow,
+                border: computed.border,
+                display: computed.display,
+                position: computed.position,
+                top: computed.top,
+                left: computed.left,
+                right: computed.right,
+                bottom: computed.bottom
+            };
+        }
+    });
+    
+    extractionData.styles = styles;
+    console.log('✅ Styles extracted');
+}
+
+// 2. Extract measurements
+function extractMeasurements() {
+    const measurements = {
+        viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight
+        },
+        elements: {}
+    };
+    
+    document.querySelectorAll('[class], [id]').forEach(el => {
+        const rect = el.getBoundingClientRect();
+        const selector = el.id || el.className.split(' ')[0];
+        measurements.elements[selector] = {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            top: rect.top,
+            left: rect.left,
+            right: rect.right,
+            bottom: rect.bottom
+        };
+    });
+    
+    extractionData.measurements = measurements;
+    console.log('✅ Measurements extracted');
+}
+
+// 3. Extract element information
+function extractElements() {
+    const elements = {};
+    
+    // Dashboard specific
+    const header = document.querySelector('h2, .dashboard-header, [class*="header"]');
+    if (header) {
+        elements.header = {
+            text: header.textContent.trim(),
+            tag: header.tagName,
+            classes: header.className,
+            styles: Object.fromEntries(
+                Array.from(window.getComputedStyle(header))
+                    .map(key => [key, window.getComputedStyle(header).getPropertyValue(key)])
+            )
+        };
+    }
+    
+    // Buttons
+    document.querySelectorAll('button, .btn, [class*="button"]').forEach((btn, i) => {
+        elements[\`button_\${i}\`] = {
+            text: btn.textContent.trim(),
+            classes: btn.className,
+            styles: Object.fromEntries(
+                Array.from(window.getComputedStyle(btn))
+                    .map(key => [key, window.getComputedStyle(btn).getPropertyValue(key)])
+            )
+        };
+    });
+    
+    // Cards
+    document.querySelectorAll('[class*="card"], [class*="summary"]').forEach((card, i) => {
+        elements[\`card_\${i}\`] = {
+            text: card.textContent.trim().substring(0, 100),
+            classes: card.className,
+            styles: Object.fromEntries(
+                Array.from(window.getComputedStyle(card))
+                    .map(key => [key, window.getComputedStyle(card).getPropertyValue(key)])
+            )
+        };
+    });
+    
+    // Tables
+    document.querySelectorAll('table').forEach((table, i) => {
+        elements[\`table_\${i}\`] = {
+            headers: Array.from(table.querySelectorAll('th')).map(th => th.textContent.trim()),
+            rowCount: table.querySelectorAll('tr').length,
+            classes: table.className,
+            styles: Object.fromEntries(
+                Array.from(window.getComputedStyle(table))
+                    .map(key => [key, window.getComputedStyle(table).getPropertyValue(key)])
+            )
+        };
+    });
+    
+    extractionData.elements = elements;
+    console.log('✅ Elements extracted');
+}
+
+// 4. Monitor API calls
+function monitorAPICalls() {
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+        const url = args[0];
+        if (typeof url === 'string' && url.includes('/api/')) {
+            return originalFetch.apply(this, args).then(response => {
+                response.clone().json().then(data => {
+                    extractionData.apiCalls.push({
+                        url: url,
+                        method: 'GET',
+                        response: data,
+                        timestamp: new Date().toISOString()
+                    });
+                    console.log('📡 API call captured:', url);
+                }).catch(() => {});
+                return response;
+            });
+        }
+        return originalFetch.apply(this, args);
+    };
+    
+    // Also monitor XMLHttpRequest
+    const originalXHR = window.XMLHttpRequest.prototype.open;
+    window.XMLHttpRequest.prototype.open = function(method, url, ...args) {
+        if (url.includes('/api/')) {
+            this.addEventListener('load', function() {
+                try {
+                    const data = JSON.parse(this.responseText);
+                    extractionData.apiCalls.push({
+                        url: url,
+                        method: method,
+                        response: data,
+                        timestamp: new Date().toISOString()
+                    });
+                    console.log('📡 API call captured:', url);
+                } catch(e) {}
+            });
+        }
+        return originalXHR.apply(this, [method, url, ...args]);
+    };
+    
+    console.log('✅ API monitoring active');
+}
+
+// 5. Run all extractions
+function extractEverything() {
+    console.log('🚀 Starting complete extraction...');
+    extractStyles();
+    extractMeasurements();
+    extractElements();
+    monitorAPICalls();
+    console.log('✅ Extraction complete!');
+    console.log('📋 Data:', extractionData);
+    return extractionData;
+}
+
+// 6. Export function
+function exportData() {
+    const dataStr = JSON.stringify(extractionData, null, 2);
+    const blob = new Blob([dataStr], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = \`trade_manager_extraction_\${window.location.pathname.replace(/\\//g, '_')}_\${Date.now()}.json\`;
+    a.click();
+    console.log('✅ Data exported!');
+}
+
+// Auto-run
+extractEverything();
+
+// Export functions to window for manual use
+window.extractTradeManager = {
+    extract: extractEverything,
+    export: exportData,
+    data: extractionData
+};
+
+console.log('✅ Extraction script loaded!');
+console.log('📋 Use window.extractTradeManager.export() to download data');`;
+            });
+        
+        function selectAll() {
+            const textarea = document.getElementById('scriptText');
+            textarea.select();
+            textarea.focus();
+        }
+        
+        function copyToClipboard() {
+            const textarea = document.getElementById('scriptText');
+            textarea.select();
+            document.execCommand('copy');
+            alert('✅ Script copied to clipboard! Now paste it in the browser console.');
+        }
+    </script>
+</body>
+</html>
+

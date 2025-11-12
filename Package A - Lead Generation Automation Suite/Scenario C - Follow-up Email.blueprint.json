@@ -1,0 +1,151 @@
+{
+    "name": "Scenario C - Follow-up Email",
+    "flow": [
+        {
+            "id": 1,
+            "module": "airtable:TriggerWatchRecords",
+            "version": 3,
+            "parameters": {
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "config": {
+                    "labelField": "Company",
+                    "triggerField": "Last Modified Time"
+                },
+                "formula": "AND({Last Out Reach} < TODAY() - 5, {Reply Received} = 0, {Email Campaign} = \"initial outreach\", {Do Not Contact} = 0, {Contact Email} != \"\")",
+                "maxRecords": 10,
+                "__IMTCONN__": 5591761,
+                "useColumnId": false
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 2,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "Write a follow-up email for this lead:\n\nCompany: {{1.Company}}\nContact Name: {{1.`Contact Full Name`}}\nRole: {{1.`Contact Role`}}\nIndustry: {{1.Industry}}\nLocation: {{1.`Location City`}}, {{1.`Location State`}}\nLast Contact Date: {{1.`Last Out Reach`}}\nPrevious Notes: {{1.Notes}}\n\nWrite a professional follow-up that:\n- References their specific role and company from the notes\n- Acknowledges time passed since last contact\n- Adds new value or insight relevant to their industry\n- Maintains urgency without being pushy\n- Keep it concise (under 80 words)\n- Be professional and warm\n\nIMPORTANT: Return ONLY valid JSON in this exact format (no markdown, no code blocks, no explanations):\n{\n  \"subject\": \"Your compelling subject line\",\n  \"body\": \"Your email body text...\"\n}",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{2.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5834162
+            },
+            "mapper": {
+                "to": [
+                    "{{1.`Contact Email`}}"
+                ],
+                "content": "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h2 style=\"color: #333;\">Hi {{1.`Contact Full Name`}},</h2><div style=\"background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px;\">{{3.body}}</div><div style=\"text-align: center;\"><a href=\"https://calendly.com/skillztechchannel/15-minute-demo-call\" style=\"background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;\">Book a Meeting</a></div><div style=\"text-align: center; margin-top: 20px; color: #6c757d; font-size: 12px;\">{{1.`Taken By`}} | espam@skillztech.net</div></div>",
+                "subject": "{{3.subject}}",
+                "bodyType": "rawHtml"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761
+            },
+            "mapper": {
+                "id": "{{1.id}}",
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR",
+                "record": {
+                    "fldFU5cYbHBHmTpHr": "follow_up_1",
+                    "fldFodc3E3nJ9yzva": "{{now}}",
+                    "fldxEEEqp6XNCRoNJ": "follow_up_sent"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 0
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: airtable:TriggerWatchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, google-email:sendAnEmail, airtable:ActionUpdateRecords"]
+    }
+}
+

@@ -1,0 +1,369 @@
+{
+    "name": "Scenario 3A-D - Advanced Voice Receptionist",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 1383407,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Twilio Voice webhook - call transcription"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "CallSid",
+                        "type": "text"
+                    },
+                    {
+                        "name": "From",
+                        "type": "text"
+                    },
+                    {
+                        "name": "To",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionText",
+                        "type": "text"
+                    },
+                    {
+                        "name": "TranscriptionUrl",
+                        "type": "text"
+                    },
+                    {
+                        "name": "CallDuration",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "formula": "{Contact Phone} = '{{1.From}}'",
+                "maxRecords": 1,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 3,
+            "module": "openai-gpt-3:createModelResponse",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "input": "You are an advanced AI voice receptionist for a business automation and lead generation company.\n\nYou have access to a comprehensive knowledge base about:\n- Services offered: Lead generation, SMS automation, AI chatbots, Voice receptionists, Analytics dashboards\n- Pricing tiers: Starter ($299-499/mo), Growth ($750-1500/mo), Pro ($2000-4000/mo)\n- Common FAQs: Setup time (2-5 days), integration options, compliance features, support availability\n- Industries served: Local businesses, agencies, service providers, consultants\n\nCaller Message (from speech-to-text): {{1.TranscriptionText}}\n\nCaller Phone: {{1.From}}\nCall Duration so far: {{1.CallDuration}} seconds\n\nContext:\nCustomer Information:\n- Company: {{2.Company[0]}}\n- Contact Name: {{2.`Contact Full Name`[0]}}\n- Industry: {{2.Industry[0]}}\n- Status: {{2.Status[0]}}\n- Previous Notes: {{2.Notes[0]}}\n- Pipeline Value: {{2.`Pipeline Value`[0]}}\n\nYour goal is to:\n1. Answer questions using your knowledge base\n2. Provide accurate information about services and pricing\n3. Handle multi-turn conversations naturally\n4. If they want to book: collect details (name, preferred time, service interest, budget)\n5. If they need routing: determine best department (Sales, Support, Technical, Billing)\n6. Build rapport and qualify leads\n7. Be friendly, professional, and concise\n\nKeep responses brief and natural for voice conversation (under 25 seconds when spoken).\n\nIMPORTANT: Return ONLY valid JSON (no markdown, no code blocks):\n{\n  \"response\": \"Your helpful response here\",\n  \"intent\": \"question\",\n  \"conversation_stage\": \"greeting\",\n  \"booking_requested\": false,\n  \"booking_confirmed\": false,\n  \"booking_details\": {\n    \"name\": \"\",\n    \"preferred_date\": \"\",\n    \"preferred_time\": \"\",\n    \"service_interest\": \"\",\n    \"budget_range\": \"\",\n    \"confirmed_slot\": \"\"\n  },\n  \"should_transfer\": false,\n  \"transfer_department\": \"\",\n  \"transfer_reason\": \"\",\n  \"lead_score\": 0,\n  \"key_qualifiers\": [],\n  \"needs_followup\": false,\n  \"followup_method\": \"\"\n}\n\nIntent can be: question, inquiry, complaint, booking_request, booking_confirmation, technical, sales, support, billing, information, goodbye\n\nConversation_stage can be: greeting, qualification, booking, routing, closing\n\nLead_score: 0-100 based on engagement, interest level, budget, decision authority\n\nKey_qualifiers: Array of strings like [\"budget_confirmed\", \"decision_maker\", \"urgent_need\", \"specific_service\"]",
+                "model": "gpt-4o",
+                "store": true,
+                "format": {
+                    "type": "json_object"
+                },
+                "reasoning": {},
+                "background": false,
+                "truncation": "auto",
+                "inputContentType": "text",
+                "createConversation": true,
+                "parallel_tool_calls": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 4,
+            "module": "json:ParseJSON",
+            "version": 1,
+            "parameters": {
+                "type": 197771
+            },
+            "mapper": {
+                "json": "{{3.text.output[0].content[0].text}}"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "type": {
+                            "label": "AI JSON"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": 5,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{4.booking_confirmed}} = true"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 6,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{4.should_transfer}} = true"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 150
+                }
+            }
+        },
+        {
+            "id": 7,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{2.id[0]}}",
+                "record": {
+                    "Contact Full Name": "{{4.booking_details.name}}",
+                    "Status": "booking_confirmed",
+                    "Last Out Reach": "{{now}}",
+                    "Pipeline Value": "{{4.booking_details.budget_range}}",
+                    "Next Step": "Appointment booked: {{4.booking_details.confirmed_slot}}",
+                    "Tags": "{{4.key_qualifiers}}",
+                    "Notes": "{{2.Notes[0]}}\n\n--- Advanced Voice Call Booking at {{now}} ---\nCallSid: {{1.CallSid}}\nCall Duration: {{1.CallDuration}}s\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nLead Score: {{4.lead_score}}\nBooking: {{4.booking_details.confirmed_slot}}\nService Interest: {{4.booking_details.service_interest}}\nBudget: {{4.booking_details.budget_range}}\nKey Qualifiers: {{4.key_qualifiers}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 50
+                }
+            }
+        },
+        {
+            "id": 8,
+            "module": "twilio:CreateMessage",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{1.From}}",
+                "from": "{{1.To}}",
+                "body": "Hi! We've confirmed your appointment for {{4.booking_details.confirmed_slot}}. Service interest: {{4.booking_details.service_interest}}. We'll send you a calendar invite shortly. Looking forward to speaking with you! Reply STOP to opt out."
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 250
+                }
+            }
+        },
+        {
+            "id": 9,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{2.id[0]}}",
+                "record": {
+                    "Status": "routed_to_{{4.transfer_department}}",
+                    "Last Out Reach": "{{now}}",
+                    "Pipeline Value": "{{4.lead_score}}",
+                    "Tags": "{{4.key_qualifiers}}",
+                    "Notes": "{{2.Notes[0]}}\n\n--- Advanced Voice Call Routing at {{now}} ---\nCallSid: {{1.CallSid}}\nCall Duration: {{1.CallDuration}}s\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nLead Score: {{4.lead_score}}\nRouted to: {{4.transfer_department}}\nReason: {{4.transfer_reason}}\nKey Qualifiers: {{4.key_qualifiers}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 450
+                }
+            }
+        },
+        {
+            "id": 10,
+            "module": "airtable:ActionUpdateRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "id": "{{2.id[0]}}",
+                "record": {
+                    "Status": "{{4.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Pipeline Value": "{{4.lead_score}}",
+                    "Tags": "{{4.key_qualifiers}}",
+                    "Notes": "{{2.Notes[0]}}\n\n--- Advanced Voice Call at {{now}} ---\nCallSid: {{1.CallSid}}\nCall Duration: {{1.CallDuration}}s\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nIntent: {{4.intent}}\nConversation Stage: {{4.conversation_stage}}\nLead Score: {{4.lead_score}}\nKey Qualifiers: {{4.key_qualifiers}}\nNeeds Followup: {{4.needs_followup}}\nFollowup Method: {{4.followup_method}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 650
+                }
+            }
+        },
+        {
+            "id": 11,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5591761,
+                "base": "appo7Y0cbtd1wa8Ph",
+                "table": "tblmVnZaaWToTXxaR"
+            },
+            "mapper": {
+                "record": {
+                    "Contact Phone": "{{1.From}}",
+                    "Status": "{{4.intent}}",
+                    "Last Out Reach": "{{now}}",
+                    "Pipeline Value": "{{4.lead_score}}",
+                    "Tags": "{{4.key_qualifiers}}",
+                    "Notes": "Advanced Voice Call:\nCallSid: {{1.CallSid}}\nCall Duration: {{1.CallDuration}}s\nTranscription: {{1.TranscriptionText}}\nAI Response: {{4.response}}\nIntent: {{4.intent}}\nConversation Stage: {{4.conversation_stage}}\nLead Score: {{4.lead_score}}\nKey Qualifiers: {{4.key_qualifiers}}\nNeeds Followup: {{4.needs_followup}}\nFollowup Method: {{4.followup_method}}\nTranscription URL: {{1.TranscriptionUrl}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1800,
+                    "y": 850
+                }
+            }
+        },
+        {
+            "id": 12,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "parameters": {
+                "route": "if-else"
+            },
+            "mapper": {
+                "filter": "{{4.needs_followup}} = true AND {{4.followup_method}} = \"email\""
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2100,
+                    "y": 850
+                }
+            }
+        },
+        {
+            "id": 13,
+            "module": "google-email:sendAnEmail",
+            "version": 4,
+            "parameters": {
+                "__IMTCONN__": 5551481
+            },
+            "mapper": {
+                "to": "{{2.`Contact Email`[0]}}",
+                "subject": "Follow-up from our conversation",
+                "bodyType": "rawHtml",
+                "body": "<html><body><p>Hi {{2.`Contact Full Name`[0]}},</p><p>Thanks for calling us today. As discussed, here's a follow-up on {{4.response}}.</p><p>Best regards,<br>Your Team</p></body></html>"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2400,
+                    "y": 850
+                }
+            }
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": true,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us2.make.com",
+        "notes": ["All modules verified working: gateway:CustomWebHook, airtable:ActionSearchRecords, openai-gpt-3:createModelResponse, json:ParseJSON, builtin:BasicRouter, airtable:ActionUpdateRecords, airtable:ActionCreateRecord, twilio:CreateMessage, google-email:sendAnEmail. Note: Twilio Voice integration requires manual setup - see TWILIO_VOICE_SETUP.md"]
+    }
+}
+

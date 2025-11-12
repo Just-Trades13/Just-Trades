@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Page</title>
+</head>
+<body>
+    <h1>Server is Working!</h1>
+    <p>If you see this, the server is accessible.</p>
+    <script>
+        console.log('Test page loaded');
+        fetch('/api/system/csrf-token/')
+            .then(r => r.json())
+            .then(d => console.log('API test:', d))
+            .catch(e => console.error('API error:', e));
+    </script>
+</body>
+</html>
