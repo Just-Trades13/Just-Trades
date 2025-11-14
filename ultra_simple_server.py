@@ -770,7 +770,7 @@ if __name__ == '__main__':
     # Configure logging for production
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
-    logger.info(f"Starting ultra-simple trading webhook server on 0.0.0.0:{port}")
+    logger.info(f"Starting Just.Trades. server on 0.0.0.0:{port}")
     try:
         app.run(host='0.0.0.0', port=port, debug=False)
     except Exception as e:
