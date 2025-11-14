@@ -759,7 +759,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     try:
-    init_db()
+        init_db()
     except Exception as e:
         logger.warning(f"Database initialization warning: {e}")
     
