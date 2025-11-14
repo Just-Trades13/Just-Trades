@@ -1,0 +1,399 @@
+{% extends "layout.html" %}
+
+{% block title %}Become an Affiliate - Just.Trades.{% endblock %}
+
+{% block page_title %}AFFILIATE PROGRAM{% endblock %}
+
+{% block content %}
+<div class="affiliate-page">
+    <div class="affiliate-hero">
+        <div class="affiliate-hero-content">
+            <h1 class="affiliate-hero-title">Earn Commissions with Just.Trades.</h1>
+            <p class="affiliate-hero-subtitle">Join our partner program and earn recurring commissions by referring traders to our platform.</p>
+        </div>
+    </div>
+
+    <div class="affiliate-benefits">
+        <div class="benefit-card">
+            <div class="benefit-icon">
+                <i class="material-icons">attach_money</i>
+            </div>
+            <h3>Recurring Commissions</h3>
+            <p>Earn ongoing commissions from every trader you refer</p>
+        </div>
+        <div class="benefit-card">
+            <div class="benefit-icon">
+                <i class="material-icons">trending_up</i>
+            </div>
+            <h3>High Conversion Rates</h3>
+            <p>Our platform converts well with competitive rates</p>
+        </div>
+        <div class="benefit-card">
+            <div class="benefit-icon">
+                <i class="material-icons">dashboard</i>
+            </div>
+            <h3>Real-Time Tracking</h3>
+            <p>Monitor your referrals and earnings in real-time</p>
+        </div>
+        <div class="benefit-card">
+            <div class="benefit-icon">
+                <i class="material-icons">support_agent</i>
+            </div>
+            <h3>Dedicated Support</h3>
+            <p>Get help from our affiliate support team</p>
+        </div>
+    </div>
+
+    <div class="affiliate-signup">
+        <div class="signup-card">
+            <h2>Join the Affiliate Program</h2>
+            <p class="signup-subtitle">Fill out the form below to get started</p>
+            
+            <form class="affiliate-form" id="affiliateForm">
+                <div class="form-group">
+                    <label for="name">Full Name *</label>
+                    <input type="text" id="name" name="name" required placeholder="Enter your full name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="email">Email Address *</label>
+                    <input type="email" id="email" name="email" required placeholder="Enter your email address">
+                </div>
+                
+                <div class="form-group">
+                    <label for="website">Website/Platform (Optional)</label>
+                    <input type="url" id="website" name="website" placeholder="https://yourwebsite.com">
+                </div>
+                
+                <div class="form-group">
+                    <label for="social">Social Media Handle (Optional)</label>
+                    <input type="text" id="social" name="social" placeholder="@yourhandle">
+                </div>
+                
+                <div class="form-group">
+                    <label for="audience">Tell us about your audience *</label>
+                    <textarea id="audience" name="audience" rows="4" required placeholder="Describe your audience, reach, and how you plan to promote Just.Trades."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="experience">Trading/Finance Experience</label>
+                    <textarea id="experience" name="experience" rows="3" placeholder="Tell us about your experience in trading or finance (optional)"></textarea>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="terms" name="terms" required>
+                        <span>I agree to the <a href="#" class="link">Affiliate Terms & Conditions</a></span>
+                    </label>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-submit">
+                    <span>Submit Application</span>
+                    <i class="material-icons">arrow_forward</i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="affiliate-faq">
+        <h2>Frequently Asked Questions</h2>
+        <div class="faq-grid">
+            <div class="faq-item">
+                <h3>How much can I earn?</h3>
+                <p>Commission rates vary based on your tier and performance. Contact us for specific details.</p>
+            </div>
+            <div class="faq-item">
+                <h3>How do I get paid?</h3>
+                <p>Payments are processed monthly via PayPal, bank transfer, or cryptocurrency.</p>
+            </div>
+            <div class="faq-item">
+                <h3>How long does approval take?</h3>
+                <p>We typically review applications within 2-3 business days.</p>
+            </div>
+            <div class="faq-item">
+                <h3>Do I need a website?</h3>
+                <p>While not required, having a platform (website, YouTube, social media) helps with approval.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .affiliate-page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+    
+    .affiliate-hero {
+        text-align: center;
+        padding: 4rem 2rem;
+        margin-bottom: 3rem;
+    }
+    
+    .affiliate-hero-title {
+        font-size: 3rem;
+        font-weight: 700;
+        margin: 0 0 1rem;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-teal) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    .affiliate-hero-subtitle {
+        font-size: 1.25rem;
+        color: var(--text-muted);
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    
+    .affiliate-benefits {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 4rem;
+    }
+    
+    .benefit-card {
+        background: var(--background-light);
+        border-radius: 16px;
+        padding: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        text-align: center;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .benefit-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(25, 184, 255, 0.15);
+    }
+    
+    .benefit-icon {
+        width: 64px;
+        height: 64px;
+        background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+    }
+    
+    .benefit-icon i {
+        font-size: 2rem;
+        color: white;
+    }
+    
+    .benefit-card h3 {
+        font-size: 1.25rem;
+        margin: 0 0 0.75rem;
+        color: var(--text-light);
+    }
+    
+    .benefit-card p {
+        color: var(--text-muted);
+        margin: 0;
+        line-height: 1.6;
+    }
+    
+    .affiliate-signup {
+        margin-bottom: 4rem;
+    }
+    
+    .signup-card {
+        background: var(--background-light);
+        border-radius: 16px;
+        padding: 3rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        max-width: 700px;
+        margin: 0 auto;
+    }
+    
+    .signup-card h2 {
+        font-size: 2rem;
+        margin: 0 0 0.5rem;
+        text-align: center;
+    }
+    
+    .signup-subtitle {
+        text-align: center;
+        color: var(--text-muted);
+        margin: 0 0 2.5rem;
+    }
+    
+    .affiliate-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    
+    .form-group {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .form-group label {
+        font-size: 0.9rem;
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+        color: var(--text-light);
+    }
+    
+    .form-group input,
+    .form-group textarea {
+        background: var(--background-dark);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 0.875rem 1rem;
+        color: var(--text-light);
+        font-family: inherit;
+        font-size: 1rem;
+        transition: border-color 0.3s ease;
+    }
+    
+    .form-group input:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+    
+    .form-group textarea {
+        resize: vertical;
+        min-height: 100px;
+    }
+    
+    .checkbox-group {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+    
+    .checkbox-label {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        cursor: pointer;
+        font-weight: 400;
+    }
+    
+    .checkbox-label input[type="checkbox"] {
+        margin-top: 0.25rem;
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: var(--primary-color);
+    }
+    
+    .link {
+        color: var(--primary-color);
+        text-decoration: none;
+    }
+    
+    .link:hover {
+        text-decoration: underline;
+    }
+    
+    .btn-submit {
+        margin-top: 1rem;
+        padding: 1rem 2rem;
+        font-size: 1.1rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        border: none;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+        color: white;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .btn-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(25, 184, 255, 0.4);
+    }
+    
+    .btn-submit:active {
+        transform: translateY(0);
+    }
+    
+    .affiliate-faq {
+        margin-top: 4rem;
+    }
+    
+    .affiliate-faq h2 {
+        font-size: 2rem;
+        text-align: center;
+        margin: 0 0 2.5rem;
+    }
+    
+    .faq-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+    }
+    
+    .faq-item {
+        background: var(--background-light);
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .faq-item h3 {
+        font-size: 1.1rem;
+        margin: 0 0 0.75rem;
+        color: var(--text-light);
+    }
+    
+    .faq-item p {
+        color: var(--text-muted);
+        margin: 0;
+        line-height: 1.6;
+    }
+    
+    @media (max-width: 768px) {
+        .affiliate-hero-title {
+            font-size: 2rem;
+        }
+        
+        .signup-card {
+            padding: 2rem 1.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('affiliateForm');
+        
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Get form data
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData);
+            
+            // Simple validation
+            if (!data.name || !data.email || !data.audience || !data.terms) {
+                alert('Please fill in all required fields and accept the terms.');
+                return;
+            }
+            
+            // Here you would typically send this to your backend
+            // For now, we'll just show a success message
+            alert('Thank you for your interest! We\'ll review your application and get back to you within 2-3 business days.');
+            
+            // Reset form
+            form.reset();
+        });
+    });
+</script>
+{% endblock %}
+

@@ -1,0 +1,33 @@
+# Just.Trades. Backend Dependencies
+
+# Web Framework
+Flask==3.0.0
+
+# Database
+SQLAlchemy==2.0.23
+alembic==1.13.1
+
+# Authentication & Security
+Flask-Login==0.6.3
+bcrypt==4.1.2
+
+# API & WebSocket
+Flask-RESTful==0.3.10
+Flask-SocketIO==5.3.6
+python-socketio==5.10.0
+
+# Background Tasks
+APScheduler==3.10.4
+
+# Discord
+discord.py==2.3.2
+
+# HTTP Client
+aiohttp==3.9.1
+requests==2.31.0
+
+# Utilities
+python-dotenv==1.0.0
+pydantic==2.5.3
+feedparser==6.0.10
+
