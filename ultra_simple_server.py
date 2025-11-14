@@ -744,18 +744,35 @@ def get_finnhub_heatmap_data(api_key):
                 current_price = data.get('c', 0)  # Current price
                 previous_close = data.get('pc', current_price)  # Previous close
                 
-                if current_price > 0 and previous_close > 0:
+                # Finnhub returns change percentage directly as 'dp' (daily percent change)
+                change_pct_raw = data.get('dp', None)
+                
+                if change_pct_raw is not None:
+                    # Finnhub returns percentage directly (e.g., 1.65 for 1.65%)
+                    change_pct = change_pct_raw
+                elif current_price > 0 and previous_close > 0 and previous_close != current_price:
+                    # Calculate from price difference
                     change_pct = ((current_price - previous_close) / previous_close) * 100
+                else:
+                    change_pct = 0
+                
+                if current_price > 0:
                     
                     # Get market cap from company profile
                     profile_url = f'https://finnhub.io/api/v1/stock/profile2?symbol={symbol}&token={api_key}'
                     profile_response = requests.get(profile_url, timeout=2)
-                    real_market_cap = market_cap  # Default
+                    real_market_cap = market_cap  # Default to provided market cap
                     
                     if profile_response.status_code == 200:
                         profile = profile_response.json()
                         if 'marketCapitalization' in profile:
-                            real_market_cap = profile['marketCapitalization'] / 1_000_000_000  # Convert to billions
+                            finnhub_market_cap = profile['marketCapitalization']
+                            # Finnhub returns market cap in raw number, convert to billions
+                            if finnhub_market_cap and finnhub_market_cap > 1000:  # Sanity check
+                                real_market_cap = finnhub_market_cap / 1_000_000_000  # Convert to billions
+                            # If the value seems wrong (too small), use fallback
+                            if real_market_cap < 10:  # If less than 10B, it's probably wrong
+                                real_market_cap = market_cap  # Use provided fallback
                     
                     heatmap_data.append({
                         'symbol': symbol,
@@ -819,6 +836,21 @@ def get_yahoo_heatmap_data():
                             meta = result['meta']
                             current_price = meta.get('regularMarketPrice', 0)
                             previous_close = meta.get('previousClose', current_price)
+                            
+                            # Try to get change percentage directly from Yahoo Finance
+                            # This is more accurate, especially when market is closed
+                            change_pct_raw = meta.get('regularMarketChangePercent', None)
+                            
+                            if change_pct_raw is not None:
+                                # Yahoo Finance returns as decimal (e.g., 0.0165 for 1.65%)
+                                change_pct = change_pct_raw * 100
+                            elif current_price > 0 and previous_close > 0 and previous_close != current_price:
+                                # Calculate from price difference
+                                change_pct = ((current_price - previous_close) / previous_close) * 100
+                            else:
+                                # If no change data available, skip this stock or use 0
+                                change_pct = 0
+                            
                             # Try to get real market cap from Yahoo Finance
                             real_market_cap = meta.get('marketCap', None)
                             if real_market_cap:
@@ -828,8 +860,7 @@ def get_yahoo_heatmap_data():
                                 # Fallback to provided market cap
                                 market_cap_billions = market_cap
                             
-                            if current_price > 0 and previous_close > 0:
-                                change_pct = ((current_price - previous_close) / previous_close) * 100
+                            if current_price > 0:
                                 heatmap_data.append({
                                     'symbol': symbol,
                                     'price': round(current_price, 2),
