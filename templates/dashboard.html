@@ -83,6 +83,41 @@
         </div>
     </section>
 
+    <!-- Stock Heatmap Section -->
+    <section class="heatmap-section">
+        <header class="heatmap-header">
+            <div>
+                <h2>Market Heatmap</h2>
+                <p class="heatmap-sub">Real-time stock performance visualization</p>
+            </div>
+            <div class="heatmap-controls">
+                <a href="https://finance.yahoo.com/markets/stocks/most-active/heatmap/" target="_blank" class="link-button" rel="noopener noreferrer">
+                    View Full Heatmap
+                    <span class="material-icons" style="font-size: 16px; vertical-align: middle; margin-left: 4px;">open_in_new</span>
+                </a>
+            </div>
+        </header>
+        <div class="heatmap-container">
+            <!-- Try iframe first, fallback to custom widget -->
+            <iframe 
+                id="yahooHeatmapFrame"
+                src="https://finance.yahoo.com/markets/stocks/most-active/heatmap/" 
+                style="width: 100%; height: 600px; border: none; border-radius: 12px; background: var(--background-light);"
+                title="Yahoo Finance Stock Heatmap"
+                loading="lazy">
+            </iframe>
+            <div id="heatmapFallback" style="display: none;">
+                <div class="heatmap-widget">
+                    <p style="text-align: center; color: var(--text-muted); padding: 40px;">
+                        <span class="material-icons" style="font-size: 48px; display: block; margin-bottom: 16px; opacity: 0.5;">bar_chart</span>
+                        Heatmap loading... If this persists, 
+                        <a href="https://finance.yahoo.com/markets/stocks/most-active/heatmap/" target="_blank" style="color: var(--primary-color);">click here to view on Yahoo Finance</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Metric Cards Section (Collapsible) -->
     <section class="metrics-grid" id="metricsCardsSection" style="display: none;">
         <article class="metric-card" data-metric="cumulative_return">
@@ -761,6 +796,63 @@
         flex-direction: column;
         gap: 1.5rem;
     }
+    /* Heatmap Section */
+    .heatmap-section {
+        background: var(--background-light);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 2rem;
+        margin-top: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    .heatmap-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .heatmap-header h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-light);
+        margin: 0;
+        letter-spacing: 0.05em;
+    }
+    .heatmap-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0 0;
+        letter-spacing: 0.03em;
+    }
+    .heatmap-controls {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+    }
+    .heatmap-container {
+        width: 100%;
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--background-dark);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        min-height: 600px;
+        position: relative;
+    }
+    .heatmap-container iframe {
+        width: 100%;
+        height: 600px;
+        border: none;
+        display: block;
+    }
+    .heatmap-widget {
+        background: var(--background-light);
+        border-radius: 12px;
+        padding: 2rem;
+        min-height: 500px;
+    }
     .onboarding-header {
         display: flex;
         align-items: flex-start;
@@ -1043,6 +1135,23 @@
         }
     }
     @media (max-width: 768px) {
+        .heatmap-section {
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        .heatmap-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .heatmap-header h2 {
+            font-size: 1.25rem;
+        }
+        .heatmap-container {
+            min-height: 400px;
+        }
+        .heatmap-container iframe {
+            height: 400px;
+        }
         .filter-header {
             flex-direction: column;
         }
@@ -1569,6 +1678,37 @@
         // Load ticker and news
         loadTickerData();
         loadNewsFeed();
+        
+        // Handle heatmap iframe loading
+        const heatmapFrame = document.getElementById('yahooHeatmapFrame');
+        const heatmapFallback = document.getElementById('heatmapFallback');
+        
+        if (heatmapFrame) {
+            // Check if iframe loads successfully (Yahoo may block iframe embedding)
+            heatmapFrame.addEventListener('load', function() {
+                // If iframe loads, hide fallback
+                if (heatmapFallback) {
+                    heatmapFallback.style.display = 'none';
+                }
+            });
+            
+            // If iframe fails to load or is blocked, show fallback after timeout
+            setTimeout(function() {
+                try {
+                    // Try to access iframe content (will fail if blocked by X-Frame-Options)
+                    const iframeDoc = heatmapFrame.contentDocument || heatmapFrame.contentWindow.document;
+                    // If we can access it, it's loaded
+                } catch (e) {
+                    // Iframe is blocked, show fallback
+                    if (heatmapFrame.offsetHeight === 0 || heatmapFrame.style.display === 'none') {
+                        if (heatmapFallback) {
+                            heatmapFrame.style.display = 'none';
+                            heatmapFallback.style.display = 'block';
+                        }
+                    }
+                }
+            }, 3000);
+        }
         
         loadFilterData().then(() => {
             // After filters load, load initial chart data (no filters = show all)
