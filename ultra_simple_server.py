@@ -688,7 +688,97 @@ def api_market_data():
 
 @app.route('/api/stock-heatmap', methods=['GET'])
 def api_stock_heatmap():
-    """Get stock heatmap data from Yahoo Finance with market cap for treemap"""
+    """Get stock heatmap data from Finnhub (primary) or Yahoo Finance (fallback)"""
+    try:
+        # Check if Finnhub API key is set (optional - falls back to Yahoo if not)
+        finnhub_api_key = os.environ.get('FINNHUB_API_KEY', None)
+        
+        # Try Finnhub first if API key is available
+        if finnhub_api_key:
+            try:
+                return get_finnhub_heatmap_data(finnhub_api_key)
+            except Exception as e:
+                logger.warning(f"Finnhub API failed, falling back to Yahoo Finance: {e}")
+        
+        # Fallback to Yahoo Finance (current implementation)
+        return get_yahoo_heatmap_data()
+    except Exception as e:
+        logger.error(f"Error fetching heatmap data: {e}")
+        return get_sample_heatmap_data()
+
+def get_finnhub_heatmap_data(api_key):
+    """Fetch stock data from Finnhub API"""
+    symbols_with_cap = [
+        {'symbol': 'NVDA', 'market_cap': 3000},
+        {'symbol': 'MSFT', 'market_cap': 3200},
+        {'symbol': 'AAPL', 'market_cap': 3500},
+        {'symbol': 'GOOGL', 'market_cap': 2000},
+        {'symbol': 'AMZN', 'market_cap': 1900},
+        {'symbol': 'META', 'market_cap': 1300},
+        {'symbol': 'TSLA', 'market_cap': 800},
+        {'symbol': 'AVGO', 'market_cap': 600},
+        {'symbol': 'ORCL', 'market_cap': 500},
+        {'symbol': 'AMD', 'market_cap': 300},
+        {'symbol': 'NFLX', 'market_cap': 280},
+        {'symbol': 'CSCO', 'market_cap': 250},
+        {'symbol': 'INTC', 'market_cap': 200},
+        {'symbol': 'MU', 'market_cap': 150},
+        {'symbol': 'PLTR', 'market_cap': 50},
+        {'symbol': 'HOOD', 'market_cap': 20},
+    ]
+    
+    heatmap_data = []
+    successful_fetches = 0
+    
+    for stock_info in symbols_with_cap[:16]:
+        symbol = stock_info['symbol']
+        market_cap = stock_info['market_cap']
+        
+        try:
+            # Finnhub quote endpoint
+            url = f'https://finnhub.io/api/v1/quote?symbol={symbol}&token={api_key}'
+            response = requests.get(url, timeout=3)
+            
+            if response.status_code == 200:
+                data = response.json()
+                current_price = data.get('c', 0)  # Current price
+                previous_close = data.get('pc', current_price)  # Previous close
+                
+                if current_price > 0 and previous_close > 0:
+                    change_pct = ((current_price - previous_close) / previous_close) * 100
+                    
+                    # Get market cap from company profile
+                    profile_url = f'https://finnhub.io/api/v1/stock/profile2?symbol={symbol}&token={api_key}'
+                    profile_response = requests.get(profile_url, timeout=2)
+                    real_market_cap = market_cap  # Default
+                    
+                    if profile_response.status_code == 200:
+                        profile = profile_response.json()
+                        if 'marketCapitalization' in profile:
+                            real_market_cap = profile['marketCapitalization'] / 1_000_000_000  # Convert to billions
+                    
+                    heatmap_data.append({
+                        'symbol': symbol,
+                        'price': round(current_price, 2),
+                        'change': round(change_pct, 2),
+                        'change_pct': f"{'+' if change_pct >= 0 else ''}{round(change_pct, 2)}%",
+                        'market_cap': real_market_cap
+                    })
+                    successful_fetches += 1
+                    logger.info(f"Finnhub: Successfully fetched {symbol}: ${current_price:.2f} ({change_pct:+.2f}%)")
+        except Exception as e:
+            logger.warning(f"Error fetching {symbol} from Finnhub: {e}")
+            continue
+    
+    logger.info(f"Finnhub API: Successfully fetched {successful_fetches} stocks")
+    
+    if heatmap_data:
+        return jsonify({'stocks': heatmap_data})
+    else:
+        raise Exception("No data from Finnhub")
+
+def get_yahoo_heatmap_data():
+    """Get stock heatmap data from Yahoo Finance (fallback)"""
     try:
         # Most active tech stocks with approximate market cap order (largest first)
         # Market cap data for sizing the treemap
@@ -713,13 +803,14 @@ def api_stock_heatmap():
         
         # Fetch data from Yahoo Finance (using their public API)
         heatmap_data = []
+        successful_fetches = 0
         for stock_info in symbols_with_cap[:16]:  # Limit to 16 for treemap layout
             symbol = stock_info['symbol']
             market_cap = stock_info['market_cap']
             try:
                 # Yahoo Finance quote endpoint (no API key needed)
                 url = f'https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=1d'
-                response = requests.get(url, timeout=2)
+                response = requests.get(url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'})
                 if response.status_code == 200:
                     data = response.json()
                     if 'chart' in data and 'result' in data['chart'] and len(data['chart']['result']) > 0:
@@ -737,7 +828,7 @@ def api_stock_heatmap():
                                 # Fallback to provided market cap
                                 market_cap_billions = market_cap
                             
-                            if previous_close > 0:
+                            if current_price > 0 and previous_close > 0:
                                 change_pct = ((current_price - previous_close) / previous_close) * 100
                                 heatmap_data.append({
                                     'symbol': symbol,
@@ -746,44 +837,38 @@ def api_stock_heatmap():
                                     'change_pct': f"{'+' if change_pct >= 0 else ''}{round(change_pct, 2)}%",
                                     'market_cap': market_cap_billions  # Real market cap in billions
                                 })
+                                successful_fetches += 1
+                                logger.info(f"Successfully fetched {symbol}: ${current_price:.2f} ({change_pct:+.2f}%)")
             except Exception as e:
                 logger.warning(f"Error fetching data for {symbol}: {e}")
                 continue
         
-        # If API fails, return sample data with market cap
-        if not heatmap_data:
-            heatmap_data = [
-                {'symbol': 'NVDA', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3000},
-                {'symbol': 'MSFT', 'price': 428.50, 'change': 1.29, 'change_pct': '+1.29%', 'market_cap': 3200},
-                {'symbol': 'AAPL', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3500},
-                {'symbol': 'GOOGL', 'price': 175.20, 'change': -0.16, 'change_pct': '-0.16%', 'market_cap': 2000},
-                {'symbol': 'AMZN', 'price': 185.30, 'change': -0.11, 'change_pct': '-0.11%', 'market_cap': 1900},
-                {'symbol': 'META', 'price': 512.80, 'change': 0.28, 'change_pct': '+0.28%', 'market_cap': 1300},
-                {'symbol': 'TSLA', 'price': 408.83, 'change': 1.70, 'change_pct': '+1.70%', 'market_cap': 800},
-                {'symbol': 'AVGO', 'price': 150.20, 'change': 1.20, 'change_pct': '+1.20%', 'market_cap': 600},
-                {'symbol': 'ORCL', 'price': 145.30, 'change': 3.87, 'change_pct': '+3.87%', 'market_cap': 500},
-                {'symbol': 'AMD', 'price': 185.50, 'change': 1.91, 'change_pct': '+1.91%', 'market_cap': 300},
-                {'symbol': 'NFLX', 'price': 645.20, 'change': 0.45, 'change_pct': '+0.45%', 'market_cap': 280},
-                {'symbol': 'CSCO', 'price': 55.20, 'change': 1.28, 'change_pct': '+1.28%', 'market_cap': 250},
-                {'symbol': 'INTC', 'price': 48.25, 'change': 0.25, 'change_pct': '+0.25%', 'market_cap': 200},
-                {'symbol': 'MU', 'price': 120.50, 'change': 7.37, 'change_pct': '+7.37%', 'market_cap': 150},
-                {'symbol': 'PLTR', 'price': 25.30, 'change': 2.65, 'change_pct': '+2.65%', 'market_cap': 50},
-                {'symbol': 'HOOD', 'price': 18.20, 'change': 3.66, 'change_pct': '+3.66%', 'market_cap': 20},
-            ]
+        logger.info(f"Yahoo Finance API: Successfully fetched {successful_fetches} stocks out of {len(symbols_with_cap[:16])}")
         
-        return jsonify({'stocks': heatmap_data})
+        if heatmap_data:
+            return jsonify({'stocks': heatmap_data})
+        else:
+            raise Exception("No data from Yahoo Finance")
     except Exception as e:
-        logger.error(f"Error fetching heatmap data: {e}")
-        # Return sample data on error
-        return jsonify({
-            'stocks': [
-                {'symbol': 'NVDA', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3000},
-                {'symbol': 'MSFT', 'price': 428.50, 'change': 1.29, 'change_pct': '+1.29%', 'market_cap': 3200},
-                {'symbol': 'AAPL', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3500},
-                {'symbol': 'GOOGL', 'price': 175.20, 'change': -0.16, 'change_pct': '-0.16%', 'market_cap': 2000},
-                {'symbol': 'AMZN', 'price': 185.30, 'change': -0.11, 'change_pct': '-0.11%', 'market_cap': 1900},
-            ]
-        })
+        logger.error(f"Error in Yahoo Finance API: {e}")
+        raise
+
+def get_sample_heatmap_data():
+    """Return sample data as last resort"""
+    return jsonify({
+        'stocks': [
+            {'symbol': 'NVDA', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3000},
+            {'symbol': 'MSFT', 'price': 428.50, 'change': 1.29, 'change_pct': '+1.29%', 'market_cap': 3200},
+            {'symbol': 'AAPL', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3500},
+            {'symbol': 'GOOGL', 'price': 175.20, 'change': -0.16, 'change_pct': '-0.16%', 'market_cap': 2000},
+            {'symbol': 'AMZN', 'price': 185.30, 'change': -0.11, 'change_pct': '-0.11%', 'market_cap': 1900},
+            {'symbol': 'META', 'price': 512.80, 'change': 0.28, 'change_pct': '+0.28%', 'market_cap': 1300},
+            {'symbol': 'TSLA', 'price': 408.83, 'change': 1.70, 'change_pct': '+1.70%', 'market_cap': 800},
+            {'symbol': 'AVGO', 'price': 150.20, 'change': 1.20, 'change_pct': '+1.20%', 'market_cap': 600},
+            {'symbol': 'ORCL', 'price': 145.30, 'change': 3.87, 'change_pct': '+3.87%', 'market_cap': 500},
+            {'symbol': 'AMD', 'price': 185.50, 'change': 1.91, 'change_pct': '+1.91%', 'market_cap': 300},
+        ]
+    })
 
 @app.route('/webhooks', methods=['POST'])
 def create_webhook():
