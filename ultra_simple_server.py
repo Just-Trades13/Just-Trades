@@ -688,16 +688,34 @@ def api_market_data():
 
 @app.route('/api/stock-heatmap', methods=['GET'])
 def api_stock_heatmap():
-    """Get stock heatmap data from Yahoo Finance"""
+    """Get stock heatmap data from Yahoo Finance with market cap for treemap"""
     try:
-        # Most active tech stocks
-        symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'NFLX', 'AMD', 'INTC',
-                   'ORCL', 'CRM', 'ADBE', 'CSCO', 'AVGO', 'QCOM', 'TXN', 'MU', 'AMAT', 'LRCX',
-                   'PYPL', 'UBER', 'LYFT', 'SNAP', 'TWTR', 'SQ', 'ROKU', 'ZM', 'DOCU', 'CRWD']
+        # Most active tech stocks with approximate market cap order (largest first)
+        # Market cap data for sizing the treemap
+        symbols_with_cap = [
+            {'symbol': 'NVDA', 'market_cap': 3000},  # Largest - top left
+            {'symbol': 'MSFT', 'market_cap': 3200},
+            {'symbol': 'AAPL', 'market_cap': 3500},
+            {'symbol': 'GOOGL', 'market_cap': 2000},
+            {'symbol': 'AMZN', 'market_cap': 1900},
+            {'symbol': 'META', 'market_cap': 1300},
+            {'symbol': 'TSLA', 'market_cap': 800},
+            {'symbol': 'AVGO', 'market_cap': 600},
+            {'symbol': 'ORCL', 'market_cap': 500},
+            {'symbol': 'AMD', 'market_cap': 300},
+            {'symbol': 'NFLX', 'market_cap': 280},
+            {'symbol': 'CSCO', 'market_cap': 250},
+            {'symbol': 'INTC', 'market_cap': 200},
+            {'symbol': 'MU', 'market_cap': 150},
+            {'symbol': 'PLTR', 'market_cap': 50},
+            {'symbol': 'HOOD', 'market_cap': 20},
+        ]
         
         # Fetch data from Yahoo Finance (using their public API)
         heatmap_data = []
-        for symbol in symbols[:20]:  # Limit to 20 for performance
+        for stock_info in symbols_with_cap[:16]:  # Limit to 16 for treemap layout
+            symbol = stock_info['symbol']
+            market_cap = stock_info['market_cap']
             try:
                 # Yahoo Finance quote endpoint (no API key needed)
                 url = f'https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=1d'
@@ -716,25 +734,32 @@ def api_stock_heatmap():
                                     'symbol': symbol,
                                     'price': round(current_price, 2),
                                     'change': round(change_pct, 2),
-                                    'change_pct': f"{'+' if change_pct >= 0 else ''}{round(change_pct, 2)}%"
+                                    'change_pct': f"{'+' if change_pct >= 0 else ''}{round(change_pct, 2)}%",
+                                    'market_cap': market_cap  # For treemap sizing
                                 })
             except Exception as e:
                 logger.warning(f"Error fetching data for {symbol}: {e}")
                 continue
         
-        # If API fails, return sample data
+        # If API fails, return sample data with market cap
         if not heatmap_data:
             heatmap_data = [
-                {'symbol': 'AAPL', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%'},
-                {'symbol': 'MSFT', 'price': 428.50, 'change': 1.29, 'change_pct': '+1.29%'},
-                {'symbol': 'GOOGL', 'price': 175.20, 'change': -0.16, 'change_pct': '-0.16%'},
-                {'symbol': 'AMZN', 'price': 185.30, 'change': -0.11, 'change_pct': '-0.11%'},
-                {'symbol': 'NVDA', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%'},
-                {'symbol': 'META', 'price': 512.80, 'change': 0.28, 'change_pct': '+0.28%'},
-                {'symbol': 'TSLA', 'price': 408.83, 'change': 1.70, 'change_pct': '+1.70%'},
-                {'symbol': 'NFLX', 'price': 645.20, 'change': 0.45, 'change_pct': '+0.45%'},
-                {'symbol': 'AMD', 'price': 185.50, 'change': 1.91, 'change_pct': '+1.91%'},
-                {'symbol': 'INTC', 'price': 48.25, 'change': 0.25, 'change_pct': '+0.25%'},
+                {'symbol': 'NVDA', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3000},
+                {'symbol': 'MSFT', 'price': 428.50, 'change': 1.29, 'change_pct': '+1.29%', 'market_cap': 3200},
+                {'symbol': 'AAPL', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3500},
+                {'symbol': 'GOOGL', 'price': 175.20, 'change': -0.16, 'change_pct': '-0.16%', 'market_cap': 2000},
+                {'symbol': 'AMZN', 'price': 185.30, 'change': -0.11, 'change_pct': '-0.11%', 'market_cap': 1900},
+                {'symbol': 'META', 'price': 512.80, 'change': 0.28, 'change_pct': '+0.28%', 'market_cap': 1300},
+                {'symbol': 'TSLA', 'price': 408.83, 'change': 1.70, 'change_pct': '+1.70%', 'market_cap': 800},
+                {'symbol': 'AVGO', 'price': 150.20, 'change': 1.20, 'change_pct': '+1.20%', 'market_cap': 600},
+                {'symbol': 'ORCL', 'price': 145.30, 'change': 3.87, 'change_pct': '+3.87%', 'market_cap': 500},
+                {'symbol': 'AMD', 'price': 185.50, 'change': 1.91, 'change_pct': '+1.91%', 'market_cap': 300},
+                {'symbol': 'NFLX', 'price': 645.20, 'change': 0.45, 'change_pct': '+0.45%', 'market_cap': 280},
+                {'symbol': 'CSCO', 'price': 55.20, 'change': 1.28, 'change_pct': '+1.28%', 'market_cap': 250},
+                {'symbol': 'INTC', 'price': 48.25, 'change': 0.25, 'change_pct': '+0.25%', 'market_cap': 200},
+                {'symbol': 'MU', 'price': 120.50, 'change': 7.37, 'change_pct': '+7.37%', 'market_cap': 150},
+                {'symbol': 'PLTR', 'price': 25.30, 'change': 2.65, 'change_pct': '+2.65%', 'market_cap': 50},
+                {'symbol': 'HOOD', 'price': 18.20, 'change': 3.66, 'change_pct': '+3.66%', 'market_cap': 20},
             ]
         
         return jsonify({'stocks': heatmap_data})
@@ -743,11 +768,11 @@ def api_stock_heatmap():
         # Return sample data on error
         return jsonify({
             'stocks': [
-                {'symbol': 'AAPL', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%'},
-                {'symbol': 'MSFT', 'price': 428.50, 'change': 1.29, 'change_pct': '+1.29%'},
-                {'symbol': 'GOOGL', 'price': 175.20, 'change': -0.16, 'change_pct': '-0.16%'},
-                {'symbol': 'AMZN', 'price': 185.30, 'change': -0.11, 'change_pct': '-0.11%'},
-                {'symbol': 'NVDA', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%'},
+                {'symbol': 'NVDA', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3000},
+                {'symbol': 'MSFT', 'price': 428.50, 'change': 1.29, 'change_pct': '+1.29%', 'market_cap': 3200},
+                {'symbol': 'AAPL', 'price': 189.94, 'change': 1.65, 'change_pct': '+1.65%', 'market_cap': 3500},
+                {'symbol': 'GOOGL', 'price': 175.20, 'change': -0.16, 'change_pct': '-0.16%', 'market_cap': 2000},
+                {'symbol': 'AMZN', 'price': 185.30, 'change': -0.11, 'change_pct': '-0.11%', 'market_cap': 1900},
             ]
         })
 

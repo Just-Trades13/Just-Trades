@@ -870,16 +870,18 @@
     }
     .heatmap-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
-        gap: 0.25rem;
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(6, 1fr);
+        gap: 0.2rem;
         margin-bottom: 1rem;
         padding: 0.5rem;
         max-width: 100%;
+        height: 500px;
+        grid-auto-flow: dense;
     }
     .heatmap-stock {
-        aspect-ratio: 1;
         border-radius: 4px;
-        padding: 0.35rem 0.25rem;
+        padding: 0.4rem 0.3rem;
         text-align: center;
         cursor: pointer;
         transition: all 0.15s ease;
@@ -889,9 +891,25 @@
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        border: none;
-        box-shadow: none;
-        min-height: 65px;
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+    /* Treemap sizing - larger market cap = larger boxes */
+    .heatmap-stock.size-xl {
+        grid-column: span 3;
+        grid-row: span 3;
+    }
+    .heatmap-stock.size-lg {
+        grid-column: span 2;
+        grid-row: span 2;
+    }
+    .heatmap-stock.size-md {
+        grid-column: span 2;
+        grid-row: span 1;
+    }
+    .heatmap-stock.size-sm {
+        grid-column: span 1;
+        grid-row: span 1;
     }
     .heatmap-stock:hover {
         transform: scale(1.08);
@@ -937,25 +955,58 @@
     }
     .heatmap-stock-symbol {
         font-weight: 700;
-        font-size: 0.75rem;
-        margin-bottom: 0.15rem;
+        margin-bottom: 0.2rem;
         letter-spacing: 0.02em;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         line-height: 1.1;
     }
+    .heatmap-stock.size-xl .heatmap-stock-symbol {
+        font-size: 1.1rem;
+    }
+    .heatmap-stock.size-lg .heatmap-stock-symbol {
+        font-size: 0.95rem;
+    }
+    .heatmap-stock.size-md .heatmap-stock-symbol {
+        font-size: 0.85rem;
+    }
+    .heatmap-stock.size-sm .heatmap-stock-symbol {
+        font-size: 0.75rem;
+    }
     .heatmap-stock-price {
-        font-size: 0.65rem;
         opacity: 0.95;
-        margin-bottom: 0.1rem;
+        margin-bottom: 0.15rem;
         font-weight: 500;
         text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
         line-height: 1;
     }
+    .heatmap-stock.size-xl .heatmap-stock-price {
+        font-size: 0.9rem;
+    }
+    .heatmap-stock.size-lg .heatmap-stock-price {
+        font-size: 0.8rem;
+    }
+    .heatmap-stock.size-md .heatmap-stock-price {
+        font-size: 0.7rem;
+    }
+    .heatmap-stock.size-sm .heatmap-stock-price {
+        font-size: 0.65rem;
+    }
     .heatmap-stock-change {
         font-weight: 700;
-        font-size: 0.7rem;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         line-height: 1;
+    }
+    .heatmap-stock.size-xl .heatmap-stock-change {
+        font-size: 0.95rem;
+    }
+    .heatmap-stock.size-lg .heatmap-stock-change {
+        font-size: 0.85rem;
+    }
+    .heatmap-stock.size-md .heatmap-stock-change {
+        font-size: 0.75rem;
+    }
+    .heatmap-stock.size-sm .heatmap-stock-change {
+        font-size: 0.7rem;
     }
     .heatmap-legend {
         display: flex;
@@ -1291,13 +1342,30 @@
             min-height: 350px;
         }
         .heatmap-grid {
-            grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-            gap: 0.2rem;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            height: 400px;
+            gap: 0.15rem;
             padding: 0.3rem;
+        }
+        .heatmap-stock.size-xl {
+            grid-column: span 2;
+            grid-row: span 2;
+        }
+        .heatmap-stock.size-lg {
+            grid-column: span 2;
+            grid-row: span 1;
+        }
+        .heatmap-stock.size-md {
+            grid-column: span 1;
+            grid-row: span 1;
+        }
+        .heatmap-stock.size-sm {
+            grid-column: span 1;
+            grid-row: span 1;
         }
         .heatmap-stock {
             padding: 0.25rem 0.2rem;
-            min-height: 55px;
         }
         .heatmap-stock-symbol {
             font-size: 0.7rem;
@@ -1855,9 +1923,24 @@
             if (data.stocks && data.stocks.length > 0) {
                 heatmapGrid.innerHTML = '';
                 
-                data.stocks.forEach(stock => {
+                // Sort by market cap (largest first) for treemap positioning
+                const sortedStocks = [...data.stocks].sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
+                
+                sortedStocks.forEach((stock, index) => {
                     const stockEl = document.createElement('div');
                     stockEl.className = 'heatmap-stock';
+                    
+                    // Determine size class based on market cap
+                    const marketCap = stock.market_cap || 100;
+                    if (marketCap > 2000) {
+                        stockEl.classList.add('size-xl');  // Largest - top left (NVDA, MSFT, AAPL)
+                    } else if (marketCap > 1000) {
+                        stockEl.classList.add('size-lg');  // Large (GOOGL, AMZN, META)
+                    } else if (marketCap > 300) {
+                        stockEl.classList.add('size-md');  // Medium (TSLA, AVGO, etc.)
+                    } else {
+                        stockEl.classList.add('size-sm');  // Small
+                    }
                     
                     // Determine color intensity based on percentage change
                     const change = stock.change;
