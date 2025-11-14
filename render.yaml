@@ -2,7 +2,7 @@ services:
   - type: web
     name: just-trades
     env: python
-    buildCommand: pip install -r requirements.txt && pip install --upgrade pip
+    buildCommand: python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt
     startCommand: python3 ultra_simple_server.py --port $PORT
     envVars:
       - key: PYTHON_VERSION
