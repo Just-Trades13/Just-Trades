@@ -766,7 +766,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Start the trading webhook server.')
     parser.add_argument('--port', type=int, default=8082, help='Port to run the server on.')
     args = parser.parse_args()
-    
+
     port = args.port
     logger.info(f"Starting Just.Trades. server on 0.0.0.0:{port}")
     app.run(host='0.0.0.0', port=port, debug=False)
