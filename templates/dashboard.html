@@ -62,23 +62,25 @@
             </div>
         </header>
         <div class="heatmap-container">
-            <!-- Custom heatmap widget with link to Yahoo Finance -->
-            <div class="heatmap-widget">
-                <div class="heatmap-placeholder">
-                    <div class="heatmap-icon">
-                        <span class="material-icons">bar_chart</span>
+            <!-- Interactive Stock Heatmap -->
+            <div class="heatmap-widget" id="heatmapWidget">
+                <div class="heatmap-loading" id="heatmapLoading">
+                    <span class="material-icons" style="font-size: 32px; opacity: 0.5;">bar_chart</span>
+                    <p>Loading stock data...</p>
+                </div>
+                <div class="heatmap-grid" id="heatmapGrid" style="display: none;"></div>
+                <div class="heatmap-legend">
+                    <div class="legend-item">
+                        <span class="legend-color" style="background: #ef4444;"></span>
+                        <span>Down</span>
                     </div>
-                    <h3>Stock Market Heatmap</h3>
-                    <p>View real-time stock performance and market trends</p>
-                    <a href="https://finance.yahoo.com/markets/stocks/most-active/heatmap/" target="_blank" class="btn btn-primary" rel="noopener noreferrer" style="margin-top: 1rem; display: inline-flex; align-items: center; gap: 8px;">
-                        <span class="material-icons" style="font-size: 18px;">open_in_new</span>
-                        Open Yahoo Finance Heatmap
-                    </a>
-                    <div class="heatmap-info">
-                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 1.5rem;">
-                            <span class="material-icons" style="font-size: 16px; vertical-align: middle;">info</span>
-                            Interactive heatmap shows most active stocks with color-coded performance
-                        </p>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background: #6b7280;"></span>
+                        <span>Neutral</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background: #22c55e;"></span>
+                        <span>Up</span>
                     </div>
                 </div>
             </div>
@@ -845,58 +847,101 @@
         position: relative;
     }
     .heatmap-widget {
-        background: linear-gradient(135deg, rgba(25, 184, 255, 0.1), rgba(45, 212, 191, 0.08));
+        background: var(--background-light);
         border-radius: 12px;
-        padding: 3rem 2rem;
+        padding: 1.5rem;
         min-height: 400px;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid rgba(25, 184, 255, 0.2);
+        flex-direction: column;
+        border: 1px solid rgba(148, 163, 184, 0.1);
     }
-    .heatmap-placeholder {
-        text-align: center;
-        max-width: 500px;
-    }
-    .heatmap-icon {
-        width: 80px;
-        height: 80px;
-        margin: 0 auto 1.5rem;
-        background: linear-gradient(135deg, rgba(25, 184, 255, 0.3), rgba(45, 212, 191, 0.25));
-        border-radius: 20px;
+    .heatmap-loading {
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        border: 1px solid rgba(25, 184, 255, 0.3);
+        min-height: 300px;
+        gap: 1rem;
+        color: var(--text-muted);
     }
-    .heatmap-icon .material-icons {
-        font-size: 48px;
-        color: var(--primary-color);
+    .heatmap-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
     }
-    .heatmap-placeholder h3 {
-        font-size: 1.5rem;
+    .heatmap-stock {
+        background: var(--background-dark);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 8px;
+        padding: 0.75rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .heatmap-stock:hover {
+        transform: translateY(-2px);
+        border-color: rgba(25, 184, 255, 0.3);
+        box-shadow: 0 4px 12px rgba(25, 184, 255, 0.2);
+    }
+    .heatmap-stock.positive {
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(34, 197, 94, 0.08));
+        border-color: rgba(34, 197, 94, 0.3);
+    }
+    .heatmap-stock.negative {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.08));
+        border-color: rgba(239, 68, 68, 0.3);
+    }
+    .heatmap-stock.neutral {
+        background: rgba(107, 114, 128, 0.1);
+        border-color: rgba(107, 114, 128, 0.2);
+    }
+    .heatmap-stock-symbol {
         font-weight: 600;
+        font-size: 0.9rem;
         color: var(--text-light);
-        margin: 0 0 0.75rem 0;
+        margin-bottom: 0.25rem;
         letter-spacing: 0.05em;
     }
-    .heatmap-placeholder p {
-        font-size: 1rem;
+    .heatmap-stock-price {
+        font-size: 0.75rem;
         color: var(--text-muted);
-        margin: 0 0 1.5rem 0;
-        line-height: 1.6;
+        margin-bottom: 0.25rem;
     }
-    .heatmap-info {
-        margin-top: 1.5rem;
-        padding-top: 1.5rem;
+    .heatmap-stock-change {
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+    .heatmap-stock-change.positive {
+        color: #22c55e;
+    }
+    .heatmap-stock-change.negative {
+        color: #ef4444;
+    }
+    .heatmap-stock-change.neutral {
+        color: var(--text-muted);
+    }
+    .heatmap-legend {
+        display: flex;
+        justify-content: center;
+        gap: 1.5rem;
+        padding-top: 1rem;
         border-top: 1px solid rgba(148, 163, 184, 0.1);
     }
-    .heatmap-info p {
+    .legend-item {
         display: flex;
         align-items: center;
-        justify-content: center;
-        gap: 8px;
-        margin: 0;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+    .legend-color {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        display: inline-block;
     }
     .onboarding-header {
         display: flex;
@@ -1195,18 +1240,24 @@
             min-height: 350px;
         }
         .heatmap-widget {
-            padding: 2rem 1.5rem;
+            padding: 1rem;
             min-height: 350px;
         }
-        .heatmap-icon {
-            width: 64px;
-            height: 64px;
+        .heatmap-grid {
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 0.5rem;
         }
-        .heatmap-icon .material-icons {
-            font-size: 36px;
+        .heatmap-stock {
+            padding: 0.5rem;
         }
-        .heatmap-placeholder h3 {
-            font-size: 1.25rem;
+        .heatmap-stock-symbol {
+            font-size: 0.8rem;
+        }
+        .heatmap-stock-price {
+            font-size: 0.7rem;
+        }
+        .heatmap-stock-change {
+            font-size: 0.75rem;
         }
         .filter-header {
             flex-direction: column;
@@ -1730,10 +1781,61 @@
         }
     }
 
+    // Load Stock Heatmap
+    async function loadStockHeatmap() {
+        const heatmapGrid = document.getElementById('heatmapGrid');
+        const heatmapLoading = document.getElementById('heatmapLoading');
+        
+        try {
+            const response = await fetch('/api/stock-heatmap');
+            const data = await response.json();
+            
+            if (data.stocks && data.stocks.length > 0) {
+                heatmapGrid.innerHTML = '';
+                
+                data.stocks.forEach(stock => {
+                    const stockEl = document.createElement('div');
+                    stockEl.className = 'heatmap-stock';
+                    
+                    // Determine color class based on change
+                    if (stock.change > 0.1) {
+                        stockEl.classList.add('positive');
+                    } else if (stock.change < -0.1) {
+                        stockEl.classList.add('negative');
+                    } else {
+                        stockEl.classList.add('neutral');
+                    }
+                    
+                    const changeClass = stock.change > 0.1 ? 'positive' : (stock.change < -0.1 ? 'negative' : 'neutral');
+                    
+                    stockEl.innerHTML = `
+                        <div class="heatmap-stock-symbol">${stock.symbol}</div>
+                        <div class="heatmap-stock-price">$${stock.price.toFixed(2)}</div>
+                        <div class="heatmap-stock-change ${changeClass}">${stock.change_pct}</div>
+                    `;
+                    
+                    // Add click to open Yahoo Finance
+                    stockEl.addEventListener('click', () => {
+                        window.open(`https://finance.yahoo.com/quote/${stock.symbol}`, '_blank');
+                    });
+                    
+                    heatmapGrid.appendChild(stockEl);
+                });
+                
+                heatmapLoading.style.display = 'none';
+                heatmapGrid.style.display = 'grid';
+            }
+        } catch (error) {
+            console.error('Error loading heatmap:', error);
+            heatmapLoading.innerHTML = '<p style="color: var(--text-muted);">Unable to load heatmap data</p>';
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
         // Load ticker and news
         loadTickerData();
         loadNewsFeed();
+        loadStockHeatmap();
         
         loadFilterData().then(() => {
             // After filters load, load initial chart data (no filters = show all)
