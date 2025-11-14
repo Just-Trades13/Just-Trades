@@ -1,2 +1,2 @@
-web: python3 ultra_simple_server.py --port $PORT
+web: gunicorn --bind 0.0.0.0:$PORT ultra_simple_server:app
 

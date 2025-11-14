@@ -2,8 +2,8 @@ services:
   - type: web
     name: just-trades
     env: python
-    buildCommand: python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt
-    startCommand: python3 ultra_simple_server.py --port $PORT
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT ultra_simple_server:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0

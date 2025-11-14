@@ -752,29 +752,21 @@ def delete_webhook(id):
     conn.close()
     return '', 204
 
+# Initialize database on import (for gunicorn)
+try:
+    init_db()
+except Exception as e:
+    logger.warning(f"Database initialization warning: {e}")
+
+# Configure logging for production
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 if __name__ == '__main__':
-    # I will add argument parsing to accept a port from the command line
+    # For local development
     parser = argparse.ArgumentParser(description='Start the trading webhook server.')
     parser.add_argument('--port', type=int, default=8082, help='Port to run the server on.')
     args = parser.parse_args()
-
-    try:
-        init_db()
-    except Exception as e:
-        logger.warning(f"Database initialization warning: {e}")
     
-    # Use the port from the arguments, or from environment variable (for Render)
-    import os
-    port = int(os.environ.get('PORT', args.port))
-    
-    # Configure logging for production
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    
+    port = args.port
     logger.info(f"Starting Just.Trades. server on 0.0.0.0:{port}")
-    try:
-        app.run(host='0.0.0.0', port=port, debug=False)
-    except Exception as e:
-        logger.error(f"Failed to start server: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+    app.run(host='0.0.0.0', port=port, debug=False)
