@@ -9,6 +9,14 @@ import requests
 from flask import Flask, request, jsonify, render_template, redirect, url_for
 from datetime import datetime
 
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, skip (optional dependency)
+    pass
+
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 

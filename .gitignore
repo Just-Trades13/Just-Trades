@@ -24,6 +24,9 @@ venv/
 env/
 .venv
 
+# Environment variables (contains API keys - DO NOT COMMIT)
+.env
+
 # IDE
 .vscode/
 .idea/
