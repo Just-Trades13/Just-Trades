@@ -50,3 +50,18 @@ phantom_scraper/venv/
 phantom_scraper/trademanagergroup.com/
 phantom_scraper/trademanagergroup_full/
 
+
+# Node modules
+node_modules/
+phantom_scraper/trade_manager_replica/frontend/node_modules/
+
+# Large media files
+*.gif
+*.mp4
+*.mov
+
+# Database files (already in gitignore but ensure they're not tracked)
+*.db
+*.sqlite
+*.sqlite3
+
