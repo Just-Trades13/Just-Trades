@@ -728,6 +728,15 @@ def api_stock_heatmap():
                             meta = result['meta']
                             current_price = meta.get('regularMarketPrice', 0)
                             previous_close = meta.get('previousClose', current_price)
+                            # Try to get real market cap from Yahoo Finance
+                            real_market_cap = meta.get('marketCap', None)
+                            if real_market_cap:
+                                # Convert to billions for easier comparison
+                                market_cap_billions = real_market_cap / 1_000_000_000
+                            else:
+                                # Fallback to provided market cap
+                                market_cap_billions = market_cap
+                            
                             if previous_close > 0:
                                 change_pct = ((current_price - previous_close) / previous_close) * 100
                                 heatmap_data.append({
@@ -735,7 +744,7 @@ def api_stock_heatmap():
                                     'price': round(current_price, 2),
                                     'change': round(change_pct, 2),
                                     'change_pct': f"{'+' if change_pct >= 0 else ''}{round(change_pct, 2)}%",
-                                    'market_cap': market_cap  # For treemap sizing
+                                    'market_cap': market_cap_billions  # Real market cap in billions
                                 })
             except Exception as e:
                 logger.warning(f"Error fetching data for {symbol}: {e}")
