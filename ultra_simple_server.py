@@ -1,7 +1,10 @@
+#!/usr/bin/env python3
 import sqlite3
 import logging
 import asyncio
 import argparse
+import sys
+import os
 from flask import Flask, request, jsonify, render_template, redirect, url_for
 from datetime import datetime
 
@@ -756,7 +759,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     try:
-        init_db()
+    init_db()
     except Exception as e:
         logger.warning(f"Database initialization warning: {e}")
     
