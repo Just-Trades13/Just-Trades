@@ -30,3 +30,23 @@ env/
 *.swp
 *.swo
 
+
+# Large backup files
+.frolic-backup-*.json
+.frolic-session.json
+
+# HAR files
+*.har
+
+# Virtual environments
+venv/
+phantom_scraper/venv/
+
+# Large binary files
+*.so
+*.dylib
+
+# Downloaded sites
+phantom_scraper/trademanagergroup.com/
+phantom_scraper/trademanagergroup_full/
+
