@@ -5,6 +5,7 @@ import asyncio
 import argparse
 import sys
 import os
+import requests
 from flask import Flask, request, jsonify, render_template, redirect, url_for
 from datetime import datetime
 
@@ -689,7 +690,6 @@ def api_market_data():
 def api_stock_heatmap():
     """Get stock heatmap data from Yahoo Finance"""
     try:
-        import requests
         # Most active tech stocks
         symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'NFLX', 'AMD', 'INTC',
                    'ORCL', 'CRM', 'ADBE', 'CSCO', 'AVGO', 'QCOM', 'TXN', 'MU', 'AMAT', 'LRCX',
