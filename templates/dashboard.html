@@ -852,8 +852,8 @@
     }
     .heatmap-widget {
         background: var(--background-light);
-        border-radius: 12px;
-        padding: 1.5rem;
+        border-radius: 8px;
+        padding: 1rem;
         min-height: 400px;
         display: flex;
         flex-direction: column;
@@ -870,31 +870,33 @@
     }
     .heatmap-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-        gap: 0.5rem;
-        margin-bottom: 1.5rem;
+        grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+        gap: 0.25rem;
+        margin-bottom: 1rem;
         padding: 0.5rem;
+        max-width: 100%;
     }
     .heatmap-stock {
         aspect-ratio: 1;
-        border-radius: 6px;
-        padding: 0.5rem;
+        border-radius: 4px;
+        padding: 0.35rem 0.25rem;
         text-align: center;
         cursor: pointer;
-        transition: all 0.2s ease;
+        transition: all 0.15s ease;
         position: relative;
         overflow: hidden;
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        border: 1px solid rgba(0, 0, 0, 0.1);
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        border: none;
+        box-shadow: none;
+        min-height: 65px;
     }
     .heatmap-stock:hover {
-        transform: scale(1.05);
+        transform: scale(1.08);
         z-index: 10;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 4px 8px rgba(0, 0, 0, 0.4);
     }
     /* Color intensity based on percentage change */
     .heatmap-stock.positive-strong {
@@ -935,21 +937,25 @@
     }
     .heatmap-stock-symbol {
         font-weight: 700;
-        font-size: 0.85rem;
-        margin-bottom: 0.2rem;
-        letter-spacing: 0.05em;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        font-size: 0.75rem;
+        margin-bottom: 0.15rem;
+        letter-spacing: 0.02em;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        line-height: 1.1;
     }
     .heatmap-stock-price {
-        font-size: 0.7rem;
-        opacity: 0.9;
-        margin-bottom: 0.15rem;
+        font-size: 0.65rem;
+        opacity: 0.95;
+        margin-bottom: 0.1rem;
         font-weight: 500;
+        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+        line-height: 1;
     }
     .heatmap-stock-change {
         font-weight: 700;
-        font-size: 0.75rem;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        font-size: 0.7rem;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        line-height: 1;
     }
     .heatmap-legend {
         display: flex;
@@ -1285,21 +1291,24 @@
             min-height: 350px;
         }
         .heatmap-grid {
-            grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-            gap: 0.4rem;
-            padding: 0.4rem;
+            grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            gap: 0.2rem;
+            padding: 0.3rem;
         }
         .heatmap-stock {
-            padding: 0.4rem;
+            padding: 0.25rem 0.2rem;
+            min-height: 55px;
         }
         .heatmap-stock-symbol {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
+            margin-bottom: 0.1rem;
         }
         .heatmap-stock-price {
-            font-size: 0.65rem;
+            font-size: 0.6rem;
+            margin-bottom: 0.08rem;
         }
         .heatmap-stock-change {
-            font-size: 0.7rem;
+            font-size: 0.65rem;
         }
         .heatmap-legend {
             padding: 0.75rem;
