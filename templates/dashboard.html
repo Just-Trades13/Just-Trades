@@ -1990,12 +1990,20 @@
             heatmapLoading.innerHTML = '<p style="color: var(--text-muted);">Unable to load heatmap data</p>';
         }
     }
+    
+    // Auto-refresh heatmap every 30 seconds during market hours
+    function startHeatmapAutoRefresh() {
+        setInterval(() => {
+            loadStockHeatmap();
+        }, 30000); // Refresh every 30 seconds
+    }
 
     document.addEventListener('DOMContentLoaded', function() {
         // Load ticker and news
         loadTickerData();
         loadNewsFeed();
         loadStockHeatmap();
+        startHeatmapAutoRefresh(); // Auto-refresh every 30 seconds
         
         loadFilterData().then(() => {
             // After filters load, load initial chart data (no filters = show all)
