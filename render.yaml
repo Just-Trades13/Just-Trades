@@ -3,7 +3,7 @@ services:
     name: just-trades
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python3 ultra_simple_server.py --port $PORT
+    startCommand: python ultra_simple_server.py --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
