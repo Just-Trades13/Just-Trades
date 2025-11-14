@@ -1,16 +1,7 @@
-# Just.Trades. Backend Dependencies
-
-# Web Framework
 Flask==3.0.0
 gunicorn==21.2.0
-
-# Database (optional - app handles missing gracefully)
 SQLAlchemy==2.0.23
 alembic==1.13.1
-
-# HTTP Client
 requests==2.31.0
-
-# Utilities
 feedparser==6.0.10
 
