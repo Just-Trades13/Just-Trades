@@ -1,0 +1,241 @@
+{% extends "layout.html" %}
+
+{% block title %}Select Broker - Just.Trades.{% endblock %}
+
+{% block page_title %}SELECT BROKER{% endblock %}
+
+{% block content %}
+<div class="broker-selection-container">
+    <div class="broker-selection-header">
+        <h2>Select Your Broker</h2>
+        <p>Choose the trading platform you want to connect</p>
+    </div>
+    
+    <div class="brokers-grid" id="brokers-grid">
+        <!-- Broker cards will be dynamically inserted here -->
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .broker-selection-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+    
+    .broker-selection-header {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+    
+    .broker-selection-header h2 {
+        font-size: 2.5rem;
+        margin: 0 0 0.5rem 0;
+        color: var(--text-light);
+    }
+    
+    .broker-selection-header p {
+        color: var(--text-muted);
+        font-size: 1.1rem;
+    }
+    
+    .brokers-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 2rem;
+    }
+    
+    .broker-card {
+        background: var(--background-light);
+        border: 2px solid var(--border-color);
+        border-radius: 12px;
+        padding: 2rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .broker-card:hover {
+        border-color: var(--green);
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(25, 184, 255, 0.2);
+    }
+    
+    .broker-card.active {
+        border-color: var(--green);
+        background: rgba(25, 184, 255, 0.1);
+    }
+    
+    .broker-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        color: var(--green);
+    }
+    
+    .broker-name {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: var(--text-light);
+    }
+    
+    .broker-description {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+    }
+    
+    .broker-status {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    
+    .broker-status.available {
+        background: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+    }
+    
+    .broker-status.coming-soon {
+        background: rgba(156, 163, 175, 0.2);
+        color: #9ca3af;
+    }
+    
+    .broker-card.coming-soon {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    
+    .broker-card.coming-soon:hover {
+        transform: none;
+        border-color: var(--border-color);
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const brokers = [
+        {
+            id: 'tradovate',
+            name: 'Tradovate',
+            description: 'Professional futures trading platform',
+            icon: 'trending_up',
+            status: 'available',
+            comingSoon: false
+        },
+        {
+            id: 'projectx',
+            name: 'Project X',
+            description: 'Advanced trading platform',
+            icon: 'rocket_launch',
+            status: 'coming-soon',
+            comingSoon: true
+        },
+        {
+            id: 'rithmic',
+            name: 'Rithmic',
+            description: 'Professional trading infrastructure',
+            icon: 'speed',
+            status: 'coming-soon',
+            comingSoon: true
+        },
+        {
+            id: 'ninjatrader',
+            name: 'NinjaTrader',
+            description: 'Futures and forex trading',
+            icon: 'show_chart',
+            status: 'coming-soon',
+            comingSoon: true
+        }
+    ];
+    
+    function displayBrokers() {
+        const grid = document.getElementById('brokers-grid');
+        // Get account_id from URL path: /accounts/<id>/broker-selection
+        const pathParts = window.location.pathname.split('/');
+        const accountId = pathParts[2] || new URLSearchParams(window.location.search).get('account_id');
+        
+        if (!accountId) {
+            alert('Account ID missing. Redirecting to accounts page.');
+            window.location.href = '/accounts';
+            return;
+        }
+        
+        grid.innerHTML = '';
+        
+        brokers.forEach(broker => {
+            const card = document.createElement('div');
+            card.className = `broker-card ${broker.comingSoon ? 'coming-soon' : ''}`;
+            
+            const statusClass = broker.status === 'available' ? 'available' : 'coming-soon';
+            const statusText = broker.status === 'available' ? 'Available' : 'Coming Soon';
+            
+            card.innerHTML = `
+                <div class="broker-icon">
+                    <i class="material-icons">${broker.icon}</i>
+                </div>
+                <div class="broker-name">${broker.name}</div>
+                <div class="broker-description">${broker.description}</div>
+                <div class="broker-status ${statusClass}">${statusText}</div>
+            `;
+            
+            if (!broker.comingSoon) {
+                card.addEventListener('click', () => {
+                    selectBroker(accountId, broker.id, broker.name);
+                });
+            } else {
+                card.addEventListener('click', () => {
+                    alert(`${broker.name} integration is coming soon!`);
+                });
+            }
+            
+            grid.appendChild(card);
+        });
+    }
+    
+    function selectBroker(accountId, brokerId, brokerName) {
+        // Update account with selected broker
+        fetch(`/api/accounts/${accountId}/set-broker`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                broker: brokerName,
+                broker_id: brokerId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Redirect to appropriate connection flow based on broker
+                if (brokerId === 'tradovate') {
+                    window.location.href = `/api/accounts/${accountId}/connect`;
+                } else {
+                    // For other brokers, redirect to their specific connection page
+                    alert(`${brokerName} connection flow coming soon!`);
+                    window.location.href = '/accounts';
+                }
+            } else {
+                alert('Error setting broker: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error selecting broker:', error);
+            alert('Error selecting broker. Please try again.');
+        });
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        displayBrokers();
+    });
+</script>
+{% endblock %}
+

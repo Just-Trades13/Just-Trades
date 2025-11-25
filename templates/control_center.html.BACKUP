@@ -1,0 +1,868 @@
+{% extends "layout.html" %}
+{% block title %}Control Center - Just.Trades.{% endblock %}
+{% block page_title %}CONTROL CENTER{% endblock %}
+{% block content %}
+<div class="control-center">
+    <section class="manual-trader">
+        <header>
+            <h1>Manual Trader</h1>
+            <span class="badge">RECORDER</span>
+        </header>
+        <div class="manual-form">
+            <label>
+                <span>Account</span>
+                <div class="select-shell">
+                    <select id="manualAccountSelect" required>
+                        <option value="">Select account...</option>
+                        <option value="1:26029294">Mark - DEMO4419847-2 (Demo)</option>
+                        <option value="1:544727">Mark - 1381296 (Live)</option>
+                    </select>
+                    <span class="material-icons">expand_more</span>
+                </div>
+            </label>
+            <label>
+                <span>Strategy</span>
+                <div class="select-shell">
+                    <select id="manualStrategySelect" required>
+                        <option value="">Select strategy...</option>
+                    </select>
+                    <span class="material-icons">expand_more</span>
+                </div>
+            </label>
+            <label>
+                <span>Ticker</span>
+                <div class="select-shell">
+                    <select id="manualTickerSelect">
+                        <option value="">Select or type a ticker</option>
+                        <option value="ES1!">ES1!</option>
+                        <option value="NQ1!">NQ1!</option>
+                        <option value="MES1!">MES1!</option>
+                        <option value="MNQ1!">MNQ1!</option>
+                    </select>
+                    <span class="material-icons">expand_more</span>
+                </div>
+            </label>
+            <label>
+                <span>Position Size (Qty)</span>
+                <input type="number" id="manualPositionSize" value="1" min="1" step="1">
+            </label>
+            <div class="manual-actions">
+                <button class="btn btn-sell" type="button" id="manualSellBtn">SELL</button>
+                <button class="btn btn-close" type="button" id="manualCloseBtn">CLOSE</button>
+                <button class="btn btn-buy" type="button" id="manualBuyBtn">BUY</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="live-panels">
+        <article class="live-trading">
+            <header>
+                <h2>Live Trading Panel</h2>
+                <div class="panel-actions">
+                    <button class="btn btn-danger">Close All</button>
+                    <button class="btn btn-warning">Clear All</button>
+                    <button class="btn btn-outline">Disable All Strats</button>
+                </div>
+            </header>
+            <table>
+                <thead>
+                    <tr>
+                        <th>STRATEGY</th>
+                        <th>ENABLES</th>
+                        <th>PROFIT / LOSS</th>
+                        <th>ACTIONS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in live_rows %}
+                    <tr>
+                        <td><a href="/recorders/{{ row.id }}">{{ row.name }}</a></td>
+                        <td class="toggle-cell">
+                            <span>ALL / ALL</span>
+                            <label class="switch">
+                                <input type="checkbox" {% if row.enabled %}checked{% endif %}>
+                                <span class="slider"></span>
+                            </label>
+                        </td>
+                        <td class="pl-cell {% if row.pnl >= 0 %}positive{% else %}negative{% endif %}"> {{ row.pnl | round(2) }} </td>
+                        <td class="action-cell">
+                            <button class="btn btn-outline btn-small">Close</button>
+                            <button class="btn btn-outline btn-small">Clear</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <!-- Positions Section -->
+            <div class="positions-section" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(148,163,184,0.12);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 style="margin: 0; font-size: 1rem; font-weight: 600;">Open Positions</h3>
+                    <button class="btn btn-outline btn-small" onclick="refreshPositions()" title="Refresh Positions">
+                        <i class="material-icons" style="font-size: 16px; vertical-align: middle;">refresh</i>
+                    </button>
+                </div>
+                <div id="positions-container" style="max-height: 300px; overflow-y: auto;">
+                    <div style="text-align: center; padding: 2rem; color: rgba(148,163,184,0.6);">
+                        <i class="material-icons" style="font-size: 24px; opacity: 0.5;">hourglass_empty</i>
+                        <p style="margin-top: 0.5rem;">Loading positions...</p>
+                    </div>
+                </div>
+            </div>
+        </article>
+
+        <article class="autotrader-logs">
+            <header>
+                <div>
+                    <h2>AutoTrader Logs</h2>
+                    <p>Realtime feed of recorder events</p>
+                </div>
+                <span class="status-dot connected">Connected</span>
+            </header>
+            <div class="log-feed">
+                {% for log in logs %}
+                <div class="log-entry">
+                    <span class="log-type {{ log.type }}">[{{ log.type | upper }}]</span>
+                    <span class="log-content">{{ log.message }}</span>
+                    <span class="log-time">{{ log.time }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+    </section>
+</div>
+{% endblock %}
+{% block styles %}
+<style>
+    .control-center { display: grid; gap: 1.5rem; }
+    .manual-trader { background: rgba(11,18,33,0.92); border-radius: 18px; border: 1px solid rgba(59,130,246,0.25); padding: 1.75rem; display: grid; gap: 1.25rem; }
+    .manual-trader header { display: flex; align-items: center; gap: 0.75rem; }
+    .manual-trader h1 { margin: 0; font-size: 1.5rem; }
+    .badge { padding: 0.25rem 0.75rem; border-radius: 999px; background: rgba(59,130,246,0.25); color: #bfdbfe; font-size: 0.75rem; letter-spacing: 0.1em; }
+    .manual-form { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); align-items: end; }
+    label { display: grid; gap: 0.35rem; color: var(--text-muted); font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    input, select { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.25); border-radius: 12px; color: #e2e8f0; padding: 0.6rem 0.75rem; font-size: 0.95rem; }
+    .select-shell { position: relative; }
+    .select-shell select { width: 100%; appearance: none; }
+    .select-shell .material-icons { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 1rem; pointer-events: none; }
+    .manual-actions { display: grid; grid-template-columns: repeat(auto-fit,minmax(100px,1fr)); gap: 0.75rem; }
+    .btn { border: none; border-radius: 12px; padding: 0.7rem 1.4rem; font-weight: 600; letter-spacing: 0.08em; cursor: pointer; text-transform: uppercase; }
+    .btn-sell { background: linear-gradient(135deg,#f87171,#ef4444); color: #0b1120; }
+    .btn-buy { background: linear-gradient(135deg,#34d399,#10b981); color: #0b1120; }
+    
+    /* Toast Notification Styles */
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .toast {
+        background: rgba(11, 18, 33, 0.95);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        color: #e2e8f0;
+        font-size: 0.875rem;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        animation: slideIn 0.3s ease-out;
+        min-width: 250px;
+        max-width: 400px;
+    }
+    
+    .toast.success {
+        border-color: rgba(16, 185, 129, 0.5);
+        background: rgba(6, 78, 59, 0.9);
+    }
+    
+    .toast.error {
+        border-color: rgba(239, 68, 68, 0.5);
+        background: rgba(127, 29, 29, 0.9);
+    }
+    
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes slideOut {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+    }
+    
+    .toast.fade-out {
+        animation: slideOut 0.3s ease-out forwards;
+    }
+    .btn-close { background: linear-gradient(135deg,#fb923c,#f97316); color: #0b1120; }
+
+    .live-panels { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; }
+    .live-trading { background: rgba(7,12,23,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); overflow: hidden; display: grid; }
+    .live-trading header { background: rgba(15,23,42,0.75); padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .live-trading h2 { margin: 0; font-size: 1.2rem; }
+    .panel-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .btn-danger { background: rgba(239,68,68,0.85); color: #0b1120; }
+    .btn-warning { background: rgba(234,179,8,0.85); color: #0b1120; }
+    .btn-outline { background: rgba(15,23,42,0.6); color: #e2e8f0; border: 1px solid rgba(148,163,184,0.2); }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { text-align: left; padding: 0.85rem 1.25rem; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: #94a3b8; border-bottom: 1px solid rgba(148,163,184,0.12); }
+    tbody td { padding: 1rem 1.25rem; border-bottom: 1px solid rgba(148,163,184,0.08); color: #e2e8f0; }
+    tbody tr:last-child td { border-bottom: none; }
+    .toggle-cell { display: flex; align-items: center; gap: 0.75rem; }
+    .switch { position: relative; display: inline-block; width: 48px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; background: rgba(148,163,184,0.3); border-radius: 24px; transition: 0.2s; }
+    .slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 4px; bottom: 3px; background: #0b1120; border-radius: 50%; transition: 0.2s; }
+    .switch input:checked + .slider { background: rgba(16,185,129,0.7); }
+    .switch input:checked + .slider:before { transform: translateX(22px); }
+    .pl-cell { font-weight: 600; }
+    .pl-cell.positive { color: #34d399; }
+    .pl-cell.negative { color: #f87171; }
+    .action-cell { display: flex; gap: 0.5rem; }
+    .btn-small { padding: 0.45rem 0.85rem; font-size: 0.75rem; }
+
+    .autotrader-logs { background: rgba(11,18,33,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); display: grid; grid-template-rows: auto 1fr; }
+    .autotrader-logs header { padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; }
+    .autotrader-logs h2 { margin: 0; font-size: 1.2rem; }
+    .autotrader-logs p { margin: 0; color: var(--text-muted); }
+    .status-dot { font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.3rem 0.75rem; border-radius: 999px; }
+    .status-dot.connected { background: rgba(52,211,153,0.25); color: #bbf7d0; }
+    .log-feed { padding: 0 1.25rem 1.25rem; overflow-y: auto; max-height: 480px; display: grid; gap: 0.75rem; }
+    .log-entry { background: rgba(15,23,42,0.6); border: 1px solid rgba(59,130,246,0.2); border-radius: 12px; padding: 0.75rem; display: grid; gap: 0.35rem; font-size: 0.85rem; }
+    .log-type { font-weight: 600; }
+    .log-type.open { color: #34d399; }
+    .log-type.close { color: #fb923c; }
+    .log-content { color: #e2e8f0; }
+    .log-time { color: var(--text-muted); font-size: 0.75rem; }
+
+    @media (max-width: 1100px) {
+        .live-panels { grid-template-columns: 1fr; }
+    }
+}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+    // Load live strategies with real-time P&L
+    async function loadLiveStrategies() {
+        try {
+            const response = await fetch('/api/live-strategies');
+            const data = await response.json();
+            
+            if (data.success) {
+                updateLiveStrategiesTable(data.strategies || []);
+            } else {
+                console.error('Error loading live strategies:', data.error);
+            }
+        } catch (error) {
+            console.error('Error loading live strategies:', error);
+        }
+    }
+    
+    function updateLiveStrategiesTable(strategies) {
+        const tbody = document.querySelector('.live-trading tbody');
+        if (!tbody) return;
+        
+        // Clear existing rows (except header)
+        tbody.innerHTML = '';
+        
+        if (strategies.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; color: rgba(148,163,184,0.6);">No active strategies</td></tr>';
+            return;
+        }
+        
+        strategies.forEach(strategy => {
+            const row = document.createElement('tr');
+            const pnl = strategy.pnl || 0;
+            const pnlClass = pnl >= 0 ? 'positive' : 'negative';
+            const pnlSign = pnl >= 0 ? '+' : '';
+            
+            row.innerHTML = `
+                <td><a href="/traders/${strategy.id}">${strategy.name}</a></td>
+                <td class="toggle-cell">
+                    <span>ALL / ALL</span>
+                    <label class="switch">
+                        <input type="checkbox" ${strategy.enabled ? 'checked' : ''} 
+                               onchange="toggleTrader(${strategy.id}, this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </td>
+                <td class="pl-cell ${pnlClass}">${pnlSign}$${pnl.toFixed(2)}</td>
+                <td class="action-cell">
+                    <button class="btn btn-outline btn-small" onclick="closeStrategy('${strategy.name}', ${strategy.account_id})">Close</button>
+                    <button class="btn btn-outline btn-small" onclick="clearStrategy('${strategy.name}', ${strategy.account_id})">Clear</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    async function toggleTrader(traderId, enabled) {
+        try {
+            const response = await fetch(`/api/traders/${traderId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    enabled: enabled
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                console.log(`Trader ${traderId} ${enabled ? 'enabled' : 'disabled'}`);
+                // Refresh to update P&L
+                loadLiveStrategies();
+            } else {
+                alert(`Error: ${data.error || 'Failed to toggle trader'}`);
+                // Revert checkbox
+                loadLiveStrategies();
+            }
+        } catch (error) {
+            console.error('Error toggling trader:', error);
+            alert('Error toggling trader');
+            // Revert checkbox
+            loadLiveStrategies();
+        }
+    }
+    
+    async function closeStrategy(strategyName, accountId) {
+        if (!confirm(`Close all positions for ${strategyName}?`)) {
+            return;
+        }
+        // Use manual trade endpoint to close positions for this account
+        try {
+            const response = await fetch('/api/manual-trade', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    account_subaccount: `${accountId}:${accountId}`,
+                    symbol: '',  // Close all positions
+                    side: 'Clear',
+                    quantity: 0
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                alert(`Positions closed: ${data.message || 'Success'}`);
+                loadLiveStrategies();
+            } else {
+                alert(`Error: ${data.error || 'Failed to close positions'}`);
+            }
+        } catch (error) {
+            console.error('Error closing strategy:', error);
+            alert('Error closing positions');
+        }
+    }
+    
+    async function clearStrategy(strategyName, accountId) {
+        if (!confirm(`Clear all positions and orders for ${strategyName}?`)) {
+            return;
+        }
+        // Use manual trade endpoint to clear all
+        try {
+            const response = await fetch('/api/manual-trade', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    account_subaccount: `${accountId}:${accountId}`,
+                    symbol: '',
+                    side: 'Clear',
+                    quantity: 0
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                alert(`Cleared: ${data.message || 'Success'}`);
+                loadLiveStrategies();
+            } else {
+                alert(`Error: ${data.error || 'Failed to clear'}`);
+            }
+        } catch (error) {
+            console.error('Error clearing strategy:', error);
+            alert('Error clearing positions');
+        }
+    }
+    
+    document.addEventListener('DOMContentLoaded', function () {
+        // Auto-scroll log feed
+        document.querySelectorAll('.log-feed').forEach(function(feed) {
+            feed.scrollTop = feed.scrollHeight;
+        });
+        
+        // Load live strategies with real-time P&L
+        loadLiveStrategies();
+        // Auto-refresh disabled to prevent rate limiting - user can manually refresh
+        // setInterval(loadLiveStrategies, 30000);
+        
+        // Load accounts for Manual Trader
+        loadAccountsForManualTrader();
+        
+        // Load strategies when account is selected
+        const accountSelect = document.getElementById('manualAccountSelect');
+        if (accountSelect) {
+            accountSelect.addEventListener('change', function() {
+                const selectedValue = this.value;
+                if (selectedValue) {
+                    // Parse account:subaccount format
+                    const [accountId, subaccountId] = selectedValue.split(':');
+                    loadStrategiesForManualTrader(accountId, subaccountId);
+                } else {
+                    // Clear strategies if no account selected
+                    const strategySelect = document.getElementById('manualStrategySelect');
+                    if (strategySelect) {
+                        strategySelect.innerHTML = '<option value="">Select strategy...</option>';
+                    }
+                }
+            });
+        }
+        
+        // Manual Trader button handlers
+        const buyBtn = document.getElementById('manualBuyBtn');
+        const sellBtn = document.getElementById('manualSellBtn');
+        const closeBtn = document.getElementById('manualCloseBtn');
+        
+        console.log('Setting up button handlers:', { buyBtn: !!buyBtn, sellBtn: !!sellBtn, closeBtn: !!closeBtn });
+        
+        if (buyBtn) {
+            buyBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('Buy button clicked');
+                placeManualTrade('Buy');
+            });
+        } else {
+            console.error('Buy button not found!');
+        }
+        
+        if (sellBtn) {
+            sellBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('Sell button clicked');
+                placeManualTrade('Sell');
+            });
+        } else {
+            console.error('Sell button not found!');
+        }
+        
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('Close button clicked');
+                placeManualTrade('Close');
+            });
+        } else {
+            console.error('Close button not found!');
+        }
+    });
+    
+    function loadAccountsForManualTrader() {
+        // Keep hardcoded accounts for now - dynamic loading can be added later
+        // The accounts are already in the HTML, so this function is not needed
+        // but keeping it here in case we want to refresh accounts later
+        console.log('loadAccountsForManualTrader called - accounts are hardcoded in HTML');
+    }
+    
+    async function loadStrategiesForManualTrader(accountId, subaccountId) {
+        try {
+            const response = await fetch('/api/strategies');
+            const data = await response.json();
+            
+            const strategySelect = document.getElementById('manualStrategySelect');
+            if (!strategySelect || !data.success || !data.strategies) {
+                return;
+            }
+            
+            // Filter to show strategies linked to this account (traders)
+            // Check both account_id and account_routing
+            const accountStrategies = data.strategies.filter(strategy => {
+                // Check if strategy is linked to this main account
+                if (strategy.account_id == accountId) {
+                    return true;
+                }
+                
+                // Check account_routing for this account/subaccount combination
+                if (strategy.account_routing) {
+                    try {
+                        const routing = JSON.parse(strategy.account_routing || '[]');
+                        return routing.some(route => {
+                            if (route.account_id == accountId) {
+                                // If subaccountId is specified, check if it matches
+                                if (subaccountId) {
+                                    return route.subaccount_id == subaccountId || route.subaccount_id === subaccountId;
+                                }
+                                // If no subaccount specified, show all strategies for this account
+                                return true;
+                            }
+                            return false;
+                        });
+                    } catch (e) {
+                        return false;
+                    }
+                }
+                
+                return false;
+            });
+            
+            // Clear existing options
+            strategySelect.innerHTML = '<option value="">Select strategy...</option>';
+            
+            // Add strategies for this account
+            accountStrategies.forEach(strategy => {
+                const option = document.createElement('option');
+                option.value = strategy.id;
+                option.textContent = strategy.name;
+                strategySelect.appendChild(option);
+            });
+            
+            // If no strategies found, show message
+            if (accountStrategies.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No strategies available for this account';
+                option.disabled = true;
+                strategySelect.appendChild(option);
+            }
+        } catch (error) {
+            console.error('Error loading strategies for manual trader:', error);
+        }
+    }
+    
+    // Manual Trader button handlers - moved to main DOMContentLoaded
+    // (handlers are set up in the main DOMContentLoaded listener above)
+    
+    async function placeManualTrade(side) {
+        console.log('placeManualTrade called with side:', side);
+        try {
+            // Get form values
+            const accountSelect = document.getElementById('manualAccountSelect');
+            const strategySelect = document.getElementById('manualStrategySelect');
+            const tickerSelect = document.getElementById('manualTickerSelect');
+            const positionSizeInput = document.getElementById('manualPositionSize');
+            
+            console.log('Form values:', {
+                account: accountSelect?.value,
+                ticker: tickerSelect?.value,
+                quantity: positionSizeInput?.value
+            });
+            
+            if (!accountSelect || !accountSelect.value) {
+                console.error('No account selected');
+                showToast('Please select an account', 'error');
+                return;
+            }
+            
+            if (!tickerSelect || !tickerSelect.value) {
+                console.error('No ticker selected');
+                showToast('Please select or enter a ticker', 'error');
+                return;
+            }
+            
+            const quantity = parseInt(positionSizeInput?.value || '1');
+            if (isNaN(quantity) || quantity < 1) {
+                console.error('Invalid quantity:', quantity);
+                showToast('Please enter a valid position size (minimum 1)', 'error');
+                return;
+            }
+            
+            console.log('Sending trade request:', {
+                account_subaccount: accountSelect.value,
+                symbol: tickerSelect.value,
+                side: side,
+                quantity: quantity
+            });
+            
+            // Send trade request (async, non-blocking)
+            fetch('/api/manual-trade', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    account_subaccount: accountSelect.value,
+                    symbol: tickerSelect.value,
+                    side: side,
+                    quantity: quantity
+                })
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    showToast(`✅ ${data.message || `${side} order placed successfully`}`, 'success');
+                } else {
+                    showToast(`❌ Error: ${data.error || 'Failed to place order'}`, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error placing manual trade:', error);
+                showToast(`❌ Error: ${error.message || 'Failed to place order'}`, 'error');
+            });
+        } catch (error) {
+            console.error('Exception in placeManualTrade:', error);
+            showToast(`❌ Error: ${error.message || 'Failed to place order'}`, 'error');
+        }
+    }
+    
+    // Toast Notification System (non-blocking, auto-dismiss)
+    function showToast(message, type = 'info') {
+        // Create toast container if it doesn't exist
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.className = 'toast-container';
+            document.body.appendChild(container);
+        }
+        
+        // Create toast element
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        // Add to container
+        container.appendChild(toast);
+        
+        // Auto-dismiss after 2.5 seconds
+        setTimeout(() => {
+            toast.classList.add('fade-out');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300); // Wait for animation to complete
+        }, 2500);
+    }
+    
+    // Position Tracking Functions
+    let positionsRefreshInterval = null;
+    
+    async function fetchPositions() {
+        try {
+            const response = await fetch('/api/positions');
+            const data = await response.json();
+            
+            if (data.success) {
+                displayPositions(data.positions || []);
+            } else {
+                displayPositionsError(data.error || 'Failed to fetch positions');
+            }
+        } catch (error) {
+            console.error('Error fetching positions:', error);
+            displayPositionsError('Error loading positions');
+        }
+    }
+    
+    function displayPositions(positions) {
+        const container = document.getElementById('positions-container');
+        
+        console.log('Displaying positions:', positions);
+        
+        if (!positions || positions.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 2rem; color: rgba(148,163,184,0.6);">
+                    <i class="material-icons" style="font-size: 24px; opacity: 0.5;">inbox</i>
+                    <p style="margin-top: 0.5rem;">No positions found</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Filter out positions with netPos = 0 (closed positions)
+        // Only show positions that are actually OPEN (quantity != 0)
+        const openPositions = positions.filter(pos => {
+            const qty = pos.quantity || pos.netPos || 0;
+            const isOpen = Math.abs(qty) > 0;
+            if (isOpen) {
+                console.log(`Open position: ${pos.symbol || 'N/A'}, qty=${qty}, pnl=${pos.pnl || 0}`);
+            }
+            return isOpen;
+        });
+        
+        console.log(`Open positions: ${openPositions.length} out of ${positions.length} total positions`);
+        
+        if (openPositions.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 2rem; color: rgba(148,163,184,0.6);">
+                    <i class="material-icons" style="font-size: 24px; opacity: 0.5;">inbox</i>
+                    <p style="margin-top: 0.5rem;">No open positions</p>
+                    <p style="margin-top: 0.25rem; font-size: 0.75rem; opacity: 0.7;">(${positions.length} closed positions)</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '<table style="width: 100%; border-collapse: collapse;">';
+        html += '<thead><tr style="border-bottom: 1px solid rgba(148,163,184,0.12);">';
+        html += '<th style="text-align: left; padding: 0.75rem; font-size: 0.75rem; text-transform: uppercase; color: rgba(148,163,184,0.8);">Symbol</th>';
+        html += '<th style="text-align: right; padding: 0.75rem; font-size: 0.75rem; text-transform: uppercase; color: rgba(148,163,184,0.8);">Qty</th>';
+        html += '<th style="text-align: center; padding: 0.75rem; font-size: 0.75rem; text-transform: uppercase; color: rgba(148,163,184,0.8);">Side</th>';
+        html += '<th style="text-align: right; padding: 0.75rem; font-size: 0.75rem; text-transform: uppercase; color: rgba(148,163,184,0.8);">P&L</th>';
+        html += '<th style="text-align: center; padding: 0.75rem; font-size: 0.75rem; text-transform: uppercase; color: rgba(148,163,184,0.8);">Actions</th>';
+        html += '</tr></thead><tbody>';
+        
+        openPositions.forEach(pos => {
+            const symbol = pos.symbol || 'N/A';
+            const quantity = pos.quantity || pos.netPos || 0;
+            const side = quantity > 0 ? 'LONG' : 'SHORT';
+            const qtyDisplay = Math.abs(quantity);
+            const accountName = pos.account_name || 'Unknown';
+            const pnl = pos.pnl || pos.unrealizedPnl || pos.unrealizedPnL || 0;
+            const pnlClass = pnl >= 0 ? 'positive' : 'negative';
+            const pnlSign = pnl >= 0 ? '+' : '';
+            
+            html += '<tr style="border-bottom: 1px solid rgba(148,163,184,0.08);">';
+            html += `<td style="padding: 0.75rem;"><strong>${symbol}</strong></td>`;
+            html += `<td style="text-align: right; padding: 0.75rem;">${qtyDisplay}</td>`;
+            html += `<td style="text-align: center; padding: 0.75rem;"><span class="badge ${quantity > 0 ? '' : 'negative'}">${side}</span></td>`;
+            html += `<td style="text-align: right; padding: 0.75rem;" class="pl-cell ${pnlClass}">${pnlSign}$${pnl.toFixed(2)}</td>`;
+            html += `<td style="text-align: center; padding: 0.75rem;">
+                <button class="btn btn-outline btn-small" onclick="closePosition('${symbol}', ${pos.account_id}, '${pos.tradovate_account_id || pos.account_id}')" title="Close Position" style="margin-right: 0.25rem;">
+                    <i class="material-icons" style="font-size: 16px;">close</i> Close
+                </button>
+                <button class="btn btn-outline btn-small" onclick="clearPosition('${symbol}', ${pos.account_id}, '${pos.tradovate_account_id || pos.account_id}')" title="Clear Position">
+                    <i class="material-icons" style="font-size: 16px;">clear</i> Clear
+                </button>
+            </td>`;
+            html += '</tr>';
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+    
+    function displayPositionsError(error) {
+        const container = document.getElementById('positions-container');
+        container.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: #ef4444;">
+                <i class="material-icons" style="font-size: 24px; opacity: 0.5;">error</i>
+                <p style="margin-top: 0.5rem;">${error}</p>
+            </div>
+        `;
+    }
+    
+    function refreshPositions() {
+        const container = document.getElementById('positions-container');
+        container.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: rgba(148,163,184,0.6);">
+                <i class="material-icons" style="font-size: 24px; opacity: 0.5;">hourglass_empty</i>
+                <p style="margin-top: 0.5rem;">Refreshing...</p>
+            </div>
+        `;
+        fetchPositions();
+    }
+    
+    async function closePosition(symbol, accountId, tradovateAccountId) {
+        if (!confirm(`Close position for ${symbol}?`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/manual-trade', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    account_subaccount: `${accountId}:${tradovateAccountId}`,
+                    symbol: symbol,
+                    side: 'Close',
+                    quantity: 0
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(`Position closed: ${data.message || 'Success'}`, 'success');
+                refreshPositions();
+            } else {
+                showToast(`Error: ${data.error || 'Failed to close position'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error closing position:', error);
+            showToast('Error closing position', 'error');
+        }
+    }
+    
+    async function clearPosition(symbol, accountId, tradovateAccountId) {
+        if (!confirm(`Clear all positions and orders for ${symbol}?`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/manual-trade', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    account_subaccount: `${accountId}:${tradovateAccountId}`,
+                    symbol: symbol,
+                    side: 'Close',
+                    quantity: 0,
+                    clear_all: true
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(`Positions cleared: ${data.message || 'Success'}`, 'success');
+                refreshPositions();
+            } else {
+                showToast(`Error: ${data.error || 'Failed to clear positions'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error clearing position:', error);
+            showToast('Error clearing position', 'error');
+        }
+    }
+    
+    // DISABLED automatic position fetching to prevent rate limiting
+    // User must manually click refresh button to see positions
+    // This ensures manual trading always has rate limit available
+    // if (document.readyState === 'loading') {
+    //     document.addEventListener('DOMContentLoaded', function() {
+    //         fetchPositions(); // Load once on page load
+    //     });
+    // } else {
+    //     fetchPositions(); // Load once
+    // }
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (positionsRefreshInterval) {
+            clearInterval(positionsRefreshInterval);
+        }
+    });
+</script>
+{% endblock %}

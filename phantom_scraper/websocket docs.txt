@@ -1,0 +1,576 @@
+Below is a **Detailed Product Requirements Document (PRD)** for building the Position Tracker microservice in TypeScript (Node.js). The document covers system architecture, data flows, error handling, logging, and code samples separated into core modules for clarity. Each section is numbered and includes steps, edge cases, and instructions to add error checks, comments, and logging.
+
+---
+
+# 1. Overview
+
+The **Position Tracker** is a standalone microservice that:
+
+1. Connects to the **Tradovate WebSocket API** for **real-time** market data and order updates.  
+2. Processes updates and **maintains trading positions** (market, limit, and stop orders) with **risk management** (stop-loss, take-profit).  
+3. Persists relevant data to a **Supabase** database (or any PostgreSQL-compatible DB).  
+4. Provides robust **error handling**, **automatic reconnection**, and **logging**.
+
+---
+
+# 2. Architectural Components
+
+1. **WebSocketManager**  
+   - Maintains and **manages** the WebSocket connection to Tradovate.  
+   - Handles **automatic reconnection** logic.  
+   - Publishes incoming messages to internal event handlers.
+
+2. **OrderEventHandler**  
+   - Parses **order updates** from WebSocket messages.  
+   - Validates data and determines **which trades to save**.  
+   - Manages **duplicate prevention** logic and **order state transitions**.
+
+3. **PositionManager**  
+   - Maintains current position data (net position, average price, etc.).  
+   - Updates positions on fills, cancellations, rejections, and expirations.  
+   - Handles **stop-loss** and **take-profit** order states.
+
+4. **Database** (Supabase)  
+   - Stores **trades**, **positions**, **order states**, etc.  
+   - Implements **transactional** operations where needed (to maintain data integrity).  
+   - Retries on transient errors.
+
+5. **Logger**  
+   - Centralized logging (e.g., `winston`, `pino`, or console) with structured logs for debugging.  
+   - Logs connections, disconnections, order transitions, error details, etc.
+
+---
+
+# 3. Detailed Requirements & Design
+
+## 3.1 WebSocket Connection Management
+
+1. **Initialize Connection**  
+   1. Use a library like `ws` to connect to the Tradovate WebSocket endpoint (`wss://md.tradovateapi.com/v1/websocket`).  
+   2. On **open** event, log a successful connection.  
+   3. On **error** event, log the error and attempt reconnection if needed.
+
+2. **Message Parsing**  
+   1. All **incoming messages** should be parsed (JSON parse if needed).  
+   2. If the message is an **order update**, route it to the **OrderEventHandler**.  
+   3. If the message is a **position update** (or generic market data), route it to the **PositionManager**.
+
+3. **Automatic Reconnection**  
+   1. On **close** event, trigger a reconnection with an **exponential backoff**.  
+   2. Keep track of the number of reconnection attempts.  
+   3. Implement maximum retry limit, log errors, and notify the monitoring system if repeated failures occur.
+
+### Potential Edge Cases
+- **Connection refused**: The endpoint might be temporarily unavailable. Reconnection logic should handle it.  
+- **Authentication errors**: Validate credentials and handle token refresh if required.  
+- **Partial messages** or **unexpected format**: Log and discard or retry parsing carefully.
+
+---
+
+## 3.2 Order Event Handling
+
+1. **Order State Transitions**  
+   - Recognized states: `Working`, `Filled`, `Canceled`, `Rejected`, `Expired`.  
+   - Market orders may skip directly from `PendingNew` to `Filled`.
+
+2. **Duplicate Prevention**  
+   - Use a **unique key**: `${ordStatus}-${price}-${filledQuantity}-${quantity}` to detect if the same state has been processed.  
+   - Maintain a simple in-memory or Redis-based map of processed states to prevent repeated DB writes.
+
+3. **Validation Rules**  
+   1. **Market Orders**  
+      - `ordStatus` = `Filled` => Price must be > 0; `filledQuantity` > 0.  
+      - No `Working` state saved for market orders (optional design choice to avoid $0 trades).  
+   2. **Limit Orders**  
+      - `limitPrice` must be > 0.  
+      - If `Filled`, ensure `filledQuantity > 0` and `tradePrice <= limitPrice` (for buys) or `tradePrice >= limitPrice` (for sells).  
+   3. **Stop Orders** (Stop-Loss / Take-Profit)  
+      - `stopPrice` must be > 0.  
+      - If `Filled`, ensure `filledQuantity > 0` and a valid fill price.
+
+4. **Sample Logic**  
+   ```typescript
+   const shouldSaveTrade = 
+       (!existingOrder && orderDetails.ordStatus === 'Working') ||
+       (orderDetails.ordStatus === 'Filled' &&
+         orderDetails.filledQuantity > 0 &&
+         (!existingOrder || existingOrder.ordStatus !== 'Filled')) ||
+       (orderDetails.ordStatus === 'Canceled' &&
+         (!existingOrder || existingOrder.ordStatus !== 'Canceled')) ||
+       (orderDetails.ordStatus === 'Rejected' &&
+         (!existingOrder || existingOrder.ordStatus !== 'Rejected')) ||
+       (orderDetails.ordStatus === 'Expired' &&
+         (!existingOrder || existingOrder.ordStatus !== 'Expired'));
+
+   // For filled orders, ensure we have a valid price and filled quantity
+   const tradePrice =
+       orderDetails.ordStatus === 'Filled' ? (orderDetails.price || 0) : 0;
+   const tradeFilledQty =
+       orderDetails.ordStatus === 'Filled' ? (orderDetails.filledQuantity || 0) : 0;
+
+   if (orderDetails.ordStatus !== 'Filled' ||
+       (tradePrice > 0 && tradeFilledQty > 0)) {
+       // Save trade...
+   }
+   ```
+
+### Potential Edge Cases
+- **Partial fills**: If partial fills are supported, ensure the logic updates `filledQuantity` and does not create duplicate entries.  
+- **Price updates** for limit orders: If the limit price changes, ensure the new state is recorded.  
+- **Canceled** after partial fill: The record for the partially filled order should remain, and a `Canceled` record is also saved.
+
+---
+
+## 3.3 Position Tracking
+
+1. **Position Updates**  
+   - For each fill, update the **net position** in the relevant contract/account.  
+   - Track **average price** if needed for PnL calculations.
+
+2. **Risk Management Orders**  
+   - **Stop-Loss**: If a parent order is **Filled**, the associated stop-loss transitions to `Working`.  
+   - **Take-Profit**: If a parent order is **Filled**, the associated take-profit transitions to `Working`.  
+   - On fill of stop-loss or take-profit, update net position accordingly.
+
+3. **Database Consistency**  
+   - If a fill triggers a position update, ensure both the **trade record** and the **position record** are updated in one transaction if possible.
+
+### Potential Edge Cases
+- **Multiple partial fills** altering the position while a stop-loss is pending.  
+- **Parent order ID** not found or missing for a risk management order.  
+- **Simultaneous triggers** of both stop-loss and take-profit in rapidly changing markets.
+
+---
+
+## 3.4 Database Design
+
+Use a **PostgreSQL** schema, powered by **Supabase** in this example. At minimum:
+
+```sql
+CREATE TABLE trades (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    trade_type TEXT NOT NULL,  -- 'Market', 'Limit', 'Stop'
+    side TEXT NOT NULL,        -- 'Buy', 'Sell'
+    price DECIMAL NOT NULL,    -- 0 for Working market orders
+    quantity INTEGER NOT NULL,
+    status TEXT NOT NULL,      -- 'Working', 'Filled', 'Canceled', 'Rejected', 'Expired'
+    filled_quantity INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    contract_id INTEGER NOT NULL,
+    order_id BIGINT NOT NULL
+);
+
+CREATE TABLE positions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    net_quantity INTEGER NOT NULL,
+    avg_price DECIMAL NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, symbol)
+);
+```
+
+- **Trades Table**: Each row represents a snapshot of an order state transition.  
+- **Positions Table**: Tracks net position per (user, symbol).
+
+### Potential Edge Cases
+- **Data collisions**: Ensure concurrency control if multiple processes can update the same position.  
+- **Error in saving**: Use **transaction** or **retry logic** on transient DB errors.
+
+---
+
+## 3.5 Error Handling
+
+1. **WebSocket Reconnection**  
+   - On close/error, attempt to reconnect with an exponential backoff.  
+   - Implement a max retry threshold; log if the threshold is exceeded.
+
+2. **Order Validation Failures**  
+   - If incoming data lacks mandatory fields (`orderId`, `price`, `filledQuantity`, etc.), log a warning/error and skip processing.
+
+3. **Database Errors**  
+   - If a DB write fails, log the error with context and **retry** up to a certain count.  
+   - If consistently failing, escalate the error to monitoring/alerting.
+
+4. **Position Calculation Verification**  
+   - If net position or average price calculations produce unexpected values, log warnings and investigate.
+
+---
+
+## 3.6 Logging
+
+1. **Connection Lifecycle**  
+   - Log connection **start**, **end**, **errors**, and **reconnect attempts**.  
+
+2. **Order State Changes**  
+   - For each order update, log the **orderId**, **old status**, **new status**, and **timestamp**.
+
+3. **Database Operations**  
+   - Log **insert** and **update** queries or results, especially if an error occurs.
+
+4. **Error Conditions**  
+   - Include stack traces in logs for easier debugging.
+
+---
+
+# 4. Step-by-Step Implementation
+
+Below is a suggested **file structure** with **detailed steps** on how to build, combine, and handle all the components.
+
+```
+src/
+ ┣ database/
+ │   ┣ index.ts
+ │   ┗ queries.ts
+ ┣ services/
+ │   ┣ WebSocketManager.ts
+ │   ┣ OrderEventHandler.ts
+ │   ┗ PositionManager.ts
+ ┣ utils/
+ │   ┗ logger.ts
+ ┣ index.ts
+ ┣ types.ts
+ ┗ config.ts
+```
+
+## 4.1 Database Setup (`database/index.ts`)
+
+1. **Initialize Supabase** (or PG client):
+   ```typescript
+   import { createClient, SupabaseClient } from '@supabase/supabase-js';
+   import { DatabaseConfig } from '../config';
+
+   let supabase: SupabaseClient;
+
+   export function initDatabase() {
+     supabase = createClient(DatabaseConfig.url, DatabaseConfig.anonKey);
+   }
+
+   export function getDatabase() {
+     return supabase;
+   }
+   ```
+
+2. **Error Handling**  
+   - Wrap calls with try/catch.  
+   - Retry on transient errors if needed.
+
+3. **Queries** (`database/queries.ts`):  
+   ```typescript
+   import { getDatabase } from './index';
+
+   export async function insertTrade(tradeData: any) {
+     const supabase = getDatabase();
+     const { error } = await supabase.from('trades').insert([tradeData]);
+     if (error) {
+       // Log and throw or retry
+       throw new Error(`DB Error: ${error.message}`);
+     }
+   }
+
+   export async function updateOrInsertPosition(positionData: any) {
+     // Upsert logic for positions
+   }
+   ```
+
+## 4.2 WebSocket Manager (`services/WebSocketManager.ts`)
+
+1. **Connect to Tradovate**  
+   ```typescript
+   import WebSocket from 'ws';
+   import { logger } from '../utils/logger';
+
+   export class WebSocketManager {
+     private socket?: WebSocket;
+     private url: string;
+     private reconnectAttempts = 0;
+     private maxReconnectAttempts = 5;
+
+     constructor(url: string) {
+       this.url = url;
+     }
+
+     public connect() {
+       this.socket = new WebSocket(this.url);
+
+       this.socket.on('open', () => {
+         logger.info('WebSocket connected.');
+         this.reconnectAttempts = 0;
+       });
+
+       this.socket.on('message', (data: string) => {
+         try {
+           const message = JSON.parse(data);
+           // Dispatch to event handler
+           // e.g. if message.type === 'orderUpdate', handleOrderUpdate(message);
+         } catch (err) {
+           logger.error('Error parsing WebSocket message', err);
+         }
+       });
+
+       this.socket.on('error', (err) => {
+         logger.error('WebSocket error', err);
+       });
+
+       this.socket.on('close', () => {
+         logger.warn('WebSocket closed. Attempting reconnect...');
+         this.reconnect();
+       });
+     }
+
+     private reconnect() {
+       if (this.reconnectAttempts < this.maxReconnectAttempts) {
+         this.reconnectAttempts++;
+         setTimeout(() => {
+           logger.info(`Reconnecting... Attempt #${this.reconnectAttempts}`);
+           this.connect();
+         }, 1000 * this.reconnectAttempts);
+       } else {
+         logger.error('Max reconnect attempts reached. WebSocket offline.');
+       }
+     }
+   }
+   ```
+
+2. **Automatic Reconnection**  
+   - Implement an **exponential backoff** by increasing the timeout in each attempt.  
+   - Log each attempt’s number.
+
+## 4.3 Order Event Handler (`services/OrderEventHandler.ts`)
+
+1. **Process Incoming Order Data**  
+   ```typescript
+   import { insertTrade } from '../database/queries';
+   import { logger } from '../utils/logger';
+   import { OrderDetails } from '../types';
+
+   // Simple in-memory set to track duplicates
+   const processedStates = new Set<string>();
+
+   export async function handleOrderUpdate(orderDetails: OrderDetails) {
+     // Validate mandatory fields
+     if (!orderDetails.orderId || !orderDetails.ordStatus) {
+       logger.warn('Order details missing essential fields.', orderDetails);
+       return;
+     }
+
+     const uniqueKey = `${orderDetails.ordStatus}-${orderDetails.price}-${orderDetails.filledQuantity}-${orderDetails.quantity}-${orderDetails.orderId}`;
+     if (processedStates.has(uniqueKey)) {
+       logger.debug(`Duplicate order state detected: ${uniqueKey}`);
+       return;
+     }
+
+     // Check if we should save this trade
+     if (!shouldSaveTrade(orderDetails)) {
+       return;
+     }
+
+     // Additional validations for Filled
+     if (orderDetails.ordStatus === 'Filled') {
+       const price = orderDetails.price || 0;
+       const filledQty = orderDetails.filledQuantity || 0;
+       if (price <= 0 || filledQty <= 0) {
+         logger.warn('Invalid fill data, skipping trade save.', orderDetails);
+         return;
+       }
+     }
+
+     // Build trade data
+     const tradeData = {
+       user_id: orderDetails.userId,
+       symbol: orderDetails.symbol,
+       trade_type: orderDetails.orderType,  // 'Market', 'Limit', 'Stop'
+       side: orderDetails.side,            // 'Buy' or 'Sell'
+       price: orderDetails.price || 0,
+       quantity: orderDetails.quantity,
+       status: orderDetails.ordStatus,
+       filled_quantity: orderDetails.filledQuantity || 0,
+       contract_id: orderDetails.contractId,
+       order_id: orderDetails.orderId
+     };
+
+     try {
+       await insertTrade(tradeData);
+       processedStates.add(uniqueKey);
+       logger.info(`Trade saved. OrderID: ${orderDetails.orderId}, Status: ${orderDetails.ordStatus}`);
+     } catch (err) {
+       logger.error('Error inserting trade to DB', err);
+     }
+   }
+
+   function shouldSaveTrade(orderDetails: OrderDetails): boolean {
+     // Derived from the earlier snippet
+     // Additional logic if needed
+     if (orderDetails.ordStatus === 'Filled' && (orderDetails.filledQuantity ?? 0) <= 0) {
+       return false;
+     }
+     // Example from the snippet
+     return true;
+   }
+   ```
+
+2. **Error Handling**  
+   - If insert fails, log error with **orderId** for reference.  
+   - If data is incomplete, log a warning and skip.
+
+3. **Commenting & Logging**  
+   - Use `logger.debug` for verbose logs (e.g., raw message data).  
+   - Use `logger.info` for normal updates (e.g., “Trade saved”).  
+   - Use `logger.error` for error conditions.
+
+## 4.4 Position Manager (`services/PositionManager.ts`)
+
+1. **Track Net Positions**  
+   ```typescript
+   import { updateOrInsertPosition } from '../database/queries';
+   import { logger } from '../utils/logger';
+   import { OrderDetails } from '../types';
+
+   export async function handlePositionUpdate(orderDetails: OrderDetails) {
+     // Only update positions on Filled
+     if (orderDetails.ordStatus !== 'Filled') return;
+
+     // Implement your net position logic
+     const quantityChange = orderDetails.side === 'Buy'
+       ? orderDetails.filledQuantity
+       : -1 * (orderDetails.filledQuantity || 0);
+
+     // For the sake of example, let's do a simple upsert.
+     try {
+       await updateOrInsertPosition({
+         user_id: orderDetails.userId,
+         symbol: orderDetails.symbol,
+         quantityChange,
+         lastFillPrice: orderDetails.price
+       });
+       logger.info(`Position updated for user: ${orderDetails.userId}, symbol: ${orderDetails.symbol}`);
+     } catch (err) {
+       logger.error('Failed to update or insert position', err);
+     }
+   }
+   ```
+
+2. **Stop-Loss & Take-Profit**  
+   - If a stop-loss or take-profit order is triggered (`Working` -> `Filled`), reduce/increase position accordingly.  
+   - Possibly store relationship to parent position/order in a separate table.
+
+3. **Error Handling**  
+   - If position record isn’t found or created, log an error and possibly retry.
+
+---
+
+# 5. Putting It All Together (`index.ts`)
+
+```typescript
+import { WebSocketManager } from './services/WebSocketManager';
+import { handleOrderUpdate } from './services/OrderEventHandler';
+import { handlePositionUpdate } from './services/PositionManager';
+import { initDatabase } from './database';
+import { logger } from './utils/logger';
+
+async function main() {
+  // 1. Initialize Database
+  initDatabase();
+  logger.info('Database initialized');
+
+  // 2. Create and connect WebSocket
+  const wsManager = new WebSocketManager('wss://md.tradovateapi.com/v1/websocket');
+  wsManager.connect();
+
+  // 3. Wire up message routing
+  //   In real usage, you'd either pass a callback to WebSocketManager or set up an EventEmitter.
+  //   For simplicity, assume we expose a method:
+  //       wsManager.onOrderUpdate = (orderDetails) => { ... }
+
+  // Example: (Pseudo-code, depends on how you route messages inside WebSocketManager)
+  // wsManager.onOrderUpdate = (orderDetails) => {
+  //   handleOrderUpdate(orderDetails);
+  //   handlePositionUpdate(orderDetails);
+  // };
+
+  // 4. Handle errors globally (optional)
+  process.on('uncaughtException', (err) => {
+    logger.error('Uncaught Exception:', err);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    logger.error('Unhandled Rejection:', reason);
+  });
+}
+
+main().catch((e) => {
+  logger.error('Failed to start Position Tracker', e);
+});
+```
+
+---
+
+# 6. Edge Cases & Potential Errors
+
+1. **Partial Fills**  
+   - If the Tradovate API sends multiple partial fills with the same `orderId`, ensure the logic accumulates `filledQuantity` rather than duplicating trades.  
+
+2. **Expired Orders**  
+   - If an order passes its time-in-force, it becomes `Expired`. Must be saved once with the `Expired` status (avoid duplicates).
+
+3. **Stop-Loss Trigger**  
+   - A stop order that transitions from `PendingNew` -> `Working` -> `Filled`. Verify each step is recorded if you want a complete audit.
+
+4. **Connection Failures**  
+   - Persist data locally until reconnected? Or do you skip data if WebSocket is offline? Decide your approach.
+
+5. **Database Locking or Deadlocks**  
+   - If your system is high-volume, watch for possible deadlocks on `positions` if you have many concurrent updates. Use transactions or row-level locking as needed.
+
+---
+
+# 7. Performance Considerations
+
+1. **Efficient Order State Tracking**  
+   - Use an in-memory set or a caching layer for **duplicate prevention** to reduce DB writes.
+
+2. **Optimized DB Operations**  
+   - Use **batch inserts** or upserts for positions if many fills arrive simultaneously.
+
+3. **Minimal Memory Footprint**  
+   - Clear or prune the **processedStates** set if it grows too large (e.g., after an hour or day).
+
+4. **Scalability**  
+   - Containerize the service (Docker) for horizontal scaling if needed. Ensure only one instance handles a specific user’s orders or implement a concurrency strategy.
+
+---
+
+# 8. Security
+
+1. **Secure Credential Handling**  
+   - Don’t store credentials in source code. Use environment variables or a secrets manager.
+
+2. **Input Validation**  
+   - Check all incoming messages for malicious or unexpected data.  
+   - Filter or sanitize logs if user-provided data is included.
+
+3. **Rate Limiting**  
+   - If the WebSocket message volume is extremely high, consider buffering or rate limiting.
+
+4. **Error Message Sanitization**  
+   - Avoid leaking sensitive info in logs or user-facing error messages.
+
+---
+
+# 9. Conclusion
+
+By following this PRD, you will construct a **modular** and **resilient** Position Tracker service in TypeScript (Node.js). Breaking core functionalities into separate files ensures **readability** and **maintainability**. The system robustly manages:
+
+- **WebSocket connection** with auto-reconnect  
+- **Real-time order tracking** (Market, Limit, Stop)  
+- **Position updates** for net quantity and average price  
+- **Stop-loss & take-profit** order linkage  
+- **Detailed logging** for debugging and audit trails  
+- **Error handling** for reconnections, validation failures, and database retries  
+
+Use the sample code as a guide, expand your validations/logic, and adapt to your specific trading/position requirements. Always add **comprehensive testing** (unit, integration) before going live.

@@ -1,0 +1,441 @@
+{% extends "layout.html" %}
+{% block title %}Manual Trader / Copy Trader - Just.Trades.{% endblock %}
+{% block page_title %}MANUAL TRADER / COPY TRADER{% endblock %}
+
+{% block content %}
+<div class="manual-copy-wrapper">
+    <section class="manual-trader">
+        <header>
+            <h1>Manual Trader</h1>
+            <span class="badge">RECORDER</span>
+        </header>
+        <div class="manual-form">
+            <label>
+                <span>Account</span>
+                <div class="select-shell">
+                    <select id="manualAccountSelect" required>
+                        <option value="">Select account...</option>
+                        <option value="1:26029294">Mark - DEMO4419847-2 (Demo)</option>
+                        <option value="1:544727">Mark - 1381296 (Live)</option>
+                    </select>
+                    <span class="material-icons">expand_more</span>
+                </div>
+            </label>
+            <label>
+                <span>Ticker</span>
+                <div class="select-shell">
+                    <select id="manualTickerSelect">
+                        <option value="">Select or type a ticker</option>
+                        <option value="ES1!">ES1!</option>
+                        <option value="NQ1!">NQ1!</option>
+                        <option value="MES1!">MES1!</option>
+                        <option value="MNQ1!">MNQ1!</option>
+                    </select>
+                    <span class="material-icons">expand_more</span>
+                </div>
+            </label>
+            <label>
+                <span>Position Size (Qty)</span>
+                <input type="number" id="manualPositionSize" value="1" min="1" step="1">
+            </label>
+            <div class="risk-grid">
+                <div class="risk-card">
+                    <h3>Targets</h3>
+                    <label>
+                        <span>Take Profit (ticks)</span>
+                        <input type="number" id="takeProfitTicks" placeholder="e.g. 20" min="1">
+                    </label>
+                    <label>
+                        <span>Stop Loss (ticks)</span>
+                        <input type="number" id="stopLossTicks" placeholder="e.g. 10" min="1">
+                    </label>
+                </div>
+                <div class="risk-card">
+                    <h3>Trailing / Breakeven</h3>
+                    <label class="toggle-row">
+                        <input type="checkbox" id="useTrailingStop">
+                        <span>Enable Trailing Stop</span>
+                    </label>
+                    <label>
+                        <span>Trailing Stop (ticks)</span>
+                        <input type="number" id="trailTicks" placeholder="e.g. 6" min="1">
+                    </label>
+                    <label class="toggle-row">
+                        <input type="checkbox" id="useBreakEven">
+                        <span>Enable Breakeven</span>
+                    </label>
+                    <label>
+                        <span>Breakeven Trigger (ticks)</span>
+                        <input type="number" id="breakEvenTrigger" placeholder="e.g. 8" min="1">
+                    </label>
+                </div>
+            </div>
+            <div class="manual-actions">
+                <button class="btn btn-sell" type="button" id="manualSellBtn">SELL</button>
+                <button class="btn btn-close" type="button" id="manualCloseBtn">CLOSE</button>
+                <button class="btn btn-buy" type="button" id="manualBuyBtn">BUY</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="copy-trader">
+        <header>
+            <div>
+                <h2>Copy Trader</h2>
+                <p>Configure mirrored trade routing (coming soon)</p>
+            </div>
+            <span class="badge badge-secondary">BETA</span>
+        </header>
+        <div class="copy-placeholder">
+            <i class="material-icons">sync_alt</i>
+            <p>Copy trader controls will live here. This dedicated tab keeps manual trading isolated so other control center panels stay stable.</p>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .manual-copy-wrapper {
+        display: grid;
+        gap: 1.5rem;
+    }
+    .manual-trader,
+    .copy-trader {
+        background: rgba(11,18,33,0.92);
+        border-radius: 18px;
+        border: 1px solid rgba(59,130,246,0.25);
+        padding: 1.75rem;
+        display: grid;
+        gap: 1.25rem;
+    }
+    .copy-trader {
+        border-color: rgba(148,163,184,0.2);
+    }
+    .manual-trader header,
+    .copy-trader header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        justify-content: space-between;
+    }
+    .manual-trader h1 { margin: 0; font-size: 1.5rem; }
+    .badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 999px;
+        background: rgba(59,130,246,0.25);
+        color: #bfdbfe;
+        font-size: 0.75rem;
+        letter-spacing: 0.1em;
+    }
+    .badge-secondary {
+        background: rgba(148,163,184,0.2);
+        color: #cbd5f5;
+    }
+    .manual-form {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit,minmax(200px,1fr));
+        align-items: end;
+    }
+    label { display: grid; gap: 0.35rem; color: var(--text-muted); font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    input, select {
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(148,163,184,0.25);
+        border-radius: 12px;
+        color: #e2e8f0;
+        padding: 0.6rem 0.75rem;
+        font-size: 0.95rem;
+    }
+    .select-shell { position: relative; }
+    .select-shell select { width: 100%; appearance: none; }
+    .select-shell .material-icons {
+        position: absolute;
+        right: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        font-size: 1rem;
+        pointer-events: none;
+    }
+    .risk-grid {
+        grid-column: span 2;
+        display: grid;
+        grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
+        gap: 1rem;
+    }
+    .risk-card {
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(59,130,246,0.25);
+        border-radius: 16px;
+        padding: 1rem;
+        display: grid;
+        gap: 0.65rem;
+    }
+    .risk-card h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(226,232,240,0.8);
+    }
+    .toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: rgba(226,232,240,0.8);
+        text-transform: none;
+    }
+    .toggle-row input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+    }
+    .manual-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit,minmax(100px,1fr));
+        gap: 0.75rem;
+    }
+    .btn {
+        border: none;
+        border-radius: 12px;
+        padding: 0.7rem 1.4rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+        text-transform: uppercase;
+    }
+    .btn-sell { background: linear-gradient(135deg,#f87171,#ef4444); color: #0b1120; }
+    .btn-buy { background: linear-gradient(135deg,#34d399,#10b981); color: #0b1120; }
+    .btn-close { background: linear-gradient(135deg,#fb923c,#f97316); color: #0b1120; }
+    .copy-placeholder {
+        border: 1px dashed rgba(148,163,184,0.35);
+        border-radius: 16px;
+        padding: 2rem;
+        text-align: center;
+        color: rgba(226,232,240,0.8);
+    }
+    .copy-placeholder i {
+        font-size: 2.5rem;
+        display: block;
+        margin-bottom: 0.75rem;
+        color: rgba(59,130,246,0.6);
+    }
+    @media (max-width: 900px) {
+        .manual-copy-wrapper {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadAccountsForManualTrader() {
+        const accountSelect = document.getElementById('manualAccountSelect');
+        if (!accountSelect) {
+            console.error('manualAccountSelect element not found');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/accounts');
+            const data = await response.json();
+            
+            if (!data.success || !data.accounts) {
+                console.error('API error:', data);
+                return;
+            }
+            
+            accountSelect.innerHTML = '<option value="">Select account...</option>';
+            
+            data.accounts.forEach(account => {
+                if (!account.is_connected) return;
+                
+                const accountName = account.name || `Account ${account.id}`;
+                const tradovateAccounts = account.tradovate_accounts || [];
+                
+                if (tradovateAccounts.length > 0) {
+                    tradovateAccounts.forEach(tradAccount => {
+                        const option = document.createElement('option');
+                        const subaccountId = String(tradAccount.id);
+                        const subaccountName = tradAccount.name || subaccountId;
+                        const envLabel = tradAccount.is_demo ? ' (Demo)' : ' (Live)';
+                        option.value = `${account.id}:${subaccountId}`;
+                        option.textContent = `${accountName} - ${subaccountName}${envLabel}`;
+                        accountSelect.appendChild(option);
+                    });
+                } else {
+                    const option = document.createElement('option');
+                    option.value = `${account.id}:`;
+                    option.textContent = accountName;
+                    accountSelect.appendChild(option);
+                }
+            });
+        } catch (error) {
+            console.error('Error loading accounts:', error);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(() => loadAccountsForManualTrader(), 100);
+        
+        const accountSelect = document.getElementById('manualAccountSelect');
+        if (accountSelect) {
+            accountSelect.addEventListener('change', function() {
+                const selectedValue = this.value;
+                if (selectedValue) {
+                    const [accountId, subaccountId] = selectedValue.split(':');
+                    loadStrategiesForManualTrader(accountId, subaccountId);
+                } else {
+                    const strategySelect = document.getElementById('manualStrategySelect');
+                    if (strategySelect) {
+                        strategySelect.innerHTML = '<option value=\"\">Select strategy...</option>';
+                    }
+                }
+            });
+        }
+
+        const buyBtn = document.getElementById('manualBuyBtn');
+        const sellBtn = document.getElementById('manualSellBtn');
+        const closeBtn = document.getElementById('manualCloseBtn');
+
+        if (buyBtn) buyBtn.addEventListener('click', () => placeManualTrade('Buy'));
+        if (sellBtn) sellBtn.addEventListener('click', () => placeManualTrade('Sell'));
+        if (closeBtn) closeBtn.addEventListener('click', () => placeManualTrade('Close'));
+    });
+
+    async function loadStrategiesForManualTrader(accountId, subaccountId) {
+        // Strategy list removed; placeholder for future use
+    }
+
+    async function placeManualTrade(side) {
+        try {
+            const accountSelect = document.getElementById('manualAccountSelect');
+            const tickerSelect = document.getElementById('manualTickerSelect');
+            const positionSizeInput = document.getElementById('manualPositionSize');
+
+            if (!accountSelect || !accountSelect.value) {
+                showToast('Please select an account', 'error');
+                return;
+            }
+            if (!tickerSelect || !tickerSelect.value) {
+                showToast('Please select or enter a ticker', 'error');
+                return;
+            }
+
+            const quantity = parseInt(positionSizeInput?.value || '1');
+            if (isNaN(quantity) || quantity < 1) {
+                showToast('Please enter a valid position size (minimum 1)', 'error');
+                return;
+            }
+
+            const riskPayload = collectRiskSettings();
+
+            const response = await fetch('/api/manual-trade', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    account_subaccount: accountSelect.value,
+                    symbol: tickerSelect.value,
+                    side: side,
+                    quantity: quantity,
+                    risk: riskPayload
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                showToast(`✅ ${data.message || `${side} order placed successfully`}`, 'success');
+            } else {
+                showToast(`❌ Error: ${data.error || 'Failed to place order'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error placing manual trade:', error);
+            showToast(`❌ Error: ${error.message || 'Failed to place order'}`, 'error');
+        }
+    }
+
+    function showToast(message, type = 'info') {
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.className = 'toast-container';
+            document.body.appendChild(container);
+        }
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+
+        setTimeout(() => toast.classList.add('fade-out'), 2500);
+        setTimeout(() => toast.remove(), 3000);
+    }
+
+    function collectRiskSettings() {
+        const tp = document.getElementById('takeProfitTicks');
+        const sl = document.getElementById('stopLossTicks');
+        const trailEnabled = document.getElementById('useTrailingStop');
+        const trailTicks = document.getElementById('trailTicks');
+        const breakEvenEnabled = document.getElementById('useBreakEven');
+        const breakEvenTrigger = document.getElementById('breakEvenTrigger');
+
+        const risk = {};
+
+        if (tp && tp.value) {
+            risk.take_profit = [{
+                gain_ticks: Number(tp.value),
+                trim_percent: 100
+            }];
+        }
+
+        if (sl && sl.value) {
+            risk.stop_loss = {
+                type: 'fixed',
+                loss_ticks: Number(sl.value)
+            };
+        }
+
+        if (trailEnabled?.checked && trailTicks?.value) {
+            risk.trail = {
+                activation_ticks: Number(trailTicks.value),
+                offset_ticks: Number(trailTicks.value)
+            };
+        }
+
+        if (breakEvenEnabled?.checked && breakEvenTrigger?.value) {
+            risk.break_even = {
+                activation_ticks: Number(breakEvenTrigger.value)
+            };
+        }
+
+        return risk;
+    }
+</script>
+<style>
+    .toast-container {
+        position: fixed;
+        top: 1.5rem;
+        right: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        z-index: 1200;
+    }
+    .toast {
+        background: rgba(15,23,42,0.95);
+        border: 1px solid rgba(148,163,184,0.2);
+        border-radius: 999px;
+        padding: 0.65rem 1.1rem;
+        font-size: 0.85rem;
+        letter-spacing: 0.02em;
+        box-shadow: 0 10px 20px rgba(2,6,23,0.45);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    .toast.success { border-color: rgba(16,185,129,0.6); color: #bbf7d0; }
+    .toast.error { border-color: rgba(248,113,113,0.6); color: #fecaca; }
+    .toast.fade-out { opacity: 0; transform: translateY(-8px); }
+</style>
+{% endblock %}
+
