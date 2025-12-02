@@ -345,6 +345,31 @@ class TradovateIntegration:
             logger.error(f"Error placing order: {e}")
             return {'success': False, 'error': str(e)}
     
+    async def get_fills(self, account_id: Optional[int] = None, order_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get fills for an account or specific order"""
+        try:
+            params = {}
+            if account_id:
+                params['accountId'] = account_id
+            if order_id:
+                params['orderId'] = order_id
+            
+            async with self.session.get(
+                f"{self.base_url}/fill/list",
+                params=params,
+                headers=self._get_headers()
+            ) as response:
+                if response.status == 200:
+                    data = await response.json() or []
+                    logger.info(f"Retrieved {len(data)} fills for account={account_id}, order={order_id}")
+                    return data
+                else:
+                    logger.warning(f"Failed to get fills: {response.status}")
+                    return []
+        except Exception as e:
+            logger.error(f"Error getting fills: {e}")
+            return []
+    
     async def get_positions(self, account_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get current positions; optionally filter by account_id."""
         try:
@@ -395,50 +420,159 @@ class TradovateIntegration:
         self.contract_cache[contract_id] = None
         return None
     
-    async def get_orders(self, account_id: str) -> List[Dict[str, Any]]:
-        """Get orders for an account"""
+    async def get_orders(self, account_id: str = None) -> List[Dict[str, Any]]:
+        """
+        Get orders for an account or all orders.
+        If account_id is None, uses /order/list to get all orders (includes order strategies).
+        """
         try:
-            async with self.session.get(
-                f"{self.base_url}/account/{account_id}/orders",
-                headers=self._get_headers()
-            ) as response:
+            if account_id:
+                # Get orders for specific account
+                url = f"{self.base_url}/account/{account_id}/orders"
+            else:
+                # Get ALL orders (includes order strategies like brackets, OCOs)
+                url = f"{self.base_url}/order/list"
+            
+            async with self.session.get(url, headers=self._get_headers()) as response:
                 if response.status == 200:
                     data = await response.json()
-                    logger.info(f"Retrieved {len(data)} orders for account {account_id}")
-                    return data
+                    logger.info(f"Retrieved {len(data)} orders from {url}")
+                    return data if isinstance(data, list) else []
                 elif response.status == 404:
                     return []
                 else:
-                    logger.error(f"Failed to get orders: {response.status}")
+                    error_text = await response.text()
+                    logger.error(f"Failed to get orders from {url}: {response.status}, {error_text[:200]}")
                     return []
                     
         except Exception as e:
-            logger.error(f"Error getting orders: {e}")
+            logger.error(f"Error getting orders: {e}", exc_info=True)
             return []
     
     async def cancel_order(self, order_id: int) -> bool:
         """Cancel an existing order"""
         try:
             if not order_id:
+                logger.warning(f"Attempted to cancel order with invalid ID: {order_id}")
                 return False
+            
+            logger.info(f"Attempting to cancel order {order_id} via {self.base_url}/order/cancelorder")
             async with self.session.post(
                 f"{self.base_url}/order/cancelorder",
-                json={"orderId": order_id},
+                json={"orderId": order_id, "isAutomated": True},
+                headers=self._get_headers()
+            ) as response:
+                response_text = await response.text()
+                logger.info(f"Cancel order {order_id} response: status={response.status}, body={response_text[:500]}")
+                
+                if response.status == 200:
+                    try:
+                        data = await response.json()
+                        logger.info(f"✅ Successfully cancelled order {order_id}, response: {data}")
+                        return True
+                    except:
+                        logger.info(f"✅ Successfully cancelled order {order_id} (no JSON response)")
+                        return True
+                else:
+                    try:
+                        error = await response.json()
+                        logger.error(f"❌ Failed to cancel order {order_id}: HTTP {response.status}, error: {error}")
+                    except:
+                        logger.error(f"❌ Failed to cancel order {order_id}: HTTP {response.status}, response: {response_text[:500]}")
+                    return False
+        except Exception as e:
+            logger.error(f"Exception cancelling order {order_id}: {e}", exc_info=True)
+            return False
+    
+    async def get_order_strategies(self, account_id: int = None) -> List[Dict[str, Any]]:
+        """
+        Get all order strategies (bracket orders, OCO orders, etc.)
+        These need to be interrupted separately from regular orders.
+        """
+        try:
+            url = f"{self.base_url}/orderStrategy/list"
+            async with self.session.get(url, headers=self._get_headers()) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    strategies = data if isinstance(data, list) else []
+                    
+                    # Filter by account if specified
+                    if account_id and strategies:
+                        strategies = [s for s in strategies if str(s.get('accountId')) == str(account_id)]
+                    
+                    logger.info(f"Retrieved {len(strategies)} order strategies")
+                    return strategies
+                else:
+                    error_text = await response.text()
+                    logger.warning(f"Failed to get order strategies: {response.status}, {error_text[:200]}")
+                    return []
+        except Exception as e:
+            logger.error(f"Error getting order strategies: {e}")
+            return []
+    
+    async def interrupt_order_strategy(self, order_strategy_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Interrupt/stop a running order strategy (bracket, OCO, etc.)
+        This cancels all orders in the strategy.
+        """
+        try:
+            async with self.session.post(
+                f"{self.base_url}/orderStrategy/interruptorderstrategy",
+                json={"orderStrategyId": order_strategy_id},
                 headers=self._get_headers()
             ) as response:
                 if response.status == 200:
-                    logger.info(f"Cancelled order {order_id}")
-                    return True
+                    data = await response.json()
+                    logger.info(f"Interrupted order strategy {order_strategy_id}")
+                    return {'success': True, 'data': data}
                 else:
                     try:
                         error = await response.json()
                     except Exception:
                         error = await response.text()
-                    logger.error(f"Failed to cancel order {order_id}: {error}")
-                    return False
+                    logger.error(f"Failed to interrupt order strategy {order_strategy_id}: {error}")
+                    return {'success': False, 'error': error}
         except Exception as e:
-            logger.error(f"Error cancelling order {order_id}: {e}")
-            return False
+            logger.error(f"Error interrupting order strategy: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    async def liquidate_position(self, account_id: int, contract_id: int, admin: bool = False) -> Optional[Dict[str, Any]]:
+        """
+        Liquidate a position and cancel all related orders for a contract.
+        This is Tradovate's official "exit at market and cancel orders" endpoint.
+        
+        Args:
+            account_id: The account ID
+            contract_id: The contract ID (not symbol - must resolve symbol to contractId)
+            admin: Whether this is an admin action (usually False)
+        
+        Returns:
+            Dict with success flag and order result, or None on error
+        """
+        try:
+            async with self.session.post(
+                f"{self.base_url}/order/liquidateposition",
+                json={
+                    "accountId": account_id,
+                    "contractId": contract_id,
+                    "admin": admin
+                },
+                headers=self._get_headers()
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    logger.info(f"Liquidated position for contract {contract_id} (account {account_id})")
+                    return {'success': True, 'data': data}
+                else:
+                    try:
+                        error = await response.json()
+                    except Exception:
+                        error = await response.text()
+                    logger.error(f"Failed to liquidate position: {error}")
+                    return {'success': False, 'error': error}
+        except Exception as e:
+            logger.error(f"Error liquidating position: {e}")
+            return {'success': False, 'error': str(e)}
     
     def create_market_order(self, account_spec: str, symbol: str, side: str, quantity: int, account_id: Optional[int] = None) -> Dict[str, Any]:
         """Create a market order"""
@@ -487,8 +621,19 @@ class TradovateIntegration:
             order["accountId"] = account_id
         return order
 
-    def create_trailing_stop_order(self, account_spec: str, symbol: str, side: str, quantity: int, offset: float, account_id: Optional[int] = None) -> Dict[str, Any]:
-        """Create a trailing stop order"""
+    def create_trailing_stop_order(self, account_spec: str, symbol: str, side: str, quantity: int, offset: float, account_id: Optional[int] = None, initial_stop_price: float = None) -> Dict[str, Any]:
+        """
+        Create a trailing stop order.
+        
+        Args:
+            account_spec: Account specification
+            symbol: Trading symbol
+            side: 'Buy' or 'Sell' (exit side)
+            quantity: Number of contracts
+            offset: Trail offset in price (not ticks)
+            account_id: Optional account ID
+            initial_stop_price: Initial stop price (required by Tradovate)
+        """
         order = {
             "accountSpec": account_spec,
             "orderType": "TrailingStop",
@@ -499,9 +644,232 @@ class TradovateIntegration:
             "timeInForce": "Day",
             "isAutomated": True
         }
+        
+        # Tradovate requires stopPrice for trailing stops
+        if initial_stop_price is not None:
+            order["stopPrice"] = float(initial_stop_price)
+        
         if account_id is not None:
             order["accountId"] = account_id
         return order
+    
+    async def place_bracket_order(self, account_id: int, account_spec: str, symbol: str, 
+                                   entry_side: str, quantity: int,
+                                   profit_target_ticks: int = None, 
+                                   stop_loss_ticks: int = None,
+                                   trailing_stop: bool = False) -> Optional[Dict[str, Any]]:
+        """
+        Place a market entry order with bracket (TP/SL) as an order strategy.
+        This is the CORRECT way to place OCO brackets in Tradovate.
+        
+        The brackets are specified in TICKS from entry price, and Tradovate
+        automatically creates OCO orders that cancel each other.
+        
+        Args:
+            account_id: The Tradovate account ID
+            account_spec: The account name/spec  
+            symbol: The trading symbol
+            entry_side: 'Buy' or 'Sell' for the entry
+            quantity: Number of contracts
+            profit_target_ticks: Profit target in ticks (positive number)
+            stop_loss_ticks: Stop loss in ticks (positive number, will be negated internally)
+            trailing_stop: Whether to use trailing stop instead of fixed stop
+        
+        Returns:
+            Dict with order strategy result
+        """
+        try:
+            # Build bracket params - Tradovate wants these in ticks
+            # profitTarget is positive ticks above entry (for long) or below (for short)
+            # stopLoss is negative ticks (loss from entry)
+            
+            bracket = {
+                "qty": int(quantity),
+                "profitTarget": int(profit_target_ticks) if profit_target_ticks else None,
+                "stopLoss": -abs(int(stop_loss_ticks)) if stop_loss_ticks else None,  # Negative for loss
+                "trailingStop": trailing_stop
+            }
+            
+            # Entry order params
+            params = {
+                "entryVersion": {
+                    "orderQty": int(quantity),
+                    "orderType": "Market",
+                    "timeInForce": "Day"
+                },
+                "brackets": [bracket]
+            }
+            
+            # Full strategy request
+            strategy_request = {
+                "accountId": account_id,
+                "accountSpec": account_spec,
+                "symbol": symbol,
+                "orderStrategyTypeId": 2,  # 2 = Bracket strategy type
+                "action": entry_side,
+                "params": json.dumps(params)
+            }
+            
+            logger.info(f"📊 Placing bracket order strategy: entry={entry_side}, qty={quantity}, TP={profit_target_ticks} ticks, SL={stop_loss_ticks} ticks")
+            logger.debug(f"Full strategy request: {strategy_request}")
+            
+            async with self.session.post(
+                f"{self.base_url}/orderStrategy/startorderstrategy",
+                json=strategy_request,
+                headers=self._get_headers()
+            ) as response:
+                response_text = await response.text()
+                
+                if response.status == 200:
+                    data = json.loads(response_text)
+                    strategy_id = data.get('id') or data.get('orderStrategyId')
+                    logger.info(f"✅ Bracket order strategy created: ID={strategy_id}")
+                    return {
+                        'success': True, 
+                        'data': data, 
+                        'strategy_id': strategy_id,
+                        'orderId': data.get('orderId')
+                    }
+                else:
+                    logger.error(f"❌ Failed to create bracket strategy: {response.status}, {response_text[:500]}")
+                    return {'success': False, 'error': response_text}
+                    
+        except Exception as e:
+            logger.error(f"Error creating bracket order strategy: {e}", exc_info=True)
+            return {'success': False, 'error': str(e)}
+    
+    async def place_exit_oco(self, account_id: int, account_spec: str, symbol: str,
+                             exit_side: str, quantity: int,
+                             take_profit_price: float = None,
+                             stop_loss_price: float = None) -> Optional[Dict[str, Any]]:
+        """
+        Place OCO exit orders (TP + SL) for an existing position.
+        
+        For exits on existing positions, we create an OCO order strategy
+        with limit (TP) and stop (SL) orders.
+        
+        Args:
+            account_id: The Tradovate account ID
+            account_spec: The account name/spec
+            symbol: The trading symbol
+            exit_side: 'Sell' for long exit, 'Buy' for short exit
+            quantity: Number of contracts
+            take_profit_price: Absolute price for take profit limit order
+            stop_loss_price: Absolute price for stop loss order
+        """
+        try:
+            # For OCO exit orders, we use orderStrategyTypeId 1 (OCO)
+            # with two orders: a limit for TP and a stop for SL
+            
+            # Build the OCO with two legs
+            params = {
+                "entryVersion": {
+                    "orderQty": int(quantity),
+                    "orderType": "Limit",
+                    "price": float(take_profit_price) if take_profit_price else 0,
+                    "timeInForce": "GTC"
+                },
+                "closeVersion": {
+                    "orderQty": int(quantity),
+                    "orderType": "Stop", 
+                    "stopPrice": float(stop_loss_price) if stop_loss_price else 0,
+                    "timeInForce": "GTC"
+                }
+            }
+            
+            strategy_request = {
+                "accountId": account_id,
+                "accountSpec": account_spec,
+                "symbol": symbol,
+                "orderStrategyTypeId": 1,  # 1 = OCO type
+                "action": exit_side,
+                "params": json.dumps(params)
+            }
+            
+            logger.info(f"📊 Placing OCO exit: {exit_side} {quantity} {symbol}, TP={take_profit_price}, SL={stop_loss_price}")
+            
+            async with self.session.post(
+                f"{self.base_url}/orderStrategy/startorderstrategy",
+                json=strategy_request,
+                headers=self._get_headers()
+            ) as response:
+                response_text = await response.text()
+                
+                if response.status == 200:
+                    data = json.loads(response_text)
+                    
+                    # Check for error in response (Tradovate returns 200 with errorText)
+                    if data.get('errorText'):
+                        error_msg = data.get('errorText')
+                        logger.warning(f"⚠️ OCO strategy returned error: {error_msg}")
+                        logger.info(f"📊 Falling back to individual TP/SL orders...")
+                        # Fallback to placing individual orders
+                        return await self._place_individual_exit_orders(
+                            account_id, account_spec, symbol, exit_side, quantity,
+                            take_profit_price, stop_loss_price
+                        )
+                    
+                    logger.info(f"✅ OCO exit strategy created: {data}")
+                    return {'success': True, 'data': data, 'strategy_id': data.get('id')}
+                else:
+                    logger.error(f"❌ Failed to create OCO exit: {response.status}, {response_text[:500]}")
+                    # Fallback to placing individual orders
+                    return await self._place_individual_exit_orders(
+                        account_id, account_spec, symbol, exit_side, quantity,
+                        take_profit_price, stop_loss_price
+                    )
+                    
+        except Exception as e:
+            logger.error(f"Error creating OCO exit: {e}", exc_info=True)
+            return {'success': False, 'error': str(e)}
+    
+    async def _place_individual_exit_orders(self, account_id: int, account_spec: str, symbol: str,
+                                            exit_side: str, quantity: int,
+                                            take_profit_price: float = None,
+                                            stop_loss_price: float = None) -> Optional[Dict[str, Any]]:
+        """
+        Fallback: Place TP and SL as individual orders with custom OCO monitoring.
+        The server will monitor these orders and cancel the partner when one fills.
+        """
+        results = {'success': False, 'tp_order': None, 'sl_order': None, 'tp_order_id': None, 'sl_order_id': None}
+        
+        try:
+            tp_order_id = None
+            sl_order_id = None
+            
+            if take_profit_price:
+                tp_data = self.create_limit_order(account_spec, symbol, exit_side, quantity, take_profit_price, account_id)
+                tp_result = await self.place_order(tp_data)
+                results['tp_order'] = tp_result
+                if tp_result and tp_result.get('success'):
+                    results['success'] = True
+                    tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
+                    results['tp_order_id'] = tp_order_id
+                    logger.info(f"✅ TP order placed: ID={tp_order_id}, Price={take_profit_price}")
+            
+            if stop_loss_price:
+                sl_data = self.create_stop_order(account_spec, symbol, exit_side, quantity, stop_loss_price, account_id)
+                sl_result = await self.place_order(sl_data)
+                results['sl_order'] = sl_result
+                if sl_result and sl_result.get('success'):
+                    results['success'] = True
+                    sl_order_id = sl_result.get('orderId') or sl_result.get('data', {}).get('orderId')
+                    results['sl_order_id'] = sl_order_id
+                    logger.info(f"✅ SL order placed: ID={sl_order_id}, Price={stop_loss_price}")
+            
+            # Register the pair for custom OCO monitoring
+            if tp_order_id and sl_order_id:
+                results['oco_registered'] = True
+                logger.info(f"🔗 TP/SL pair will be monitored for OCO behavior: TP={tp_order_id} <-> SL={sl_order_id}")
+            elif results['success']:
+                logger.warning("⚠️ Only one side of bracket placed - no OCO monitoring")
+                
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error placing individual exit orders: {e}")
+            return results
+
 
 class TradovateManager:
     """High-level manager for Tradovate operations"""

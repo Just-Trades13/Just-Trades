@@ -114,11 +114,125 @@
 </style>
 {% endblock %}
 {% block scripts %}
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.log-feed').forEach(function(feed) {
             feed.scrollTop = feed.scrollHeight;
         });
+        
+        // WebSocket connection for real-time updates (like Trade Manager)
+        const socket = io();
+        
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket');
+            const statusDot = document.querySelector('.status-dot');
+            if (statusDot) {
+                statusDot.textContent = 'Connected';
+                statusDot.classList.add('connected');
+            }
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Disconnected from WebSocket');
+            const statusDot = document.querySelector('.status-dot');
+            if (statusDot) {
+                statusDot.textContent = 'Disconnected';
+                statusDot.classList.remove('connected');
+            }
+        });
+        
+        // P&L updates
+        socket.on('pnl_update', (data) => {
+            console.log('P&L update:', data);
+            // Update P&L in Live Trading Panel
+            updatePnLInTable(data);
+        });
+        
+        // Position updates
+        socket.on('position_update', (data) => {
+            console.log('Position update:', data);
+            // Update positions in table
+            updatePositionsInTable(data);
+        });
+        
+        // Strategy P&L updates
+        socket.on('strategy_pnl_update', (data) => {
+            console.log('Strategy P&L update:', data);
+            // Update specific strategy P&L
+            updateStrategyPnL(data.strategy_id, data.strategy_name, data.pnl);
+        });
+        
+        // Log entries
+        socket.on('log_entry', (data) => {
+            console.log('Log entry:', data);
+            addLogEntry(data.type, data.message, data.time);
+        });
+        
+        // Trade executed
+        socket.on('trade_executed', (data) => {
+            console.log('Trade executed:', data);
+            addLogEntry('trade', `Trade executed: ${data.side} ${data.quantity} ${data.symbol}`, data.timestamp);
+        });
+        
+        function updatePnLInTable(data) {
+            // Update P&L cells in Live Trading Panel
+            const rows = document.querySelectorAll('.live-trading tbody tr');
+            rows.forEach(row => {
+                const pnlCell = row.querySelector('.pl-cell');
+                if (pnlCell && data.total_pnl !== undefined) {
+                    // Update with total P&L or strategy-specific P&L
+                    const currentPnl = parseFloat(pnlCell.textContent) || 0;
+                    // For now, just update if we have strategy-specific data
+                }
+            });
+        }
+        
+        function updatePositionsInTable(data) {
+            // Update position counts in table
+            // Implementation depends on your table structure
+            if (data.strategy) {
+                // Find row by strategy name and update
+                const rows = document.querySelectorAll('.live-trading tbody tr');
+                rows.forEach(row => {
+                    const strategyCell = row.querySelector('td:first-child');
+                    if (strategyCell && strategyCell.textContent.includes(data.strategy)) {
+                        // Update position info if needed
+                    }
+                });
+            }
+        }
+        
+        function updateStrategyPnL(strategyId, strategyName, pnl) {
+            // Find row by strategy ID or name and update P&L
+            const rows = document.querySelectorAll('.live-trading tbody tr');
+            rows.forEach(row => {
+                const strategyCell = row.querySelector('td:first-child');
+                if (strategyCell && (strategyCell.textContent.includes(strategyName) || row.dataset.strategyId === String(strategyId))) {
+                    const pnlCell = row.querySelector('.pl-cell');
+                    if (pnlCell) {
+                        pnlCell.textContent = pnl.toFixed(2);
+                        pnlCell.className = `pl-cell ${pnl >= 0 ? 'positive' : 'negative'}`;
+                    }
+                }
+            });
+        }
+        
+        function addLogEntry(type, message, time) {
+            const logFeed = document.querySelector('.log-feed');
+            if (logFeed) {
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry';
+                const timeStr = time ? new Date(time).toLocaleTimeString() : new Date().toLocaleTimeString();
+                logEntry.innerHTML = `
+                    <span class="log-type ${type}">[${type.toUpperCase()}]</span>
+                    <span class="log-content">${message}</span>
+                    <span class="log-time">${timeStr}</span>
+                `;
+                logFeed.appendChild(logEntry);
+                logFeed.scrollTop = logFeed.scrollHeight;
+            }
+        }
     });
 </script>
 {% endblock %}

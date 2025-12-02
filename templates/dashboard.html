@@ -2435,5 +2435,90 @@
             }
         });
     }
+
+</script>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+    // ============================================================================
+    // WebSocket Connection for Real-Time Updates (like Trade Manager)
+    // ============================================================================
+    const socket = io();
+
+    socket.on('connect', () => {
+        console.log('✅ Connected to WebSocket - Dashboard');
+    });
+
+    socket.on('disconnect', () => {
+        console.log('❌ Disconnected from WebSocket');
+    });
+
+    // P&L updates every second
+    socket.on('pnl_update', (data) => {
+        console.log('P&L update:', data);
+        
+        // Update metrics if visible
+        const metricsSection = document.getElementById('metricsCardsSection');
+        if (metricsSection && metricsSection.style.display !== 'none') {
+            // Update cumulative return with total P&L
+            const cumulativeCard = document.querySelector('[data-metric="cumulative_return"]');
+            if (cumulativeCard) {
+                const returnValue = cumulativeCard.querySelector('[data-field="return"]');
+                if (returnValue && typeof formatCurrency !== 'undefined') {
+                    returnValue.textContent = formatCurrency(data.total_pnl || 0);
+                }
+            }
+            
+            // Update P&L card
+            const pnlCard = document.querySelector('[data-metric="pnl"]');
+            if (pnlCard) {
+                // You can update profit/loss here if you have that data
+            }
+        }
+    });
+
+    // Position updates
+    socket.on('position_update', (data) => {
+        console.log('Position update:', data);
+        
+        // Update contracts held metric
+        const contractsCard = document.querySelector('[data-metric="contracts_held"]');
+        if (contractsCard && data.count !== undefined) {
+            const maxSize = contractsCard.querySelector('[data-field="max_size"]');
+            if (maxSize) {
+                maxSize.textContent = data.count || 0;
+            }
+        }
+    });
+
+    // Strategy P&L updates
+    socket.on('strategy_pnl_update', (data) => {
+        console.log('Strategy P&L update:', data);
+        // Update chart if needed
+        // You can add chart update logic here
+    });
+
+    // Trade executed - add to trade history table
+    socket.on('trade_executed', (data) => {
+        console.log('Trade executed:', data);
+        
+        // Reload trade history to show new trade
+        const userId = document.getElementById('filterUser')?.value || '';
+        const strategyId = document.getElementById('filterStrategy')?.value || '';
+        const symbol = document.getElementById('filterSymbol')?.value || '';
+        const timeFrame = document.getElementById('filterTimeFrame')?.value || '';
+        
+        // Reload trade history
+        if (typeof loadTradeHistory === 'function') {
+            loadTradeHistory(userId || null, strategyId || null, symbol || null, timeFrame || null, 1);
+        }
+        
+        // Reload metrics
+        if (typeof loadMetricCards === 'function') {
+            const metricsSection = document.getElementById('metricsCardsSection');
+            if (metricsSection && metricsSection.style.display !== 'none') {
+                loadMetricCards();
+            }
+        }
+    });
 </script>
 {% endblock %}

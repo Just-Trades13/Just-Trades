@@ -1,0 +1,95 @@
+{% extends "layout.html" %}
+{% block title %}Settings - Just.Trades.{% endblock %}
+{% block page_title %}SETTINGS{% endblock %}
+{% block content %}
+<div class="settings-wrapper">
+    <section class="settings-row">
+        <article class="settings-card">
+            <header>
+                <h2>Push Notifications</h2>
+            </header>
+            <p>Receive browser push notifications when your recorders fire or encounter issues.</p>
+            <button class="btn btn-danger">Disable Push Notifications</button>
+        </article>
+        <article class="settings-card">
+            <header>
+                <h2>Discord DMs</h2>
+            </header>
+            <p>Send alerts as direct messages via Discord when enabled.</p>
+            <button class="btn btn-danger">Disable Discord DMs</button>
+        </article>
+    </section>
+
+    <section class="settings-row">
+        <article class="settings-card linked">
+            <span class="status-dot connected">Discord Linked</span>
+        </article>
+        <article class="settings-card linked signout">
+            <a href="#">Sign Out</a>
+        </article>
+    </section>
+
+    <section class="settings-forms">
+        <div class="username-card">
+            <h2>Change Your Username</h2>
+            <div class="form-row">
+                <input type="text" placeholder="Enter new username">
+                <button class="btn btn-primary">Update</button>
+            </div>
+        </div>
+        <div class="password-card">
+            <h2>Change Password</h2>
+            <div class="form-row">
+                <label class="input-shell">
+                    <input type="password" placeholder="New password">
+                    <span class="material-icons">visibility</span>
+                </label>
+                <label class="input-shell">
+                    <input type="password" placeholder="Confirm new password">
+                    <span class="material-icons">visibility</span>
+                </label>
+                <button class="btn btn-highlight">Change Password</button>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+{% block styles %}
+<style>
+    .settings-wrapper { display: grid; gap: 1.5rem; }
+    .settings-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; }
+    .settings-card { background: rgba(11,18,33,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); padding: 1.75rem; display: grid; gap: 0.75rem; }
+    .settings-card header h2 { margin: 0; font-size: 1.2rem; }
+    .settings-card p { margin: 0; color: var(--text-muted); }
+    .btn { border: none; border-radius: 12px; padding: 0.7rem 1.6rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+    .btn-danger { background: linear-gradient(135deg, #f87171, #ef4444); color: #0b1120; }
+    .btn-primary { background: linear-gradient(135deg, #60a5fa, #2563eb); color: #0b1120; }
+    .btn-highlight { background: linear-gradient(135deg, #fb7185, #ec4899); color: #0b1120; }
+
+    .linked { display: flex; align-items: center; justify-content: space-between; }
+    .status-dot { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.35rem 0.85rem; border-radius: 999px; }
+    .status-dot.connected { background: rgba(52,211,153,0.25); color: #bbf7d0; }
+    .signout { justify-content: flex-end; }
+    .signout a { color: #facc15; text-decoration: none; font-weight: 600; }
+
+    .settings-forms { display: grid; gap: 1.5rem; }
+    .username-card, .password-card { background: rgba(7,12,23,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); padding: 1.75rem; display: grid; gap: 1rem; }
+    .form-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .form-row input { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.25); border-radius: 12px; color: #e2e8f0; padding: 0.65rem 0.85rem; font-size: 0.95rem; flex: 1; min-width: 220px; }
+    .input-shell { position: relative; flex: 1; min-width: 220px; }
+    .input-shell input { width: 100%; padding-right: 2.5rem; }
+    .input-shell .material-icons { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); cursor: pointer; }
+
+    @media (max-width: 720px) {
+        .settings-row { grid-template-columns: 1fr; }
+        .form-row { flex-direction: column; }
+        .form-row button { width: 100%; }
+    }
+}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+    // Placeholder for any future interactions (e.g., password visibility toggle)
+</script>
+{% endblock %}

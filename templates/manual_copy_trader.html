@@ -1,3 +1,9 @@
+{# ⚠️ CRITICAL FOR AI ASSISTANTS: READ START_HERE.md BEFORE MODIFYING THIS FILE
+   Tab: Manual Trader (/manual-trader)
+   Allowed Files: This file, /api/manual-trade endpoint
+   Forbidden Files: account_management.html, control_center.html (other tabs)
+   See TAB_ISOLATION_MAP.md for complete file mappings.
+#}
 {% extends "layout.html" %}
 {% block title %}Manual Trader / Copy Trader - Just.Trades.{% endblock %}
 {% block page_title %}MANUAL TRADER / COPY TRADER{% endblock %}
@@ -78,17 +84,71 @@
         </div>
     </section>
 
+    <section class="live-positions">
+        <header>
+            <div>
+                <h2>Live Positions</h2>
+                <p>Real-time position tracking via WebSocket</p>
+            </div>
+            <div class="position-controls">
+                <span id="wsStatus" class="badge badge-secondary">Connecting...</span>
+            </div>
+        </header>
+        <div id="positionsContainer" class="positions-container">
+            <div class="positions-placeholder">
+                <i class="material-icons">trending_up</i>
+                <p>Select an account to view live positions</p>
+            </div>
+        </div>
+    </section>
+
     <section class="copy-trader">
         <header>
             <div>
                 <h2>Copy Trader</h2>
-                <p>Configure mirrored trade routing (coming soon)</p>
+                <p>Mirror your manual trades to multiple accounts</p>
             </div>
-            <span class="badge badge-secondary">BETA</span>
+            <label class="copy-toggle">
+                <input type="checkbox" id="copyTradeEnabled">
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Copy Trading</span>
+            </label>
         </header>
-        <div class="copy-placeholder">
-            <i class="material-icons">sync_alt</i>
-            <p>Copy trader controls will live here. This dedicated tab keeps manual trading isolated so other control center panels stay stable.</p>
+        <div class="copy-accounts-container">
+            <div class="copy-accounts-header">
+                <span>Select accounts to copy trades to:</span>
+                <div class="copy-actions">
+                    <button type="button" class="btn-small" id="selectAllAccounts">Select All</button>
+                    <button type="button" class="btn-small btn-outline" id="deselectAllAccounts">Deselect All</button>
+                </div>
+            </div>
+            <div id="copyAccountsList" class="copy-accounts-list">
+                <div class="copy-accounts-loading">
+                    <i class="material-icons spin">sync</i>
+                    <span>Loading accounts...</span>
+                </div>
+            </div>
+            <div class="copy-settings">
+                <h4>Copy Settings</h4>
+                <div class="copy-settings-grid">
+                    <label class="setting-row">
+                        <input type="checkbox" id="copyUseSameQuantity" checked>
+                        <span>Use same quantity for all accounts</span>
+                    </label>
+                    <label class="setting-row">
+                        <input type="checkbox" id="copyUseRiskSettings" checked>
+                        <span>Apply same risk settings (TP/SL/Trail)</span>
+                    </label>
+                    <label class="setting-row">
+                        <input type="checkbox" id="copyExcludeSource" checked>
+                        <span>Exclude source account from copy</span>
+                    </label>
+                </div>
+            </div>
+            <div class="copy-status" id="copyStatus">
+                <i class="material-icons">info</i>
+                <span>Enable copy trading and select accounts to mirror your trades</span>
+            </div>
         </div>
     </section>
 </div>
@@ -207,18 +267,394 @@
     .btn-sell { background: linear-gradient(135deg,#f87171,#ef4444); color: #0b1120; }
     .btn-buy { background: linear-gradient(135deg,#34d399,#10b981); color: #0b1120; }
     .btn-close { background: linear-gradient(135deg,#fb923c,#f97316); color: #0b1120; }
-    .copy-placeholder {
+    /* Copy Trader Toggle Switch */
+    .copy-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        cursor: pointer;
+    }
+    .copy-toggle input[type="checkbox"] {
+        display: none;
+    }
+    .toggle-slider {
+        width: 48px;
+        height: 26px;
+        background: rgba(71,85,105,0.5);
+        border-radius: 999px;
+        position: relative;
+        transition: background 0.3s ease;
+    }
+    .toggle-slider::after {
+        content: '';
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        background: #e2e8f0;
+        border-radius: 50%;
+        top: 3px;
+        left: 3px;
+        transition: transform 0.3s ease;
+    }
+    .copy-toggle input:checked + .toggle-slider {
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+    }
+    .copy-toggle input:checked + .toggle-slider::after {
+        transform: translateX(22px);
+    }
+    .toggle-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: rgba(226,232,240,0.8);
+    }
+    .copy-toggle input:checked ~ .toggle-label {
+        color: #3b82f6;
+    }
+    
+    /* Copy Accounts Container */
+    .copy-accounts-container {
+        display: grid;
+        gap: 1rem;
+    }
+    .copy-accounts-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    .copy-accounts-header span {
+        font-size: 0.85rem;
+        color: rgba(226,232,240,0.7);
+    }
+    .copy-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+    .btn-small {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.75rem;
+        border-radius: 8px;
+        border: none;
+        background: rgba(59,130,246,0.25);
+        color: #93c5fd;
+        cursor: pointer;
+        transition: background 0.2s ease;
+    }
+    .btn-small:hover {
+        background: rgba(59,130,246,0.4);
+    }
+    .btn-small.btn-outline {
+        background: transparent;
+        border: 1px solid rgba(148,163,184,0.3);
+        color: rgba(226,232,240,0.7);
+    }
+    .btn-small.btn-outline:hover {
+        background: rgba(148,163,184,0.1);
+    }
+    
+    /* Copy Accounts List */
+    .copy-accounts-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 0.75rem;
+        max-height: 300px;
+        overflow-y: auto;
+        padding: 0.5rem;
+        background: rgba(15,23,42,0.4);
+        border-radius: 12px;
+        border: 1px solid rgba(148,163,184,0.15);
+    }
+    .copy-accounts-loading {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 2rem;
+        color: rgba(148,163,184,0.7);
+    }
+    .spin {
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    
+    /* Account Card */
+    .copy-account-card {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(148,163,184,0.2);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .copy-account-card:hover {
+        border-color: rgba(59,130,246,0.4);
+        background: rgba(59,130,246,0.05);
+    }
+    .copy-account-card.selected {
+        border-color: rgba(59,130,246,0.6);
+        background: rgba(59,130,246,0.1);
+    }
+    .copy-account-card input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: #3b82f6;
+    }
+    .copy-account-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+    .copy-account-name {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #e2e8f0;
+    }
+    .copy-account-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.75rem;
+        color: rgba(148,163,184,0.8);
+    }
+    .copy-account-badge {
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        font-size: 0.65rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .copy-account-badge.demo {
+        background: rgba(251,191,36,0.2);
+        color: #fcd34d;
+    }
+    .copy-account-badge.live {
+        background: rgba(16,185,129,0.2);
+        color: #6ee7b7;
+    }
+    
+    /* Copy Settings */
+    .copy-settings {
+        padding: 1rem;
+        background: rgba(15,23,42,0.4);
+        border-radius: 12px;
+        border: 1px solid rgba(148,163,184,0.15);
+    }
+    .copy-settings h4 {
+        margin: 0 0 0.75rem 0;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(226,232,240,0.7);
+    }
+    .copy-settings-grid {
+        display: grid;
+        gap: 0.6rem;
+    }
+    .setting-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: rgba(226,232,240,0.8);
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+    .setting-row input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: #3b82f6;
+    }
+    
+    /* Copy Status */
+    .copy-status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: rgba(59,130,246,0.1);
+        border: 1px solid rgba(59,130,246,0.25);
+        border-radius: 10px;
+        font-size: 0.85rem;
+        color: rgba(147,197,253,0.9);
+    }
+    .copy-status i {
+        font-size: 1.1rem;
+    }
+    .copy-status.active {
+        background: rgba(16,185,129,0.1);
+        border-color: rgba(16,185,129,0.3);
+        color: #6ee7b7;
+    }
+    .copy-status.disabled {
+        background: rgba(148,163,184,0.1);
+        border-color: rgba(148,163,184,0.2);
+        color: rgba(148,163,184,0.7);
+    }
+    .live-positions {
+        background: rgba(11,18,33,0.92);
+        border-radius: 18px;
+        border: 1px solid rgba(59,130,246,0.25);
+        padding: 1.75rem;
+        display: grid;
+        gap: 1.25rem;
+    }
+    .live-positions header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    .live-positions h2 {
+        margin: 0;
+        font-size: 1.5rem;
+    }
+    .position-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .positions-container {
+        min-height: 200px;
+    }
+    .positions-placeholder {
         border: 1px dashed rgba(148,163,184,0.35);
         border-radius: 16px;
         padding: 2rem;
         text-align: center;
         color: rgba(226,232,240,0.8);
     }
-    .copy-placeholder i {
+    .positions-placeholder i {
         font-size: 2.5rem;
         display: block;
         margin-bottom: 0.75rem;
         color: rgba(59,130,246,0.6);
+    }
+    .positions-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .positions-table th,
+    .positions-table td {
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(148,163,184,0.15);
+    }
+    .positions-table th {
+        color: rgba(226,232,240,0.6);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-weight: 600;
+    }
+    .positions-table td {
+        color: rgba(226,232,240,0.9);
+        font-size: 0.9rem;
+    }
+    .positions-table tr:hover {
+        background: rgba(59,130,246,0.05);
+    }
+    .position-quantity {
+        font-weight: 600;
+    }
+    .position-quantity.positive {
+        color: #10b981;
+    }
+    .position-quantity.negative {
+        color: #f87171;
+    }
+    .position-pnl {
+        font-weight: 600;
+    }
+    .position-pnl.positive {
+        color: #10b981;
+    }
+    .position-pnl.negative {
+        color: #f87171;
+    }
+    /* Account PnL Summary Styles */
+    .pnl-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+    }
+    .account-pnl-card {
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(59,130,246,0.25);
+        border-radius: 14px;
+        padding: 1rem;
+    }
+    .account-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(148,163,184,0.15);
+    }
+    .account-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #e2e8f0;
+    }
+    .account-type-badge {
+        padding: 0.2rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.65rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+    .account-type-badge.demo {
+        background: rgba(251,191,36,0.2);
+        color: #fcd34d;
+    }
+    .account-type-badge.live {
+        background: rgba(16,185,129,0.2);
+        color: #6ee7b7;
+    }
+    .account-type {
+        font-size: 0.75rem;
+        color: rgba(148,163,184,0.7);
+    }
+    .pnl-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.35rem 0;
+    }
+    .pnl-label {
+        color: rgba(148,163,184,0.9);
+        font-size: 0.8rem;
+    }
+    .pnl-value {
+        font-weight: 600;
+        font-size: 0.95rem;
+    }
+    .pnl-value.positive {
+        color: #10b981;
+    }
+    .pnl-value.negative {
+        color: #f87171;
+    }
+    .pnl-row.net-liq {
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid rgba(148,163,184,0.15);
+    }
+    .pnl-row.net-liq .pnl-value {
+        color: #38bdf8;
     }
     @media (max-width: 900px) {
         .manual-copy-wrapper {
@@ -285,11 +721,24 @@
                 const selectedValue = this.value;
                 if (selectedValue) {
                     const [accountId, subaccountId] = selectedValue.split(':');
+                    currentAccountId = accountId;
                     loadStrategiesForManualTrader(accountId, subaccountId);
+                    // Positions will update via WebSocket automatically
                 } else {
+                    currentAccountId = null;
                     const strategySelect = document.getElementById('manualStrategySelect');
                     if (strategySelect) {
-                        strategySelect.innerHTML = '<option value=\"\">Select strategy...</option>';
+                        strategySelect.innerHTML = '<option value="">Select strategy...</option>';
+                    }
+                    // Clear positions display
+                    const container = document.getElementById('positionsContainer');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="positions-placeholder">
+                                <i class="material-icons">trending_up</i>
+                                <p>Select an account to view live positions</p>
+                            </div>
+                        `;
                     }
                 }
             });
@@ -331,6 +780,7 @@
 
             const riskPayload = collectRiskSettings();
 
+            // Place the primary manual trade
             const response = await fetch('/api/manual-trade', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -346,6 +796,13 @@
             const data = await response.json();
             if (data.success) {
                 showToast(`✅ ${data.message || `${side} order placed successfully`}`, 'success');
+                
+                // Execute copy trades if enabled
+                const copyEnabled = document.getElementById('copyTradeEnabled')?.checked;
+                if (copyEnabled) {
+                    // Small delay to let primary order process
+                    setTimeout(() => executeCopyTrades(side), 100);
+                }
             } else {
                 showToast(`❌ Error: ${data.error || 'Failed to place order'}`, 'error');
             }
@@ -411,6 +868,520 @@
         }
 
         return risk;
+    }
+
+    // ============================================================================
+    // Copy Trader Functionality
+    // ============================================================================
+    let allSubaccounts = []; // Store all available subaccounts for copy trading
+
+    async function loadCopyTraderAccounts() {
+        const listContainer = document.getElementById('copyAccountsList');
+        if (!listContainer) return;
+
+        try {
+            const response = await fetch('/api/accounts');
+            const data = await response.json();
+            
+            if (!data.success || !data.accounts) {
+                listContainer.innerHTML = '<div class="copy-accounts-loading"><span>No accounts found</span></div>';
+                return;
+            }
+            
+            allSubaccounts = [];
+            let html = '';
+            
+            data.accounts.forEach(account => {
+                if (!account.is_connected) return;
+                
+                const accountName = account.name || `Account ${account.id}`;
+                const tradovateAccounts = account.tradovate_accounts || [];
+                
+                tradovateAccounts.forEach(subaccount => {
+                    const subId = String(subaccount.id);
+                    const subName = subaccount.name || subId;
+                    const isDemo = subaccount.is_demo;
+                    const envLabel = isDemo ? 'Demo' : 'Live';
+                    const badgeClass = isDemo ? 'demo' : 'live';
+                    
+                    // Store for later use
+                    allSubaccounts.push({
+                        account_id: account.id,
+                        subaccount_id: subId,
+                        full_value: `${account.id}:${subId}`,
+                        name: subName,
+                        account_name: accountName,
+                        is_demo: isDemo
+                    });
+                    
+                    html += `
+                        <label class="copy-account-card" data-value="${account.id}:${subId}">
+                            <input type="checkbox" class="copy-account-checkbox" value="${account.id}:${subId}">
+                            <div class="copy-account-info">
+                                <span class="copy-account-name">${subName}</span>
+                                <div class="copy-account-meta">
+                                    <span>${accountName}</span>
+                                    <span class="copy-account-badge ${badgeClass}">${envLabel}</span>
+                                </div>
+                            </div>
+                        </label>
+                    `;
+                });
+            });
+            
+            if (html === '') {
+                listContainer.innerHTML = '<div class="copy-accounts-loading"><span>No connected accounts found. Connect accounts first.</span></div>';
+            } else {
+                listContainer.innerHTML = html;
+                
+                // Add event listeners for card selection styling
+                document.querySelectorAll('.copy-account-card').forEach(card => {
+                    const checkbox = card.querySelector('input[type="checkbox"]');
+                    checkbox.addEventListener('change', () => {
+                        card.classList.toggle('selected', checkbox.checked);
+                        updateCopyStatus();
+                    });
+                });
+            }
+            
+            updateCopyStatus();
+        } catch (error) {
+            console.error('Error loading copy trader accounts:', error);
+            listContainer.innerHTML = '<div class="copy-accounts-loading"><span>Error loading accounts</span></div>';
+        }
+    }
+
+    function getSelectedCopyAccounts() {
+        const checkboxes = document.querySelectorAll('.copy-account-checkbox:checked');
+        return Array.from(checkboxes).map(cb => cb.value);
+    }
+
+    function updateCopyStatus() {
+        const statusEl = document.getElementById('copyStatus');
+        const toggleEl = document.getElementById('copyTradeEnabled');
+        if (!statusEl || !toggleEl) return;
+        
+        const isEnabled = toggleEl.checked;
+        const selectedAccounts = getSelectedCopyAccounts();
+        
+        if (!isEnabled) {
+            statusEl.className = 'copy-status disabled';
+            statusEl.innerHTML = '<i class="material-icons">sync_disabled</i><span>Copy trading is disabled</span>';
+        } else if (selectedAccounts.length === 0) {
+            statusEl.className = 'copy-status';
+            statusEl.innerHTML = '<i class="material-icons">warning</i><span>Select at least one account to copy trades to</span>';
+        } else {
+            statusEl.className = 'copy-status active';
+            statusEl.innerHTML = `<i class="material-icons">check_circle</i><span>Copy trading active: ${selectedAccounts.length} account${selectedAccounts.length > 1 ? 's' : ''} selected</span>`;
+        }
+    }
+
+    // Initialize copy trader on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load accounts for copy trader
+        setTimeout(() => loadCopyTraderAccounts(), 200);
+        
+        // Copy trade toggle
+        const copyToggle = document.getElementById('copyTradeEnabled');
+        if (copyToggle) {
+            copyToggle.addEventListener('change', updateCopyStatus);
+        }
+        
+        // Select All / Deselect All buttons
+        const selectAllBtn = document.getElementById('selectAllAccounts');
+        const deselectAllBtn = document.getElementById('deselectAllAccounts');
+        
+        if (selectAllBtn) {
+            selectAllBtn.addEventListener('click', () => {
+                document.querySelectorAll('.copy-account-checkbox').forEach(cb => {
+                    cb.checked = true;
+                    cb.closest('.copy-account-card').classList.add('selected');
+                });
+                updateCopyStatus();
+            });
+        }
+        
+        if (deselectAllBtn) {
+            deselectAllBtn.addEventListener('click', () => {
+                document.querySelectorAll('.copy-account-checkbox').forEach(cb => {
+                    cb.checked = false;
+                    cb.closest('.copy-account-card').classList.remove('selected');
+                });
+                updateCopyStatus();
+            });
+        }
+    });
+
+    // Execute copy trades to all selected accounts
+    async function executeCopyTrades(side) {
+        const copyEnabled = document.getElementById('copyTradeEnabled')?.checked;
+        if (!copyEnabled) return { success: true, message: 'Copy trading disabled' };
+        
+        const selectedAccounts = getSelectedCopyAccounts();
+        if (selectedAccounts.length === 0) return { success: true, message: 'No accounts selected for copy' };
+        
+        const tickerSelect = document.getElementById('manualTickerSelect');
+        const positionSizeInput = document.getElementById('manualPositionSize');
+        const excludeSource = document.getElementById('copyExcludeSource')?.checked;
+        const useSameQuantity = document.getElementById('copyUseSameQuantity')?.checked;
+        const useRiskSettings = document.getElementById('copyUseRiskSettings')?.checked;
+        
+        const sourceAccount = document.getElementById('manualAccountSelect')?.value;
+        const symbol = tickerSelect?.value;
+        const quantity = parseInt(positionSizeInput?.value || '1');
+        const riskPayload = useRiskSettings ? collectRiskSettings() : {};
+        
+        // Filter out source account if needed
+        // sourceAccount format: "account_id:subaccount_id" e.g., "1:26029294"
+        // selectedAccounts format: same "account_id:subaccount_id"
+        console.log('=== COPY TRADE DEBUG ===');
+        console.log('Source account (from select):', sourceAccount);
+        console.log('Selected accounts:', selectedAccounts);
+        console.log('Exclude source checked:', excludeSource);
+        
+        const accountsToCopy = excludeSource 
+            ? selectedAccounts.filter(acc => {
+                const match = acc === sourceAccount;
+                console.log(`  Comparing: "${acc}" === "${sourceAccount}" => ${match} (${match ? 'EXCLUDE' : 'INCLUDE'})`);
+                return !match;
+            })
+            : selectedAccounts;
+        
+        console.log('Accounts to copy to:', accountsToCopy);
+        console.log('========================');
+        
+        if (accountsToCopy.length === 0) {
+            showToast('ℹ️ No additional accounts to copy to (source excluded)', 'info');
+            return { success: true, message: 'No accounts to copy to (source excluded)' };
+        }
+        
+        // Execute copy trades
+        const results = [];
+        showToast(`🔄 Copying ${side} trade to ${accountsToCopy.length} account(s)...`, 'info');
+        
+        for (const accountValue of accountsToCopy) {
+            try {
+                const response = await fetch('/api/manual-trade', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_subaccount: accountValue,
+                        symbol: symbol,
+                        side: side,
+                        quantity: useSameQuantity ? quantity : quantity,
+                        risk: riskPayload
+                    })
+                });
+                
+                const data = await response.json();
+                results.push({
+                    account: accountValue,
+                    success: data.success,
+                    message: data.message || data.error
+                });
+            } catch (error) {
+                results.push({
+                    account: accountValue,
+                    success: false,
+                    message: error.message
+                });
+            }
+        }
+        
+        // Summarize results
+        const successful = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success).length;
+        
+        if (failed === 0) {
+            showToast(`✅ Copy trade successful: ${successful} account(s)`, 'success');
+        } else if (successful === 0) {
+            showToast(`❌ Copy trade failed for all ${failed} account(s)`, 'error');
+        } else {
+            showToast(`⚠️ Copy trade: ${successful} succeeded, ${failed} failed`, 'info');
+        }
+        
+        return { success: successful > 0, results };
+    }
+</script>
+<script>
+    // ============================================================================
+    // WebSocket Connection for Real-Time Position Updates (like Trade Manager)
+    // ============================================================================
+    console.log('🔌 WebSocket script block starting...');
+    console.log('🔍 DEBUG: Script is executing!');
+    console.log('🔍 DEBUG: Current time:', new Date().toISOString());
+    let socket = null;
+    let currentAccountId = null;
+
+    // Store account PnL data globally for display
+    let accountPnlData = {};
+
+    function updatePositionsFromWebSocket(positions, pnlData) {
+        const container = document.getElementById('positionsContainer');
+        if (!container) return;
+
+        // Update account PnL data if provided
+        if (pnlData) {
+            accountPnlData = pnlData;
+        }
+
+        if (!positions || positions.length === 0) {
+            // Even with no positions, show account PnL summary if available
+            let html = '';
+            if (Object.keys(accountPnlData).length > 0) {
+                html += buildAccountPnlSummary(accountPnlData);
+            }
+            html += `
+                <div class="positions-placeholder">
+                    <i class="material-icons">trending_flat</i>
+                    <p>No open positions</p>
+                </div>
+            `;
+            container.innerHTML = html;
+            return;
+        }
+
+        // Build account PnL summary + positions table
+        let tableHTML = '';
+        
+        // Add account PnL summary at the top
+        if (Object.keys(accountPnlData).length > 0) {
+            tableHTML += buildAccountPnlSummary(accountPnlData);
+        }
+
+        // Build positions table
+        tableHTML += `
+            <table class="positions-table">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Quantity</th>
+                        <th>Avg Price</th>
+                        <th>Account</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        positions.forEach(pos => {
+            const qty = pos.net_quantity || pos.quantity || 0;
+            const qtyClass = qty >= 0 ? 'positive' : 'negative';
+            const qtySign = qty >= 0 ? '+' : '';
+            const accountName = pos.account_name || 'Unknown';
+            const isDemo = pos.is_demo ? '(Demo)' : '(Live)';
+            
+            tableHTML += `
+                <tr>
+                    <td><strong>${pos.symbol || 'N/A'}</strong></td>
+                    <td class="position-quantity ${qtyClass}">${qtySign}${qty}</td>
+                    <td>${pos.avg_price ? pos.avg_price.toFixed(2) : 'N/A'}</td>
+                    <td>${accountName} <span class="account-type">${isDemo}</span></td>
+                </tr>
+            `;
+        });
+
+        tableHTML += `
+                </tbody>
+            </table>
+        `;
+
+        container.innerHTML = tableHTML;
+    }
+
+    function buildAccountPnlSummary(pnlData) {
+        let html = '<div class="pnl-summary">';
+        
+        for (const [accId, acc] of Object.entries(pnlData)) {
+            const openPnl = acc.open_pnl || 0;
+            const realizedPnl = acc.realized_pnl || 0;
+            const netLiq = acc.net_liq || 0;
+            const pnlClass = openPnl >= 0 ? 'positive' : 'negative';
+            const pnlSign = openPnl >= 0 ? '+' : '';
+            const isDemo = acc.is_demo ? '(Demo)' : '(Live)';
+            
+            html += `
+                <div class="account-pnl-card">
+                    <div class="account-header">
+                        <span class="account-name">${acc.account_name || accId}</span>
+                        <span class="account-type-badge ${acc.is_demo ? 'demo' : 'live'}">${isDemo}</span>
+                    </div>
+                    <div class="pnl-row">
+                        <span class="pnl-label">Unrealized P&L:</span>
+                        <span class="pnl-value ${pnlClass}">${pnlSign}$${openPnl.toFixed(2)}</span>
+                    </div>
+                    <div class="pnl-row">
+                        <span class="pnl-label">Today's Realized:</span>
+                        <span class="pnl-value ${realizedPnl >= 0 ? 'positive' : 'negative'}">${realizedPnl >= 0 ? '+' : ''}$${realizedPnl.toFixed(2)}</span>
+                    </div>
+                    <div class="pnl-row net-liq">
+                        <span class="pnl-label">Net Liq:</span>
+                        <span class="pnl-value">$${netLiq.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                    </div>
+                </div>
+            `;
+        }
+        
+        html += '</div>';
+        return html;
+    }
+
+    // ============================================================================
+    // WebSocket Connection (Socket.IO already loaded above)
+    // ============================================================================
+    console.log('🔌 WebSocket script block executing...');
+    console.log('Socket.IO available:', typeof io !== 'undefined');
+    console.log('Document ready state:', document.readyState);
+    
+    // Function to connect WebSocket
+    function connectWebSocket() {
+        console.log('🔌 Attempting to connect WebSocket...');
+        console.log('Socket.IO available:', typeof io !== 'undefined');
+        
+        if (typeof io === 'undefined') {
+            console.error('❌ Socket.IO library not loaded! Retrying in 1 second...');
+            const statusEl = document.getElementById('wsStatus');
+            if (statusEl) {
+                statusEl.textContent = 'Loading Socket.IO...';
+                statusEl.className = 'badge badge-secondary';
+            }
+            setTimeout(connectWebSocket, 1000);
+            return;
+        }
+
+        try {
+            console.log('Creating Socket.IO connection to:', window.location.origin);
+            // Connect to the same origin
+            socket = io(window.location.origin, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionAttempts: 5,
+                timeout: 20000
+            });
+            
+            console.log('✅ Socket object created:', socket);
+
+            socket.on('connect', () => {
+                console.log('✅ Connected to WebSocket - Manual Trader');
+                console.log('Socket ID:', socket.id);
+                const statusEl = document.getElementById('wsStatus');
+                if (statusEl) {
+                    statusEl.textContent = 'Connected';
+                    statusEl.className = 'badge';
+                }
+            });
+
+            socket.on('disconnect', (reason) => {
+                console.log('❌ Disconnected from WebSocket. Reason:', reason);
+                const statusEl = document.getElementById('wsStatus');
+                if (statusEl) {
+                    statusEl.textContent = 'Disconnected';
+                    statusEl.className = 'badge badge-secondary';
+                }
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('❌ WebSocket connection error:', error);
+                console.error('Error details:', error.message);
+                const statusEl = document.getElementById('wsStatus');
+                if (statusEl) {
+                    statusEl.textContent = 'Connection Error';
+                    statusEl.className = 'badge badge-secondary';
+                }
+            });
+
+            socket.on('reconnect', (attemptNumber) => {
+                console.log('🔄 Reconnected after', attemptNumber, 'attempts');
+            });
+
+            socket.on('reconnect_error', (error) => {
+                console.error('❌ Reconnection error:', error);
+            });
+
+            // Real-time position updates (every second, like Trade Manager)
+            socket.on('position_update', (data) => {
+                console.log('📊 Position update received:', data);
+                
+                const positions = data.positions || [];
+                const pnlData = data.pnl_data || {};
+                
+                // Always update with all positions and PnL data
+                // The PnL data contains account-level unrealized/realized PnL from Tradovate
+                console.log(`📊 Received ${positions.length} positions, ${Object.keys(pnlData).length} accounts`);
+                
+                // Update the display with positions and PnL data
+                updatePositionsFromWebSocket(positions, pnlData);
+            });
+
+            // Trade executed - refresh positions
+            socket.on('trade_executed', (data) => {
+                console.log('💰 Trade executed:', data);
+                // Positions will be updated via position_update event
+            });
+
+            // Test event to verify connection
+            socket.on('status', (data) => {
+                console.log('📡 Status update:', data);
+            });
+
+        } catch (error) {
+            console.error('❌ Error creating WebSocket connection:', error);
+            console.error('Error stack:', error.stack);
+            const statusEl = document.getElementById('wsStatus');
+            if (statusEl) {
+                statusEl.textContent = 'Error: ' + error.message;
+                statusEl.className = 'badge badge-secondary';
+            }
+        }
+    }
+    
+    // Connect immediately - Socket.IO should be loaded in layout.html head
+    console.log('📄 Connecting WebSocket immediately...');
+    console.log('Window location:', window.location.href);
+    console.log('Socket.IO type:', typeof io);
+    console.log('Document ready state:', document.readyState);
+    
+    // Wait for DOM and Socket.IO to be ready
+    function attemptConnection() {
+        console.log('🔄 Attempting connection, io available:', typeof io !== 'undefined');
+        console.log('Document ready:', document.readyState === 'complete');
+        
+        if (typeof io === 'undefined') {
+            console.error('❌ Socket.IO not available!');
+            console.error('This means Socket.IO script failed to load from /static/js/socket.io.min.js');
+            const statusEl = document.getElementById('wsStatus');
+            if (statusEl) {
+                statusEl.textContent = 'Socket.IO not loaded';
+                statusEl.className = 'badge badge-secondary';
+            }
+            // Retry after 2 seconds
+            console.log('⏳ Retrying in 2 seconds...');
+            setTimeout(attemptConnection, 2000);
+            return;
+        }
+        
+        if (document.readyState !== 'complete') {
+            console.log('⏳ Waiting for DOM to be ready...');
+            window.addEventListener('load', attemptConnection);
+            return;
+        }
+        
+        console.log('✅ Socket.IO is available, connecting NOW...');
+        console.log('Calling connectWebSocket()...');
+        try {
+            connectWebSocket();
+        } catch (error) {
+            console.error('❌ Error calling connectWebSocket:', error);
+            console.error('Stack:', error.stack);
+        }
+    }
+    
+    // Start connection attempt
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', attemptConnection);
+    } else {
+        // DOM already ready, try immediately
+        attemptConnection();
     }
 </script>
 <style>

@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""
+⚠️ CRITICAL FOR AI ASSISTANTS: READ START_HERE.md BEFORE MODIFYING THIS FILE
+
+PROTECTION RULES:
+- Tab Isolation: Only modify files for the tab you're working on (see TAB_ISOLATION_MAP.md)
+- Protected Functions: Account management functions are PROTECTED (see ACCOUNT_MGMT_SNAPSHOT.md)
+- Verify Before Fixing: Don't fix things that aren't broken
+- One Change at a Time: Make minimal, focused changes
+
+See START_HERE.md for complete protection rules.
+"""
 from __future__ import annotations
 import sqlite3
 import logging
@@ -9,9 +20,21 @@ import os
 import json
 import re
 import time
+import threading
 import requests
+from typing import Optional
 from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask_socketio import SocketIO, emit
 from datetime import datetime, timedelta
+
+# WebSocket support for Tradovate market data
+try:
+    import websockets
+    WEBSOCKETS_AVAILABLE = True
+except ImportError:
+    WEBSOCKETS_AVAILABLE = False
+    # Logger not defined yet, will log later
+
 
 # Load environment variables from .env file if it exists
 try:
@@ -23,6 +46,80 @@ except ImportError:
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
+
+# Initialize SocketIO for WebSocket support (like Trade Manager)
+# Use 'eventlet' or 'gevent' if available, otherwise fall back to threading
+try:
+    import eventlet
+    eventlet.monkey_patch()
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+    logger.info("SocketIO using eventlet async mode")
+except ImportError:
+    try:
+        import gevent
+        from gevent import monkey
+        monkey.patch_all()
+        socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
+        logger.info("SocketIO using gevent async mode")
+    except ImportError:
+        socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True, engineio_logger=True)
+        logger.info("SocketIO using threading async mode (fallback)")
+
+# ⚠️ SECURITY WARNING: API credentials should be stored in environment variables or secure config
+# These are default credentials - prefer storing in .env file or environment variables
+# Example: TRADOVATE_API_CID=8720, TRADOVATE_API_SECRET=your-secret
+TRADOVATE_API_CID = int(os.getenv('TRADOVATE_API_CID', '8720'))
+TRADOVATE_API_SECRET = os.getenv('TRADOVATE_API_SECRET', 'e76ee8d1-d168-4252-a59e-f11a8b0cdae4')
+
+# Contract multipliers for PnL calculation
+CONTRACT_MULTIPLIERS = {
+    'MES': 5.0,    # Micro E-mini S&P 500: $5 per point
+    'MNQ': 2.0,    # Micro E-mini Nasdaq: $2 per point
+    'ES': 50.0,    # E-mini S&P 500: $50 per point
+    'NQ': 20.0,    # E-mini Nasdaq: $20 per point
+    'MYM': 5.0,    # Micro E-mini Dow: $5 per point
+    'YM': 5.0,     # E-mini Dow: $5 per point
+    'M2K': 5.0,    # Micro E-mini Russell 2000: $5 per point
+    'RTY': 50.0,   # E-mini Russell 2000: $50 per point
+}
+
+def get_contract_multiplier(symbol: str) -> float:
+    """Get contract multiplier for a symbol"""
+    symbol_upper = symbol.upper().strip()
+    
+    # Try to match known base symbols (2-3 characters)
+    # Check 3-char symbols first (MES, MNQ, M2K, etc.)
+    if symbol_upper[:3] in CONTRACT_MULTIPLIERS:
+        return CONTRACT_MULTIPLIERS[symbol_upper[:3]]
+    
+    # Check 2-char symbols (ES, NQ, YM, etc.)
+    if symbol_upper[:2] in CONTRACT_MULTIPLIERS:
+        return CONTRACT_MULTIPLIERS[symbol_upper[:2]]
+    
+    # Fallback: remove month codes and numbers
+    # Month codes: F, G, H, J, K, M, N, Q, U, V, X, Z
+    base_symbol = re.sub(r'[0-9!]+', '', symbol_upper)  # Remove numbers and !
+    base_symbol = re.sub(r'[FGHJKMNQUVXZ]$', '', base_symbol)  # Remove trailing month code
+    
+    return CONTRACT_MULTIPLIERS.get(base_symbol, 1.0)
+
+def get_market_price_simple(symbol: str) -> Optional[float]:
+    """
+    Get current market price using a simple HTTP endpoint.
+    This is a placeholder - you'll need to integrate with:
+    - TradingView API (free tier available)
+    - Tradovate WebSocket market data (requires subscription)
+    - Or another market data provider
+    """
+    try:
+        # For now, return None - will be implemented with market data source
+        # TradingView has a free API: https://symbol-search.tradingview.com/
+        # Or use: https://scanner.tradingview.com/symbols?exchange=CME&symbol=MES1!
+        logger.debug(f"Market data not yet implemented for {symbol}")
+        return None
+    except Exception as e:
+        logger.error(f"Error getting market price for {symbol}: {e}")
+        return None
 
 SYMBOL_FALLBACK_MAP = {
     'MNQ': 'MNQZ5',
@@ -112,7 +209,15 @@ def clamp_price(price: float, tick_size: float) -> float:
 
 
 async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbol: str, entry_side: str, quantity: int, risk_config: dict):
+    """
+    Apply risk management orders (TP/SL) as OCO (One-Cancels-Other) using Tradovate's order strategy.
+    When TP hits, SL is automatically cancelled (and vice versa).
+    """
+    logger.info(f"🎯 apply_risk_orders called: symbol={symbol}, side={entry_side}, qty={quantity}")
+    logger.info(f"🎯 Risk config: {risk_config}")
+    
     if not risk_config or not quantity:
+        logger.info(f"🎯 No risk config or quantity=0, skipping bracket orders")
         return
     symbol_upper = symbol.upper()
     fill = await wait_for_position_fill(tradovate, account_id, symbol_upper, entry_side)
@@ -128,71 +233,337 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
     is_long = entry_side.lower() == 'buy'
     exit_action = 'Sell' if is_long else 'Buy'
 
-    async def place_tp_order(ticks: float, qty: int):
-        if not ticks or qty <= 0:
-            return
-        offset = tick_size * ticks
-        target_price = entry_price + offset if is_long else entry_price - offset
-        order = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, qty, clamp_price(target_price, tick_size), account_id)
-        await tradovate.place_order(order)
-
-    async def place_stop_order(ticks: float, qty: int):
-        if not ticks or qty <= 0:
-            return
-        offset = tick_size * ticks
-        stop_price = entry_price - offset if is_long else entry_price + offset
-        order = tradovate.create_stop_order(account_spec, symbol_upper, exit_action, qty, clamp_price(stop_price, tick_size), account_id)
-        await tradovate.place_order(order)
-
-    async def place_trailing_order(trail_ticks: float, qty: int):
-        if not trail_ticks or qty <= 0:
-            return
-        offset = tick_size * trail_ticks
-        order = tradovate.create_trailing_stop_order(account_spec, symbol_upper, exit_action, qty, float(offset), account_id)
-        await tradovate.place_order(order)
-
-    # Take profit ladder
-    take_profit = risk_config.get('take_profit') or []
-    remaining_qty = quantity
-    for idx, tp in enumerate(take_profit):
-        ticks = tp.get('gain_ticks')
-        trim_percent = tp.get('trim_percent', 100 if idx == len(take_profit) - 1 else 0)
-        tp_qty = int(round(quantity * (trim_percent / 100.0))) if trim_percent else 0
-        if tp_qty <= 0:
-            if idx == len(take_profit) - 1:
-                tp_qty = remaining_qty
-        tp_qty = min(max(tp_qty, 0), remaining_qty)
-        remaining_qty -= tp_qty
-        await place_tp_order(ticks, tp_qty)
-
-    # Stop loss or trailing stop
-    trail_cfg = risk_config.get('trail')
+    # Get risk settings
+    take_profit_list = risk_config.get('take_profit') or []
     stop_cfg = risk_config.get('stop_loss')
+    trail_cfg = risk_config.get('trail')
+    
+    # Get tick values
+    tp_ticks = None
+    sl_ticks = None
+    
+    if take_profit_list:
+        first_tp = take_profit_list[0]
+        tp_ticks = first_tp.get('gain_ticks')
+    
+    if stop_cfg:
+        sl_ticks = stop_cfg.get('loss_ticks')
+    
+    # Calculate absolute prices for OCO exit orders
+    tp_price = None
+    sl_price = None
+    
+    if tp_ticks:
+        tp_offset = tick_size * tp_ticks
+        tp_price = entry_price + tp_offset if is_long else entry_price - tp_offset
+        tp_price = clamp_price(tp_price, tick_size)
+    
+    if sl_ticks:
+        sl_offset = tick_size * sl_ticks
+        sl_price = entry_price - sl_offset if is_long else entry_price + sl_offset
+        sl_price = clamp_price(sl_price, tick_size)
+    
+    # Track order IDs for break-even and trailing stop integration
+    tp_order_id = None
+    sl_order_id = None
+    
+    # If we have BOTH TP and SL, try to place as OCO order strategy
+    if tp_price and sl_price:
+        logger.info(f"📊 Placing OCO exit orders: TP @ {tp_price}, SL @ {sl_price}, Qty: {quantity}")
+        logger.info(f"   Entry: {entry_price}, TP ticks: {tp_ticks}, SL ticks: {sl_ticks}")
+        
+        # Use the new OCO exit method
+        result = await tradovate.place_exit_oco(
+            account_id=account_id,
+            account_spec=account_spec,
+            symbol=symbol_upper,
+            exit_side=exit_action,
+            quantity=quantity,
+            take_profit_price=tp_price,
+            stop_loss_price=sl_price
+        )
+        
+        if result and result.get('success'):
+            logger.info(f"✅ OCO exit orders placed successfully")
+            
+            # Register the pair for custom OCO monitoring (if they were placed as individual orders)
+            tp_order_id = result.get('tp_order_id')
+            sl_order_id = result.get('sl_order_id')
+            
+            if tp_order_id and sl_order_id:
+                register_oco_pair(tp_order_id, sl_order_id, account_id, symbol_upper)
+        else:
+            logger.warning(f"⚠️ OCO exit failed, orders may have been placed individually: {result}")
+    
+    # If only TP (no SL)
+    elif tp_price:
+        logger.info(f"📊 Placing Take Profit only @ {tp_price}, Qty: {quantity}")
+        tp_order_data = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, quantity, tp_price, account_id)
+        tp_result = await tradovate.place_order(tp_order_data)
+        if tp_result and tp_result.get('success'):
+            tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
+    
+    # If only SL (no TP)
+    elif sl_price:
+        logger.info(f"📊 Placing Stop Loss only @ {sl_price}, Qty: {quantity}")
+        sl_order_data = tradovate.create_stop_order(account_spec, symbol_upper, exit_action, quantity, sl_price, account_id)
+        sl_result = await tradovate.place_order(sl_order_data)
+        if sl_result and sl_result.get('success'):
+            sl_order_id = sl_result.get('orderId') or sl_result.get('data', {}).get('orderId')
+    
+    # Handle trailing stop (can be used with or instead of fixed SL)
     if trail_cfg and trail_cfg.get('offset_ticks'):
-        await place_trailing_order(trail_cfg.get('offset_ticks'), quantity)
-    elif stop_cfg and stop_cfg.get('loss_ticks'):
-        await place_stop_order(stop_cfg.get('loss_ticks'), quantity)
+        trail_ticks = trail_cfg.get('offset_ticks')
+        trail_offset = tick_size * trail_ticks
+        
+        # Calculate initial stop price (entry - offset for long, entry + offset for short)
+        if is_long:
+            initial_stop_price = entry_price - trail_offset
+        else:
+            initial_stop_price = entry_price + trail_offset
+        initial_stop_price = clamp_price(initial_stop_price, tick_size)
+        
+        logger.info(f"📊 Placing Trailing Stop: offset={trail_offset} ({trail_ticks} ticks), initial stop={initial_stop_price}")
+        trail_order = tradovate.create_trailing_stop_order(
+            account_spec, symbol_upper, exit_action, quantity, 
+            float(trail_offset), account_id, initial_stop_price
+        )
+        trail_result = await tradovate.place_order(trail_order)
+        
+        if trail_result and trail_result.get('success'):
+            trail_order_id = trail_result.get('orderId') or trail_result.get('data', {}).get('orderId')
+            logger.info(f"✅ Trailing Stop placed: Order ID={trail_order_id}")
+            
+            # If we placed a trailing stop AND an SL, register them for OCO
+            if sl_order_id and trail_order_id:
+                # The trailing stop and fixed SL are alternatives - register as OCO
+                register_oco_pair(trail_order_id, sl_order_id, account_id, symbol_upper)
+                logger.info(f"🔗 Trailing Stop and SL registered as OCO: Trail={trail_order_id} <-> SL={sl_order_id}")
+        else:
+            error_msg = trail_result.get('error', 'Unknown error') if trail_result else 'No response'
+            logger.warning(f"⚠️ Failed to place trailing stop: {error_msg}")
+    
+    # Handle break-even (monitor position and move SL to entry when profitable)
+    break_even_cfg = risk_config.get('break_even')
+    if break_even_cfg and break_even_cfg.get('activation_ticks'):
+        be_ticks = break_even_cfg.get('activation_ticks')
+        logger.info(f"📊 Break-even enabled: Will move SL to entry after {be_ticks} ticks profit")
+        
+        # Register for break-even monitoring
+        register_break_even_monitor(
+            account_id=account_id,
+            symbol=symbol_upper,
+            entry_price=entry_price,
+            is_long=is_long,
+            activation_ticks=be_ticks,
+            tick_size=tick_size,
+            sl_order_id=sl_order_id,  # We'll modify this order
+            quantity=quantity,
+            account_spec=account_spec
+        )
+    
+    # Handle multiple TP levels (if any beyond the first)
+    if len(take_profit_list) > 1:
+        logger.info(f"📊 Processing {len(take_profit_list) - 1} additional TP levels")
+        first_tp_percent = take_profit_list[0].get('trim_percent', 100)
+        first_tp_qty = int(round(quantity * (first_tp_percent / 100.0))) if first_tp_percent else quantity
+        remaining_qty = quantity - first_tp_qty
+        
+        for idx, tp in enumerate(take_profit_list[1:], start=1):
+            ticks = tp.get('gain_ticks')
+            trim_percent = tp.get('trim_percent', 0)
+            
+            level_qty = int(round(quantity * (trim_percent / 100.0))) if trim_percent else 0
+            if idx == len(take_profit_list) - 1 and level_qty == 0:
+                level_qty = remaining_qty  # Last level gets remaining
+            
+            level_qty = min(max(level_qty, 0), remaining_qty)
+            if level_qty <= 0:
+                continue
+                
+            remaining_qty -= level_qty
+            
+            if ticks:
+                tp_offset = tick_size * ticks
+                level_price = entry_price + tp_offset if is_long else entry_price - tp_offset
+                level_price = clamp_price(level_price, tick_size)
+                
+                logger.info(f"  TP Level {idx + 1}: Price={level_price}, Qty={level_qty}")
+                tp_order = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, level_qty, level_price, account_id)
+                await tradovate.place_order(tp_order)
 
 
-async def cancel_open_orders(tradovate, account_id: int, symbol: str | None = None):
+def normalize_symbol(symbol: str) -> str:
+    """Normalize symbol for comparison (remove !, handle different formats)"""
+    if not symbol:
+        return ''
+    normalized = symbol.upper().strip()
+    # Remove trailing ! (TradingView format)
+    normalized = normalized.rstrip('!')
+    return normalized
+
+async def cancel_open_orders(tradovate, account_id: int, symbol: str | None = None, cancel_all: bool = False):
     cancelled = 0
     try:
-        orders = await tradovate.get_orders(str(account_id)) or []
+        # Try getting all orders first (includes order strategies), then filter by account
+        # This ensures we get bracket orders, OCO orders, etc. that might not show up in account-specific endpoint
+        all_orders = await tradovate.get_orders(None) or []  # Get all orders
+        orders = [o for o in all_orders if str(o.get('accountId', '')) == str(account_id)]
+        
+        # If we got no orders from /order/list, fallback to account-specific endpoint
+        if not orders:
+            logger.info(f"No orders found via /order/list, trying account-specific endpoint")
+            orders = await tradovate.get_orders(str(account_id)) or []
+        logger.info(f"Retrieved {len(orders)} orders for account {account_id}, filtering for symbol: {symbol}, cancel_all: {cancel_all}")
+        
+        # Log all orders for debugging
+        if orders:
+            logger.info(f"=== ALL ORDERS RETRIEVED ===")
+            for idx, order in enumerate(orders[:10]):  # Log first 10 orders
+                logger.info(f"Order #{idx+1}: id={order.get('id')}, status={order.get('status')}, ordStatus={order.get('ordStatus')}, "
+                           f"symbol={order.get('symbol')}, contractId={order.get('contractId')}, "
+                           f"orderType={order.get('orderType')}, orderQty={order.get('orderQty')}, "
+                           f"action={order.get('action')}, strategyId={order.get('orderStrategyId')}, "
+                           f"keys={list(order.keys())[:15]}")
+            if len(orders) > 10:
+                logger.info(f"... and {len(orders) - 10} more orders")
+            logger.info(f"=== END ORDER LIST ===")
+        
+        # Statuses that represent active/resting orders that can be cancelled
+        # According to Tradovate docs, statuses are: Working, Filled, Canceled, Rejected, Expired
+        # Also check: PendingNew, PendingReplace, PendingCancel, Stopped, Suspended
+        # We check both lowercase and capitalized versions for robustness
+        cancellable_statuses = {
+            'working', 'pending', 'queued', 'accepted', 'new', 
+            'pendingnew', 'pendingreplace', 'pendingcancel',
+            'stopped', 'suspended',
+            # Capitalized versions (Tradovate standard format)
+            'Working', 'Pending', 'Queued', 'Accepted', 'New',
+            'PendingNew', 'PendingReplace', 'PendingCancel',
+            'Stopped', 'Suspended'
+        }
+        
+        # Normalize target symbol if provided
+        target_symbol_normalized = None
+        target_contract_ids = set()
+        if symbol:
+            target_symbol_normalized = normalize_symbol(symbol)
+            logger.info(f"Target symbol normalized: {target_symbol_normalized}")
+        
+        # Resolve target symbol to contractId(s) if we have a symbol to match
+        if symbol and target_symbol_normalized:
+            try:
+                # Get positions to find matching contractIds
+                positions = await tradovate.get_positions(account_id)
+                for pos in positions:
+                    pos_symbol = str(pos.get('symbol') or '').upper()
+                    if normalize_symbol(pos_symbol) == target_symbol_normalized:
+                        contract_id = pos.get('contractId')
+                        if contract_id:
+                            target_contract_ids.add(contract_id)
+                            logger.info(f"Found matching contractId {contract_id} for symbol {target_symbol_normalized}")
+            except Exception as e:
+                logger.warning(f"Error resolving contractIds for symbol matching: {e}")
+        
         for order in orders:
             if not order:
                 continue
-            status = (order.get('status') or '').lower()
-            if status not in ('working', 'pending', 'queued', 'accepted', 'new'):
-                continue
-            if symbol:
-                order_symbol = str(order.get('symbol') or '').upper()
-                if order_symbol != symbol.upper():
-                    continue
+            
+            # Check both 'status' and 'ordStatus' fields (Tradovate uses ordStatus per docs)
+            # Also check 'action' which sometimes indicates buy/sell (meaning order is active)
+            status = order.get('ordStatus') or order.get('status') or ''
+            status_lower = status.lower() if status else ''
             order_id = order.get('id')
+            order_type = order.get('orderType') or order.get('order_type') or 'Unknown'
+            order_strategy_id = order.get('orderStrategyId')  # For bracket/OCO orders
+            order_action = order.get('action')  # Buy/Sell indicates active order
+            
+            # Non-cancellable final statuses (order is already complete)
+            non_cancellable = {'filled', 'canceled', 'cancelled', 'rejected', 'expired', 'complete', 'completed'}
+            
+            # Skip if status indicates order is already done
+            if status_lower and status_lower in non_cancellable:
+                logger.debug(f"Skipping order {order_id} - status '{status}' is final (not cancellable)")
+                continue
+            
+            # If status is empty but order has action (Buy/Sell), it's likely an active order
+            if not status and not order_action:
+                # If no status and no action, check if it has position-related fields (might be position data, not order)
+                if 'netPos' in order:
+                    logger.debug(f"Skipping order {order_id} - appears to be position data, not order")
+                    continue
+            
+            # Log what we're about to try to cancel
+            logger.info(f"Order {order_id} may be active: status='{status}', ordStatus='{order.get('ordStatus')}', action={order_action}, strategyId={order_strategy_id}")
+            
+            # Get symbol from order - could be direct symbol field or need to resolve from contractId
+            order_symbol = str(order.get('symbol') or '').upper()
+            order_contract_id = order.get('contractId')
+            
+            # Resolve contractId to symbol if we don't have symbol
+            if not order_symbol and order_contract_id:
+                try:
+                    resolved_symbol = await tradovate._get_contract_symbol(order_contract_id)
+                    if resolved_symbol:
+                        order_symbol = resolved_symbol.upper()
+                        order['symbol'] = resolved_symbol  # Cache it for future use
+                        logger.debug(f"Resolved contractId {order_contract_id} to symbol {order_symbol}")
+                except Exception as e:
+                    logger.debug(f"Could not resolve contractId {order_contract_id}: {e}")
+            
+            # Filter by symbol if provided - try multiple matching strategies
+            should_cancel = True
+            if cancel_all:
+                # Cancel all cancellable orders regardless of symbol
+                should_cancel = True
+                logger.info(f"Cancel-all mode: Will cancel order {order_id} ({order_symbol or f'contractId:{order_contract_id}' or 'no symbol'}, {order_type}, status: {status})")
+            elif symbol:
+                should_cancel = False
+                
+                # Strategy 1: Exact symbol match (after normalization)
+                if order_symbol:
+                    order_symbol_normalized = normalize_symbol(order_symbol)
+                    if order_symbol_normalized == target_symbol_normalized:
+                        should_cancel = True
+                        logger.info(f"Order {order_id} matches by normalized symbol: {order_symbol} -> {order_symbol_normalized}")
+                
+                # Strategy 2: ContractId match
+                if not should_cancel and order_contract_id and order_contract_id in target_contract_ids:
+                    should_cancel = True
+                    logger.info(f"Order {order_id} matches by contractId: {order_contract_id}")
+                
+                # Strategy 3: Partial symbol match (in case of format differences)
+                if not should_cancel and order_symbol:
+                    # Try matching base symbol (e.g., "ES" in "ESM1" or "ES1!")
+                    order_base = normalize_symbol(order_symbol)
+                    target_base = target_symbol_normalized
+                    # Extract base symbol (remove month codes and numbers)
+                    order_base_only = re.sub(r'\d+[A-Z]*$', '', order_base)
+                    target_base_only = re.sub(r'\d+[A-Z]*$', '', target_base)
+                    if order_base_only and target_base_only and order_base_only == target_base_only:
+                        # If base matches and one contains the other, it's likely a match
+                        if target_base_only in order_base or order_base_only in target_base:
+                            should_cancel = True
+                            logger.info(f"Order {order_id} matches by base symbol: {order_base} vs {target_base}")
+                
+                if not should_cancel:
+                    logger.debug(f"Skipping order {order_id} ({order_symbol or 'no symbol'}) - doesn't match {symbol}")
+                    continue
+            
+            # Attempt to cancel the order
+            logger.info(f"Attempting to cancel order {order_id} ({order_symbol or f'contractId:{order_contract_id}' or 'no symbol'}, {order_type}, status: {status})")
             if await tradovate.cancel_order(order_id):
                 cancelled += 1
+                logger.info(f"✅ Successfully cancelled order {order_id} ({order_symbol or 'no symbol'})")
+            else:
+                logger.warning(f"❌ Failed to cancel order {order_id} ({order_symbol or 'no symbol'})")
+                
     except Exception as e:
-        logger.warning(f"Unable to cancel open orders for {symbol or 'account'}: {e}")
+        logger.error(f"Unable to cancel open orders for {symbol or 'account'}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+    
+    logger.info(f"Total cancelled: {cancelled} orders for symbol {symbol or 'all'}")
     return cancelled
 
 def init_db():
@@ -207,6 +578,54 @@ def init_db():
             body TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    ''')
+    # Strategy P&L history table (for recording strategy performance like Trade Manager)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS strategy_pnl_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id INTEGER,
+            strategy_name TEXT,
+            pnl REAL,
+            drawdown REAL DEFAULT 0.0,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_strategy_pnl_timestamp 
+        ON strategy_pnl_history(strategy_id, timestamp)
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_strategy_pnl_date 
+        ON strategy_pnl_history(DATE(timestamp))
+    ''')
+    conn.commit()
+    conn.close()
+    
+    # Initialize just_trades.db with positions table (like Trade Manager)
+    conn = sqlite3.connect('just_trades.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS open_positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            subaccount_id TEXT,
+            account_name TEXT,
+            symbol TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            avg_price REAL NOT NULL,
+            current_price REAL DEFAULT 0.0,
+            unrealized_pnl REAL DEFAULT 0.0,
+            order_id TEXT,
+            strategy_name TEXT,
+            direction TEXT,  -- 'BUY' or 'SELL'
+            open_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(account_id, subaccount_id, symbol)
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_open_positions_account 
+        ON open_positions(account_id, subaccount_id)
     ''')
     conn.commit()
     conn.close()
@@ -298,7 +717,8 @@ def dashboard():
 
 @app.route('/accounts')
 def accounts():
-    return render_template('account_management.html')
+    # Inject the fetch MD token script into the template context
+    return render_template('account_management.html', include_md_token_script=True)
 
 @app.route('/api/accounts', methods=['GET'])
 def get_accounts():
@@ -434,6 +854,55 @@ def set_broker(account_id):
         logger.error(f"Error setting broker: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/accounts/<int:account_id>/credentials')
+def collect_credentials(account_id):
+    """Render credentials collection page for Tradovate account"""
+    return render_template('collect_credentials.html', account_id=account_id)
+
+@app.route('/api/accounts/<int:account_id>/store-credentials', methods=['POST'])
+def store_credentials(account_id):
+    """Store username/password for an account (optional, for mdAccessToken)"""
+    try:
+        data = request.get_json()
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        environment = data.get('environment', 'demo')  # 'live' or 'demo'
+        
+        if not username or not password:
+            return jsonify({
+                'success': False,
+                'error': 'Username and password are required'
+            }), 400
+        
+        # Store credentials in database
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE accounts 
+            SET username = ?, 
+                password = ?,
+                environment = ?
+            WHERE id = ?
+        """, (username, password, environment, account_id))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Stored credentials for account {account_id}")
+        
+        # Optionally fetch mdAccessToken immediately if we want
+        # For now, just store and continue to OAuth
+        
+        return jsonify({
+            'success': True,
+            'message': 'Credentials stored successfully',
+            'redirect_url': f'/api/accounts/{account_id}/connect'
+        })
+    except Exception as e:
+        logger.error(f"Error storing credentials: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/accounts/<int:account_id>/connect')
 def connect_account(account_id):
     """Redirect to Tradovate OAuth connection"""
@@ -546,9 +1015,12 @@ def oauth_callback():
         
         if response.status_code == 200:
             token_data = response.json()
+            logger.info(f"OAuth token response keys: {list(token_data.keys())}")
             access_token = token_data.get('accessToken') or token_data.get('access_token')
             refresh_token = token_data.get('refreshToken') or token_data.get('refresh_token')
             md_access_token = token_data.get('mdAccessToken') or token_data.get('md_access_token')
+            
+            logger.info(f"Tokens extracted - accessToken: {bool(access_token)}, refreshToken: {bool(refresh_token)}, mdAccessToken: {bool(md_access_token)}")
             
             # Store tokens in database
             conn = sqlite3.connect('just_trades.db')
@@ -563,6 +1035,86 @@ def oauth_callback():
             """, (access_token, refresh_token, md_access_token, account_id))
             conn.commit()
             conn.close()
+            
+            # OAuth token exchange doesn't return mdAccessToken - try to get it via accessTokenRequest
+            if not md_access_token and access_token:
+                try:
+                    # Check if we have username/password stored
+                    conn = sqlite3.connect('just_trades.db')
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT username, password, client_id, client_secret, environment
+                        FROM accounts WHERE id = ?
+                    """, (account_id,))
+                    creds = cursor.fetchone()
+                    conn.close()
+                    
+                    if creds and creds[0] and creds[1]:  # Has username and password
+                        username, password, client_id, client_secret, environment = creds
+                        base_url = "https://live.tradovateapi.com/v1" if environment == 'live' else "https://demo.tradovateapi.com/v1"
+                        
+                        # Use OAuth client credentials for accessTokenRequest (same as OAuth flow)
+                        # Use API credentials: cid: 8720, secret: e76ee8d1-d168-4252-a59e-f11a8b0cdae4
+                        # These are used for fetching mdAccessToken via /auth/accesstokenrequest
+                        DEFAULT_CLIENT_ID = str(TRADOVATE_API_CID)  # Use global API CID
+                        DEFAULT_CLIENT_SECRET = TRADOVATE_API_SECRET  # Use global API secret
+                        
+                        # Make accessTokenRequest to get mdAccessToken
+                        login_data = {
+                            "name": username,
+                            "password": password,
+                            "appId": "Just.Trade",
+                            "appVersion": "1.0.0",
+                            "deviceId": f"Just.Trade-{account_id}",
+                            "cid": DEFAULT_CLIENT_ID,  # Use OAuth client ID
+                            "sec": DEFAULT_CLIENT_SECRET  # Use OAuth client secret
+                        }
+                        
+                        logger.info(f"Fetching mdAccessToken via /auth/accesstokenrequest for account {account_id}")
+                        token_response = requests.post(
+                            f"{base_url}/auth/accesstokenrequest",
+                            json=login_data,
+                            headers={"Content-Type": "application/json"}
+                        )
+                        
+                        if token_response.status_code == 200:
+                            token_data = token_response.json()
+                            logger.info(f"accessTokenRequest response keys: {list(token_data.keys())}")
+                            
+                            # Check for errors first
+                            if 'errorText' in token_data:
+                                error_msg = token_data.get('errorText', 'Unknown error')
+                                logger.warning(f"accessTokenRequest returned error: {error_msg}")
+                                if 'not registered' in error_msg.lower():
+                                    logger.info("App not registered - this is expected if using OAuth client credentials with accessTokenRequest")
+                                    logger.info("mdAccessToken may not be available via this method. WebSocket will use accessToken instead.")
+                                elif 'incorrect username' in error_msg.lower() or 'password' in error_msg.lower():
+                                    logger.warning("Credentials may be incorrect or don't match OAuth account")
+                            else:
+                                md_access_token = token_data.get('mdAccessToken') or token_data.get('md_access_token')
+                                if md_access_token:
+                                    # Update mdAccessToken in database
+                                    conn = sqlite3.connect('just_trades.db')
+                                    cursor = conn.cursor()
+                                    cursor.execute("""
+                                        UPDATE accounts SET md_access_token = ? WHERE id = ?
+                                    """, (md_access_token, account_id))
+                                    conn.commit()
+                                    conn.close()
+                                    logger.info(f"✅ Successfully retrieved and stored mdAccessToken for account {account_id}")
+                                else:
+                                    logger.warning(f"mdAccessToken not in accessTokenRequest response for account {account_id}")
+                                    logger.info(f"Full response: {token_data}")
+                        else:
+                            error_text = token_response.text[:200] if hasattr(token_response, 'text') else str(token_response.status_code)
+                            logger.warning(f"Failed to get mdAccessToken: {token_response.status_code} - {error_text}")
+                    else:
+                        logger.info(f"Account {account_id} doesn't have username/password stored. MD Token will be fetched when credentials are added.")
+                        logger.info("Note: WebSocket will work with OAuth accessToken, but mdAccessToken provides better market data access.")
+                except Exception as e:
+                    logger.error(f"Error fetching mdAccessToken: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
             
             # Fetch and store Tradovate account + subaccount metadata (TradersPost-style)
             if access_token:
@@ -630,6 +1182,134 @@ def refresh_account_subaccounts(account_id):
         import traceback
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/accounts/<int:account_id>/fetch-md-token', methods=['POST'])
+def fetch_md_access_token(account_id):
+    """Fetch mdAccessToken for an account - accepts credentials in request or uses stored ones"""
+    try:
+        data = request.get_json() or {}
+        
+        # Get credentials from request or database
+        username = data.get('username')
+        password = data.get('password')
+        use_stored = data.get('use_stored', True)  # Default to using stored credentials
+        
+        if not username or not password:
+            if use_stored:
+                # Try to get from database
+                conn = sqlite3.connect('just_trades.db')
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT username, password, client_id, client_secret, environment
+                    FROM accounts WHERE id = ?
+                """, (account_id,))
+                creds = cursor.fetchone()
+                conn.close()
+                
+                if not creds or not creds[0] or not creds[1]:
+                    return jsonify({
+                        'success': False,
+                        'error': 'No credentials provided and account does not have username/password stored.',
+                        'instructions': 'Either provide username/password in the request body, or add them to the account first.'
+                    }), 400
+                
+                username, password, client_id, client_secret, environment = creds
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Username and password required in request body'
+                }), 400
+        else:
+            # Get environment and client credentials from database
+            conn = sqlite3.connect('just_trades.db')
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT client_id, client_secret, environment
+                FROM accounts WHERE id = ?
+            """, (account_id,))
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row:
+                client_id, client_secret, environment = row
+            else:
+                environment = 'demo'  # Default
+                client_id = None
+                client_secret = None
+        
+        base_url = "https://live.tradovateapi.com/v1" if environment == 'live' else "https://demo.tradovateapi.com/v1"
+        
+        # Make accessTokenRequest to get mdAccessToken
+        # Use provided API credentials (prefer stored, fallback to defaults)
+        login_data = {
+            "name": username,
+            "password": password,
+            "appId": "Just.Trade",
+            "appVersion": "1.0.0",
+            "deviceId": f"Just.Trade-{account_id}",
+            "cid": client_id or str(TRADOVATE_API_CID),  # Use stored or default API CID
+            "sec": client_secret or TRADOVATE_API_SECRET  # Use stored or default API secret
+        }
+        
+        logger.info(f"Fetching mdAccessToken for account {account_id} via /auth/accesstokenrequest")
+        token_response = requests.post(
+            f"{base_url}/auth/accesstokenrequest",
+            json=login_data,
+            headers={"Content-Type": "application/json"}
+        )
+        
+        if token_response.status_code == 200:
+            token_data = token_response.json()
+            md_access_token = token_data.get('mdAccessToken') or token_data.get('md_access_token')
+            access_token = token_data.get('accessToken') or token_data.get('access_token')
+            refresh_token = token_data.get('refreshToken') or token_data.get('refresh_token')
+            
+            if md_access_token:
+                # Update tokens in database
+                conn = sqlite3.connect('just_trades.db')
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE accounts 
+                    SET md_access_token = ?,
+                        tradovate_token = COALESCE(?, tradovate_token),
+                        tradovate_refresh_token = COALESCE(?, tradovate_refresh_token),
+                        token_expires_at = datetime('now', '+24 hours')
+                    WHERE id = ?
+                """, (md_access_token, access_token, refresh_token, account_id))
+                conn.commit()
+                conn.close()
+                
+                logger.info(f"✅ Successfully stored mdAccessToken for account {account_id}")
+                return jsonify({
+                    'success': True,
+                    'message': 'mdAccessToken fetched and stored successfully. WebSocket will now work properly.',
+                    'has_md_token': True
+                })
+            else:
+                logger.warning(f"mdAccessToken not in response: {list(token_data.keys())}")
+                return jsonify({
+                    'success': False,
+                    'error': 'mdAccessToken not in response from Tradovate',
+                    'response_keys': list(token_data.keys())
+                }), 400
+        else:
+            error_text = token_response.text[:200]
+            logger.error(f"Failed to fetch mdAccessToken: {token_response.status_code} - {error_text}")
+            return jsonify({
+                'success': False,
+                'error': f'Failed to fetch mdAccessToken: {token_response.status_code}',
+                'details': error_text
+            }), token_response.status_code
+            
+    except Exception as e:
+        logger.error(f"Error fetching mdAccessToken: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 
 @app.route('/api/strategies', methods=['GET'])
 def get_strategies():
@@ -758,6 +1438,54 @@ def control_center():
 def manual_trader_page():
     return render_template('manual_copy_trader.html')
 
+@app.route('/api/trades/open/', methods=['GET'])
+def get_open_trades():
+    """Get open positions (like Trade Manager's /api/trades/open/)"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all open positions
+        cursor.execute('''
+            SELECT * FROM open_positions
+            ORDER BY open_time DESC
+        ''')
+        positions = cursor.fetchall()
+        conn.close()
+        
+        # Format like Trade Manager
+        formatted_positions = []
+        for pos in positions:
+            formatted_positions.append({
+                'id': pos['id'],
+                'Strat_Name': pos.get('strategy_name') or 'Manual Trade',
+                'Ticker': pos['symbol'],
+                'TimeFrame': '',
+                'Direction': pos['direction'],
+                'Open_Price': str(pos['avg_price']),
+                'Open_Time': pos['open_time'],
+                'Running_Pos': float(pos['quantity']),
+                'Account': pos['account_name'] or f"Account {pos['account_id']}",
+                'Nickname': '',
+                'Expo': None,
+                'Strike': None,
+                'Drawdown': f"{pos['unrealized_pnl']:.2f}",
+                'StratTicker': pos['symbol'],
+                'Stoploss': '0.00',
+                'TakeProfit': [],
+                'SLTP_Data': {},
+                'Opt_Name': pos['symbol'],
+                'IfOption': False
+            })
+        
+        return jsonify(formatted_positions)
+    except Exception as e:
+        logger.error(f"Error fetching open trades: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/manual-trade', methods=['POST'])
 def manual_trade():
     """Place a manual trade order"""
@@ -768,6 +1496,10 @@ def manual_trade():
         side = data.get('side', '').strip()
         quantity = int(data.get('quantity', 1))
         risk_settings = data.get('risk') or {}
+        
+        # DEBUG: Log received risk settings
+        logger.info(f"📋 Manual trade request: symbol={symbol}, side={side}, qty={quantity}")
+        logger.info(f"📋 Risk settings received: {risk_settings}")
         
         if not account_subaccount:
             return jsonify({'success': False, 'error': 'Account not specified'}), 400
@@ -883,46 +1615,156 @@ def manual_trade():
                 
                 if trade_side == 'close':
                     symbol_upper = tradovate_symbol.upper()
-                    cancelled_before = await cancel_open_orders(tradovate, account_numeric_id, None)
-                    positions = await tradovate.get_positions(account_numeric_id)
-                    matched_positions = [pos for pos in positions if str(pos.get('symbol', '')).upper() == symbol_upper and pos.get('netPos')]
-                    if not matched_positions:
-                        if cancelled_before:
-                            return {'success': True, 'message': f'Cancelled {cancelled_before} working orders for {symbol_upper}'}
-                        return {'success': False, 'error': f'No open position found for {symbol}'}
+                    logger.info(f"=== CLOSING POSITION + CANCELLING ALL ORDERS FOR {symbol_upper} ===")
+                    
                     results = []
                     total_closed = 0
-                    for pos in matched_positions:
-                        net_pos = pos.get('netPos')
-                        if net_pos is None:
-                            qty_field = pos.get('position') or pos.get('quantity') or pos.get('orderQty') or 0
-                            net_pos = qty_field
-                        qty = abs(int(net_pos or 0))
-                        if qty == 0:
+                    total_cancelled = 0
+                    
+                    # STEP 1: Get positions FIRST to find what we need to close
+                    positions = await tradovate.get_positions(account_numeric_id)
+                    logger.info(f"Step 1: Retrieved {len(positions)} positions for account {account_numeric_id}")
+                    
+                    # Log all positions for debugging
+                    for idx, pos in enumerate(positions):
+                        pos_symbol = pos.get('symbol', 'N/A')
+                        pos_net = pos.get('netPos', 0)
+                        pos_contract = pos.get('contractId')
+                        logger.info(f"  Position {idx+1}: symbol={pos_symbol}, netPos={pos_net}, contractId={pos_contract}")
+                    
+                    # Match positions - try multiple matching strategies
+                    matched_positions = []
+                    normalized_target = normalize_symbol(symbol_upper)
+                    
+                    for pos in positions:
+                        pos_symbol = str(pos.get('symbol', '')).upper()
+                        pos_net = pos.get('netPos', 0)
+                        
+                        if not pos_net:  # Skip flat positions
                             continue
-                        close_side = 'Sell' if net_pos > 0 else 'Buy'
-                        order_data = tradovate.create_market_order(
-                            account_spec,
-                            pos.get('symbol'),
-                            close_side,
-                            qty,
-                            account_numeric_id
-                        )
-                        result = await tradovate.place_order(order_data)
-                        if not result or not result.get('success'):
-                            return result or {'success': False, 'error': 'Failed to close position'}
-                        results.append(result)
-                        total_closed += qty
-                    cancelled_after = await cancel_open_orders(tradovate, account_numeric_id, None)
-                    total_cancelled = cancelled_before + cancelled_after
-                    message = f'Closed {total_closed} contracts for {symbol_upper}'
-                    if total_cancelled:
-                        message += f' and cancelled {total_cancelled} working orders'
-                    if results:
-                        last = results[-1]
-                        last['message'] = message
-                        return last
-                    return {'success': True, 'message': message}
+                        
+                        # Try exact match first
+                        if pos_symbol == symbol_upper:
+                            matched_positions.append(pos)
+                            continue
+                        
+                        # Try normalized match (handles MNQ vs MNQZ4, etc.)
+                        pos_normalized = normalize_symbol(pos_symbol)
+                        if pos_normalized == normalized_target:
+                            matched_positions.append(pos)
+                            continue
+                        
+                        # Try base symbol match (MNQ matches MNQZ4)
+                        pos_base = re.sub(r'[A-Z]\d+$', '', pos_normalized)  # Remove month+year
+                        target_base = re.sub(r'[A-Z]\d+$', '', normalized_target)
+                        if pos_base and target_base and (pos_base == target_base or pos_base in target_base or target_base in pos_base):
+                            matched_positions.append(pos)
+                            continue
+                    
+                    logger.info(f"Step 1b: Found {len(matched_positions)} matching positions for {symbol_upper}")
+                    
+                    # STEP 2: Close positions using liquidateposition (this also cancels related orders)
+                    for pos in matched_positions:
+                        contract_id = pos.get('contractId')
+                        pos_symbol = pos.get('symbol', symbol_upper)
+                        net_pos = pos.get('netPos', 0)
+                        
+                        if not contract_id:
+                            logger.warning(f"Position for {pos_symbol} has no contractId, using manual close")
+                            # Manual close
+                            qty = abs(int(net_pos))
+                            if qty > 0:
+                                close_side = 'Sell' if net_pos > 0 else 'Buy'
+                                order_data = tradovate.create_market_order(account_spec, pos_symbol, close_side, qty, account_numeric_id)
+                                result = await tradovate.place_order(order_data)
+                                if result and result.get('success'):
+                                    results.append(result)
+                                    total_closed += qty
+                            continue
+                        
+                        logger.info(f"Step 2: Liquidating position for {pos_symbol} (contractId: {contract_id}, netPos: {net_pos})")
+                        
+                        # Use liquidateposition endpoint - this SHOULD close position AND cancel related orders
+                        result = await tradovate.liquidate_position(account_numeric_id, contract_id, admin=False)
+                        
+                        if result and result.get('success'):
+                            results.append(result)
+                            total_closed += abs(int(net_pos))
+                            logger.info(f"✅ Successfully liquidated position for {pos_symbol}")
+                        else:
+                            error_msg = result.get('error', 'Unknown error') if result else 'No response'
+                            logger.warning(f"⚠️ liquidateposition returned: {error_msg}, falling back to manual close")
+                            
+                            # Fallback: Manual close
+                            qty = abs(int(net_pos))
+                            if qty > 0:
+                                close_side = 'Sell' if net_pos > 0 else 'Buy'
+                                logger.info(f"Manual close: {close_side} {qty} {pos_symbol}")
+                                order_data = tradovate.create_market_order(account_spec, pos_symbol, close_side, qty, account_numeric_id)
+                                result = await tradovate.place_order(order_data)
+                                if result and result.get('success'):
+                                    results.append(result)
+                                    total_closed += qty
+                    
+                    # STEP 3: Cancel ALL remaining orders and strategies (cleanup)
+                    logger.info(f"Step 3: Cancelling any remaining orders and strategies")
+                    
+                    # Get and interrupt order strategies
+                    try:
+                        all_strategies = await tradovate.get_order_strategies(account_numeric_id)
+                        for strategy in all_strategies:
+                            strategy_id = strategy.get('id')
+                            strategy_status = (strategy.get('status') or '').lower()
+                            if strategy_status not in ['completed', 'complete', 'cancelled', 'canceled', 'failed']:
+                                logger.info(f"Interrupting order strategy {strategy_id}")
+                                await tradovate.interrupt_order_strategy(strategy_id)
+                    except Exception as e:
+                        logger.warning(f"Error interrupting order strategies: {e}")
+                    
+                    # Cancel all individual orders
+                    cancelled_after = await cancel_open_orders(tradovate, account_numeric_id, None, cancel_all=True)
+                    total_cancelled += cancelled_after
+                    logger.info(f"Cancelled {cancelled_after} additional orders")
+                    
+                    # STEP 4: Final verification
+                    final_positions = await tradovate.get_positions(account_numeric_id)
+                    still_open = [p for p in final_positions if normalize_symbol(p.get('symbol', '')) == normalized_target and p.get('netPos', 0) != 0]
+                    
+                    logger.info(f"=== CLOSE COMPLETE: Closed {total_closed} contracts, cancelled {total_cancelled} orders ===")
+                    
+                    if still_open:
+                        logger.warning(f"⚠️ Position still open after close attempt!")
+                        # Try one more time with direct market order
+                        for pos in still_open:
+                            qty = abs(int(pos.get('netPos', 0)))
+                            close_side = 'Sell' if pos.get('netPos', 0) > 0 else 'Buy'
+                            order_data = tradovate.create_market_order(account_spec, pos.get('symbol'), close_side, qty, account_numeric_id)
+                            result = await tradovate.place_order(order_data)
+                            if result and result.get('success'):
+                                total_closed += qty
+                                results.append(result)
+                    
+                    # Build response
+                    if total_closed > 0 or total_cancelled > 0:
+                        message = f'Closed {total_closed} contracts for {symbol_upper}'
+                        if total_cancelled > 0:
+                            message += f' and cancelled {total_cancelled} resting orders'
+                        
+                        response = {
+                            'success': True,
+                            'message': message,
+                            'closed_quantity': total_closed,
+                            'cancelled_orders': total_cancelled
+                        }
+                        if results:
+                            response['orderId'] = results[-1].get('data', {}).get('orderId') or results[-1].get('orderId')
+                        return response
+                    
+                    # Nothing to close or cancel
+                    if not matched_positions:
+                        return {'success': True, 'message': f'No open position found for {symbol_upper}. Nothing to close.'}
+                    
+                    return {'success': False, 'error': 'Failed to close position'}
                 else:
                     order_data = tradovate.create_market_order(
                         account_spec,
@@ -955,6 +1797,207 @@ def manual_trade():
                     result = asyncio.run(place_trade())
         if not result.get('success'):
             return jsonify({'success': False, 'error': result.get('error', 'Failed to place order')}), 400
+
+        # Log the order response to see what accountId it was placed on
+        order_id = result.get('orderId') or result.get('data', {}).get('orderId')
+        order_response = result.get('raw') or result
+        logger.info(f"Order placed - Order ID: {order_id}, Account used: {account_numeric_id} ({account_spec}), Full response: {order_response}")
+        
+        # The order response doesn't include accountId, but we know which one we used
+        logger.info(f"✅ Order {order_id} placed on account {account_numeric_id} ({account_spec})")
+        
+        # Since Tradovate's position API returns 0, we need to track positions from filled orders
+        # Get fill price from order status after a short delay
+        if result.get('success') and order_id:
+            import threading
+            def get_fill_price_and_update_position():
+                import time
+                time.sleep(2)  # Wait 2 seconds for order to fill
+                try:
+                    from phantom_scraper.tradovate_integration import TradovateIntegration
+                    async def fetch_order_details():
+                        async with TradovateIntegration(demo=demo) as tradovate:
+                            tradovate.access_token = token_container['access_token']
+                            tradovate.refresh_token = token_container['refresh_token']
+                            tradovate.md_access_token = token_container['md_access_token']
+                            
+                            # Try to get order details - but orders API returns 0
+                            # Instead, check if fill price is in the order response itself
+                            # Or use a different approach: get fill price from order history
+                            
+                            # Method 1: Check order response (might have fill price immediately)
+                            # This is handled in the main trade function
+                            
+                            # Method 1: Try /fill/list endpoint (BEST - gets actual fill prices)
+                            avg_fill_price = 0.0
+                            fills = await tradovate.get_fills(order_id=order_id)
+                            if fills:
+                                # Get the most recent fill for this order
+                                for fill in fills:
+                                    if str(fill.get('orderId')) == str(order_id):
+                                        avg_fill_price = fill.get('price') or fill.get('fillPrice') or 0.0
+                                        logger.info(f"✅ Found fill price from /fill/list: {avg_fill_price}")
+                                        break
+                            
+                            # Method 2: Query order by ID directly
+                            if avg_fill_price == 0:
+                                try:
+                                    async with tradovate.session.get(
+                                        f"{tradovate.base_url}/order/item",
+                                        params={'id': order_id},
+                                        headers=tradovate._get_headers()
+                                    ) as order_response:
+                                        if order_response.status == 200:
+                                            order_data = await order_response.json()
+                                            avg_fill_price = order_data.get('avgFillPrice') or order_data.get('price') or 0.0
+                                            order_status = order_data.get('ordStatus') or order_data.get('status', '')
+                                            logger.info(f"Order {order_id} from /order/item: status={order_status}, avgFillPrice={avg_fill_price}")
+                                            if avg_fill_price > 0:
+                                                logger.info(f"✅ Found fill price from /order/item: {avg_fill_price}")
+                                except Exception as e:
+                                    logger.warning(f"Error fetching order item: {e}")
+                            
+                            # Method 3: Try orders list (fallback)
+                            if avg_fill_price == 0:
+                                orders = await tradovate.get_orders(None)
+                                if orders:
+                                    for o in orders:
+                                        if str(o.get('id')) == str(order_id):
+                                            avg_fill_price = o.get('avgFillPrice') or o.get('price') or o.get('fillPrice') or 0.0
+                                            order_status = o.get('ordStatus') or o.get('status', '')
+                                            logger.info(f"Order {order_id} from list: status={order_status}, avgFillPrice={avg_fill_price}")
+                                            if avg_fill_price > 0:
+                                                logger.info(f"✅ Found fill price from /order/list: {avg_fill_price}")
+                                            break
+                            
+                            # If we found a fill price, update the position
+                            if avg_fill_price > 0:
+                                # Update position with fill price
+                                net_qty = quantity if side.lower() == 'buy' else -quantity
+                                cache_key = f"{symbol}_{account_numeric_id}"
+                                
+                                # Get or create position
+                                position = _position_cache.get(cache_key, {
+                                    'symbol': symbol,
+                                    'quantity': net_qty,
+                                    'net_quantity': net_qty,
+                                    'avg_price': avg_fill_price,
+                                    'last_price': avg_fill_price,  # Start with fill price
+                                    'unrealized_pnl': 0.0,
+                                    'account_id': account_id,
+                                    'subaccount_id': str(account_numeric_id),
+                                    'account_name': account_spec,
+                                    'order_id': order_id,
+                                    'open_time': datetime.now().isoformat()
+                                })
+                                
+                                # Update with fill price
+                                position['avg_price'] = avg_fill_price
+                                position['last_price'] = avg_fill_price
+                                _position_cache[cache_key] = position
+                                
+                                # Store position in database (like Trade Manager)
+                                conn = sqlite3.connect('just_trades.db')
+                                cursor = conn.cursor()
+                                cursor.execute('''
+                                    INSERT OR REPLACE INTO open_positions 
+                                    (symbol, net_quantity, avg_price, last_price, unrealized_pnl, 
+                                     account_id, subaccount_id, account_name, order_id, open_time)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ''', (
+                                    position['symbol'], position['net_quantity'], position['avg_price'],
+                                    position['last_price'], position['unrealized_pnl'], position['account_id'],
+                                    position['subaccount_id'], position['account_name'], position['order_id'],
+                                    position['open_time']
+                                ))
+                                conn.commit()
+                                conn.close()
+                                logger.info(f"✅ Stored position in database: {symbol} qty={net_qty} @ {avg_fill_price}")
+                                
+                                # Update PnL (will be 0 initially since current = fill)
+                                update_position_pnl()
+                                
+                                # Emit updated position
+                                socketio.emit('position_update', {
+                                    'positions': [position],
+                                    'count': 1,
+                                    'timestamp': datetime.now().isoformat(),
+                                    'source': 'order_fill'
+                                })
+                                logger.info(f"Updated position with fill price: {avg_fill_price}")
+                            else:
+                                logger.warning(f"⚠️ Could not get fill price for order {order_id} - will retry later")
+                                # Will need to poll again or use market data estimate
+                    asyncio.run(fetch_order_details())
+                except Exception as e:
+                    logger.warning(f"Error fetching fill price: {e}")
+            
+            # Start background thread to get fill price
+            threading.Thread(target=get_fill_price_and_update_position, daemon=True).start()
+            
+            # Emit initial position (without fill price for now)
+            net_qty = quantity if side.lower() == 'buy' else -quantity
+            synthetic_position = {
+                'symbol': symbol,
+                'quantity': net_qty,
+                'net_quantity': net_qty,
+                'avg_price': 0.0,  # Will be updated when we get fill price
+                'last_price': 0.0,  # Will be updated with market data
+                'unrealized_pnl': 0.0,
+                'account_id': account_id,
+                'subaccount_id': str(account_numeric_id),
+                'account_name': account_spec,
+                'order_id': order_id
+            }
+            logger.info(f"Emitting initial position for order {order_id} (fill price will be updated)")
+            
+            # Store in global cache
+            cache_key = f"{symbol}_{account_numeric_id}"
+            _position_cache[cache_key] = synthetic_position
+            
+            # Emit the position update
+            socketio.emit('position_update', {
+                'positions': [synthetic_position],
+                'count': 1,
+                'timestamp': datetime.now().isoformat(),
+                'source': 'order_fill'
+            })
+
+        # Emit WebSocket events for real-time updates (like Trade Manager)
+        try:
+            # Emit log entry
+            socketio.emit('log_entry', {
+                'type': 'trade',
+                'message': f'Trade executed: {side} {quantity} {symbol}',
+                'time': datetime.now().isoformat()
+            })
+            
+            # Emit position update
+            socketio.emit('position_update', {
+                'strategy': 'Manual Trade',
+                'symbol': symbol,
+                'quantity': quantity,
+                'side': side,
+                'account': account_spec,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # Trigger immediate position refresh by clearing cache
+            if hasattr(emit_realtime_updates, '_last_position_fetch'):
+                emit_realtime_updates._last_position_fetch = 0  # Force refresh on next cycle
+            
+            # Emit trade executed event
+            socketio.emit('trade_executed', {
+                'strategy': 'Manual Trade',
+                'symbol': symbol,
+                'side': side,
+                'quantity': quantity,
+                'order_id': result.get('orderId', 'N/A'),
+                'account': account_spec,
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as ws_error:
+            logger.error(f"Error emitting WebSocket events: {ws_error}")
 
         return jsonify({
             'success': True,
@@ -1244,6 +2287,66 @@ def api_dashboard_trade_history():
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'Failed to fetch trade history', 'trades': []}), 500
+
+@app.route('/api/dashboard/pnl-calendar', methods=['GET'])
+def api_pnl_calendar():
+    """Get P&L data for calendar view (like Trade Manager)"""
+    try:
+        start_date = request.args.get('start_date', (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
+        end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+        
+        conn = sqlite3.connect('trading_webhook.db')
+        cursor = conn.execute('''
+            SELECT DATE(timestamp) as date, SUM(pnl) as daily_pnl
+            FROM strategy_pnl_history
+            WHERE DATE(timestamp) BETWEEN ? AND ?
+            GROUP BY DATE(timestamp)
+            ORDER BY date
+        ''', (start_date, end_date))
+        
+        data = [{'date': row[0], 'pnl': float(row[1]) if row[1] else 0.0} for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({'calendar_data': data})
+    except Exception as e:
+        logger.error(f"Error fetching P&L calendar: {e}")
+        return jsonify({'calendar_data': []})
+
+@app.route('/api/dashboard/pnl-drawdown-chart', methods=['GET'])
+def api_pnl_drawdown_chart():
+    """Get P&L and drawdown data for chart (like Trade Manager)"""
+    try:
+        strategy_id = request.args.get('strategy_id', None)
+        limit = int(request.args.get('limit', 1000))
+        
+        query = '''
+            SELECT timestamp, pnl, drawdown
+            FROM strategy_pnl_history
+        '''
+        params = []
+        
+        if strategy_id:
+            query += ' WHERE strategy_id = ?'
+            params.append(strategy_id)
+        
+        query += ' ORDER BY timestamp DESC LIMIT ?'
+        params.append(limit)
+        
+        conn = sqlite3.connect('trading_webhook.db')
+        cursor = conn.execute(query, params)
+        
+        data = [{
+            'timestamp': row[0],
+            'pnl': float(row[1]) if row[1] else 0.0,
+            'drawdown': float(row[2]) if row[2] else 0.0
+        } for row in cursor.fetchall()]
+        data.reverse()  # Reverse to get chronological order
+        conn.close()
+        
+        return jsonify({'chart_data': data})
+    except Exception as e:
+        logger.error(f"Error fetching P&L chart: {e}")
+        return jsonify({'chart_data': []})
 
 @app.route('/api/dashboard/metrics', methods=['GET'])
 def api_dashboard_metrics():
@@ -1840,6 +2943,1254 @@ try:
 except Exception as e:
     logger.warning(f"Database initialization warning: {e}")
 
+# ============================================================================
+# WebSocket Handlers (Real-time updates like Trade Manager)
+# ============================================================================
+
+@socketio.on('connect')
+def handle_connect():
+    """Handle WebSocket connection"""
+    logger.info('Client connected to WebSocket')
+    emit('status', {
+        'connected': True,
+        'message': 'Connected to server',
+        'timestamp': datetime.now().isoformat()
+    })
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle WebSocket disconnection"""
+    logger.info('Client disconnected from WebSocket')
+
+@socketio.on('subscribe')
+def handle_subscribe(data):
+    """Subscribe to specific update channels"""
+    channels = data.get('channels', [])
+    logger.info(f'Client subscribed to: {channels}')
+    emit('subscribed', {'channels': channels})
+
+# ============================================================================
+# Strategy P&L Recording Functions
+# ============================================================================
+
+def record_strategy_pnl(strategy_id, strategy_name, pnl, drawdown=0.0):
+    """Record strategy P&L to database (like Trade Manager)"""
+    try:
+        conn = sqlite3.connect('trading_webhook.db')
+        conn.execute('''
+            INSERT INTO strategy_pnl_history (strategy_id, strategy_name, pnl, drawdown, timestamp)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (strategy_id, strategy_name, pnl, drawdown, datetime.now()))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error recording strategy P&L: {e}")
+
+def calculate_strategy_pnl(strategy_id):
+    """Calculate current P&L for a strategy from trades database"""
+    try:
+        # Try to get P&L from just_trades.db (SQLAlchemy models)
+        try:
+            from app.database import SessionLocal
+            from app.models import Trade, Position
+            
+            db = SessionLocal()
+            
+            # Calculate realized P&L from closed trades
+            closed_trades = db.query(Trade).filter(
+                Trade.strategy_id == strategy_id,
+                Trade.status == 'filled',
+                Trade.closed_at.isnot(None)
+            ).all()
+            
+            realized_pnl = sum(trade.pnl or 0.0 for trade in closed_trades)
+            
+            # Calculate unrealized P&L from open positions
+            positions = db.query(Position).filter(
+                Position.account_id.in_(
+                    db.query(Trade.account_id).filter(Trade.strategy_id == strategy_id).distinct()
+                )
+            ).all()
+            
+            unrealized_pnl = sum(pos.unrealized_pnl or 0.0 for pos in positions)
+            
+            total_pnl = realized_pnl + unrealized_pnl
+            db.close()
+            
+            return total_pnl
+            
+        except ImportError:
+            # Fallback to SQLite direct query
+            conn = sqlite3.connect('just_trades.db')
+            cursor = conn.execute('''
+                SELECT COALESCE(SUM(pnl), 0.0) as total_pnl
+                FROM trades
+                WHERE strategy_id = ? AND status = 'filled'
+            ''', (strategy_id,))
+            result = cursor.fetchone()
+            pnl = float(result[0]) if result and result[0] else 0.0
+            conn.close()
+            return pnl
+            
+    except Exception as e:
+        logger.error(f"Error calculating strategy P&L: {e}")
+        return 0.0
+
+def calculate_strategy_drawdown(strategy_id):
+    """Calculate current drawdown for a strategy"""
+    try:
+        # Get historical P&L to calculate drawdown
+        conn = sqlite3.connect('trading_webhook.db')
+        cursor = conn.execute('''
+            SELECT pnl FROM strategy_pnl_history
+            WHERE strategy_id = ?
+            ORDER BY timestamp DESC
+            LIMIT 100
+        ''', (strategy_id,))
+        
+        pnl_history = [float(row[0]) for row in cursor.fetchall() if row[0] is not None]
+        conn.close()
+        
+        if not pnl_history:
+            return 0.0
+        
+        # Calculate drawdown: peak - current
+        peak = max(pnl_history)
+        current = pnl_history[0] if pnl_history else 0.0
+        drawdown = max(0.0, peak - current)
+        
+        return drawdown
+        
+    except Exception as e:
+        logger.error(f"Error calculating strategy drawdown: {e}")
+        return 0.0
+
+# ============================================================================
+# Background Threads for Real-Time Updates (Every Second, like Trade Manager)
+# ============================================================================
+
+# Global position cache to persist positions across updates
+_position_cache = {}
+
+# Market data cache for real-time prices
+_market_data_cache = {}
+
+# Market data WebSocket connection
+_market_data_ws = None
+_market_data_ws_task = None
+_market_data_subscribed_symbols = set()
+
+async def connect_tradovate_market_data_websocket():
+    """Connect to Tradovate market data WebSocket and subscribe to quotes"""
+    global _market_data_cache, _market_data_ws, _market_data_subscribed_symbols
+    
+    if not WEBSOCKETS_AVAILABLE:
+        logger.error("websockets library not available. Cannot connect to market data.")
+        return
+    
+    # Get md_access_token from database
+    md_token = None
+    demo = True  # Default to demo
+    
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT md_access_token, environment FROM accounts 
+            WHERE md_access_token IS NOT NULL AND md_access_token != ''
+            LIMIT 1
+        ''')
+        row = cursor.fetchone()
+        if row:
+            md_token = row['md_access_token']
+            # Check if environment is 'demo' or 'live'
+            # Note: sqlite3.Row doesn't have .get() method, use dict() or direct access
+            env = row['environment'] if row['environment'] else 'demo'
+            demo = (env == 'demo' or env is None)
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error fetching md_access_token: {e}")
+        return
+    
+    if not md_token:
+        logger.warning("No md_access_token found. Market data WebSocket will not connect.")
+        return
+    
+    # WebSocket URL (demo or live)
+    ws_url = "wss://demo.tradovateapi.com/v1/websocket" if demo else "wss://live.tradovateapi.com/v1/websocket"
+    
+    while True:
+        try:
+            logger.info(f"Connecting to Tradovate market data WebSocket: {ws_url}")
+            async with websockets.connect(ws_url) as ws:
+                _market_data_ws = ws
+                logger.info("✅ Market data WebSocket connected")
+                
+                # Authorize with md_access_token
+                # Format: "authorize\n0\n\n{token}"
+                auth_message = f"authorize\n0\n\n{md_token}"
+                await ws.send(auth_message)
+                
+                # Wait for authorization response
+                response = await ws.recv()
+                logger.info(f"Market data auth response: {response[:200]}")
+                
+                # Subscribe to quotes for symbols we have positions in
+                await subscribe_to_market_data_symbols(ws)
+                
+                # Listen for market data updates
+                async for message in ws:
+                    try:
+                        # Parse message (format: "frame\n{id}\n\n{json_data}")
+                        if message.startswith("frame"):
+                            parts = message.split("\n", 3)
+                            if len(parts) >= 4:
+                                json_data = json.loads(parts[3])
+                                await process_market_data_message(json_data)
+                        elif message.startswith("["):
+                            # Direct JSON array format
+                            data = json.loads(message)
+                            await process_market_data_message(data)
+                    except json.JSONDecodeError as e:
+                        logger.debug(f"Could not parse market data message: {e}")
+                    except Exception as e:
+                        logger.warning(f"Error processing market data message: {e}")
+                        
+        except websockets.exceptions.ConnectionClosed:
+            logger.warning("Market data WebSocket connection closed. Reconnecting in 5 seconds...")
+            await asyncio.sleep(5)
+        except Exception as e:
+            logger.error(f"Market data WebSocket error: {e}. Reconnecting in 10 seconds...")
+            await asyncio.sleep(10)
+
+async def subscribe_to_market_data_symbols(ws):
+    """Subscribe to market data quotes for symbols we have positions in"""
+    global _position_cache, _market_data_subscribed_symbols
+    
+    # Get symbols from positions
+    symbols_to_subscribe = set()
+    for position in _position_cache.values():
+        symbol = position.get('symbol', '')
+        if symbol:
+            # Convert TradingView symbol to Tradovate format if needed
+            # MES1! -> MESM1 (front month)
+            tradovate_symbol = convert_symbol_for_tradovate_md(symbol)
+            symbols_to_subscribe.add(tradovate_symbol)
+    
+    # Also check database for open positions
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT symbol FROM open_positions WHERE symbol IS NOT NULL")
+        for row in cursor.fetchall():
+            symbol = row[0]
+            if symbol:
+                tradovate_symbol = convert_symbol_for_tradovate_md(symbol)
+                symbols_to_subscribe.add(tradovate_symbol)
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Error getting symbols from database: {e}")
+    
+    # Subscribe to each symbol
+    for symbol in symbols_to_subscribe:
+        if symbol not in _market_data_subscribed_symbols:
+            try:
+                # Subscribe to quote data
+                # Format: "quote/subscribe\n{id}\n\n{json}"
+                subscribe_msg = f"quote/subscribe\n1\n\n{json.dumps({'symbol': symbol})}"
+                await ws.send(subscribe_msg)
+                _market_data_subscribed_symbols.add(symbol)
+                logger.info(f"Subscribed to market data for {symbol}")
+            except Exception as e:
+                logger.warning(f"Error subscribing to {symbol}: {e}")
+
+def convert_symbol_for_tradovate_md(symbol: str) -> str:
+    """Convert symbol format for Tradovate market data (MES1! -> MESM1)"""
+    # Remove ! and convert month codes
+    symbol = symbol.upper().replace('!', '')
+    # If it ends with a number, it's already in Tradovate format
+    if symbol[-1].isdigit():
+        return symbol
+    # Otherwise, try to get front month (simplified - you may need contract lookup)
+    # For now, just return the symbol as-is
+    return symbol
+
+async def process_market_data_message(data):
+    """Process incoming market data message and update cache"""
+    global _market_data_cache
+    
+    try:
+        # Handle different message formats
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    symbol = item.get('symbol') or item.get('s')
+                    if symbol:
+                        # Update cache with latest price
+                        if symbol not in _market_data_cache:
+                            _market_data_cache[symbol] = {}
+                        
+                        # Extract price data
+                        last = item.get('last') or item.get('lastPrice') or item.get('l')
+                        bid = item.get('bid') or item.get('b')
+                        ask = item.get('ask') or item.get('a')
+                        
+                        if last:
+                            _market_data_cache[symbol]['last'] = float(last)
+                        if bid:
+                            _market_data_cache[symbol]['bid'] = float(bid)
+                        if ask:
+                            _market_data_cache[symbol]['ask'] = float(ask)
+                        
+                        # Update PnL for positions with this symbol
+                        update_position_pnl()
+                        
+        elif isinstance(data, dict):
+            symbol = data.get('symbol') or data.get('s')
+            if symbol:
+                if symbol not in _market_data_cache:
+                    _market_data_cache[symbol] = {}
+                
+                last = data.get('last') or data.get('lastPrice') or data.get('l')
+                bid = data.get('bid') or data.get('b')
+                ask = data.get('ask') or data.get('a')
+                
+                if last:
+                    _market_data_cache[symbol]['last'] = float(last)
+                if bid:
+                    _market_data_cache[symbol]['bid'] = float(bid)
+                if ask:
+                    _market_data_cache[symbol]['ask'] = float(ask)
+                
+                update_position_pnl()
+                
+    except Exception as e:
+        logger.warning(f"Error processing market data: {e}")
+
+def start_market_data_websocket():
+    """Start the market data WebSocket in a background thread"""
+    global _market_data_ws_task
+    if _market_data_ws_task and not _market_data_ws_task.done():
+        return  # Already running
+    
+    def run_websocket():
+        asyncio.run(connect_tradovate_market_data_websocket())
+    
+    _market_data_ws_task = threading.Thread(target=run_websocket, daemon=True)
+    _market_data_ws_task.start()
+    logger.info("Market data WebSocket thread started")
+
+def update_position_pnl():
+    """Update PnL for all cached positions based on current market prices"""
+    global _position_cache, _market_data_cache
+    
+    for cache_key, position in _position_cache.items():
+        symbol = position.get('symbol', '')
+        if not symbol:
+            continue
+        
+        # Get current price from market data cache
+        current_price = _market_data_cache.get(symbol, {}).get('last', 0.0)
+        if current_price == 0:
+            # Try to get from bid/ask
+            market_data = _market_data_cache.get(symbol, {})
+            current_price = market_data.get('bid', 0.0) or market_data.get('ask', 0.0)
+        
+        if current_price > 0 and position.get('avg_price', 0) > 0:
+            # Calculate PnL: (current_price - avg_price) * quantity * contract_multiplier
+            contract_multiplier = get_contract_multiplier(symbol)
+            quantity = position.get('net_quantity', 0)
+            avg_price = position.get('avg_price', 0)
+            
+            # PnL = (current - entry) * quantity * multiplier
+            # For long: (current - entry) * qty * mult
+            # For short: (entry - current) * qty * mult = (current - entry) * (-qty) * mult
+            pnl = (current_price - avg_price) * quantity * contract_multiplier
+            
+            position['last_price'] = current_price
+            position['unrealized_pnl'] = pnl
+            
+            # Update in database
+            try:
+                conn = sqlite3.connect('just_trades.db')
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE open_positions 
+                    SET last_price = ?, unrealized_pnl = ?, updated_at = ?
+                    WHERE symbol = ? AND subaccount_id = ?
+                ''', (current_price, pnl, datetime.now().isoformat(), symbol, position.get('subaccount_id')))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.warning(f"Error updating position PnL in database: {e}")
+            
+            logger.debug(f"Updated PnL for {symbol}: price={current_price}, avg={avg_price}, qty={quantity}, mult={contract_multiplier}, PnL={pnl}")
+
+# ============================================================================
+# Custom OCO Monitor - Tracks TP/SL pairs and cancels the other when one fills
+# ============================================================================
+
+# Store paired orders: {tp_order_id: sl_order_id, sl_order_id: tp_order_id}
+_oco_pairs = {}
+# Store order details for monitoring: {order_id: {account_id, symbol, type: 'tp'|'sl', partner_id}}
+_oco_order_details = {}
+_oco_lock = threading.Lock()
+
+def register_oco_pair(tp_order_id: int, sl_order_id: int, account_id: int, symbol: str):
+    """Register a TP/SL pair for OCO monitoring"""
+    global _oco_pairs, _oco_order_details
+    
+    with _oco_lock:
+        # Store the pairing both ways for easy lookup
+        _oco_pairs[tp_order_id] = sl_order_id
+        _oco_pairs[sl_order_id] = tp_order_id
+        
+        # Store details for each order
+        _oco_order_details[tp_order_id] = {
+            'account_id': account_id,
+            'symbol': symbol,
+            'type': 'tp',
+            'partner_id': sl_order_id,
+            'created_at': time.time()
+        }
+        _oco_order_details[sl_order_id] = {
+            'account_id': account_id,
+            'symbol': symbol,
+            'type': 'sl',
+            'partner_id': tp_order_id,
+            'created_at': time.time()
+        }
+        
+        logger.info(f"🔗 OCO pair registered: TP={tp_order_id} <-> SL={sl_order_id} for {symbol}")
+
+def unregister_oco_pair(order_id: int):
+    """Remove an OCO pair from monitoring (called when one side fills/cancels)"""
+    global _oco_pairs, _oco_order_details
+    
+    with _oco_lock:
+        if order_id in _oco_pairs:
+            partner_id = _oco_pairs.pop(order_id, None)
+            if partner_id and partner_id in _oco_pairs:
+                _oco_pairs.pop(partner_id, None)
+            
+            # Remove details
+            _oco_order_details.pop(order_id, None)
+            if partner_id:
+                _oco_order_details.pop(partner_id, None)
+
+def monitor_oco_orders():
+    """
+    Background thread that monitors OCO order pairs across ALL accounts.
+    When one order fills, it cancels the partner order on the SAME account.
+    """
+    logger.info("🔄 OCO Monitor started - watching for TP/SL fills...")
+    
+    while True:
+        try:
+            # Only process if we have pairs to monitor
+            with _oco_lock:
+                if not _oco_pairs:
+                    time.sleep(1)
+                    continue
+                
+                # Get a copy of current pairs
+                pairs_to_check = dict(_oco_pairs)
+                details_copy = dict(_oco_order_details)
+            
+            if not pairs_to_check:
+                time.sleep(1)
+                continue
+            
+            # Get ALL accounts with tokens (for multi-account support)
+            conn = sqlite3.connect('just_trades.db')
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, tradovate_token, environment, tradovate_accounts, subaccounts
+                FROM accounts 
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+            ''')
+            all_accounts = cursor.fetchall()
+            conn.close()
+            
+            if not all_accounts:
+                time.sleep(2)
+                continue
+            
+            # Group OCO pairs by account_id for efficient processing
+            account_orders = {}  # {account_id: [order_ids]}
+            for order_id, details in details_copy.items():
+                acc_id = details.get('account_id')
+                if acc_id:
+                    if acc_id not in account_orders:
+                        account_orders[acc_id] = []
+                    account_orders[acc_id].append(order_id)
+            
+            # Build a map of account_id -> account info (token, env)
+            # Account IDs in our system are the tradovate subaccount IDs (like 26029294)
+            account_info_map = {}
+            for acc in all_accounts:
+                token = acc['tradovate_token']
+                env = acc['environment'] or 'demo'
+                
+                # Try tradovate_accounts field (JSON format)
+                tradovate_accounts_str = acc['tradovate_accounts'] or ''
+                if tradovate_accounts_str:
+                    try:
+                        import json
+                        tradovate_accounts = json.loads(tradovate_accounts_str)
+                        for ta in tradovate_accounts:
+                            acc_id = ta.get('id') or ta.get('accountId')
+                            if acc_id:
+                                account_info_map[int(acc_id)] = {'token': token, 'env': env}
+                    except:
+                        pass
+                
+                # Also try subaccounts field (comma-separated or JSON)
+                subaccounts_str = acc['subaccounts'] or ''
+                if subaccounts_str:
+                    try:
+                        import json
+                        subaccounts = json.loads(subaccounts_str)
+                        for sa in subaccounts:
+                            if isinstance(sa, dict):
+                                acc_id = sa.get('id') or sa.get('accountId')
+                            else:
+                                acc_id = sa
+                            if acc_id:
+                                account_info_map[int(acc_id)] = {'token': token, 'env': env}
+                    except:
+                        # Try comma-separated
+                        for tid in subaccounts_str.split(','):
+                            tid = tid.strip()
+                            if tid:
+                                try:
+                                    account_info_map[int(tid)] = {'token': token, 'env': env}
+                                except ValueError:
+                                    pass
+            
+            # Process each account's orders
+            orders_to_remove = []
+            partners_to_cancel = []  # [(partner_id, filled_id, symbol, account_id)]
+            
+            for account_id, order_ids in account_orders.items():
+                # Get token for this account
+                acc_info = account_info_map.get(account_id)
+                if not acc_info:
+                    # Try to find any token (fallback for accounts not in our map)
+                    if all_accounts:
+                        acc_info = {
+                            'token': all_accounts[0]['tradovate_token'],
+                            'env': all_accounts[0]['environment'] or 'demo'
+                        }
+                    else:
+                        continue
+                
+                token = acc_info['token']
+                env = acc_info['env']
+                base_url = 'https://demo.tradovateapi.com/v1' if env == 'demo' else 'https://live.tradovateapi.com/v1'
+                headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+                
+                # Get orders for this account
+                try:
+                    response = requests.get(f'{base_url}/order/list', headers=headers, timeout=5)
+                    if response.status_code != 200:
+                        continue
+                    
+                    orders = response.json()
+                    order_status_map = {o.get('id'): o.get('ordStatus', '') for o in orders}
+                except Exception as e:
+                    logger.debug(f"OCO monitor fetch error for account {account_id}: {e}")
+                    continue
+                
+                # Check each order for this account
+                for order_id in order_ids:
+                    if order_id not in pairs_to_check:
+                        continue
+                    
+                    partner_id = pairs_to_check.get(order_id)
+                    details = details_copy.get(order_id, {})
+                    status = order_status_map.get(order_id, '')
+                    
+                    # If order is filled, we need to cancel the partner
+                    if status.lower() == 'filled':
+                        order_type = details.get('type', 'unknown')
+                        symbol = details.get('symbol', 'unknown')
+                        
+                        logger.info(f"🎯 OCO: {order_type.upper()} order {order_id} FILLED for {symbol} (account {account_id})")
+                        logger.info(f"🎯 OCO: Cancelling partner order {partner_id}...")
+                        
+                        partners_to_cancel.append((partner_id, order_id, symbol, account_id, token, env))
+                        orders_to_remove.append(order_id)
+                    
+                    # If order is cancelled/rejected, just remove from monitoring
+                    elif status.lower() in ['canceled', 'cancelled', 'rejected', 'expired']:
+                        orders_to_remove.append(order_id)
+            
+            # Cancel partner orders (using the correct token for each account)
+            for partner_id, filled_id, symbol, account_id, token, env in partners_to_cancel:
+                try:
+                    base_url = 'https://demo.tradovateapi.com/v1' if env == 'demo' else 'https://live.tradovateapi.com/v1'
+                    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+                    
+                    cancel_response = requests.post(
+                        f'{base_url}/order/cancelorder',
+                        json={'orderId': partner_id, 'isAutomated': True},
+                        headers=headers,
+                        timeout=5
+                    )
+                    if cancel_response.status_code == 200:
+                        result = cancel_response.json()
+                        if result.get('errorText'):
+                            logger.warning(f"⚠️ OCO: Cancel returned error for {partner_id}: {result.get('errorText')}")
+                        else:
+                            logger.info(f"✅ OCO: Successfully cancelled partner order {partner_id} for {symbol} (account {account_id})")
+                        
+                        # Emit event to frontend
+                        socketio.emit('oco_triggered', {
+                            'filled_order': filled_id,
+                            'cancelled_order': partner_id,
+                            'symbol': symbol,
+                            'account_id': account_id,
+                            'message': f'OCO triggered: cancelled partner order for {symbol}'
+                        })
+                    else:
+                        logger.warning(f"⚠️ OCO: Failed to cancel partner order {partner_id}: {cancel_response.text[:200]}")
+                except Exception as e:
+                    logger.error(f"❌ OCO: Error cancelling partner order {partner_id}: {e}")
+            
+            # Remove processed orders from monitoring
+            for order_id in orders_to_remove:
+                unregister_oco_pair(order_id)
+            
+            time.sleep(1)  # Check every second
+            
+        except Exception as e:
+            logger.error(f"OCO Monitor error: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            time.sleep(2)
+
+# Start OCO monitor thread
+oco_monitor_thread = threading.Thread(target=monitor_oco_orders, daemon=True)
+oco_monitor_thread.start()
+logger.info("🔄 OCO Monitor thread started")
+
+# ============================================================================
+# Break-Even Monitor - Moves SL to entry price when position goes profitable
+# ============================================================================
+
+# Store break-even monitors: {key: {account_id, symbol, entry_price, is_long, activation_ticks, ...}}
+_break_even_monitors = {}
+_break_even_lock = threading.Lock()
+
+def register_break_even_monitor(account_id: int, symbol: str, entry_price: float, is_long: bool,
+                                 activation_ticks: int, tick_size: float, sl_order_id: int,
+                                 quantity: int, account_spec: str):
+    """Register a position for break-even monitoring"""
+    global _break_even_monitors
+    
+    key = f"{account_id}:{symbol}"
+    
+    with _break_even_lock:
+        _break_even_monitors[key] = {
+            'account_id': account_id,
+            'symbol': symbol,
+            'entry_price': entry_price,
+            'is_long': is_long,
+            'activation_ticks': activation_ticks,
+            'tick_size': tick_size,
+            'sl_order_id': sl_order_id,
+            'quantity': quantity,
+            'account_spec': account_spec,
+            'triggered': False,
+            'created_at': time.time()
+        }
+        
+        activation_price = entry_price + (tick_size * activation_ticks) if is_long else entry_price - (tick_size * activation_ticks)
+        logger.info(f"📊 Break-even monitor registered: {symbol} on account {account_id}")
+        logger.info(f"   Entry: {entry_price}, Activation: {activation_price} ({activation_ticks} ticks)")
+
+def unregister_break_even_monitor(key: str):
+    """Remove a break-even monitor"""
+    global _break_even_monitors
+    
+    with _break_even_lock:
+        if key in _break_even_monitors:
+            _break_even_monitors.pop(key)
+
+def monitor_break_even():
+    """
+    Background thread that monitors positions for break-even activation.
+    When price reaches activation_ticks profit, cancels old SL and places new SL at entry.
+    """
+    logger.info("📊 Break-Even Monitor started")
+    
+    while True:
+        try:
+            with _break_even_lock:
+                if not _break_even_monitors:
+                    time.sleep(2)
+                    continue
+                
+                monitors_copy = dict(_break_even_monitors)
+            
+            if not monitors_copy:
+                time.sleep(2)
+                continue
+            
+            # Get tokens from database
+            conn = sqlite3.connect('just_trades.db')
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, tradovate_token, environment, tradovate_accounts, subaccounts
+                FROM accounts 
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+            ''')
+            all_accounts = cursor.fetchall()
+            conn.close()
+            
+            if not all_accounts:
+                time.sleep(2)
+                continue
+            
+            # Build account info map
+            account_info_map = {}
+            for acc in all_accounts:
+                token = acc['tradovate_token']
+                env = acc['environment'] or 'demo'
+                
+                tradovate_accounts_str = acc['tradovate_accounts'] or ''
+                if tradovate_accounts_str:
+                    try:
+                        tradovate_accounts = json.loads(tradovate_accounts_str)
+                        for ta in tradovate_accounts:
+                            acc_id = ta.get('id') or ta.get('accountId')
+                            is_demo = ta.get('is_demo', True)
+                            if acc_id:
+                                account_info_map[int(acc_id)] = {'token': token, 'env': 'demo' if is_demo else 'live'}
+                    except:
+                        pass
+            
+            # Check each monitored position
+            monitors_to_remove = []
+            
+            for key, monitor in monitors_copy.items():
+                if monitor.get('triggered'):
+                    continue
+                
+                account_id = monitor['account_id']
+                symbol = monitor['symbol']
+                entry_price = monitor['entry_price']
+                is_long = monitor['is_long']
+                activation_ticks = monitor['activation_ticks']
+                tick_size = monitor['tick_size']
+                sl_order_id = monitor['sl_order_id']
+                quantity = monitor['quantity']
+                account_spec = monitor['account_spec']
+                
+                acc_info = account_info_map.get(account_id)
+                if not acc_info:
+                    continue
+                
+                token = acc_info['token']
+                env = acc_info['env']
+                base_url = 'https://demo.tradovateapi.com/v1' if env == 'demo' else 'https://live.tradovateapi.com/v1'
+                headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+                
+                try:
+                    # Get current positions
+                    pos_response = requests.get(f'{base_url}/position/list', headers=headers, timeout=5)
+                    if pos_response.status_code != 200:
+                        continue
+                    
+                    positions = pos_response.json()
+                    
+                    # Find matching position
+                    position = None
+                    for p in positions:
+                        if p.get('accountId') == account_id:
+                            pos_symbol = p.get('contractId')  # Need to resolve
+                            # For now, check by netPos direction matching
+                            net_pos = p.get('netPos', 0)
+                            if (is_long and net_pos > 0) or (not is_long and net_pos < 0):
+                                position = p
+                                break
+                    
+                    if not position:
+                        # Position closed, remove monitor
+                        monitors_to_remove.append(key)
+                        continue
+                    
+                    # Get current price (from position's netPrice or last trade)
+                    current_price = position.get('netPrice', 0)
+                    if not current_price:
+                        continue
+                    
+                    # Calculate profit in ticks
+                    if is_long:
+                        profit_ticks = (current_price - entry_price) / tick_size
+                    else:
+                        profit_ticks = (entry_price - current_price) / tick_size
+                    
+                    # Check if activation threshold reached
+                    if profit_ticks >= activation_ticks:
+                        logger.info(f"🎯 Break-even triggered for {symbol}! Profit: {profit_ticks:.1f} ticks >= {activation_ticks} ticks")
+                        
+                        # Cancel old SL order
+                        if sl_order_id:
+                            cancel_response = requests.post(
+                                f'{base_url}/order/cancelorder',
+                                json={'orderId': sl_order_id, 'isAutomated': True},
+                                headers=headers,
+                                timeout=5
+                            )
+                            if cancel_response.status_code == 200:
+                                logger.info(f"✅ Cancelled old SL order {sl_order_id}")
+                        
+                        # Place new SL at entry price (break-even)
+                        exit_side = 'Sell' if is_long else 'Buy'
+                        new_sl_data = {
+                            "accountSpec": account_spec,
+                            "orderType": "Stop",
+                            "action": exit_side,
+                            "symbol": symbol,
+                            "orderQty": int(quantity),
+                            "stopPrice": float(entry_price),
+                            "timeInForce": "GTC",
+                            "isAutomated": True
+                        }
+                        
+                        sl_response = requests.post(
+                            f'{base_url}/order/placeorder',
+                            json=new_sl_data,
+                            headers=headers,
+                            timeout=5
+                        )
+                        
+                        if sl_response.status_code == 200:
+                            result = sl_response.json()
+                            new_sl_id = result.get('orderId')
+                            logger.info(f"✅ Break-even SL placed at {entry_price}, Order ID: {new_sl_id}")
+                            
+                            # Emit to frontend
+                            socketio.emit('break_even_triggered', {
+                                'symbol': symbol,
+                                'account_id': account_id,
+                                'entry_price': entry_price,
+                                'new_sl_order_id': new_sl_id,
+                                'message': f'Break-even activated for {symbol}'
+                            })
+                        else:
+                            logger.warning(f"⚠️ Failed to place break-even SL: {sl_response.text[:200]}")
+                        
+                        # Mark as triggered
+                        with _break_even_lock:
+                            if key in _break_even_monitors:
+                                _break_even_monitors[key]['triggered'] = True
+                        
+                        monitors_to_remove.append(key)
+                
+                except Exception as e:
+                    logger.debug(f"Break-even monitor error for {key}: {e}")
+                    continue
+            
+            # Remove processed monitors
+            for key in monitors_to_remove:
+                unregister_break_even_monitor(key)
+            
+            time.sleep(2)  # Check every 2 seconds
+            
+        except Exception as e:
+            logger.error(f"Break-Even Monitor error: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            time.sleep(3)
+
+# Start break-even monitor thread
+break_even_thread = threading.Thread(target=monitor_break_even, daemon=True)
+break_even_thread.start()
+logger.info("📊 Break-Even Monitor thread started")
+
+# ============================================================================
+# Tradovate PnL Fetching (Direct from API - No Market Data Required!)
+# ============================================================================
+
+# Cache for Tradovate PnL data
+_tradovate_pnl_cache = {
+    'last_fetch': 0,
+    'data': {},
+    'positions': []
+}
+
+def fetch_tradovate_pnl_sync():
+    """
+    Fetch real-time PnL directly from Tradovate's cashBalance API.
+    This is the CORRECT way to get PnL - Tradovate calculates it for us!
+    No market data subscription required.
+    """
+    global _tradovate_pnl_cache
+    
+    current_time = time.time()
+    
+    # Dynamic throttling based on account count to avoid rate limits
+    # Tradovate allows ~120 requests/min, each account needs 2 calls (cashBalance + positions)
+    # 
+    # SCALING TABLE:
+    # Accounts | Calls/update | Safe interval | Updates/min
+    # ---------|--------------|---------------|------------
+    #    1     |      2       |    0.5s       |    120
+    #    2     |      4       |    0.5s       |    120  
+    #    5     |     10       |    1.0s       |     60
+    #   10     |     20       |    2.0s       |     30
+    #   20     |     40       |    4.0s       |     15
+    #   50     |    100       |   10.0s       |      6
+    #
+    # Formula: interval = max(0.5, num_accounts * 0.2) to stay under 120 req/min
+    num_accounts = _tradovate_pnl_cache.get('account_count', 2)
+    if not isinstance(num_accounts, int) or num_accounts < 1:
+        num_accounts = 2
+    min_interval = max(0.5, num_accounts * 0.2)  # Scale up as accounts increase
+    
+    if current_time - _tradovate_pnl_cache['last_fetch'] < min_interval:
+        return _tradovate_pnl_cache['data'], _tradovate_pnl_cache['positions']
+    
+    try:
+        # Get ALL connected accounts from database (multi-account support for copy trading)
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, tradovate_token, tradovate_accounts, environment
+            FROM accounts 
+            WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+        ''')
+        all_linked_accounts = cursor.fetchall()
+        conn.close()
+        
+        if not all_linked_accounts:
+            return {}, []
+        
+        all_pnl_data = {}
+        all_positions = []
+        total_subaccounts = 0
+        
+        # Process each linked account (user may have multiple Tradovate logins)
+        for account in all_linked_accounts:
+            token = account['tradovate_token']
+            env = account['environment'] or 'demo'
+            
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Parse tradovate_accounts to get subaccount IDs
+            tradovate_accounts = []
+            try:
+                if account['tradovate_accounts']:
+                    tradovate_accounts = json.loads(account['tradovate_accounts'])
+            except:
+                pass
+            
+            total_subaccounts += len(tradovate_accounts)
+            
+            # Fetch PnL for each subaccount under this linked account
+            for ta in tradovate_accounts:
+                acc_id = ta.get('id')
+                acc_name = ta.get('name', str(acc_id))
+                is_demo = ta.get('is_demo', True)
+                
+                # Use correct base URL for demo vs live accounts
+                acc_base_url = 'https://demo.tradovateapi.com/v1' if is_demo else 'https://live.tradovateapi.com/v1'
+                
+                try:
+                    # Get cash balance snapshot (includes openPnL!)
+                    response = requests.get(
+                        f'{acc_base_url}/cashBalance/getCashBalanceSnapshot?accountId={acc_id}',
+                        headers=headers,
+                        timeout=5
+                    )
+                    
+                    if response.status_code == 200:
+                        snap = response.json()
+                        all_pnl_data[acc_id] = {
+                            'account_id': acc_id,
+                            'account_name': acc_name,
+                            'is_demo': is_demo,
+                            'total_cash_value': snap.get('totalCashValue', 0),
+                            'net_liq': snap.get('netLiq', 0),
+                            'open_pnl': snap.get('openPnL', 0),  # Unrealized PnL!
+                            'realized_pnl': snap.get('realizedPnL', 0),
+                            'total_pnl': snap.get('totalPnL', 0),
+                            'week_realized_pnl': snap.get('weekRealizedPnL', 0),
+                            'initial_margin': snap.get('initialMargin', 0),
+                            'maintenance_margin': snap.get('maintenanceMargin', 0)
+                        }
+                        logger.debug(f"Fetched PnL for {acc_name}: openPnL=${snap.get('openPnL', 0):.2f}, realizedPnL=${snap.get('realizedPnL', 0):.2f}")
+                    elif response.status_code == 429:
+                        # Rate limited - back off by increasing cache time
+                        logger.warning(f"Rate limited by Tradovate (429)! Slowing down...")
+                        _tradovate_pnl_cache['account_count'] = max(10, _tradovate_pnl_cache.get('account_count', 2) * 2)
+                        return _tradovate_pnl_cache.get('data', {}), _tradovate_pnl_cache.get('positions', [])
+                    elif response.status_code == 401:
+                        logger.warning(f"Token expired for account {acc_id} - will refresh on next trade")
+                        continue
+                    else:
+                        logger.debug(f"Cash balance API returned {response.status_code} for {acc_id}: {response.text[:100]}")
+                    
+                    # Get positions for this account
+                    pos_response = requests.get(
+                        f'{acc_base_url}/position/list',
+                        headers=headers,
+                        timeout=5
+                    )
+                    
+                    if pos_response.status_code == 200:
+                        positions = pos_response.json()
+                        for pos in positions:
+                            if pos.get('netPos', 0) != 0:  # Only open positions
+                                # Get contract name
+                                contract_id = pos.get('contractId')
+                                contract_name = get_contract_name_cached(contract_id, acc_base_url, headers)
+                                
+                                all_positions.append({
+                                    'account_id': acc_id,
+                                    'account_name': acc_name,
+                                    'is_demo': is_demo,
+                                    'contract_id': contract_id,
+                                    'symbol': contract_name,
+                                    'net_quantity': pos.get('netPos', 0),
+                                    'bought': pos.get('bought', 0),
+                                    'bought_value': pos.get('boughtValue', 0),
+                                    'sold': pos.get('sold', 0),
+                                    'sold_value': pos.get('soldValue', 0),
+                                    # Calculate avg price from bought/sold values
+                                    'avg_price': calculate_avg_price(pos),
+                                    'timestamp': pos.get('timestamp')
+                                })
+                                
+                except requests.exceptions.RequestException as e:
+                    logger.warning(f"Error fetching PnL for account {acc_id}: {e}")
+                    continue
+        
+        # Update cache (including total subaccount count for dynamic throttling)
+        _tradovate_pnl_cache['last_fetch'] = current_time
+        _tradovate_pnl_cache['data'] = all_pnl_data
+        _tradovate_pnl_cache['positions'] = all_positions
+        _tradovate_pnl_cache['account_count'] = total_subaccounts  # Total across all linked accounts
+        
+        if total_subaccounts > 5:
+            logger.info(f"Monitoring {total_subaccounts} subaccounts, update interval: {max(0.5, total_subaccounts * 0.2):.1f}s")
+        
+        return all_pnl_data, all_positions
+        
+    except Exception as e:
+        logger.error(f"Error fetching Tradovate PnL: {e}")
+        import traceback
+        logger.debug(f"Traceback: {traceback.format_exc()}")
+        return _tradovate_pnl_cache.get('data', {}), _tradovate_pnl_cache.get('positions', [])
+
+# Cache for contract names
+_contract_name_cache = {}
+
+def get_contract_name_cached(contract_id, base_url, headers):
+    """Get contract name from ID, with caching"""
+    global _contract_name_cache
+    
+    if contract_id in _contract_name_cache:
+        return _contract_name_cache[contract_id]
+    
+    try:
+        response = requests.get(
+            f'{base_url}/contract/item?id={contract_id}',
+            headers=headers,
+            timeout=5
+        )
+        if response.status_code == 200:
+            contract = response.json()
+            name = contract.get('name', str(contract_id))
+            _contract_name_cache[contract_id] = name
+            return name
+    except:
+        pass
+    
+    return str(contract_id)
+
+def calculate_avg_price(position):
+    """Calculate average entry price from position data"""
+    net_pos = position.get('netPos', 0)
+    if net_pos == 0:
+        return 0
+    
+    if net_pos > 0:
+        # Long position - use bought value
+        bought = position.get('bought', 0)
+        bought_value = position.get('boughtValue', 0)
+        if bought > 0:
+            return bought_value / bought
+    else:
+        # Short position - use sold value
+        sold = position.get('sold', 0)
+        sold_value = position.get('soldValue', 0)
+        if sold > 0:
+            return sold_value / sold
+    
+    return 0
+
+def emit_realtime_updates():
+    """Emit real-time updates every second (like Trade Manager)"""
+    global _position_cache
+    while True:
+        try:
+            # ============================================================
+            # FETCH REAL-TIME PnL DIRECTLY FROM TRADOVATE
+            # This is the correct approach - no market data needed!
+            # ============================================================
+            
+            total_pnl = 0.0
+            today_pnl = 0.0
+            open_pnl = 0.0
+            active_positions = 0
+            positions_list = []
+            
+            # Fetch PnL from Tradovate's cashBalance API
+            pnl_data, tradovate_positions = fetch_tradovate_pnl_sync()
+            
+            if pnl_data:
+                # Sum up PnL from all accounts
+                for acc_id, acc_data in pnl_data.items():
+                    open_pnl += acc_data.get('open_pnl', 0)
+                    today_pnl += acc_data.get('realized_pnl', 0)
+                    total_pnl += acc_data.get('total_pnl', 0)
+                
+                logger.debug(f"Tradovate PnL: open=${open_pnl:.2f}, realized=${today_pnl:.2f}, total=${total_pnl:.2f}")
+            
+            if tradovate_positions:
+                active_positions = len(tradovate_positions)
+                positions_list = [{
+                    'symbol': pos.get('symbol', 'Unknown'),
+                    'net_quantity': pos.get('net_quantity', 0),
+                    'avg_price': pos.get('avg_price', 0),
+                    'account_id': pos.get('account_id'),
+                    'account_name': pos.get('account_name'),
+                    'is_demo': pos.get('is_demo', True),
+                    # Note: unrealized_pnl per position requires market data
+                    # But we have total open_pnl from cashBalance
+                } for pos in tradovate_positions]
+            
+            # Also include any synthetic positions from manual trades
+            if _position_cache:
+                for cache_key, pos in _position_cache.items():
+                    # Check if this position is already in tradovate_positions
+                    exists = any(
+                        p.get('symbol') == pos.get('symbol') and 
+                        p.get('account_id') == pos.get('account_id')
+                        for p in positions_list
+                    )
+                    if not exists and pos.get('net_quantity', 0) != 0:
+                        positions_list.append(pos)
+                        active_positions = len(positions_list)
+            
+            # Emit P&L updates with REAL data from Tradovate
+            socketio.emit('pnl_update', {
+                'total_pnl': total_pnl,
+                'open_pnl': open_pnl,  # Unrealized PnL
+                'today_pnl': today_pnl,  # Realized PnL today
+                'active_positions': active_positions,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # Emit position updates
+            socketio.emit('position_update', {
+                'positions': positions_list,
+                'count': active_positions,
+                'pnl_data': pnl_data,  # Include full PnL data per account
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # Note: Position and PnL fetching is now handled by fetch_tradovate_pnl_sync() above
+            # The new implementation uses Tradovate's cashBalance API which provides 
+            # real-time PnL without needing market data subscription
+            
+        except Exception as e:
+            logger.error(f"Error emitting real-time updates: {e}")
+            import traceback
+            logger.debug(f"Traceback: {traceback.format_exc()}")
+        time.sleep(0.5)  # Every 0.5 seconds for maximum speed
+
+def record_strategy_pnl_continuously():
+    """Record P&L for all active strategies every second (like Trade Manager)"""
+    while True:
+        try:
+            strategies = []
+            
+            # Try SQLAlchemy models first
+            try:
+                from app.database import SessionLocal
+                from app.models import Strategy
+                
+                db = SessionLocal()
+                active_strategies = db.query(Strategy).filter(Strategy.active == True).all()
+                strategies = [(s.id, s.name) for s in active_strategies]
+                db.close()
+                
+            except (ImportError, Exception):
+                # Fallback to SQLite direct query
+                try:
+                    conn = sqlite3.connect('trading_webhook.db')
+                    cursor = conn.execute('''
+                        SELECT id, name FROM strategies WHERE enabled = 1
+                    ''')
+                    strategies = cursor.fetchall()
+                    conn.close()
+                except sqlite3.OperationalError as e:
+                    # If strategies table doesn't exist yet, that's okay
+                    if 'no such table' not in str(e).lower():
+                        logger.debug(f"Strategies table not found: {e}")
+                    strategies = []
+            
+            # Record P&L for each strategy
+            for strategy_id, strategy_name in strategies:
+                try:
+                    # Calculate current P&L for strategy
+                    pnl = calculate_strategy_pnl(strategy_id)
+                    drawdown = calculate_strategy_drawdown(strategy_id)
+                    
+                    # Record to database
+                    record_strategy_pnl(strategy_id, strategy_name, pnl, drawdown)
+                    
+                    # Emit real-time update
+                    socketio.emit('strategy_pnl_update', {
+                        'strategy_id': strategy_id,
+                        'strategy_name': strategy_name,
+                        'pnl': pnl,
+                        'drawdown': drawdown,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                except Exception as e:
+                    logger.error(f"Error processing strategy {strategy_id}: {e}")
+                
+        except Exception as e:
+            logger.error(f"Error recording strategy P&L: {e}")
+        time.sleep(1)  # Every second
+
+# Start background threads
+update_thread = threading.Thread(target=emit_realtime_updates, daemon=True)
+update_thread.start()
+
+pnl_recording_thread = threading.Thread(target=record_strategy_pnl_continuously, daemon=True)
+pnl_recording_thread.start()
+
+# Start Tradovate market data WebSocket
+if WEBSOCKETS_AVAILABLE:
+    start_market_data_websocket()
+    logger.info("✅ Market data WebSocket thread started")
+else:
+    logger.warning("websockets library not installed. Market data WebSocket will not work. Install with: pip install websockets")
+
 # Configure logging for production
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -1851,4 +4202,5 @@ if __name__ == '__main__':
 
     port = args.port
     logger.info(f"Starting Just.Trades. server on 0.0.0.0:{port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    logger.info("WebSocket support enabled (like Trade Manager)")
+    socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)

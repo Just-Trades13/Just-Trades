@@ -1,0 +1,6 @@
+# Sandbox-specific ignores
+*.db
+*.log
+__pycache__/
+venv/
+.env

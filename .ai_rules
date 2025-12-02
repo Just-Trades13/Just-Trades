@@ -1,0 +1,30 @@
+# AI Assistant Rules - MANDATORY
+# This file is checked by many AI systems automatically
+
+⚠️ CRITICAL: READ START_HERE.md BEFORE ANY CODE CHANGES
+
+MANDATORY RULES:
+1. Read START_HERE.md first
+2. Read .cursorrules for complete protection rules
+3. Read TAB_ISOLATION_MAP.md - Only modify files for the tab you're working on
+4. Read WHAT_NOT_TO_DO.md - Past mistakes to avoid
+5. Read PRE_CHANGE_CHECKLIST.md - Mandatory checklist
+
+TAB ISOLATION (CRITICAL):
+- ONLY modify files for the tab you're working on
+- NEVER modify files from other tabs
+- Check TAB_ISOLATION_MAP.md before modifying ANY file
+
+PROTECTED FILES:
+- templates/account_management.html - LOCKED, DO NOT MODIFY
+- Account management functions - PROTECTED
+- Core integration methods - PROTECTED
+
+RED FLAGS - STOP IMMEDIATELY:
+- Modifying file not in tab's allowed list
+- "Improving" code in another tab
+- Modifying protected file without permission
+- File is in .cursorignore
+
+See START_HERE.md for complete rules.
+

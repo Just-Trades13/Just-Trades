@@ -1,0 +1,70 @@
+# Cursor Ignore - Protected Files
+# Files listed here should NOT be modified without explicit user permission
+# These are locked/protected files that are working and must be preserved
+
+# Account Management - LOCKED BASELINE
+templates/account_management.html
+
+# Core Backend - Protected Functions
+# Note: File can be modified, but account management functions are locked
+# ultra_simple_server.py - Account management functions protected
+
+# Core Integration - Protected Methods
+# Note: File can be modified, but core methods are locked
+# phantom_scraper/tradovate_integration.py - Core methods protected
+
+# Documentation Snapshots - DO NOT MODIFY
+ACCOUNT_MGMT_SNAPSHOT.md
+CURRENT_STATUS_SNAPSHOT.md
+WHAT_NOT_TO_DO.md
+PRE_CHANGE_CHECKLIST.md
+HANDOFF_DOCUMENT.md
+BACKUP_INDEX.md
+
+# Backup Directories - DO NOT MODIFY
+backups/
+
+# Database Files - Handle with Care
+*.db
+*.db-journal
+*.db-wal
+
+# Environment Files - Never Commit
+.env
+.env.local
+.env.*.local
+
+# Log Files
+*.log
+server.log
+ngrok.log
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.backup
+
