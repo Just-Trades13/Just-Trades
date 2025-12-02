@@ -3863,7 +3863,7 @@ def fetch_tradovate_pnl_sync():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id, tradovate_token, tradovate_accounts, environment
+            SELECT id, name, tradovate_token, tradovate_accounts, environment
             FROM accounts 
             WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
         ''')
@@ -3881,6 +3881,7 @@ def fetch_tradovate_pnl_sync():
         for account in all_linked_accounts:
             token = account['tradovate_token']
             env = account['environment'] or 'demo'
+            user_account_name = account['name'] if account['name'] else f"Account {account['id']}"  # User's custom name
             
             headers = {
                 'Authorization': f'Bearer {token}',
@@ -3900,8 +3901,10 @@ def fetch_tradovate_pnl_sync():
             # Fetch PnL for each subaccount under this linked account
             for ta in tradovate_accounts:
                 acc_id = ta.get('id')
-                acc_name = ta.get('name', str(acc_id))
+                subaccount_name = ta.get('name', str(acc_id))  # Tradovate's subaccount name
                 is_demo = ta.get('is_demo', True)
+                # Display as "UserName - SubaccountName" (like account dropdown)
+                acc_name = f"{user_account_name} - {subaccount_name}"
                 
                 # Use correct base URL for demo vs live accounts
                 acc_base_url = 'https://demo.tradovateapi.com/v1' if is_demo else 'https://live.tradovateapi.com/v1'

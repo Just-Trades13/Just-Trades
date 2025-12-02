@@ -13,38 +13,40 @@
     <section class="manual-trader">
         <header>
             <h1>Manual Trader</h1>
-            <span class="badge">RECORDER</span>
         </header>
         <div class="manual-form">
-            <label>
-                <span>Account</span>
-                <div class="select-shell">
-                    <select id="manualAccountSelect" required>
-                        <option value="">Select account...</option>
-                        <option value="1:26029294">Mark - DEMO4419847-2 (Demo)</option>
-                        <option value="1:544727">Mark - 1381296 (Live)</option>
-                    </select>
-                    <span class="material-icons">expand_more</span>
+            <div class="trade-setup-grid">
+                <div class="setup-card">
+                    <h3>Order Setup</h3>
+                    <label>
+                        <span>Account</span>
+                        <div class="select-shell">
+                            <select id="manualAccountSelect" required>
+                                <option value="">Select account...</option>
+                                <option value="1:26029294">Mark - DEMO4419847-2 (Demo)</option>
+                                <option value="1:544727">Mark - 1381296 (Live)</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label>
+                        <span>Ticker</span>
+                        <div class="select-shell">
+                            <select id="manualTickerSelect">
+                                <option value="">Select or type a ticker</option>
+                                <option value="ES1!">ES1!</option>
+                                <option value="NQ1!">NQ1!</option>
+                                <option value="MES1!">MES1!</option>
+                                <option value="MNQ1!">MNQ1!</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label>
+                        <span>Position Size (Qty)</span>
+                        <input type="number" id="manualPositionSize" value="1" min="1" step="1">
+                    </label>
                 </div>
-            </label>
-            <label>
-                <span>Ticker</span>
-                <div class="select-shell">
-                    <select id="manualTickerSelect">
-                        <option value="">Select or type a ticker</option>
-                        <option value="ES1!">ES1!</option>
-                        <option value="NQ1!">NQ1!</option>
-                        <option value="MES1!">MES1!</option>
-                        <option value="MNQ1!">MNQ1!</option>
-                    </select>
-                    <span class="material-icons">expand_more</span>
-                </div>
-            </label>
-            <label>
-                <span>Position Size (Qty)</span>
-                <input type="number" id="manualPositionSize" value="1" min="1" step="1">
-            </label>
-            <div class="risk-grid">
                 <div class="risk-card">
                     <h3>Targets</h3>
                     <label>
@@ -195,8 +197,31 @@
     .manual-form {
         display: grid;
         gap: 1rem;
-        grid-template-columns: repeat(auto-fit,minmax(200px,1fr));
-        align-items: end;
+    }
+    .trade-setup-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+    }
+    @media (max-width: 900px) {
+        .trade-setup-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    .setup-card {
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(59,130,246,0.25);
+        border-radius: 16px;
+        padding: 1rem;
+        display: grid;
+        gap: 0.65rem;
+    }
+    .setup-card h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(226,232,240,0.8);
     }
     label { display: grid; gap: 0.35rem; color: var(--text-muted); font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
     input, select {
@@ -217,12 +242,6 @@
         color: var(--text-muted);
         font-size: 1rem;
         pointer-events: none;
-    }
-    .risk-grid {
-        grid-column: span 2;
-        display: grid;
-        grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
-        gap: 1rem;
     }
     .risk-card {
         background: rgba(15,23,42,0.55);
