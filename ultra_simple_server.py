@@ -105,21 +105,91 @@ def get_contract_multiplier(symbol: str) -> float:
 
 def get_market_price_simple(symbol: str) -> Optional[float]:
     """
-    Get current market price using a simple HTTP endpoint.
-    This is a placeholder - you'll need to integrate with:
-    - TradingView API (free tier available)
-    - Tradovate WebSocket market data (requires subscription)
-    - Or another market data provider
+    Get current market price using TradingView's public scanner API.
+    This doesn't require authentication but has rate limits.
     """
     try:
-        # For now, return None - will be implemented with market data source
-        # TradingView has a free API: https://symbol-search.tradingview.com/
-        # Or use: https://scanner.tradingview.com/symbols?exchange=CME&symbol=MES1!
-        logger.debug(f"Market data not yet implemented for {symbol}")
+        if not symbol:
+            return None
+        
+        # Normalize symbol (remove !, add CME prefix if needed)
+        clean_symbol = symbol.upper().replace('!', '')
+        
+        # Map common futures symbols to TradingView format
+        tv_symbol_map = {
+            'MNQ': 'CME_MINI:MNQ1!',
+            'MES': 'CME_MINI:MES1!',
+            'MYM': 'CBOT_MINI:MYM1!',
+            'M2K': 'CME_MINI:M2K1!',
+            'NQ': 'CME:NQ1!',
+            'ES': 'CME:ES1!',
+            'YM': 'CBOT:YM1!',
+            'RTY': 'CME:RTY1!',
+            'CL': 'NYMEX:CL1!',
+            'GC': 'COMEX:GC1!',
+        }
+        
+        # Extract root symbol
+        root = extract_symbol_root(clean_symbol)
+        tv_symbol = tv_symbol_map.get(root)
+        
+        if not tv_symbol:
+            # Try direct format
+            tv_symbol = f'CME:{clean_symbol}'
+        
+        # Use TradingView's scanner endpoint
+        url = "https://scanner.tradingview.com/futures/scan"
+        payload = {
+            "symbols": {"tickers": [tv_symbol]},
+            "columns": ["close", "change", "high", "low", "volume"]
+        }
+        
+        response = requests.post(url, json=payload, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('data') and len(data['data']) > 0:
+                price = data['data'][0].get('d', [None])[0]
+                if price:
+                    logger.debug(f"Got price for {symbol}: {price}")
+                    return float(price)
+        
+        logger.debug(f"Could not get price for {symbol} from TradingView")
         return None
+        
     except Exception as e:
-        logger.error(f"Error getting market price for {symbol}: {e}")
+        logger.warning(f"Error getting market price for {symbol}: {e}")
         return None
+
+
+# Cache for price data to avoid excessive API calls
+_price_cache = {}
+_price_cache_ttl = 5  # seconds
+
+
+def get_cached_price(symbol: str) -> Optional[float]:
+    """Get price with caching to avoid rate limits"""
+    global _price_cache
+    
+    if not symbol:
+        return None
+    
+    root = extract_symbol_root(symbol)
+    cache_key = root
+    
+    # Check cache first
+    if cache_key in _price_cache:
+        cached_price, cached_time = _price_cache[cache_key]
+        if time.time() - cached_time < _price_cache_ttl:
+            return cached_price
+    
+    # Fetch new price
+    price = get_market_price_simple(symbol)
+    
+    if price:
+        _price_cache[cache_key] = (price, time.time())
+    
+    return price
 
 SYMBOL_FALLBACK_MAP = {
     'MNQ': 'MNQZ5',
@@ -566,6 +636,107 @@ async def cancel_open_orders(tradovate, account_id: int, symbol: str | None = No
     logger.info(f"Total cancelled: {cancelled} orders for symbol {symbol or 'all'}")
     return cancelled
 
+
+def get_tick_size(symbol):
+    """Get tick size for a given symbol"""
+    if not symbol:
+        return 0.25  # Default
+    
+    symbol_upper = symbol.upper()
+    
+    # Micro futures
+    if 'MNQ' in symbol_upper:
+        return 0.25
+    elif 'MES' in symbol_upper:
+        return 0.25
+    elif 'MYM' in symbol_upper:
+        return 1.0
+    elif 'M2K' in symbol_upper:
+        return 0.10
+    elif 'MCL' in symbol_upper:
+        return 0.01
+    elif 'MGC' in symbol_upper:
+        return 0.10
+    # E-mini futures
+    elif 'NQ' in symbol_upper:
+        return 0.25
+    elif 'ES' in symbol_upper:
+        return 0.25
+    elif 'YM' in symbol_upper:
+        return 1.0
+    elif 'RTY' in symbol_upper:
+        return 0.10
+    # Commodities
+    elif 'CL' in symbol_upper:
+        return 0.01
+    elif 'GC' in symbol_upper:
+        return 0.10
+    elif 'SI' in symbol_upper:
+        return 0.005
+    elif 'NG' in symbol_upper:
+        return 0.001
+    # Currencies
+    elif '6E' in symbol_upper or 'EUR' in symbol_upper:
+        return 0.00005
+    elif '6J' in symbol_upper or 'JPY' in symbol_upper:
+        return 0.0000005
+    elif '6B' in symbol_upper or 'GBP' in symbol_upper:
+        return 0.0001
+    # Default
+    else:
+        return 0.25
+
+
+def get_tick_value(symbol):
+    """Get tick value (dollar value per tick) for a given symbol"""
+    if not symbol:
+        return 0.50  # Default for micro futures
+    
+    symbol_upper = symbol.upper()
+    
+    # Micro futures (smaller tick values)
+    if 'MNQ' in symbol_upper:
+        return 0.50   # $0.50 per tick (0.25 points)
+    elif 'MES' in symbol_upper:
+        return 1.25   # $1.25 per tick (0.25 points)
+    elif 'MYM' in symbol_upper:
+        return 0.50   # $0.50 per tick (1 point)
+    elif 'M2K' in symbol_upper:
+        return 0.50   # $0.50 per tick (0.10 points)
+    elif 'MCL' in symbol_upper:
+        return 1.00   # $1.00 per tick (0.01)
+    elif 'MGC' in symbol_upper:
+        return 1.00   # $1.00 per tick (0.10)
+    # E-mini futures (larger tick values)
+    elif 'NQ' in symbol_upper:
+        return 5.00   # $5.00 per tick (0.25 points)
+    elif 'ES' in symbol_upper:
+        return 12.50  # $12.50 per tick (0.25 points)
+    elif 'YM' in symbol_upper:
+        return 5.00   # $5.00 per tick (1 point)
+    elif 'RTY' in symbol_upper:
+        return 5.00   # $5.00 per tick (0.10 points)
+    # Commodities
+    elif 'CL' in symbol_upper:
+        return 10.00  # $10.00 per tick (0.01)
+    elif 'GC' in symbol_upper:
+        return 10.00  # $10.00 per tick (0.10)
+    elif 'SI' in symbol_upper:
+        return 25.00  # $25.00 per tick
+    elif 'NG' in symbol_upper:
+        return 10.00  # $10.00 per tick
+    # Currencies
+    elif '6E' in symbol_upper or 'EUR' in symbol_upper:
+        return 6.25   # $6.25 per tick
+    elif '6J' in symbol_upper or 'JPY' in symbol_upper:
+        return 6.25
+    elif '6B' in symbol_upper or 'GBP' in symbol_upper:
+        return 6.25
+    # Default
+    else:
+        return 0.50
+
+
 def init_db():
     conn = sqlite3.connect('trading_webhook.db')
     cursor = conn.cursor()
@@ -627,6 +798,112 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_open_positions_account 
         ON open_positions(account_id, subaccount_id)
     ''')
+    
+    # Recorders table - stores recorder configurations
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            strategy_type TEXT DEFAULT 'Futures',
+            symbol TEXT,
+            demo_account_id TEXT,
+            account_id INTEGER,
+            -- Positional Settings
+            initial_position_size INTEGER DEFAULT 2,
+            add_position_size INTEGER DEFAULT 2,
+            -- TP Settings
+            tp_units TEXT DEFAULT 'Ticks',
+            trim_units TEXT DEFAULT 'Contracts',
+            tp_targets TEXT DEFAULT '[]',
+            -- SL Settings
+            sl_enabled INTEGER DEFAULT 0,
+            sl_amount REAL DEFAULT 0,
+            sl_units TEXT DEFAULT 'Ticks',
+            sl_type TEXT DEFAULT 'Fixed',
+            -- Averaging Down
+            avg_down_enabled INTEGER DEFAULT 0,
+            avg_down_amount INTEGER DEFAULT 1,
+            avg_down_point REAL DEFAULT 0,
+            avg_down_units TEXT DEFAULT 'Ticks',
+            -- Filter Settings
+            add_delay INTEGER DEFAULT 1,
+            max_contracts_per_trade INTEGER DEFAULT 0,
+            option_premium_filter REAL DEFAULT 0,
+            direction_filter TEXT,
+            -- Time Filters
+            time_filter_1_start TEXT DEFAULT '8:45 AM',
+            time_filter_1_stop TEXT DEFAULT '1:45 PM',
+            time_filter_2_start TEXT DEFAULT '12:30 PM',
+            time_filter_2_stop TEXT DEFAULT '3:15 PM',
+            -- Execution Controls
+            signal_cooldown INTEGER DEFAULT 60,
+            max_signals_per_session INTEGER DEFAULT 10,
+            max_daily_loss REAL DEFAULT 500,
+            auto_flat_after_cutoff INTEGER DEFAULT 1,
+            -- Miscellaneous
+            notes TEXT,
+            -- Recording Status
+            recording_enabled INTEGER DEFAULT 1,
+            is_recording INTEGER DEFAULT 0,
+            -- Webhook
+            webhook_token TEXT,
+            signal_count INTEGER DEFAULT 0,
+            -- Timestamps
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_recorders_name 
+        ON recorders(name)
+    ''')
+    
+    # Recorded trades table - stores individual trade executions from signals
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorded_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recorder_id INTEGER NOT NULL,
+            signal_id INTEGER,
+            ticker TEXT NOT NULL,
+            action TEXT NOT NULL,
+            side TEXT NOT NULL,
+            entry_price REAL,
+            entry_time DATETIME,
+            exit_price REAL,
+            exit_time DATETIME,
+            quantity INTEGER DEFAULT 1,
+            pnl REAL DEFAULT 0,
+            pnl_ticks REAL DEFAULT 0,
+            fees REAL DEFAULT 0,
+            status TEXT DEFAULT 'open',
+            exit_reason TEXT,
+            notes TEXT,
+            -- TP/SL tracking
+            tp_price REAL,
+            sl_price REAL,
+            tp_ticks REAL,
+            sl_ticks REAL,
+            max_favorable REAL DEFAULT 0,
+            max_adverse REAL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (recorder_id) REFERENCES recorders(id),
+            FOREIGN KEY (signal_id) REFERENCES recorded_signals(id)
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_recorded_trades_recorder 
+        ON recorded_trades(recorder_id)
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_recorded_trades_status 
+        ON recorded_trades(status)
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_recorded_trades_entry_time 
+        ON recorded_trades(entry_time)
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -1311,6 +1588,82 @@ def fetch_md_access_token(account_id):
         }), 500
 
 
+# ============================================================================
+# TradingView Session Integration (for real-time price data)
+# ============================================================================
+
+@app.route('/api/tradingview/session', methods=['POST'])
+def store_tradingview_session():
+    """Store TradingView session cookies for real-time price data"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        sessionid = data.get('sessionid')
+        sessionid_sign = data.get('sessionid_sign')
+        device_t = data.get('device_t')
+        
+        if not sessionid:
+            return jsonify({'success': False, 'error': 'sessionid is required'}), 400
+        
+        # Store as JSON in the first account (or create a settings table later)
+        tv_session = json.dumps({
+            'sessionid': sessionid,
+            'sessionid_sign': sessionid_sign,
+            'device_t': device_t,
+            'updated_at': datetime.now().isoformat()
+        })
+        
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        cursor.execute("UPDATE accounts SET tradingview_session = ? WHERE id = 1", (tv_session,))
+        conn.commit()
+        conn.close()
+        
+        logger.info("✅ TradingView session stored successfully")
+        
+        # Restart TradingView WebSocket with new session
+        start_tradingview_websocket()
+        
+        return jsonify({
+            'success': True,
+            'message': 'TradingView session stored. WebSocket will connect for real-time prices.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error storing TradingView session: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/tradingview/session', methods=['GET'])
+def get_tradingview_session_status():
+    """Check if TradingView session is configured"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT tradingview_session FROM accounts WHERE id = 1")
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row[0]:
+            session_data = json.loads(row[0])
+            return jsonify({
+                'success': True,
+                'configured': True,
+                'updated_at': session_data.get('updated_at'),
+                'has_sessionid': bool(session_data.get('sessionid'))
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'configured': False
+            })
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/strategies', methods=['GET'])
 def get_strategies():
     """Get all strategies"""
@@ -1378,21 +1731,1399 @@ def strategies():
 
 @app.route('/recorders', methods=['GET'])
 def recorders_list():
-    demo_recorders = [
-        {'id': idx, 'name': name}
-        for idx, name in enumerate([
-            'JADDCAVIX', 'JADDCAVIXES', 'JADES', 'JADIND50', 'JADNQ', 'TEST2'
-        ], start=1)
-    ]
-    return render_template('recorders_list.html', recorders=demo_recorders)
+    """Render the recorders list page"""
+    conn = sqlite3.connect('just_trades.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name, symbol, is_recording, created_at FROM recorders ORDER BY created_at DESC')
+    recorders = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return render_template('recorders_list.html', recorders=recorders)
 
 @app.route('/recorders/new')
 def recorders_new():
-    return render_template('recorders.html')
+    """Render the new recorder form"""
+    # Get accounts for dropdown
+    conn = sqlite3.connect('just_trades.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name FROM accounts WHERE enabled = 1')
+    accounts = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return render_template('recorders.html', recorder=None, accounts=accounts, mode='create')
 
 @app.route('/recorders/<int:recorder_id>')
 def recorders_edit(recorder_id):
-    return render_template('recorders.html')
+    """Render the edit recorder form"""
+    conn = sqlite3.connect('just_trades.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
+    recorder = cursor.fetchone()
+    if not recorder:
+        conn.close()
+        return redirect('/recorders')
+    recorder = dict(recorder)
+    # Parse TP targets JSON
+    try:
+        recorder['tp_targets'] = json.loads(recorder.get('tp_targets') or '[]')
+    except:
+        recorder['tp_targets'] = []
+    # Get accounts for dropdown
+    cursor.execute('SELECT id, name FROM accounts WHERE enabled = 1')
+    accounts = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return render_template('recorders.html', recorder=recorder, accounts=accounts, mode='edit')
+
+# ============================================================
+# RECORDER API ENDPOINTS
+# ============================================================
+
+@app.route('/api/recorders', methods=['GET'])
+def api_get_recorders():
+    """Get all recorders"""
+    try:
+        search = request.args.get('search', '').strip()
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        offset = (page - 1) * per_page
+        
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if search:
+            cursor.execute('''
+                SELECT * FROM recorders 
+                WHERE name LIKE ? 
+                ORDER BY created_at DESC 
+                LIMIT ? OFFSET ?
+            ''', (f'%{search}%', per_page, offset))
+        else:
+            cursor.execute('''
+                SELECT * FROM recorders 
+                ORDER BY created_at DESC 
+                LIMIT ? OFFSET ?
+            ''', (per_page, offset))
+        
+        recorders = []
+        for row in cursor.fetchall():
+            recorder = dict(row)
+            try:
+                recorder['tp_targets'] = json.loads(recorder.get('tp_targets') or '[]')
+            except:
+                recorder['tp_targets'] = []
+            recorders.append(recorder)
+        
+        # Get total count
+        if search:
+            cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ?', (f'%{search}%',))
+        else:
+            cursor.execute('SELECT COUNT(*) as count FROM recorders')
+        total = cursor.fetchone()['count']
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'recorders': recorders,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': (total + per_page - 1) // per_page
+        })
+    except Exception as e:
+        logger.error(f"Error getting recorders: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders/<int:recorder_id>', methods=['GET'])
+def api_get_recorder(recorder_id):
+    """Get a single recorder by ID"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        recorder = dict(row)
+        try:
+            recorder['tp_targets'] = json.loads(recorder.get('tp_targets') or '[]')
+        except:
+            recorder['tp_targets'] = []
+        
+        return jsonify({'success': True, 'recorder': recorder})
+    except Exception as e:
+        logger.error(f"Error getting recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders', methods=['POST'])
+def api_create_recorder():
+    """Create a new recorder"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        name = data.get('name', '').strip()
+        if not name:
+            return jsonify({'success': False, 'error': 'Strategy name is required'}), 400
+        
+        # Generate webhook token
+        import secrets
+        webhook_token = secrets.token_urlsafe(16)
+        
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        
+        # Serialize TP targets
+        tp_targets = json.dumps(data.get('tp_targets', []))
+        
+        cursor.execute('''
+            INSERT INTO recorders (
+                name, strategy_type, symbol, demo_account_id, account_id,
+                initial_position_size, add_position_size,
+                tp_units, trim_units, tp_targets,
+                sl_enabled, sl_amount, sl_units, sl_type,
+                avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
+                add_delay, max_contracts_per_trade, option_premium_filter, direction_filter,
+                time_filter_1_start, time_filter_1_stop, time_filter_2_start, time_filter_2_stop,
+                signal_cooldown, max_signals_per_session, max_daily_loss, auto_flat_after_cutoff,
+                notes, recording_enabled, webhook_token
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            name,
+            data.get('strategy_type', 'Futures'),
+            data.get('symbol'),
+            data.get('demo_account_id'),
+            data.get('account_id'),
+            data.get('initial_position_size', 2),
+            data.get('add_position_size', 2),
+            data.get('tp_units', 'Ticks'),
+            data.get('trim_units', 'Contracts'),
+            tp_targets,
+            1 if data.get('sl_enabled') else 0,
+            data.get('sl_amount', 0),
+            data.get('sl_units', 'Ticks'),
+            data.get('sl_type', 'Fixed'),
+            1 if data.get('avg_down_enabled') else 0,
+            data.get('avg_down_amount', 1),
+            data.get('avg_down_point', 0),
+            data.get('avg_down_units', 'Ticks'),
+            data.get('add_delay', 1),
+            data.get('max_contracts_per_trade', 0),
+            data.get('option_premium_filter', 0),
+            data.get('direction_filter'),
+            data.get('time_filter_1_start', '8:45 AM'),
+            data.get('time_filter_1_stop', '1:45 PM'),
+            data.get('time_filter_2_start', '12:30 PM'),
+            data.get('time_filter_2_stop', '3:15 PM'),
+            data.get('signal_cooldown', 60),
+            data.get('max_signals_per_session', 10),
+            data.get('max_daily_loss', 500),
+            1 if data.get('auto_flat_after_cutoff', True) else 0,
+            data.get('notes', ''),
+            1 if data.get('recording_enabled', True) else 0,
+            webhook_token
+        ))
+        
+        recorder_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Created recorder: {name} (ID: {recorder_id})")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Recorder "{name}" created successfully',
+            'recorder_id': recorder_id,
+            'webhook_token': webhook_token
+        })
+    except Exception as e:
+        logger.error(f"Error creating recorder: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders/<int:recorder_id>', methods=['PUT'])
+def api_update_recorder(recorder_id):
+    """Update an existing recorder"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Check if recorder exists
+        cursor.execute('SELECT id FROM recorders WHERE id = ?', (recorder_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        # Build update query dynamically
+        fields = []
+        values = []
+        
+        field_mapping = {
+            'name': 'name',
+            'strategy_type': 'strategy_type',
+            'symbol': 'symbol',
+            'demo_account_id': 'demo_account_id',
+            'account_id': 'account_id',
+            'initial_position_size': 'initial_position_size',
+            'add_position_size': 'add_position_size',
+            'tp_units': 'tp_units',
+            'trim_units': 'trim_units',
+            'sl_amount': 'sl_amount',
+            'sl_units': 'sl_units',
+            'sl_type': 'sl_type',
+            'avg_down_amount': 'avg_down_amount',
+            'avg_down_point': 'avg_down_point',
+            'avg_down_units': 'avg_down_units',
+            'add_delay': 'add_delay',
+            'max_contracts_per_trade': 'max_contracts_per_trade',
+            'option_premium_filter': 'option_premium_filter',
+            'direction_filter': 'direction_filter',
+            'time_filter_1_start': 'time_filter_1_start',
+            'time_filter_1_stop': 'time_filter_1_stop',
+            'time_filter_2_start': 'time_filter_2_start',
+            'time_filter_2_stop': 'time_filter_2_stop',
+            'signal_cooldown': 'signal_cooldown',
+            'max_signals_per_session': 'max_signals_per_session',
+            'max_daily_loss': 'max_daily_loss',
+            'notes': 'notes',
+        }
+        
+        for key, db_field in field_mapping.items():
+            if key in data:
+                fields.append(f'{db_field} = ?')
+                values.append(data[key])
+        
+        # Handle boolean fields
+        if 'sl_enabled' in data:
+            fields.append('sl_enabled = ?')
+            values.append(1 if data['sl_enabled'] else 0)
+        if 'avg_down_enabled' in data:
+            fields.append('avg_down_enabled = ?')
+            values.append(1 if data['avg_down_enabled'] else 0)
+        if 'auto_flat_after_cutoff' in data:
+            fields.append('auto_flat_after_cutoff = ?')
+            values.append(1 if data['auto_flat_after_cutoff'] else 0)
+        if 'recording_enabled' in data:
+            fields.append('recording_enabled = ?')
+            values.append(1 if data['recording_enabled'] else 0)
+        
+        # Handle TP targets JSON
+        if 'tp_targets' in data:
+            fields.append('tp_targets = ?')
+            values.append(json.dumps(data['tp_targets']))
+        
+        # Always update updated_at
+        fields.append('updated_at = CURRENT_TIMESTAMP')
+        
+        if fields:
+            values.append(recorder_id)
+            cursor.execute(f'''
+                UPDATE recorders SET {', '.join(fields)} WHERE id = ?
+            ''', values)
+            conn.commit()
+        
+        conn.close()
+        
+        logger.info(f"Updated recorder ID: {recorder_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Recorder updated successfully'
+        })
+    except Exception as e:
+        logger.error(f"Error updating recorder {recorder_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders/<int:recorder_id>', methods=['DELETE'])
+def api_delete_recorder(recorder_id):
+    """Delete a recorder"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        
+        # Check if recorder exists
+        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        name = row[0]
+        
+        cursor.execute('DELETE FROM recorders WHERE id = ?', (recorder_id,))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Deleted recorder: {name} (ID: {recorder_id})")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Recorder "{name}" deleted successfully'
+        })
+    except Exception as e:
+        logger.error(f"Error deleting recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders/<int:recorder_id>/clone', methods=['POST'])
+def api_clone_recorder(recorder_id):
+    """Clone an existing recorder"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        original = dict(row)
+        
+        # Generate new webhook token
+        import secrets
+        webhook_token = secrets.token_urlsafe(16)
+        
+        # Create cloned recorder with modified name
+        new_name = f"{original['name']} (Copy)"
+        
+        cursor.execute('''
+            INSERT INTO recorders (
+                name, strategy_type, symbol, demo_account_id, account_id,
+                initial_position_size, add_position_size,
+                tp_units, trim_units, tp_targets,
+                sl_enabled, sl_amount, sl_units, sl_type,
+                avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
+                add_delay, max_contracts_per_trade, option_premium_filter, direction_filter,
+                time_filter_1_start, time_filter_1_stop, time_filter_2_start, time_filter_2_stop,
+                signal_cooldown, max_signals_per_session, max_daily_loss, auto_flat_after_cutoff,
+                notes, recording_enabled, webhook_token
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            new_name,
+            original['strategy_type'],
+            original['symbol'],
+            original['demo_account_id'],
+            original['account_id'],
+            original['initial_position_size'],
+            original['add_position_size'],
+            original['tp_units'],
+            original['trim_units'],
+            original['tp_targets'],
+            original['sl_enabled'],
+            original['sl_amount'],
+            original['sl_units'],
+            original['sl_type'],
+            original['avg_down_enabled'],
+            original['avg_down_amount'],
+            original['avg_down_point'],
+            original['avg_down_units'],
+            original['add_delay'],
+            original['max_contracts_per_trade'],
+            original['option_premium_filter'],
+            original['direction_filter'],
+            original['time_filter_1_start'],
+            original['time_filter_1_stop'],
+            original['time_filter_2_start'],
+            original['time_filter_2_stop'],
+            original['signal_cooldown'],
+            original['max_signals_per_session'],
+            original['max_daily_loss'],
+            original['auto_flat_after_cutoff'],
+            original['notes'],
+            original['recording_enabled'],
+            webhook_token
+        ))
+        
+        new_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Cloned recorder {recorder_id} -> {new_id}: {new_name}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Recorder cloned successfully',
+            'recorder_id': new_id,
+            'name': new_name
+        })
+    except Exception as e:
+        logger.error(f"Error cloning recorder {recorder_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders/<int:recorder_id>/start', methods=['POST'])
+def api_start_recorder(recorder_id):
+    """Start recording for a recorder"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT name, is_recording FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        name, is_recording = row
+        if is_recording:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder is already running'}), 400
+        
+        cursor.execute('UPDATE recorders SET is_recording = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (recorder_id,))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Started recording: {name} (ID: {recorder_id})")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Recording started for "{name}"'
+        })
+    except Exception as e:
+        logger.error(f"Error starting recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders/<int:recorder_id>/stop', methods=['POST'])
+def api_stop_recorder(recorder_id):
+    """Stop recording for a recorder"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT name, is_recording FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        name, is_recording = row
+        if not is_recording:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder is not running'}), 400
+        
+        cursor.execute('UPDATE recorders SET is_recording = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (recorder_id,))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Stopped recording: {name} (ID: {recorder_id})")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Recording stopped for "{name}"'
+        })
+    except Exception as e:
+        logger.error(f"Error stopping recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders/<int:recorder_id>/webhook', methods=['GET'])
+def api_get_recorder_webhook(recorder_id):
+    """Get webhook details for a recorder"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, webhook_token FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        # Build webhook URL
+        base_url = request.host_url.rstrip('/')
+        webhook_url = f"{base_url}/webhook/{row['webhook_token']}"
+        
+        # Simple indicator alert message (user specifies buy or sell)
+        indicator_buy_message = json.dumps({
+            "recorder": row['name'],
+            "action": "buy",
+            "ticker": "{{ticker}}",
+            "price": "{{close}}"
+        }, indent=2)
+        
+        indicator_sell_message = json.dumps({
+            "recorder": row['name'],
+            "action": "sell",
+            "ticker": "{{ticker}}",
+            "price": "{{close}}"
+        }, indent=2)
+        
+        # Pine Script strategy alert message (action auto-filled by TradingView)
+        strategy_message = json.dumps({
+            "recorder": row['name'],
+            "action": "{{strategy.order.action}}",
+            "ticker": "{{ticker}}",
+            "price": "{{close}}",
+            "contracts": "{{strategy.order.contracts}}",
+            "position_size": "{{strategy.position_size}}",
+            "market_position": "{{strategy.market_position}}"
+        }, indent=2)
+        
+        return jsonify({
+            'success': True,
+            'webhook_url': webhook_url,
+            'name': row['name'],
+            'alerts': {
+                'indicator_buy': indicator_buy_message,
+                'indicator_sell': indicator_sell_message,
+                'strategy_message': strategy_message
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting webhook for recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============================================================
+# WEBHOOK RECEIVER - TradingView sends signals here
+# ============================================================
+
+@app.route('/webhook/<webhook_token>', methods=['POST'])
+def receive_webhook(webhook_token):
+    """
+    Receive webhook from TradingView alerts/strategies.
+    
+    Supports two modes:
+    1. Simple Alerts (buy/sell signals) - Our system handles TP/SL/sizing
+    2. Strategy Alerts (full position management from TradingView)
+    
+    Expected JSON formats:
+    
+    Simple Alert:
+    {
+        "recorder": "MY_STRATEGY",
+        "action": "buy" or "sell",
+        "ticker": "NQ1!",
+        "price": "21500.25"
+    }
+    
+    Strategy Alert (TradingView handles sizing/risk):
+    {
+        "recorder": "MY_STRATEGY",
+        "action": "buy" or "sell",
+        "ticker": "NQ1!",
+        "price": "21500.25",
+        "position_size": "2",
+        "contracts": "2",
+        "market_position": "long" or "short" or "flat"
+    }
+    """
+    try:
+        # Find recorder by webhook token
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM recorders WHERE webhook_token = ? AND recording_enabled = 1
+        ''', (webhook_token,))
+        recorder = cursor.fetchone()
+        
+        if not recorder:
+            logger.warning(f"Webhook received for unknown/disabled token: {webhook_token[:8]}...")
+            return jsonify({'success': False, 'error': 'Invalid or disabled webhook'}), 404
+        
+        recorder = dict(recorder)
+        recorder_id = recorder['id']
+        recorder_name = recorder['name']
+        
+        # Parse incoming data (support both JSON and form data)
+        if request.is_json:
+            data = request.get_json()
+        else:
+            # Try to parse as JSON from text body
+            try:
+                data = json.loads(request.data.decode('utf-8'))
+            except:
+                data = request.form.to_dict()
+        
+        if not data:
+            return jsonify({'success': False, 'error': 'No data received'}), 400
+        
+        logger.info(f"📨 Webhook received for recorder '{recorder_name}': {data}")
+        
+        # Extract signal data
+        action = str(data.get('action', '')).lower().strip()
+        ticker = data.get('ticker', data.get('symbol', ''))
+        price = data.get('price', data.get('close', 0))
+        
+        # Strategy-specific fields (when TradingView handles sizing)
+        position_size = data.get('position_size', data.get('contracts'))
+        market_position = data.get('market_position', '')  # long, short, flat
+        prev_position_size = data.get('prev_position_size', data.get('prev_market_position_size'))
+        
+        # Validate action - including TP/SL price alerts
+        valid_actions = ['buy', 'sell', 'long', 'short', 'close', 'flat', 'exit', 
+                         'tp_hit', 'sl_hit', 'take_profit', 'stop_loss', 'price_alert']
+        if action not in valid_actions:
+            logger.warning(f"Invalid action '{action}' for recorder {recorder_name}")
+            return jsonify({'success': False, 'error': f'Invalid action: {action}'}), 400
+        
+        # Handle TP/SL price alerts - these close open positions at TP/SL price
+        if action in ['tp_hit', 'take_profit']:
+            normalized_action = 'TP_HIT'
+            direction = 'flat'
+        elif action in ['sl_hit', 'stop_loss']:
+            normalized_action = 'SL_HIT'
+            direction = 'flat'
+        elif action == 'price_alert':
+            # Generic price update - check if it hits TP/SL
+            normalized_action = 'PRICE_UPDATE'
+            direction = None
+        # Standard actions
+        elif action in ['long', 'buy']:
+            normalized_action = 'BUY'
+            direction = 'long'
+        elif action in ['short', 'sell']:
+            normalized_action = 'SELL'
+            direction = 'short'
+        else:  # close, flat, exit
+            normalized_action = 'CLOSE'
+            direction = 'flat'
+        
+        # Check signal delay (skip signals based on recorder settings)
+        signal_delay = recorder.get('add_delay', 1) or 1
+        
+        # Get/update signal counter for this recorder
+        cursor.execute('''
+            SELECT signal_count FROM recorders WHERE id = ?
+        ''', (recorder_id,))
+        result = cursor.fetchone()
+        signal_count = (result['signal_count'] if result and result['signal_count'] else 0) + 1
+        
+        cursor.execute('''
+            UPDATE recorders SET signal_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        ''', (signal_count, recorder_id))
+        conn.commit()
+        
+        # Check if we should skip this signal
+        if signal_delay > 1 and signal_count % signal_delay != 0:
+            logger.info(f"⏭️ Skipping signal {signal_count} for {recorder_name} (delay={signal_delay})")
+            conn.close()
+            return jsonify({
+                'success': True,
+                'skipped': True,
+                'message': f'Signal {signal_count} skipped (executing every {signal_delay} signals)',
+                'next_execute': signal_count + (signal_delay - (signal_count % signal_delay))
+            })
+        
+        # Determine if this is a simple alert or strategy alert
+        is_strategy_alert = position_size is not None or market_position
+        
+        # Record the signal
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS recorded_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recorder_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                ticker TEXT,
+                price REAL,
+                position_size TEXT,
+                market_position TEXT,
+                signal_type TEXT,
+                raw_data TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (recorder_id) REFERENCES recorders(id)
+            )
+        ''')
+        
+        cursor.execute('''
+            INSERT INTO recorded_signals 
+            (recorder_id, action, ticker, price, position_size, market_position, signal_type, raw_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            recorder_id,
+            normalized_action,
+            ticker,
+            float(price) if price else None,
+            str(position_size) if position_size else None,
+            market_position,
+            'strategy' if is_strategy_alert else 'alert',
+            json.dumps(data)
+        ))
+        
+        signal_id = cursor.lastrowid
+        
+        # =====================================================
+        # TRADE PROCESSING LOGIC - Convert signals into trades
+        # WITH TP/SL SETTINGS FROM RECORDER
+        # =====================================================
+        trade_result = None
+        current_price = float(price) if price else 0
+        
+        # Get position size from recorder settings
+        quantity = int(position_size) if position_size else recorder.get('initial_position_size', 1)
+        
+        # Get TP/SL settings from recorder
+        sl_enabled = recorder.get('sl_enabled', 0)
+        sl_amount = recorder.get('sl_amount', 0) or 0
+        sl_units = recorder.get('sl_units', 'Ticks')
+        
+        # Parse TP targets (JSON array)
+        tp_targets_raw = recorder.get('tp_targets', '[]')
+        try:
+            tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
+        except:
+            tp_targets = []
+        
+        # Get first TP target (primary)
+        tp_ticks = tp_targets[0].get('value', 0) if tp_targets else 0
+        
+        # Determine tick size and tick value for PnL calculation
+        tick_size = get_tick_size(ticker) if ticker else 0.25
+        tick_value = get_tick_value(ticker) if ticker else 0.50
+        
+        # Check for existing open trade for this recorder
+        cursor.execute('''
+            SELECT * FROM recorded_trades 
+            WHERE recorder_id = ? AND status = 'open' 
+            ORDER BY entry_time DESC LIMIT 1
+        ''', (recorder_id,))
+        open_trade_row = cursor.fetchone()
+        
+        open_trade = None
+        if open_trade_row:
+            # Convert to dict properly
+            columns = [desc[0] for desc in cursor.description]
+            open_trade = dict(zip(columns, open_trade_row))
+        
+        def calculate_tp_sl_prices(entry_price, side, tp_ticks, sl_ticks, tick_size):
+            """Calculate TP and SL price levels based on entry and tick settings"""
+            if side == 'LONG':
+                tp_price = entry_price + (tp_ticks * tick_size) if tp_ticks else None
+                sl_price = entry_price - (sl_ticks * tick_size) if sl_ticks else None
+            else:  # SHORT
+                tp_price = entry_price - (tp_ticks * tick_size) if tp_ticks else None
+                sl_price = entry_price + (sl_ticks * tick_size) if sl_ticks else None
+            return tp_price, sl_price
+        
+        def check_tp_sl_hit(open_trade, current_price, tick_size):
+            """Check if TP or SL was hit and return exit info"""
+            if not open_trade:
+                return None, None, None
+            
+            tp_price = open_trade.get('tp_price')
+            sl_price = open_trade.get('sl_price')
+            side = open_trade['side']
+            entry_price = open_trade['entry_price']
+            
+            if side == 'LONG':
+                # For LONG: TP hit if price >= tp_price, SL hit if price <= sl_price
+                if tp_price and current_price >= tp_price:
+                    return 'tp', tp_price, (tp_price - entry_price) / tick_size
+                if sl_price and current_price <= sl_price:
+                    return 'sl', sl_price, (sl_price - entry_price) / tick_size
+            else:  # SHORT
+                # For SHORT: TP hit if price <= tp_price, SL hit if price >= sl_price
+                if tp_price and current_price <= tp_price:
+                    return 'tp', tp_price, (entry_price - tp_price) / tick_size
+                if sl_price and current_price >= sl_price:
+                    return 'sl', sl_price, (entry_price - sl_price) / tick_size
+            
+            return None, None, None
+        
+        def close_trade(cursor, trade, exit_price, pnl_ticks, tick_value, exit_reason):
+            """Close a trade and calculate PnL"""
+            pnl = pnl_ticks * tick_value * trade['quantity']
+            
+            cursor.execute('''
+                UPDATE recorded_trades 
+                SET exit_price = ?, exit_time = CURRENT_TIMESTAMP, 
+                    pnl = ?, pnl_ticks = ?, status = 'closed', 
+                    exit_reason = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (exit_price, pnl, pnl_ticks, exit_reason, trade['id']))
+            
+            return pnl, pnl_ticks
+        
+        # First, check if any open trade hit TP/SL based on current price
+        if open_trade:
+            hit_type, hit_price, hit_ticks = check_tp_sl_hit(open_trade, current_price, tick_size)
+            
+            if hit_type:
+                # TP or SL was hit - close at the TP/SL price, not current price
+                pnl, pnl_ticks = close_trade(cursor, open_trade, hit_price, hit_ticks, tick_value, hit_type)
+                
+                trade_result = {
+                    'action': 'closed',
+                    'trade_id': open_trade['id'],
+                    'side': open_trade['side'],
+                    'entry_price': open_trade['entry_price'],
+                    'exit_price': hit_price,
+                    'pnl': pnl,
+                    'pnl_ticks': pnl_ticks,
+                    'exit_reason': hit_type.upper()
+                }
+                logger.info(f"🎯 {hit_type.upper()} HIT for '{recorder_name}': {open_trade['side']} {ticker} | Exit: {hit_price} | PnL: ${pnl:.2f} ({pnl_ticks:.1f} ticks)")
+                open_trade = None  # Trade is now closed
+        
+        # Now process the signal action
+        
+        # Handle TP/SL price alerts from TradingView
+        if normalized_action == 'TP_HIT':
+            if open_trade:
+                # Close at TP price (use stored TP or current price if not set)
+                tp_price = open_trade.get('tp_price') or current_price
+                if open_trade['side'] == 'LONG':
+                    pnl_ticks = (tp_price - open_trade['entry_price']) / tick_size
+                else:
+                    pnl_ticks = (open_trade['entry_price'] - tp_price) / tick_size
+                
+                pnl, _ = close_trade(cursor, open_trade, tp_price, pnl_ticks, tick_value, 'tp')
+                
+                trade_result = {
+                    'action': 'closed',
+                    'trade_id': open_trade['id'],
+                    'side': open_trade['side'],
+                    'entry_price': open_trade['entry_price'],
+                    'exit_price': tp_price,
+                    'pnl': pnl,
+                    'pnl_ticks': pnl_ticks,
+                    'exit_reason': 'TP'
+                }
+                logger.info(f"🎯 TP HIT (alert) for '{recorder_name}': {open_trade['side']} {ticker} | Exit: {tp_price} | PnL: ${pnl:.2f}")
+        
+        elif normalized_action == 'SL_HIT':
+            if open_trade:
+                # Close at SL price (use stored SL or current price if not set)
+                sl_price = open_trade.get('sl_price') or current_price
+                if open_trade['side'] == 'LONG':
+                    pnl_ticks = (sl_price - open_trade['entry_price']) / tick_size
+                else:
+                    pnl_ticks = (open_trade['entry_price'] - sl_price) / tick_size
+                
+                pnl, _ = close_trade(cursor, open_trade, sl_price, pnl_ticks, tick_value, 'sl')
+                
+                trade_result = {
+                    'action': 'closed',
+                    'trade_id': open_trade['id'],
+                    'side': open_trade['side'],
+                    'entry_price': open_trade['entry_price'],
+                    'exit_price': sl_price,
+                    'pnl': pnl,
+                    'pnl_ticks': pnl_ticks,
+                    'exit_reason': 'SL'
+                }
+                logger.info(f"🛑 SL HIT (alert) for '{recorder_name}': {open_trade['side']} {ticker} | Exit: {sl_price} | PnL: ${pnl:.2f}")
+        
+        elif normalized_action == 'PRICE_UPDATE':
+            # Just a price update - check if it hits TP/SL
+            if open_trade:
+                hit_type, hit_price, hit_ticks = check_tp_sl_hit(open_trade, current_price, tick_size)
+                if hit_type:
+                    pnl, pnl_ticks = close_trade(cursor, open_trade, hit_price, hit_ticks, tick_value, hit_type)
+                    trade_result = {
+                        'action': 'closed',
+                        'trade_id': open_trade['id'],
+                        'side': open_trade['side'],
+                        'entry_price': open_trade['entry_price'],
+                        'exit_price': hit_price,
+                        'pnl': pnl,
+                        'pnl_ticks': pnl_ticks,
+                        'exit_reason': hit_type.upper()
+                    }
+                    logger.info(f"🎯 {hit_type.upper()} from price update for '{recorder_name}': PnL ${pnl:.2f}")
+                    open_trade = None
+        
+        elif normalized_action == 'CLOSE' or (market_position and market_position.lower() == 'flat'):
+            # Close any open trade at current price
+            if open_trade:
+                if open_trade['side'] == 'LONG':
+                    pnl_ticks = (current_price - open_trade['entry_price']) / tick_size
+                else:
+                    pnl_ticks = (open_trade['entry_price'] - current_price) / tick_size
+                
+                pnl, _ = close_trade(cursor, open_trade, current_price, pnl_ticks, tick_value, 'signal')
+                
+                trade_result = {
+                    'action': 'closed',
+                    'trade_id': open_trade['id'],
+                    'side': open_trade['side'],
+                    'entry_price': open_trade['entry_price'],
+                    'exit_price': current_price,
+                    'pnl': pnl,
+                    'pnl_ticks': pnl_ticks,
+                    'exit_reason': 'SIGNAL'
+                }
+                logger.info(f"📊 Trade CLOSED by signal for '{recorder_name}': {open_trade['side']} {ticker} | PnL: ${pnl:.2f} ({pnl_ticks:.1f} ticks)")
+        
+        elif normalized_action == 'BUY':
+            # If we have an open SHORT, close it first
+            if open_trade and open_trade['side'] == 'SHORT':
+                pnl_ticks = (open_trade['entry_price'] - current_price) / tick_size
+                pnl, _ = close_trade(cursor, open_trade, current_price, pnl_ticks, tick_value, 'reversal')
+                
+                logger.info(f"📊 SHORT closed by BUY reversal: ${pnl:.2f}")
+                open_trade = None
+            
+            # Open new LONG trade if no open trade
+            if not open_trade:
+                # Calculate TP/SL prices based on recorder settings
+                tp_price, sl_price = calculate_tp_sl_prices(
+                    current_price, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                )
+                
+                cursor.execute('''
+                    INSERT INTO recorded_trades 
+                    (recorder_id, signal_id, ticker, action, side, entry_price, entry_time, 
+                     quantity, status, tp_price, sl_price, tp_ticks, sl_ticks)
+                    VALUES (?, ?, ?, ?, 'LONG', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, ?, ?)
+                ''', (recorder_id, signal_id, ticker, 'BUY', current_price, quantity,
+                      tp_price, sl_price, tp_ticks, sl_amount if sl_enabled else None))
+                
+                new_trade_id = cursor.lastrowid
+                trade_result = {
+                    'action': 'opened',
+                    'trade_id': new_trade_id,
+                    'side': 'LONG',
+                    'entry_price': current_price,
+                    'quantity': quantity,
+                    'tp_price': tp_price,
+                    'sl_price': sl_price
+                }
+                logger.info(f"📈 LONG opened for '{recorder_name}': {ticker} @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
+        
+        elif normalized_action == 'SELL':
+            # If we have an open LONG, close it first
+            if open_trade and open_trade['side'] == 'LONG':
+                pnl_ticks = (current_price - open_trade['entry_price']) / tick_size
+                pnl, _ = close_trade(cursor, open_trade, current_price, pnl_ticks, tick_value, 'reversal')
+                
+                logger.info(f"📊 LONG closed by SELL reversal: ${pnl:.2f}")
+                open_trade = None
+            
+            # Open new SHORT trade if no open trade
+            if not open_trade:
+                # Calculate TP/SL prices based on recorder settings
+                tp_price, sl_price = calculate_tp_sl_prices(
+                    current_price, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                )
+                
+                cursor.execute('''
+                    INSERT INTO recorded_trades 
+                    (recorder_id, signal_id, ticker, action, side, entry_price, entry_time, 
+                     quantity, status, tp_price, sl_price, tp_ticks, sl_ticks)
+                    VALUES (?, ?, ?, ?, 'SHORT', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, ?, ?)
+                ''', (recorder_id, signal_id, ticker, 'SELL', current_price, quantity,
+                      tp_price, sl_price, tp_ticks, sl_amount if sl_enabled else None))
+                
+                new_trade_id = cursor.lastrowid
+                trade_result = {
+                    'action': 'opened',
+                    'trade_id': new_trade_id,
+                    'side': 'SHORT',
+                    'entry_price': current_price,
+                    'quantity': quantity,
+                    'tp_price': tp_price,
+                    'sl_price': sl_price
+                }
+                logger.info(f"📉 SHORT opened for '{recorder_name}': {ticker} @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
+        
+        conn.commit()
+        conn.close()
+        
+        # Emit real-time update via WebSocket
+        try:
+            socketio.emit('signal_received', {
+                'recorder_id': recorder_id,
+                'recorder_name': recorder_name,
+                'signal_id': signal_id,
+                'action': normalized_action,
+                'ticker': ticker,
+                'price': price,
+                'position_size': position_size,
+                'signal_type': 'strategy' if is_strategy_alert else 'alert',
+                'timestamp': datetime.now().isoformat(),
+                'trade': trade_result
+            })
+            
+            # If a trade was closed, also emit trade_executed event for dashboard
+            if trade_result and trade_result.get('action') == 'closed':
+                socketio.emit('trade_executed', {
+                    'recorder_id': recorder_id,
+                    'recorder_name': recorder_name,
+                    'trade_id': trade_result['trade_id'],
+                    'side': trade_result['side'],
+                    'pnl': trade_result['pnl'],
+                    'ticker': ticker,
+                    'timestamp': datetime.now().isoformat()
+                })
+        except Exception as e:
+            logger.warning(f"Could not emit WebSocket update: {e}")
+        
+        logger.info(f"✅ Signal recorded for '{recorder_name}': {normalized_action} {ticker} @ {price}")
+        
+        # Build response based on alert type
+        response = {
+            'success': True,
+            'message': f'Signal received and recorded',
+            'signal_id': signal_id,
+            'recorder': recorder_name,
+            'action': normalized_action,
+            'ticker': ticker,
+            'price': price,
+            'signal_number': signal_count
+        }
+        
+        # Add trade information to response
+        if trade_result:
+            response['trade'] = trade_result
+            if trade_result.get('action') == 'closed':
+                response['message'] = f"Trade closed with PnL: ${trade_result['pnl']:.2f}"
+            elif trade_result.get('action') == 'opened':
+                response['message'] = f"{trade_result['side']} position opened @ {trade_result['entry_price']}"
+        
+        if is_strategy_alert:
+            response['signal_type'] = 'strategy'
+            response['position_size'] = position_size
+            response['market_position'] = market_position
+            response['note'] = 'Strategy alert - TradingView manages position sizing'
+        else:
+            response['signal_type'] = 'alert'
+            response['note'] = 'Simple alert - Recorder settings control sizing/risk'
+            response['recorder_settings'] = {
+                'initial_position_size': recorder.get('initial_position_size'),
+                'tp_enabled': bool(recorder.get('tp_targets')),
+                'sl_enabled': bool(recorder.get('sl_enabled'))
+            }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders/<int:recorder_id>/signals', methods=['GET'])
+def api_get_recorder_signals(recorder_id):
+    """Get recorded signals for a recorder"""
+    try:
+        limit = int(request.args.get('limit', 50))
+        
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM recorded_signals 
+            WHERE recorder_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT ?
+        ''', (recorder_id, limit))
+        
+        signals = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'signals': signals,
+            'count': len(signals)
+        })
+    except Exception as e:
+        logger.error(f"Error getting signals: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/recorders/<int:recorder_id>/trades', methods=['GET'])
+def api_get_recorder_trades(recorder_id):
+    """Get recorded trades for a recorder with pagination and filters"""
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        status = request.args.get('status')  # open, closed, or all
+        
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Build query with filters
+        where_clauses = ['recorder_id = ?']
+        params = [recorder_id]
+        
+        if status and status != 'all':
+            where_clauses.append('status = ?')
+            params.append(status)
+        
+        where_sql = ' AND '.join(where_clauses)
+        
+        # Get total count
+        cursor.execute(f'SELECT COUNT(*) FROM recorded_trades WHERE {where_sql}', params)
+        total = cursor.fetchone()[0]
+        
+        # Get paginated trades
+        offset = (page - 1) * per_page
+        cursor.execute(f'''
+            SELECT * FROM recorded_trades 
+            WHERE {where_sql}
+            ORDER BY entry_time DESC 
+            LIMIT ? OFFSET ?
+        ''', params + [per_page, offset])
+        
+        trades = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'trades': trades,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'total_pages': (total + per_page - 1) // per_page,
+                'has_prev': page > 1,
+                'has_next': page * per_page < total
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting trades: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/recorders/<int:recorder_id>/pnl', methods=['GET'])
+def api_get_recorder_pnl(recorder_id):
+    """Get PnL summary and history for a recorder"""
+    try:
+        timeframe = request.args.get('timeframe', 'all')  # today, week, month, 3months, 6months, year, all
+        
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Build date filter
+        date_filter = ''
+        if timeframe == 'today':
+            date_filter = "AND DATE(exit_time) = DATE('now')"
+        elif timeframe == 'week':
+            date_filter = "AND exit_time >= DATE('now', '-7 days')"
+        elif timeframe == 'month':
+            date_filter = "AND exit_time >= DATE('now', '-30 days')"
+        elif timeframe == '3months':
+            date_filter = "AND exit_time >= DATE('now', '-90 days')"
+        elif timeframe == '6months':
+            date_filter = "AND exit_time >= DATE('now', '-180 days')"
+        elif timeframe == 'year':
+            date_filter = "AND exit_time >= DATE('now', '-365 days')"
+        
+        # Get summary stats for closed trades
+        cursor.execute(f'''
+            SELECT 
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
+                SUM(pnl) as total_pnl,
+                SUM(pnl_ticks) as total_ticks,
+                AVG(pnl) as avg_pnl,
+                MAX(pnl) as max_profit,
+                MIN(pnl) as max_loss,
+                AVG(CASE WHEN pnl > 0 THEN pnl END) as avg_win,
+                AVG(CASE WHEN pnl < 0 THEN pnl END) as avg_loss
+            FROM recorded_trades 
+            WHERE recorder_id = ? AND status = 'closed' {date_filter}
+        ''', (recorder_id,))
+        
+        stats = dict(cursor.fetchone())
+        
+        # Calculate win rate and profit factor
+        wins = stats.get('wins') or 0
+        losses = stats.get('losses') or 0
+        total = wins + losses
+        stats['win_rate'] = round((wins / total * 100), 1) if total > 0 else 0
+        
+        avg_win = abs(stats.get('avg_win') or 0)
+        avg_loss = abs(stats.get('avg_loss') or 1)
+        stats['profit_factor'] = round(avg_win / avg_loss, 2) if avg_loss > 0 else 0
+        
+        # Get daily PnL for charting
+        cursor.execute(f'''
+            SELECT 
+                DATE(exit_time) as date,
+                SUM(pnl) as daily_pnl,
+                COUNT(*) as trade_count,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as daily_wins,
+                SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as daily_losses
+            FROM recorded_trades 
+            WHERE recorder_id = ? AND status = 'closed' {date_filter}
+            GROUP BY DATE(exit_time)
+            ORDER BY DATE(exit_time) ASC
+        ''', (recorder_id,))
+        
+        daily_pnl = [dict(row) for row in cursor.fetchall()]
+        
+        # Calculate cumulative PnL for chart
+        cumulative = 0
+        max_cumulative = 0
+        max_drawdown = 0
+        
+        for day in daily_pnl:
+            cumulative += day['daily_pnl'] or 0
+            day['cumulative_pnl'] = cumulative
+            
+            if cumulative > max_cumulative:
+                max_cumulative = cumulative
+            
+            drawdown = max_cumulative - cumulative
+            if drawdown > max_drawdown:
+                max_drawdown = drawdown
+            day['drawdown'] = drawdown
+        
+        stats['max_drawdown'] = max_drawdown
+        
+        # Get open position if any
+        cursor.execute('''
+            SELECT * FROM recorded_trades 
+            WHERE recorder_id = ? AND status = 'open'
+            ORDER BY entry_time DESC LIMIT 1
+        ''', (recorder_id,))
+        
+        open_trade = cursor.fetchone()
+        if open_trade:
+            stats['open_position'] = dict(open_trade)
+        
+        # Get recorder name
+        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        recorder = cursor.fetchone()
+        stats['recorder_name'] = recorder['name'] if recorder else f'Recorder {recorder_id}'
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'summary': stats,
+            'daily_pnl': daily_pnl,
+            'chart_data': {
+                'labels': [d['date'] for d in daily_pnl],
+                'profit': [d['cumulative_pnl'] for d in daily_pnl],
+                'drawdown': [d['drawdown'] for d in daily_pnl]
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting PnL: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/recorders/all/pnl', methods=['GET'])
+def api_get_all_recorders_pnl():
+    """Get aggregated PnL for all recorders (for dashboard)"""
+    try:
+        timeframe = request.args.get('timeframe', 'month')
+        recorder_id = request.args.get('recorder_id')  # Optional filter
+        
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Build date filter
+        date_filter = ''
+        if timeframe == 'today':
+            date_filter = "AND DATE(rt.exit_time) = DATE('now')"
+        elif timeframe == 'week':
+            date_filter = "AND rt.exit_time >= DATE('now', '-7 days')"
+        elif timeframe == 'month':
+            date_filter = "AND rt.exit_time >= DATE('now', '-30 days')"
+        elif timeframe == '3months':
+            date_filter = "AND rt.exit_time >= DATE('now', '-90 days')"
+        elif timeframe == '6months':
+            date_filter = "AND rt.exit_time >= DATE('now', '-180 days')"
+        elif timeframe == 'year':
+            date_filter = "AND rt.exit_time >= DATE('now', '-365 days')"
+        
+        recorder_filter = ''
+        params = []
+        if recorder_id:
+            recorder_filter = 'AND rt.recorder_id = ?'
+            params.append(int(recorder_id))
+        
+        # Get per-recorder summary
+        cursor.execute(f'''
+            SELECT 
+                r.id as recorder_id,
+                r.name as recorder_name,
+                r.symbol,
+                COUNT(rt.id) as total_trades,
+                SUM(CASE WHEN rt.pnl > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN rt.pnl < 0 THEN 1 ELSE 0 END) as losses,
+                SUM(rt.pnl) as total_pnl,
+                AVG(rt.pnl) as avg_pnl
+            FROM recorders r
+            LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id AND rt.status = 'closed' {date_filter}
+            WHERE 1=1 {recorder_filter}
+            GROUP BY r.id
+            ORDER BY total_pnl DESC
+        ''', params)
+        
+        recorders = []
+        for row in cursor.fetchall():
+            rec = dict(row)
+            wins = rec['wins'] or 0
+            losses = rec['losses'] or 0
+            total = wins + losses
+            rec['win_rate'] = round((wins / total * 100), 1) if total > 0 else 0
+            recorders.append(rec)
+        
+        # Get daily aggregate PnL for chart
+        cursor.execute(f'''
+            SELECT 
+                DATE(rt.exit_time) as date,
+                SUM(rt.pnl) as daily_pnl,
+                COUNT(rt.id) as trade_count
+            FROM recorded_trades rt
+            WHERE rt.status = 'closed' {date_filter} {recorder_filter.replace('rt.recorder_id', 'rt.recorder_id')}
+            GROUP BY DATE(rt.exit_time)
+            ORDER BY DATE(rt.exit_time) ASC
+        ''', params)
+        
+        daily_data = [dict(row) for row in cursor.fetchall()]
+        
+        # Calculate cumulative
+        cumulative = 0
+        max_cumulative = 0
+        for day in daily_data:
+            cumulative += day['daily_pnl'] or 0
+            day['cumulative_pnl'] = cumulative
+            if cumulative > max_cumulative:
+                max_cumulative = cumulative
+            day['drawdown'] = max_cumulative - cumulative
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'recorders': recorders,
+            'chart_data': {
+                'labels': [d['date'] for d in daily_data],
+                'profit': [d['cumulative_pnl'] for d in daily_data],
+                'drawdown': [d['drawdown'] for d in daily_data]
+            },
+            'total_pnl': sum(r['total_pnl'] or 0 for r in recorders),
+            'total_trades': sum(r['total_trades'] or 0 for r in recorders)
+        })
+    except Exception as e:
+        logger.error(f"Error getting all recorders PnL: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/traders')
 def traders_list():
@@ -1432,11 +3163,145 @@ def traders_edit(trader_id):
 
 @app.route('/control-center')
 def control_center():
-    return render_template('control_center.html')
+    """Control Center with live recorder/strategy data and PnL"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all recorders with their PnL
+        cursor.execute('''
+            SELECT 
+                r.id,
+                r.name,
+                r.symbol,
+                r.recording_enabled,
+                COALESCE(SUM(CASE WHEN rt.status = 'closed' THEN rt.pnl ELSE 0 END), 0) as total_pnl,
+                COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
+                COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades
+            FROM recorders r
+            LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
+            GROUP BY r.id
+            ORDER BY r.name
+        ''')
+        
+        live_rows = []
+        for row in cursor.fetchall():
+            live_rows.append({
+                'id': row['id'],
+                'name': row['name'],
+                'symbol': row['symbol'] or '',
+                'enabled': bool(row['recording_enabled']),
+                'pnl': row['total_pnl'] or 0,
+                'open_trades': row['open_trades'] or 0,
+                'closed_trades': row['closed_trades'] or 0
+            })
+        
+        # Get recent signals as logs
+        cursor.execute('''
+            SELECT 
+                rs.action,
+                rs.ticker,
+                rs.price,
+                rs.created_at,
+                r.name as recorder_name
+            FROM recorded_signals rs
+            JOIN recorders r ON rs.recorder_id = r.id
+            ORDER BY rs.created_at DESC
+            LIMIT 20
+        ''')
+        
+        logs = []
+        for row in cursor.fetchall():
+            log_type = 'open' if row['action'] in ['BUY', 'LONG'] else 'close'
+            logs.append({
+                'type': log_type,
+                'message': f"{row['recorder_name']}: {row['action']} {row['ticker']} @ {row['price']}",
+                'time': row['created_at']
+            })
+        
+        conn.close()
+        
+        return render_template('control_center.html', live_rows=live_rows, logs=logs)
+    except Exception as e:
+        logger.error(f"Error loading control center: {e}")
+        return render_template('control_center.html', live_rows=[], logs=[])
 
 @app.route('/manual-trader')
 def manual_trader_page():
     return render_template('manual_copy_trader.html')
+
+
+@app.route('/api/control-center/stats', methods=['GET'])
+def api_control_center_stats():
+    """Get live recorder stats for control center (real-time updates)"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all recorders with their current stats
+        cursor.execute('''
+            SELECT 
+                r.id,
+                r.name,
+                r.symbol,
+                r.recording_enabled,
+                r.signal_count,
+                COALESCE(SUM(CASE WHEN rt.status = 'closed' THEN rt.pnl ELSE 0 END), 0) as total_pnl,
+                COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
+                COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
+                (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
+            FROM recorders r
+            LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
+            GROUP BY r.id
+            ORDER BY r.name
+        ''')
+        
+        recorders = []
+        total_pnl = 0
+        for row in cursor.fetchall():
+            pnl = row['total_pnl'] or 0
+            total_pnl += pnl
+            recorders.append({
+                'id': row['id'],
+                'name': row['name'],
+                'symbol': row['symbol'] or '',
+                'enabled': bool(row['recording_enabled']),
+                'pnl': pnl,
+                'open_trades': row['open_trades'] or 0,
+                'closed_trades': row['closed_trades'] or 0,
+                'signal_count': row['signal_count'] or 0,
+                'last_signal': row['last_signal']
+            })
+        
+        # Get open recorded trades
+        cursor.execute('''
+            SELECT 
+                rt.*,
+                r.name as recorder_name
+            FROM recorded_trades rt
+            JOIN recorders r ON rt.recorder_id = r.id
+            WHERE rt.status = 'open'
+            ORDER BY rt.entry_time DESC
+        ''')
+        
+        open_positions = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'recorders': recorders,
+            'total_pnl': total_pnl,
+            'open_positions': open_positions,
+            'total_recorders': len(recorders),
+            'active_recorders': sum(1 for r in recorders if r['enabled'])
+        })
+    except Exception as e:
+        logger.error(f"Error getting control center stats: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/trades/open/', methods=['GET'])
 def get_open_trades():
@@ -2045,132 +3910,139 @@ def api_dashboard_users():
 
 @app.route('/api/dashboard/strategies', methods=['GET'])
 def api_dashboard_strategies():
-    """Get list of strategies for filter dropdown"""
+    """Get list of strategies (recorders) for filter dropdown"""
     try:
-        try:
-            from app.database import SessionLocal
-            from app.models import Strategy
-            
-            db = SessionLocal()
-            # Get all active strategies, or all if none specified
-            user_id = request.args.get('user_id')
-            query = db.query(Strategy)
-            if user_id:
-                query = query.filter(Strategy.user_id == user_id)
-            strategies = query.filter(Strategy.active == True).order_by(Strategy.name).all()
-            db.close()
-            
-            return jsonify({
-                'strategies': [{
-                    'id': s.id,
-                    'name': s.name,
-                    'symbol': s.symbol,
-                    'user_id': s.user_id,
-                    'recording_enabled': s.recording_enabled
-                } for s in strategies]
-            })
-        except ImportError:
-            return jsonify({'error': 'Database not configured', 'strategies': []}), 200
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all recorders as strategies with trade counts
+        cursor.execute('''
+            SELECT 
+                r.id, 
+                r.name, 
+                r.symbol, 
+                r.recording_enabled,
+                COUNT(rt.id) as trade_count,
+                SUM(CASE WHEN rt.status = 'closed' THEN rt.pnl ELSE 0 END) as total_pnl
+            FROM recorders r
+            LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
+            GROUP BY r.id
+            ORDER BY r.name
+        ''')
+        
+        recorders = [dict(row) for row in cursor.fetchall()]
+        
+        # Get unique symbols from recorded trades
+        cursor.execute('''
+            SELECT DISTINCT ticker FROM recorded_trades WHERE ticker IS NOT NULL
+            UNION
+            SELECT DISTINCT symbol FROM recorders WHERE symbol IS NOT NULL AND symbol != ''
+            ORDER BY 1
+        ''')
+        symbols = [row['ticker'] or row[0] for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return jsonify({
+            'strategies': [{
+                'id': r['id'],
+                'name': r['name'],
+                'symbol': r['symbol'],
+                'recording_enabled': bool(r['recording_enabled']),
+                'trade_count': r['trade_count'] or 0,
+                'total_pnl': r['total_pnl'] or 0
+            } for r in recorders],
+            'symbols': symbols
+        })
     except Exception as e:
         logger.error(f"Error fetching strategies: {e}")
-        return jsonify({'error': 'Failed to fetch strategies', 'strategies': []}), 500
+        return jsonify({'error': 'Failed to fetch strategies', 'strategies': [], 'symbols': []}), 500
 
 @app.route('/api/dashboard/chart-data', methods=['GET'])
 def api_dashboard_chart_data():
-    """Get chart data (profit vs drawdown) with optional filters"""
+    """Get chart data (profit vs drawdown) from recorded trades"""
     try:
-        from app.database import SessionLocal
-        from app.models import RecordedPosition, Strategy
-        from datetime import datetime, timedelta
-        from sqlalchemy import func
-        
-        db = SessionLocal()
-        
-        # Get filter parameters (empty = show all)
-        user_id = request.args.get('user_id')
-        strategy_id = request.args.get('strategy_id')
+        # Get filter parameters
+        strategy_id = request.args.get('strategy_id')  # This is recorder_id
         symbol = request.args.get('symbol')
-        timeframe = request.args.get('timeframe', 'all')
+        timeframe = request.args.get('timeframe', 'month')
         
-        # Build query for recorded positions
-        query = db.query(RecordedPosition)
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
         
-        # Apply filters
-        if user_id:
-            # Filter by user's strategies
-            strategy_ids = db.query(Strategy.id).filter(Strategy.user_id == user_id).subquery()
-            query = query.filter(RecordedPosition.strategy_id.in_(strategy_ids))
+        # Build date filter
+        date_filter = ''
+        if timeframe == 'today':
+            date_filter = "AND DATE(rt.exit_time) = DATE('now')"
+        elif timeframe == 'week':
+            date_filter = "AND rt.exit_time >= DATE('now', '-7 days')"
+        elif timeframe == 'month':
+            date_filter = "AND rt.exit_time >= DATE('now', '-30 days')"
+        elif timeframe == '3months':
+            date_filter = "AND rt.exit_time >= DATE('now', '-90 days')"
+        elif timeframe == '6months':
+            date_filter = "AND rt.exit_time >= DATE('now', '-180 days')"
+        elif timeframe == 'year':
+            date_filter = "AND rt.exit_time >= DATE('now', '-365 days')"
+        
+        # Build recorder filter
+        recorder_filter = ''
+        params = []
         if strategy_id:
-            query = query.filter(RecordedPosition.strategy_id == strategy_id)
+            recorder_filter = 'AND rt.recorder_id = ?'
+            params.append(int(strategy_id))
+        
+        # Build symbol filter
+        symbol_filter = ''
         if symbol:
-            query = query.filter(RecordedPosition.symbol == symbol)
+            symbol_filter = 'AND rt.ticker = ?'
+            params.append(symbol)
         
-        # Apply timeframe filter
-        if timeframe and timeframe != 'all':
-            now = datetime.utcnow()
-            if timeframe == 'today':
-                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            elif timeframe == 'week':
-                start_date = now - timedelta(days=7)
-            elif timeframe == 'month':
-                start_date = now - timedelta(days=30)
-            elif timeframe == '3months':
-                start_date = now - timedelta(days=90)
-            elif timeframe == '6months':
-                start_date = now - timedelta(days=180)
-            elif timeframe == 'year':
-                start_date = now - timedelta(days=365)
-            else:
-                start_date = None
-            
-            if start_date:
-                query = query.filter(RecordedPosition.entry_timestamp >= start_date)
+        # Get daily aggregate PnL
+        cursor.execute(f'''
+            SELECT 
+                DATE(rt.exit_time) as date,
+                SUM(rt.pnl) as daily_pnl,
+                SUM(CASE WHEN rt.pnl < 0 THEN ABS(rt.pnl) ELSE 0 END) as daily_loss,
+                MAX(ABS(CASE WHEN rt.pnl < 0 THEN rt.pnl ELSE 0 END)) as max_single_loss
+            FROM recorded_trades rt
+            WHERE rt.status = 'closed' {date_filter} {recorder_filter} {symbol_filter}
+            GROUP BY DATE(rt.exit_time)
+            ORDER BY DATE(rt.exit_time) ASC
+        ''', params)
         
-        # Get all positions
-        positions = query.order_by(RecordedPosition.entry_timestamp).all()
+        daily_data = [dict(row) for row in cursor.fetchall()]
+        conn.close()
         
-        # Calculate cumulative profit and max drawdown per day
-        # Group by date and calculate daily totals
-        daily_data = {}
-        for pos in positions:
-            if pos.exit_timestamp:  # Use exit timestamp for closed positions
-                date_key = pos.exit_timestamp.date()
-                if date_key not in daily_data:
-                    daily_data[date_key] = {'profit': 0, 'max_drawdown': 0, 'daily_losses': []}
-                if pos.pnl:
-                    daily_data[date_key]['profit'] += pos.pnl
-                    # Track individual losses for max DD calculation
-                    if pos.pnl < 0:
-                        daily_data[date_key]['daily_losses'].append(abs(pos.pnl))
-        
-        # Calculate max drawdown per day (worst single loss or sum of losses if all negative)
-        for date_key in daily_data:
-            if daily_data[date_key]['daily_losses']:
-                # Max DD is the worst single loss OR the total of all losses if all trades were losses
-                daily_losses = daily_data[date_key]['daily_losses']
-                max_single_loss = max(daily_losses)
-                total_losses = sum(daily_losses)
-                # Use the maximum of single worst loss or total losses
-                daily_data[date_key]['max_drawdown'] = max(max_single_loss, total_losses)
-            else:
-                daily_data[date_key]['max_drawdown'] = 0
-        
-        # Sort by date and calculate cumulative profit, but keep max DD per day (not cumulative)
-        sorted_dates = sorted(daily_data.keys())
-        labels = [date.strftime('%b %d') for date in sorted_dates]
+        # Calculate cumulative profit and drawdown
+        labels = []
         cumulative_profit = []
-        max_drawdown_per_day = []  # Max DD for each day (not cumulative)
+        drawdown_per_day = []
         running_profit = 0
+        max_profit = 0
         
-        for date in sorted_dates:
-            running_profit += daily_data[date]['profit']
-            cumulative_profit.append(running_profit)
-            # Max DD per day (not cumulative - represents that day's worst drawdown)
-            max_drawdown_per_day.append(daily_data[date]['max_drawdown'])
+        for day in daily_data:
+            # Format date label
+            try:
+                date_obj = datetime.strptime(day['date'], '%Y-%m-%d')
+                labels.append(date_obj.strftime('%b %d'))
+            except:
+                labels.append(day['date'])
+            
+            running_profit += day['daily_pnl'] or 0
+            cumulative_profit.append(round(running_profit, 2))
+            
+            # Track max profit for drawdown calculation
+            if running_profit > max_profit:
+                max_profit = running_profit
+            
+            # Drawdown from peak
+            current_drawdown = max_profit - running_profit
+            drawdown_per_day.append(round(current_drawdown, 2))
         
-        db.close()
-        
-        # If no data, return empty arrays (will show empty chart)
+        # If no data, return empty arrays
         if not labels:
             return jsonify({
                 'labels': [],
@@ -2181,7 +4053,7 @@ def api_dashboard_chart_data():
         return jsonify({
             'labels': labels,
             'profit': cumulative_profit,
-            'drawdown': max_drawdown_per_day  # Max DD per day, not cumulative
+            'drawdown': drawdown_per_day
         })
     except Exception as e:
         logger.error(f"Error fetching chart data: {e}")
@@ -2191,82 +4063,83 @@ def api_dashboard_chart_data():
 
 @app.route('/api/dashboard/trade-history', methods=['GET'])
 def api_dashboard_trade_history():
-    """Get trade history with optional filters"""
+    """Get trade history from recorded trades with optional filters"""
     try:
-        from app.database import SessionLocal
-        from app.models import RecordedPosition, Strategy, Trade
-        from datetime import datetime, timedelta
-        
-        db = SessionLocal()
-        
-        # Get filter parameters (empty = show all)
-        user_id = request.args.get('user_id')
-        strategy_id = request.args.get('strategy_id')
+        # Get filter parameters
+        strategy_id = request.args.get('strategy_id')  # This is recorder_id
         symbol = request.args.get('symbol')
         timeframe = request.args.get('timeframe', 'all')
-        
-        # Use recorded_positions as the source (recorder tracks all trades)
-        query = db.query(RecordedPosition)
-        
-        # Apply filters
-        if user_id:
-            strategy_ids = db.query(Strategy.id).filter(Strategy.user_id == user_id).subquery()
-            query = query.filter(RecordedPosition.strategy_id.in_(strategy_ids))
-        if strategy_id:
-            query = query.filter(RecordedPosition.strategy_id == strategy_id)
-        if symbol:
-            query = query.filter(RecordedPosition.symbol == symbol)
-        
-        # Apply timeframe filter
-        if timeframe and timeframe != 'all':
-            now = datetime.utcnow()
-            if timeframe == 'today':
-                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            elif timeframe == 'week':
-                start_date = now - timedelta(days=7)
-            elif timeframe == 'month':
-                start_date = now - timedelta(days=30)
-            elif timeframe == '3months':
-                start_date = now - timedelta(days=90)
-            elif timeframe == '6months':
-                start_date = now - timedelta(days=180)
-            elif timeframe == 'year':
-                start_date = now - timedelta(days=365)
-            else:
-                start_date = None
-            
-            if start_date:
-                query = query.filter(RecordedPosition.entry_timestamp >= start_date)
-        
-        # Get closed positions (trades) with pagination
         page = int(request.args.get('page', 1))
         per_page = 20
+        
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Build filters
+        where_clauses = ["rt.status = 'closed'"]
+        params = []
+        
+        if strategy_id:
+            where_clauses.append('rt.recorder_id = ?')
+            params.append(int(strategy_id))
+        
+        if symbol:
+            where_clauses.append('rt.ticker = ?')
+            params.append(symbol)
+        
+        # Timeframe filter
+        if timeframe == 'today':
+            where_clauses.append("DATE(rt.exit_time) = DATE('now')")
+        elif timeframe == 'week':
+            where_clauses.append("rt.exit_time >= DATE('now', '-7 days')")
+        elif timeframe == 'month':
+            where_clauses.append("rt.exit_time >= DATE('now', '-30 days')")
+        elif timeframe == '3months':
+            where_clauses.append("rt.exit_time >= DATE('now', '-90 days')")
+        elif timeframe == '6months':
+            where_clauses.append("rt.exit_time >= DATE('now', '-180 days')")
+        elif timeframe == 'year':
+            where_clauses.append("rt.exit_time >= DATE('now', '-365 days')")
+        
+        where_sql = ' AND '.join(where_clauses)
+        
+        # Get total count
+        cursor.execute(f'''
+            SELECT COUNT(*) FROM recorded_trades rt WHERE {where_sql}
+        ''', params)
+        total_count = cursor.fetchone()[0]
+        
+        # Get paginated trades with recorder name
         offset = (page - 1) * per_page
+        cursor.execute(f'''
+            SELECT 
+                rt.*,
+                r.name as strategy_name
+            FROM recorded_trades rt
+            LEFT JOIN recorders r ON rt.recorder_id = r.id
+            WHERE {where_sql}
+            ORDER BY rt.exit_time DESC
+            LIMIT ? OFFSET ?
+        ''', params + [per_page, offset])
         
-        # Get total count for pagination
-        total_count = query.filter(RecordedPosition.status == 'closed').count()
-        
-        # Get paginated results
-        positions = query.filter(RecordedPosition.status == 'closed').order_by(RecordedPosition.exit_timestamp.desc()).limit(per_page).offset(offset).all()
-        
-        # Format for frontend
         trades = []
-        for pos in positions:
-            strategy = db.query(Strategy).filter(Strategy.id == pos.strategy_id).first()
+        for row in cursor.fetchall():
+            trade = dict(row)
             trades.append({
-                'open_time': pos.entry_timestamp.isoformat() if pos.entry_timestamp else None,
-                'closed_time': pos.exit_timestamp.isoformat() if pos.exit_timestamp else None,
-                'strategy': strategy.name if strategy else 'N/A',
-                'symbol': pos.symbol,
-                'side': pos.side,
-                'size': pos.quantity,
-                'entry_price': pos.entry_price,
-                'exit_price': pos.exit_price,
-                'profit': pos.pnl or 0,
-                'drawdown': pos.pnl if pos.pnl and pos.pnl < 0 else 0
+                'open_time': trade.get('entry_time'),
+                'closed_time': trade.get('exit_time'),
+                'strategy': trade.get('strategy_name') or 'N/A',
+                'symbol': trade.get('ticker'),
+                'side': trade.get('side'),
+                'size': trade.get('quantity', 1),
+                'entry_price': trade.get('entry_price'),
+                'exit_price': trade.get('exit_price'),
+                'profit': trade.get('pnl') or 0,
+                'drawdown': abs(trade.get('pnl')) if trade.get('pnl') and trade.get('pnl') < 0 else 0
             })
         
-        db.close()
+        conn.close()
         
         # Calculate pagination info
         total_pages = (total_count + per_page - 1) // per_page if total_count > 0 else 1
@@ -2350,121 +4223,124 @@ def api_pnl_drawdown_chart():
 
 @app.route('/api/dashboard/metrics', methods=['GET'])
 def api_dashboard_metrics():
-    """Get metric cards data with optional filters"""
+    """Get metric cards data from recorded trades"""
     try:
-        from app.database import SessionLocal
-        from app.models import RecordedPosition, Strategy
-        from datetime import datetime, timedelta
-        from sqlalchemy import func
-        
-        db = SessionLocal()
-        
-        # Get filter parameters (empty = show all)
-        user_id = request.args.get('user_id')
-        strategy_id = request.args.get('strategy_id')
+        # Get filter parameters
+        strategy_id = request.args.get('strategy_id')  # This is recorder_id
         symbol = request.args.get('symbol')
         timeframe = request.args.get('timeframe', 'all')
         
-        # Build query for recorded positions
-        query = db.query(RecordedPosition)
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
         
-        # Apply filters
-        if user_id:
-            strategy_ids = db.query(Strategy.id).filter(Strategy.user_id == user_id).subquery()
-            query = query.filter(RecordedPosition.strategy_id.in_(strategy_ids))
+        # Build filters
+        where_clauses = ["status = 'closed'"]
+        params = []
+        
         if strategy_id:
-            query = query.filter(RecordedPosition.strategy_id == strategy_id)
+            where_clauses.append('recorder_id = ?')
+            params.append(int(strategy_id))
+        
         if symbol:
-            query = query.filter(RecordedPosition.symbol == symbol)
+            where_clauses.append('ticker = ?')
+            params.append(symbol)
         
-        # Apply timeframe filter
-        if timeframe and timeframe != 'all':
-            now = datetime.utcnow()
-            if timeframe == 'today':
-                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            elif timeframe == 'week':
-                start_date = now - timedelta(days=7)
-            elif timeframe == 'month':
-                start_date = now - timedelta(days=30)
-            elif timeframe == '3months':
-                start_date = now - timedelta(days=90)
-            elif timeframe == '6months':
-                start_date = now - timedelta(days=180)
-            elif timeframe == 'year':
-                start_date = now - timedelta(days=365)
-            else:
-                start_date = None
-            
-            if start_date:
-                query = query.filter(RecordedPosition.entry_timestamp >= start_date)
+        # Timeframe filter
+        if timeframe == 'today':
+            where_clauses.append("DATE(exit_time) = DATE('now')")
+        elif timeframe == 'week':
+            where_clauses.append("exit_time >= DATE('now', '-7 days')")
+        elif timeframe == 'month':
+            where_clauses.append("exit_time >= DATE('now', '-30 days')")
+        elif timeframe == '3months':
+            where_clauses.append("exit_time >= DATE('now', '-90 days')")
+        elif timeframe == '6months':
+            where_clauses.append("exit_time >= DATE('now', '-180 days')")
+        elif timeframe == 'year':
+            where_clauses.append("exit_time >= DATE('now', '-365 days')")
         
-        # Get all closed positions for calculations
-        positions = query.filter(RecordedPosition.status == 'closed').all()
+        where_sql = ' AND '.join(where_clauses)
         
-        # Calculate metrics
-        total_trades = len(positions)
-        wins = [p for p in positions if p.pnl and p.pnl > 0]
-        losses = [p for p in positions if p.pnl and p.pnl < 0]
+        # Get aggregate metrics
+        cursor.execute(f'''
+            SELECT 
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
+                SUM(pnl) as total_pnl,
+                SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) as total_wins,
+                SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END) as total_losses,
+                MAX(pnl) as max_profit,
+                MIN(pnl) as max_loss,
+                AVG(CASE WHEN pnl > 0 THEN pnl END) as avg_win,
+                AVG(CASE WHEN pnl < 0 THEN ABS(pnl) END) as avg_loss,
+                MAX(quantity) as max_quantity,
+                AVG(quantity) as avg_quantity,
+                MIN(DATE(entry_time)) as first_trade,
+                MAX(DATE(exit_time)) as last_trade
+            FROM recorded_trades
+            WHERE {where_sql}
+        ''', params)
         
-        total_profit = sum(p.pnl for p in positions if p.pnl)
-        total_wins = sum(p.pnl for p in wins)
-        total_losses = abs(sum(p.pnl for p in losses))
+        row = cursor.fetchone()
+        stats = dict(row) if row else {}
+        conn.close()
         
-        # Cumulative Return
-        cumulative_return = {
-            'return': total_profit or 0,
-            'time_traded': calculate_time_traded(positions)
-        }
+        # Calculate derived metrics
+        total_trades = stats.get('total_trades') or 0
+        wins = stats.get('wins') or 0
+        losses = stats.get('losses') or 0
+        total_wins_amt = stats.get('total_wins') or 0
+        total_losses_amt = stats.get('total_losses') or 1
         
-        # Win Rate
-        win_rate = {
-            'wins': len(wins),
-            'losses': len(losses),
-            'percentage': round((len(wins) / total_trades * 100) if total_trades > 0 else 0, 1)
-        }
+        win_rate_pct = round((wins / total_trades * 100), 1) if total_trades > 0 else 0
+        profit_factor = round(total_wins_amt / total_losses_amt, 2) if total_losses_amt > 0 else total_wins_amt
         
-        # Drawdown
-        drawdowns = [abs(p.pnl) for p in losses if p.pnl]
-        drawdown = {
-            'max': max(drawdowns) if drawdowns else 0,
-            'avg': sum(drawdowns) / len(drawdowns) if drawdowns else 0,
-            'run': max(drawdowns) if drawdowns else 0  # Same as max for now
-        }
-        
-        # Total ROI (simplified - would need initial capital)
-        total_roi = 0  # TODO: Calculate based on initial capital
-        
-        # Contracts Held
-        quantities = [p.quantity for p in positions if p.quantity]
-        contracts_held = {
-            'max': max(quantities) if quantities else 0,
-            'avg': round(sum(quantities) / len(quantities)) if quantities else 0
-        }
-        
-        # Max/Avg PNL
-        win_pnls = [p.pnl for p in wins if p.pnl]
-        loss_pnls = [abs(p.pnl) for p in losses if p.pnl]
-        pnl = {
-            'max_profit': max(win_pnls) if win_pnls else 0,
-            'avg_profit': sum(win_pnls) / len(win_pnls) if win_pnls else 0,
-            'max_loss': max(loss_pnls) if loss_pnls else 0,
-            'avg_loss': sum(loss_pnls) / len(loss_pnls) if loss_pnls else 0
-        }
-        
-        # Profit Factor
-        profit_factor = (total_wins / total_losses) if total_losses > 0 else (total_wins if total_wins > 0 else 0)
-        
-        db.close()
+        # Calculate time traded
+        time_traded = '0D'
+        if stats.get('first_trade') and stats.get('last_trade'):
+            try:
+                first = datetime.strptime(stats['first_trade'], '%Y-%m-%d')
+                last = datetime.strptime(stats['last_trade'], '%Y-%m-%d')
+                delta = (last - first).days
+                months = delta // 30
+                days = delta % 30
+                if months > 0:
+                    time_traded = f"{months}M {days}D"
+                else:
+                    time_traded = f"{days}D"
+            except:
+                time_traded = '0D'
         
         return jsonify({
             'metrics': {
-                'cumulative_return': cumulative_return,
-                'win_rate': win_rate,
-                'drawdown': drawdown,
-                'total_roi': total_roi,
-                'contracts_held': contracts_held,
-                'pnl': pnl,
-                'profit_factor': round(profit_factor, 2)
+                'cumulative_return': {
+                    'return': stats.get('total_pnl') or 0,
+                    'time_traded': time_traded
+                },
+                'win_rate': {
+                    'wins': wins,
+                    'losses': losses,
+                    'percentage': win_rate_pct
+                },
+                'drawdown': {
+                    'max': abs(stats.get('max_loss') or 0),
+                    'avg': stats.get('avg_loss') or 0,
+                    'run': abs(stats.get('max_loss') or 0)
+                },
+                'total_roi': 0,  # Would need initial capital
+                'contracts_held': {
+                    'max': stats.get('max_quantity') or 0,
+                    'avg': round(stats.get('avg_quantity') or 0)
+                },
+                'pnl': {
+                    'max_profit': stats.get('max_profit') or 0,
+                    'avg_profit': stats.get('avg_win') or 0,
+                    'max_loss': abs(stats.get('max_loss') or 0),
+                    'avg_loss': stats.get('avg_loss') or 0
+                },
+                'profit_factor': profit_factor
             }
         })
     except Exception as e:
@@ -2473,8 +4349,8 @@ def api_dashboard_metrics():
         traceback.print_exc()
         return jsonify({'error': 'Failed to fetch metrics', 'metrics': {}}), 500
 
-def calculate_time_traded(positions):
-    """Calculate time traded string like '1M 1D'"""
+def calculate_time_traded_legacy(positions):
+    """Calculate time traded string like '1M 1D' - Legacy version"""
     if not positions:
         return '0D'
     
@@ -2498,86 +4374,68 @@ def calculate_time_traded(positions):
 
 @app.route('/api/dashboard/calendar-data', methods=['GET'])
 def api_dashboard_calendar_data():
-    """Get daily PnL data for calendar view"""
+    """Get daily PnL data for calendar view from recorded trades"""
     try:
-        from app.database import SessionLocal
-        from app.models import RecordedPosition, Strategy
-        from datetime import datetime, timedelta
-        from sqlalchemy import func, extract
-        
-        db = SessionLocal()
-        
-        # Get filter parameters (empty = show all)
-        user_id = request.args.get('user_id')
-        strategy_id = request.args.get('strategy_id')
+        # Get filter parameters
+        strategy_id = request.args.get('strategy_id')  # This is recorder_id
         symbol = request.args.get('symbol')
-        timeframe = request.args.get('timeframe', 'all')
+        timeframe = request.args.get('timeframe', 'month')
         
-        # Use recorded_positions as the source
-        query = db.query(RecordedPosition)
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
         
-        # Apply filters
-        if user_id:
-            strategy_ids = db.query(Strategy.id).filter(Strategy.user_id == user_id).subquery()
-            query = query.filter(RecordedPosition.strategy_id.in_(strategy_ids))
+        # Build filters
+        where_clauses = ["status = 'closed'"]
+        params = []
+        
         if strategy_id:
-            query = query.filter(RecordedPosition.strategy_id == strategy_id)
+            where_clauses.append('recorder_id = ?')
+            params.append(int(strategy_id))
+        
         if symbol:
-            query = query.filter(RecordedPosition.symbol == symbol)
+            where_clauses.append('ticker = ?')
+            params.append(symbol)
         
-        # Apply timeframe filter
-        if timeframe and timeframe != 'all':
-            now = datetime.utcnow()
-            if timeframe == 'today':
-                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            elif timeframe == 'week':
-                start_date = now - timedelta(days=7)
-            elif timeframe == 'month':
-                start_date = now - timedelta(days=30)
-            elif timeframe == '3months':
-                start_date = now - timedelta(days=90)
-            elif timeframe == '6months':
-                start_date = now - timedelta(days=180)
-            elif timeframe == 'year':
-                start_date = now - timedelta(days=365)
-            else:
-                start_date = None
-            
-            if start_date:
-                query = query.filter(RecordedPosition.entry_timestamp >= start_date)
+        # Timeframe filter
+        if timeframe == 'today':
+            where_clauses.append("DATE(exit_time) = DATE('now')")
+        elif timeframe == 'week':
+            where_clauses.append("exit_time >= DATE('now', '-7 days')")
+        elif timeframe == 'month':
+            where_clauses.append("exit_time >= DATE('now', '-30 days')")
+        elif timeframe == '3months':
+            where_clauses.append("exit_time >= DATE('now', '-90 days')")
+        elif timeframe == '6months':
+            where_clauses.append("exit_time >= DATE('now', '-180 days')")
+        elif timeframe == 'year':
+            where_clauses.append("exit_time >= DATE('now', '-365 days')")
         
-        # Get closed positions only
-        query = query.filter(RecordedPosition.status == 'closed')
+        where_sql = ' AND '.join(where_clauses)
         
-        # Group by date and calculate daily PnL
-        positions = query.all()
+        # Get daily PnL
+        cursor.execute(f'''
+            SELECT 
+                DATE(exit_time) as date,
+                SUM(pnl) as daily_pnl,
+                COUNT(*) as trade_count
+            FROM recorded_trades
+            WHERE {where_sql}
+            GROUP BY DATE(exit_time)
+            ORDER BY DATE(exit_time) ASC
+        ''', params)
         
-        # Group by date
-        daily_data = {}
-        for pos in positions:
-            if pos.exit_timestamp:
-                date_key = pos.exit_timestamp.date()
-                pnl = pos.pnl or 0
-                
-                if date_key not in daily_data:
-                    daily_data[date_key] = {
-                        'pnl': 0,
-                        'trades': 0
-                    }
-                
-                daily_data[date_key]['pnl'] += pnl
-                daily_data[date_key]['trades'] += 1
+        rows = cursor.fetchall()
+        conn.close()
         
-        # Format for frontend
+        # Format for frontend (date string -> {pnl, trades})
         calendar_data = {}
-        for date_key, data in daily_data.items():
-            date_str = date_key.isoformat()
+        for row in rows:
+            date_str = row['date']
             calendar_data[date_str] = {
-                'pnl': round(data['pnl'], 2),
-                'trades': data['trades']
+                'pnl': round(row['daily_pnl'] or 0, 2),
+                'trades': row['trade_count'] or 0
             }
-        
-        db.close()
         
         return jsonify({'calendar_data': calendar_data})
     except Exception as e:
@@ -3165,7 +5023,7 @@ async def connect_tradovate_market_data_websocket():
             await asyncio.sleep(10)
 
 async def subscribe_to_market_data_symbols(ws):
-    """Subscribe to market data quotes for symbols we have positions in"""
+    """Subscribe to market data quotes for symbols we have positions in AND open recorder trades"""
     global _position_cache, _market_data_subscribed_symbols
     
     # Get symbols from positions
@@ -3191,6 +5049,24 @@ async def subscribe_to_market_data_symbols(ws):
         conn.close()
     except Exception as e:
         logger.warning(f"Error getting symbols from database: {e}")
+    
+    # Get symbols from open recorder trades (for TP/SL monitoring)
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT ticker FROM recorded_trades 
+            WHERE status = 'open' AND ticker IS NOT NULL
+        ''')
+        for row in cursor.fetchall():
+            symbol = row[0]
+            if symbol:
+                tradovate_symbol = convert_symbol_for_tradovate_md(symbol)
+                symbols_to_subscribe.add(tradovate_symbol)
+                logger.info(f"Adding recorder trade symbol to market data subscription: {symbol} -> {tradovate_symbol}")
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Error getting recorder trade symbols: {e}")
     
     # Subscribe to each symbol
     for symbol in symbols_to_subscribe:
@@ -3221,6 +5097,8 @@ async def process_market_data_message(data):
     global _market_data_cache
     
     try:
+        symbols_updated = set()
+        
         # Handle different message formats
         if isinstance(data, list):
             for item in data:
@@ -3238,13 +5116,11 @@ async def process_market_data_message(data):
                         
                         if last:
                             _market_data_cache[symbol]['last'] = float(last)
+                            symbols_updated.add(symbol)
                         if bid:
                             _market_data_cache[symbol]['bid'] = float(bid)
                         if ask:
                             _market_data_cache[symbol]['ask'] = float(ask)
-                        
-                        # Update PnL for positions with this symbol
-                        update_position_pnl()
                         
         elif isinstance(data, dict):
             symbol = data.get('symbol') or data.get('s')
@@ -3258,20 +5134,164 @@ async def process_market_data_message(data):
                 
                 if last:
                     _market_data_cache[symbol]['last'] = float(last)
+                    symbols_updated.add(symbol)
                 if bid:
                     _market_data_cache[symbol]['bid'] = float(bid)
                 if ask:
                     _market_data_cache[symbol]['ask'] = float(ask)
-                
-                update_position_pnl()
+        
+        # Update PnL for positions with this symbol
+        update_position_pnl()
+        
+        # Check TP/SL for open recorder trades
+        if symbols_updated:
+            check_recorder_trades_tp_sl(symbols_updated)
                 
     except Exception as e:
         logger.warning(f"Error processing market data: {e}")
 
+def check_recorder_trades_tp_sl(symbols_updated: set):
+    """
+    Check open recorder trades for TP/SL hits based on current market prices.
+    This is called on every market data update for real-time TP/SL monitoring.
+    """
+    global _market_data_cache
+    
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all open trades that have TP or SL set
+        cursor.execute('''
+            SELECT t.*, r.name as recorder_name 
+            FROM recorded_trades t
+            JOIN recorders r ON t.recorder_id = r.id
+            WHERE t.status = 'open' AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
+        ''')
+        
+        open_trades = [dict(row) for row in cursor.fetchall()]
+        
+        for trade in open_trades:
+            ticker = trade['ticker']
+            
+            # Normalize ticker for market data lookup (MNQ1! -> MNQ, etc.)
+            ticker_root = extract_symbol_root(ticker) if ticker else None
+            if not ticker_root:
+                continue
+            
+            # Find price in cache (try various symbol formats)
+            current_price = None
+            for cached_symbol in _market_data_cache.keys():
+                if ticker_root in cached_symbol.upper():
+                    current_price = _market_data_cache[cached_symbol].get('last')
+                    if current_price:
+                        break
+            
+            if not current_price:
+                continue
+            
+            # Check TP/SL
+            tp_price = trade.get('tp_price')
+            sl_price = trade.get('sl_price')
+            side = trade['side']
+            entry_price = trade['entry_price']
+            
+            hit_type = None
+            exit_price = None
+            
+            if side == 'LONG':
+                # LONG: TP hit if price >= tp_price, SL hit if price <= sl_price
+                if tp_price and current_price >= tp_price:
+                    hit_type = 'tp'
+                    exit_price = tp_price
+                elif sl_price and current_price <= sl_price:
+                    hit_type = 'sl'
+                    exit_price = sl_price
+            else:  # SHORT
+                # SHORT: TP hit if price <= tp_price, SL hit if price >= sl_price
+                if tp_price and current_price <= tp_price:
+                    hit_type = 'tp'
+                    exit_price = tp_price
+                elif sl_price and current_price >= sl_price:
+                    hit_type = 'sl'
+                    exit_price = sl_price
+            
+            if hit_type and exit_price:
+                # Calculate PnL
+                tick_size = get_tick_size(ticker)
+                tick_value = get_tick_value(ticker)
+                
+                if side == 'LONG':
+                    pnl_ticks = (exit_price - entry_price) / tick_size
+                else:
+                    pnl_ticks = (entry_price - exit_price) / tick_size
+                
+                pnl = pnl_ticks * tick_value * trade['quantity']
+                
+                # Close the trade
+                cursor.execute('''
+                    UPDATE recorded_trades 
+                    SET exit_price = ?, exit_time = CURRENT_TIMESTAMP, 
+                        pnl = ?, pnl_ticks = ?, status = 'closed', 
+                        exit_reason = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (exit_price, pnl, pnl_ticks, hit_type, trade['id']))
+                
+                conn.commit()
+                
+                logger.info(f"🎯 {hit_type.upper()} HIT via market data for '{trade['recorder_name']}': "
+                           f"{side} {ticker} | Entry: {entry_price} | Exit: {exit_price} | "
+                           f"PnL: ${pnl:.2f} ({pnl_ticks:.1f} ticks)")
+                
+                # Emit WebSocket event for real-time UI updates
+                try:
+                    socketio.emit('trade_executed', {
+                        'recorder_id': trade['recorder_id'],
+                        'recorder_name': trade['recorder_name'],
+                        'trade_id': trade['id'],
+                        'side': side,
+                        'entry_price': entry_price,
+                        'exit_price': exit_price,
+                        'pnl': pnl,
+                        'pnl_ticks': pnl_ticks,
+                        'exit_reason': hit_type.upper(),
+                        'ticker': ticker,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    
+                    socketio.emit('signal_received', {
+                        'recorder_id': trade['recorder_id'],
+                        'recorder_name': trade['recorder_name'],
+                        'action': f'{hit_type.upper()}_HIT',
+                        'ticker': ticker,
+                        'price': exit_price,
+                        'timestamp': datetime.now().isoformat(),
+                        'trade': {
+                            'action': 'closed',
+                            'trade_id': trade['id'],
+                            'side': side,
+                            'entry_price': entry_price,
+                            'exit_price': exit_price,
+                            'pnl': pnl,
+                            'exit_reason': hit_type.upper()
+                        }
+                    })
+                except Exception as e:
+                    logger.warning(f"Could not emit WebSocket update: {e}")
+        
+        conn.close()
+        
+    except Exception as e:
+        logger.warning(f"Error checking recorder trades TP/SL: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+
+
 def start_market_data_websocket():
     """Start the market data WebSocket in a background thread"""
     global _market_data_ws_task
-    if _market_data_ws_task and not _market_data_ws_task.done():
+    if _market_data_ws_task and hasattr(_market_data_ws_task, 'is_alive') and _market_data_ws_task.is_alive():
         return  # Already running
     
     def run_websocket():
@@ -3280,6 +5300,326 @@ def start_market_data_websocket():
     _market_data_ws_task = threading.Thread(target=run_websocket, daemon=True)
     _market_data_ws_task.start()
     logger.info("Market data WebSocket thread started")
+
+
+# ============================================================================
+# Recorder Trade TP/SL Polling (Fallback when WebSocket not available)
+# ============================================================================
+
+_recorder_tp_sl_thread = None
+
+def poll_recorder_trades_tp_sl():
+    """
+    Polling fallback for TP/SL monitoring when Tradovate WebSocket isn't connected.
+    Uses TradingView public API to get prices every 5 seconds.
+    """
+    global _market_data_cache
+    
+    logger.info("🔄 Starting recorder trade TP/SL polling thread (every 5 seconds)")
+    
+    while True:
+        try:
+            # Get all open trades with TP/SL set
+            conn = sqlite3.connect('just_trades.db')
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT DISTINCT ticker FROM recorded_trades 
+                WHERE status = 'open' AND ticker IS NOT NULL
+                AND (tp_price IS NOT NULL OR sl_price IS NOT NULL)
+            ''')
+            
+            symbols_needed = [row['ticker'] for row in cursor.fetchall()]
+            conn.close()
+            
+            if not symbols_needed:
+                time.sleep(5)
+                continue
+            
+            # Fetch prices for all symbols
+            symbols_updated = set()
+            for symbol in symbols_needed:
+                price = get_cached_price(symbol)
+                if price:
+                    root = extract_symbol_root(symbol)
+                    if root not in _market_data_cache:
+                        _market_data_cache[root] = {}
+                    _market_data_cache[root]['last'] = price
+                    symbols_updated.add(root)
+                    logger.debug(f"Polled price for {symbol}: {price}")
+            
+            # Check TP/SL for open trades
+            if symbols_updated:
+                check_recorder_trades_tp_sl(symbols_updated)
+            
+            time.sleep(5)  # Poll every 5 seconds
+            
+        except Exception as e:
+            logger.warning(f"Error in TP/SL polling: {e}")
+            time.sleep(10)
+
+
+def start_recorder_tp_sl_polling():
+    """Start the TP/SL polling thread"""
+    global _recorder_tp_sl_thread
+    
+    if _recorder_tp_sl_thread and _recorder_tp_sl_thread.is_alive():
+        return
+    
+    _recorder_tp_sl_thread = threading.Thread(target=poll_recorder_trades_tp_sl, daemon=True)
+    _recorder_tp_sl_thread.start()
+    logger.info("✅ Recorder TP/SL polling thread started")
+
+
+# ============================================================================
+# TradingView WebSocket for Real-Time Price Data
+# ============================================================================
+
+_tradingview_ws = None
+_tradingview_ws_thread = None
+_tradingview_subscribed_symbols = set()
+
+def get_tradingview_session():
+    """Get TradingView session cookies from database"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT tradingview_session FROM accounts WHERE id = 1")
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row[0]:
+            return json.loads(row[0])
+        return None
+    except Exception as e:
+        logger.error(f"Error getting TradingView session: {e}")
+        return None
+
+
+async def connect_tradingview_websocket():
+    """Connect to TradingView WebSocket for real-time quotes"""
+    global _market_data_cache, _tradingview_ws, _tradingview_subscribed_symbols
+    
+    if not WEBSOCKETS_AVAILABLE:
+        logger.error("websockets library not available for TradingView")
+        return
+    
+    session = get_tradingview_session()
+    if not session or not session.get('sessionid'):
+        logger.warning("No TradingView session configured. Use /api/tradingview/session to set it up.")
+        return
+    
+    sessionid = session.get('sessionid')
+    sessionid_sign = session.get('sessionid_sign', '')
+    
+    # TradingView WebSocket URL
+    ws_url = "wss://data.tradingview.com/socket.io/websocket"
+    
+    while True:
+        try:
+            logger.info(f"Connecting to TradingView WebSocket...")
+            
+            # Create connection with headers
+            async with websockets.connect(
+                ws_url,
+                additional_headers={
+                    'Origin': 'https://www.tradingview.com',
+                    'Cookie': f'sessionid={sessionid}; sessionid_sign={sessionid_sign}'
+                }
+            ) as ws:
+                _tradingview_ws = ws
+                logger.info("✅ TradingView WebSocket connected!")
+                
+                # TradingView uses a custom protocol
+                # The cookies handle auth, we use "unauthorized_user_token" for WebSocket
+                # but the cookies give us access to real-time data
+                auth_msg = json.dumps({
+                    "m": "set_auth_token",
+                    "p": ["unauthorized_user_token"]
+                })
+                await ws.send(f"~m~{len(auth_msg)}~m~{auth_msg}")
+                logger.info("Sent TradingView auth")
+                
+                # Create a quote session
+                quote_session = f"qs_{int(time.time())}"
+                create_session_msg = json.dumps({
+                    "m": "quote_create_session",
+                    "p": [quote_session]
+                })
+                await ws.send(f"~m~{len(create_session_msg)}~m~{create_session_msg}")
+                
+                # Subscribe to symbols we need
+                await subscribe_tradingview_symbols(ws, quote_session)
+                
+                # Listen for messages
+                msg_count = 0
+                async for message in ws:
+                    msg_count += 1
+                    try:
+                        # Handle ping/pong
+                        if message.startswith('~h~'):
+                            # Respond to heartbeat
+                            await ws.send(message)
+                            continue
+                        
+                        await process_tradingview_message(message)
+                        
+                        # Log first few messages
+                        if msg_count <= 5:
+                            logger.info(f"TradingView msg #{msg_count}: {message[:100]}...")
+                            
+                    except Exception as e:
+                        logger.warning(f"Error processing TradingView message: {e}")
+                        
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(f"TradingView WebSocket closed: {e}. Reconnecting in 5 seconds...")
+            await asyncio.sleep(5)
+        except Exception as e:
+            logger.error(f"TradingView WebSocket error: {e}. Reconnecting in 10 seconds...")
+            import traceback
+            logger.debug(traceback.format_exc())
+            await asyncio.sleep(10)
+
+
+async def subscribe_tradingview_symbols(ws, quote_session):
+    """Subscribe to symbols for real-time quotes"""
+    global _tradingview_subscribed_symbols
+    
+    # Get symbols from open recorder trades
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT ticker FROM recorded_trades 
+            WHERE status = 'open' AND ticker IS NOT NULL
+        ''')
+        
+        symbols = set()
+        for row in cursor.fetchall():
+            ticker = row[0]
+            if ticker:
+                # Convert to TradingView format
+                root = extract_symbol_root(ticker)
+                tv_symbol = f"CME_MINI:{root}1!" if root in ['MNQ', 'MES', 'M2K'] else f"CME:{root}1!"
+                symbols.add(tv_symbol)
+        conn.close()
+        
+        # Also add common symbols
+        default_symbols = ['CME_MINI:MNQ1!', 'CME_MINI:MES1!', 'CME:NQ1!', 'CME:ES1!']
+        symbols.update(default_symbols)
+        
+        for symbol in symbols:
+            if symbol not in _tradingview_subscribed_symbols:
+                # Add symbol to session - simplified format
+                add_msg = json.dumps({
+                    "m": "quote_add_symbols",
+                    "p": [quote_session, symbol]
+                })
+                await ws.send(f"~m~{len(add_msg)}~m~{add_msg}")
+                _tradingview_subscribed_symbols.add(symbol)
+                logger.info(f"📈 Subscribed to TradingView: {symbol}")
+                
+    except Exception as e:
+        logger.warning(f"Error subscribing to TradingView symbols: {e}")
+
+
+async def process_tradingview_message(message):
+    """Process incoming TradingView WebSocket message"""
+    global _market_data_cache
+    
+    try:
+        # TradingView messages are formatted as: ~m~{length}~m~{json}
+        if not message:
+            return
+        
+        # Log first few messages for debugging
+        if len(message) < 500:
+            logger.debug(f"TradingView raw msg: {message[:200]}")
+        
+        # Handle heartbeat
+        if message.startswith('~h~'):
+            return
+        
+        if not message.startswith('~m~'):
+            return
+        
+        # Extract JSON part
+        parts = message.split('~m~')
+        for part in parts:
+            if not part or part.isdigit():
+                continue
+            
+            try:
+                data = json.loads(part)
+                
+                # Log message type
+                if isinstance(data, dict):
+                    msg_type = data.get('m', 'unknown')
+                    logger.debug(f"TradingView msg type: {msg_type}")
+                
+                # Handle quote update messages
+                if isinstance(data, dict) and data.get('m') == 'qsd':
+                    # Quote session data
+                    params = data.get('p', [])
+                    logger.debug(f"QSD params: {params}")
+                    if len(params) >= 2:
+                        symbol_data = params[1]
+                        symbol = symbol_data.get('n', '')  # Symbol name
+                        values = symbol_data.get('v', {})
+                        
+                        if symbol and values:
+                            # TradingView can send price in different fields
+                            last_price = values.get('lp') or values.get('last_price') or values.get('ch')
+                            bid = values.get('bid')
+                            ask = values.get('ask')
+                            
+                            # Log what we're getting
+                            if 'lp' in values or 'bid' in values or 'ask' in values:
+                                logger.info(f"📊 TradingView {symbol}: lp={values.get('lp')}, bid={bid}, ask={ask}")
+                            
+                            # Use mid price if we have bid/ask but no last
+                            if not last_price and bid and ask:
+                                last_price = (float(bid) + float(ask)) / 2
+                            
+                            if last_price:
+                                # Extract root symbol (CME_MINI:MNQ1! -> MNQ)
+                                root = symbol.split(':')[-1].replace('1!', '').replace('!', '')
+                                
+                                if root not in _market_data_cache:
+                                    _market_data_cache[root] = {}
+                                
+                                _market_data_cache[root]['last'] = float(last_price)
+                                _market_data_cache[root]['source'] = 'tradingview'
+                                _market_data_cache[root]['updated'] = time.time()
+                                
+                                logger.info(f"💰 TradingView price: {root} = {last_price}")
+                                
+                                # Check TP/SL for recorder trades
+                                check_recorder_trades_tp_sl({root})
+                                
+            except json.JSONDecodeError:
+                continue
+                
+    except Exception as e:
+        logger.debug(f"Error processing TradingView message: {e}")
+
+
+def start_tradingview_websocket():
+    """Start TradingView WebSocket in background thread"""
+    global _tradingview_ws_thread
+    
+    if _tradingview_ws_thread and _tradingview_ws_thread.is_alive():
+        logger.info("TradingView WebSocket already running")
+        return
+    
+    def run_websocket():
+        asyncio.run(connect_tradingview_websocket())
+    
+    _tradingview_ws_thread = threading.Thread(target=run_websocket, daemon=True)
+    _tradingview_ws_thread.start()
+    logger.info("✅ TradingView WebSocket thread started")
+
 
 def update_position_pnl():
     """Update PnL for all cached positions based on current market prices"""
@@ -4193,6 +6533,21 @@ if WEBSOCKETS_AVAILABLE:
     logger.info("✅ Market data WebSocket thread started")
 else:
     logger.warning("websockets library not installed. Market data WebSocket will not work. Install with: pip install websockets")
+
+# Start Recorder TP/SL Polling (always runs as fallback/backup)
+start_recorder_tp_sl_polling()
+logger.info("✅ Recorder TP/SL monitoring active")
+
+# Try to start TradingView WebSocket if session is configured
+try:
+    session = get_tradingview_session()
+    if session and session.get('sessionid'):
+        start_tradingview_websocket()
+        logger.info("✅ TradingView WebSocket started (session found)")
+    else:
+        logger.info("ℹ️ TradingView session not configured. POST to /api/tradingview/session to enable real-time prices.")
+except Exception as e:
+    logger.warning(f"Could not start TradingView WebSocket: {e}")
 
 # Configure logging for production
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

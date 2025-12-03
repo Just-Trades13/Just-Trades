@@ -121,6 +121,10 @@
             feed.scrollTop = feed.scrollHeight;
         });
         
+        // Refresh stats periodically
+        loadControlCenterStats();
+        setInterval(loadControlCenterStats, 5000);  // Refresh every 5 seconds
+        
         // WebSocket connection for real-time updates (like Trade Manager)
         const socket = io();
         
@@ -142,80 +146,91 @@
             }
         });
         
-        // P&L updates
-        socket.on('pnl_update', (data) => {
-            console.log('P&L update:', data);
-            // Update P&L in Live Trading Panel
-            updatePnLInTable(data);
-        });
-        
-        // Position updates
-        socket.on('position_update', (data) => {
-            console.log('Position update:', data);
-            // Update positions in table
-            updatePositionsInTable(data);
-        });
-        
-        // Strategy P&L updates
-        socket.on('strategy_pnl_update', (data) => {
-            console.log('Strategy P&L update:', data);
-            // Update specific strategy P&L
-            updateStrategyPnL(data.strategy_id, data.strategy_name, data.pnl);
-        });
-        
-        // Log entries
-        socket.on('log_entry', (data) => {
-            console.log('Log entry:', data);
-            addLogEntry(data.type, data.message, data.time);
+        // Signal received - update logs immediately
+        socket.on('signal_received', (data) => {
+            console.log('Signal received:', data);
+            const tradeInfo = data.trade ? ` → ${data.trade.action.toUpperCase()} ${data.trade.side || ''}` : '';
+            addLogEntry(
+                data.action === 'BUY' ? 'open' : 'close',
+                `${data.recorder_name}: ${data.action} ${data.ticker} @ ${data.price}${tradeInfo}`,
+                data.timestamp
+            );
+            // Refresh stats to update PnL
+            loadControlCenterStats();
         });
         
         // Trade executed
         socket.on('trade_executed', (data) => {
             console.log('Trade executed:', data);
-            addLogEntry('trade', `Trade executed: ${data.side} ${data.quantity} ${data.symbol}`, data.timestamp);
+            const pnlStr = data.pnl ? ` | PnL: $${data.pnl.toFixed(2)}` : '';
+            addLogEntry('trade', `${data.recorder_name}: ${data.side} closed ${data.ticker}${pnlStr}`, data.timestamp);
+            // Refresh stats to update PnL
+            loadControlCenterStats();
         });
         
-        function updatePnLInTable(data) {
-            // Update P&L cells in Live Trading Panel
-            const rows = document.querySelectorAll('.live-trading tbody tr');
-            rows.forEach(row => {
-                const pnlCell = row.querySelector('.pl-cell');
-                if (pnlCell && data.total_pnl !== undefined) {
-                    // Update with total P&L or strategy-specific P&L
-                    const currentPnl = parseFloat(pnlCell.textContent) || 0;
-                    // For now, just update if we have strategy-specific data
-                }
-            });
-        }
+        // Legacy handlers
+        socket.on('pnl_update', (data) => {
+            loadControlCenterStats();
+        });
         
-        function updatePositionsInTable(data) {
-            // Update position counts in table
-            // Implementation depends on your table structure
-            if (data.strategy) {
-                // Find row by strategy name and update
-                const rows = document.querySelectorAll('.live-trading tbody tr');
-                rows.forEach(row => {
-                    const strategyCell = row.querySelector('td:first-child');
-                    if (strategyCell && strategyCell.textContent.includes(data.strategy)) {
-                        // Update position info if needed
-                    }
-                });
+        socket.on('strategy_pnl_update', (data) => {
+            updateStrategyPnL(data.strategy_id, data.strategy_name, data.pnl);
+        });
+        
+        async function loadControlCenterStats() {
+            try {
+                const response = await fetch('/api/control-center/stats');
+                const data = await response.json();
+                
+                if (data.success && data.recorders) {
+                    updateLiveTradingTable(data.recorders);
+                }
+            } catch (error) {
+                console.error('Error loading control center stats:', error);
             }
         }
         
+        function updateLiveTradingTable(recorders) {
+            const tbody = document.querySelector('.live-trading tbody');
+            if (!tbody) return;
+            
+            // Build new rows
+            let html = '';
+            recorders.forEach(recorder => {
+                const pnlClass = recorder.pnl >= 0 ? 'positive' : 'negative';
+                const pnlFormatted = recorder.pnl >= 0 ? `$${recorder.pnl.toFixed(2)}` : `-$${Math.abs(recorder.pnl).toFixed(2)}`;
+                html += `
+                    <tr data-recorder-id="${recorder.id}">
+                        <td><a href="/recorders/${recorder.id}">${recorder.name}</a> <span style="color: #64748b; font-size: 0.8em;">${recorder.symbol}</span></td>
+                        <td class="toggle-cell">
+                            <span>${recorder.open_trades} open / ${recorder.closed_trades} closed</span>
+                            <label class="switch">
+                                <input type="checkbox" ${recorder.enabled ? 'checked' : ''} onchange="toggleRecorder(${recorder.id}, this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </td>
+                        <td class="pl-cell ${pnlClass}">${pnlFormatted}</td>
+                        <td class="action-cell">
+                            <button class="btn btn-outline btn-small" onclick="closeRecorderPositions(${recorder.id})">Close</button>
+                            <button class="btn btn-outline btn-small" onclick="viewRecorderDetails(${recorder.id})">View</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tbody.innerHTML = html || '<tr><td colspan="4" style="text-align: center; padding: 2rem; color: #64748b;">No recorders found. <a href="/recorders/new">Create one</a></td></tr>';
+        }
+        
         function updateStrategyPnL(strategyId, strategyName, pnl) {
-            // Find row by strategy ID or name and update P&L
-            const rows = document.querySelectorAll('.live-trading tbody tr');
-            rows.forEach(row => {
-                const strategyCell = row.querySelector('td:first-child');
-                if (strategyCell && (strategyCell.textContent.includes(strategyName) || row.dataset.strategyId === String(strategyId))) {
+            const row = document.querySelector(`tr[data-recorder-id="${strategyId}"]`);
+            if (row) {
                     const pnlCell = row.querySelector('.pl-cell');
                     if (pnlCell) {
-                        pnlCell.textContent = pnl.toFixed(2);
+                    const pnlFormatted = pnl >= 0 ? `$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`;
+                    pnlCell.textContent = pnlFormatted;
                         pnlCell.className = `pl-cell ${pnl >= 0 ? 'positive' : 'negative'}`;
                     }
                 }
-            });
         }
         
         function addLogEntry(type, message, time) {
@@ -229,10 +244,41 @@
                     <span class="log-content">${message}</span>
                     <span class="log-time">${timeStr}</span>
                 `;
-                logFeed.appendChild(logEntry);
-                logFeed.scrollTop = logFeed.scrollHeight;
+                logFeed.insertBefore(logEntry, logFeed.firstChild);
+                
+                // Keep only last 50 entries
+                while (logFeed.children.length > 50) {
+                    logFeed.removeChild(logFeed.lastChild);
+                }
             }
         }
     });
+    
+    // Global functions for button handlers
+    async function toggleRecorder(recorderId, enabled) {
+        try {
+            const response = await fetch(`/api/recorders/${recorderId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recording_enabled: enabled ? 1 : 0 })
+            });
+            const data = await response.json();
+            if (!data.success) {
+                console.error('Failed to toggle recorder:', data.error);
+            }
+        } catch (error) {
+            console.error('Error toggling recorder:', error);
+        }
+    }
+    
+    function closeRecorderPositions(recorderId) {
+        // TODO: Implement close all positions for recorder
+        console.log('Close positions for recorder:', recorderId);
+        alert('Close positions feature coming soon');
+    }
+    
+    function viewRecorderDetails(recorderId) {
+        window.location.href = `/recorders/${recorderId}`;
+    }
 </script>
 {% endblock %}
