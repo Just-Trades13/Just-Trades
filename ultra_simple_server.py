@@ -6314,10 +6314,12 @@ logger.info("📊 Break-Even Monitor thread started")
 # ============================================================================
 
 # Cache for Tradovate PnL data
+# RESET on every server start to avoid stale data
 _tradovate_pnl_cache = {
     'last_fetch': 0,
     'data': {},
-    'positions': []
+    'positions': [],
+    'account_count': 2  # Start with reasonable default
 }
 
 def fetch_tradovate_pnl_sync():
@@ -6429,9 +6431,11 @@ def fetch_tradovate_pnl_sync():
                         }
                         logger.debug(f"Fetched PnL for {acc_name}: openPnL=${snap.get('openPnL', 0):.2f}, realizedPnL=${snap.get('realizedPnL', 0):.2f}")
                     elif response.status_code == 429:
-                        # Rate limited - back off by increasing cache time
-                        logger.warning(f"Rate limited by Tradovate (429)! Slowing down...")
-                        _tradovate_pnl_cache['account_count'] = max(10, _tradovate_pnl_cache.get('account_count', 2) * 2)
+                        # Rate limited - back off by increasing cache time (max 30 seconds)
+                        current_count = _tradovate_pnl_cache.get('account_count', 2)
+                        new_count = min(150, current_count + 10)  # Cap at ~30s interval
+                        logger.warning(f"Rate limited by Tradovate (429)! Slowing down to {new_count * 0.2:.1f}s interval")
+                        _tradovate_pnl_cache['account_count'] = new_count
                         return _tradovate_pnl_cache.get('data', {}), _tradovate_pnl_cache.get('positions', [])
                     elif response.status_code == 401:
                         logger.warning(f"Token expired for account {acc_id} - will refresh on next trade")
@@ -6482,6 +6486,10 @@ def fetch_tradovate_pnl_sync():
         
         if total_subaccounts > 5:
             logger.info(f"Monitoring {total_subaccounts} subaccounts, update interval: {max(0.5, total_subaccounts * 0.2):.1f}s")
+        
+        # Debug: Log what we're returning
+        if all_pnl_data:
+            logger.info(f"📊 Returning PnL data for {len(all_pnl_data)} accounts, {len(all_positions)} positions")
         
         return all_pnl_data, all_positions
         
