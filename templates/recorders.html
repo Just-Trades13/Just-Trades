@@ -36,24 +36,24 @@
     <section class="builder-form">
         <!-- Basic Info -->
         <div class="form-two">
-            <label class="form-field">
+        <label class="form-field">
                 <span>Strategy Name <span class="required">*</span></span>
                 <input type="text" id="name" placeholder="Enter strategy name" value="{{ recorder.name if recorder else '' }}" required>
-            </label>
-            <label class="form-field">
-                <span>Strategy Type</span>
-                <div class="select-shell">
+        </label>
+        <label class="form-field">
+            <span>Strategy Type</span>
+            <div class="select-shell">
                     <select id="strategy_type">
                         <option value="Stock" {{ 'selected' if recorder and recorder.strategy_type == 'Stock' else '' }}>Stock</option>
                         <option value="Futures" {{ 'selected' if not recorder or recorder.strategy_type == 'Futures' else '' }}>Futures</option>
                         <option value="Crypto" {{ 'selected' if recorder and recorder.strategy_type == 'Crypto' else '' }}>Crypto</option>
                         <option value="Forex" {{ 'selected' if recorder and recorder.strategy_type == 'Forex' else '' }}>Forex</option>
-                    </select>
-                    <span class="material-icons">expand_more</span>
-                </div>
-            </label>
+                </select>
+                <span class="material-icons">expand_more</span>
+            </div>
+        </label>
         </div>
-        
+
 
         <!-- Positional Settings Panel -->
         <section class="card-panel" data-panel>

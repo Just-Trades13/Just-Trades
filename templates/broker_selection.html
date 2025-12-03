@@ -217,7 +217,9 @@
             if (data.success) {
                 // Redirect to appropriate connection flow based on broker
                 if (brokerId === 'tradovate') {
-                    window.location.href = `/api/accounts/${accountId}/connect`;
+                    // For Tradovate, collect credentials first (optional, for mdAccessToken)
+                    // Then proceed to OAuth
+                    window.location.href = `/accounts/${accountId}/credentials`;
                 } else {
                     // For other brokers, redirect to their specific connection page
                     alert(`${brokerName} connection flow coming soon!`);

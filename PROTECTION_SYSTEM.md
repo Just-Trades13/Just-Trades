@@ -6,38 +6,44 @@
 
 ## 🛡️ Protection Layers
 
-### Layer 1: Cursor Rules (`.cursorrules`)
+### Layer 1: Tab Isolation (NEW - CRITICAL)
+- **Location**: `TAB_ISOLATION_MAP.md`
+- **Purpose**: Maps each tab to its allowed files, prevents cross-tab modifications
+- **Effect**: AI can ONLY modify files for the tab being worked on
+- **Status**: ✅ Active - **MANDATORY RULE**
+
+### Layer 2: Cursor Rules (`.cursorrules`)
 - **Location**: Root directory
-- **Purpose**: Instructs AI assistants on protection rules
+- **Purpose**: Instructs AI assistants on protection rules (includes tab isolation)
 - **Effect**: AI reads these rules before making changes
 - **Status**: ✅ Active
 
-### Layer 2: Cursor Ignore (`.cursorignore`)
+### Layer 3: Cursor Ignore (`.cursorignore`)
 - **Location**: Root directory
 - **Purpose**: Lists files that should not be modified
 - **Effect**: AI assistants should skip these files
 - **Status**: ✅ Active
 
-### Layer 3: File Permissions (`protect_files.sh`)
+### Layer 4: File Permissions (`protect_files.sh`)
 - **Location**: Root directory
 - **Purpose**: Makes protected files read-only
 - **Effect**: Prevents accidental modifications
 - **Usage**: `./protect_files.sh` to protect, `./unprotect_files.sh` to unprotect
 - **Status**: ✅ Available
 
-### Layer 4: Documentation Snapshots
+### Layer 5: Documentation Snapshots
 - **Files**: `ACCOUNT_MGMT_SNAPSHOT.md`, `CURRENT_STATUS_SNAPSHOT.md`
 - **Purpose**: Documents locked baselines
 - **Effect**: Reference for what should not change
 - **Status**: ✅ Active
 
-### Layer 5: Git Tags & Backups
+### Layer 6: Git Tags & Backups
 - **Git Tags**: `working-state-dec-2025` (and future tags)
 - **Backups**: `backups/YYYY-MM-DD/` directories
 - **Purpose**: Restore points for working code
 - **Status**: ✅ Active
 
-### Layer 6: Sandbox System
+### Layer 7: Sandbox System
 - **Location**: `sandboxes/` directory
 - **Purpose**: Isolated environment for experiments
 - **Effect**: Safe testing without affecting main code
@@ -74,12 +80,16 @@
 ### For AI Assistants
 
 **Before making ANY changes:**
-1. Read `.cursorrules` (automatically loaded)
-2. Check `.cursorignore` for protected files
-3. Read `WHAT_NOT_TO_DO.md` for past mistakes
-4. Read `PRE_CHANGE_CHECKLIST.md` for mandatory steps
-5. Check if file is in protection docs
-6. If protected, ask user for explicit permission
+1. **IDENTIFY which tab** you're working on (e.g., "Manual Trader", "Account Management")
+2. **READ `TAB_ISOLATION_MAP.md`** to see which files belong to that tab
+3. **ONLY modify files listed for that specific tab**
+4. Read `.cursorrules` (automatically loaded)
+5. Check `.cursorignore` for protected files
+6. Read `WHAT_NOT_TO_DO.md` for past mistakes
+7. Read `PRE_CHANGE_CHECKLIST.md` for mandatory steps
+8. Check if file is in protection docs
+9. If protected, ask user for explicit permission
+10. **NEVER modify files from other tabs** - even if you think it's "helpful"
 
 **When modifying protected files:**
 1. ⚠️ WARN user that file is protected

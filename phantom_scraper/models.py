@@ -42,6 +42,7 @@ class Account(Base):
     # Relationships
     strategies = relationship("Strategy", back_populates="account")
     trades = relationship("Trade", back_populates="account")
+    positions = relationship("Position", back_populates="account")
 
 class Strategy(Base):
     __tablename__ = 'strategies'
@@ -111,6 +112,64 @@ class WebhookLog(Base):
     processed = Column(Boolean, default=False)
     error_message = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class Position(Base):
+    """Tracks live positions per account and symbol"""
+    __tablename__ = 'positions'
+    
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=False)
+    
+    # Position details
+    symbol = Column(String(20), nullable=False)
+    contract_id = Column(Integer)  # Tradovate contract ID
+    net_quantity = Column(Integer, default=0)  # Net position (positive = long, negative = short)
+    avg_price = Column(Float)  # Average entry price
+    last_price = Column(Float)  # Last market price for PnL calculation
+    unrealized_pnl = Column(Float, default=0.0)  # Unrealized PnL
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    account = relationship("Account", back_populates="positions")
+    
+    # Unique constraint: one position per account/symbol
+    __table_args__ = (
+        {'sqlite_autoincrement': True},
+    )
+
+class OrderState(Base):
+    """Tracks order state transitions for duplicate prevention"""
+    __tablename__ = 'order_states'
+    
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=False)
+    tradovate_order_id = Column(String(50), nullable=False)
+    
+    # Order details
+    symbol = Column(String(20), nullable=False)
+    side = Column(String(10), nullable=False)  # 'Buy' or 'Sell'
+    order_type = Column(String(20))  # 'Market', 'Limit', 'Stop'
+    quantity = Column(Integer, nullable=False)
+    filled_quantity = Column(Integer, default=0)
+    price = Column(Float)
+    limit_price = Column(Float)
+    stop_price = Column(Float)
+    
+    # Order status
+    status = Column(String(20), nullable=False)  # 'Working', 'Filled', 'Canceled', 'Rejected', 'Expired'
+    
+    # Unique key for duplicate prevention
+    unique_key = Column(String(255), unique=True)  # Composite key: status-price-filledQty-qty-orderId
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    account = relationship("Account")
 
 # Database setup
 def create_database():
