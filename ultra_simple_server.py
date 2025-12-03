@@ -23,9 +23,15 @@ import time
 import threading
 import requests
 from typing import Optional
+from queue import Queue, Empty
 from flask import Flask, request, jsonify, render_template, redirect, url_for
 from flask_socketio import SocketIO, emit
 from datetime import datetime, timedelta
+
+# High-performance signal queue for handling hundreds of signals per second
+signal_queue = Queue(maxsize=10000)
+BATCH_SIZE = 50  # Process signals in batches for faster DB writes
+BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 
 # WebSocket support for Tradovate market data
 try:
@@ -2290,6 +2296,162 @@ def api_get_recorder_webhook(recorder_id):
         })
     except Exception as e:
         logger.error(f"Error getting webhook for recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============================================================
+# HIGH-PERFORMANCE SIGNAL PROCESSOR (Background Thread)
+# ============================================================
+
+# Cache for recorder lookups (avoid repeated DB queries)
+recorder_cache = {}
+recorder_cache_time = {}
+CACHE_TTL = 60  # Cache recorder info for 60 seconds
+
+def get_cached_recorder(webhook_token):
+    """Get recorder from cache or database"""
+    now = time.time()
+    if webhook_token in recorder_cache:
+        if now - recorder_cache_time.get(webhook_token, 0) < CACHE_TTL:
+            return recorder_cache[webhook_token]
+    
+    conn = sqlite3.connect('just_trades.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM recorders WHERE webhook_token = ? AND recording_enabled = 1', (webhook_token,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        recorder = dict(row)
+        recorder_cache[webhook_token] = recorder
+        recorder_cache_time[webhook_token] = now
+        return recorder
+    return None
+
+def process_signal_batch(signals):
+    """Process a batch of signals efficiently with single DB connection"""
+    if not signals:
+        return
+    
+    conn = sqlite3.connect('just_trades.db')
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA synchronous=NORMAL')
+    cursor = conn.cursor()
+    
+    try:
+        # Batch insert signals
+        for sig in signals:
+            cursor.execute('''
+                INSERT INTO recorded_signals 
+                (recorder_id, action, ticker, price, position_size, market_position, signal_type, raw_data, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                sig['recorder_id'],
+                sig['action'],
+                sig['ticker'],
+                sig['price'],
+                sig.get('position_size'),
+                sig.get('market_position'),
+                sig['signal_type'],
+                json.dumps(sig['raw_data']),
+                sig['timestamp']
+            ))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Batch signal insert error: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+def signal_processor_worker():
+    """Background worker that processes signals from queue in batches"""
+    logger.info("🚀 Signal processor worker started")
+    batch = []
+    last_process_time = time.time()
+    
+    while True:
+        try:
+            # Try to get signal with timeout
+            signal = signal_queue.get(timeout=BATCH_TIMEOUT)
+            batch.append(signal)
+            
+            # Process batch when full or timeout reached
+            if len(batch) >= BATCH_SIZE:
+                process_signal_batch(batch)
+                batch = []
+                last_process_time = time.time()
+                
+        except Empty:
+            # Timeout - process partial batch if any
+            if batch and time.time() - last_process_time >= BATCH_TIMEOUT:
+                process_signal_batch(batch)
+                batch = []
+                last_process_time = time.time()
+        except Exception as e:
+            logger.error(f"Signal processor error: {e}")
+
+# Start background signal processor
+signal_processor_thread = threading.Thread(target=signal_processor_worker, daemon=True)
+signal_processor_thread.start()
+
+# ============================================================
+# FAST WEBHOOK - Ultra-high-frequency endpoint (record only)
+# ============================================================
+
+@app.route('/webhook/fast/<webhook_token>', methods=['POST'])
+def receive_webhook_fast(webhook_token):
+    """
+    Ultra-fast webhook endpoint for high-frequency signals.
+    - Queues signal for async processing
+    - Returns immediately (sub-millisecond response)
+    - Use for hundreds of signals per second
+    """
+    try:
+        # Quick cache lookup
+        recorder = get_cached_recorder(webhook_token)
+        if not recorder:
+            return jsonify({'success': False, 'error': 'Invalid webhook'}), 404
+        
+        # Parse data
+        if request.is_json:
+            data = request.get_json(force=True, silent=True) or {}
+        else:
+            try:
+                data = json.loads(request.data.decode('utf-8'))
+            except:
+                data = {}
+        
+        # Normalize action
+        action = str(data.get('action', '')).lower().strip()
+        if action in ['long', 'buy']:
+            action = 'BUY'
+        elif action in ['short', 'sell']:
+            action = 'SELL'
+        else:
+            action = action.upper()
+        
+        # Queue signal for async processing
+        signal_data = {
+            'recorder_id': recorder['id'],
+            'action': action,
+            'ticker': data.get('ticker', data.get('symbol', '')),
+            'price': float(data.get('price', data.get('close', 0)) or 0),
+            'position_size': data.get('position_size'),
+            'market_position': data.get('market_position'),
+            'signal_type': 'fast',
+            'raw_data': data,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Non-blocking queue add
+        try:
+            signal_queue.put_nowait(signal_data)
+            return jsonify({'success': True, 'queued': True, 'queue_size': signal_queue.qsize()}), 202
+        except:
+            # Queue full - still try to process
+            return jsonify({'success': False, 'error': 'Queue full'}), 503
+            
+    except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ============================================================
@@ -4662,20 +4824,13 @@ def get_yahoo_heatmap_data():
                         if 'meta' in result:
                             meta = result['meta']
                             current_price = meta.get('regularMarketPrice', 0)
-                            previous_close = meta.get('previousClose', current_price)
+                            # Yahoo Finance chart API uses 'chartPreviousClose', not 'previousClose'
+                            previous_close = meta.get('chartPreviousClose') or meta.get('previousClose', 0)
                             
-                            # Try to get change percentage directly from Yahoo Finance
-                            # This is more accurate, especially when market is closed
-                            change_pct_raw = meta.get('regularMarketChangePercent', None)
-                            
-                            if change_pct_raw is not None:
-                                # Yahoo Finance returns as decimal (e.g., 0.0165 for 1.65%)
-                                change_pct = change_pct_raw * 100
-                            elif current_price > 0 and previous_close > 0 and previous_close != current_price:
-                                # Calculate from price difference
+                            # Calculate change percentage from prices
+                            if current_price > 0 and previous_close > 0:
                                 change_pct = ((current_price - previous_close) / previous_close) * 100
                             else:
-                                # If no change data available, skip this stock or use 0
                                 change_pct = 0
                             
                             # Try to get real market cap from Yahoo Finance
