@@ -6072,6 +6072,101 @@ oco_monitor_thread = threading.Thread(target=monitor_oco_orders, daemon=True)
 oco_monitor_thread.start()
 logger.info("🔄 OCO Monitor thread started")
 
+def cleanup_orphaned_orders():
+    """
+    On startup, scan for working orders that don't have matching positions.
+    This cleans up orphaned TP/SL orders from previous sessions.
+    """
+    time.sleep(10)  # Wait for server to fully start
+    logger.info("🧹 Scanning for orphaned orders...")
+    
+    try:
+        # Get all accounts with tokens
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, tradovate_token, tradovate_accounts
+            FROM accounts 
+            WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+        ''')
+        accounts = cursor.fetchall()
+        conn.close()
+        
+        if not accounts:
+            logger.info("🧹 No accounts to scan for orphaned orders")
+            return
+        
+        for account in accounts:
+            token = account['tradovate_token']
+            tradovate_accounts = []
+            if account['tradovate_accounts']:
+                try:
+                    tradovate_accounts = json.loads(account['tradovate_accounts'])
+                except:
+                    pass
+            
+            for ta in tradovate_accounts:
+                acc_id = ta.get('id')
+                is_demo = ta.get('is_demo', True)
+                acc_name = ta.get('name', str(acc_id))
+                base_url = 'https://demo.tradovateapi.com/v1' if is_demo else 'https://live.tradovateapi.com/v1'
+                headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+                
+                try:
+                    # Get positions
+                    pos_response = requests.get(f'{base_url}/position/list', headers=headers, timeout=5)
+                    positions = pos_response.json() if pos_response.status_code == 200 else []
+                    
+                    # Build set of contract IDs with open positions
+                    open_contracts = set()
+                    for pos in positions:
+                        if pos.get('netPos', 0) != 0:
+                            open_contracts.add(pos.get('contractId'))
+                    
+                    # Get orders
+                    order_response = requests.get(f'{base_url}/order/list', headers=headers, timeout=5)
+                    orders = order_response.json() if order_response.status_code == 200 else []
+                    
+                    orphaned = []
+                    for order in orders:
+                        order_status = order.get('ordStatus', '').lower()
+                        if order_status in ['working', 'pending', 'accepted']:
+                            contract_id = order.get('contractId')
+                            # If no open position for this contract, it's orphaned
+                            if contract_id not in open_contracts:
+                                orphaned.append(order)
+                    
+                    if orphaned:
+                        logger.warning(f"🧹 Found {len(orphaned)} orphaned orders for {acc_name}")
+                        for order in orphaned:
+                            order_id = order.get('id')
+                            try:
+                                cancel_response = requests.post(
+                                    f'{base_url}/order/cancelorder',
+                                    json={'orderId': order_id, 'isAutomated': True},
+                                    headers=headers,
+                                    timeout=5
+                                )
+                                if cancel_response.status_code == 200:
+                                    logger.info(f"🧹 Cancelled orphaned order {order_id}")
+                                else:
+                                    logger.warning(f"🧹 Failed to cancel orphaned order {order_id}: {cancel_response.text[:100]}")
+                            except Exception as e:
+                                logger.warning(f"🧹 Error cancelling orphaned order {order_id}: {e}")
+                    else:
+                        logger.info(f"🧹 No orphaned orders for {acc_name}")
+                        
+                except Exception as e:
+                    logger.warning(f"🧹 Error scanning {acc_name} for orphaned orders: {e}")
+                    
+    except Exception as e:
+        logger.error(f"🧹 Error in orphaned orders cleanup: {e}")
+
+# Start orphaned orders cleanup in background
+cleanup_thread = threading.Thread(target=cleanup_orphaned_orders, daemon=True)
+cleanup_thread.start()
+
 # ============================================================================
 # Break-Even Monitor - Moves SL to entry price when position goes profitable
 # ============================================================================
