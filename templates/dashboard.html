@@ -2497,8 +2497,14 @@
     // Helper functions
     function formatDateTime(dateStr) {
         if (!dateStr) return 'N/A';
-        const date = new Date(dateStr);
+        // SQLite CURRENT_TIMESTAMP is UTC - append 'Z' if no timezone indicator
+        let utcStr = dateStr;
+        if (!dateStr.endsWith('Z') && !dateStr.includes('+') && !dateStr.includes('-', 10)) {
+            utcStr = dateStr.replace(' ', 'T') + 'Z';
+        }
+        const date = new Date(utcStr);
         return date.toLocaleString('en-US', { 
+            timeZone: 'America/Chicago',
             month: 'short', 
             day: '2-digit', 
             year: 'numeric',

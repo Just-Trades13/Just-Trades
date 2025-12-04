@@ -238,7 +238,18 @@
             if (logFeed) {
                 const logEntry = document.createElement('div');
                 logEntry.className = 'log-entry';
-                const timeStr = time ? new Date(time).toLocaleTimeString() : new Date().toLocaleTimeString();
+                // Format time in Chicago timezone
+                let timeStr;
+                if (time) {
+                    // Handle UTC timestamps from server
+                    let utcStr = time;
+                    if (!time.endsWith('Z') && !time.includes('+') && !time.includes('-', 10)) {
+                        utcStr = time.replace(' ', 'T') + 'Z';
+                    }
+                    timeStr = new Date(utcStr).toLocaleTimeString('en-US', { timeZone: 'America/Chicago' });
+                } else {
+                    timeStr = new Date().toLocaleTimeString('en-US', { timeZone: 'America/Chicago' });
+                }
                 logEntry.innerHTML = `
                     <span class="log-type ${type}">[${type.toUpperCase()}]</span>
                     <span class="log-content">${message}</span>
