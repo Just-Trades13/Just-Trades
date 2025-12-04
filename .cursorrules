@@ -1,274 +1,181 @@
-# Cursor AI Workflow Rules - PROTECTED CODEBASE
-# ⚠️ CRITICAL: READ ALL PROTECTION RULES BEFORE MAKING ANY CHANGES
+# ⛔ CURSOR AI RULES - STRICT ENFORCEMENT ⛔
+# LAST WORKING STATE: Dec 3, 2025 (Tag: WORKING_DEC3_2025)
+# ============================================================
 
-## 🛡️ PROTECTION SYSTEM - MANDATORY RULES
+## 🚨 ABSOLUTE REQUIREMENT: ASK BEFORE MODIFYING
 
-### BEFORE ANY CODE CHANGES - MANDATORY CHECKLIST:
-1. **READ `WHAT_NOT_TO_DO.md`** - Lists all past mistakes that broke working code
-2. **READ `PRE_CHANGE_CHECKLIST.md`** - Mandatory checklist before changes
-3. **READ `ACCOUNT_MGMT_SNAPSHOT.md`** - Account management is LOCKED - DO NOT TOUCH
-4. **READ `CURRENT_STATUS_SNAPSHOT.md`** - Current working state documentation
-5. **READ `TAB_ISOLATION_MAP.md`** - **CRITICAL**: Tab isolation rules - only modify files for the tab you're working on
-6. **CHECK `.cursorignore`** - Protected files that should NOT be modified
-7. **VERIFY THE PROBLEM EXISTS** - Don't fix things that aren't broken
-8. **IDENTIFY THE TAB** - Which tab/page are you working on? Only modify that tab's files
+**BEFORE touching ANY code, you MUST:**
+1. Tell the user which file you want to modify
+2. Explain what change you want to make
+3. WAIT for user to say "yes" or "approved" or "go ahead"
+4. Only THEN make the change
 
-### 🔒 LOCKED FILES - DO NOT MODIFY WITHOUT EXPLICIT PERMISSION
+**Example:**
+```
+AI: "I need to modify templates/manual_copy_trader.html to fix the button. Can I proceed?"
+User: "Yes"
+AI: [Now makes the change]
+```
 
-**CRITICAL PROTECTED FILES:**
-- `templates/account_management.html` - **LOCKED** - Baseline saved in `ACCOUNT_MGMT_SNAPSHOT.md`
-- `ultra_simple_server.py` - **PROTECTED** - Account management functions locked
-- `phantom_scraper/tradovate_integration.py` - **PROTECTED** - Core integration locked
-
-**PROTECTION RULES:**
-- If a file is in `.cursorignore`, DO NOT modify it
-- If a file has a snapshot in `backups/`, verify changes against snapshot
-- If user says "DO NOT TOUCH", that means NEVER modify without explicit permission
-- Account management code is LOCKED - any changes must be approved first
-
-### 🚨 RED FLAGS - STOP IMMEDIATELY
-
-**STOP if you see:**
-- User says "don't touch" or "locked" or "baseline"
-- File is listed in `ACCOUNT_MGMT_SNAPSHOT.md`
-- File is in `.cursorignore`
-- User hasn't explicitly requested the change
-- You're about to "improve" working code
-- You're about to remove "unnecessary" code
-- You're about to refactor working functionality
-
-**IF YOU SEE RED FLAGS:**
-1. STOP making changes
-2. ASK user for explicit permission
-3. Reference the protection documentation
-4. Suggest using sandbox instead
-
-## Core Principles
-
-1. **Only modify code directly relevant to the specific request**
-   - Avoid changing unrelated functionality
-   - Don't refactor code that wasn't requested
-   - Keep changes focused and minimal
-   - **NEVER modify locked/protected files without explicit permission**
-
-2. **Never use placeholders or incomplete code**
-   - Never replace code with placeholders like `// ... rest of the processing ...` or `# TODO: implement this`
-   - Always include complete, working code
-   - If something is complex, break it into smaller steps but complete each step fully
-
-3. **Provide context-aware suggestions**
-   - Reference existing code patterns when making suggestions
-   - Match the style and structure of existing code in the project
-   - Use similar patterns found in the codebase
-   - **Check protection rules before suggesting changes**
-
-4. **Plan before implementing**
-   - Break complex problems into smaller, manageable steps
-   - Explain the approach before making changes
-   - Consider edge cases and error handling
-   - **Verify file is not protected before modifying**
-
-5. **Preserve existing functionality**
-   - Don't break working code while fixing or adding features
-   - Test assumptions before making changes
-   - Maintain backward compatibility when possible
-   - **Account management is LOCKED - preserve it exactly as-is**
-
-## Project-Specific Guidelines
-
-### Protected Areas - DO NOT MODIFY
-- **Account Management**: `templates/account_management.html` - LOCKED baseline
-- **Account Management Backend**: Functions in `ultra_simple_server.py` related to account fetching/storage
-- **OAuth Flow**: OAuth callback and connection endpoints (unless explicitly requested)
-- **Core Integration**: `phantom_scraper/tradovate_integration.py` - Core methods locked
-
-### Python Files
-- Follow PEP 8 style guidelines
-- Include proper error handling with try/except blocks
-- Add docstrings for functions and classes
-- Use type hints when appropriate
-- Handle API rate limits and authentication errors gracefully
-- **Check if file is protected before modifying**
-
-### Frontend Files (HTML/JS)
-- Maintain existing structure and IDs
-- Don't remove working JavaScript functions
-- Don't change element IDs that are referenced elsewhere
-- **Account management HTML is LOCKED - do not modify**
-
-### API Integrations
-- Always handle authentication properly
-- Include error handling for API failures (401, 403, 404, 429, etc.)
-- Respect rate limits and implement retry logic
-- Validate API responses before processing
-- Use environment variables for sensitive credentials (never hardcode)
-
-### Data Structures
-- Maintain consistency with existing data schemas
-- Validate data types and formats
-- Handle missing or null values appropriately
-- Use consistent field naming conventions
-
-### Testing
-- When suggesting test files, include comprehensive test cases
-- Test both success and failure scenarios
-- Include edge cases and boundary conditions
-
-## Sandbox Workflow
-
-**For new features or experiments:**
-1. Use `create_sandbox.sh` to create a sandbox copy
-2. Work in the sandbox directory
-3. Test thoroughly in sandbox
-4. Only merge to main after user approval
-5. **NEVER work directly on protected files**
-
-## Common Patterns to Follow
-
-### When fixing errors:
-1. **VERIFY the problem exists** - Don't fix things that aren't broken
-2. **CHECK if file is protected** - If yes, ask permission first
-3. Identify the root cause first
-4. Explain what went wrong
-5. Provide the fix with context
-6. Suggest preventive measures if applicable
-
-### When adding features:
-1. **IDENTIFY which tab** you're working on - Check `TAB_ISOLATION_MAP.md`
-2. **CHECK if you should use sandbox** - For major changes, use sandbox
-3. **ONLY modify files for that tab** - Do NOT touch other tabs' files
-4. Check for existing similar functionality first
-5. Reuse existing patterns and utilities
-6. Follow the established architecture
-7. Update related documentation if needed
-8. **DO NOT modify protected files**
-9. **DO NOT modify other tabs' files** - Even if you think it's "helpful"
-
-### When refactoring:
-1. **NEVER refactor protected/locked code** without explicit permission
-2. Only refactor when explicitly requested
-3. Maintain all existing functionality
-4. Test thoroughly after refactoring
-5. Keep changes incremental and focused
-
-## Communication Style
-
-- Be clear and concise in explanations
-- Provide code examples when helpful
-- Reference specific files and line numbers when relevant
-- **Warn user if attempting to modify protected files**
-- Suggest improvements when appropriate, but don't implement without permission
-- Acknowledge limitations and uncertainties
-- **Always mention if a file is protected before modifying**
-
-## Error Prevention
-
-- Always validate inputs before processing
-- Check for null/undefined values
-- Handle edge cases explicitly
-- Include proper error messages
-- Log errors for debugging (but don't expose sensitive data)
-- **Check protection rules before making changes**
-
-## Documentation
-
-- Update README files when adding new features
-- Add comments for complex logic
-- Document API endpoints and their expected inputs/outputs
-- Keep setup guides current with any changes
-- **Update protection docs if adding new protected files**
-
-## Recovery Process
-
-**If something breaks:**
-1. **STOP making changes immediately**
-2. **Revert to last known working state** (check `backups/` or git tags)
-3. **Tell the user what happened**
-4. **Reference `WHAT_NOT_TO_DO.md`** to avoid repeating mistakes
-5. **Only then** make minimal fixes if needed
-
-## File Protection System
-
-**Protected files are listed in:**
-- `.cursorignore` - Files that should not be modified
-- `ACCOUNT_MGMT_SNAPSHOT.md` - Account management baseline
-- `CURRENT_STATUS_SNAPSHOT.md` - Current working state
-- `TAB_ISOLATION_MAP.md` - **CRITICAL** - Tab isolation rules (DO NOT MODIFY)
-
-**Before modifying any file:**
-1. Check if it's in `.cursorignore`
-2. Check if it has a snapshot in `backups/`
-3. Check if it's mentioned in protection docs
-4. If protected, ask user for explicit permission
-5. If not protected, proceed with caution
-
-## 🚨 TAB ISOLATION - CRITICAL RULE
-
-### **MANDATORY TAB ISOLATION RULE**
-
-**When working on ANY tab/page, you MUST:**
-
-1. **IDENTIFY which tab you're working on** (e.g., "Manual Trader", "Account Management", "Control Center")
-2. **READ `TAB_ISOLATION_MAP.md`** to see which files belong to that tab
-3. **ONLY modify files listed for that specific tab**
-4. **NEVER modify files from other tabs** - even if you think it's "related" or "helpful"
-5. **NEVER "improve" or "fix" code in other tabs** while working on one tab
-6. **WARN user** if you need to modify shared files (like `layout.html` or core integration)
-7. **ASK explicit permission** before touching any file not in the tab's allowed list
-
-### Tab Isolation Examples:
-
-**✅ CORRECT:**
-- User: "Fix trailing stop in manual trader"
-- You modify: `templates/manual_copy_trader.html`, `/api/manual-trade` endpoint
-- You DO NOT touch: `templates/account_management.html`, `templates/control_center.html`
-
-**❌ WRONG:**
-- User: "Fix trailing stop in manual trader"
-- You modify: `templates/manual_copy_trader.html` AND `templates/control_center.html` "to keep them consistent"
-- **STOP** - You're modifying another tab's files!
-
-**✅ CORRECT:**
-- User: "Add feature to account management"
-- You modify: `templates/account_management.html` (if user explicitly approves), account endpoints
-- You DO NOT touch: `templates/manual_copy_trader.html`, manual trader endpoints
-
-**❌ WRONG:**
-- User: "Add feature to account management"
-- You modify: Account management files AND "also update manual trader to match"
-- **STOP** - You're modifying another tab's files!
-
-### Red Flags - STOP IMMEDIATELY:
-
-- 🔴 You're about to modify a file not in the tab's allowed list
-- 🔴 You're about to "improve" code in another tab "while you're at it"
-- 🔴 You're about to modify shared files without explicit permission
-- 🔴 User says "work on Tab A" but you're modifying Tab B's files
-- 🔴 You think "this change would help other tabs too" - **STOP, don't do it**
-
-### Shared Files (Handle with Extreme Caution):
-
-- `templates/layout.html` - Used by ALL tabs
-- `ultra_simple_server.py` - Shared functions
-- `phantom_scraper/tradovate_integration.py` - Core integration
-- `static/` - Shared assets
-
-**Rule**: Only modify shared files if user **explicitly requests** it. Otherwise, **DO NOT TOUCH**.
-
-## Sandbox Development
-
-**For experimental work:**
-- Use `create_sandbox.sh` to create isolated copy
-- Work in sandbox directory
-- Test thoroughly
-- Merge only after approval
-- **Never modify protected files directly**
-- **Respect tab isolation even in sandbox**
+**If user doesn't explicitly approve, DO NOT MODIFY THE FILE.**
 
 ---
 
-**REMEMBER**: 
-1. The user cannot afford to break working code. Protection rules exist for a reason.
-2. **TAB ISOLATION IS MANDATORY** - Only modify files for the tab you're working on.
-3. When in doubt, ASK before modifying.
-4. **NEVER modify other tabs' files "while you're at it"** - This breaks working code.
+## 🔒 LOCKED FILES - NEVER MODIFY WITHOUT EXPLICIT APPROVAL
+
+These files are WORKING. Do not touch them without user saying "yes, modify X file":
+
+```
+⛔ LOCKED - ASK FIRST:
+├── ultra_simple_server.py
+├── templates/manual_copy_trader.html
+├── templates/account_management.html  ← NEVER TOUCH
+├── templates/recorders.html
+├── templates/recorders_list.html
+├── templates/dashboard.html
+├── templates/control_center.html
+└── just_trades.db
+```
+
+---
+
+## 🚫 THINGS YOU MUST NEVER DO
+
+1. **NEVER refactor or "improve" working code**
+2. **NEVER remove code you think is "unused"**
+3. **NEVER change code formatting or indentation**
+4. **NEVER modify files from other tabs**
+5. **NEVER modify database schemas**
+6. **NEVER overwrite backup files**
+7. **NEVER make bulk edits**
+8. **NEVER add features not explicitly requested**
+
+---
+
+## ✅ WORKING FEATURES (DO NOT BREAK)
+
+| Feature | Status | Last Verified |
+|---------|--------|---------------|
+| Manual Trader Tab | ✅ WORKING | Dec 3, 2025 |
+| Live Position Cards | ✅ WORKING | Dec 3, 2025 |
+| Account PnL Display | ✅ WORKING | Dec 3, 2025 |
+| Recorders Tab | ✅ WORKING | Dec 3, 2025 |
+| Webhook Signals | ✅ WORKING | Dec 3, 2025 |
+| Trade Recording | ✅ WORKING | Dec 3, 2025 |
+| Dashboard | ✅ WORKING | Dec 3, 2025 |
+| Control Center | ✅ WORKING | Dec 3, 2025 |
+| Account Management | ✅ WORKING | Dec 3, 2025 |
+| Tradovate OAuth | ✅ WORKING | Dec 3, 2025 |
+| WebSocket Updates | ✅ WORKING | Dec 3, 2025 |
+| Copy Trading | ✅ WORKING | Dec 3, 2025 |
+
+---
+
+## 📋 TAB ISOLATION - MANDATORY
+
+**When user says "work on X tab", ONLY touch files for that tab:**
+
+| Tab | ONLY These Files |
+|-----|------------------|
+| Manual Trader | `manual_copy_trader.html`, manual trade routes |
+| Recorders | `recorders.html`, `recorders_list.html`, recorder routes |
+| Dashboard | `dashboard.html`, dashboard routes |
+| Control Center | `control_center.html`, control center routes |
+| Account Management | **NEVER TOUCH** |
+
+**🚨 If you touch a file NOT in the tab's list, YOU ARE BREAKING THE RULES.**
+
+---
+
+## 🔧 SAFE CHANGE PROCESS
+
+### Step 1: ASK PERMISSION
+```
+"I want to modify [filename] to [do what]. Is this okay?"
+```
+
+### Step 2: WAIT FOR APPROVAL
+Do not proceed until user explicitly approves.
+
+### Step 3: ONE SMALL CHANGE
+- Edit ONLY the specific lines needed
+- Do NOT touch surrounding code
+- Do NOT "clean up" other parts
+
+### Step 4: VERIFY
+- Test the change works
+- Check no regressions
+
+### Step 5: IF BROKEN, RESTORE
+```bash
+cp backups/WORKING_STATE_DEC3_2025/[filename] ./
+# OR
+git checkout WORKING_DEC3_2025 -- [filename]
+```
+
+---
+
+## 🆘 RECOVERY COMMANDS
+
+```bash
+# Restore single file from backup
+cp backups/WORKING_STATE_DEC3_2025/ultra_simple_server.py ./
+cp backups/WORKING_STATE_DEC3_2025/manual_copy_trader.html templates/
+
+# Restore ALL templates
+cp backups/WORKING_STATE_DEC3_2025/*.html templates/
+
+# Full git restore to working state
+git checkout WORKING_DEC3_2025
+
+# Restart server
+pkill -f "python.*ultra_simple"
+nohup python3 ultra_simple_server.py > /tmp/server.log 2>&1 &
+```
+
+---
+
+## 📚 PAST MISTAKES - LEARN FROM THESE
+
+### ❌ Mistake: Bulk refactoring
+**What happened:** AI "improved" code style, broke everything
+**Lesson:** NEVER refactor working code
+
+### ❌ Mistake: Modifying multiple tabs
+**What happened:** Fixed one tab, broke three others
+**Lesson:** ONE TAB AT A TIME
+
+### ❌ Mistake: Changing database schema
+**What happened:** Added columns, broke existing queries
+**Lesson:** NEVER change DB schema without approval
+
+### ❌ Mistake: Removing "unused" code
+**What happened:** Removed code that was actually used elsewhere
+**Lesson:** NEVER remove code you didn't write
+
+### ❌ Mistake: Making unauthorized changes
+**What happened:** AI made changes without asking, broke working features
+**Lesson:** ALWAYS ASK FIRST
+
+---
+
+## ⚠️ FINAL WARNING
+
+This codebase has been BROKEN MULTIPLE TIMES by AI making unauthorized changes.
+
+**EVERY SINGLE CHANGE requires:**
+1. ✅ User permission (explicit "yes")
+2. ✅ Clear explanation BEFORE changing
+3. ✅ Single file, minimal edit
+4. ✅ Immediate testing
+5. ✅ Rollback plan ready
+
+**When in doubt: ASK THE USER.**
+
+**If user hasn't said "yes", DON'T TOUCH IT.**
+
+---
+
+*Backup: backups/WORKING_STATE_DEC3_2025/*
+*Git tag: WORKING_DEC3_2025*
+*Last verified: Dec 3, 2025*

@@ -1,235 +1,215 @@
-# START HERE - Trade Recorder System Handoff
+# 🚨 MANDATORY: READ BEFORE ANY CODE CHANGES 🚨
 
-**Date:** December 3, 2025  
-**Status:** ✅ FULLY FUNCTIONAL - Real-time trade recording with auto TP/SL
+## ⛔ ABSOLUTE RULES - VIOLATION = BROKEN CODE
+
+### RULE 1: NEVER MODIFY THESE FILES WITHOUT EXPLICIT USER PERMISSION
+```
+LOCKED FILES - DO NOT TOUCH:
+├── ultra_simple_server.py          ← CORE SERVER - ASK FIRST
+├── templates/manual_copy_trader.html   ← MANUAL TRADER - ASK FIRST
+├── templates/account_management.html   ← ACCOUNT MGMT - NEVER TOUCH
+├── templates/recorders.html            ← RECORDERS - ASK FIRST
+├── templates/recorders_list.html       ← RECORDERS LIST - ASK FIRST
+├── templates/dashboard.html            ← DASHBOARD - ASK FIRST
+├── templates/control_center.html       ← CONTROL CENTER - ASK FIRST
+└── just_trades.db                      ← DATABASE - NEVER MODIFY SCHEMA
+```
+
+### RULE 2: BEFORE ANY CHANGE, YOU MUST:
+1. ✅ **ASK USER**: "I want to modify [filename]. Is this okay?"
+2. ✅ **WAIT FOR APPROVAL** before touching any code
+3. ✅ **EXPLAIN WHAT YOU WILL CHANGE** before changing it
+4. ✅ **MAKE ONE SMALL CHANGE AT A TIME** - not bulk edits
+
+### RULE 3: THINGS YOU MUST NEVER DO
+- ❌ **NEVER** refactor code that's working
+- ❌ **NEVER** "improve" or "clean up" existing code
+- ❌ **NEVER** remove code you think is "unused"
+- ❌ **NEVER** change indentation or formatting of working code
+- ❌ **NEVER** modify files in other tabs while working on one tab
+- ❌ **NEVER** add "helpful" features not explicitly requested
+- ❌ **NEVER** change database schemas without explicit approval
+- ❌ **NEVER** delete or overwrite backup files
+
+### RULE 4: IF YOU BREAK SOMETHING
+1. **STOP IMMEDIATELY**
+2. **TELL THE USER WHAT YOU BROKE**
+3. **RESTORE FROM BACKUP**: `backups/WORKING_STATE_DEC3_2025/`
+4. **OR USE GIT**: `git checkout WORKING_DEC3_2025 -- <filename>`
 
 ---
 
-## 🎯 What This System Does
+## 🔒 WORKING STATE BACKUP (Dec 3, 2025)
 
-A **Trade Recorder** that:
-1. Receives signals from TradingView webhooks
-2. Opens simulated trades with TP/SL levels (from recorder settings)
-3. Monitors real-time prices via TradingView WebSocket
-4. Auto-closes trades when TP or SL is hit
-5. Calculates and stores PnL
+**Everything below is CONFIRMED WORKING. Do not break it.**
 
----
-
-## ✅ Current Working State
-
-### Server
-- **File:** `ultra_simple_server.py`
-- **Port:** 8082
-- **Start:** `python3 ultra_simple_server.py`
-
-### Database
-- **File:** `just_trades.db` (SQLite)
-- **Key Tables:**
-  - `recorders` - Strategy configurations with TP/SL settings
-  - `recorded_trades` - Trade history with entry/exit/PnL
-  - `recorded_signals` - Raw webhook signals
-  - `accounts` - Tradovate accounts + TradingView session
-
-### Real-Time Price Feed
-- **Primary:** TradingView WebSocket (connected via session cookies)
-- **Fallback:** TradingView Scanner API (polling)
-- **Symbols streaming:** MNQ, MES, NQ, ES
-
-### TradingView Session (Stored)
+### Backup Location
 ```
-sessionid: lp992963ppcyy790wxquqhf2fquhopvv
-sessionid_sign: v3:QcspTiCJOFhvLcADCSuWDYt1uG2P+HB4THZpcYr7PBU=
+backups/WORKING_STATE_DEC3_2025/
+├── ultra_simple_server.py
+├── manual_copy_trader.html
+├── recorders.html
+├── recorders_list.html
+├── dashboard.html
+├── control_center.html
+├── account_management.html
+└── just_trades.db
 ```
 
----
-
-## 🔑 Key Files
-
-| File | Purpose |
-|------|---------|
-| `ultra_simple_server.py` | Main Flask server (~6500 lines) |
-| `just_trades.db` | SQLite database |
-| `templates/dashboard.html` | PnL dashboard (Trade Manager style) |
-| `templates/control_center.html` | Live recorder monitoring |
-| `templates/recorders_list.html` | Recorder management |
-| `templates/recorders.html` | Create/edit recorder form |
-| `RECORDERS_HANDOFF.md` | Detailed documentation |
-
----
-
-## 🛠️ Key Endpoints
-
-### Webhooks
-```
-POST /webhook/<token>  - Receive TradingView signals
-```
-
-### Recorder API
-```
-GET    /api/recorders              - List all recorders
-GET    /api/recorders/<id>         - Get single recorder
-POST   /api/recorders              - Create recorder
-PUT    /api/recorders/<id>         - Update recorder
-GET    /api/recorders/<id>/pnl     - Get PnL stats
-GET    /api/recorders/<id>/trades  - Get trade history
-```
-
-### TradingView Session
-```
-POST /api/tradingview/session  - Store session cookies
-GET  /api/tradingview/session  - Check session status
-```
-
-### Dashboard
-```
-GET /api/dashboard/strategies    - List strategies
-GET /api/dashboard/chart-data    - PnL chart data
-GET /api/dashboard/trade-history - Trade table
-GET /api/dashboard/metrics       - Metric cards
-GET /api/dashboard/calendar-data - Calendar PnL
-```
-
----
-
-## 📊 How Trade Recording Works
-
-### Signal Flow
-```
-TradingView Alert → POST /webhook/<token> → 
-  1. Record signal to recorded_signals
-  2. Check for open trade (close if reversal)
-  3. Calculate TP/SL prices from recorder settings
-  4. Insert new trade to recorded_trades
-  5. Emit WebSocket event for UI update
-```
-
-### TP/SL Monitoring Flow
-```
-TradingView WebSocket → Real-time price update →
-  1. Update _market_data_cache
-  2. Call check_recorder_trades_tp_sl()
-  3. For each open trade with TP/SL:
-     - If price >= TP (LONG) or <= TP (SHORT) → Close at TP
-     - If price <= SL (LONG) or >= SL (SHORT) → Close at SL
-  4. Calculate PnL, update database
-  5. Emit trade_executed WebSocket event
-```
-
-### PnL Calculation
-```python
-tick_size = get_tick_size(symbol)   # e.g., 0.25 for MNQ
-tick_value = get_tick_value(symbol) # e.g., $0.50 for MNQ
-
-if side == 'LONG':
-    pnl_ticks = (exit_price - entry_price) / tick_size
-else:
-    pnl_ticks = (entry_price - exit_price) / tick_size
-
-pnl = pnl_ticks * tick_value * quantity
-```
-
----
-
-## 🔧 Key Functions in ultra_simple_server.py
-
-| Function | Line ~# | Purpose |
-|----------|---------|---------|
-| `receive_webhook()` | 2200 | Process incoming TradingView signals |
-| `check_recorder_trades_tp_sl()` | 5100 | Check TP/SL on price update |
-| `connect_tradingview_websocket()` | 5400 | TradingView WebSocket connection |
-| `process_tradingview_message()` | 5530 | Parse TradingView price data |
-| `get_tick_size()` | 620 | Get tick size for symbol |
-| `get_tick_value()` | 665 | Get dollar value per tick |
-
----
-
-## 📋 Test Commands
-
-### Check server is running
+### Git Tag
 ```bash
-curl http://localhost:8082/api/tradingview/session
-```
-
-### Send test webhook
-```bash
-curl -X POST http://localhost:8082/webhook/BCfOq35nzwuqZfBcNxk5iQ \
-  -H "Content-Type: application/json" \
-  -d '{"recorder": "JT Test 2", "action": "buy", "ticker": "MNQ1!", "price": "25650.00"}'
-```
-
-### Check open trades
-```bash
-sqlite3 just_trades.db "SELECT * FROM recorded_trades WHERE status = 'open'"
-```
-
-### Check price streaming
-```bash
-grep "💰" /tmp/server.log | tail -10
-```
-
-### Update TradingView session
-```bash
-curl -X POST http://localhost:8082/api/tradingview/session \
-  -H "Content-Type: application/json" \
-  -d '{"sessionid": "NEW_ID", "sessionid_sign": "NEW_SIGN"}'
+git tag WORKING_DEC3_2025
+# To restore any file:
+git checkout WORKING_DEC3_2025 -- templates/manual_copy_trader.html
 ```
 
 ---
 
-## ⚠️ Protected Files (DO NOT MODIFY)
+## ✅ WHAT'S WORKING (DO NOT BREAK)
 
-- `templates/account_management.html` - LOCKED
-- Account management functions in `ultra_simple_server.py` - LOCKED
-- See `.cursorignore` and `TAB_ISOLATION_MAP.md`
+| Feature | Status | Files Involved |
+|---------|--------|----------------|
+| **Manual Trader** | ✅ Working | `manual_copy_trader.html`, server routes |
+| **Live Position Cards** | ✅ Working | WebSocket `position_update` event |
+| **Account PnL Display** | ✅ Working | `fetch_tradovate_pnl_sync()` |
+| **Recorders Tab** | ✅ Working | `recorders.html`, `recorders_list.html` |
+| **Webhook Signals** | ✅ Working | `/webhook/<token>` endpoint |
+| **Trade Recording** | ✅ Working | `recorded_signals`, `recorded_trades` tables |
+| **Dashboard** | ✅ Working | `dashboard.html` |
+| **Control Center** | ✅ Working | `control_center.html` |
+| **Account Management** | ✅ Working | `account_management.html` - NEVER TOUCH |
+| **Tradovate OAuth** | ✅ Working | OAuth flow in server |
+| **WebSocket Updates** | ✅ Working | `emit_realtime_updates()` |
+| **Copy Trading** | ✅ Working | Copy trader logic in manual trader |
 
 ---
 
-## 🔄 If Things Break
+## 📋 TAB ISOLATION RULES
 
-### TradingView WebSocket disconnects
-1. Get fresh cookies from Chrome DevTools → tradingview.com
-2. POST to `/api/tradingview/session`
+**When user says "work on X tab", ONLY modify files for that tab:**
 
-### Server won't start
-```bash
-python3 -m py_compile ultra_simple_server.py  # Check syntax
-tail -50 /tmp/server.log  # Check errors
+| Tab | Allowed Files |
+|-----|---------------|
+| Manual Trader | `manual_copy_trader.html`, `/api/manual-trade` route |
+| Recorders | `recorders.html`, `recorders_list.html`, recorder routes |
+| Dashboard | `dashboard.html`, dashboard API routes |
+| Control Center | `control_center.html`, control center routes |
+| Account Management | **NEVER TOUCH** - It's locked |
+| Settings | `settings.html` only |
+
+**🚨 NEVER modify files from OTHER tabs while working on one tab!**
+
+---
+
+## 🛠️ HOW TO MAKE SAFE CHANGES
+
+### Step 1: Ask Permission
+```
+"I need to modify [filename] to [do X]. Is this okay?"
 ```
 
-### No price updates
+### Step 2: Wait for User Approval
+Do not proceed until user says "yes" or "go ahead"
+
+### Step 3: Make ONE Small Change
+- Edit only the specific lines needed
+- Do not touch surrounding code
+- Do not "improve" other parts
+
+### Step 4: Test Immediately
+- Verify the feature works
+- Check server logs for errors
+- Confirm no regressions
+
+### Step 5: If Something Breaks
 ```bash
-grep "TradingView" /tmp/server.log | tail -20
+# Restore from backup
+cp backups/WORKING_STATE_DEC3_2025/[filename] templates/[filename]
+
+# Or use git
+git checkout WORKING_DEC3_2025 -- [filename]
 ```
 
 ---
 
-## 📈 Current Test Recorder
+## 🚫 PAST MISTAKES (LEARN FROM THESE)
 
-| Field | Value |
-|-------|-------|
-| ID | 3 |
-| Name | JT Test 2 |
-| Webhook Token | BCfOq35nzwuqZfBcNxk5iQ |
-| Position Size | 1 contract |
-| TP | 20 ticks |
-| SL | 20 ticks (enabled) |
+### Mistake 1: Bulk Refactoring
+**What happened**: AI "improved" working code, broke everything
+**Rule**: NEVER refactor working code
 
----
+### Mistake 2: Modifying Multiple Tabs
+**What happened**: AI fixed one tab but broke three others
+**Rule**: ONE TAB AT A TIME
 
-## 🎯 What's Next (Optional)
+### Mistake 3: Changing Database Schema
+**What happened**: AI added columns, broke existing queries
+**Rule**: NEVER change schema without approval
 
-1. **Close All Positions** - Button in Control Center
-2. **Historical Backfill** - Process old signals
-3. **Export to CSV** - Trade history download
-4. **Session Auto-Refresh** - Detect expired cookies
+### Mistake 4: Removing "Unused" Code
+**What happened**: AI removed code it thought was unused, broke features
+**Rule**: NEVER remove code you didn't write
 
----
-
-**Server Log:** `/tmp/server.log`  
-**Detailed Docs:** `RECORDERS_HANDOFF.md`  
-**Tab Rules:** `TAB_ISOLATION_MAP.md`
+### Mistake 5: Overwriting Backups
+**What happened**: AI overwrote backup with broken code
+**Rule**: NEVER modify backup files
 
 ---
 
-*Last Updated: December 3, 2025*
+## 📞 QUICK REFERENCE
+
+### Restore Working State
+```bash
+# Restore single file
+cp backups/WORKING_STATE_DEC3_2025/ultra_simple_server.py ./
+
+# Restore all templates
+cp backups/WORKING_STATE_DEC3_2025/*.html templates/
+
+# Full git restore
+git checkout WORKING_DEC3_2025
+```
+
+### Check Server Status
+```bash
+pgrep -f "python.*ultra_simple"  # Is server running?
+tail -50 /tmp/server.log         # Recent logs
+```
+
+### Restart Server
+```bash
+pkill -f "python.*ultra_simple"
+nohup python3 ultra_simple_server.py > /tmp/server.log 2>&1 &
+```
+
+---
+
+## 🔐 CHECKSUMS (Verify File Integrity)
+
+Run this to verify files haven't been corrupted:
+```bash
+md5 ultra_simple_server.py templates/*.html
+```
+
+Expected (Dec 3, 2025 working state):
+- Store checksums after confirming working state
+
+---
+
+## ⚠️ FINAL WARNING
+
+**This codebase has been broken multiple times by AI making unauthorized changes.**
+
+**EVERY CHANGE REQUIRES:**
+1. User permission
+2. Clear explanation of what will change
+3. Single-file, minimal edits
+4. Immediate testing
+5. Rollback plan ready
+
+**If in doubt, ASK THE USER FIRST.**
+
+---
+
+*Last updated: Dec 3, 2025 - All features confirmed working*
+*Backup tag: WORKING_DEC3_2025*

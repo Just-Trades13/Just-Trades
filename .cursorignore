@@ -1,44 +1,84 @@
-# Cursor Ignore - Protected Files
-# Files listed here should NOT be modified without explicit user permission
-# These are locked/protected files that are working and must be preserved
+# ⛔ CURSOR IGNORE - PROTECTED FILES ⛔
+# Files listed here should NOT be modified without EXPLICIT user permission
+# Last updated: Dec 3, 2025 - All features working
 
-# Account Management - LOCKED BASELINE
+# ============================================================
+# 🔒 LOCKED FILES - NEVER MODIFY WITHOUT ASKING
+# ============================================================
+
+# Account Management - ABSOLUTELY LOCKED - NEVER TOUCH
 templates/account_management.html
 
-# Core Backend - Protected Functions
-# Note: File can be modified, but account management functions are locked
-# ultra_simple_server.py - Account management functions protected
+# Backup Directory - NEVER MODIFY OR DELETE
+backups/
+backups/WORKING_STATE_DEC3_2025/
 
-# Core Integration - Protected Methods
-# Note: File can be modified, but core methods are locked
-# phantom_scraper/tradovate_integration.py - Core methods protected
+# ============================================================
+# ⚠️ PROTECTED FILES - ASK BEFORE MODIFYING
+# ============================================================
 
-# Documentation Snapshots - DO NOT MODIFY
+# Core Backend (Working - Dec 3, 2025)
+# ultra_simple_server.py
+
+# Templates (All Working - Dec 3, 2025)
+# templates/manual_copy_trader.html
+# templates/recorders.html
+# templates/recorders_list.html
+# templates/dashboard.html
+# templates/control_center.html
+
+# Core Integration
+# phantom_scraper/tradovate_integration.py
+
+# ============================================================
+# 📚 DOCUMENTATION - DO NOT MODIFY
+# ============================================================
+
+# Protection Documentation
+START_HERE.md
 ACCOUNT_MGMT_SNAPSHOT.md
 CURRENT_STATUS_SNAPSHOT.md
 WHAT_NOT_TO_DO.md
 PRE_CHANGE_CHECKLIST.md
+TAB_ISOLATION_MAP.md
 HANDOFF_DOCUMENT.md
 BACKUP_INDEX.md
-TAB_ISOLATION_MAP.md
 
-# Backup Directories - DO NOT MODIFY
-backups/
+# ============================================================
+# 💾 DATABASE FILES - NEVER MODIFY SCHEMA
+# ============================================================
 
-# Database Files - Handle with Care
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
+just_trades.db
+trading_webhook.db
 
-# Environment Files - Never Commit
+# ============================================================
+# 🔐 SENSITIVE FILES - NEVER COMMIT
+# ============================================================
+
 .env
 .env.local
 .env.*.local
+*.pem
+*.key
+*_secret*
+*_token*
 
-# Log Files
+# ============================================================
+# 📝 LOG FILES
+# ============================================================
+
 *.log
 server.log
 ngrok.log
+/tmp/*.log
+
+# ============================================================
+# 🗑️ CACHE & BUILD FILES
+# ============================================================
 
 # Python Cache
 __pycache__/
@@ -46,11 +86,15 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+*.egg-info/
+dist/
+build/
 
 # Virtual Environment
 venv/
 env/
 ENV/
+.venv/
 
 # IDE Files
 .vscode/
@@ -62,10 +106,32 @@ ENV/
 # OS Files
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Temporary Files
 *.tmp
 *.temp
 *.bak
 *.backup
+*.orig
 
+# ============================================================
+# 🔄 SESSION FILES
+# ============================================================
+
+.frolic-session.json
+.frolic-backup-*.json
+*.session
+
+# ============================================================
+# RESTORE COMMANDS (for reference)
+# ============================================================
+# 
+# To restore working state:
+#   cp backups/WORKING_STATE_DEC3_2025/* ./
+#   cp backups/WORKING_STATE_DEC3_2025/*.html templates/
+# 
+# Or use git:
+#   git checkout WORKING_DEC3_2025 -- <filename>
+#
+# ============================================================

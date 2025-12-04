@@ -1,205 +1,154 @@
-# What NOT To Do - Lessons Learned
+# ⛔ WHAT NOT TO DO - LEARN FROM PAST MISTAKES ⛔
 
-## ⚠️ CRITICAL: READ THIS BEFORE MAKING ANY CHANGES
+## This file documents ALL mistakes that have broken this codebase.
+## READ THIS BEFORE MAKING ANY CHANGES.
 
-**BEFORE making ANY changes to working code, you MUST:**
-1. Read this entire document
-2. Read PRE_CHANGE_CHECKLIST.md
-3. Verify the problem actually exists
-4. Check that your planned change is NOT on the "don't do" list below
+---
 
-**The user cannot afford to break working code. This is not optional.**
+## ❌ MISTAKE 1: Bulk Refactoring Working Code
 
-## Critical Rule: Don't Fix What Isn't Broken
+**What happened:**
+AI decided to "improve" code formatting, variable names, and structure across multiple files.
+Result: Broke working features, introduced bugs, lost critical functionality.
 
-### The Problem
-When the manual trader was working correctly, unnecessary changes were made that broke functionality. This document records what NOT to do.
+**Rule:** 
+NEVER refactor code that is working. If it works, leave it alone.
 
-## What Broke Things (November 2025)
+---
 
-### 1. ❌ DON'T: Add Unnecessary Error Handling
-**What I Did:**
-- Added verbose error messages for environment-specific tokens
-- Added checks for 401/403 errors with different logging
-- Changed error handling to be "smarter" about token environments
+## ❌ MISTAKE 2: Modifying Multiple Tabs at Once
 
-**Why It Broke:**
-- The code was already handling errors correctly
-- The extra logic added complexity and potential failure points
-- The original simple error handling was sufficient
+**What happened:**
+User asked to fix something in Manual Trader tab.
+AI also "helpfully" modified Dashboard and Control Center "to be consistent."
+Result: Manual Trader fixed, but Dashboard and Control Center broken.
 
-**Lesson:** If error handling is working, don't "improve" it.
+**Rule:**
+ONE TAB AT A TIME. Only modify files belonging to the tab user requested.
 
-### 2. ❌ DON'T: Change Working Token Endpoint Order
-**What I Did:**
-- Changed token endpoint order to prioritize demo first
-- Added comments about environment-specific tokens
-- Modified the fallback logic
+---
 
-**Why It Broke:**
-- The original order was working fine
-- The token exchange was already succeeding
-- Changing the order didn't solve any actual problem
+## ❌ MISTAKE 3: Changing Database Schema
 
-**Lesson:** If token exchange is working, don't change the endpoint order.
+**What happened:**
+AI added new columns to database tables without asking.
+Result: Existing queries failed, data lost, features broken.
 
-### 3. ❌ DON'T: Add Verbose Logging/Comments That Change Behavior
-**What I Did:**
-- Added extensive comments about "environment-specific tokens"
-- Added logging that changed how errors were reported
-- Modified error messages to be more "helpful"
+**Rule:**
+NEVER modify database schema without explicit user approval.
 
-**Why It Broke:**
-- The comments suggested a problem that didn't exist
-- The logging changes affected how errors were handled
-- The original simple logging was sufficient
+---
 
-**Lesson:** Comments and logging should document, not change behavior.
+## ❌ MISTAKE 4: Removing "Unused" Code
 
-### 4. ❌ DON'T: Try to "Fix" Things That Aren't Broken
-**What I Did:**
-- Saw "No demo accounts found" in logs and tried to "fix" it
-- Assumed the token was environment-specific and needed special handling
-- Added logic to handle "environment-specific tokens"
+**What happened:**
+AI identified code it thought was "dead" or "unused" and removed it.
+Result: That code was actually used by other parts of the system. Features broke.
 
-**Why It Broke:**
-- The accounts were already in the database correctly
-- The UI was already displaying them correctly
-- The "problem" was a misunderstanding, not an actual issue
+**Rule:**
+NEVER remove code you didn't write. Even if it looks unused, it might be used elsewhere.
 
-**Lesson:** Verify there's actually a problem before trying to fix it.
+---
 
-### 5. ❌ DON'T: Make Multiple Changes at Once
-**What I Did:**
-- Changed error handling
-- Changed token endpoint order
-- Changed logging
-- Changed account fetching logic
-- All in the same session
+## ❌ MISTAKE 5: Making Unauthorized Changes
 
-**Why It Broke:**
-- Hard to identify which change caused the problem
-- Made it difficult to revert
-- Broke multiple things at once
+**What happened:**
+AI made changes without asking user first.
+Result: Working features broke, user had to spend hours debugging.
 
-**Lesson:** Make one small change at a time, test, then proceed.
+**Rule:**
+ALWAYS ask before modifying any file. Wait for explicit "yes" before proceeding.
 
-### 6. ❌ DON'T: Over-Complicate Working Code with Excessive Logging and Error Handling
-**What I Did:**
-- Added extensive console logging throughout `loadAccountsForManualTrader()`
-- Added multiple try-catch blocks and error checks
-- Added complex parsing logic for different data types
-- Added fallback safety checks and warnings
-- Added verbose field name variations (Name, name, accountId, id, Id)
+---
 
-**Why It Broke:**
-- The original simple code was working fine
-- The API already returns data in the correct format (array)
-- Excessive logging and error handling added complexity and potential failure points
-- The simple version that just checks `Array.isArray()` and uses the data directly works perfectly
+## ❌ MISTAKE 6: Overwriting Backup Files
 
-**What Was Actually Working:**
-- Simple function that fetches accounts, filters for connected ones, and adds them to dropdown
-- API returns `tradovate_accounts` as an array - no parsing needed
-- Simple `forEach` loop to add options works perfectly
+**What happened:**
+AI "helpfully" updated backup files with "current" code.
+Result: Backups now contained broken code, no way to restore.
 
-**The Fix:**
-- Restored to simple version: fetch, filter, loop, add options
-- Removed all excessive logging and error handling
-- Trust that the API returns correct data format
-- Keep it simple - if it works, don't "improve" it
+**Rule:**
+NEVER modify or overwrite backup files in backups/ directory.
 
-**Lesson:** Simple code that works is better than complex code with extensive error handling. Don't add logging and error handling "just in case" - only add it when there's an actual problem to debug.
+---
 
-### 7. ❌ DON'T: Remove Working Code Without Understanding What It Does
-**What Happened:**
-- Another context window removed ALL the JavaScript functions from `control_center.html`
-- Removed account dropdown, strategy dropdown, ticker dropdown IDs
-- Removed all button IDs and event handlers
-- Removed toast notification system
-- Removed position tracking
-- Removed ALL manual trading functionality
+## ❌ MISTAKE 7: Changing Core Functions
 
-**Why It Broke:**
-- The code was working perfectly - manual trader was placing orders successfully
-- Removing IDs broke all JavaScript selectors
-- Removing functions broke all functionality
-- The file went from ~900 lines to ~180 lines - lost 80% of working code
+**What happened:**
+AI modified core functions like fetch_tradovate_pnl_sync() to "improve" them.
+Result: Live positions stopped displaying, PnL calculations broke.
 
-**The Fix:**
-- Had to restore entire file from scratch
-- Rebuilt all JavaScript functions
-- Restored all HTML IDs and structure
-- Restored toast notification system
+**Rule:**
+NEVER modify core functions without explicit approval and thorough testing.
 
-**Lesson:** NEVER remove code that's working. If you don't understand what code does, ASK or READ the handoff document first. The handoff document clearly states what's working - don't break it.
+---
 
-## What Was Actually Working
+## ❌ MISTAKE 8: Ignoring Tab Isolation
 
-### ✅ Manual Trader
-- Symbol conversion (MNQ1! → MNQZ5) was working
-- Order placement was working
-- Token refresh was working
-- Account selection was working
+**What happened:**
+AI modified templates/account_management.html while working on Manual Trader.
+Result: Account management completely broke, tokens stopped saving.
 
-### ✅ Account Display
-- Both demo and live accounts were stored in database
-- Both accounts were displayed in UI
-- Account merging logic was preserving both accounts
+**Rule:**
+STRICT TAB ISOLATION. Only modify files for the tab you're working on.
 
-### ✅ Token Exchange
-- Token exchange was working for both demo and live
-- Token refresh was working
-- Token validation was working (with warnings, not errors)
+---
 
-## The Root Cause
+## ❌ MISTAKE 9: Adding "Helpful" Features
 
-**The real issue:** I saw logs saying "No demo accounts found" and assumed there was a problem. But:
-1. The accounts were already in the database
-2. The UI was already showing them
-3. The "No demo accounts found" was just a log message during fetch, not an error
+**What happened:**
+AI added features it thought would be helpful, but were not requested.
+Result: New features conflicted with existing ones, broke working functionality.
 
-**The fix:** I should have verified the actual state before making changes.
+**Rule:**
+ONLY implement what user explicitly requests. No "bonus" features.
 
-## Rules Going Forward
+---
 
-1. **Verify the problem exists** before trying to fix it
-2. **Check the database** to see actual data state
-3. **Check the UI** to see what users actually see
-4. **Don't change working code** unless explicitly asked
-5. **Make one small change at a time** and test
-6. **Revert immediately** if something breaks
-7. **Document what works** so we can restore it
+## ❌ MISTAKE 10: Not Testing After Changes
 
-## How to Avoid This
+**What happened:**
+AI made changes and declared them "done" without verifying they worked.
+Result: User discovered broken features later.
 
-1. **Ask the user** what they're seeing before making changes
-2. **Check logs** to understand the actual state
-3. **Test in browser** to see what users see
-4. **Check database** to verify data state
-5. **Make minimal changes** - only what's needed
-6. **Test after each change** before proceeding
+**Rule:**
+ALWAYS verify changes work before declaring them complete.
 
-## When to Make Changes
+---
 
-✅ **DO make changes when:**
-- User explicitly reports a problem
-- Code has a clear bug (error, exception, wrong output)
-- User requests a new feature
-- Security issue is identified
+## ✅ WHAT TO DO INSTEAD
 
-❌ **DON'T make changes when:**
-- Logs show warnings but everything works
-- Code is working but "could be better"
-- You think something "might" be wrong
-- User hasn't reported any issues
+1. **ASK FIRST**: "Can I modify [file] to [do X]?"
+2. **WAIT FOR APPROVAL**: Do not proceed until user says yes
+3. **MAKE ONE CHANGE**: Single file, single purpose
+4. **TEST IMMEDIATELY**: Verify the change works
+5. **REPORT RESULTS**: Tell user if it worked or failed
+6. **IF BROKEN, RESTORE**: Use backups, do not try to "fix" blindly
 
-## Recovery Process
+---
 
-When something breaks:
-1. **Stop making changes immediately**
-2. **Revert to last known working state**
-3. **Identify what changed**
-4. **Document what broke**
-5. **Only then** make minimal fixes if needed
+## 🔧 RECOVERY PROCEDURE
 
+If you broke something:
+
+1. STOP making changes
+2. Tell user what you broke
+3. Restore from backup:
+   cp backups/WORKING_STATE_DEC3_2025/[broken_file] ./
+   OR
+   git checkout WORKING_DEC3_2025 -- [broken_file]
+4. Restart server if needed
+5. Verify restoration worked
+
+---
+
+## 📅 WORKING STATE BACKUPS
+
+| Date | Tag/Location | Status |
+|------|--------------|--------|
+| Dec 3, 2025 | backups/WORKING_STATE_DEC3_2025/ | ✅ All features working |
+| Dec 3, 2025 | git tag WORKING_DEC3_2025 | ✅ All features working |
+
+---
+
+*Last updated: Dec 3, 2025*
