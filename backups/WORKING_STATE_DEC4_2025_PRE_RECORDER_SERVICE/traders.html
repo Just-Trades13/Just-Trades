@@ -1,0 +1,492 @@
+{% extends "layout.html" %}
+{% block title %}My Traders - Just.Trades.{% endblock %}
+{% block page_title %}MY TRADERS{% endblock %}
+{% block content %}
+<div class="traders-wrapper">
+    {% if mode == 'list' %}
+    <section class="list-header">
+        <input type="text" placeholder="Search strategy...">
+        <a class="btn btn-primary" href="/traders/new">Create Trader</a>
+    </section>
+    <table class="trader-table">
+        <thead>
+            <tr>
+                <th>ACTIONS</th>
+                <th>STRATEGY</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for trader in traders %}
+            <tr>
+                <td class="actions">
+                    <a href="/traders/{{ trader.id }}" title="Edit"><span class="material-icons">edit</span></a>
+                    <a href="#" title="Clone"><span class="material-icons">loop</span></a>
+                    <a href="#" title="Delete"><span class="material-icons">close</span></a>
+                </td>
+                <td><a class="strategy-link" href="/traders/{{ trader.id }}">{{ trader.name }}</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <footer class="pager">
+        <button disabled>‹</button>
+        <span class="page-pill">1</span>
+        <button>›</button>
+    </footer>
+    {% else %}
+    <section class="builder-header">
+        <div>
+            <h1>{{ header_title }}</h1>
+            <span class="chip">TRADER</span>
+            <p>Use this interface to configure your trading trader, including position sizing, SLTP rules, and account routing.</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-primary">{{ header_cta }}</button>
+            <a class="link-button" href="#">Help</a>
+        </div>
+    </section>
+
+    <section class="builder-alert builder-alert--error">
+        <strong>⚠ PLEASE FIX THE FOLLOWING ISSUES:</strong>
+        <ul>
+            <li>Strategy name is required.</li>
+            <li>At least one account must be enabled.</li>
+        </ul>
+    </section>
+
+    <section class="builder-form">
+        <label class="form-field">
+            <span>Strategy Name</span>
+            <div class="select-shell">
+                <select>
+                    <option>Select strategy...</option>
+                    {% for name in strategy_names %}
+                    <option>{{ name }}</option>
+                    {% endfor %}
+                </select>
+                <span class="material-icons">expand_more</span>
+            </div>
+        </label>
+        <label class="form-field">
+            <span>Strategy Type</span>
+            <div class="select-shell">
+                <select>
+                    <option>Stock</option>
+                    <option>Futures</option>
+                    <option>Crypto</option>
+                </select>
+                <span class="material-icons">expand_more</span>
+            </div>
+        </label>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> Hide Account Routing (Required)</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <table class="account-routing">
+                    <thead>
+                        <tr>
+                            <th>ACCOUNT</th>
+                            <th>ENABLE</th>
+                            <th>MAX CONS</th>
+                            <th>CUSTOM TICKER</th>
+                            <th>MULTIPLIER</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in accounts %}
+                        <tr>
+                            <td>{{ account }}</td>
+                            <td>
+                                <label class="switch">
+                                    <input type="checkbox">
+                                    <span class="slider"></span>
+                                </label>
+                            </td>
+                            <td><input type="number" value="0"></td>
+                            <td><input type="text" placeholder="DISABLED"></td>
+                            <td><input type="number" value="1"></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> Hide Positional Settings</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Initial Position Size</span>
+                        <input type="number" value="1">
+                    </label>
+                    <label class="form-field">
+                        <span>Add Position Size</span>
+                        <input type="number" value="1">
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Stop Loss / Take Profit Settings (Optional)</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body collapsed-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>TP Units</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>Ticks</option>
+                                <option>Points</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="form-field">
+                        <span>Trim Units</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>Contracts</option>
+                                <option>Percent</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <button class="btn btn-outline btn-small">+ Add TP</button>
+                <div class="tp-row">
+                    <span class="tp-pill">TP #1</span>
+                    <label class="form-field">
+                        <span>TP Value</span>
+                        <input type="number" value="0">
+                    </label>
+                    <label class="form-field">
+                        <span>Trim %</span>
+                        <input type="number" value="0">
+                        <small>This TP is disabled.</small>
+                    </label>
+                    <button class="icon-btn" type="button"><span class="material-icons">delete</span></button>
+                </div>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Stop Loss</span>
+                    <span class="tag tag-disabled">Disabled</span>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Stop Loss Amount</span>
+                        <input type="number" value="0">
+                    </label>
+                    <label class="form-field">
+                        <span>SL Units</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>Ticks</option>
+                                <option>Points</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>SL Type</span>
+                    <div class="select-shell">
+                        <select>
+                            <option>Fixed</option>
+                            <option>Trail</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Averaging Down</span>
+                    <span class="tag tag-disabled">Disabled</span>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Average Down Amount</span>
+                        <input type="number" value="1">
+                    </label>
+                    <label class="form-field">
+                        <span>Average Down Point</span>
+                        <input type="number" value="0">
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Avg Down Unit</span>
+                    <div class="select-shell">
+                        <select>
+                            <option>Ticks</option>
+                            <option>Points</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
+            </div>
+        </section>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Filter Settings (Optional)</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body collapsed-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Ticker</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>ALL</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="form-field">
+                        <span>Timeframe</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>ALL</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Add Delay</span>
+                        <input type="number" value="1">
+                        <small>Currently disabled</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Max Contracts Per Trade</span>
+                        <input type="number" value="0">
+                        <small>Unlimited contracts (no limit)</small>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Option Premium Filter</span>
+                    <input type="number" value="0">
+                    <small>Currently disabled</small>
+                </label>
+                <label class="form-field">
+                    <span>Direction Filter</span>
+                    <div class="select-shell">
+                        <select>
+                            <option>Select a strategy...</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
+                <div class="time-filters">
+                    <div class="time-block">
+                        <h4>Time Filter #1</h4>
+                        <div class="time-grid">
+                            <label class="form-field">
+                                <span>Start #1</span>
+                                <div class="time-shell">
+                                    <input type="number" value="8">
+                                    <span>:</span>
+                                    <input type="number" value="45">
+                                    <select>
+                                        <option>AM</option>
+                                        <option>PM</option>
+                                    </select>
+                                </div>
+                            </label>
+                            <label class="form-field">
+                                <span>Stop #1</span>
+                                <div class="time-shell">
+                                    <input type="number" value="1">
+                                    <span>:</span>
+                                    <input type="number" value="45">
+                                    <select>
+                                        <option>PM</option>
+                                        <option>AM</option>
+                                    </select>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="time-block">
+                        <h4>Time Filter #2</h4>
+                        <div class="time-grid">
+                            <label class="form-field">
+                                <span>Start #2</span>
+                                <div class="time-shell">
+                                    <input type="number" value="12">
+                                    <span>:</span>
+                                    <input type="number" value="30">
+                                    <select>
+                                        <option>PM</option>
+                                        <option>AM</option>
+                                    </select>
+                                </div>
+                            </label>
+                            <label class="form-field">
+                                <span>Stop #2</span>
+                                <div class="time-shell">
+                                    <input type="number" value="3">
+                                    <span>:</span>
+                                    <input type="number" value="15">
+                                    <select>
+                                        <option>PM</option>
+                                        <option>AM</option>
+                                    </select>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Miscellaneous Settings</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body collapsed-body">
+                <label class="form-field">
+                    <span>Nickname</span>
+                    <input type="text" placeholder="Example nickname">
+                </label>
+                <label class="form-field">
+                    <span>Strategy Description</span>
+                    <textarea rows="3" placeholder="Optional. Max 200 characters."></textarea>
+                </label>
+                <label class="form-field">
+                    <span>Discord Channel</span>
+                    <input type="text" placeholder="#alerts-channel">
+                </label>
+                <div class="toggle-row">
+                    <span>Private</span>
+                    <label class="switch">
+                        <input type="checkbox" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-row">
+                    <span>Manual Strategy</span>
+                    <label class="switch">
+                        <input type="checkbox">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-row">
+                    <span>Inverse Strat</span>
+                    <label class="switch">
+                        <input type="checkbox">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </section>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
+{% block styles %}
+<style>
+    .traders-wrapper { display: grid; gap: 1.5rem; }
+    .list-header { display: flex; align-items: center; gap: 1rem; background: rgba(11,18,33,0.9); border: 1px solid rgba(148,163,184,0.12); border-radius: 16px; padding: 1rem 1.25rem; }
+    .list-header input { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.2); border-radius: 10px; color: #e2e8f0; padding: 0.65rem 0.85rem; flex: 1; }
+    .btn { border: none; border-radius: 12px; padding: 0.65rem 1.4rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+    .btn-primary { background: linear-gradient(135deg, #60a5fa, #2563eb); color: #0b1120; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
+    .trader-table { width: 100%; border-collapse: collapse; background: rgba(7,12,23,0.92); border: 1px solid rgba(148,163,184,0.12); border-radius: 16px; overflow: hidden; }
+    thead th { text-align: left; padding: 0.85rem 1rem; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: #94a3b8; border-bottom: 1px solid rgba(148,163,184,0.12); }
+    tbody td { padding: 0.95rem 1rem; border-bottom: 1px solid rgba(148,163,184,0.08); color: #e2e8f0; }
+    tbody tr:last-child td { border-bottom: none; }
+    .actions { display: flex; gap: 0.75rem; }
+    .actions a { color: rgba(148,163,184,0.8); text-decoration: none; }
+    .actions a:hover { color: #60a5fa; }
+    .strategy-link { color: #60a5fa; text-decoration: none; font-weight: 600; }
+    .strategy-link:hover { text-decoration: underline; }
+    .pager { display: flex; align-items: center; gap: 0.75rem; justify-content: center; padding: 0.75rem; }
+    .pager button { background: rgba(15,23,42,0.6); border: 1px solid rgba(148,163,184,0.2); border-radius: 10px; color: #cbd5f5; padding: 0.4rem 0.75rem; cursor: pointer; }
+    .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .page-pill { background: rgba(236,72,153,0.6); color: white; border-radius: 999px; padding: 0.4rem 0.75rem; font-weight: 600; }
+
+    .builder-header { background: rgba(11,18,33,0.92); border-radius: 18px; border: 1px solid rgba(59,130,246,0.25); padding: 1.75rem; display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; }
+    .builder-header h1 { margin: 0; font-size: 2rem; }
+    .chip { padding: 0.25rem 0.75rem; border-radius: 999px; background: rgba(59,130,246,0.25); color: #bfdbfe; font-size: 0.75rem; letter-spacing: 0.1em; }
+    .header-actions { display: flex; gap: 0.75rem; align-items: center; }
+    .link-button { color: #60a5fa; text-decoration: none; font-weight: 600; }
+    .builder-alert { border-radius: 14px; padding: 1rem 1.2rem; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: #fca5a5; }
+    .builder-alert ul { margin: 0; padding-left: 1.25rem; }
+    .builder-form { display: grid; gap: 1.5rem; }
+    .form-field { display: grid; gap: 0.35rem; color: var(--text-muted); font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    input, select, textarea { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.25); border-radius: 12px; color: #e2e8f0; padding: 0.6rem 0.75rem; font-size: 0.95rem; }
+    textarea { resize: vertical; }
+    .select-shell { position: relative; }
+    .select-shell select { width: 100%; appearance: none; }
+    .select-shell .material-icons { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); font-size: 1rem; color: var(--text-muted); pointer-events: none; }
+
+    .card-panel { background: rgba(8,12,24,0.92); border: 1px solid rgba(59,130,246,0.18); border-radius: 16px; overflow: hidden; }
+    .card-panel header { background: rgba(37,99,235,0.3); padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; }
+    .panel-toggle { background: none; border: none; color: #e0ecff; display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; }
+    .panel-toggle .material-icons { transition: transform 0.2s ease; }
+    .panel-help { color: #93c5fd; text-decoration: none; font-size: 0.8rem; }
+    .panel-body { padding: 1.2rem 1.4rem; display: block; }
+    .card-panel.collapsed .panel-body { display: none; }
+    .card-panel.collapsed .panel-toggle .material-icons { transform: rotate(0deg); }
+    .form-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .account-routing { width: 100%; border-collapse: collapse; background: rgba(5,10,20,0.8); border-radius: 12px; overflow: hidden; }
+    .account-routing thead th { text-align: left; padding: 0.75rem; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: #94a3b8; border-bottom: 1px solid rgba(148,163,184,0.12); }
+    .account-routing tbody td { padding: 0.75rem; border-bottom: 1px solid rgba(148,163,184,0.08); }
+    .account-routing tbody tr:last-child td { border-bottom: none; }
+    .switch { position: relative; display: inline-block; width: 48px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; background: rgba(148,163,184,0.3); border-radius: 24px; transition: .2s; }
+    .slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 4px; bottom: 3px; background: #0b1120; border-radius: 50%; transition: .2s; }
+    .switch input:checked + .slider { background: rgba(16,185,129,0.7); }
+    .switch input:checked + .slider:before { transform: translateX(22px); }
+    .tp-row { display: grid; grid-template-columns: auto repeat(2, minmax(0,1fr)) auto; gap: 0.75rem; align-items: center; background: rgba(30,41,59,0.6); border-radius: 10px; padding: 0.75rem; margin-top: 0.75rem; }
+    .tp-pill { background: rgba(59,130,246,0.35); color: #dbeafe; border-radius: 999px; padding: 0.3rem 0.75rem; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .icon-btn { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.35); color: #fca5a5; border-radius: 10px; padding: 0.45rem; cursor: pointer; }
+    .separator { height: 1px; background: rgba(148,163,184,0.2); margin: 0.75rem 0; }
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; }
+    .tag { padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .tag-disabled { background: rgba(248,172,28,0.15); color: #facc15; }
+
+    .time-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .time-block { background: rgba(5,10,20,0.8); border: 1px solid rgba(148,163,184,0.2); border-radius: 12px; padding: 1rem; display: grid; gap: 0.75rem; }
+    .time-grid { display: grid; gap: 0.75rem; }
+    .time-shell { display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; padding: 0.4rem 0.65rem; }
+    .time-shell input { width: 3rem; border: none; background: transparent; text-align: center; }
+    .time-shell select { border: none; background: transparent; color: #e2e8f0; }
+
+    .toggle-row .switch { margin-left: auto; }
+
+    @media (max-width: 900px) {
+        .builder-header { flex-direction: column; align-items: flex-start; }
+    }
+}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('[data-panel]').forEach(function(panel) {
+            const toggle = panel.querySelector('.panel-toggle');
+            if (!toggle) return;
+            toggle.addEventListener('click', function () {
+                panel.classList.toggle('collapsed');
+                const icon = toggle.querySelector('.material-icons');
+                if (icon) {
+                    icon.textContent = panel.classList.contains('collapsed') ? 'add' : 'remove';
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

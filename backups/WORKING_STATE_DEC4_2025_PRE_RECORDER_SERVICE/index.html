@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{% block title %}Just.Trades.{% endblock %}
+{% block page_title %}Welcome{% endblock %}
+{% block content %}
+<div style="padding:2rem;">
+    <h1 style="margin-top:0;">Just.Trades. Workspace</h1>
+    <p>This root view now redirects to the full dashboard experience.</p>
+    <a class="btn btn-primary" href="/dashboard">Go to Dashboard</a>
+</div>
+{% endblock %}
+{% block styles %}
+<style>
+    .btn {
+        display: inline-block;
+        margin-top: 1rem;
+        padding: 0.75rem 1.5rem;
+        border-radius: 10px;
+        background: var(--primary-color);
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+{% block scripts %}{% endblock %}
