@@ -910,6 +910,28 @@ def init_db():
         ON recorded_trades(entry_time)
     ''')
     
+    # Traders table - links recorders to accounts for live trading
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS traders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recorder_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (recorder_id) REFERENCES recorders(id) ON DELETE CASCADE,
+            FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+            UNIQUE(recorder_id, account_id)
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_traders_recorder 
+        ON traders(recorder_id)
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_traders_account 
+        ON traders(account_id)
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -2369,6 +2391,176 @@ def api_get_recorder_webhook(recorder_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ============================================================
+# TRADERS API ENDPOINTS (links recorders to accounts)
+# ============================================================
+
+@app.route('/api/traders', methods=['GET'])
+def api_get_traders():
+    """Get all traders (recorder-account links) with joined data"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                t.id,
+                t.recorder_id,
+                t.account_id,
+                t.enabled,
+                t.created_at,
+                r.name as recorder_name,
+                r.strategy_type,
+                r.initial_position_size,
+                r.symbol,
+                a.name as account_name,
+                a.broker
+            FROM traders t
+            JOIN recorders r ON t.recorder_id = r.id
+            JOIN accounts a ON t.account_id = a.id
+            ORDER BY t.created_at DESC
+        ''')
+        
+        traders = []
+        for row in cursor.fetchall():
+            traders.append({
+                'id': row['id'],
+                'recorder_id': row['recorder_id'],
+                'account_id': row['account_id'],
+                'enabled': bool(row['enabled']),
+                'created_at': row['created_at'],
+                'name': row['recorder_name'],
+                'strategy_type': row['strategy_type'],
+                'position_size': row['initial_position_size'],
+                'symbol': row['symbol'],
+                'account_name': row['account_name'],
+                'broker': row['broker']
+            })
+        
+        conn.close()
+        return jsonify({'success': True, 'traders': traders})
+        
+    except Exception as e:
+        logger.error(f"Error getting traders: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/traders', methods=['POST'])
+def api_create_trader():
+    """Create a new trader (link recorder to account)"""
+    try:
+        data = request.get_json()
+        recorder_id = data.get('recorder_id')
+        account_id = data.get('account_id')
+        
+        if not recorder_id or not account_id:
+            return jsonify({'success': False, 'error': 'recorder_id and account_id are required'}), 400
+        
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Verify recorder exists
+        cursor.execute('SELECT id, name FROM recorders WHERE id = ?', (recorder_id,))
+        recorder = cursor.fetchone()
+        if not recorder:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        # Verify account exists
+        cursor.execute('SELECT id, name FROM accounts WHERE id = ?', (account_id,))
+        account = cursor.fetchone()
+        if not account:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+        
+        # Check if link already exists
+        cursor.execute('SELECT id FROM traders WHERE recorder_id = ? AND account_id = ?', (recorder_id, account_id))
+        existing = cursor.fetchone()
+        if existing:
+            conn.close()
+            return jsonify({'success': False, 'error': 'This recorder is already linked to this account'}), 400
+        
+        # Create the trader link
+        cursor.execute('''
+            INSERT INTO traders (recorder_id, account_id, enabled)
+            VALUES (?, ?, 1)
+        ''', (recorder_id, account_id))
+        
+        trader_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Created trader {trader_id}: recorder '{recorder['name']}' -> account '{account['name']}'")
+        
+        return jsonify({
+            'success': True,
+            'trader_id': trader_id,
+            'message': f"Linked '{recorder['name']}' to '{account['name']}'"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating trader: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/traders/<int:trader_id>', methods=['PUT'])
+def api_update_trader(trader_id):
+    """Update a trader (enable/disable)"""
+    try:
+        data = request.get_json()
+        
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        
+        # Check trader exists
+        cursor.execute('SELECT id FROM traders WHERE id = ?', (trader_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Trader not found'}), 404
+        
+        # Update enabled status if provided
+        if 'enabled' in data:
+            enabled = 1 if data['enabled'] else 0
+            cursor.execute('UPDATE traders SET enabled = ? WHERE id = ?', (enabled, trader_id))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Updated trader {trader_id}")
+        return jsonify({'success': True, 'message': 'Trader updated'})
+        
+    except Exception as e:
+        logger.error(f"Error updating trader {trader_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/traders/<int:trader_id>', methods=['DELETE'])
+def api_delete_trader(trader_id):
+    """Delete a trader (unlink recorder from account)"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        
+        # Check trader exists
+        cursor.execute('SELECT id FROM traders WHERE id = ?', (trader_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Trader not found'}), 404
+        
+        cursor.execute('DELETE FROM traders WHERE id = ?', (trader_id,))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Deleted trader {trader_id}")
+        return jsonify({'success': True, 'message': 'Trader deleted'})
+        
+    except Exception as e:
+        logger.error(f"Error deleting trader {trader_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============================================================
 # HIGH-PERFORMANCE SIGNAL PROCESSOR (Background Thread)
 # ============================================================
 
@@ -3359,25 +3551,71 @@ def api_get_all_recorders_pnl():
 
 @app.route('/traders')
 def traders_list():
-    demo_traders = [
-        {'id': idx, 'name': name}
-        for idx, name in enumerate(['JADDCAVIXES', 'JADES', 'JADIND50', 'JADNQ'], start=1)
-    ]
+    # Fetch real traders from database (recorder-account links)
+    conn = sqlite3.connect('just_trades.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT t.id, r.name
+        FROM traders t
+        JOIN recorders r ON t.recorder_id = r.id
+        ORDER BY t.created_at DESC
+    ''')
+    
+    traders = [{'id': row['id'], 'name': row['name']} for row in cursor.fetchall()]
+    conn.close()
+    
     return render_template(
         'traders.html',
         mode='list',
-        traders=demo_traders
+        traders=traders
     )
+
+@app.route('/my-traders')
+def my_traders():
+    """My Traders page - link recorders to accounts"""
+    return render_template('my_traders_tab.html')
 
 @app.route('/traders/new')
 def traders_new():
-    accounts = ['1302271','1367612','1381296','1393592','1492972','1503862','1523896','1536745','DEMO3890283','DEMO4419847-2','DEMO5253444']
+    # Fetch real recorders from database
+    conn = sqlite3.connect('just_trades.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Get recorder names for strategy dropdown
+    cursor.execute('SELECT name FROM recorders ORDER BY name')
+    strategy_names = [row['name'] for row in cursor.fetchall()]
+    
+    # Get accounts with their tradovate_accounts for account routing
+    cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+    accounts = []
+    for row in cursor.fetchall():
+        parent_name = row['name']
+        # Parse tradovate_accounts JSON if available
+        if row['tradovate_accounts']:
+            try:
+                tradovate_accts = json.loads(row['tradovate_accounts'])
+                for acct in tradovate_accts:
+                    if isinstance(acct, dict) and acct.get('name'):
+                        # Format: "ParentName - AccountNumber (DEMO/LIVE)"
+                        env = "DEMO" if acct.get('is_demo') else "LIVE"
+                        accounts.append(f"{parent_name} - {acct['name']} ({env})")
+            except:
+                pass
+        # Fallback to account name if no tradovate_accounts
+        if not accounts:
+            accounts.append(parent_name)
+    
+    conn.close()
+    
     return render_template(
         'traders.html',
         mode='builder',
         header_title='Create New Trader',
         header_cta='Create Trader',
-        strategy_names=['JADDCAVIX','JADES','JADIND50','JADNQ'],
+        strategy_names=strategy_names,
         accounts=accounts
     )
 

@@ -529,11 +529,11 @@
             if (data.success) {
                 loadAccounts();
             } else {
-                alert('Error refreshing subaccounts: ' + (data.error || 'Unknown error'));
+                showAcctToast('Error refreshing subaccounts: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (error) {
             console.error('Error refreshing subaccounts:', error);
-            alert('Error refreshing subaccounts: ' + error.message);
+            showAcctToast('Error refreshing subaccounts: ' + error.message, 'error');
         } finally {
             buttonEl.classList.remove('loading');
             buttonEl.innerHTML = originalLabel;

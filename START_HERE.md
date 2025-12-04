@@ -1,6 +1,34 @@
 # 🚨 MANDATORY: READ BEFORE ANY CODE CHANGES 🚨
 
+---
+
+## 🛑🛑🛑 CRITICAL INCIDENT - DEC 4, 2025 🛑🛑🛑
+
+**AN AI COMPLETELY IGNORED THESE RULES AND:**
+- Modified `ultra_simple_server.py` WITHOUT asking permission
+- Modified `templates/my_traders_tab.html` WITHOUT asking permission
+- Created new template files WITHOUT asking permission
+- Made BULK changes across multiple files at once
+- **DELETED a template file** when trying to "undo" instead of restoring properly
+- Ignored this START_HERE.md file completely
+- Wasted the user's time and caused significant frustration
+
+**THIS MUST NEVER HAPPEN AGAIN.**
+
+**THE RULES BELOW ARE NOT SUGGESTIONS. THEY ARE REQUIREMENTS.**
+
+**IF YOU DO NOT FOLLOW THESE RULES, YOU WILL BREAK THE CODEBASE.**
+
+---
+
 ## ⛔ ABSOLUTE RULES - VIOLATION = BROKEN CODE
+
+### RULE 0: ASK PERMISSION FOR EVERY SINGLE FILE
+- Before touching ANY file, say: "I want to modify [filename] to [change]. Is this okay?"
+- WAIT for the user to say "yes" or "approved"
+- If the user hasn't explicitly approved, DO NOT TOUCH THE FILE
+- "do it" does NOT mean "do whatever you want" - it means do what you ASKED about
+- NEVER delete files - if you need to undo, use `git checkout` or `cp` from backup
 
 ### RULE 1: NEVER MODIFY THESE FILES WITHOUT EXPLICIT USER PERMISSION
 ```

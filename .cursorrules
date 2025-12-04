@@ -1,5 +1,62 @@
-# ⛔ CURSOR AI RULES - STRICT ENFORCEMENT ⛔
+# ⛔⛔⛔ CURSOR AI RULES - ZERO TOLERANCE ENFORCEMENT ⛔⛔⛔
 # LAST WORKING STATE: Dec 4, 2025 (Tag: WORKING_DEC4_2025_OAUTH_FIX)
+# ============================================================
+
+# ============================================================
+# 🛑🛑🛑 STOP - READ THIS FIRST - MANDATORY 🛑🛑🛑
+# ============================================================
+#
+# ON DEC 4, 2025, AN AI VIOLATED THESE RULES AND:
+# - Modified ultra_simple_server.py WITHOUT permission
+# - Modified templates/my_traders_tab.html WITHOUT permission
+# - Created new files WITHOUT permission
+# - Made BULK changes instead of small incremental ones
+# - DELETED a template file when trying to "undo"
+# - Ignored START_HERE.md completely
+# - Caused the user significant frustration and wasted time
+#
+# THIS MUST NEVER HAPPEN AGAIN.
+#
+# ============================================================
+
+# ============================================================
+# 🚫 ABSOLUTE ZERO-TOLERANCE RULES 🚫
+# ============================================================
+#
+# 1. DO NOT TOUCH ANY FILE until user says "yes" or "approved"
+# 2. DO NOT make multiple changes at once - ONE change, then STOP
+# 3. DO NOT create new files without explicit permission
+# 4. DO NOT delete ANY files EVER without explicit permission
+# 5. DO NOT "undo" or "restore" without asking HOW to restore
+# 6. DO NOT assume "do it" means "do everything you want"
+# 7. DO NOT ignore these rules for ANY reason
+#
+# VIOLATION OF THESE RULES = BROKEN CODEBASE + ANGRY USER
+#
+# ============================================================
+
+# ============================================================
+# ✅ CORRECT BEHAVIOR - FOLLOW THIS EXACTLY
+# ============================================================
+#
+# STEP 1: User asks for something
+# STEP 2: AI says "I want to modify [specific file] to [specific change]. Is this okay?"
+# STEP 3: AI WAITS for user to say "yes" / "approved" / "go ahead"
+# STEP 4: AI makes ONLY that ONE specific change
+# STEP 5: AI STOPS and asks before making any additional changes
+#
+# EXAMPLE OF CORRECT:
+#   User: "Fix the button on my traders tab"
+#   AI: "I want to modify templates/my_traders_tab.html to fix the button. Can I proceed?"
+#   User: "yes"
+#   AI: [Makes ONLY the button fix, nothing else]
+#   AI: "Done. Do you want me to make any other changes?"
+#
+# EXAMPLE OF WRONG (WHAT HAPPENED DEC 4):
+#   User: "Work on my traders tab"
+#   AI: [Immediately modifies 3 files, creates new files, adds API endpoints, changes everything]
+#   THIS IS WRONG. THIS BREAKS TRUST. THIS BREAKS THE CODEBASE.
+#
 # ============================================================
 
 ## 🚨🚨🚨 CRITICAL: OAUTH TOKEN EXCHANGE FIX 🚨🚨🚨
@@ -142,6 +199,23 @@ nohup python3 ultra_simple_server.py > /tmp/server.log 2>&1 &
 ---
 
 ## 📚 PAST MISTAKES - LEARN FROM THESE
+
+### ❌ CRITICAL MISTAKE (Dec 4, 2025): Ignoring all rules completely
+**What happened:** 
+- AI was told to work on My Traders tab
+- AI immediately modified ultra_simple_server.py WITHOUT asking
+- AI modified templates/my_traders_tab.html WITHOUT asking
+- AI created a new template file WITHOUT asking
+- AI made massive bulk changes across multiple files
+- When told to undo, AI DELETED a template file instead of restoring it
+- AI completely ignored START_HERE.md and .cursorrules
+- User had to manually restore files
+**Lesson:** 
+- ALWAYS ASK BEFORE EVERY SINGLE FILE CHANGE
+- NEVER assume permission - wait for explicit "yes"
+- NEVER delete files when trying to undo - use git checkout or cp from backup
+- ONE small change at a time, then STOP and ask
+- READ and FOLLOW the rules - they exist for a reason
 
 ### ❌ Mistake: Bulk refactoring
 **What happened:** AI "improved" code style, broke everything
