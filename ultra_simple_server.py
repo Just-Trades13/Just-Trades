@@ -2796,39 +2796,11 @@ def receive_webhook_fast(webhook_token):
 # ============================================================
 # WEBHOOK RECEIVER - TradingView sends signals here
 # ============================================================
-# 
-# ARCHITECTURE: Webhooks are proxied to recorder_service.py (port 8083)
-# for event-driven drawdown tracking. Falls back to local handler if
-# recorder service is unavailable.
-# ============================================================
 
 @app.route('/webhook/<webhook_token>', methods=['POST'])
 def receive_webhook(webhook_token):
     """
-    Proxy webhooks to recorder_service for event-driven processing.
-    Falls back to local handler if recorder service is unavailable.
-    """
-    try:
-        # Try to forward to recorder service (port 8083)
-        import requests as req
-        response = req.post(
-            f'http://localhost:8083/webhook/{webhook_token}',
-            json=request.get_json() if request.is_json else None,
-            data=request.data if not request.is_json else None,
-            headers={'Content-Type': request.content_type or 'application/json'},
-            timeout=5
-        )
-        logger.info(f"📨 Webhook proxied to recorder service: {response.status_code}")
-        return response.json(), response.status_code
-    except Exception as e:
-        # Recorder service unavailable - use local handler
-        logger.warning(f"Recorder service unavailable ({e}), using local handler")
-        return receive_webhook_local(webhook_token)
-
-
-def receive_webhook_local(webhook_token):
-    """
-    Local webhook handler (fallback when recorder service is unavailable).
+    Receive webhook from TradingView alerts/strategies.
     
     Supports two modes:
     1. Simple Alerts (buy/sell signals) - Our system handles TP/SL/sizing
