@@ -193,6 +193,7 @@
 - `.cursorignore` - Files that should not be modified
 - `ACCOUNT_MGMT_SNAPSHOT.md` - Account management baseline
 - `CURRENT_STATUS_SNAPSHOT.md` - Current working state
+- `TAB_ISOLATION_MAP.md` - **CRITICAL** - Tab isolation rules (DO NOT MODIFY)
 
 **Before modifying any file:**
 1. Check if it's in `.cursorignore`
