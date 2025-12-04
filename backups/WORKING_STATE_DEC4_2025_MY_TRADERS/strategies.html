@@ -1,0 +1,227 @@
+{% extends "layout.html" %}
+{% block title %}Strategy JSON Guide - Just.Trades.{% endblock %}
+{% block page_title %}STRATEGY JSON GUIDE{% endblock %}
+{% block content %}
+<div class="strategies-examples">
+    <section class="examples-hero">
+        <div>
+            <h1>TradingView Alert Integration</h1>
+            <p>Follow these steps to connect TradingView (or any alert source) to Just.Trades. recorders. Think of this page as a living reference—not a builder—so you can customize payloads with confidence.</p>
+            <ol class="hero-steps">
+                <li>Create or edit a recorder to define sizing, filters, SL/TP, etc.</li>
+                <li>Copy the webhook URL and payload template provided in the recorder modal.</li>
+                <li>In TradingView: create an alert → paste the webhook URL → paste the JSON payload into the <strong>Message</strong> box.</li>
+                <li>Customize the JSON values below to match your strategy logic. The keys stay the same; only the numbers/text change.</li>
+            </ol>
+        </div>
+        <div class="hero-actions">
+            <a class="btn btn-outline" href="#">Import Example JSON</a>
+            <a class="btn btn-primary" href="/recorders/new">Go To Recorder Builder</a>
+        </div>
+    </section>
+
+    <section class="examples-grid instructions-grid">
+        <article class="example-card">
+            <header>
+                <h2>Where do the fields appear?</h2>
+            </header>
+            <div class="example-body">
+                <ul>
+                    <li><strong>strategy</strong>: Tie this to the recorder’s <em>Strategy Tag</em>. It makes routing deterministic.</li>
+                    <li><strong>action</strong>: "long", "short", "flat", or custom values you map inside the recorder.</li>
+                    <li><strong>contracts / size</strong>: Default position sizing. Recorders can override per broker.</li>
+                    <li><strong>trail / take_profit / stop_loss</strong>: Optional objects for advanced logic (trailing offsets, laddered profits, etc.).</li>
+                    <li><strong>metadata</strong>: Anything custom you want the recorder to inspect (e.g., indicator state, signal ID).</li>
+                </ul>
+            </div>
+        </article>
+
+        <article class="example-card">
+            <header>
+                <h2>TradingView Setup Primer</h2>
+            </header>
+            <div class="example-body">
+                <ol>
+                    <li>Select your chart → click the alert bell → configure alert condition as usual.</li>
+                    <li>Enable <strong>Webhook URL</strong> and paste the URL from your recorder modal.</li>
+                    <li>In the <strong>Message</strong> area, paste one of the templates below. Replace values to match your logic.</li>
+                    <li>Create separate alerts for each direction (BUY/SELL) if the recorder expects toggle alerts.</li>
+                </ol>
+                <p class="note">Tip: keep the JSON compact (single line) if you prefer, but spacing doesn’t matter as long as it’s valid JSON.</p>
+            </div>
+        </article>
+
+        <article class="example-card">
+            <header>
+                <h2>Minimal Template</h2>
+                <p>Start here if you only need direction + size. Great for straightforward strategies.</p>
+            </header>
+            <div class="example-body">
+                {% raw %}<pre>{
+  "strategy": "or_breakout",
+  "action": "long",
+  "contracts": 1,
+  "metadata": {
+    "note": "Opening range breakout"
+  }
+}</pre>{% endraw %}
+                <p class="note">Customize <code>action</code> (long/short) per alert. You can add any fields under <code>metadata</code> for troubleshooting later.</p>
+            </div>
+        </article>
+
+        <article class="example-card">
+            <header>
+                <h2>Minimal Toggle Alerts</h2>
+                <p>Single field changes per alert. Use <code>example_toggle</code> as the base name.</p>
+            </header>
+            <div class="example-body">
+                {% raw %}<pre>{
+  "strategy": "example_toggle",
+  "action": "buy",
+  "contracts": 1,
+  "metadata": {
+    "note": "Example toggle alert"
+  }
+}</pre>
+<pre>{
+  "strategy": "example_toggle",
+  "action": "sell",
+  "contracts": 1,
+  "metadata": {
+    "note": "Example toggle alert"
+  }
+}</pre>{% endraw %}
+                <p class="note">Create two alerts in TradingView—one with <code>action</code> "buy", the other "sell". Everything else can remain identical.</p>
+            </div>
+        </article>
+
+        <article class="example-card">
+            <header>
+                <h2>TP Ladder with Trailing Stop</h2>
+                <p>Showcases multiple trims and a trailing stop offset.</p>
+            </header>
+            <div class="example-body">
+                {% raw %}<pre>{
+  "strategy": "example_tp_trail",
+  "action": "long",
+  "contracts": 2,
+  "take_profit": [
+    {"gain_ticks": 8, "trim_percent": 50},
+    {"gain_ticks": 12, "trim_percent": 25},
+    {"gain_ticks": 20, "trim_percent": 25}
+  ],
+  "trail": {
+    "activation_ticks": 12,
+    "offset_ticks": 6
+  }
+}</pre>{% endraw %}
+                <p class="note">Each object inside <code>take_profit</code> lines up with the ladder rows in your recorder. The recorder will enforce the trail values when activated.</p>
+            </div>
+        </article>
+
+        <article class="example-card">
+            <header>
+                <h2>Bracket Order (Stop + Target)</h2>
+                <p>Great for bracket-style plays where you want SL and TP defined together.</p>
+            </header>
+            <div class="example-body">
+                {% raw %}<pre>{
+  "strategy": "example_bracket",
+  "action": "short",
+  "contracts": 1,
+  "take_profit": [{"gain_ticks": 15, "trim_percent": 100}],
+  "stop_loss": {
+    "type": "fixed",
+    "loss_ticks": 7
+  }
+}</pre>{% endraw %}
+                <p class="note">This mirrors a simple bracket order: full exit at +15 ticks or stop out at -7 ticks.</p>
+            </div>
+        </article>
+
+        <article class="example-card">
+            <header>
+                <h2>Premium Filters & Direction Reference</h2>
+                <p>Shows how to send guardrails the recorder can respect before firing orders.</p>
+            </header>
+            <div class="example-body">
+                {% raw %}<pre>{
+  "strategy": "example_premium_filter",
+  "action": "long",
+  "contracts": 1,
+  "premium_floor": 1.20,
+  "cooldown_seconds": 45,
+  "direction_reference": "example_direction_feed",
+  "windows": [
+    {"start": "09:00", "end": "11:30"},
+    {"start": "13:00", "end": "15:30"}
+  ]
+}</pre>{% endraw %}
+                <p class="note">If your direction feed prints "long", the recorder honors the signal. Any other state can be treated as "do nothing".</p>
+            </div>
+        </article>
+
+        <article class="example-card">
+            <header>
+                <h2>Webhook with Daily Risk Caps</h2>
+                <p>Ideal for bots that want to enforce loss limits and auto-flat times from the alert layer.</p>
+            </header>
+            <div class="example-body">
+                {% raw %}<pre>{
+  "strategy": "example_crypto_risk",
+  "action": "short",
+  "contracts": 2,
+  "max_daily_loss": 750,
+  "auto_flat": "20:00",
+  "metadata": {
+    "source": "python_bot",
+    "signal_id": "example-signal-001"
+  }
+}</pre>{% endraw %}
+                <p class="note">Pairs nicely with the recorder’s Auto Flat toggle so the UI and alert message stay in sync.</p>
+            </div>
+        </article>
+    </section>
+
+    <section class="faq-card">
+        <h2>FAQ</h2>
+        <ul>
+            <li><strong>Do I need both BUY and SELL alerts?</strong> Yes—send one payload for each direction unless your strategy only trades one side.</li>
+            <li><strong>Can I omit fields?</strong> Absolutely. If a field isn’t included, the recorder falls back to its default configuration.</li>
+            <li><strong>What about webhooks outside TradingView?</strong> Any system that can POST JSON to the webhook works the same way (bots, NinjaTrader, etc.).</li>
+        </ul>
+    </section>
+</div>
+{% endblock %}
+{% block styles %}
+<style>
+    .strategies-examples { display: grid; gap: 1.75rem; }
+    .examples-hero { display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; background: linear-gradient(135deg, rgba(25, 184, 255, 0.18), rgba(15, 118, 230, 0.12)); border-radius: 20px; border: 1px solid rgba(148, 163, 184, 0.12); padding: 2rem; }
+    .examples-hero h1 { margin: 0; font-size: 2rem; }
+    .examples-hero p { margin: 0; color: var(--text-muted); }
+    .hero-steps { margin: 1.1rem 0 0; padding-left: 1.5rem; color: var(--text-muted); display: grid; gap: 0.35rem; }
+    .hero-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .btn { border: none; border-radius: 12px; padding: 0.75rem 1.6rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+    .btn-primary { background: linear-gradient(135deg, #60a5fa, #2563eb); color: #0b1120; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
+    .btn-outline { background: rgba(15,23,42,0.6); color: #e2e8f0; border: 1px solid rgba(148,163,184,0.2); }
+    .btn-small { padding: 0.45rem 0.9rem; font-size: 0.75rem; }
+
+    .examples-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+    .instructions-grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .example-card { background: rgba(11, 18, 33, 0.92); border-radius: 18px; border: 1px solid rgba(148, 163, 184, 0.12); padding: 1.75rem; display: grid; gap: 1rem; }
+    .example-card header h2 { margin: 0; font-size: 1.2rem; }
+    .example-card header p { margin: 0; color: var(--text-muted); }
+    .example-body ul, .example-body ol { margin: 0; padding-left: 1.25rem; color: var(--text-muted); display: grid; gap: 0.35rem; }
+    .example-body pre { margin: 0; background: rgba(15,23,42,0.55); border: 1px solid rgba(59,130,246,0.25); border-radius: 10px; padding: 0.85rem; font-family: "Courier New", monospace; font-size: 0.8rem; color: #e0f2fe; overflow-x: auto; }
+    .note { color: var(--text-muted); font-size: 0.85rem; }
+
+    .faq-card { background: rgba(7,12,23,0.92); border: 1px solid rgba(148,163,184,0.12); border-radius: 18px; padding: 1.75rem; display: grid; gap: 1rem; }
+    .faq-card h2 { margin: 0; }
+    .faq-card ul { margin: 0; padding-left: 1.25rem; color: var(--text-muted); display: grid; gap: 0.5rem; }
+
+    @media (max-width: 900px) {
+        .examples-hero { flex-direction: column; align-items: flex-start; }
+    }
+</style>
+{% endblock %}
+{% block scripts %}{% endblock %}

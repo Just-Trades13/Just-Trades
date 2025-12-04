@@ -1,0 +1,276 @@
+# ⛔⛔⛔ CURSOR AI RULES - ZERO TOLERANCE ENFORCEMENT ⛔⛔⛔
+# LAST WORKING STATE: Dec 4, 2025 (Tag: WORKING_DEC4_2025_OAUTH_FIX)
+# ============================================================
+
+# ============================================================
+# 🛑🛑🛑 STOP - READ THIS FIRST - MANDATORY 🛑🛑🛑
+# ============================================================
+#
+# ON DEC 4, 2025, AN AI VIOLATED THESE RULES AND:
+# - Modified ultra_simple_server.py WITHOUT permission
+# - Modified templates/my_traders_tab.html WITHOUT permission
+# - Created new files WITHOUT permission
+# - Made BULK changes instead of small incremental ones
+# - DELETED a template file when trying to "undo"
+# - Ignored START_HERE.md completely
+# - Caused the user significant frustration and wasted time
+#
+# THIS MUST NEVER HAPPEN AGAIN.
+#
+# ============================================================
+
+# ============================================================
+# 🚫 ABSOLUTE ZERO-TOLERANCE RULES 🚫
+# ============================================================
+#
+# 1. DO NOT TOUCH ANY FILE until user says "yes" or "approved"
+# 2. DO NOT make multiple changes at once - ONE change, then STOP
+# 3. DO NOT create new files without explicit permission
+# 4. DO NOT delete ANY files EVER without explicit permission
+# 5. DO NOT "undo" or "restore" without asking HOW to restore
+# 6. DO NOT assume "do it" means "do everything you want"
+# 7. DO NOT ignore these rules for ANY reason
+#
+# VIOLATION OF THESE RULES = BROKEN CODEBASE + ANGRY USER
+#
+# ============================================================
+
+# ============================================================
+# ✅ CORRECT BEHAVIOR - FOLLOW THIS EXACTLY
+# ============================================================
+#
+# STEP 1: User asks for something
+# STEP 2: AI says "I want to modify [specific file] to [specific change]. Is this okay?"
+# STEP 3: AI WAITS for user to say "yes" / "approved" / "go ahead"
+# STEP 4: AI makes ONLY that ONE specific change
+# STEP 5: AI STOPS and asks before making any additional changes
+#
+# EXAMPLE OF CORRECT:
+#   User: "Fix the button on my traders tab"
+#   AI: "I want to modify templates/my_traders_tab.html to fix the button. Can I proceed?"
+#   User: "yes"
+#   AI: [Makes ONLY the button fix, nothing else]
+#   AI: "Done. Do you want me to make any other changes?"
+#
+# EXAMPLE OF WRONG (WHAT HAPPENED DEC 4):
+#   User: "Work on my traders tab"
+#   AI: [Immediately modifies 3 files, creates new files, adds API endpoints, changes everything]
+#   THIS IS WRONG. THIS BREAKS TRUST. THIS BREAKS THE CODEBASE.
+#
+# ============================================================
+
+## 🚨🚨🚨 CRITICAL: OAUTH TOKEN EXCHANGE FIX 🚨🚨🚨
+## NEVER REMOVE THE LIVE ENDPOINT FALLBACK IN oauth_callback()
+## See OAUTH_429_FIX_CRITICAL.md for details
+## The code MUST try live.tradovateapi.com FIRST, then demo.tradovateapi.com
+## Removing this causes 20+ minute OAuth failures (429 rate limiting)
+
+## 🚨 ABSOLUTE REQUIREMENT: ASK BEFORE MODIFYING
+
+**BEFORE touching ANY code, you MUST:**
+1. Tell the user which file you want to modify
+2. Explain what change you want to make
+3. WAIT for user to say "yes" or "approved" or "go ahead"
+4. Only THEN make the change
+
+**Example:**
+```
+AI: "I need to modify templates/manual_copy_trader.html to fix the button. Can I proceed?"
+User: "Yes"
+AI: [Now makes the change]
+```
+
+**If user doesn't explicitly approve, DO NOT MODIFY THE FILE.**
+
+---
+
+## 🔒 LOCKED FILES - NEVER MODIFY WITHOUT EXPLICIT APPROVAL
+
+These files are WORKING. Do not touch them without user saying "yes, modify X file":
+
+```
+⛔ LOCKED - ASK FIRST:
+├── ultra_simple_server.py
+├── templates/manual_copy_trader.html
+├── templates/account_management.html  ← NEVER TOUCH
+├── templates/recorders.html
+├── templates/recorders_list.html
+├── templates/dashboard.html
+├── templates/control_center.html
+└── just_trades.db
+```
+
+---
+
+## 🚫 THINGS YOU MUST NEVER DO
+
+1. **NEVER refactor or "improve" working code**
+2. **NEVER remove code you think is "unused"**
+3. **NEVER change code formatting or indentation**
+4. **NEVER modify files from other tabs**
+5. **NEVER modify database schemas**
+6. **NEVER overwrite backup files**
+7. **NEVER make bulk edits**
+8. **NEVER add features not explicitly requested**
+
+---
+
+## ✅ WORKING FEATURES (DO NOT BREAK)
+
+| Feature | Status | Last Verified |
+|---------|--------|---------------|
+| Manual Trader Tab | ✅ WORKING | Dec 3, 2025 |
+| Live Position Cards | ✅ WORKING | Dec 3, 2025 |
+| Account PnL Display | ✅ WORKING | Dec 3, 2025 |
+| Recorders Tab | ✅ WORKING | Dec 3, 2025 |
+| Webhook Signals | ✅ WORKING | Dec 3, 2025 |
+| Trade Recording | ✅ WORKING | Dec 3, 2025 |
+| Dashboard | ✅ WORKING | Dec 3, 2025 |
+| Control Center | ✅ WORKING | Dec 3, 2025 |
+| Account Management | ✅ WORKING | Dec 3, 2025 |
+| Tradovate OAuth | ✅ WORKING | Dec 4, 2025 | **CRITICAL: Uses LIVE+DEMO fallback** |
+| WebSocket Updates | ✅ WORKING | Dec 3, 2025 |
+| Copy Trading | ✅ WORKING | Dec 3, 2025 |
+
+---
+
+## 📋 TAB ISOLATION - MANDATORY
+
+**When user says "work on X tab", ONLY touch files for that tab:**
+
+| Tab | ONLY These Files |
+|-----|------------------|
+| Manual Trader | `manual_copy_trader.html`, manual trade routes |
+| Recorders | `recorders.html`, `recorders_list.html`, recorder routes |
+| Dashboard | `dashboard.html`, dashboard routes |
+| Control Center | `control_center.html`, control center routes |
+| Account Management | **NEVER TOUCH** |
+
+**🚨 If you touch a file NOT in the tab's list, YOU ARE BREAKING THE RULES.**
+
+---
+
+## 🔧 SAFE CHANGE PROCESS
+
+### Step 1: ASK PERMISSION
+```
+"I want to modify [filename] to [do what]. Is this okay?"
+```
+
+### Step 2: WAIT FOR APPROVAL
+Do not proceed until user explicitly approves.
+
+### Step 3: ONE SMALL CHANGE
+- Edit ONLY the specific lines needed
+- Do NOT touch surrounding code
+- Do NOT "clean up" other parts
+
+### Step 4: VERIFY
+- Test the change works
+- Check no regressions
+
+### Step 5: IF BROKEN, RESTORE
+```bash
+cp backups/WORKING_STATE_DEC3_2025/[filename] ./
+# OR
+git checkout WORKING_DEC3_2025 -- [filename]
+```
+
+---
+
+## 🆘 RECOVERY COMMANDS
+
+```bash
+# Restore single file from backup
+cp backups/WORKING_STATE_DEC3_2025/ultra_simple_server.py ./
+cp backups/WORKING_STATE_DEC3_2025/manual_copy_trader.html templates/
+
+# Restore ALL templates
+cp backups/WORKING_STATE_DEC3_2025/*.html templates/
+
+# Full git restore to working state
+git checkout WORKING_DEC3_2025
+
+# Restart server
+pkill -f "python.*ultra_simple"
+nohup python3 ultra_simple_server.py > /tmp/server.log 2>&1 &
+```
+
+---
+
+## 📚 PAST MISTAKES - LEARN FROM THESE
+
+### ❌ CRITICAL MISTAKE (Dec 4, 2025): Ignoring all rules completely
+**What happened:** 
+- AI was told to work on My Traders tab
+- AI immediately modified ultra_simple_server.py WITHOUT asking
+- AI modified templates/my_traders_tab.html WITHOUT asking
+- AI created a new template file WITHOUT asking
+- AI made massive bulk changes across multiple files
+- When told to undo, AI DELETED a template file instead of restoring it
+- AI completely ignored START_HERE.md and .cursorrules
+- User had to manually restore files
+**Lesson:** 
+- ALWAYS ASK BEFORE EVERY SINGLE FILE CHANGE
+- NEVER assume permission - wait for explicit "yes"
+- NEVER delete files when trying to undo - use git checkout or cp from backup
+- ONE small change at a time, then STOP and ask
+- READ and FOLLOW the rules - they exist for a reason
+
+### ❌ Mistake: Bulk refactoring
+**What happened:** AI "improved" code style, broke everything
+**Lesson:** NEVER refactor working code
+
+### ❌ Mistake: Modifying multiple tabs
+**What happened:** Fixed one tab, broke three others
+**Lesson:** ONE TAB AT A TIME
+
+### ❌ Mistake: Changing database schema
+**What happened:** Added columns, broke existing queries
+**Lesson:** NEVER change DB schema without approval
+
+### ❌ Mistake: Removing "unused" code
+**What happened:** Removed code that was actually used elsewhere
+**Lesson:** NEVER remove code you didn't write
+
+### ❌ Mistake: Making unauthorized changes
+**What happened:** AI made changes without asking, broke working features
+**Lesson:** ALWAYS ASK FIRST
+
+---
+
+## ⚠️ FINAL WARNING
+
+This codebase has been BROKEN MULTIPLE TIMES by AI making unauthorized changes.
+
+**EVERY SINGLE CHANGE requires:**
+1. ✅ User permission (explicit "yes")
+2. ✅ Clear explanation BEFORE changing
+3. ✅ Single file, minimal edit
+4. ✅ Immediate testing
+5. ✅ Rollback plan ready
+
+**When in doubt: ASK THE USER.**
+
+**If user hasn't said "yes", DON'T TOUCH IT.**
+
+---
+
+## 🔐 CRITICAL CODE - NEVER MODIFY WITHOUT UNDERSTANDING
+
+### OAuth Token Exchange (ultra_simple_server.py ~line 1338)
+```python
+# CRITICAL: Try LIVE first, then DEMO (demo gets rate-limited)
+token_endpoints = [
+    'https://live.tradovateapi.com/v1/auth/oauthtoken',  # MUST BE FIRST
+    'https://demo.tradovateapi.com/v1/auth/oauthtoken'   # Fallback only
+]
+```
+**WHY:** Demo API returns 429 errors for 20+ minutes. LIVE works immediately.
+**NEVER:** Use only demo endpoint, remove LIVE, or change the order.
+
+---
+
+*Backup: backups/WORKING_STATE_DEC4_2025_OAUTH_FIX/*
+*Git tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX*
+*Last verified: Dec 4, 2025*
