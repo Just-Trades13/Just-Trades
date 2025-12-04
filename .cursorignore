@@ -31,18 +31,20 @@ backups/WORKING_STATE_DEC3_2025/
 # phantom_scraper/tradovate_integration.py
 
 # ============================================================
-# 📚 DOCUMENTATION - DO NOT MODIFY
+# 📚 DOCUMENTATION - AI CAN READ, BUT SHOULD NOT MODIFY
 # ============================================================
-
-# Protection Documentation
-START_HERE.md
-ACCOUNT_MGMT_SNAPSHOT.md
-CURRENT_STATUS_SNAPSHOT.md
-WHAT_NOT_TO_DO.md
-PRE_CHANGE_CHECKLIST.md
-TAB_ISOLATION_MAP.md
-HANDOFF_DOCUMENT.md
-BACKUP_INDEX.md
+# NOTE: These files are NOT in cursorignore so AI can READ them
+# The AI should read these files but ask before modifying them
+# 
+# Protection Documentation (AI MUST read these):
+# - START_HERE.md
+# - ACCOUNT_MGMT_SNAPSHOT.md  
+# - CURRENT_STATUS_SNAPSHOT.md
+# - WHAT_NOT_TO_DO.md
+# - PRE_CHANGE_CHECKLIST.md
+# - TAB_ISOLATION_MAP.md
+# - HANDOFF_DOCUMENT.md
+# - BACKUP_INDEX.md
 
 # ============================================================
 # 💾 DATABASE FILES - NEVER MODIFY SCHEMA
