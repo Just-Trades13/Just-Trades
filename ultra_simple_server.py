@@ -2332,6 +2332,46 @@ def api_stop_recorder(recorder_id):
         logger.error(f"Error stopping recorder {recorder_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/recorders/<int:recorder_id>/reset-history', methods=['POST'])
+def api_reset_recorder_history(recorder_id):
+    """Reset trade history for a recorder (delete all trades and signals)"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Verify recorder exists
+        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        name = row['name']
+        
+        # Delete all trades for this recorder
+        cursor.execute('DELETE FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        trades_deleted = cursor.rowcount
+        
+        # Delete all signals for this recorder
+        cursor.execute('DELETE FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+        signals_deleted = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Reset history for recorder '{name}' (ID: {recorder_id}): {trades_deleted} trades, {signals_deleted} signals deleted")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Trade history reset for "{name}". Deleted {trades_deleted} trades and {signals_deleted} signals.',
+            'trades_deleted': trades_deleted,
+            'signals_deleted': signals_deleted
+        })
+    except Exception as e:
+        logger.error(f"Error resetting history for recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/recorders/<int:recorder_id>/webhook', methods=['GET'])
 def api_get_recorder_webhook(recorder_id):
     """Get webhook details for a recorder"""
