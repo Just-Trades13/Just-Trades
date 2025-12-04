@@ -514,8 +514,9 @@ sqlite3 just_trades.db "SELECT id, side, entry_price, exit_price, max_favorable,
 ### Key Functions:
 | Function | Line ~Range | Purpose |
 |----------|-------------|---------|
-| `update_trade_mfe_mae()` | ~5376-5415 | Calculates and stores MFE/MAE |
-| `check_recorder_trades_tp_sl()` | ~5420-5555 | Calls MFE/MAE update on each price tick |
+| `check_recorder_trades_tp_sl()` | ~5616-5789 | Monitors TP/SL AND updates MFE/MAE on each price tick |
+
+**Note:** MFE/MAE tracking is now built INTO `check_recorder_trades_tp_sl()` (lines ~5657-5697). There is no separate `update_trade_mfe_mae()` function.
 
 ---
 
@@ -640,5 +641,5 @@ git checkout WORKING_DEC4_2025_OAUTH_FIX -- ultra_simple_server.py
 
 ---
 
-*Last updated: Dec 4, 2025 - Added CRITICAL OAuth token exchange fix (LIVE endpoint fallback)*
-*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX*
+*Last updated: Dec 4, 2025 - Added MFE/MAE (drawdown) tracking fix*
+*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC4_2025_MFE_MAE*
