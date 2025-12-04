@@ -67,28 +67,32 @@ LOCKED FILES - DO NOT TOUCH:
 
 ---
 
-## 🔒 WORKING STATE BACKUP (Dec 3, 2025)
+## 🔒 WORKING STATE BACKUP (Dec 4, 2025 - LATEST)
 
 **Everything below is CONFIRMED WORKING. Do not break it.**
 
-### Backup Location
+### Latest Backup (Position Tracking)
 ```
-backups/WORKING_STATE_DEC3_2025/
-├── ultra_simple_server.py
-├── manual_copy_trader.html
-├── recorders.html
-├── recorders_list.html
-├── dashboard.html
-├── control_center.html
-├── account_management.html
-└── just_trades.db
+backups/WORKING_STATE_DEC4_2025_POSITION_TRACKING/
+└── ultra_simple_server.py   ← Contains Trade Manager style position tracking
 ```
 
-### Git Tag
+### Previous Backups
+```
+backups/WORKING_STATE_DEC4_2025_MFE_MAE/
+backups/WORKING_STATE_DEC4_2025_RESET_HISTORY/
+backups/WORKING_STATE_DEC3_2025/
+```
+
+### Git Tags (Most Recent First)
 ```bash
-git tag WORKING_DEC3_2025
+git tag WORKING_DEC4_2025_POSITION_TRACKING  # Trade Manager style drawdown
+git tag WORKING_DEC4_2025_RESET_HISTORY      # Reset history fix
+git tag WORKING_DEC4_2025_MFE_MAE            # Individual trade MFE/MAE
+git tag WORKING_DEC3_2025                     # Original working state
+
 # To restore any file:
-git checkout WORKING_DEC3_2025 -- templates/manual_copy_trader.html
+git checkout WORKING_DEC4_2025_POSITION_TRACKING -- ultra_simple_server.py
 ```
 
 ---
@@ -111,6 +115,8 @@ git checkout WORKING_DEC3_2025 -- templates/manual_copy_trader.html
 | **Copy Trading** | ✅ Working | Copy trader logic in manual trader |
 | **MFE/MAE Tracking** | ✅ Working | `update_trade_mfe_mae()` in server |
 | **Reset Trade History** | ✅ Working | `/api/recorders/<id>/reset-history` endpoint |
+| **Position Tracking (TM Style)** | ✅ Working | `recorder_positions` table, 1-sec polling |
+| **Real-Time Drawdown** | ✅ Working | `worst_unrealized_pnl` tracking |
 
 ---
 
@@ -159,6 +165,32 @@ cp backups/WORKING_STATE_DEC3_2025/[filename] templates/[filename]
 # Or use git
 git checkout WORKING_DEC3_2025 -- [filename]
 ```
+
+---
+
+## 📊 POSITION TRACKING (Trade Manager Style) - Dec 4, 2025
+
+### How It Works
+- **DCA entries combine** into single position with weighted average entry
+- **Real-time drawdown** tracked via 1-second polling (`worst_unrealized_pnl`)
+- **Position closes on TP/SL** - matches Trade Manager behavior exactly
+- **Dashboard shows positions** instead of individual trades
+
+### Database Table: `recorder_positions`
+```sql
+SELECT id, ticker, side, total_quantity, avg_entry_price, 
+       worst_unrealized_pnl, status 
+FROM recorder_positions ORDER BY id DESC;
+```
+
+### Key Functions
+- `update_recorder_position()` - Creates/updates positions on BUY/SELL
+- `close_recorder_position()` - Closes positions on exit
+- `poll_recorder_positions_drawdown()` - 1-second drawdown tracking
+- `/api/dashboard/trade-history` - Returns position-based data
+
+### Handoff Document
+See `HANDOFF_DEC4_2025_POSITION_TRACKING.md` for full implementation details.
 
 ---
 
