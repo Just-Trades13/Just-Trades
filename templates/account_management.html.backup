@@ -22,34 +22,6 @@
 <div class="accounts-grid" id="accounts-grid">
     <!-- Account cards will be dynamically inserted here -->
 </div>
-
-<!-- Name Account Modal -->
-<div id="name-modal" class="acct-modal" style="display: none;">
-    <div class="acct-modal-content">
-        <h2>Name Your Account</h2>
-        <p>Enter a name to identify this account (e.g., "Main Trading", "Demo Practice")</p>
-        <input type="text" id="account-name-input" class="acct-modal-input" placeholder="Account name..." autofocus>
-        <div class="acct-modal-actions">
-            <button class="acct-btn acct-btn-outline" onclick="closeNameModal()">Cancel</button>
-            <button class="acct-btn acct-btn-primary" id="confirm-name-btn">Continue</button>
-        </div>
-    </div>
-</div>
-
-<!-- Delete Account Modal -->
-<div id="delete-acct-modal" class="acct-modal" style="display: none;">
-    <div class="acct-modal-content">
-        <h2>Delete Account?</h2>
-        <p>Are you sure you want to delete "<span id="delete-acct-name"></span>"? This will remove all associated data and cannot be undone.</p>
-        <div class="acct-modal-actions">
-            <button class="acct-btn acct-btn-outline" onclick="closeDeleteAcctModal()">Cancel</button>
-            <button class="acct-btn acct-btn-danger" id="confirm-delete-acct-btn">Delete</button>
-        </div>
-    </div>
-</div>
-
-<!-- Toast Notification -->
-<div id="acct-toast" class="acct-toast"></div>
 {% endblock %}
 
 {% block styles %}
@@ -203,113 +175,6 @@
     .account-detail-row .value.unavailable {
         color: rgba(255,255,255,0.4);
     }
-
-    /* Modal Styles - Matching Recorders */
-    .acct-modal {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 2000;
-        backdrop-filter: blur(4px);
-    }
-    .acct-modal-content {
-        background: rgba(11,18,33,0.98);
-        border: 1px solid rgba(148,163,184,0.2);
-        border-radius: 20px;
-        padding: 1.75rem;
-        max-width: 400px;
-        width: 90%;
-        text-align: center;
-    }
-    .acct-modal-content h2 {
-        margin: 0 0 0.75rem;
-        font-size: 1.25rem;
-        color: #e2e8f0;
-    }
-    .acct-modal-content p {
-        color: #94a3b8;
-        margin: 0 0 1.5rem;
-        font-size: 0.9rem;
-        line-height: 1.5;
-    }
-    .acct-modal-input {
-        width: 100%;
-        background: rgba(15,23,42,0.55);
-        border: 1px solid rgba(148,163,184,0.25);
-        border-radius: 10px;
-        color: #e2e8f0;
-        padding: 0.75rem 1rem;
-        font-size: 0.95rem;
-        margin-bottom: 1.5rem;
-        box-sizing: border-box;
-    }
-    .acct-modal-input:focus {
-        outline: none;
-        border-color: rgba(96,165,250,0.5);
-    }
-    .acct-modal-actions {
-        display: flex;
-        gap: 0.75rem;
-        justify-content: center;
-    }
-    .acct-btn {
-        border: none;
-        border-radius: 12px;
-        padding: 0.65rem 1.4rem;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        cursor: pointer;
-        font-size: 0.85rem;
-    }
-    .acct-btn-primary {
-        background: linear-gradient(135deg, #60a5fa, #2563eb);
-        color: #0b1120;
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
-    }
-    .acct-btn-primary:hover {
-        background: linear-gradient(135deg, #93c5fd, #3b82f6);
-    }
-    .acct-btn-outline {
-        background: rgba(15,23,42,0.6);
-        color: #e2e8f0;
-        border: 1px solid rgba(148,163,184,0.2);
-    }
-    .acct-btn-outline:hover {
-        background: rgba(30,41,59,0.8);
-    }
-    .acct-btn-danger {
-        background: linear-gradient(135deg, #f87171, #dc2626);
-        color: white;
-    }
-    .acct-btn-danger:hover {
-        background: linear-gradient(135deg, #fca5a5, #ef4444);
-    }
-    /* Toast */
-    .acct-toast {
-        position: fixed;
-        bottom: 2rem;
-        left: 50%;
-        transform: translateX(-50%) translateY(100px);
-        background: rgba(11,18,33,0.95);
-        border: 1px solid rgba(148,163,184,0.2);
-        border-radius: 12px;
-        padding: 0.85rem 1.5rem;
-        color: #e2e8f0;
-        font-size: 0.9rem;
-        opacity: 0;
-        transition: all 0.3s ease;
-        z-index: 3000;
-    }
-    .acct-toast.show {
-        transform: translateX(-50%) translateY(0);
-        opacity: 1;
-    }
-    .acct-toast.success { border-color: rgba(34,197,94,0.5); color: #86efac; }
-    .acct-toast.error { border-color: rgba(239,68,68,0.5); color: #fca5a5; }
 </style>
 {% endblock %}
 
@@ -385,11 +250,9 @@
                 document.querySelectorAll('.delete-account').forEach(btn => {
                     btn.addEventListener('click', function(e) {
                         e.stopPropagation();
-                        const card = this.closest('.account-card');
-                        const accountId = card.dataset.accountId;
-                        const accountName = card.querySelector('.account-name').textContent;
-                        if (accountId) {
-                            showDeleteAcctModal(accountId, accountName);
+                        const accountId = this.closest('.account-card').dataset.accountId;
+                        if (accountId && confirm('Are you sure you want to delete this account?')) {
+                            deleteAccount(accountId);
                         }
                     });
                 });
@@ -415,27 +278,11 @@
         }
     }
     
-    // Name Account Modal Functions
-    function showNameModal() {
-        document.getElementById('account-name-input').value = '';
-        document.getElementById('name-modal').style.display = 'flex';
-        setTimeout(() => document.getElementById('account-name-input').focus(), 100);
-        
-        document.getElementById('confirm-name-btn').onclick = confirmCreateAccount;
-    }
-    
-    function closeNameModal() {
-        document.getElementById('name-modal').style.display = 'none';
-    }
-    
-    async function confirmCreateAccount() {
-        const accountName = document.getElementById('account-name-input').value.trim();
-        if (!accountName) {
-            showAcctToast('Please enter an account name', 'error');
+    async function createAccount() {
+        const accountName = prompt('Enter account name:');
+        if (!accountName || !accountName.trim()) {
             return;
         }
-        
-        closeNameModal();
         
         try {
             const response = await fetch('/api/accounts', {
@@ -443,7 +290,7 @@
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ accountName: accountName })
+                body: JSON.stringify({ accountName: accountName.trim() })
             });
             
             const data = await response.json();
@@ -455,40 +302,15 @@
                     loadAccounts();
                 }
             } else {
-                showAcctToast('Error creating account: ' + (data.error || 'Unknown error'), 'error');
+                alert('Error creating account: ' + (data.error || 'Unknown error'));
             }
         } catch (error) {
             console.error('Error creating account:', error);
-            showAcctToast('Error creating account: ' + error.message, 'error');
+            alert('Error creating account: ' + error.message);
         }
     }
     
-    async function createAccount() {
-        showNameModal();
-    }
-    
-    // Delete Account Modal Functions
-    let pendingDeleteAcctId = null;
-    
-    function showDeleteAcctModal(accountId, accountName) {
-        pendingDeleteAcctId = accountId;
-        document.getElementById('delete-acct-name').textContent = accountName;
-        document.getElementById('delete-acct-modal').style.display = 'flex';
-        
-        document.getElementById('confirm-delete-acct-btn').onclick = confirmDeleteAccount;
-    }
-    
-    function closeDeleteAcctModal() {
-        document.getElementById('delete-acct-modal').style.display = 'none';
-        pendingDeleteAcctId = null;
-    }
-    
-    async function confirmDeleteAccount() {
-        if (!pendingDeleteAcctId) return;
-        
-        const accountId = pendingDeleteAcctId;
-        closeDeleteAcctModal();
-        
+    async function deleteAccount(accountId) {
         try {
             const response = await fetch(`/api/accounts/${accountId}`, {
                 method: 'DELETE'
@@ -497,20 +319,15 @@
             const data = await response.json();
             
             if (data.success) {
-                showAcctToast('Account deleted successfully!', 'success');
+                alert('Account deleted successfully!');
                 loadAccounts();
             } else {
-                showAcctToast('Error deleting account: ' + (data.error || 'Unknown error'), 'error');
+                alert('Error deleting account: ' + (data.error || 'Unknown error'));
             }
         } catch (error) {
             console.error('Error deleting account:', error);
-            showAcctToast('Error deleting account: ' + error.message, 'error');
+            alert('Error deleting account: ' + error.message);
         }
-    }
-    
-    async function deleteAccount(accountId) {
-        // Legacy function - now handled by modal
-        confirmDeleteAccount();
     }
     
     async function refreshSubaccounts(buttonEl) {
@@ -547,38 +364,6 @@
         if (addButton) {
             addButton.addEventListener('click', createAccount);
         }
-    });
-
-    // Toast notification
-    function showAcctToast(message, type = 'info') {
-        const toast = document.getElementById('acct-toast');
-        toast.textContent = message;
-        toast.className = `acct-toast ${type} show`;
-        
-        setTimeout(() => {
-            toast.className = 'acct-toast';
-        }, 3000);
-    }
-    
-    // Close modals on escape key
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            closeNameModal();
-            closeDeleteAcctModal();
-        }
-        // Allow Enter to submit name modal
-        if (e.key === 'Enter' && document.getElementById('name-modal').style.display === 'flex') {
-            confirmCreateAccount();
-        }
-    });
-    
-    // Close modals on backdrop click
-    document.querySelectorAll('.acct-modal').forEach(modal => {
-        modal.addEventListener('click', function(e) {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
-        });
     });
 </script>
 {% endblock %}

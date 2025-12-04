@@ -910,6 +910,30 @@ def init_db():
         ON recorded_trades(entry_time)
     ''')
     
+    # Trade entries table - tracks individual DCA/pyramid legs for accurate drawdown
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS trade_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trade_id INTEGER NOT NULL,
+            entry_price REAL NOT NULL,
+            quantity INTEGER DEFAULT 1,
+            entry_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            signal_id INTEGER,
+            notes TEXT,
+            FOREIGN KEY (trade_id) REFERENCES recorded_trades(id) ON DELETE CASCADE
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_trade_entries_trade_id 
+        ON trade_entries(trade_id)
+    ''')
+    
+    # Add worst_price column to recorded_trades if not exists (tracks worst price seen for MAE)
+    try:
+        cursor.execute('ALTER TABLE recorded_trades ADD COLUMN worst_price REAL')
+    except:
+        pass  # Column already exists
+    
     conn.commit()
     conn.close()
 
@@ -2113,7 +2137,7 @@ def api_update_recorder(recorder_id):
 
 @app.route('/api/recorders/<int:recorder_id>', methods=['DELETE'])
 def api_delete_recorder(recorder_id):
-    """Delete a recorder"""
+    """Delete a recorder and all associated trades/signals (cascade delete)"""
     try:
         conn = sqlite3.connect('just_trades.db')
         cursor = conn.cursor()
@@ -2127,18 +2151,74 @@ def api_delete_recorder(recorder_id):
         
         name = row[0]
         
+        # Count associated data for logging
+        cursor.execute('SELECT COUNT(*) FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        trades_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+        signals_count = cursor.fetchone()[0]
+        
+        # CASCADE DELETE: Delete associated trades first (references signals)
+        cursor.execute('DELETE FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        
+        # CASCADE DELETE: Delete associated signals
+        cursor.execute('DELETE FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+        
+        # Finally delete the recorder itself
         cursor.execute('DELETE FROM recorders WHERE id = ?', (recorder_id,))
         conn.commit()
         conn.close()
         
-        logger.info(f"Deleted recorder: {name} (ID: {recorder_id})")
+        logger.info(f"Deleted recorder: {name} (ID: {recorder_id}) with {trades_count} trades and {signals_count} signals")
         
         return jsonify({
             'success': True,
-            'message': f'Recorder "{name}" deleted successfully'
+            'message': f'Recorder "{name}" deleted successfully (including {trades_count} trades and {signals_count} signals)'
         })
     except Exception as e:
         logger.error(f"Error deleting recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recorders/<int:recorder_id>/reset-history', methods=['POST'])
+def api_reset_recorder_history(recorder_id):
+    """Reset trade history for a recorder (delete all trades and signals but keep recorder settings)"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        
+        # Check if recorder exists
+        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        name = row[0]
+        
+        # Count associated data for logging
+        cursor.execute('SELECT COUNT(*) FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        trades_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+        signals_count = cursor.fetchone()[0]
+        
+        # Delete associated trades
+        cursor.execute('DELETE FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        
+        # Delete associated signals
+        cursor.execute('DELETE FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Reset trade history for recorder: {name} (ID: {recorder_id}) - deleted {trades_count} trades and {signals_count} signals")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Trade history reset for "{name}" ({trades_count} trades and {signals_count} signals deleted)'
+        })
+    except Exception as e:
+        logger.error(f"Error resetting history for recorder {recorder_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/recorders/<int:recorder_id>/clone', methods=['POST'])
@@ -2890,8 +2970,79 @@ def receive_webhook(webhook_token):
                 logger.info(f"📊 SHORT closed by BUY reversal: ${pnl:.2f}")
                 open_trade = None
             
+            # DCA: If we already have an open LONG, add to position (pyramid/DCA)
+            if open_trade and open_trade['side'] == 'LONG':
+                # Calculate weighted average entry price
+                old_qty = open_trade['quantity']
+                old_entry = open_trade['entry_price']
+                add_qty = quantity
+                new_total_qty = old_qty + add_qty
+                avg_entry = ((old_entry * old_qty) + (current_price * add_qty)) / new_total_qty
+                
+                # Track worst price for accurate MAE (for LONG, worst = lowest price seen)
+                current_worst = open_trade.get('worst_price') or open_trade['entry_price']
+                new_worst = min(current_worst, current_price)  # LONG: lower is worse
+                
+                # Calculate current drawdown using ALL entry legs vs worst price
+                # Get all entry legs to calculate true MAE
+                cursor.execute('SELECT entry_price, quantity FROM trade_entries WHERE trade_id = ?', (open_trade['id'],))
+                entry_legs = cursor.fetchall()
+                total_mae_dollars = 0
+                for leg_price, leg_qty in entry_legs:
+                    leg_dd_points = max(0, leg_price - new_worst)  # LONG: entry - worst
+                    leg_dd_dollars = (leg_dd_points / tick_size) * tick_value * leg_qty
+                    total_mae_dollars += leg_dd_dollars
+                # Add current DCA leg's potential DD
+                new_leg_dd_points = max(0, current_price - new_worst)
+                new_leg_dd_dollars = (new_leg_dd_points / tick_size) * tick_value * add_qty
+                total_mae_dollars += new_leg_dd_dollars
+                
+                # Convert back to price points for storage (normalized by total qty)
+                total_qty_for_mae = sum(q for _, q in entry_legs) + add_qty
+                mae_points = (total_mae_dollars / tick_value * tick_size) / total_qty_for_mae if total_qty_for_mae > 0 else 0
+                current_mae = open_trade.get('max_adverse') or 0
+                new_mae = max(current_mae, mae_points)
+                
+                # Recalculate TP/SL based on new average entry
+                tp_price, sl_price = calculate_tp_sl_prices(
+                    avg_entry, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                )
+                
+                # Update existing trade with new average, quantity, worst price, and MAE
+                cursor.execute('''
+                    UPDATE recorded_trades 
+                    SET entry_price = ?, quantity = ?, tp_price = ?, sl_price = ?, 
+                        worst_price = ?, max_adverse = ?,
+                        notes = COALESCE(notes, '') || ? , updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (avg_entry, new_total_qty, tp_price, sl_price, new_worst, new_mae,
+                      f'\nDCA: +{add_qty}@{current_price} (avg now {avg_entry:.2f})', open_trade['id']))
+                
+                # Record this entry leg
+                cursor.execute('''
+                    INSERT INTO trade_entries (trade_id, entry_price, quantity, signal_id)
+                    VALUES (?, ?, ?, ?)
+                ''', (open_trade['id'], current_price, add_qty, signal_id))
+                
+                trade_result = {
+                    'action': 'dca_added',
+                    'trade_id': open_trade['id'],
+                    'side': 'LONG',
+                    'old_entry': old_entry,
+                    'add_price': current_price,
+                    'avg_entry': avg_entry,
+                    'old_qty': old_qty,
+                    'add_qty': add_qty,
+                    'total_qty': new_total_qty,
+                    'tp_price': tp_price,
+                    'sl_price': sl_price,
+                    'worst_price': new_worst,
+                    'current_mae_dollars': total_mae_dollars
+                }
+                logger.info(f"📈 DCA LONG for '{recorder_name}': +{add_qty}@{current_price} | Avg: {avg_entry:.2f} | Total: {new_total_qty} | Worst: {new_worst} | MAE: ${total_mae_dollars:.2f}")
+            
             # Open new LONG trade if no open trade
-            if not open_trade:
+            elif not open_trade:
                 # Calculate TP/SL prices based on recorder settings
                 tp_price, sl_price = calculate_tp_sl_prices(
                     current_price, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
@@ -2900,12 +3051,19 @@ def receive_webhook(webhook_token):
                 cursor.execute('''
                     INSERT INTO recorded_trades 
                     (recorder_id, signal_id, ticker, action, side, entry_price, entry_time, 
-                     quantity, status, tp_price, sl_price, tp_ticks, sl_ticks)
-                    VALUES (?, ?, ?, ?, 'LONG', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, ?, ?)
+                     quantity, status, tp_price, sl_price, tp_ticks, sl_ticks, worst_price)
+                    VALUES (?, ?, ?, ?, 'LONG', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, ?, ?, ?)
                 ''', (recorder_id, signal_id, ticker, 'BUY', current_price, quantity,
-                      tp_price, sl_price, tp_ticks, sl_amount if sl_enabled else None))
+                      tp_price, sl_price, tp_ticks, sl_amount if sl_enabled else None, current_price))
                 
                 new_trade_id = cursor.lastrowid
+                
+                # Record first entry leg
+                cursor.execute('''
+                    INSERT INTO trade_entries (trade_id, entry_price, quantity, signal_id)
+                    VALUES (?, ?, ?, ?)
+                ''', (new_trade_id, current_price, quantity, signal_id))
+                
                 trade_result = {
                     'action': 'opened',
                     'trade_id': new_trade_id,
@@ -2926,8 +3084,78 @@ def receive_webhook(webhook_token):
                 logger.info(f"📊 LONG closed by SELL reversal: ${pnl:.2f}")
                 open_trade = None
             
+            # DCA: If we already have an open SHORT, add to position (pyramid/DCA)
+            if open_trade and open_trade['side'] == 'SHORT':
+                # Calculate weighted average entry price
+                old_qty = open_trade['quantity']
+                old_entry = open_trade['entry_price']
+                add_qty = quantity
+                new_total_qty = old_qty + add_qty
+                avg_entry = ((old_entry * old_qty) + (current_price * add_qty)) / new_total_qty
+                
+                # Track worst price for accurate MAE (for SHORT, worst = highest price seen)
+                current_worst = open_trade.get('worst_price') or open_trade['entry_price']
+                new_worst = max(current_worst, current_price)  # SHORT: higher is worse
+                
+                # Calculate current drawdown using ALL entry legs vs worst price
+                cursor.execute('SELECT entry_price, quantity FROM trade_entries WHERE trade_id = ?', (open_trade['id'],))
+                entry_legs = cursor.fetchall()
+                total_mae_dollars = 0
+                for leg_price, leg_qty in entry_legs:
+                    leg_dd_points = max(0, new_worst - leg_price)  # SHORT: worst - entry
+                    leg_dd_dollars = (leg_dd_points / tick_size) * tick_value * leg_qty
+                    total_mae_dollars += leg_dd_dollars
+                # Add current DCA leg's potential DD
+                new_leg_dd_points = max(0, new_worst - current_price)
+                new_leg_dd_dollars = (new_leg_dd_points / tick_size) * tick_value * add_qty
+                total_mae_dollars += new_leg_dd_dollars
+                
+                # Convert back to price points for storage (normalized by total qty)
+                total_qty_for_mae = sum(q for _, q in entry_legs) + add_qty
+                mae_points = (total_mae_dollars / tick_value * tick_size) / total_qty_for_mae if total_qty_for_mae > 0 else 0
+                current_mae = open_trade.get('max_adverse') or 0
+                new_mae = max(current_mae, mae_points)
+                
+                # Recalculate TP/SL based on new average entry
+                tp_price, sl_price = calculate_tp_sl_prices(
+                    avg_entry, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                )
+                
+                # Update existing trade with new average, quantity, worst price, and MAE
+                cursor.execute('''
+                    UPDATE recorded_trades 
+                    SET entry_price = ?, quantity = ?, tp_price = ?, sl_price = ?, 
+                        worst_price = ?, max_adverse = ?,
+                        notes = COALESCE(notes, '') || ? , updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (avg_entry, new_total_qty, tp_price, sl_price, new_worst, new_mae,
+                      f'\nDCA: +{add_qty}@{current_price} (avg now {avg_entry:.2f})', open_trade['id']))
+                
+                # Record this entry leg
+                cursor.execute('''
+                    INSERT INTO trade_entries (trade_id, entry_price, quantity, signal_id)
+                    VALUES (?, ?, ?, ?)
+                ''', (open_trade['id'], current_price, add_qty, signal_id))
+                
+                trade_result = {
+                    'action': 'dca_added',
+                    'trade_id': open_trade['id'],
+                    'side': 'SHORT',
+                    'old_entry': old_entry,
+                    'add_price': current_price,
+                    'avg_entry': avg_entry,
+                    'old_qty': old_qty,
+                    'add_qty': add_qty,
+                    'total_qty': new_total_qty,
+                    'tp_price': tp_price,
+                    'sl_price': sl_price,
+                    'worst_price': new_worst,
+                    'current_mae_dollars': total_mae_dollars
+                }
+                logger.info(f"📉 DCA SHORT for '{recorder_name}': +{add_qty}@{current_price} | Avg: {avg_entry:.2f} | Total: {new_total_qty} | Worst: {new_worst} | MAE: ${total_mae_dollars:.2f}")
+            
             # Open new SHORT trade if no open trade
-            if not open_trade:
+            elif not open_trade:
                 # Calculate TP/SL prices based on recorder settings
                 tp_price, sl_price = calculate_tp_sl_prices(
                     current_price, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
@@ -2936,12 +3164,19 @@ def receive_webhook(webhook_token):
                 cursor.execute('''
                     INSERT INTO recorded_trades 
                     (recorder_id, signal_id, ticker, action, side, entry_price, entry_time, 
-                     quantity, status, tp_price, sl_price, tp_ticks, sl_ticks)
-                    VALUES (?, ?, ?, ?, 'SHORT', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, ?, ?)
+                     quantity, status, tp_price, sl_price, tp_ticks, sl_ticks, worst_price)
+                    VALUES (?, ?, ?, ?, 'SHORT', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, ?, ?, ?)
                 ''', (recorder_id, signal_id, ticker, 'SELL', current_price, quantity,
-                      tp_price, sl_price, tp_ticks, sl_amount if sl_enabled else None))
+                      tp_price, sl_price, tp_ticks, sl_amount if sl_enabled else None, current_price))
                 
                 new_trade_id = cursor.lastrowid
+                
+                # Record first entry leg
+                cursor.execute('''
+                    INSERT INTO trade_entries (trade_id, entry_price, quantity, signal_id)
+                    VALUES (?, ?, ?, ?)
+                ''', (new_trade_id, current_price, quantity, signal_id))
+                
                 trade_result = {
                     'action': 'opened',
                     'trade_id': new_trade_id,
@@ -4342,17 +4577,32 @@ def api_dashboard_trade_history():
         trades = []
         for row in cursor.fetchall():
             trade = dict(row)
+            ticker = trade.get('ticker', '')
+            quantity = trade.get('quantity', 1)
+            
+            # Convert max_adverse (price points) to dollar value
+            tick_size = get_tick_size(ticker) if ticker else 0.25
+            tick_value = get_tick_value(ticker) if ticker else 0.50
+            max_adverse_points = trade.get('max_adverse') or 0
+            max_favorable_points = trade.get('max_favorable') or 0
+            
+            # Drawdown in dollars = (points / tick_size) * tick_value * quantity
+            drawdown_dollars = (max_adverse_points / tick_size * tick_value * quantity) if tick_size > 0 else 0
+            mfe_dollars = (max_favorable_points / tick_size * tick_value * quantity) if tick_size > 0 else 0
+            
             trades.append({
                 'open_time': trade.get('entry_time'),
                 'closed_time': trade.get('exit_time'),
                 'strategy': trade.get('strategy_name') or 'N/A',
-                'symbol': trade.get('ticker'),
+                'symbol': ticker,
                 'side': trade.get('side'),
-                'size': trade.get('quantity', 1),
+                'size': quantity,
                 'entry_price': trade.get('entry_price'),
                 'exit_price': trade.get('exit_price'),
                 'profit': trade.get('pnl') or 0,
-                'drawdown': abs(trade.get('pnl')) if trade.get('pnl') and trade.get('pnl') < 0 else 0
+                'drawdown': round(drawdown_dollars, 2),
+                'max_favorable': round(mfe_dollars, 2),
+                'max_adverse': round(drawdown_dollars, 2)
             })
         
         conn.close()
@@ -5359,6 +5609,47 @@ async def process_market_data_message(data):
     except Exception as e:
         logger.warning(f"Error processing market data: {e}")
 
+def update_trade_mfe_mae(trade_id: int, current_price: float, side: str, entry_price: float):
+    """Update Maximum Favorable/Adverse Excursion for an open trade"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        
+        # Get current MFE/MAE
+        cursor.execute('SELECT max_favorable, max_adverse FROM recorded_trades WHERE id = ?', (trade_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return
+            
+        current_mfe = row[0] or 0.0
+        current_mae = row[1] or 0.0
+        
+        # Calculate current excursion (in price terms)
+        if side == 'LONG':
+            favorable = max(0, current_price - entry_price)  # How far up from entry
+            adverse = max(0, entry_price - current_price)    # How far down from entry
+        else:  # SHORT
+            favorable = max(0, entry_price - current_price)  # How far down from entry
+            adverse = max(0, current_price - entry_price)    # How far up from entry
+        
+        # Update if we have new highs/lows
+        new_mfe = max(current_mfe, favorable)
+        new_mae = max(current_mae, adverse)
+        
+        if new_mfe != current_mfe or new_mae != current_mae:
+            cursor.execute('''
+                UPDATE recorded_trades 
+                SET max_favorable = ?, max_adverse = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (new_mfe, new_mae, trade_id))
+            conn.commit()
+        
+        conn.close()
+    except Exception as e:
+        logger.debug(f"Error updating MFE/MAE: {e}")
+
+
 def check_recorder_trades_tp_sl(symbols_updated: set):
     """
     Check open recorder trades for TP/SL hits based on current market prices.
@@ -5399,6 +5690,9 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
             
             if not current_price:
                 continue
+            
+            # Update MFE/MAE tracking for this trade
+            update_trade_mfe_mae(trade['id'], current_price, trade['side'], trade['entry_price'])
             
             # Check TP/SL
             tp_price = trade.get('tp_price')

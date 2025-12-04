@@ -71,6 +71,9 @@
                     <button class="icon-btn" title="Webhook" onclick="showWebhook({{ recorder.id }})">
                         <span class="material-icons">link</span>
                     </button>
+                    <button class="icon-btn reset" title="Reset Trade History" onclick="resetHistory({{ recorder.id }}, '{{ recorder.name }}')">
+                        <span class="material-icons">refresh</span>
+                    </button>
                     <button class="icon-btn delete" title="Delete" onclick="deleteRecorder({{ recorder.id }}, '{{ recorder.name }}')">
                         <span class="material-icons">delete</span>
                     </button>
@@ -106,18 +109,18 @@
                     <button class="btn btn-primary btn-small" onclick="copyToClipboard('webhook-url')">Copy</button>
                 </div>
             </label>
-            <div class="alert-block">
-                <h3>Toggle Alert (2 Alerts Needed)</h3>
+            <div class="alert-block buy-alert">
+                <h3>🟢 BUY Alert Message</h3>
                 <pre id="alert-toggle"></pre>
                 <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-toggle')">Copy</button>
             </div>
-            <div class="alert-block">
-                <h3>TM Sizing Alert</h3>
+            <div class="alert-block sell-alert">
+                <h3>🔴 SELL Alert Message</h3>
                 <pre id="alert-tm"></pre>
                 <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-tm')">Copy</button>
             </div>
-            <div class="alert-block">
-                <h3>TV Sizing Alert</h3>
+            <div class="alert-block strategy-alert">
+                <h3>📊 Strategy Alert (Pine Script)</h3>
                 <pre id="alert-tv"></pre>
                 <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-tv')">Copy</button>
             </div>
@@ -133,6 +136,18 @@
         <div class="modal-actions">
             <button class="btn btn-outline" onclick="closeDeleteModal()">Cancel</button>
             <button class="btn btn-danger" id="confirm-delete-btn">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- Reset History Confirmation Modal -->
+<div id="reset-modal" class="modal" style="display: none;">
+    <div class="modal-content confirm-modal">
+        <h2>Reset Trade History?</h2>
+        <p>This will delete all recorded trades and signals for "<span id="reset-name"></span>". The recorder settings will remain unchanged. This action cannot be undone.</p>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeResetModal()">Cancel</button>
+            <button class="btn btn-warning" id="confirm-reset-btn">Reset History</button>
         </div>
     </div>
 </div>
@@ -284,6 +299,15 @@
         background: rgba(239,68,68,0.15);
         border-color: rgba(239,68,68,0.3);
     }
+    .icon-btn.reset:hover {
+        color: #fcd34d;
+        background: rgba(251,191,36,0.15);
+        border-color: rgba(251,191,36,0.3);
+    }
+    .btn-warning {
+        background: linear-gradient(135deg, #fbbf24, #d97706);
+        color: #0b1120;
+    }
     .icon-btn .material-icons { font-size: 1.1rem; }
 
     .strategy-link { 
@@ -433,6 +457,21 @@
         white-space: pre-wrap;
         word-break: break-all;
     }
+    .alert-block.buy-alert {
+        border-color: rgba(34,197,94,0.3);
+        background: rgba(34,197,94,0.08);
+    }
+    .alert-block.buy-alert h3 { color: #86efac; }
+    .alert-block.sell-alert {
+        border-color: rgba(239,68,68,0.3);
+        background: rgba(239,68,68,0.08);
+    }
+    .alert-block.sell-alert h3 { color: #fca5a5; }
+    .alert-block.strategy-alert {
+        border-color: rgba(59,130,246,0.3);
+        background: rgba(59,130,246,0.08);
+    }
+    .alert-block.strategy-alert h3 { color: #93c5fd; }
 
     /* Confirm Modal */
     .confirm-modal {
@@ -575,6 +614,9 @@
                     <button class="icon-btn" title="Webhook" onclick="showWebhook(${r.id})">
                         <span class="material-icons">link</span>
                     </button>
+                    <button class="icon-btn reset" title="Reset Trade History" onclick="resetHistory(${r.id}, '${escapeHtml(r.name)}')">
+                        <span class="material-icons">refresh</span>
+                    </button>
                     <button class="icon-btn delete" title="Delete" onclick="deleteRecorder(${r.id}, '${escapeHtml(r.name)}')">
                         <span class="material-icons">delete</span>
                     </button>
@@ -637,9 +679,9 @@
             .then(data => {
                 if (data.success) {
                     document.getElementById('webhook-url').value = data.webhook_url;
-                    document.getElementById('alert-toggle').textContent = data.alerts.toggle;
-                    document.getElementById('alert-tm').textContent = data.alerts.tm_sizing;
-                    document.getElementById('alert-tv').textContent = data.alerts.tv_sizing;
+                    document.getElementById('alert-toggle').textContent = data.alerts.indicator_buy;
+                    document.getElementById('alert-tm').textContent = data.alerts.indicator_sell;
+                    document.getElementById('alert-tv').textContent = data.alerts.strategy_message;
                     document.getElementById('webhook-modal').style.display = 'flex';
                 } else {
                     showToast(data.error || 'Failed to get webhook', 'error');
@@ -691,6 +733,42 @@
             });
     }
 
+    // Reset History Functions
+    let pendingResetId = null;
+
+    function resetHistory(id, name) {
+        pendingResetId = id;
+        document.getElementById('reset-name').textContent = name;
+        document.getElementById('reset-modal').style.display = 'flex';
+        
+        document.getElementById('confirm-reset-btn').onclick = confirmReset;
+    }
+
+    function closeResetModal() {
+        document.getElementById('reset-modal').style.display = 'none';
+        pendingResetId = null;
+    }
+
+    function confirmReset() {
+        if (!pendingResetId) return;
+        
+        fetch(`/api/recorders/${pendingResetId}/reset-history`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                closeResetModal();
+                if (data.success) {
+                    showToast(data.message, 'success');
+                } else {
+                    showToast(data.error || 'Failed to reset history', 'error');
+                }
+            })
+            .catch(err => {
+                closeResetModal();
+                console.error('Error:', err);
+                showToast('Failed to reset trade history', 'error');
+            });
+    }
+
     function copyToClipboard(elementId) {
         const el = document.getElementById(elementId);
         const text = el.value || el.textContent;
@@ -722,6 +800,7 @@
         if (e.key === 'Escape') {
             closeWebhookModal();
             closeDeleteModal();
+            closeResetModal();
         }
     });
 

@@ -329,18 +329,18 @@
                     <button class="btn btn-primary btn-small" onclick="copyToClipboard('webhook-url')">Copy</button>
                 </div>
             </label>
-            <div class="alert-block">
-                <h3>Toggle Alert (2 Alerts Needed)</h3>
+            <div class="alert-block buy-alert">
+                <h3>🟢 BUY Alert Message</h3>
                 <pre id="alert-toggle"></pre>
                 <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-toggle')">Copy</button>
             </div>
-            <div class="alert-block">
-                <h3>TM Sizing Alert</h3>
+            <div class="alert-block sell-alert">
+                <h3>🔴 SELL Alert Message</h3>
                 <pre id="alert-tm"></pre>
                 <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-tm')">Copy</button>
             </div>
-            <div class="alert-block">
-                <h3>TV Sizing Alert</h3>
+            <div class="alert-block strategy-alert">
+                <h3>📊 Strategy Alert (Pine Script)</h3>
                 <pre id="alert-tv"></pre>
                 <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-tv')">Copy</button>
             </div>
@@ -1033,14 +1033,17 @@
                     const webhookUrl = document.getElementById('webhook-url');
                     if (webhookUrl) webhookUrl.value = data.webhook_url;
                     
+                    // Toggle Alert = BUY alert (user creates separate BUY and SELL alerts)
                     const toggle = document.getElementById('alert-toggle');
-                    if (toggle) toggle.textContent = data.alerts.toggle;
+                    if (toggle) toggle.textContent = data.alerts.indicator_buy;
                     
+                    // TM Sizing = SELL alert
                     const tm = document.getElementById('alert-tm');
-                    if (tm) tm.textContent = data.alerts.tm_sizing;
+                    if (tm) tm.textContent = data.alerts.indicator_sell;
                     
+                    // TV Sizing = Strategy alert (for Pine Script strategies)
                     const tv = document.getElementById('alert-tv');
-                    if (tv) tv.textContent = data.alerts.tv_sizing;
+                    if (tv) tv.textContent = data.alerts.strategy_message;
                 }
             })
             .catch(console.error);
