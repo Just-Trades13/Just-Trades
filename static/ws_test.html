@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head><title>WS Test</title></head>
+<body>
+<h1>WebSocket Test</h1>
+<div id="status">Connecting...</div>
+<script src="/static/js/socket.io.min.js"></script>
+<script>
+console.log('IO available:', typeof io);
+const s = io();
+s.on('connect', () => {
+    console.log('✅ CONNECTED!');
+    document.getElementById('status').textContent = '✅ Connected: ' + s.id;
+});
+s.on('connect_error', (e) => {
+    console.error('❌ ERROR:', e);
+    document.getElementById('status').textContent = '❌ Error: ' + e.message;
+});
+</script>
+</body>
+</html>

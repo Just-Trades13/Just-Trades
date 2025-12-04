@@ -1,0 +1,201 @@
+# Trade Manager Reverse Engineering - Your Answers
+# Fill this out based on what you observe in Trade Manager
+
+================================================================================
+1. WEBSOCKET BEHAVIOR - Control Center Page
+================================================================================
+
+What updates in real-time? (Check all that apply)
+[ ] Strategy P&L numbers update live
+[ ] Position counts change automatically
+[ ] Log entries appear as they happen
+[ ] Account balances update
+[ ] Order status changes
+[ ] Other: _________________________________
+
+How often do updates happen?
+( ) Every second
+( ) Every few seconds
+( ) Only on events (trades, position changes)
+( ) Other: _________________________________
+
+When you open the Control Center, does it:
+( ) Immediately show all data
+( ) Load data over time (progressive loading)
+( ) Show some data immediately, load more later
+
+Additional observations:
+_____________________________________________________________
+_____________________________________________________________
+_____________________________________________________________
+
+
+================================================================================
+2. DASHBOARD BEHAVIOR
+================================================================================
+
+What updates in real-time? (Check all that apply)
+[ ] Total P&L
+[ ] Today's P&L
+[ ] Active positions count
+[ ] Trade history table
+[ ] Charts/graphs
+[ ] Other: _________________________________
+
+Do you see trades appear in the table:
+( ) As they happen (immediately)
+( ) Only when you refresh the page
+( ) After a delay (how long? _____ seconds)
+
+Do charts update automatically?
+( ) Yes, continuously
+( ) Yes, on new data
+( ) No, only on refresh
+
+Additional observations:
+_____________________________________________________________
+_____________________________________________________________
+_____________________________________________________________
+
+
+================================================================================
+3. ACCOUNT MANAGEMENT
+================================================================================
+
+When you add a new Tradovate account:
+Does it show progress/status updates?
+( ) Yes - describe: _________________________________
+( ) No
+
+Does it refresh account balances automatically?
+( ) Yes - how often? _____
+( ) No
+
+Do subaccounts appear immediately?
+( ) Yes
+( ) No - there's a delay
+
+How does Trade Manager test account connections?
+Loading state? ( ) Yes ( ) No
+How long does it take? _____ seconds
+What happens during the test? _________________________________
+
+
+================================================================================
+4. STRATEGY MANAGEMENT
+================================================================================
+
+When you enable/disable a strategy:
+Does the status update immediately?
+( ) Yes
+( ) No - there's a delay
+
+Do you see confirmation messages?
+( ) Yes - describe: _________________________________
+( ) No
+
+Does the Control Center reflect the change right away?
+( ) Yes
+( ) No - there's a delay
+
+When a strategy executes a trade:
+Do you see it in the logs immediately?
+( ) Yes
+( ) No - there's a delay
+
+Does the P&L update right away?
+( ) Yes
+( ) No - there's a delay
+
+Does the position count change instantly?
+( ) Yes
+( ) No - there's a delay
+
+Additional observations:
+_____________________________________________________________
+_____________________________________________________________
+
+
+================================================================================
+5. TECHNICAL DETAILS - WebSocket
+================================================================================
+
+When you open browser DevTools (F12) → Network tab → Filter by "WS":
+
+Do you see a WebSocket connection?
+( ) Yes
+( ) No
+
+If yes, what's the URL?
+_____________________________________________________________
+
+When does it connect?
+( ) On page load (immediately)
+( ) On specific pages only - which pages? _________________________________
+( ) After some action - what action? _________________________________
+
+If you look at the WebSocket messages:
+What message types do you see? (List all you can find)
+1. _________________________________
+2. _________________________________
+3. _________________________________
+4. _________________________________
+5. _________________________________
+
+How often are messages sent?
+( ) Very frequently (multiple per second)
+( ) Occasionally (every few seconds)
+( ) Only on events
+( ) Other: _________________________________
+
+What data is in each message? (Describe what you see)
+Message type 1: _________________________________
+  Data: _________________________________
+
+Message type 2: _________________________________
+  Data: _________________________________
+
+Message type 3: _________________________________
+  Data: _________________________________
+
+
+================================================================================
+6. ADDITIONAL OBSERVATIONS
+================================================================================
+
+Any other real-time features you notice?
+_____________________________________________________________
+_____________________________________________________________
+_____________________________________________________________
+
+Any specific behaviors that stand out?
+_____________________________________________________________
+_____________________________________________________________
+_____________________________________________________________
+
+Any screenshots or specific examples you want to mention?
+_____________________________________________________________
+_____________________________________________________________
+_____________________________________________________________
+
+================================================================================
+7. PRIORITY FEATURES
+================================================================================
+
+What features from Trade Manager are MOST important to replicate?
+1. _________________________________
+2. _________________________________
+3. _________________________________
+
+What features can wait?
+1. _________________________________
+2. _________________________________
+
+================================================================================
+
+Notes:
+- Be as detailed as possible
+- If you're not sure about something, note that
+- Include any specific examples or timestamps if relevant
+- Feel free to add more sections if needed
+

@@ -1,0 +1,9 @@
+Copy and paste this when starting a new chat:
+
+@START_HERE.md
+
+Project: Just.Trades Trading Platform
+Working on: [Tab name]
+
+[Your request here]
+

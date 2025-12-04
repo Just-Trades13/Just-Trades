@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Connection Test</h1>
+    <div id="status">Not connected</div>
+    <div id="messages"></div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        console.log('Socket.IO loaded:', typeof io !== 'undefined');
+        
+        const socket = io('http://localhost:8082', {
+            transports: ['websocket', 'polling'],
+            reconnection: true
+        });
+
+        socket.on('connect', () => {
+            console.log('✅ CONNECTED! Socket ID:', socket.id);
+            document.getElementById('status').textContent = '✅ Connected - Socket ID: ' + socket.id;
+            document.getElementById('status').style.color = 'green';
+        });
+
+        socket.on('disconnect', () => {
+            console.log('❌ DISCONNECTED');
+            document.getElementById('status').textContent = '❌ Disconnected';
+            document.getElementById('status').style.color = 'red';
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('❌ CONNECTION ERROR:', error);
+            document.getElementById('status').textContent = '❌ Error: ' + error.message;
+            document.getElementById('status').style.color = 'red';
+        });
+
+        socket.on('status', (data) => {
+            console.log('Status received:', data);
+            const msg = document.createElement('div');
+            msg.textContent = 'Status: ' + JSON.stringify(data);
+            document.getElementById('messages').appendChild(msg);
+        });
+
+        socket.on('position_update', (data) => {
+            console.log('Position update:', data);
+            const msg = document.createElement('div');
+            msg.textContent = 'Position: ' + JSON.stringify(data);
+            document.getElementById('messages').appendChild(msg);
+        });
+    </script>
+</body>
+</html>
+

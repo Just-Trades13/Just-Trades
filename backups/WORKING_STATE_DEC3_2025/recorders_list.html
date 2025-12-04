@@ -1,0 +1,737 @@
+{% extends "layout.html" %}
+{% block title %}My Recorders - Just.Trades.{% endblock %}
+{% block page_title %}MY RECORDERS{% endblock %}
+{% block content %}
+<div class="recorder-list">
+    <section class="list-header">
+        <input type="text" id="search-input" placeholder="Search strategy..." oninput="handleSearch()">
+        <div class="spacer"></div>
+        <a class="btn btn-primary" href="/recorders/new">
+            <span class="material-icons">add</span>
+            Create Recorder
+        </a>
+    </section>
+
+    <!-- Loading State -->
+    <div id="loading-state" style="display: none; text-align: center; padding: 2rem;">
+        <span class="material-icons spin">sync</span>
+        <p>Loading recorders...</p>
+    </div>
+
+    <!-- Empty State -->
+    <div id="empty-state" style="display: none;" class="empty-state">
+        <span class="material-icons">edit_note</span>
+        <h3>No Recorders Yet</h3>
+        <p>Create your first recorder to start tracking your trading strategies.</p>
+        <a class="btn btn-primary" href="/recorders/new">Create Your First Recorder</a>
+    </div>
+
+    <!-- Recorders Table -->
+    <table id="recorders-table">
+        <thead>
+            <tr>
+                <th>STATUS</th>
+                <th>STRATEGY</th>
+                <th>SYMBOL</th>
+                <th>CREATED</th>
+                <th>ACTIONS</th>
+            </tr>
+        </thead>
+        <tbody id="recorders-tbody">
+            {% for recorder in recorders %}
+            <tr data-id="{{ recorder.id }}">
+                <td class="status-col">
+                    {% if recorder.is_recording %}
+                    <span class="status-badge recording" title="Recording">
+                        <span class="material-icons">fiber_manual_record</span>
+                        REC
+                    </span>
+                    {% else %}
+                    <span class="status-badge stopped" title="Stopped">
+                        <span class="material-icons">stop_circle</span>
+                        OFF
+                    </span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a class="strategy-link" href="/recorders/{{ recorder.id }}">{{ recorder.name }}</a>
+                </td>
+                <td class="symbol-col">{{ recorder.symbol or '—' }}</td>
+                <td class="date-col">{{ recorder.created_at[:10] if recorder.created_at else '—' }}</td>
+                <td class="actions">
+                    <button class="icon-btn" title="Edit" onclick="editRecorder({{ recorder.id }})">
+                        <span class="material-icons">edit</span>
+                    </button>
+                    <button class="icon-btn" title="Clone" onclick="cloneRecorder({{ recorder.id }})">
+                        <span class="material-icons">content_copy</span>
+                    </button>
+                    <button class="icon-btn" title="{% if recorder.is_recording %}Stop Recording{% else %}Start Recording{% endif %}" onclick="toggleRecording({{ recorder.id }}, {{ 'true' if recorder.is_recording else 'false' }})">
+                        <span class="material-icons">{% if recorder.is_recording %}stop{% else %}play_arrow{% endif %}</span>
+                    </button>
+                    <button class="icon-btn" title="Webhook" onclick="showWebhook({{ recorder.id }})">
+                        <span class="material-icons">link</span>
+                    </button>
+                    <button class="icon-btn delete" title="Delete" onclick="deleteRecorder({{ recorder.id }}, '{{ recorder.name }}')">
+                        <span class="material-icons">delete</span>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Pagination -->
+    <footer class="pager" id="pager">
+        <button id="prev-btn" onclick="changePage(-1)" disabled>‹</button>
+        <span class="page-info" id="page-info">Page 1</span>
+        <button id="next-btn" onclick="changePage(1)">›</button>
+    </footer>
+</div>
+
+<!-- Webhook Modal -->
+<div id="webhook-modal" class="modal" style="display: none;">
+    <div class="modal-content webhook-modal">
+        <header>
+            <div>
+                <h2>Strategy Webhook Details</h2>
+                <p>Share the auto-generated webhook and alert templates with your signal source.</p>
+            </div>
+            <button class="btn btn-outline" onclick="closeWebhookModal()">Close</button>
+        </header>
+        <div class="webhook-body">
+            <label class="form-field">
+                <span>Webhook URL</span>
+                <div class="copy-row">
+                    <input type="text" id="webhook-url" readonly>
+                    <button class="btn btn-primary btn-small" onclick="copyToClipboard('webhook-url')">Copy</button>
+                </div>
+            </label>
+            <div class="alert-block">
+                <h3>Toggle Alert (2 Alerts Needed)</h3>
+                <pre id="alert-toggle"></pre>
+                <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-toggle')">Copy</button>
+            </div>
+            <div class="alert-block">
+                <h3>TM Sizing Alert</h3>
+                <pre id="alert-tm"></pre>
+                <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-tm')">Copy</button>
+            </div>
+            <div class="alert-block">
+                <h3>TV Sizing Alert</h3>
+                <pre id="alert-tv"></pre>
+                <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-tv')">Copy</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="delete-modal" class="modal" style="display: none;">
+    <div class="modal-content confirm-modal">
+        <h2>Delete Recorder?</h2>
+        <p>Are you sure you want to delete "<span id="delete-name"></span>"? This action cannot be undone.</p>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeDeleteModal()">Cancel</button>
+            <button class="btn btn-danger" id="confirm-delete-btn">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="toast"></div>
+
+{% endblock %}
+{% block styles %}
+<style>
+    .recorder-list { display: grid; gap: 1.25rem; }
+    .list-header { 
+        display: flex; 
+        align-items: center; 
+        gap: 1rem; 
+        background: rgba(11,18,33,0.9); 
+        border: 1px solid rgba(148,163,184,0.12); 
+        border-radius: 16px; 
+        padding: 1rem 1.25rem; 
+    }
+    .list-header input { 
+        background: rgba(15,23,42,0.55); 
+        border: 1px solid rgba(148,163,184,0.2); 
+        border-radius: 10px; 
+        color: #e2e8f0; 
+        padding: 0.65rem 0.85rem; 
+        width: 280px;
+    }
+    .spacer { flex: 1; }
+    .btn { 
+        border: none; 
+        border-radius: 12px; 
+        padding: 0.65rem 1.4rem; 
+        font-weight: 600; 
+        letter-spacing: 0.06em; 
+        text-transform: uppercase; 
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        text-decoration: none;
+    }
+    .btn-primary { 
+        background: linear-gradient(135deg, #60a5fa, #2563eb); 
+        color: #0b1120; 
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); 
+    }
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #93c5fd, #3b82f6);
+    }
+    .btn-outline { 
+        background: rgba(15,23,42,0.6); 
+        color: #e2e8f0; 
+        border: 1px solid rgba(148,163,184,0.2); 
+    }
+    .btn-outline:hover {
+        background: rgba(30,41,59,0.8);
+    }
+    .btn-danger {
+        background: linear-gradient(135deg, #f87171, #dc2626);
+        color: white;
+    }
+    .btn-small { 
+        padding: 0.45rem 0.9rem; 
+        font-size: 0.75rem; 
+    }
+    .btn .material-icons { font-size: 1.1rem; }
+
+    table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        background: rgba(7,12,23,0.92); 
+        border: 1px solid rgba(148,163,184,0.12); 
+        border-radius: 16px; 
+        overflow: hidden; 
+    }
+    thead th { 
+        text-align: left; 
+        padding: 0.85rem 1rem; 
+        text-transform: uppercase; 
+        letter-spacing: 0.08em; 
+        font-size: 0.75rem; 
+        color: #94a3b8; 
+        border-bottom: 1px solid rgba(148,163,184,0.12); 
+    }
+    tbody td { 
+        padding: 0.95rem 1rem; 
+        border-bottom: 1px solid rgba(148,163,184,0.08); 
+        font-size: 0.95rem; 
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: rgba(30,41,59,0.4); }
+
+    .status-col { width: 90px; }
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.3rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+    .status-badge .material-icons { font-size: 0.7rem; }
+    .status-badge.recording { 
+        background: rgba(239,68,68,0.2); 
+        color: #fca5a5;
+        animation: pulse 2s infinite;
+    }
+    .status-badge.stopped { 
+        background: rgba(148,163,184,0.2); 
+        color: #94a3b8; 
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+
+    .symbol-col { color: #60a5fa; font-weight: 500; }
+    .date-col { color: #94a3b8; font-size: 0.85rem; }
+
+    .actions { 
+        display: flex; 
+        gap: 0.5rem; 
+    }
+    .icon-btn { 
+        background: rgba(15,23,42,0.6); 
+        border: 1px solid rgba(148,163,184,0.15); 
+        color: #94a3b8; 
+        border-radius: 8px;
+        padding: 0.4rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    }
+    .icon-btn:hover { 
+        color: #60a5fa;
+        background: rgba(59,130,246,0.15);
+        border-color: rgba(59,130,246,0.3);
+    }
+    .icon-btn.delete:hover {
+        color: #fca5a5;
+        background: rgba(239,68,68,0.15);
+        border-color: rgba(239,68,68,0.3);
+    }
+    .icon-btn .material-icons { font-size: 1.1rem; }
+
+    .strategy-link { 
+        color: #60a5fa; 
+        text-decoration: none; 
+        font-weight: 600; 
+    }
+    .strategy-link:hover { text-decoration: underline; }
+
+    .pager { 
+        display: flex; 
+        align-items: center; 
+        gap: 0.75rem; 
+        justify-content: center; 
+        padding: 0.75rem; 
+    }
+    .pager button { 
+        background: rgba(15,23,42,0.6); 
+        border: 1px solid rgba(148,163,184,0.2); 
+        border-radius: 10px; 
+        color: #cbd5f5; 
+        padding: 0.4rem 0.75rem; 
+        cursor: pointer; 
+    }
+    .pager button:hover:not(:disabled) {
+        background: rgba(59,130,246,0.2);
+        border-color: rgba(59,130,246,0.4);
+    }
+    .pager button:disabled { 
+        opacity: 0.4; 
+        cursor: not-allowed; 
+    }
+    .page-info { 
+        color: #94a3b8;
+        font-size: 0.85rem;
+        padding: 0 0.5rem;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        background: rgba(11,18,33,0.9);
+        border: 1px solid rgba(148,163,184,0.12);
+        border-radius: 16px;
+    }
+    .empty-state .material-icons {
+        font-size: 4rem;
+        color: #60a5fa;
+        opacity: 0.6;
+        margin-bottom: 1rem;
+    }
+    .empty-state h3 {
+        margin: 0 0 0.5rem;
+        font-size: 1.25rem;
+    }
+    .empty-state p {
+        color: #94a3b8;
+        margin: 0 0 1.5rem;
+    }
+
+    /* Spin animation */
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    .spin { animation: spin 1s linear infinite; }
+
+    /* Modal */
+    .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        backdrop-filter: blur(4px);
+    }
+    .modal-content {
+        background: rgba(11,18,33,0.98);
+        border: 1px solid rgba(148,163,184,0.2);
+        border-radius: 20px;
+        padding: 1.75rem;
+        max-width: 600px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+    .webhook-modal header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .webhook-modal header h2 {
+        margin: 0 0 0.25rem;
+        font-size: 1.25rem;
+    }
+    .webhook-modal header p {
+        margin: 0;
+        color: #94a3b8;
+        font-size: 0.9rem;
+    }
+    .webhook-body { display: grid; gap: 1.25rem; }
+    .form-field { display: grid; gap: 0.35rem; }
+    .form-field span { 
+        color: #94a3b8; 
+        font-size: 0.8rem; 
+        letter-spacing: 0.08em; 
+        text-transform: uppercase; 
+    }
+    .form-field input { 
+        background: rgba(15,23,42,0.55); 
+        border: 1px solid rgba(148,163,184,0.25); 
+        border-radius: 10px; 
+        color: #e2e8f0; 
+        padding: 0.65rem 0.85rem; 
+        font-size: 0.9rem;
+    }
+    .copy-row { display: flex; gap: 0.75rem; }
+    .copy-row input { flex: 1; }
+    .alert-block { 
+        background: rgba(5,10,20,0.8); 
+        border: 1px solid rgba(59,130,246,0.2); 
+        border-radius: 12px; 
+        padding: 1rem; 
+        display: grid; 
+        gap: 0.75rem; 
+    }
+    .alert-block h3 { 
+        margin: 0; 
+        font-size: 0.9rem; 
+        color: #bfdbfe; 
+    }
+    .alert-block pre { 
+        margin: 0; 
+        background: rgba(15,23,42,0.55); 
+        border: 1px solid rgba(59,130,246,0.25); 
+        border-radius: 10px; 
+        padding: 0.85rem; 
+        font-family: "Courier New", monospace; 
+        font-size: 0.8rem; 
+        color: #e0f2fe; 
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    /* Confirm Modal */
+    .confirm-modal {
+        text-align: center;
+        max-width: 400px;
+    }
+    .confirm-modal h2 {
+        margin: 0 0 0.75rem;
+    }
+    .confirm-modal p {
+        color: #94a3b8;
+        margin: 0 0 1.5rem;
+    }
+    .modal-actions {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+    }
+
+    /* Toast */
+    .toast {
+        position: fixed;
+        bottom: 2rem;
+        left: 50%;
+        transform: translateX(-50%) translateY(100px);
+        background: rgba(11,18,33,0.95);
+        border: 1px solid rgba(148,163,184,0.2);
+        border-radius: 12px;
+        padding: 0.85rem 1.5rem;
+        color: #e2e8f0;
+        font-size: 0.9rem;
+        opacity: 0;
+        transition: all 0.3s ease;
+        z-index: 3000;
+    }
+    .toast.show {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+    .toast.success { border-color: rgba(34,197,94,0.5); color: #86efac; }
+    .toast.error { border-color: rgba(239,68,68,0.5); color: #fca5a5; }
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+    let currentPage = 1;
+    let totalPages = 1;
+    let searchTimeout = null;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        updateEmptyState();
+        updatePagination();
+    });
+
+    function updateEmptyState() {
+        const tbody = document.getElementById('recorders-tbody');
+        const table = document.getElementById('recorders-table');
+        const empty = document.getElementById('empty-state');
+        
+        if (tbody.children.length === 0) {
+            table.style.display = 'none';
+            empty.style.display = 'block';
+            document.getElementById('pager').style.display = 'none';
+        } else {
+            table.style.display = 'table';
+            empty.style.display = 'none';
+            document.getElementById('pager').style.display = 'flex';
+        }
+    }
+
+    function updatePagination() {
+        document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages || 1}`;
+        document.getElementById('prev-btn').disabled = currentPage <= 1;
+        document.getElementById('next-btn').disabled = currentPage >= totalPages;
+    }
+
+    function handleSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            const query = document.getElementById('search-input').value;
+            loadRecorders(query);
+        }, 300);
+    }
+
+    function loadRecorders(search = '') {
+        const loading = document.getElementById('loading-state');
+        const table = document.getElementById('recorders-table');
+        
+        loading.style.display = 'block';
+        table.style.display = 'none';
+        
+        fetch(`/api/recorders?search=${encodeURIComponent(search)}&page=${currentPage}`)
+            .then(res => res.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.success) {
+                    totalPages = data.total_pages;
+                    renderRecorders(data.recorders);
+                    updatePagination();
+                } else {
+                    showToast(data.error || 'Failed to load recorders', 'error');
+                }
+            })
+            .catch(err => {
+                loading.style.display = 'none';
+                console.error('Error:', err);
+                showToast('Failed to load recorders', 'error');
+            });
+    }
+
+    function renderRecorders(recorders) {
+        const tbody = document.getElementById('recorders-tbody');
+        tbody.innerHTML = '';
+        
+        recorders.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.dataset.id = r.id;
+            tr.innerHTML = `
+                <td class="status-col">
+                    <span class="status-badge ${r.is_recording ? 'recording' : 'stopped'}" title="${r.is_recording ? 'Recording' : 'Stopped'}">
+                        <span class="material-icons">${r.is_recording ? 'fiber_manual_record' : 'stop_circle'}</span>
+                        ${r.is_recording ? 'REC' : 'OFF'}
+                    </span>
+                </td>
+                <td><a class="strategy-link" href="/recorders/${r.id}">${escapeHtml(r.name)}</a></td>
+                <td class="symbol-col">${r.symbol || '—'}</td>
+                <td class="date-col">${r.created_at ? r.created_at.slice(0, 10) : '—'}</td>
+                <td class="actions">
+                    <button class="icon-btn" title="Edit" onclick="editRecorder(${r.id})">
+                        <span class="material-icons">edit</span>
+                    </button>
+                    <button class="icon-btn" title="Clone" onclick="cloneRecorder(${r.id})">
+                        <span class="material-icons">content_copy</span>
+                    </button>
+                    <button class="icon-btn" title="${r.is_recording ? 'Stop Recording' : 'Start Recording'}" onclick="toggleRecording(${r.id}, ${r.is_recording})">
+                        <span class="material-icons">${r.is_recording ? 'stop' : 'play_arrow'}</span>
+                    </button>
+                    <button class="icon-btn" title="Webhook" onclick="showWebhook(${r.id})">
+                        <span class="material-icons">link</span>
+                    </button>
+                    <button class="icon-btn delete" title="Delete" onclick="deleteRecorder(${r.id}, '${escapeHtml(r.name)}')">
+                        <span class="material-icons">delete</span>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        updateEmptyState();
+    }
+
+    function changePage(delta) {
+        currentPage += delta;
+        const search = document.getElementById('search-input').value;
+        loadRecorders(search);
+    }
+
+    function editRecorder(id) {
+        window.location.href = `/recorders/${id}`;
+    }
+
+    function cloneRecorder(id) {
+        fetch(`/api/recorders/${id}/clone`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`Cloned: ${data.name}`, 'success');
+                    loadRecorders(document.getElementById('search-input').value);
+                } else {
+                    showToast(data.error || 'Failed to clone', 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                showToast('Failed to clone recorder', 'error');
+            });
+    }
+
+    function toggleRecording(id, isRecording) {
+        const action = isRecording ? 'stop' : 'start';
+        fetch(`/api/recorders/${id}/${action}`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    loadRecorders(document.getElementById('search-input').value);
+                } else {
+                    showToast(data.error || `Failed to ${action}`, 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                showToast(`Failed to ${action} recording`, 'error');
+            });
+    }
+
+    function showWebhook(id) {
+        fetch(`/api/recorders/${id}/webhook`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('webhook-url').value = data.webhook_url;
+                    document.getElementById('alert-toggle').textContent = data.alerts.toggle;
+                    document.getElementById('alert-tm').textContent = data.alerts.tm_sizing;
+                    document.getElementById('alert-tv').textContent = data.alerts.tv_sizing;
+                    document.getElementById('webhook-modal').style.display = 'flex';
+                } else {
+                    showToast(data.error || 'Failed to get webhook', 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                showToast('Failed to get webhook details', 'error');
+            });
+    }
+
+    function closeWebhookModal() {
+        document.getElementById('webhook-modal').style.display = 'none';
+    }
+
+    let pendingDeleteId = null;
+
+    function deleteRecorder(id, name) {
+        pendingDeleteId = id;
+        document.getElementById('delete-name').textContent = name;
+        document.getElementById('delete-modal').style.display = 'flex';
+        
+        document.getElementById('confirm-delete-btn').onclick = confirmDelete;
+    }
+
+    function closeDeleteModal() {
+        document.getElementById('delete-modal').style.display = 'none';
+        pendingDeleteId = null;
+    }
+
+    function confirmDelete() {
+        if (!pendingDeleteId) return;
+        
+        fetch(`/api/recorders/${pendingDeleteId}`, { method: 'DELETE' })
+            .then(res => res.json())
+            .then(data => {
+                closeDeleteModal();
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    loadRecorders(document.getElementById('search-input').value);
+                } else {
+                    showToast(data.error || 'Failed to delete', 'error');
+                }
+            })
+            .catch(err => {
+                closeDeleteModal();
+                console.error('Error:', err);
+                showToast('Failed to delete recorder', 'error');
+            });
+    }
+
+    function copyToClipboard(elementId) {
+        const el = document.getElementById(elementId);
+        const text = el.value || el.textContent;
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('Copied to clipboard!', 'success');
+        }).catch(() => {
+            showToast('Failed to copy', 'error');
+        });
+    }
+
+    function showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.className = `toast ${type} show`;
+        
+        setTimeout(() => {
+            toast.className = 'toast';
+        }, 3000);
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Close modals on escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeWebhookModal();
+            closeDeleteModal();
+        }
+    });
+
+    // Close modals on backdrop click
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+    });
+</script>
+{% endblock %}

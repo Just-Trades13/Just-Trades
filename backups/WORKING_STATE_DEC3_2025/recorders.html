@@ -1,0 +1,1125 @@
+{% extends "layout.html" %}
+{% block title %}{{ 'Edit' if recorder else 'Create' }} Recorder - Just.Trades.{% endblock %}
+{% block page_title %}{% if recorder %}EDIT RECORDER{% else %}CREATE RECORDER{% endif %}{% endblock %}
+{% block content %}
+<div class="recorder-builder">
+    <section class="builder-header">
+        <div class="header-meta">
+            <div class="title-row">
+                <h1>{{ recorder.name if recorder else 'Create New Recorder' }}</h1>
+                <span class="chip">RECORDER</span>
+                {% if recorder and recorder.is_recording %}
+                <span class="chip chip-recording">● RECORDING</span>
+                {% endif %}
+            </div>
+            <p>Configure your recorder with sizing, target ladders, risk controls, and routing options before going live.</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-primary" id="save-btn" onclick="saveRecorder()">
+                <span class="material-icons">save</span>
+                {{ 'Update Recorder' if recorder else 'Create Recorder' }}
+            </button>
+            <a class="link-button" href="/recorders">← Back to List</a>
+        </div>
+    </section>
+
+    <!-- Alert Messages -->
+    <section class="builder-alert builder-alert--error" id="error-alert" style="display: none;">
+        <strong>⚠ Please fix the following issues:</strong>
+        <ul id="error-list"></ul>
+    </section>
+
+    <section class="builder-alert builder-alert--success" id="success-alert" style="display: none;">
+        <strong>✅ <span id="success-message">Recorder saved successfully.</span></strong>
+    </section>
+
+    <section class="builder-form">
+        <!-- Basic Info -->
+        <div class="form-two">
+        <label class="form-field">
+                <span>Strategy Name <span class="required">*</span></span>
+                <input type="text" id="name" placeholder="Enter strategy name" value="{{ recorder.name if recorder else '' }}" required>
+        </label>
+        <label class="form-field">
+            <span>Strategy Type</span>
+            <div class="select-shell">
+                    <select id="strategy_type">
+                        <option value="Stock" {{ 'selected' if recorder and recorder.strategy_type == 'Stock' else '' }}>Stock</option>
+                        <option value="Futures" {{ 'selected' if not recorder or recorder.strategy_type == 'Futures' else '' }}>Futures</option>
+                        <option value="Crypto" {{ 'selected' if recorder and recorder.strategy_type == 'Crypto' else '' }}>Crypto</option>
+                        <option value="Forex" {{ 'selected' if recorder and recorder.strategy_type == 'Forex' else '' }}>Forex</option>
+                </select>
+                <span class="material-icons">expand_more</span>
+            </div>
+        </label>
+        </div>
+
+
+        <!-- Positional Settings Panel -->
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> Positional Settings</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Initial Position Size</span>
+                        <input type="number" id="initial_position_size" value="{{ recorder.initial_position_size if recorder else 1 }}" min="1">
+                    </label>
+                    <label class="form-field">
+                        <span>Add Position Size</span>
+                        <input type="number" id="add_position_size" value="{{ recorder.add_position_size if recorder else 0 }}" min="0">
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLTP Settings Panel -->
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> SLTP Settings</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <div class="tp-sl-grid">
+                    <div class="tp-settings">
+                        <h3>Take Profit Targets</h3>
+                        <div class="form-two">
+                            <label class="form-field">
+                                <span>TP Units</span>
+                                <div class="select-shell">
+                                    <select id="tp_units">
+                                        <option value="Ticks" {{ 'selected' if not recorder or recorder.tp_units == 'Ticks' else '' }}>Ticks</option>
+                                        <option value="Points" {{ 'selected' if recorder and recorder.tp_units == 'Points' else '' }}>Points</option>
+                                        <option value="Percent" {{ 'selected' if recorder and recorder.tp_units == 'Percent' else '' }}>Percent</option>
+                                    </select>
+                                    <span class="material-icons">expand_more</span>
+                                </div>
+                            </label>
+                            <label class="form-field">
+                                <span>Trim Units</span>
+                                <div class="select-shell">
+                                    <select id="trim_units">
+                                        <option value="Contracts" {{ 'selected' if not recorder or recorder.trim_units == 'Contracts' else '' }}>Contracts</option>
+                                        <option value="Percent" {{ 'selected' if recorder and recorder.trim_units == 'Percent' else '' }}>Percent</option>
+                                    </select>
+                                    <span class="material-icons">expand_more</span>
+                                </div>
+                            </label>
+                        </div>
+                        <button class="btn btn-outline btn-small" type="button" onclick="addTpTarget()">+ Add TP</button>
+                        <div id="tp-targets-container">
+                            <!-- TP targets will be rendered here -->
+                        </div>
+                    </div>
+                    <div class="sl-settings">
+                        <div class="toggle-row">
+                            <span>Stop Loss</span>
+                            <label class="switch">
+                                <input type="checkbox" id="sl_enabled" {{ 'checked' if recorder and recorder.sl_enabled else '' }}>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-two">
+                            <label class="form-field">
+                                <span>Stop Loss Amount</span>
+                                <input type="number" id="sl_amount" value="{{ recorder.sl_amount if recorder else 0 }}" step="0.01">
+                            </label>
+                            <label class="form-field">
+                                <span>SL Units</span>
+                                <div class="select-shell">
+                                    <select id="sl_units">
+                                        <option value="Ticks" {{ 'selected' if not recorder or recorder.sl_units == 'Ticks' else '' }}>Ticks</option>
+                                        <option value="Loss" {{ 'selected' if recorder and recorder.sl_units == 'Loss' else '' }}>Loss ($)</option>
+                                        <option value="Percent" {{ 'selected' if recorder and recorder.sl_units == 'Percent' else '' }}>Percent</option>
+                                    </select>
+                                    <span class="material-icons">expand_more</span>
+                                </div>
+                            </label>
+                        </div>
+                        <label class="form-field">
+                            <span>SL Type</span>
+                            <div class="select-shell">
+                                <select id="sl_type">
+                                    <option value="Fixed" {{ 'selected' if not recorder or recorder.sl_type == 'Fixed' else '' }}>Fixed</option>
+                                    <option value="Trail" {{ 'selected' if recorder and recorder.sl_type == 'Trail' else '' }}>Trailing</option>
+                                </select>
+                                <span class="material-icons">expand_more</span>
+                            </div>
+                        </label>
+                        <div class="separator"></div>
+                        <div class="toggle-row">
+                            <span>Averaging Down</span>
+                            <label class="switch">
+                                <input type="checkbox" id="avg_down_enabled" {{ 'checked' if recorder and recorder.avg_down_enabled else '' }}>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-two">
+                            <label class="form-field">
+                                <span>Average Down Amount</span>
+                                <input type="number" id="avg_down_amount" value="{{ recorder.avg_down_amount if recorder else 0 }}" min="0">
+                            </label>
+                            <label class="form-field">
+                                <span>Average Down Point</span>
+                                <input type="number" id="avg_down_point" value="{{ recorder.avg_down_point if recorder else 0 }}" step="0.01">
+                            </label>
+                        </div>
+                        <label class="form-field">
+                            <span>Avg Down Unit</span>
+                            <div class="select-shell">
+                                <select id="avg_down_units">
+                                    <option value="Ticks" {{ 'selected' if not recorder or recorder.avg_down_units == 'Ticks' else '' }}>Ticks</option>
+                                    <option value="Points" {{ 'selected' if recorder and recorder.avg_down_units == 'Points' else '' }}>Points</option>
+                                </select>
+                                <span class="material-icons">expand_more</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Filter Settings Panel -->
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> Filter Settings</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Signal Delay</span>
+                        <input type="number" id="add_delay" value="{{ recorder.add_delay if recorder else 1 }}" min="1">
+                        <small>Execute every Nth signal (1 = all, 2 = every other, etc.)</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Max Contracts Per Trade</span>
+                        <input type="number" id="max_contracts_per_trade" value="{{ recorder.max_contracts_per_trade if recorder else 0 }}" min="0">
+                        <small>0 = unlimited</small>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Option Premium Filter</span>
+                    <input type="number" id="option_premium_filter" value="{{ recorder.option_premium_filter if recorder else 0 }}" step="0.01" min="0">
+                    <small>Minimum premium threshold (0 = disabled)</small>
+                </label>
+                <label class="form-field">
+                    <span>Direction Filter</span>
+                    <div class="select-shell">
+                        <select id="direction_filter">
+                            <option value="">All Directions</option>
+                            <option value="Long" {{ 'selected' if recorder and recorder.direction_filter == 'Long' else '' }}>Long Only</option>
+                            <option value="Short" {{ 'selected' if recorder and recorder.direction_filter == 'Short' else '' }}>Short Only</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
+                <div class="time-filters">
+                    <div class="time-block">
+                        <h4>Time Filter #1</h4>
+                        <div class="time-grid">
+                            <label class="form-field">
+                                <span>Start #1</span>
+                                <input type="text" id="time_filter_1_start" value="{{ recorder.time_filter_1_start if recorder else '' }}" placeholder="e.g. 8:45 AM">
+                            </label>
+                            <label class="form-field">
+                                <span>Stop #1</span>
+                                <input type="text" id="time_filter_1_stop" value="{{ recorder.time_filter_1_stop if recorder else '' }}" placeholder="e.g. 1:45 PM">
+                            </label>
+                        </div>
+                    </div>
+                    <div class="time-block">
+                        <h4>Time Filter #2</h4>
+                        <div class="time-grid">
+                            <label class="form-field">
+                                <span>Start #2</span>
+                                <input type="text" id="time_filter_2_start" value="{{ recorder.time_filter_2_start if recorder else '' }}" placeholder="e.g. 12:30 PM">
+                            </label>
+                            <label class="form-field">
+                                <span>Stop #2</span>
+                                <input type="text" id="time_filter_2_stop" value="{{ recorder.time_filter_2_stop if recorder else '' }}" placeholder="e.g. 3:15 PM">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Execution Controls Panel -->
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> Execution Controls</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Signal Cooldown (seconds)</span>
+                        <input type="number" id="signal_cooldown" value="{{ recorder.signal_cooldown if recorder else 0 }}" min="0">
+                        <small>0 = no cooldown</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Max Signals Per Session</span>
+                        <input type="number" id="max_signals_per_session" value="{{ recorder.max_signals_per_session if recorder else 0 }}" min="0">
+                        <small>0 = unlimited</small>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Max Daily Loss ($)</span>
+                    <input type="number" id="max_daily_loss" value="{{ recorder.max_daily_loss if recorder else 0 }}" step="0.01" min="0">
+                    <small>0 = no limit</small>
+                </label>
+                <div class="switch-row">
+                    <label class="switch">
+                        <input type="checkbox" id="auto_flat_after_cutoff" {{ 'checked' if recorder and recorder.auto_flat_after_cutoff else '' }}>
+                        <span class="slider"></span>
+                    </label>
+                    <div>
+                        <h3>Enable Auto Flat After Cutoff</h3>
+                        <p>Automatically close open positions and disable signals after the session end time.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Miscellaneous Settings Panel -->
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> Miscellaneous Settings</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <label class="form-field">
+                    <span>Notes</span>
+                    <textarea id="notes" rows="3" placeholder="Add any additional context for this recorder...">{{ recorder.notes if recorder else '' }}</textarea>
+                </label>
+                <div class="switch-row">
+                    <label class="switch">
+                        <input type="checkbox" id="recording_enabled" {{ 'checked' if not recorder or recorder.recording_enabled else '' }}>
+                        <span class="slider"></span>
+                    </label>
+                    <div>
+                        <h3>Recording Enabled</h3>
+                        <p>Allow this recorder to capture trading signals and positions.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </section>
+
+    <!-- Webhook Section (only shown for existing recorders) -->
+    {% if recorder and recorder.webhook_token %}
+    <section class="webhook-card">
+        <header>
+            <div>
+                <h2>Strategy Webhook Details</h2>
+                <p>Share the auto-generated webhook and alert templates with your signal source.</p>
+            </div>
+            <button class="btn btn-outline" onclick="toggleWebhookCard()">
+                <span class="material-icons" id="webhook-toggle-icon">expand_more</span>
+            </button>
+        </header>
+        <div class="webhook-body" id="webhook-body">
+            <label class="form-field">
+                <span>Webhook URL</span>
+                <div class="copy-row">
+                    <input type="text" id="webhook-url" readonly value="">
+                    <button class="btn btn-primary btn-small" onclick="copyToClipboard('webhook-url')">Copy</button>
+                </div>
+            </label>
+            <div class="alert-block">
+                <h3>Toggle Alert (2 Alerts Needed)</h3>
+                <pre id="alert-toggle"></pre>
+                <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-toggle')">Copy</button>
+            </div>
+            <div class="alert-block">
+                <h3>TM Sizing Alert</h3>
+                <pre id="alert-tm"></pre>
+                <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-tm')">Copy</button>
+            </div>
+            <div class="alert-block">
+                <h3>TV Sizing Alert</h3>
+                <pre id="alert-tv"></pre>
+                <button class="btn btn-outline btn-small" onclick="copyToClipboard('alert-tv')">Copy</button>
+            </div>
+        </div>
+    </section>
+    {% endif %}
+</div>
+
+<!-- Webhook Modal (shown after creation) -->
+<div id="webhook-modal" class="modal" style="display: none;">
+    <div class="modal-content webhook-modal-content">
+        <header>
+            <div>
+                <h2>🎉 Recorder Created Successfully!</h2>
+                <p>Copy these webhook details into your TradingView alert to connect your signals.</p>
+            </div>
+        </header>
+        <div class="webhook-body">
+            <label class="form-field">
+                <span>Webhook URL</span>
+                <div class="copy-row">
+                    <input type="text" id="modal-webhook-url" readonly>
+                    <button class="btn btn-primary btn-small" onclick="copyToClipboard('modal-webhook-url')">Copy</button>
+                </div>
+                <small>Paste this URL in TradingView Alert → Webhook URL (check the webhook checkbox!)</small>
+            </label>
+            
+            <div class="alert-section">
+                <h3 class="section-title">📈 For Indicator Alerts</h3>
+                <p class="section-desc">Create separate alerts for BUY and SELL signals</p>
+                
+                <div class="alert-block buy-alert">
+                    <h4>🟢 BUY Alert Message</h4>
+                    <pre id="modal-indicator-buy"></pre>
+                    <button class="btn btn-primary btn-small" onclick="copyToClipboard('modal-indicator-buy')">Copy BUY Message</button>
+                </div>
+                
+                <div class="alert-block sell-alert">
+                    <h4>🔴 SELL Alert Message</h4>
+                    <pre id="modal-indicator-sell"></pre>
+                    <button class="btn btn-primary btn-small" onclick="copyToClipboard('modal-indicator-sell')">Copy SELL Message</button>
+                </div>
+            </div>
+            
+            <div class="alert-section">
+                <h3 class="section-title">📊 For Pine Script Strategies</h3>
+                <p class="section-desc">One alert handles both BUY and SELL automatically</p>
+                
+                <div class="alert-block strategy-alert">
+                    <h4>Strategy Alert Message</h4>
+                    <pre id="modal-strategy-alert"></pre>
+                    <button class="btn btn-outline btn-small" onclick="copyToClipboard('modal-strategy-alert')">Copy Strategy Message</button>
+                    <small>TradingView auto-fills {% raw %}{{strategy.order.action}}{% endraw %} with "buy" or "sell"</small>
+                </div>
+            </div>
+        </div>
+        <footer class="modal-footer">
+            <button class="btn btn-outline" onclick="closeWebhookModalAndGoToList()">Go to Recorders List</button>
+            <button class="btn btn-primary" onclick="closeWebhookModalAndEdit()">Edit This Recorder</button>
+        </footer>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="toast"></div>
+
+{% endblock %}
+{% block styles %}
+<style>
+    .recorder-builder { display: grid; gap: 1.75rem; }
+    .builder-header { 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: flex-start; 
+        gap: 1.5rem; 
+        background: radial-gradient(circle at top left, rgba(59,130,246,0.18), transparent 55%), rgba(11,18,33,0.9); 
+        border-radius: 20px; 
+        border: 1px solid rgba(59,130,246,0.25); 
+        padding: 2rem; 
+    }
+    .title-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .chip { 
+        padding: 0.25rem 0.75rem; 
+        border-radius: 999px; 
+        background: rgba(59,130,246,0.25); 
+        color: #93c5fd; 
+        font-size: 0.75rem; 
+        letter-spacing: 0.12em; 
+        text-transform: uppercase; 
+    }
+    .chip-recording {
+        background: rgba(239,68,68,0.25);
+        color: #fca5a5;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+    .builder-header h1 { margin: 0; font-size: 2rem; }
+    .builder-header p { margin: 0; color: var(--text-muted); max-width: 540px; }
+    .header-actions { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+    .btn { 
+        border: none; 
+        border-radius: 12px; 
+        padding: 0.75rem 1.6rem; 
+        font-weight: 600; 
+        letter-spacing: 0.06em; 
+        text-transform: uppercase; 
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        text-decoration: none;
+    }
+    .btn-primary { 
+        background: linear-gradient(135deg, #60a5fa, #2563eb); 
+        color: #0b1120; 
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); 
+    }
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #93c5fd, #3b82f6);
+    }
+    .btn-outline { 
+        background: rgba(15,23,42,0.6); 
+        color: #e2e8f0; 
+        border: 1px solid rgba(148,163,184,0.2); 
+    }
+    .btn-small { padding: 0.45rem 0.9rem; font-size: 0.75rem; }
+    .btn .material-icons { font-size: 1.1rem; }
+    .link-button { color: #60a5fa; text-decoration: none; font-weight: 600; }
+    .link-button:hover { text-decoration: underline; }
+
+    .builder-alert { 
+        border-radius: 14px; 
+        padding: 1rem 1.25rem; 
+        display: grid; 
+        gap: 0.5rem; 
+        font-size: 0.9rem; 
+    }
+    .builder-alert--error { 
+        background: rgba(239,68,68,0.12); 
+        border: 1px solid rgba(239,68,68,0.45); 
+        color: #fca5a5; 
+    }
+    .builder-alert--success { 
+        background: rgba(34,197,94,0.12); 
+        border: 1px solid rgba(34,197,94,0.35); 
+        color: #86efac; 
+    }
+    .builder-alert ul { margin: 0; padding-left: 1.25rem; }
+
+    .builder-form { 
+        background: rgba(11,18,33,0.9); 
+        border-radius: 20px; 
+        border: 1px solid rgba(148,163,184,0.12); 
+        padding: 1.75rem; 
+        display: grid; 
+        gap: 1.5rem; 
+    }
+    .form-field { 
+        display: grid; 
+        gap: 0.35rem; 
+        color: var(--text-muted); 
+        font-size: 0.8rem; 
+        letter-spacing: 0.08em; 
+        text-transform: uppercase; 
+    }
+    .form-field .required { color: #f87171; }
+    input, select, textarea { 
+        background: rgba(15,23,42,0.55); 
+        border: 1px solid rgba(148,163,184,0.25); 
+        border-radius: 12px; 
+        color: #e2e8f0; 
+        padding: 0.65rem 0.85rem; 
+        font-size: 0.95rem; 
+    }
+    input:focus, select:focus, textarea:focus {
+        outline: none;
+        border-color: rgba(59,130,246,0.5);
+        box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+    }
+    .input-error { border-color: rgba(248,113,113,0.6) !important; }
+    .error-text { color: #fca5a5; font-size: 0.75rem; }
+    .select-shell { position: relative; }
+    .select-shell select { width: 100%; appearance: none; cursor: pointer; }
+    .select-shell .material-icons { 
+        position: absolute; 
+        right: 0.75rem; 
+        top: 50%; 
+        transform: translateY(-50%); 
+        font-size: 1rem; 
+        color: var(--text-muted); 
+        pointer-events: none; 
+    }
+    textarea { resize: vertical; }
+    small { color: #64748b; font-size: 0.75rem; text-transform: none; letter-spacing: normal; }
+
+    .card-panel { 
+        border-radius: 16px; 
+        background: rgba(8,12,24,0.92); 
+        border: 1px solid rgba(37,99,235,0.2); 
+        overflow: hidden; 
+    }
+    .card-panel header { 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        background: rgba(37,99,235,0.3); 
+        padding: 0.75rem 1rem; 
+    }
+    .panel-toggle { 
+        background: none; 
+        border: none; 
+        color: #e0ecff; 
+        display: inline-flex; 
+        align-items: center; 
+        gap: 0.6rem; 
+        font-weight: 600; 
+        letter-spacing: 0.05em; 
+        text-transform: uppercase; 
+        cursor: pointer; 
+    }
+    .panel-toggle .material-icons { font-size: 1.1rem; transition: transform 0.2s ease; }
+    .panel-help { color: #93c5fd; text-decoration: none; font-size: 0.8rem; }
+    .panel-body { padding: 1.2rem 1.4rem; display: block; }
+    .card-panel.collapsed .panel-body { display: none; }
+    .card-panel.collapsed .panel-toggle .material-icons { transform: rotate(-90deg); }
+
+    .form-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .tp-sl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem; }
+    .tp-settings, .sl-settings { 
+        background: rgba(5,10,20,0.8); 
+        border: 1px solid rgba(59,130,246,0.18); 
+        border-radius: 12px; 
+        padding: 1.1rem; 
+        display: grid; 
+        gap: 0.75rem; 
+    }
+    .tp-settings h3, .sl-settings h3 { margin: 0 0 0.5rem; font-size: 0.95rem; color: #bfdbfe; }
+    .tp-row { 
+        display: grid; 
+        grid-template-columns: auto 1fr 1fr auto; 
+        gap: 0.75rem; 
+        align-items: center; 
+        background: rgba(30,41,59,0.6); 
+        border-radius: 10px; 
+        padding: 0.75rem; 
+    }
+    .tp-pill { 
+        background: rgba(59,130,246,0.35); 
+        color: #dbeafe; 
+        border-radius: 999px; 
+        padding: 0.3rem 0.75rem; 
+        font-size: 0.75rem; 
+        letter-spacing: 0.08em; 
+        text-transform: uppercase; 
+        white-space: nowrap;
+    }
+    .icon-btn { 
+        background: rgba(239,68,68,0.15); 
+        border: 1px solid rgba(239,68,68,0.4); 
+        color: #fca5a5; 
+        border-radius: 10px; 
+        padding: 0.45rem; 
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .icon-btn:hover {
+        background: rgba(239,68,68,0.25);
+    }
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; }
+    .separator { height: 1px; background: rgba(148,163,184,0.2); margin: 0.75rem 0; }
+
+    .time-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .time-block { 
+        background: rgba(5,10,20,0.8); 
+        border: 1px solid rgba(148,163,184,0.2); 
+        border-radius: 12px; 
+        padding: 1rem; 
+        display: grid; 
+        gap: 0.75rem; 
+    }
+    .time-block h4 { margin: 0; font-size: 0.85rem; color: #94a3b8; }
+    .time-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+    .switch-row { 
+        display: flex; 
+        align-items: center; 
+        gap: 1rem; 
+        background: rgba(15,23,42,0.55); 
+        border-radius: 12px; 
+        padding: 1rem; 
+        margin-top: 1rem; 
+    }
+    .switch-row h3 { margin: 0 0 0.25rem; font-size: 0.95rem; }
+    .switch-row p { margin: 0; color: #64748b; font-size: 0.85rem; }
+    .switch { position: relative; display: inline-block; width: 48px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { 
+        position: absolute; 
+        inset: 0; 
+        background: rgba(148,163,184,0.3); 
+        border-radius: 24px; 
+        transition: .2s; 
+        cursor: pointer;
+    }
+    .slider:before { 
+        content: ""; 
+        position: absolute; 
+        height: 18px; 
+        width: 18px; 
+        left: 4px; 
+        bottom: 3px; 
+        background: #0b1120; 
+        border-radius: 50%; 
+        transition: .2s; 
+    }
+    .switch input:checked + .slider { background: rgba(25,184,255,0.7); }
+    .switch input:checked + .slider:before { transform: translateX(22px); }
+
+    .webhook-card { 
+        background: rgba(11,18,33,0.92); 
+        border-radius: 18px; 
+        border: 1px solid rgba(148,163,184,0.12); 
+        padding: 1.75rem; 
+        display: grid; 
+        gap: 1.25rem; 
+    }
+    .webhook-card header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .webhook-card header h2 { margin: 0 0 0.25rem; font-size: 1.25rem; }
+    .webhook-card header p { margin: 0; color: #94a3b8; font-size: 0.9rem; }
+    .webhook-body { display: grid; gap: 1.25rem; }
+    .copy-row { display: flex; gap: 0.75rem; }
+    .copy-row input { flex: 1; }
+    .alert-block { 
+        background: rgba(5,10,20,0.8); 
+        border: 1px solid rgba(59,130,246,0.2); 
+        border-radius: 12px; 
+        padding: 1rem; 
+        display: grid; 
+        gap: 0.75rem; 
+    }
+    .alert-block h3 { margin: 0; font-size: 0.9rem; color: #bfdbfe; }
+    .alert-block pre { 
+        margin: 0; 
+        background: rgba(15,23,42,0.55); 
+        border: 1px solid rgba(59,130,246,0.25); 
+        border-radius: 10px; 
+        padding: 0.85rem; 
+        font-family: "Courier New", monospace; 
+        font-size: 0.8rem; 
+        color: #e0f2fe; 
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    /* Modal */
+    .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        backdrop-filter: blur(8px);
+    }
+    .modal-content {
+        background: rgba(11,18,33,0.98);
+        border: 1px solid rgba(59,130,246,0.3);
+        border-radius: 20px;
+        max-width: 650px;
+        width: 95%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+    .webhook-modal-content {
+        padding: 0;
+    }
+    .webhook-modal-content header {
+        background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(59,130,246,0.2));
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid rgba(148,163,184,0.15);
+    }
+    .webhook-modal-content header h2 {
+        margin: 0 0 0.5rem;
+        font-size: 1.4rem;
+    }
+    .webhook-modal-content header p {
+        margin: 0;
+        color: #94a3b8;
+    }
+    .webhook-modal-content .webhook-body {
+        padding: 1.5rem 2rem;
+        display: grid;
+        gap: 1.25rem;
+    }
+    .alert-block.alt {
+        background: rgba(15,23,42,0.6);
+        border-color: rgba(148,163,184,0.2);
+    }
+    .alert-section {
+        background: rgba(15,23,42,0.4);
+        border: 1px solid rgba(148,163,184,0.15);
+        border-radius: 14px;
+        padding: 1.25rem;
+    }
+    .section-title {
+        margin: 0 0 0.25rem;
+        font-size: 1rem;
+        color: #e2e8f0;
+    }
+    .section-desc {
+        margin: 0 0 1rem;
+        color: #64748b;
+        font-size: 0.85rem;
+    }
+    .alert-block h4 {
+        margin: 0 0 0.5rem;
+        font-size: 0.9rem;
+        color: #94a3b8;
+    }
+    .alert-block.buy-alert {
+        border-color: rgba(34,197,94,0.3);
+        background: rgba(34,197,94,0.08);
+    }
+    .alert-block.buy-alert h4 { color: #86efac; }
+    .alert-block.sell-alert {
+        border-color: rgba(239,68,68,0.3);
+        background: rgba(239,68,68,0.08);
+    }
+    .alert-block.sell-alert h4 { color: #fca5a5; }
+    .alert-block.strategy-alert {
+        border-color: rgba(59,130,246,0.3);
+        background: rgba(59,130,246,0.08);
+    }
+    .alert-block.strategy-alert h4 { color: #93c5fd; }
+    .webhook-body .alert-section + .alert-section {
+        margin-top: 1rem;
+    }
+    .alert-block + .alert-block {
+        margin-top: 0.75rem;
+    }
+    .modal-footer {
+        padding: 1.25rem 2rem;
+        border-top: 1px solid rgba(148,163,184,0.15);
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+    }
+
+    /* Toast */
+    .toast {
+        position: fixed;
+        bottom: 2rem;
+        left: 50%;
+        transform: translateX(-50%) translateY(100px);
+        background: rgba(11,18,33,0.95);
+        border: 1px solid rgba(148,163,184,0.2);
+        border-radius: 12px;
+        padding: 0.85rem 1.5rem;
+        color: #e2e8f0;
+        font-size: 0.9rem;
+        opacity: 0;
+        transition: all 0.3s ease;
+        z-index: 3000;
+    }
+    .toast.show {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+    .toast.success { border-color: rgba(34,197,94,0.5); color: #86efac; }
+    .toast.error { border-color: rgba(239,68,68,0.5); color: #fca5a5; }
+
+    @media (max-width: 920px) {
+        .builder-header { flex-direction: column; align-items: flex-start; }
+        .header-actions { width: 100%; justify-content: flex-start; }
+        .tp-row { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+    // Recorder ID (if editing)
+    const recorderId = {{ recorder.id if recorder else 'null' }};
+    const isEditMode = recorderId !== null;
+    
+    // TP Targets data
+    let tpTargets = {{ recorder.tp_targets | tojson if recorder and recorder.tp_targets else '[]' }};
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Initialize panel toggles
+        document.querySelectorAll('[data-panel]').forEach(function (panel) {
+            var toggle = panel.querySelector('.panel-toggle');
+            if (!toggle) return;
+            toggle.addEventListener('click', function () {
+                panel.classList.toggle('collapsed');
+                var icon = toggle.querySelector('.material-icons');
+                var text = toggle.querySelector('.toggle-text');
+                if (icon) {
+                    icon.textContent = panel.classList.contains('collapsed') ? 'add' : 'remove';
+                }
+                if (text) {
+                    text.textContent = panel.classList.contains('collapsed') ? 'Show' : 'Hide';
+                }
+            });
+        });
+
+        // Render TP targets
+        renderTpTargets();
+
+        // Load webhook info if editing
+        if (isEditMode) {
+            loadWebhookInfo();
+        }
+    });
+
+    function renderTpTargets() {
+        const container = document.getElementById('tp-targets-container');
+        container.innerHTML = '';
+        
+        tpTargets.forEach((tp, index) => {
+            const row = document.createElement('div');
+            row.className = 'tp-row';
+            row.innerHTML = `
+                <span class="tp-pill">TP #${index + 1}</span>
+                <label class="form-field">
+                    <span>TP Value</span>
+                    <input type="number" value="${tp.value || 0}" step="0.01" onchange="updateTpTarget(${index}, 'value', this.value)">
+                </label>
+                <label class="form-field">
+                    <span>Trim</span>
+                    <input type="number" value="${tp.trim || 0}" step="0.01" onchange="updateTpTarget(${index}, 'trim', this.value)">
+                    <small>Trim %; 0 keeps full size.</small>
+                </label>
+                <button class="icon-btn" type="button" onclick="removeTpTarget(${index})">
+                    <span class="material-icons">delete</span>
+                </button>
+            `;
+            container.appendChild(row);
+        });
+    }
+
+    function addTpTarget() {
+        tpTargets.push({ value: 0, trim: 0 });
+        renderTpTargets();
+    }
+
+    function updateTpTarget(index, field, value) {
+        tpTargets[index][field] = parseFloat(value) || 0;
+    }
+
+    function removeTpTarget(index) {
+        tpTargets.splice(index, 1);
+        renderTpTargets();
+    }
+
+    function collectFormData() {
+        return {
+            name: document.getElementById('name').value.trim(),
+            strategy_type: document.getElementById('strategy_type').value,
+            initial_position_size: parseInt(document.getElementById('initial_position_size').value) || 1,
+            add_position_size: parseInt(document.getElementById('add_position_size').value) || 0,
+            tp_units: document.getElementById('tp_units').value,
+            trim_units: document.getElementById('trim_units').value,
+            tp_targets: tpTargets,
+            sl_enabled: document.getElementById('sl_enabled').checked,
+            sl_amount: parseFloat(document.getElementById('sl_amount').value) || 0,
+            sl_units: document.getElementById('sl_units').value,
+            sl_type: document.getElementById('sl_type').value,
+            avg_down_enabled: document.getElementById('avg_down_enabled').checked,
+            avg_down_amount: parseInt(document.getElementById('avg_down_amount').value) || 0,
+            avg_down_point: parseFloat(document.getElementById('avg_down_point').value) || 0,
+            avg_down_units: document.getElementById('avg_down_units').value,
+            add_delay: parseInt(document.getElementById('add_delay').value) || 1,
+            max_contracts_per_trade: parseInt(document.getElementById('max_contracts_per_trade').value) || 0,
+            option_premium_filter: parseFloat(document.getElementById('option_premium_filter').value) || 0,
+            direction_filter: document.getElementById('direction_filter').value || null,
+            time_filter_1_start: document.getElementById('time_filter_1_start').value || null,
+            time_filter_1_stop: document.getElementById('time_filter_1_stop').value || null,
+            time_filter_2_start: document.getElementById('time_filter_2_start').value || null,
+            time_filter_2_stop: document.getElementById('time_filter_2_stop').value || null,
+            signal_cooldown: parseInt(document.getElementById('signal_cooldown').value) || 0,
+            max_signals_per_session: parseInt(document.getElementById('max_signals_per_session').value) || 0,
+            max_daily_loss: parseFloat(document.getElementById('max_daily_loss').value) || 0,
+            auto_flat_after_cutoff: document.getElementById('auto_flat_after_cutoff').checked,
+            notes: document.getElementById('notes').value.trim(),
+            recording_enabled: document.getElementById('recording_enabled').checked
+        };
+    }
+
+    function validateForm(data) {
+        const errors = [];
+        
+        if (!data.name) {
+            errors.push('Strategy name is required.');
+            document.getElementById('name').classList.add('input-error');
+        } else {
+            document.getElementById('name').classList.remove('input-error');
+        }
+        
+        return errors;
+    }
+
+    function showErrors(errors) {
+        const alert = document.getElementById('error-alert');
+        const list = document.getElementById('error-list');
+        list.innerHTML = errors.map(e => `<li>${e}</li>`).join('');
+        alert.style.display = 'grid';
+        alert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function hideErrors() {
+        document.getElementById('error-alert').style.display = 'none';
+    }
+
+    function showSuccess(message) {
+        document.getElementById('success-message').textContent = message;
+        document.getElementById('success-alert').style.display = 'grid';
+        setTimeout(() => {
+            document.getElementById('success-alert').style.display = 'none';
+        }, 5000);
+    }
+
+    function saveRecorder() {
+        hideErrors();
+        
+        const data = collectFormData();
+        const errors = validateForm(data);
+        
+        if (errors.length > 0) {
+            showErrors(errors);
+            return;
+        }
+        
+        const btn = document.getElementById('save-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-icons spin">sync</span> Saving...';
+        
+        const url = isEditMode ? `/api/recorders/${recorderId}` : '/api/recorders';
+        const method = isEditMode ? 'PUT' : 'POST';
+        
+        fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(res => res.json())
+        .then(result => {
+            btn.disabled = false;
+            btn.innerHTML = '<span class="material-icons">save</span> ' + (isEditMode ? 'Update Recorder' : 'Create Recorder');
+            
+            if (result.success) {
+                showSuccess(result.message);
+                showToast(result.message, 'success');
+                
+                if (!isEditMode && result.recorder_id) {
+                    // Show webhook modal immediately after creation
+                    showWebhookModalForNew(result.recorder_id, data.name);
+                } else if (isEditMode) {
+                    loadWebhookInfo();
+                }
+            } else {
+                showErrors([result.error || 'Failed to save recorder']);
+                showToast(result.error || 'Failed to save', 'error');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<span class="material-icons">save</span> ' + (isEditMode ? 'Update Recorder' : 'Create Recorder');
+            console.error('Error:', err);
+            showErrors(['Network error. Please try again.']);
+            showToast('Network error', 'error');
+        });
+    }
+
+    let newRecorderId = null;
+
+    function loadWebhookInfo() {
+        if (!recorderId) return;
+        
+        fetch(`/api/recorders/${recorderId}/webhook`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const webhookUrl = document.getElementById('webhook-url');
+                    if (webhookUrl) webhookUrl.value = data.webhook_url;
+                    
+                    const toggle = document.getElementById('alert-toggle');
+                    if (toggle) toggle.textContent = data.alerts.toggle;
+                    
+                    const tm = document.getElementById('alert-tm');
+                    if (tm) tm.textContent = data.alerts.tm_sizing;
+                    
+                    const tv = document.getElementById('alert-tv');
+                    if (tv) tv.textContent = data.alerts.tv_sizing;
+                }
+            })
+            .catch(console.error);
+    }
+
+    function showWebhookModalForNew(recId, recName) {
+        newRecorderId = recId;
+        
+        fetch(`/api/recorders/${recId}/webhook`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('modal-webhook-url').value = data.webhook_url;
+                    document.getElementById('modal-indicator-buy').textContent = data.alerts.indicator_buy;
+                    document.getElementById('modal-indicator-sell').textContent = data.alerts.indicator_sell;
+                    document.getElementById('modal-strategy-alert').textContent = data.alerts.strategy_message;
+                    document.getElementById('webhook-modal').style.display = 'flex';
+                }
+            })
+            .catch(err => {
+                console.error('Error loading webhook:', err);
+                // Fallback - just redirect
+                window.location.href = `/recorders/${recId}`;
+            });
+    }
+
+    function closeWebhookModalAndGoToList() {
+        document.getElementById('webhook-modal').style.display = 'none';
+        window.location.href = '/recorders';
+    }
+
+    function closeWebhookModalAndEdit() {
+        document.getElementById('webhook-modal').style.display = 'none';
+        if (newRecorderId) {
+            window.location.href = `/recorders/${newRecorderId}`;
+        }
+    }
+
+    function toggleWebhookCard() {
+        const body = document.getElementById('webhook-body');
+        const icon = document.getElementById('webhook-toggle-icon');
+        if (body.style.display === 'none') {
+            body.style.display = 'grid';
+            icon.textContent = 'expand_more';
+        } else {
+            body.style.display = 'none';
+            icon.textContent = 'expand_less';
+        }
+    }
+
+    function copyToClipboard(elementId) {
+        const el = document.getElementById(elementId);
+        const text = el.value || el.textContent;
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('Copied to clipboard!', 'success');
+        }).catch(() => {
+            showToast('Failed to copy', 'error');
+        });
+    }
+
+    function showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.className = `toast ${type} show`;
+        
+        setTimeout(() => {
+            toast.className = 'toast';
+        }, 3000);
+    }
+
+    // Add spin animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .spin { animation: spin 1s linear infinite; }
+    `;
+    document.head.appendChild(style);
+</script>
+{% endblock %}

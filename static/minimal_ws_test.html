@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minimal WS Test</title>
+    <script src="/static/js/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Minimal WebSocket Test</h1>
+    <div id="output"></div>
+    <script>
+        console.log('=== MINIMAL TEST STARTING ===');
+        console.log('Socket.IO type:', typeof io);
+        
+        const output = document.getElementById('output');
+        output.innerHTML = '<p>Socket.IO type: ' + typeof io + '</p>';
+        
+        if (typeof io !== 'undefined') {
+            console.log('✅ Socket.IO loaded, attempting connection...');
+            const socket = io();
+            socket.on('connect', () => {
+                console.log('✅ CONNECTED! ID:', socket.id);
+                output.innerHTML += '<p style="color: green;">✅ Connected! ID: ' + socket.id + '</p>';
+            });
+            socket.on('connect_error', (err) => {
+                console.error('❌ Connection error:', err);
+                output.innerHTML += '<p style="color: red;">❌ Error: ' + err.message + '</p>';
+            });
+        } else {
+            console.error('❌ Socket.IO NOT loaded');
+            output.innerHTML += '<p style="color: red;">❌ Socket.IO NOT loaded</p>';
+        }
+    </script>
+</body>
+</html>

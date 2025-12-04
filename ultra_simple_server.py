@@ -915,7 +915,8 @@ def init_db():
 
 def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_url: str = "https://demo.tradovateapi.com") -> dict:
     """
-    Fetch Tradovate accounts/subaccounts for the given account_id and persist them.
+    Fetch Tradovate accounts/subaccounts for the given account_id and MERGE with existing data.
+    This preserves accounts from environments the token can't access.
     Returns a dict with success flag and parsed subaccounts.
     """
     try:
@@ -923,7 +924,29 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
+
+        # First, get EXISTING data from the database to preserve accounts we can't access
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT tradovate_accounts, subaccounts FROM accounts WHERE id = ?", (account_id,))
+        existing_row = cursor.fetchone()
+        conn.close()
         
+        existing_accounts = []
+        existing_subaccounts = []
+        if existing_row:
+            try:
+                if existing_row['tradovate_accounts']:
+                    existing_accounts = json.loads(existing_row['tradovate_accounts'])
+            except:
+                pass
+            try:
+                if existing_row['subaccounts']:
+                    existing_subaccounts = json.loads(existing_row['subaccounts'])
+            except:
+                pass
+
         # Always attempt both demo and live endpoints so we capture all accounts
         base_urls = []
         if base_url:
@@ -931,30 +954,36 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
         for candidate in ("https://demo.tradovateapi.com", "https://live.tradovateapi.com"):
             if candidate not in base_urls:
                 base_urls.append(candidate)
-        
-        combined_accounts = []
-        formatted_subaccounts = []
+
+        # Track which environments we successfully fetched
+        fetched_environments = set()
+        new_accounts = []
+        new_subaccounts = []
         success = False
+        
         for candidate_base in base_urls:
             try:
                 response = requests.get(f"{candidate_base}/v1/account/list", headers=headers, timeout=15)
             except Exception as req_err:
-                logger.error(f"Error fetching Tradovate accounts from {candidate_base}: {req_err}")
+                logger.warning(f"Error fetching Tradovate accounts from {candidate_base}: {req_err}")
                 continue
-            
+
             if response.status_code != 200:
-                logger.error(f"Failed to fetch Tradovate accounts from {candidate_base}: {response.status_code} - {response.text}")
+                logger.warning(f"Could not fetch from {candidate_base}: {response.status_code} (token may not have access)")
                 continue
-            
+
             success = True
             environment = "demo" if "demo." in candidate_base else "live"
+            fetched_environments.add(environment)
+            logger.info(f"Successfully fetched accounts from {environment} environment")
+            
             accounts_payload = response.json() or []
             for account in accounts_payload:
                 account_copy = dict(account) if isinstance(account, dict) else {}
                 account_copy["environment"] = environment
                 account_copy["is_demo"] = environment == "demo"
-                combined_accounts.append(account_copy)
-                
+                new_accounts.append(account_copy)
+
                 parent_name = account_copy.get('name') or account_copy.get('accountName', 'Tradovate')
                 for sub in account_copy.get('subAccounts', []) or []:
                     tags = sub.get('tags') or []
@@ -962,7 +991,7 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
                         tags = [tags]
                     name = sub.get('name') or ''
                     is_demo = True if environment == "demo" else False
-                    formatted_subaccounts.append({
+                    new_subaccounts.append({
                         "id": sub.get('id'),
                         "name": name,
                         "parent": parent_name,
@@ -971,21 +1000,46 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
                         "environment": environment,
                         "is_demo": is_demo
                     })
-        
+
         if not success:
+            # If we couldn't fetch from any endpoint, keep existing data
+            if existing_accounts:
+                logger.warning(f"Could not refresh accounts, keeping existing {len(existing_accounts)} accounts")
+                return {"success": True, "subaccounts": existing_subaccounts, "message": "Using cached data"}
             return {"success": False, "error": "Failed to fetch Tradovate accounts from demo or live endpoints"}
+
+        # MERGE: Keep existing accounts from environments we couldn't fetch
+        combined_accounts = list(new_accounts)
+        combined_subaccounts = list(new_subaccounts)
         
+        for existing_acc in existing_accounts:
+            existing_env = existing_acc.get('environment') or ('demo' if existing_acc.get('is_demo') else 'live')
+            if existing_env not in fetched_environments:
+                # We couldn't access this environment, so keep the existing data
+                logger.info(f"Preserving existing {existing_env} account: {existing_acc.get('name')}")
+                combined_accounts.append(existing_acc)
+        
+        for existing_sub in existing_subaccounts:
+            existing_env = existing_sub.get('environment') or ('demo' if existing_sub.get('is_demo') else 'live')
+            if existing_env not in fetched_environments:
+                combined_subaccounts.append(existing_sub)
+
+        # Log what we're storing
+        demo_count = sum(1 for a in combined_accounts if a.get('is_demo'))
+        live_count = sum(1 for a in combined_accounts if not a.get('is_demo'))
+        logger.info(f"Storing {demo_count} demo + {live_count} live accounts for account {account_id}")
+
         conn = sqlite3.connect('just_trades.db')
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE accounts
             SET tradovate_accounts = ?, subaccounts = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (json.dumps(combined_accounts), json.dumps(formatted_subaccounts), account_id))
+        """, (json.dumps(combined_accounts), json.dumps(combined_subaccounts), account_id))
         conn.commit()
         conn.close()
-        logger.info(f"Stored {len(formatted_subaccounts)} Tradovate subaccounts for account {account_id}")
-        return {"success": True, "subaccounts": formatted_subaccounts}
+        logger.info(f"Stored {len(combined_subaccounts)} Tradovate subaccounts for account {account_id}")
+        return {"success": True, "subaccounts": combined_subaccounts}
     except Exception as e:
         logger.error(f"Error storing Tradovate accounts: {e}")
         return {"success": False, "error": str(e)}
@@ -6414,8 +6468,62 @@ _tradovate_pnl_cache = {
     'last_fetch': 0,
     'data': {},
     'positions': [],
-    'account_count': 2  # Start with reasonable default
+    'account_count': 10,  # Start slower (2 second interval) to avoid rate limits
+    'rate_limited_until': 0  # Timestamp when rate limit expires
 }
+
+def try_refresh_tradovate_token(account_id: int) -> bool:
+    """Try to refresh the Tradovate access token using the refresh token."""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT tradovate_token, tradovate_refresh_token, environment
+            FROM accounts WHERE id = ?
+        ''', (account_id,))
+        account = cursor.fetchone()
+        
+        if not account or not account['tradovate_refresh_token']:
+            conn.close()
+            return False
+        
+        refresh_token = account['tradovate_refresh_token']
+        env = account['environment'] or 'demo'
+        base_url = 'https://demo.tradovateapi.com' if env == 'demo' else 'https://live.tradovateapi.com'
+        
+        # Call Tradovate's token renewal endpoint
+        response = requests.post(
+            f'{base_url}/v1/auth/renewAccessToken',
+            headers={'Content-Type': 'application/json'},
+            json={'refreshToken': refresh_token},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            new_access_token = data.get('accessToken') or data.get('access_token')
+            new_refresh_token = data.get('refreshToken') or data.get('refresh_token') or refresh_token
+            
+            if new_access_token:
+                cursor.execute('''
+                    UPDATE accounts 
+                    SET tradovate_token = ?, 
+                        tradovate_refresh_token = ?,
+                        token_expires_at = datetime('now', '+24 hours')
+                    WHERE id = ?
+                ''', (new_access_token, new_refresh_token, account_id))
+                conn.commit()
+                conn.close()
+                logger.info(f"✅ Successfully refreshed Tradovate token for account {account_id}")
+                return True
+        
+        conn.close()
+        logger.warning(f"Failed to refresh token: {response.status_code} - {response.text[:100]}")
+        return False
+    except Exception as e:
+        logger.error(f"Error refreshing Tradovate token: {e}")
+        return False
 
 def fetch_tradovate_pnl_sync():
     """
@@ -6441,6 +6549,12 @@ def fetch_tradovate_pnl_sync():
     #   50     |    100       |   10.0s       |      6
     #
     # Formula: interval = max(0.5, num_accounts * 0.2) to stay under 120 req/min
+    # Check if we're in a rate limit cooldown
+    rate_limited_until = _tradovate_pnl_cache.get('rate_limited_until', 0)
+    if current_time < rate_limited_until:
+        # Still in cooldown, return cached data
+        return _tradovate_pnl_cache.get('data', {}), _tradovate_pnl_cache.get('positions', [])
+    
     num_accounts = _tradovate_pnl_cache.get('account_count', 2)
     if not isinstance(num_accounts, int) or num_accounts < 1:
         num_accounts = 2
@@ -6526,14 +6640,17 @@ def fetch_tradovate_pnl_sync():
                         }
                         logger.debug(f"Fetched PnL for {acc_name}: openPnL=${snap.get('openPnL', 0):.2f}, realizedPnL=${snap.get('realizedPnL', 0):.2f}")
                     elif response.status_code == 429:
-                        # Rate limited - back off by increasing cache time (max 30 seconds)
-                        current_count = _tradovate_pnl_cache.get('account_count', 2)
-                        new_count = min(150, current_count + 10)  # Cap at ~30s interval
-                        logger.warning(f"Rate limited by Tradovate (429)! Slowing down to {new_count * 0.2:.1f}s interval")
-                        _tradovate_pnl_cache['account_count'] = new_count
+                        # Rate limited - enter cooldown for 60 seconds
+                        cooldown_seconds = 60
+                        _tradovate_pnl_cache['rate_limited_until'] = current_time + cooldown_seconds
+                        logger.warning(f"Rate limited by Tradovate (429)! Entering {cooldown_seconds}s cooldown")
                         return _tradovate_pnl_cache.get('data', {}), _tradovate_pnl_cache.get('positions', [])
                     elif response.status_code == 401:
-                        logger.warning(f"Token expired for account {acc_id} - will refresh on next trade")
+                        logger.warning(f"Token expired for account {acc_id} - attempting auto-refresh")
+                        # Try to refresh the token automatically
+                        refreshed = try_refresh_tradovate_token(account['id'])
+                        if refreshed:
+                            logger.info(f"Token refreshed for account {account['id']}, will retry on next cycle")
                         continue
                     else:
                         logger.debug(f"Cash balance API returned {response.status_code} for {acc_id}: {response.text[:100]}")
