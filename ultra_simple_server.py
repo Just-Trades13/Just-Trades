@@ -5654,11 +5654,51 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
             if not current_price:
                 continue
             
+            # =====================================================
+            # MFE/MAE TRACKING - Update on every price tick
+            # =====================================================
+            side = trade['side']
+            entry_price = trade['entry_price']
+            tick_size = get_tick_size(ticker)
+            tick_value = get_tick_value(ticker)
+            
+            # Get current MFE/MAE values
+            current_max_favorable = trade.get('max_favorable') or 0
+            current_max_adverse = trade.get('max_adverse') or 0
+            
+            # Calculate current excursion based on trade direction
+            if side == 'LONG':
+                # For LONG: favorable = price went UP, adverse = price went DOWN
+                favorable_excursion = max(0, current_price - entry_price)
+                adverse_excursion = max(0, entry_price - current_price)
+            else:  # SHORT
+                # For SHORT: favorable = price went DOWN, adverse = price went UP
+                favorable_excursion = max(0, entry_price - current_price)
+                adverse_excursion = max(0, current_price - entry_price)
+            
+            # Update MFE/MAE if we have new highs/lows
+            new_max_favorable = max(current_max_favorable, favorable_excursion)
+            new_max_adverse = max(current_max_adverse, adverse_excursion)
+            
+            # Only update database if values changed (to reduce DB writes)
+            if new_max_favorable != current_max_favorable or new_max_adverse != current_max_adverse:
+                cursor.execute('''
+                    UPDATE recorded_trades 
+                    SET max_favorable = ?, max_adverse = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (new_max_favorable, new_max_adverse, trade['id']))
+                conn.commit()
+                
+                # Log significant drawdown events (when MAE increases by more than 2 ticks)
+                if new_max_adverse > current_max_adverse:
+                    mae_ticks = new_max_adverse / tick_size if tick_size > 0 else 0
+                    mae_dollars = mae_ticks * tick_value * trade['quantity']
+                    if mae_ticks >= 2:  # Only log if significant
+                        logger.debug(f"📉 MAE update for trade {trade['id']}: {mae_ticks:.1f} ticks (${mae_dollars:.2f})")
+            
             # Check TP/SL
             tp_price = trade.get('tp_price')
             sl_price = trade.get('sl_price')
-            side = trade['side']
-            entry_price = trade['entry_price']
             
             hit_type = None
             exit_price = None
@@ -5681,10 +5721,7 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
                     exit_price = sl_price
             
             if hit_type and exit_price:
-                # Calculate PnL
-                tick_size = get_tick_size(ticker)
-                tick_value = get_tick_value(ticker)
-                
+                # Calculate PnL (tick_size and tick_value already calculated above for MFE/MAE)
                 if side == 'LONG':
                     pnl_ticks = (exit_price - entry_price) / tick_size
                 else:
