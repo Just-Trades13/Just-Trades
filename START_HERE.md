@@ -110,6 +110,7 @@ git checkout WORKING_DEC3_2025 -- templates/manual_copy_trader.html
 | **WebSocket Updates** | ✅ Working | `emit_realtime_updates()` |
 | **Copy Trading** | ✅ Working | Copy trader logic in manual trader |
 | **MFE/MAE Tracking** | ✅ Working | `update_trade_mfe_mae()` in server |
+| **Reset Trade History** | ✅ Working | `/api/recorders/<id>/reset-history` endpoint |
 
 ---
 
@@ -524,6 +525,7 @@ sqlite3 just_trades.db "SELECT id, side, entry_price, exit_price, max_favorable,
 
 | Date | Change |
 |------|--------|
+| Dec 4, 2025 | Added Reset Trade History endpoint - `/api/recorders/<id>/reset-history` |
 | Dec 4, 2025 | Added MFE/MAE (drawdown) tracking - `update_trade_mfe_mae()` function |
 | Dec 4, 2025 | Added detailed database storage info (accounts.tradingview_session) |
 | Dec 4, 2025 | Added function references for TradingView WebSocket code |
@@ -641,5 +643,5 @@ git checkout WORKING_DEC4_2025_OAUTH_FIX -- ultra_simple_server.py
 
 ---
 
-*Last updated: Dec 4, 2025 - Added MFE/MAE (drawdown) tracking fix*
-*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC4_2025_MFE_MAE*
+*Last updated: Dec 4, 2025 - Added Reset Trade History endpoint*
+*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC4_2025_MFE_MAE, WORKING_DEC4_2025_RESET_HISTORY*

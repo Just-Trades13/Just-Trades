@@ -1,13 +1,21 @@
-# 🔄 HANDOFF: MFE/MAE (Drawdown) Tracking Fix - Dec 4, 2025
+# 🔄 HANDOFF: MFE/MAE & Reset History Fixes - Dec 4, 2025
 
 ---
 
 ## 📋 Session Summary
 
 **Date:** December 4, 2025  
+
+### Fix 1: MFE/MAE (Drawdown) Tracking
 **Issue:** All trades showed 0 drawdown (`max_adverse = 0`) despite being a DCA strategy where drawdown is inevitable  
 **Root Cause:** The `check_recorder_trades_tp_sl()` function monitored prices but never updated `max_favorable` or `max_adverse` columns  
 **Solution:** Added MFE/MAE tracking code inside `check_recorder_trades_tp_sl()` that updates on every price tick  
+**Status:** ✅ FIXED AND WORKING
+
+### Fix 2: Reset Trade History Button
+**Issue:** "Reset Trade History" button in My Recorders was not working  
+**Root Cause:** Frontend button called `/api/recorders/<id>/reset-history` but the backend endpoint didn't exist  
+**Solution:** Added the missing API endpoint to `ultra_simple_server.py`  
 **Status:** ✅ FIXED AND WORKING
 
 ---
@@ -75,19 +83,25 @@ After:  Trade 2226 | max_favorable=0.0 | max_adverse=0.75  ← TRACKING!
 ```
 backups/WORKING_STATE_DEC4_2025_MFE_MAE/
 └── ultra_simple_server.py  ← Contains the MFE/MAE fix
+
+backups/WORKING_STATE_DEC4_2025_RESET_HISTORY/
+├── ultra_simple_server.py  ← Contains both fixes
+└── recorders_list.html
 ```
 
-### Git Tag
+### Git Tags
 ```bash
 git tag WORKING_DEC4_2025_MFE_MAE
+git tag WORKING_DEC4_2025_RESET_HISTORY
 
 # To restore if needed:
-git checkout WORKING_DEC4_2025_MFE_MAE -- ultra_simple_server.py
+git checkout WORKING_DEC4_2025_RESET_HISTORY -- ultra_simple_server.py
 ```
 
-### Git Commit
+### Git Commits
 ```
 commit: "Add MFE/MAE (drawdown) tracking to check_recorder_trades_tp_sl() - Dec 4, 2025"
+commit: "Add /api/recorders/<id>/reset-history endpoint - Dec 4, 2025"
 ```
 
 ---
@@ -212,6 +226,37 @@ sqlite3 just_trades.db "SELECT id, side, entry_price, max_favorable, max_adverse
 
 ---
 
+## ✅ Reset Trade History Endpoint
+
+### API Endpoint
+```
+POST /api/recorders/<recorder_id>/reset-history
+```
+
+### What It Does
+- Deletes all `recorded_trades` for the specified recorder
+- Deletes all `recorded_signals` for the specified recorder
+- Keeps the recorder settings unchanged
+- Returns count of deleted records
+
+### Response Example
+```json
+{
+    "success": true,
+    "message": "Trade history reset for \"JADVIX\". Deleted 302 trades and 150 signals.",
+    "trades_deleted": 302,
+    "signals_deleted": 150
+}
+```
+
+### How to Use
+1. Go to **My Recorders** page
+2. Click the **refresh icon** (🔄) next to the strategy
+3. Confirm in the modal dialog
+4. Trade history is cleared, strategy settings remain
+
+---
+
 *Last updated: Dec 4, 2025*
-*Git tag: WORKING_DEC4_2025_MFE_MAE*
-*Backup: backups/WORKING_STATE_DEC4_2025_MFE_MAE/*
+*Git tags: WORKING_DEC4_2025_MFE_MAE, WORKING_DEC4_2025_RESET_HISTORY*
+*Backups: backups/WORKING_STATE_DEC4_2025_MFE_MAE/, backups/WORKING_STATE_DEC4_2025_RESET_HISTORY/*
