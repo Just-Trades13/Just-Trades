@@ -2183,7 +2183,7 @@ def api_update_recorder(recorder_id):
 
 @app.route('/api/recorders/<int:recorder_id>', methods=['DELETE'])
 def api_delete_recorder(recorder_id):
-    """Delete a recorder"""
+    """Delete a recorder and ALL associated data (trades, signals, positions)"""
     try:
         conn = sqlite3.connect('just_trades.db')
         cursor = conn.cursor()
@@ -2197,15 +2197,26 @@ def api_delete_recorder(recorder_id):
         
         name = row[0]
         
+        # CASCADE DELETE: Delete all associated data FIRST
+        cursor.execute('DELETE FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        trades_deleted = cursor.rowcount
+        
+        cursor.execute('DELETE FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+        signals_deleted = cursor.rowcount
+        
+        cursor.execute('DELETE FROM recorder_positions WHERE recorder_id = ?', (recorder_id,))
+        positions_deleted = cursor.rowcount
+        
+        # Now delete the recorder itself
         cursor.execute('DELETE FROM recorders WHERE id = ?', (recorder_id,))
         conn.commit()
         conn.close()
         
-        logger.info(f"Deleted recorder: {name} (ID: {recorder_id})")
+        logger.info(f"Deleted recorder: {name} (ID: {recorder_id}) - Cascade deleted {trades_deleted} trades, {signals_deleted} signals, {positions_deleted} positions")
         
         return jsonify({
             'success': True,
-            'message': f'Recorder "{name}" deleted successfully'
+            'message': f'Recorder "{name}" deleted successfully (including {trades_deleted} trades, {signals_deleted} signals, {positions_deleted} positions)'
         })
     except Exception as e:
         logger.error(f"Error deleting recorder {recorder_id}: {e}")
@@ -2734,98 +2745,71 @@ signal_processor_thread = threading.Thread(target=signal_processor_worker, daemo
 signal_processor_thread.start()
 
 # ============================================================
-# FAST WEBHOOK - Ultra-high-frequency endpoint (record only)
+# WEBHOOK PROXY - Forwards to Trading Engine (port 8083)
 # ============================================================
+# All webhook processing is now handled by the Trading Engine.
+# These routes proxy requests there for backward compatibility.
+# ============================================================
+
+TRADING_ENGINE_URL = "http://localhost:8083"
 
 @app.route('/webhook/fast/<webhook_token>', methods=['POST'])
 def receive_webhook_fast(webhook_token):
     """
-    Ultra-fast webhook endpoint for high-frequency signals.
-    - Queues signal for async processing
-    - Returns immediately (sub-millisecond response)
-    - Use for hundreds of signals per second
+    Proxy to Trading Engine for backward compatibility.
+    Fast webhook endpoint - forwards to Trading Engine.
     """
     try:
-        # Quick cache lookup
-        recorder = get_cached_recorder(webhook_token)
-        if not recorder:
-            return jsonify({'success': False, 'error': 'Invalid webhook'}), 404
-        
-        # Parse data
-        if request.is_json:
-            data = request.get_json(force=True, silent=True) or {}
-        else:
-            try:
-                data = json.loads(request.data.decode('utf-8'))
-            except:
-                data = {}
-        
-        # Normalize action
-        action = str(data.get('action', '')).lower().strip()
-        if action in ['long', 'buy']:
-            action = 'BUY'
-        elif action in ['short', 'sell']:
-            action = 'SELL'
-        else:
-            action = action.upper()
-        
-        # Queue signal for async processing
-        signal_data = {
-            'recorder_id': recorder['id'],
-            'action': action,
-            'ticker': data.get('ticker', data.get('symbol', '')),
-            'price': float(data.get('price', data.get('close', 0)) or 0),
-            'position_size': data.get('position_size'),
-            'market_position': data.get('market_position'),
-            'signal_type': 'fast',
-            'raw_data': data,
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        # Non-blocking queue add
-        try:
-            signal_queue.put_nowait(signal_data)
-            return jsonify({'success': True, 'queued': True, 'queue_size': signal_queue.qsize()}), 202
-        except:
-            # Queue full - still try to process
-            return jsonify({'success': False, 'error': 'Queue full'}), 503
-            
+        import requests as req
+        response = req.post(
+            f"{TRADING_ENGINE_URL}/webhook/{webhook_token}",
+            json=request.get_json(force=True, silent=True) or {},
+            headers={'Content-Type': 'application/json'},
+            timeout=5
+        )
+        return jsonify(response.json()), response.status_code
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"Error proxying webhook to Trading Engine: {e}")
+        return jsonify({'success': False, 'error': f'Trading Engine unavailable: {e}'}), 503
 
 # ============================================================
-# WEBHOOK RECEIVER - TradingView sends signals here
+# WEBHOOK RECEIVER - Proxies to Trading Engine (port 8083)
+# ============================================================
+# All webhook processing has been moved to the Trading Engine.
+# This route proxies requests there for backward compatibility.
 # ============================================================
 
 @app.route('/webhook/<webhook_token>', methods=['POST'])
 def receive_webhook(webhook_token):
     """
-    Receive webhook from TradingView alerts/strategies.
-    
-    Supports two modes:
-    1. Simple Alerts (buy/sell signals) - Our system handles TP/SL/sizing
-    2. Strategy Alerts (full position management from TradingView)
-    
-    Expected JSON formats:
-    
-    Simple Alert:
-    {
-        "recorder": "MY_STRATEGY",
-        "action": "buy" or "sell",
-        "ticker": "NQ1!",
-        "price": "21500.25"
-    }
-    
-    Strategy Alert (TradingView handles sizing/risk):
-    {
-        "recorder": "MY_STRATEGY",
-        "action": "buy" or "sell",
-        "ticker": "NQ1!",
-        "price": "21500.25",
-        "position_size": "2",
-        "contracts": "2",
-        "market_position": "long" or "short" or "flat"
-    }
+    Proxy to Trading Engine for backward compatibility.
+    Main webhook endpoint - forwards all requests to Trading Engine.
+    """
+    try:
+        import requests as req
+        response = req.post(
+            f"{TRADING_ENGINE_URL}/webhook/{webhook_token}",
+            json=request.get_json(force=True, silent=True) or {},
+            headers={'Content-Type': 'application/json'},
+            timeout=10
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        logger.error(f"Error proxying webhook to Trading Engine: {e}")
+        return jsonify({'success': False, 'error': f'Trading Engine unavailable: {e}'}), 503
+
+
+# ============================================================
+# LEGACY WEBHOOK CODE - DISABLED (handled by Trading Engine)
+# ============================================================
+# The following code has been moved to recorder_service.py
+# It's kept here commented out for reference only.
+# ============================================================
+
+def _DISABLED_receive_webhook_legacy(webhook_token):
+    """
+    DISABLED - This code has been moved to Trading Engine (recorder_service.py)
+    Kept here for reference only. DO NOT RE-ENABLE.
     """
     try:
         # Find recorder by webhook token
@@ -3446,6 +3430,10 @@ def receive_webhook(webhook_token):
         import traceback
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============================================================
+# END OF DISABLED LEGACY WEBHOOK CODE
+# ============================================================
 
 @app.route('/api/recorders/<int:recorder_id>/signals', methods=['GET'])
 def api_get_recorder_signals(recorder_id):
@@ -7623,24 +7611,29 @@ if WEBSOCKETS_AVAILABLE:
 else:
     logger.warning("websockets library not installed. Market data WebSocket will not work. Install with: pip install websockets")
 
-# Start Recorder TP/SL Polling (always runs as fallback/backup)
-start_recorder_tp_sl_polling()
-logger.info("✅ Recorder TP/SL monitoring active")
+# ============================================================================
+# RECORDER THREADS DISABLED - Now handled by Trading Engine (port 8083)
+# ============================================================================
+# The following threads have been moved to recorder_service.py (Trading Engine):
+# - TP/SL monitoring (poll_recorder_trades_tp_sl)
+# - Position drawdown tracking (poll_recorder_positions_drawdown)
+# - TradingView WebSocket for recorders
+#
+# DO NOT RE-ENABLE THESE - they would duplicate the Trading Engine's work
+# and cause race conditions with the shared database.
+# ============================================================================
 
-# Start Position Drawdown Polling (Trade Manager style real-time tracking)
-start_position_drawdown_polling()
-logger.info("✅ Position drawdown tracking active")
+# NOTE: Recorder TP/SL monitoring now handled by Trading Engine
+# start_recorder_tp_sl_polling()  # DISABLED - handled by Trading Engine
+logger.info("ℹ️ Recorder TP/SL monitoring handled by Trading Engine (port 8083)")
 
-# Try to start TradingView WebSocket if session is configured
-try:
-    session = get_tradingview_session()
-    if session and session.get('sessionid'):
-        start_tradingview_websocket()
-        logger.info("✅ TradingView WebSocket started (session found)")
-    else:
-        logger.info("ℹ️ TradingView session not configured. POST to /api/tradingview/session to enable real-time prices.")
-except Exception as e:
-    logger.warning(f"Could not start TradingView WebSocket: {e}")
+# NOTE: Position drawdown tracking now handled by Trading Engine
+# start_position_drawdown_polling()  # DISABLED - handled by Trading Engine
+logger.info("ℹ️ Position drawdown tracking handled by Trading Engine (port 8083)")
+
+# NOTE: TradingView WebSocket for recorders now handled by Trading Engine
+# The main server's TradingView WebSocket is only for Tradovate market data
+logger.info("ℹ️ Recorder price streaming handled by Trading Engine (port 8083)")
 
 # Configure logging for production
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
