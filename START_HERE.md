@@ -686,8 +686,23 @@ sqlite3 just_trades.db "SELECT id, ticker, worst_unrealized_pnl FROM recorder_po
 ```
 
 ### ⚠️ If Drawdown Stops Working
-TradingView cookies expire! Refresh them:
+TradingView cookies expire! You have two options:
 
+#### Option A: Automatic Refresh (Recommended)
+Set up once, works forever:
+```bash
+# Store your TradingView credentials (one-time)
+cd "/Users/mylesjadwin/Trading Projects"
+python3 tradingview_auth.py store --username 'YOUR_EMAIL' --password 'YOUR_PASSWORD'
+
+# Test it works
+python3 tradingview_auth.py status
+python3 tradingview_auth.py refresh
+
+# The Trading Engine will now auto-refresh cookies when they expire!
+```
+
+#### Option B: Manual Refresh
 1. Go to TradingView.com → DevTools (F12) → Application → Cookies
 2. Copy `sessionid` and `sessionid_sign` values
 3. Store them:
@@ -700,6 +715,28 @@ curl -X POST http://localhost:8082/api/tradingview/session \
 ```bash
 pkill -f "python.*recorder_service"
 cd "/Users/mylesjadwin/Trading Projects" && python3 recorder_service.py &
+```
+
+### 🔐 TradingView Auto-Auth System (Dec 5, 2025)
+
+The system now supports automatic cookie refresh:
+
+| Component | Purpose |
+|-----------|---------|
+| `tradingview_auth.py` | Manages credentials and auto-login |
+| `tradingview_credentials` table | Encrypted credential storage |
+| Auto-refresh in Trading Engine | Detects expired cookies and refreshes |
+
+**API Endpoints:**
+- `GET /api/tradingview/auth-status` - Check auth status (port 8083)
+- `POST /api/tradingview/refresh` - Trigger manual refresh (port 8083)
+
+**CLI Commands:**
+```bash
+python3 tradingview_auth.py store --username EMAIL --password PASSWORD
+python3 tradingview_auth.py status
+python3 tradingview_auth.py refresh
+python3 tradingview_auth.py keepalive  # Run as daemon
 ```
 
 ---

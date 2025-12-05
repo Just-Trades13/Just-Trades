@@ -926,18 +926,27 @@ async def connect_tradingview_websocket():
         logger.error("websockets not available")
         return
     
-    session = get_tradingview_session()
-    if not session or not session.get('sessionid'):
-        logger.warning("No TradingView session configured")
-        return
-    
     import websockets
     
-    sessionid = session.get('sessionid')
-    sessionid_sign = session.get('sessionid_sign', '')
     ws_url = "wss://data.tradingview.com/socket.io/websocket"
+    consecutive_failures = 0
+    max_failures_before_refresh = 3
     
     while True:
+        # Get fresh session on each connection attempt
+        session = get_tradingview_session()
+        if not session or not session.get('sessionid'):
+            logger.warning("No TradingView session configured - attempting auto-refresh...")
+            if _try_auto_refresh_cookies():
+                session = get_tradingview_session()
+            if not session or not session.get('sessionid'):
+                logger.error("❌ No TradingView session - run: python3 tradingview_auth.py store --username EMAIL --password PASSWORD")
+                await asyncio.sleep(60)  # Wait before retrying
+                continue
+        
+        sessionid = session.get('sessionid')
+        sessionid_sign = session.get('sessionid_sign', '')
+        
         try:
             logger.info("Connecting to TradingView WebSocket...")
             
@@ -949,6 +958,7 @@ async def connect_tradingview_websocket():
                 }
             ) as ws:
                 _tradingview_ws = ws
+                consecutive_failures = 0  # Reset on successful connection
                 logger.info("✅ TradingView WebSocket connected!")
                 
                 # Auth
@@ -969,13 +979,67 @@ async def connect_tradingview_websocket():
                         if message.startswith('~h~'):
                             await ws.send(message)
                             continue
+                        
+                        # Check for auth errors in message
+                        if 'auth' in message.lower() and 'error' in message.lower():
+                            logger.warning("⚠️ Auth error detected in WebSocket message")
+                            consecutive_failures = max_failures_before_refresh  # Trigger refresh
+                            break
+                        
                         await process_message(message)
                     except Exception as e:
                         logger.warning(f"Error processing message: {e}")
                         
         except Exception as e:
-            logger.warning(f"TradingView WebSocket error: {e}. Reconnecting in 10s...")
-            await asyncio.sleep(10)
+            _tradingview_ws = None
+            consecutive_failures += 1
+            error_str = str(e).lower()
+            
+            # Check if error indicates auth/session issue
+            is_auth_error = any(x in error_str for x in ['401', '403', 'auth', 'forbidden', 'unauthorized', 'session'])
+            
+            if is_auth_error or consecutive_failures >= max_failures_before_refresh:
+                logger.warning(f"⚠️ WebSocket auth issue detected (failures: {consecutive_failures}). Attempting cookie refresh...")
+                if _try_auto_refresh_cookies():
+                    consecutive_failures = 0
+                    logger.info("✅ Cookies refreshed, reconnecting immediately...")
+                    continue
+                else:
+                    logger.error("❌ Cookie refresh failed. Will retry in 60s...")
+                    await asyncio.sleep(60)
+            else:
+                logger.warning(f"TradingView WebSocket error: {e}. Reconnecting in 10s...")
+                await asyncio.sleep(10)
+
+
+def _try_auto_refresh_cookies() -> bool:
+    """Try to auto-refresh TradingView cookies using tradingview_auth module"""
+    try:
+        # Import the auth module
+        import tradingview_auth
+        
+        logger.info("🔄 Attempting automatic cookie refresh...")
+        
+        # Check if credentials are configured
+        creds = tradingview_auth.get_credentials()
+        if not creds:
+            logger.warning("❌ No TradingView credentials stored. Run: python3 tradingview_auth.py store --username EMAIL --password PASSWORD")
+            return False
+        
+        # Try to refresh
+        if tradingview_auth.refresh_cookies():
+            logger.info("✅ Cookies auto-refreshed successfully!")
+            return True
+        else:
+            logger.error("❌ Cookie auto-refresh failed")
+            return False
+            
+    except ImportError:
+        logger.warning("tradingview_auth module not available for auto-refresh")
+        return False
+    except Exception as e:
+        logger.error(f"Error during auto-refresh: {e}")
+        return False
 
 
 async def subscribe_symbols(ws, quote_session: str):
@@ -1073,6 +1137,75 @@ def health():
         'port': SERVICE_PORT,
         'timestamp': datetime.now().isoformat()
     })
+
+
+@app.route('/api/tradingview/refresh', methods=['POST'])
+def api_refresh_cookies():
+    """
+    Manually trigger TradingView cookie refresh.
+    Requires credentials to be stored first.
+    """
+    try:
+        if _try_auto_refresh_cookies():
+            # Restart WebSocket to use new cookies
+            global _tradingview_ws
+            if _tradingview_ws:
+                # The WebSocket loop will reconnect with new cookies
+                logger.info("WebSocket will reconnect with fresh cookies")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Cookies refreshed successfully. WebSocket reconnecting...'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Cookie refresh failed. Check if credentials are stored: python3 tradingview_auth.py store --username EMAIL --password PASSWORD'
+            }), 500
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tradingview/auth-status', methods=['GET'])
+def api_auth_status():
+    """Check TradingView authentication status"""
+    try:
+        # Check if credentials are stored
+        credentials_stored = False
+        try:
+            import tradingview_auth
+            creds = tradingview_auth.get_credentials()
+            credentials_stored = creds is not None
+        except:
+            pass
+        
+        # Check session cookies
+        session = get_tradingview_session()
+        session_valid = session is not None and session.get('sessionid') is not None
+        
+        # Get session update time
+        session_updated = session.get('updated_at') if session else None
+        auto_refreshed = session.get('auto_refreshed', False) if session else False
+        
+        return jsonify({
+            'success': True,
+            'credentials_stored': credentials_stored,
+            'session_valid': session_valid,
+            'session_updated_at': session_updated,
+            'auto_refresh_enabled': credentials_stored,
+            'last_auto_refresh': auto_refreshed,
+            'websocket_connected': _tradingview_ws is not None,
+            'subscribed_symbols': list(_tradingview_subscribed_symbols),
+            'cached_prices': {k: v.get('last') for k, v in _market_data_cache.items()}
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 @app.route('/status', methods=['GET'])

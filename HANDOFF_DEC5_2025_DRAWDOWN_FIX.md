@@ -198,9 +198,92 @@ Our implementation now matches this behavior:
 
 | File | Change |
 |------|--------|
-| `recorder_service.py` | Fixed Scanner API columns (line ~694) |
-| `START_HERE.md` | Added drawdown fix documentation |
+| `recorder_service.py` | Fixed Scanner API columns, added auto-refresh integration |
+| `tradingview_auth.py` | **NEW** - Auto-login and cookie management service |
+| `START_HERE.md` | Added drawdown fix and auto-auth documentation |
 | `HANDOFF_DEC5_2025_DRAWDOWN_FIX.md` | This document |
+
+---
+
+## 🔐 TradingView Auto-Refresh System
+
+### Overview
+The system now supports automatic cookie refresh when cookies expire:
+
+1. **Trading Engine detects** expired cookies (WebSocket auth errors)
+2. **Calls `tradingview_auth.py`** to auto-login via headless browser
+3. **Extracts fresh cookies** and stores them
+4. **Reconnects WebSocket** with new cookies
+
+### Setup (One-Time)
+```bash
+cd "/Users/mylesjadwin/Trading Projects"
+
+# Store TradingView credentials (encrypted in database)
+python3 tradingview_auth.py store --username 'your_email@example.com' --password 'your_password'
+
+# Verify setup
+python3 tradingview_auth.py status
+
+# Test refresh works
+python3 tradingview_auth.py refresh
+```
+
+### How It Works
+```
+WebSocket Disconnects (auth error)
+         │
+         ▼
+_try_auto_refresh_cookies() in recorder_service.py
+         │
+         ▼
+tradingview_auth.refresh_cookies()
+         │
+         ├──► Try keep-alive request first
+         │    └──► If works, session still valid
+         │
+         └──► If keep-alive fails, full auto-login:
+              1. Launch headless Chromium (Playwright)
+              2. Navigate to TradingView login
+              3. Enter credentials
+              4. Extract sessionid cookies
+              5. Store in database
+         │
+         ▼
+WebSocket reconnects with fresh cookies
+```
+
+### API Endpoints (Port 8083)
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/tradingview/auth-status` | GET | Check auth status |
+| `/api/tradingview/refresh` | POST | Trigger manual cookie refresh |
+
+### CLI Commands
+```bash
+python3 tradingview_auth.py store -u EMAIL -p PASSWORD  # Store credentials
+python3 tradingview_auth.py status                       # Check status
+python3 tradingview_auth.py refresh                      # Refresh cookies
+python3 tradingview_auth.py keepalive                    # Run daemon (every 6h)
+```
+
+### Database Table
+```sql
+-- tradingview_credentials (new table)
+CREATE TABLE tradingview_credentials (
+    id INTEGER PRIMARY KEY,
+    username_encrypted TEXT NOT NULL,
+    password_encrypted TEXT NOT NULL,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+```
+
+### Security Notes
+- Credentials are encrypted using machine-specific key
+- Password is ONLY used for TradingView auto-login
+- Runs in headless mode (no browser window)
+- Playwright/Chromium required for auto-login
 
 ---
 
