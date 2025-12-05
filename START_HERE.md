@@ -2,6 +2,61 @@
 
 ---
 
+## 🏗️ ARCHITECTURE UPDATE - DEC 5, 2025 🏗️
+
+**⚠️ THE SYSTEM NOW USES A 2-SERVER MICROSERVICES ARCHITECTURE**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Main Server (port 8082)                   │
+│  • OAuth & Authentication                                    │
+│  • Dashboard UI (all templates)                              │
+│  • Copy Trading                                              │
+│  • Account Management                                        │
+│  • Webhooks → PROXY to Trading Engine                        │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ HTTP Proxy
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                Trading Engine (port 8083)                    │
+│  • Webhook Processing (signals → trades → positions)         │
+│  • TP/SL Monitoring (real-time + polling)                   │
+│  • Drawdown Tracking (worst_unrealized_pnl)                 │
+│  • MFE/MAE Tracking                                         │
+│  • Position Aggregation (DCA, weighted avg entry)           │
+│  • TradingView WebSocket for price streaming                │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │ just_trades.db│
+                    │ (Shared DB)   │
+                    └───────────────┘
+```
+
+### HOW TO START THE SYSTEM
+```bash
+./start_services.sh   # Starts both servers in correct order
+```
+
+### KEY FILES
+| File | Port | Purpose |
+|------|------|---------|
+| `ultra_simple_server.py` | 8082 | Main Server (OAuth, UI, proxies webhooks) |
+| `recorder_service.py` | 8083 | Trading Engine (ALL trading logic) |
+| `start_services.sh` | - | Startup script |
+
+### CRITICAL RULES
+1. **Trading logic → `recorder_service.py` ONLY**
+2. **UI/Dashboard → `ultra_simple_server.py` + templates**
+3. **NEVER re-enable disabled threads in main server**
+4. **Start Trading Engine BEFORE Main Server**
+
+### FULL DOCUMENTATION
+See **`HANDOFF_DEC5_2025_MICROSERVICES_ARCHITECTURE.md`** for complete details.
+
+---
+
 ## 🛑🛑🛑 CRITICAL INCIDENT - DEC 4, 2025 🛑🛑🛑
 
 **AN AI COMPLETELY IGNORED THESE RULES AND:**
@@ -557,6 +612,19 @@ sqlite3 just_trades.db "SELECT id, side, entry_price, exit_price, max_favorable,
 
 | Date | Change |
 |------|--------|
+| **Dec 5, 2025** | **FIX: Drawdown tracking now working** |
+| Dec 5, 2025 | Fixed TradingView Scanner API bug (was requesting invalid columns) |
+| Dec 5, 2025 | Stored TradingView session cookies for WebSocket connection |
+| Dec 5, 2025 | Real-time drawdown (`worst_unrealized_pnl`) now updates every price tick |
+| **Dec 5, 2025** | **MAJOR: Microservices Architecture Migration** |
+| Dec 5, 2025 | Split into 2-server architecture: Main Server (8082) + Trading Engine (8083) |
+| Dec 5, 2025 | Moved all webhook processing to Trading Engine |
+| Dec 5, 2025 | Moved TP/SL monitoring to Trading Engine |
+| Dec 5, 2025 | Moved drawdown tracking to Trading Engine |
+| Dec 5, 2025 | Main Server webhooks now proxy to Trading Engine |
+| Dec 5, 2025 | Added `HANDOFF_DEC5_2025_MICROSERVICES_ARCHITECTURE.md` |
+| Dec 5, 2025 | Added `handoff_logs` table to database |
+| Dec 5, 2025 | Updated `start_services.sh` for new architecture |
 | Dec 4, 2025 | Added Reset Trade History endpoint - `/api/recorders/<id>/reset-history` |
 | Dec 4, 2025 | Added MFE/MAE (drawdown) tracking - `update_trade_mfe_mae()` function |
 | Dec 4, 2025 | Added detailed database storage info (accounts.tradingview_session) |
@@ -574,6 +642,65 @@ sqlite3 just_trades.db "SELECT id, side, entry_price, exit_price, max_favorable,
 3. **Not checking if market is open** - Futures: Sun 6pm - Fri 5pm ET
 4. **Looking for wrong log patterns** - Use `grep "TradingView price"` or `grep "lp="`
 5. **Trying to modify database schema** - NEVER do this without approval
+6. **Using invalid TradingView API columns** - Only `close` works, NOT `bid`/`ask`
+
+---
+
+## 🔧 CRITICAL: Drawdown Tracking Fix (Dec 5, 2025)
+
+### ⚠️ THE PROBLEM
+Drawdown was showing $0.00 for 90% of trades because:
+1. TradingView session cookies were not configured (WebSocket couldn't connect)
+2. The fallback API was requesting invalid columns (`bid`, `ask`) which caused errors
+
+### ✅ THE FIX
+1. **Fixed Scanner API** in `recorder_service.py` line ~694:
+   - Changed `["close", "bid", "ask"]` to `["close"]`
+2. **Stored TradingView session cookies** for WebSocket real-time streaming
+
+### 📍 How Drawdown Tracking Works Now
+```
+TradingView WebSocket (real-time prices)
+         │
+         ▼
+on_price_update() in recorder_service.py
+         │
+         ├──► update_position_drawdown() 
+         │    → Calculates unrealized PnL
+         │    → Updates worst_unrealized_pnl if new low
+         │
+         └──► Stored in recorder_positions table
+```
+
+### 🔑 To Verify Drawdown is Working
+```bash
+# Check Trading Engine status
+curl -s http://localhost:8083/status | python3 -m json.tool
+
+# Look for:
+# - "websocket_connected": true
+# - "cached_prices": {"MES": ..., "MNQ": ...}
+
+# Check positions have drawdown values
+sqlite3 just_trades.db "SELECT id, ticker, worst_unrealized_pnl FROM recorder_positions WHERE status='open';"
+```
+
+### ⚠️ If Drawdown Stops Working
+TradingView cookies expire! Refresh them:
+
+1. Go to TradingView.com → DevTools (F12) → Application → Cookies
+2. Copy `sessionid` and `sessionid_sign` values
+3. Store them:
+```bash
+curl -X POST http://localhost:8082/api/tradingview/session \
+  -H "Content-Type: application/json" \
+  -d '{"sessionid": "YOUR_VALUE", "sessionid_sign": "YOUR_VALUE"}'
+```
+4. Restart Trading Engine:
+```bash
+pkill -f "python.*recorder_service"
+cd "/Users/mylesjadwin/Trading Projects" && python3 recorder_service.py &
+```
 
 ---
 
@@ -675,5 +802,22 @@ git checkout WORKING_DEC4_2025_OAUTH_FIX -- ultra_simple_server.py
 
 ---
 
-*Last updated: Dec 4, 2025 - Added Reset Trade History endpoint*
-*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC4_2025_MFE_MAE, WORKING_DEC4_2025_RESET_HISTORY*
+---
+
+## 📦 Database Handoff Logs
+
+The system now stores handoff session logs in the database:
+
+```bash
+# View all handoff logs
+sqlite3 just_trades.db "SELECT session_date, session_title, summary FROM handoff_logs;"
+
+# View full details of latest handoff
+sqlite3 just_trades.db "SELECT * FROM handoff_logs ORDER BY id DESC LIMIT 1;"
+```
+
+---
+
+*Last updated: Dec 5, 2025 - Drawdown Tracking Fix*
+*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC4_2025_MFE_MAE, WORKING_DEC4_2025_RESET_HISTORY, WORKING_DEC5_2025_DRAWDOWN_FIX*
+*Handoff docs: HANDOFF_DEC5_2025_MICROSERVICES_ARCHITECTURE.md, HANDOFF_DEC5_2025_DRAWDOWN_FIX.md*
