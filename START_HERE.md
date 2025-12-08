@@ -4,7 +4,7 @@
 
 ## 🏗️ ARCHITECTURE UPDATE - DEC 5, 2025 🏗️
 
-**⚠️ THE SYSTEM NOW USES A 2-SERVER MICROSERVICES ARCHITECTURE**
+**⚠️ THE SYSTEM NOW USES A 3-SERVER MICROSERVICES ARCHITECTURE**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -14,19 +14,22 @@
 │  • Copy Trading                                              │
 │  • Account Management                                        │
 │  • Webhooks → PROXY to Trading Engine                        │
+│  • Insider Signals UI → PROXY to Insider Service             │
 └───────────────────────────┬─────────────────────────────────┘
                             │ HTTP Proxy
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                Trading Engine (port 8083)                    │
-│  • Webhook Processing (signals → trades → positions)         │
-│  • TP/SL Monitoring (real-time + polling)                   │
-│  • Drawdown Tracking (worst_unrealized_pnl)                 │
-│  • MFE/MAE Tracking                                         │
-│  • Position Aggregation (DCA, weighted avg entry)           │
-│  • TradingView WebSocket for price streaming                │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
+              ┌─────────────┴─────────────┐
+              ▼                           ▼
+┌─────────────────────────────┐  ┌─────────────────────────────┐
+│  Trading Engine (port 8083) │  │  Insider Service (port 8084)│
+│  • Webhook Processing       │  │  • SEC EDGAR Form 4 polling │
+│  • TP/SL Monitoring         │  │  • 13D/13G Activist filings │
+│  • Drawdown Tracking        │  │  • Signal Scoring (0-100)   │
+│  • MFE/MAE Tracking         │  │  • Watchlist management     │
+│  • Position Aggregation     │  │  • Stock price lookup       │
+│  • TradingView WebSocket    │  │  • Auto-refresh every 5 min │
+└─────────────┬───────────────┘  └─────────────┬───────────────┘
+              │                                │
+              └─────────────┬─────────────────┘
                             ▼
                     ┌───────────────┐
                     │ just_trades.db│
@@ -36,21 +39,23 @@
 
 ### HOW TO START THE SYSTEM
 ```bash
-./start_services.sh   # Starts both servers in correct order
+./start_services.sh   # Starts all 3 servers in correct order
 ```
 
 ### KEY FILES
 | File | Port | Purpose |
 |------|------|---------|
-| `ultra_simple_server.py` | 8082 | Main Server (OAuth, UI, proxies webhooks) |
+| `ultra_simple_server.py` | 8082 | Main Server (OAuth, UI, proxies) |
 | `recorder_service.py` | 8083 | Trading Engine (ALL trading logic) |
+| `insider_service.py` | 8084 | Insider Signals (SEC EDGAR data) |
 | `start_services.sh` | - | Startup script |
 
 ### CRITICAL RULES
 1. **Trading logic → `recorder_service.py` ONLY**
 2. **UI/Dashboard → `ultra_simple_server.py` + templates**
-3. **NEVER re-enable disabled threads in main server**
-4. **Start Trading Engine BEFORE Main Server**
+3. **Insider signals → `insider_service.py` ONLY**
+4. **NEVER re-enable disabled threads in main server**
+5. **Start Trading Engine BEFORE Main Server**
 
 ### FULL DOCUMENTATION
 See **`HANDOFF_DEC5_2025_MICROSERVICES_ARCHITECTURE.md`** for complete details.
@@ -625,6 +630,89 @@ tail -100 /tmp/server.log | grep -E "TradingView price|lp="
 
 ---
 
+## 📊 INSIDER SIGNALS SYSTEM - Added Dec 8, 2025
+
+### 🎯 Overview
+The Insider Signals system monitors SEC EDGAR for insider trading filings and scores them for unusual/high-conviction activity.
+
+**Access:** http://localhost:8082/insider-signals
+
+### 🔄 How It Works
+```
+SEC EDGAR → insider_service.py → Signal Scoring → Database → UI
+     │              │                   │              │
+     │              │                   │              └─► Watchlist
+     │              │                   └─► 0-100 Score
+     │              └─► Form 4, 13D/13G parsing
+     └─► Every 5 minutes polling
+```
+
+### 📁 Key Files
+| File | Purpose |
+|------|---------|
+| `insider_service.py` | Standalone service (port 8084) - SEC polling, scoring |
+| `templates/insider_signals.html` | UI template |
+| Routes in `ultra_simple_server.py` | Proxy routes (lines 1109-1220) |
+
+### 🗄️ Database Tables
+```sql
+-- insider_filings: Raw SEC filings
+-- insider_signals: Scored signals (0-100)
+-- insider_watchlist: User's watched tickers/insiders
+-- insider_poll_status: Polling status tracking
+```
+
+### 📡 API Endpoints
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/insiders/status` | GET | Service status |
+| `/api/insiders/today` | GET | Today's signals |
+| `/api/insiders/top` | GET | Top signals with filters |
+| `/api/insiders/ticker/<symbol>` | GET | Signals for specific ticker |
+| `/api/insiders/conviction` | GET | High conviction signals (85+) |
+| `/api/insiders/refresh` | POST | Trigger manual refresh |
+| `/api/insiders/price/<ticker>` | GET | Get stock price |
+| `/api/insiders/watchlist` | GET/POST | Watchlist operations |
+| `/api/insiders/watchlist/<id>` | DELETE | Remove from watchlist |
+
+### 🎯 Signal Scoring (0-100)
+| Factor | Weight | Description |
+|--------|--------|-------------|
+| Dollar Value | 35% | Size of purchase ($1M+ = 100) |
+| Ownership Change | 20% | % increase in position |
+| Insider Role | 15% | CEO=1.0, Director=0.7, etc. |
+| Cluster Detection | 15% | Multiple insiders buying |
+| Recency | 15% | Base score for any buy |
+
+**Thresholds:**
+- 70+ = Highlighted (yellow)
+- 85+ = High Conviction (green)
+
+### ✅ Features
+- SEC Form 4 filing ingestion (insider buys/sells)
+- 13D/13G activist investor filings
+- Signal scoring with multiple factors
+- Watchlist for tracking tickers & insiders
+- Real-time stock price lookup
+- Click-through to TradingView charts
+- Filter by score, time period, role
+- Auto-refresh every 5 minutes
+
+### 🔧 Troubleshooting
+```bash
+# Check service status
+curl http://localhost:8084/status
+
+# View logs
+tail -f /tmp/insider_service.log
+
+# Restart service
+pkill -f "python.*insider_service"
+cd "/Users/mylesjadwin/Trading Projects" && python3 insider_service.py &
+```
+
+---
+
 ## 📈 MFE/MAE (Drawdown) Tracking - WORKING
 
 **Added Dec 4, 2025** - The system now tracks Maximum Favorable Excursion (MFE) and Maximum Adverse Excursion (MAE) for each trade.
@@ -667,6 +755,16 @@ sqlite3 just_trades.db "SELECT id, side, entry_price, exit_price, max_favorable,
 
 | Date | Change |
 |------|--------|
+| **Dec 8, 2025** | **NEW: Insider Signals Tab** |
+| Dec 8, 2025 | Added `insider_service.py` - SEC EDGAR polling service (port 8084) |
+| Dec 8, 2025 | Added `templates/insider_signals.html` - Insider signals UI |
+| Dec 8, 2025 | Added Form 4 filing ingestion with signal scoring (0-100) |
+| Dec 8, 2025 | Added 13D/13G activist investor filing support |
+| Dec 8, 2025 | Added watchlist feature (track tickers & insiders) |
+| Dec 8, 2025 | Added real-time stock price lookup via Yahoo Finance |
+| Dec 8, 2025 | Added TradingView chart click-through links |
+| Dec 8, 2025 | Updated `start_services.sh` for 3-server architecture |
+| Dec 8, 2025 | Architecture now: Main(8082) + Trading(8083) + Insider(8084) |
 | **Dec 5, 2025** | **FIX: Drawdown tracking now working** |
 | Dec 5, 2025 | Fixed TradingView Scanner API bug (was requesting invalid columns) |
 | Dec 5, 2025 | Stored TradingView session cookies for WebSocket connection |

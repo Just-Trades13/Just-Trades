@@ -1176,6 +1176,46 @@ def api_insiders_refresh():
     except requests.exceptions.RequestException as e:
         return jsonify({"success": False, "error": str(e)}), 503
 
+@app.route('/api/insiders/price/<ticker>')
+def api_insiders_price(ticker):
+    """Proxy to insider service - get stock price"""
+    try:
+        resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/price/{ticker}", timeout=10)
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"success": False, "error": str(e)}), 503
+
+@app.route('/api/insiders/watchlist', methods=['GET', 'POST'])
+def api_insiders_watchlist():
+    """Proxy to insider service - watchlist operations"""
+    try:
+        if request.method == 'POST':
+            resp = requests.post(f"{INSIDER_SERVICE_URL}/api/insiders/watchlist", 
+                               json=request.get_json(), timeout=10)
+        else:
+            resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/watchlist", timeout=10)
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"success": False, "error": str(e)}), 503
+
+@app.route('/api/insiders/watchlist/<int:item_id>', methods=['DELETE'])
+def api_insiders_watchlist_delete(item_id):
+    """Proxy to insider service - delete watchlist item"""
+    try:
+        resp = requests.delete(f"{INSIDER_SERVICE_URL}/api/insiders/watchlist/{item_id}", timeout=10)
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"success": False, "error": str(e)}), 503
+
+@app.route('/api/insiders/watchlist/signals')
+def api_insiders_watchlist_signals():
+    """Proxy to insider service - signals matching watchlist"""
+    try:
+        resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/watchlist/signals", timeout=10)
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"success": False, "error": str(e)}), 503
+
 # =============================================================================
 # END INSIDER SIGNALS ROUTES
 # =============================================================================
@@ -2569,6 +2609,9 @@ def api_get_traders():
                 t.id,
                 t.recorder_id,
                 t.account_id,
+                t.subaccount_id,
+                t.subaccount_name,
+                t.is_demo,
                 t.enabled,
                 t.created_at,
                 r.name as recorder_name,
@@ -2585,10 +2628,18 @@ def api_get_traders():
         
         traders = []
         for row in cursor.fetchall():
+            is_demo = bool(row['is_demo']) if row['is_demo'] is not None else None
+            env_label = "DEMO" if is_demo else "LIVE" if is_demo is not None else ""
+            # Build display name: "Mark DEMO (DEMO4419847-2)" or "Mark LIVE (1381296)"
+            display_account = f"{row['account_name']} {env_label} ({row['subaccount_name']})" if row['subaccount_name'] else row['account_name']
+            
             traders.append({
                 'id': row['id'],
                 'recorder_id': row['recorder_id'],
                 'account_id': row['account_id'],
+                'subaccount_id': row['subaccount_id'],
+                'subaccount_name': row['subaccount_name'],
+                'is_demo': is_demo,
                 'enabled': bool(row['enabled']),
                 'created_at': row['created_at'],
                 'name': row['recorder_name'],
@@ -2596,6 +2647,7 @@ def api_get_traders():
                 'position_size': row['initial_position_size'],
                 'symbol': row['symbol'],
                 'account_name': row['account_name'],
+                'display_account': display_account,
                 'broker': row['broker']
             })
         
@@ -2609,11 +2661,14 @@ def api_get_traders():
 
 @app.route('/api/traders', methods=['POST'])
 def api_create_trader():
-    """Create a new trader (link recorder to account)"""
+    """Create a new trader (link recorder to account with subaccount info)"""
     try:
         data = request.get_json()
         recorder_id = data.get('recorder_id')
         account_id = data.get('account_id')
+        subaccount_id = data.get('subaccount_id')  # Tradovate subaccount ID (e.g., 26029294)
+        subaccount_name = data.get('subaccount_name')  # e.g., "DEMO4419847-2" or "1381296"
+        is_demo = data.get('is_demo')  # True for demo, False for live
         
         if not recorder_id or not account_id:
             return jsonify({'success': False, 'error': 'recorder_id and account_id are required'}), 400
@@ -2636,29 +2691,35 @@ def api_create_trader():
             conn.close()
             return jsonify({'success': False, 'error': 'Account not found'}), 404
         
-        # Check if link already exists
-        cursor.execute('SELECT id FROM traders WHERE recorder_id = ? AND account_id = ?', (recorder_id, account_id))
+        # Check if link already exists (same recorder + account + subaccount)
+        if subaccount_id:
+            cursor.execute('SELECT id FROM traders WHERE recorder_id = ? AND account_id = ? AND subaccount_id = ?', 
+                          (recorder_id, account_id, subaccount_id))
+        else:
+            cursor.execute('SELECT id FROM traders WHERE recorder_id = ? AND account_id = ?', (recorder_id, account_id))
         existing = cursor.fetchone()
         if existing:
             conn.close()
             return jsonify({'success': False, 'error': 'This recorder is already linked to this account'}), 400
         
-        # Create the trader link
+        # Create the trader link with subaccount info
         cursor.execute('''
-            INSERT INTO traders (recorder_id, account_id, enabled)
-            VALUES (?, ?, 1)
-        ''', (recorder_id, account_id))
+            INSERT INTO traders (recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled)
+            VALUES (?, ?, ?, ?, ?, 1)
+        ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0))
         
         trader_id = cursor.lastrowid
         conn.commit()
         conn.close()
         
-        logger.info(f"Created trader {trader_id}: recorder '{recorder['name']}' -> account '{account['name']}'")
+        env_label = "DEMO" if is_demo else "LIVE"
+        display_name = f"{account['name']} {env_label} ({subaccount_name})" if subaccount_name else account['name']
+        logger.info(f"Created trader {trader_id}: recorder '{recorder['name']}' -> {display_name}")
         
         return jsonify({
             'success': True,
             'trader_id': trader_id,
-            'message': f"Linked '{recorder['name']}' to '{account['name']}'"
+            'message': f"Linked '{recorder['name']}' to '{display_name}'"
         })
         
     except Exception as e:
@@ -3851,19 +3912,20 @@ def my_traders():
 
 @app.route('/traders/new')
 def traders_new():
-    # Fetch real recorders from database
+    """Create new trader page - select recorder and accounts"""
     conn = sqlite3.connect('just_trades.db')
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # Get recorder names for strategy dropdown
-    cursor.execute('SELECT name FROM recorders ORDER BY name')
-    strategy_names = [row['name'] for row in cursor.fetchall()]
+    # Get recorders with their IDs for the dropdown
+    cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
+    recorders = [{'id': row['id'], 'name': row['name'], 'strategy_type': row['strategy_type']} for row in cursor.fetchall()]
     
-    # Get accounts with their tradovate_accounts for account routing
+    # Get accounts with their tradovate subaccounts for account routing table
     cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
     accounts = []
     for row in cursor.fetchall():
+        parent_id = row['id']
         parent_name = row['name']
         # Parse tradovate_accounts JSON if available
         if row['tradovate_accounts']:
@@ -3871,14 +3933,25 @@ def traders_new():
                 tradovate_accts = json.loads(row['tradovate_accounts'])
                 for acct in tradovate_accts:
                     if isinstance(acct, dict) and acct.get('name'):
-                        # Format: "ParentName - AccountNumber (DEMO/LIVE)"
-                        env = "DEMO" if acct.get('is_demo') else "LIVE"
-                        accounts.append(f"{parent_name} - {acct['name']} ({env})")
+                        env_label = "🔵 DEMO" if acct.get('is_demo') else "🟢 LIVE"
+                        accounts.append({
+                            'id': parent_id,
+                            'name': acct['name'],
+                            'display_name': f"{env_label} - {acct['name']} ({parent_name})",
+                            'subaccount_id': acct.get('id'),
+                            'is_demo': acct.get('is_demo', False)
+                        })
             except:
                 pass
         # Fallback to account name if no tradovate_accounts
         if not accounts:
-            accounts.append(parent_name)
+            accounts.append({
+                'id': parent_id,
+                'name': parent_name,
+                'display_name': parent_name,
+                'subaccount_id': None,
+                'is_demo': False
+            })
     
     conn.close()
     
@@ -3887,7 +3960,7 @@ def traders_new():
         mode='builder',
         header_title='Create New Trader',
         header_cta='Create Trader',
-        strategy_names=strategy_names,
+        recorders=recorders,
         accounts=accounts
     )
 

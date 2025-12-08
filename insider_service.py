@@ -173,6 +173,18 @@ def init_database():
             VALUES (1, ?, 0)
         ''', (datetime.now().isoformat(),))
     
+    # Watchlist table - track tickers and insiders to follow
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS insider_watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            watch_type TEXT NOT NULL,
+            watch_value TEXT NOT NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(watch_type, watch_value)
+        )
+    ''')
+    
     # Create indexes for faster queries
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_filings_ticker ON insider_filings(ticker)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_filings_date ON insider_filings(filing_date)')
@@ -190,26 +202,24 @@ def init_database():
 # SEC EDGAR API FUNCTIONS
 # =============================================================================
 
-def fetch_recent_form4_filings():
+def fetch_recent_form4_filings(count=100):
     """
     Fetch recent Form 4 filings from SEC EDGAR
     Returns list of filing dictionaries
+    
+    Args:
+        count: Number of filings to fetch (default 100, max 400)
     """
     filings = []
     
     try:
-        # Use SEC's full-text search API for recent Form 4 filings
-        # This gives us structured JSON data
-        search_url = "https://efts.sec.gov/LATEST/search-index"
-        
-        # Alternative: Use the EDGAR filing API directly
-        # Get recent Form 4 filings (last 24 hours)
+        # SEC EDGAR API - get recent Form 4 filings
         api_url = "https://www.sec.gov/cgi-bin/browse-edgar"
         params = {
             'action': 'getcurrent',
             'type': '4',
             'owner': 'only',
-            'count': '100',
+            'count': str(min(count, 400)),  # SEC caps at 400
             'output': 'atom'
         }
         
@@ -218,7 +228,7 @@ def fetch_recent_form4_filings():
             'Accept': 'application/atom+xml'
         }
         
-        logger.info("📡 Fetching Form 4 filings from SEC EDGAR...")
+        logger.info(f"📡 Fetching up to {count} Form 4 filings from SEC EDGAR...")
         response = requests.get(api_url, params=params, headers=headers, timeout=30)
         
         if response.status_code == 200:
@@ -234,6 +244,188 @@ def fetch_recent_form4_filings():
         logger.error(f"❌ SEC EDGAR request failed: {e}")
     except Exception as e:
         logger.error(f"❌ Error fetching filings: {e}")
+    
+    return filings
+
+
+def fetch_form4_filings_fulltext(days_back=7, max_results=200):
+    """
+    Fetch Form 4 filings using SEC's full-text search API
+    This can search historical filings, not just recent ones
+    
+    Args:
+        days_back: How many days back to search
+        max_results: Maximum results to return
+    """
+    filings = []
+    
+    try:
+        # SEC EDGAR Full-Text Search API
+        search_url = "https://efts.sec.gov/LATEST/search-index"
+        
+        # Calculate date range
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days_back)
+        
+        params = {
+            'q': 'formType:"4"',
+            'dateRange': 'custom',
+            'startdt': start_date.strftime('%Y-%m-%d'),
+            'enddt': end_date.strftime('%Y-%m-%d'),
+            'forms': '4',
+            'from': '0',
+            'size': str(min(max_results, 200))
+        }
+        
+        headers = {
+            'User-Agent': SEC_USER_AGENT,
+            'Accept': 'application/json'
+        }
+        
+        logger.info(f"📡 Searching Form 4 filings from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}...")
+        response = requests.get(search_url, params=params, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            hits = data.get('hits', {}).get('hits', [])
+            
+            for hit in hits:
+                source = hit.get('_source', {})
+                filing = {
+                    'form_type': '4',
+                    'accession_number': source.get('adsh', '').replace('-', ''),
+                    'filing_url': f"https://www.sec.gov/Archives/edgar/data/{source.get('cik', '')}/{source.get('adsh', '').replace('-', '')}/",
+                    'filing_date': source.get('file_date'),
+                    'company_name': source.get('display_names', [None])[0] if source.get('display_names') else None,
+                    'insider_name': source.get('display_names', [None, None])[1] if len(source.get('display_names', [])) > 1 else None
+                }
+                filings.append(filing)
+            
+            logger.info(f"📊 Found {len(filings)} Form 4 filings via full-text search")
+        else:
+            logger.warning(f"⚠️ SEC full-text search returned status {response.status_code}")
+            
+    except Exception as e:
+        logger.error(f"❌ Error in full-text search: {e}")
+    
+    return filings
+
+
+def fetch_13d_13g_filings(count=50):
+    """
+    Fetch 13D and 13G filings from SEC EDGAR
+    These are activist investor and large shareholder filings (5%+ ownership)
+    
+    13D = Activist investor (intends to influence management)
+    13G = Passive investor (no intent to control)
+    
+    Returns list of filing dictionaries
+    """
+    all_filings = []
+    
+    for form_type in ['SC 13D', 'SC 13G']:
+        try:
+            api_url = "https://www.sec.gov/cgi-bin/browse-edgar"
+            params = {
+                'action': 'getcurrent',
+                'type': form_type,
+                'owner': 'include',
+                'count': str(count),
+                'output': 'atom'
+            }
+            
+            headers = {
+                'User-Agent': SEC_USER_AGENT,
+                'Accept': 'application/atom+xml'
+            }
+            
+            logger.info(f"📡 Fetching {form_type} filings from SEC EDGAR...")
+            response = requests.get(api_url, params=params, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                filings = parse_13d_13g_atom_feed(response.text, form_type)
+                all_filings.extend(filings)
+                logger.info(f"📊 Fetched {len(filings)} {form_type} filings")
+            else:
+                logger.warning(f"⚠️ SEC EDGAR returned status {response.status_code} for {form_type}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error fetching {form_type} filings: {e}")
+    
+    return all_filings
+
+
+def parse_13d_13g_atom_feed(xml_content, form_type):
+    """
+    Parse SEC EDGAR Atom feed for 13D/13G filings
+    """
+    import xml.etree.ElementTree as ET
+    import re
+    
+    filings = []
+    seen_accessions = set()
+    
+    try:
+        root = ET.fromstring(xml_content)
+        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+        
+        for entry in root.findall('.//atom:entry', ns):
+            try:
+                title = entry.find('atom:title', ns)
+                link = entry.find('atom:link', ns)
+                updated = entry.find('atom:updated', ns)
+                entry_id = entry.find('atom:id', ns)
+                summary = entry.find('atom:summary', ns)
+                
+                if title is not None and title.text:
+                    title_text = title.text
+                    
+                    # Extract accession number
+                    accession_number = None
+                    if entry_id is not None and entry_id.text:
+                        acc_match = re.search(r'accession-number=(\d{10}-\d{2}-\d{6})', entry_id.text)
+                        if acc_match:
+                            accession_number = acc_match.group(1)
+                    
+                    if accession_number and accession_number in seen_accessions:
+                        continue
+                    if accession_number:
+                        seen_accessions.add(accession_number)
+                    
+                    filing_url = link.get('href') if link is not None else None
+                    
+                    # Parse company/filer name from title
+                    # Format: "SC 13D - Company Name (CIK)"
+                    company_name = None
+                    if ' - ' in title_text:
+                        parts = title_text.split(' - ', 1)
+                        if len(parts) > 1:
+                            name_part = parts[1]
+                            if '(' in name_part:
+                                company_name = name_part.split('(')[0].strip()
+                            else:
+                                company_name = name_part.strip()
+                    
+                    filing = {
+                        'form_type': '13D' if '13D' in form_type else '13G',
+                        'title': title_text,
+                        'filing_url': filing_url,
+                        'filing_date': updated.text if updated is not None else None,
+                        'company_name': company_name,
+                        'accession_number': accession_number,
+                        'is_activist': '13D' in form_type  # 13D = activist, 13G = passive
+                    }
+                    
+                    filings.append(filing)
+                    
+            except Exception as e:
+                logger.debug(f"Error parsing 13D/13G entry: {e}")
+                continue
+                
+    except ET.ParseError as e:
+        logger.error(f"❌ XML parse error for 13D/13G: {e}")
+    except Exception as e:
+        logger.error(f"❌ Error parsing 13D/13G Atom feed: {e}")
     
     return filings
 
@@ -584,39 +776,63 @@ def calculate_signal_score(filing_data):
         return 0, ['not_buy']
     
     # 1. Dollar Value Weight (35%)
+    # Adjusted thresholds to be more generous for small-cap stocks
     total_value = filing_data.get('total_value', 0) or 0
     if total_value >= 1000000:  # $1M+
         dollar_score = 100
         reason_flags.append('million_dollar_buy')
     elif total_value >= 500000:  # $500K+
-        dollar_score = 85
+        dollar_score = 95
         reason_flags.append('large_buy_500k')
+    elif total_value >= 250000:  # $250K+
+        dollar_score = 85
+        reason_flags.append('large_buy_250k')
     elif total_value >= 100000:  # $100K+
-        dollar_score = 70
+        dollar_score = 75
         reason_flags.append('significant_buy_100k')
     elif total_value >= 50000:  # $50K+
-        dollar_score = 50
+        dollar_score = 65
+        reason_flags.append('notable_buy_50k')
+    elif total_value >= 25000:  # $25K+
+        dollar_score = 55
+        reason_flags.append('buy_25k')
     elif total_value >= 10000:  # $10K+
-        dollar_score = 30
+        dollar_score = 45
+    elif total_value >= 5000:  # $5K+
+        dollar_score = 35
     else:
-        dollar_score = 10
+        dollar_score = 20
     
     score += dollar_score * SCORING_WEIGHTS['dollar_value']
     
     # 2. Ownership Change Weight (20%)
+    # Also check if this is a NEW position (very bullish signal)
     ownership_change = filing_data.get('ownership_change_percent', 0) or 0
-    if ownership_change >= 50:  # 50%+ increase
+    shares_owned_after = filing_data.get('shares_owned_after', 0) or 0
+    shares = filing_data.get('shares', 0) or 0
+    
+    # New position detection (bought shares = total shares owned)
+    is_new_position = shares_owned_after > 0 and shares > 0 and abs(shares_owned_after - shares) < 10
+    
+    if is_new_position:
         ownership_score = 100
+        reason_flags.append('new_position')
+    elif ownership_change >= 100:  # Doubled position or more
+        ownership_score = 100
+        reason_flags.append('doubled_position')
+    elif ownership_change >= 50:  # 50%+ increase
+        ownership_score = 90
         reason_flags.append('major_position_increase')
     elif ownership_change >= 25:
-        ownership_score = 80
+        ownership_score = 75
         reason_flags.append('significant_increase')
     elif ownership_change >= 10:
         ownership_score = 60
+        reason_flags.append('position_increase_10pct')
     elif ownership_change >= 5:
-        ownership_score = 40
+        ownership_score = 45
     else:
-        ownership_score = 20
+        ownership_score = 30
     
     score += ownership_score * SCORING_WEIGHTS['ownership_change']
     
@@ -642,10 +858,15 @@ def calculate_signal_score(filing_data):
     cluster_score = 0  # Will be calculated in batch processing
     score += cluster_score * SCORING_WEIGHTS['cluster']
     
-    # 5. Recency Weight (15%) - First buy in a while
-    # This would also require historical data
-    recency_score = 50  # Default medium score
+    # 5. Recency Weight (15%) - Give base score, bonus for any buy
+    # All insider buys are somewhat notable
+    recency_score = 60  # Base score for any insider buy
     score += recency_score * SCORING_WEIGHTS['recency']
+    
+    # Bonus: If this is a direct open market purchase (not option exercise)
+    if filing_data.get('price', 0) > 0:
+        score += 5  # Small bonus for actual cash purchase
+        reason_flags.append('open_market_purchase')
     
     # Round to integer
     final_score = min(100, max(0, round(score)))
@@ -712,8 +933,8 @@ def _process_filings_impl():
     errors_count = 0
     
     try:
-        # Fetch recent filings
-        filings = fetch_recent_form4_filings()
+        # Fetch recent filings - get up to 200 to capture more activity
+        filings = fetch_recent_form4_filings(count=200)
         logger.info(f"📋 Processing {len(filings)} filings...")
         
         for i, filing in enumerate(filings):
@@ -823,6 +1044,90 @@ def _process_filings_impl():
             except Exception as e:
                 logger.error(f"❌ Error processing filing: {e}")
                 errors_count += 1
+                continue
+        
+        # Also fetch 13D/13G activist investor filings
+        logger.info("📡 Fetching 13D/13G activist filings...")
+        activist_filings = fetch_13d_13g_filings(count=30)
+        
+        for i, filing in enumerate(activist_filings):
+            try:
+                accession_number = filing.get('accession_number')
+                if not accession_number:
+                    continue
+                
+                # Skip if already processed
+                cursor.execute('SELECT id FROM insider_filings WHERE accession_number = ?', (accession_number,))
+                if cursor.fetchone():
+                    continue
+                
+                # For 13D/13G, we create a high-value signal directly
+                # These are always significant (5%+ ownership)
+                form_type = filing.get('form_type', '13G')
+                is_activist = filing.get('is_activist', False)
+                
+                # Store the filing (we don't have detailed transaction data for 13D/13G)
+                cursor.execute('''
+                    INSERT INTO insider_filings (
+                        accession_number, form_type, ticker, company_name,
+                        insider_name, insider_title, transaction_type,
+                        shares, price, total_value, ownership_change_percent,
+                        shares_owned_after, filing_date, transaction_date,
+                        filing_url, raw_data
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    accession_number,
+                    form_type,
+                    None,  # Ticker needs to be extracted from filing
+                    filing.get('company_name'),
+                    filing.get('company_name'),  # Filer name
+                    '5%+ Owner' if not is_activist else 'Activist Investor',
+                    'STAKE',  # Special type for ownership stake filings
+                    0,
+                    0,
+                    0,
+                    5.0,  # Minimum 5% ownership for 13D/13G
+                    0,
+                    filing.get('filing_date'),
+                    None,
+                    filing.get('filing_url'),
+                    json.dumps(filing)
+                ))
+                
+                filing_id = cursor.lastrowid
+                
+                # Create signal - 13D/13G are always notable
+                score = 85 if is_activist else 70  # Activists score higher
+                reason_flags = ['activist_investor' if is_activist else 'large_shareholder', '5pct_ownership']
+                
+                cursor.execute('''
+                    INSERT INTO insider_signals (
+                        filing_id, ticker, signal_score, insider_name,
+                        insider_role, transaction_type, dollar_value,
+                        reason_flags, is_highlighted, is_conviction
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    filing_id,
+                    None,  # Will need ticker extraction
+                    score,
+                    filing.get('company_name'),
+                    'Activist' if is_activist else '5%+ Owner',
+                    'STAKE',
+                    0,
+                    json.dumps(reason_flags),
+                    1,  # Always highlighted
+                    1 if is_activist else 0
+                ))
+                
+                if is_activist:
+                    logger.info(f"🦈 ACTIVIST FILING: {filing.get('company_name')} - 13D filed (Score: {score})")
+                else:
+                    logger.info(f"📊 LARGE SHAREHOLDER: {filing.get('company_name')} - 13G filed (Score: {score})")
+                
+                processed_count += 1
+                
+            except Exception as e:
+                logger.debug(f"Error processing 13D/13G filing: {e}")
                 continue
         
         # Update poll status
@@ -1071,6 +1376,290 @@ def trigger_refresh():
     return jsonify({
         'success': True,
         'message': 'Refresh triggered - processing in background'
+    })
+
+
+# =============================================================================
+# WATCHLIST API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/insiders/watchlist', methods=['GET'])
+def get_watchlist():
+    """Get all watchlist items"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM insider_watchlist ORDER BY created_at DESC')
+    items = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return jsonify({
+        'success': True,
+        'count': len(items),
+        'watchlist': items
+    })
+
+
+@app.route('/api/insiders/watchlist', methods=['POST'])
+def add_to_watchlist():
+    """Add a ticker or insider to watchlist"""
+    data = request.get_json()
+    
+    watch_type = data.get('type', 'ticker')  # 'ticker' or 'insider'
+    watch_value = data.get('value', '').strip().upper() if watch_type == 'ticker' else data.get('value', '').strip()
+    notes = data.get('notes', '')
+    
+    if not watch_value:
+        return jsonify({'success': False, 'error': 'Value is required'}), 400
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO insider_watchlist (watch_type, watch_value, notes)
+            VALUES (?, ?, ?)
+        ''', (watch_type, watch_value, notes))
+        conn.commit()
+        watchlist_id = cursor.lastrowid
+        conn.close()
+        
+        logger.info(f"👁️ Added to watchlist: {watch_type} = {watch_value}")
+        
+        return jsonify({
+            'success': True,
+            'id': watchlist_id,
+            'message': f'Added {watch_value} to watchlist'
+        })
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({'success': False, 'error': 'Already in watchlist'}), 409
+
+
+@app.route('/api/insiders/watchlist/<int:item_id>', methods=['DELETE'])
+def remove_from_watchlist(item_id):
+    """Remove item from watchlist"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('DELETE FROM insider_watchlist WHERE id = ?', (item_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    
+    if deleted:
+        return jsonify({'success': True, 'message': 'Removed from watchlist'})
+    else:
+        return jsonify({'success': False, 'error': 'Item not found'}), 404
+
+
+@app.route('/api/insiders/watchlist/signals')
+def get_watchlist_signals():
+    """Get signals that match watchlist items"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Get watchlist
+    cursor.execute('SELECT watch_type, watch_value FROM insider_watchlist')
+    watchlist = cursor.fetchall()
+    
+    if not watchlist:
+        conn.close()
+        return jsonify({'success': True, 'count': 0, 'signals': []})
+    
+    # Build query for matching signals
+    ticker_list = [w['watch_value'] for w in watchlist if w['watch_type'] == 'ticker']
+    insider_list = [w['watch_value'] for w in watchlist if w['watch_type'] == 'insider']
+    
+    signals = []
+    
+    if ticker_list:
+        placeholders = ','.join(['?' for _ in ticker_list])
+        cursor.execute(f'''
+            SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
+                   f.ownership_change_percent, f.filing_date, f.transaction_date,
+                   'ticker' as match_type
+            FROM insider_signals s
+            JOIN insider_filings f ON s.filing_id = f.id
+            WHERE s.ticker IN ({placeholders})
+            ORDER BY s.created_at DESC
+            LIMIT 50
+        ''', ticker_list)
+        signals.extend([dict(row) for row in cursor.fetchall()])
+    
+    if insider_list:
+        for insider_name in insider_list:
+            cursor.execute('''
+                SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date,
+                       'insider' as match_type
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE s.insider_name LIKE ?
+                ORDER BY s.created_at DESC
+                LIMIT 20
+            ''', (f'%{insider_name}%',))
+            signals.extend([dict(row) for row in cursor.fetchall()])
+    
+    conn.close()
+    
+    # Remove duplicates and sort by date
+    seen = set()
+    unique_signals = []
+    for s in signals:
+        if s['id'] not in seen:
+            seen.add(s['id'])
+            unique_signals.append(s)
+    
+    unique_signals.sort(key=lambda x: x['created_at'], reverse=True)
+    
+    return jsonify({
+        'success': True,
+        'count': len(unique_signals),
+        'signals': unique_signals[:50]
+    })
+
+
+# =============================================================================
+# PRICE LOOKUP
+# =============================================================================
+
+# Simple price cache to avoid hammering APIs
+_price_cache = {}
+_price_cache_time = {}
+PRICE_CACHE_TTL = 300  # 5 minutes
+
+def get_stock_price(ticker):
+    """
+    Get current stock price using Yahoo Finance API (free, no key needed)
+    Returns price and change info or None if unavailable
+    """
+    if not ticker:
+        return None
+    
+    ticker = ticker.upper()
+    
+    # Check cache
+    now = time.time()
+    if ticker in _price_cache and (now - _price_cache_time.get(ticker, 0)) < PRICE_CACHE_TTL:
+        return _price_cache[ticker]
+    
+    try:
+        # Use Yahoo Finance API (no auth required)
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+        params = {'interval': '1d', 'range': '5d'}
+        headers = {'User-Agent': SEC_USER_AGENT}
+        
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            result = data.get('chart', {}).get('result', [])
+            
+            if result:
+                meta = result[0].get('meta', {})
+                price = meta.get('regularMarketPrice')
+                prev_close = meta.get('previousClose') or meta.get('chartPreviousClose')
+                
+                if price:
+                    change = None
+                    change_pct = None
+                    if prev_close:
+                        change = price - prev_close
+                        change_pct = (change / prev_close) * 100
+                    
+                    price_data = {
+                        'price': round(price, 2),
+                        'change': round(change, 2) if change else None,
+                        'change_pct': round(change_pct, 2) if change_pct else None,
+                        'currency': meta.get('currency', 'USD')
+                    }
+                    
+                    # Cache it
+                    _price_cache[ticker] = price_data
+                    _price_cache_time[ticker] = now
+                    
+                    return price_data
+                    
+    except Exception as e:
+        logger.debug(f"Price lookup failed for {ticker}: {e}")
+    
+    return None
+
+
+@app.route('/api/insiders/price/<ticker>')
+def get_price(ticker):
+    """Get current price for a ticker"""
+    price_data = get_stock_price(ticker)
+    
+    if price_data:
+        return jsonify({
+            'success': True,
+            'ticker': ticker.upper(),
+            **price_data
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'ticker': ticker.upper(),
+            'error': 'Price unavailable'
+        }), 404
+
+
+@app.route('/api/insiders/signals-with-prices')
+def get_signals_with_prices():
+    """Get top signals with current prices added"""
+    limit = request.args.get('limit', 20, type=int)
+    min_score = request.args.get('min_score', 0, type=int)
+    days = request.args.get('days', 7, type=int)
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    since_date = (datetime.now() - timedelta(days=days)).isoformat()
+    
+    cursor.execute('''
+        SELECT s.*, f.company_name, f.filing_url, f.shares, f.price as purchase_price,
+               f.ownership_change_percent, f.filing_date, f.transaction_date
+        FROM insider_signals s
+        JOIN insider_filings f ON s.filing_id = f.id
+        WHERE s.signal_score >= ?
+        AND s.created_at >= ?
+        ORDER BY s.signal_score DESC, s.created_at DESC
+        LIMIT ?
+    ''', (min_score, since_date, limit))
+    
+    signals = []
+    for row in cursor.fetchall():
+        signal = dict(row)
+        
+        # Get current price if ticker exists
+        if signal.get('ticker'):
+            price_data = get_stock_price(signal['ticker'])
+            if price_data:
+                signal['current_price'] = price_data['price']
+                signal['price_change'] = price_data['change']
+                signal['price_change_pct'] = price_data['change_pct']
+                
+                # Calculate gain/loss since insider purchase
+                purchase_price = signal.get('purchase_price')
+                if purchase_price and purchase_price > 0:
+                    gain = price_data['price'] - purchase_price
+                    gain_pct = (gain / purchase_price) * 100
+                    signal['gain_since_purchase'] = round(gain, 2)
+                    signal['gain_since_purchase_pct'] = round(gain_pct, 2)
+        
+        signals.append(signal)
+    
+    conn.close()
+    
+    return jsonify({
+        'success': True,
+        'count': len(signals),
+        'signals': signals
     })
 
 

@@ -471,6 +471,140 @@
         text-decoration: underline;
     }
 
+    /* Watchlist Panel */
+    .watchlist-panel {
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+
+    .watchlist-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .watchlist-header h3 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        font-size: 1rem;
+        color: var(--text-light);
+    }
+
+    .watchlist-header h3 .material-icons {
+        color: var(--primary-color);
+    }
+
+    .watchlist-add {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .watchlist-add select,
+    .watchlist-add input {
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 8px;
+        padding: 8px 12px;
+        color: var(--text-light);
+        font-size: 0.85rem;
+    }
+
+    .watchlist-add input {
+        min-width: 180px;
+    }
+
+    .btn-sm {
+        padding: 8px 14px;
+        font-size: 0.8rem;
+    }
+
+    .watchlist-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .watchlist-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: rgba(25, 184, 255, 0.1);
+        border: 1px solid rgba(25, 184, 255, 0.2);
+        border-radius: 8px;
+        font-size: 0.85rem;
+        color: var(--text-light);
+    }
+
+    .watchlist-item.insider {
+        background: rgba(168, 85, 247, 0.1);
+        border-color: rgba(168, 85, 247, 0.2);
+    }
+
+    .watchlist-item .type-badge {
+        font-size: 0.7rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: rgba(148, 163, 184, 0.2);
+        color: var(--text-muted);
+        text-transform: uppercase;
+    }
+
+    .watchlist-item .remove-btn {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        transition: color 0.2s;
+    }
+
+    .watchlist-item .remove-btn:hover {
+        color: #ef4444;
+    }
+
+    .watchlist-item .remove-btn .material-icons {
+        font-size: 1rem;
+    }
+
+    .watchlist-empty {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        padding: 12px;
+    }
+
+    /* Chart Link */
+    .chart-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--primary-color);
+        text-decoration: none;
+        font-size: 0.85rem;
+        opacity: 0.8;
+        transition: opacity 0.2s;
+    }
+
+    .chart-link:hover {
+        opacity: 1;
+        text-decoration: underline;
+    }
+
+    .chart-link .material-icons {
+        font-size: 1rem;
+    }
+
     /* Empty State */
     .empty-state {
         text-align: center;
@@ -643,9 +777,10 @@
             <div class="filter-group">
                 <label>Min Score</label>
                 <select id="filterMinScore" onchange="applyFilters()">
-                    <option value="0">All Scores</option>
+                    <option value="0" selected>All Scores</option>
+                    <option value="30">30+</option>
                     <option value="50">50+</option>
-                    <option value="70" selected>70+ (Highlighted)</option>
+                    <option value="70">70+ (Highlighted)</option>
                     <option value="85">85+ (Conviction)</option>
                 </select>
             </div>
@@ -672,6 +807,33 @@
                 <label>Search Ticker</label>
                 <input type="text" id="filterTicker" placeholder="e.g. AAPL" onkeyup="debounceSearch()">
             </div>
+            <div class="filter-group">
+                <label>View</label>
+                <select id="filterView" onchange="changeView()">
+                    <option value="all" selected>All Signals</option>
+                    <option value="watchlist">My Watchlist</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Watchlist Panel (hidden by default) -->
+    <div class="watchlist-panel" id="watchlistPanel" style="display: none;">
+        <div class="watchlist-header">
+            <h3><span class="material-icons">visibility</span> My Watchlist</h3>
+            <div class="watchlist-add">
+                <select id="watchlistType">
+                    <option value="ticker">Ticker</option>
+                    <option value="insider">Insider Name</option>
+                </select>
+                <input type="text" id="watchlistValue" placeholder="Enter ticker or name...">
+                <button class="btn btn-primary btn-sm" onclick="addToWatchlist()">
+                    <span class="material-icons">add</span> Add
+                </button>
+            </div>
+        </div>
+        <div class="watchlist-items" id="watchlistItems">
+            <!-- Populated dynamically -->
         </div>
     </div>
 
@@ -683,7 +845,7 @@
                     <th>Ticker</th>
                     <th>Insider</th>
                     <th>Role</th>
-                    <th>Buy Size</th>
+                    <th>Buy @ Price</th>
                     <th>Score</th>
                     <th>Signals</th>
                     <th>Time</th>
@@ -880,18 +1042,23 @@
             const timeAgo = getTimeAgo(signal.created_at);
             const dollarValue = formatDollar(signal.dollar_value);
             const reasonFlags = parseReasonFlags(signal.reason_flags);
+            const purchasePrice = signal.price ? `$${signal.price.toFixed(2)}` : '--';
+            const shares = signal.shares ? signal.shares.toLocaleString() : '--';
             
             return `
                 <tr class="${rowClass}" onclick="showSignalDetail(${index})">
                     <td>
                         <div class="ticker-cell">
                             <span class="ticker-symbol">${signal.ticker || '--'}</span>
-                            <span class="company-name">${signal.company_name || ''}</span>
+                            ${signal.ticker ? `<a class="chart-link" href="https://www.tradingview.com/chart/?symbol=${signal.ticker}" target="_blank" onclick="event.stopPropagation()"><span class="material-icons">show_chart</span></a>` : ''}
                         </div>
                     </td>
                     <td>${signal.insider_name || '--'}</td>
                     <td><span class="role-badge ${roleClass}">${formatRole(signal.insider_role)}</span></td>
-                    <td><span class="dollar-value ${signal.dollar_value >= 500000 ? 'large' : ''}">${dollarValue}</span></td>
+                    <td>
+                        <span class="dollar-value ${signal.dollar_value >= 500000 ? 'large' : ''}">${dollarValue}</span>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">${shares} @ ${purchasePrice}</div>
+                    </td>
                     <td><span class="score-badge ${scoreClass}">${signal.signal_score}</span></td>
                     <td>
                         <div class="reason-flags">
@@ -1071,15 +1238,159 @@
         const flagMap = {
             'million_dollar_buy': '$1M+ Buy',
             'large_buy_500k': '$500K+ Buy',
+            'large_buy_250k': '$250K+ Buy',
             'significant_buy_100k': '$100K+ Buy',
+            'notable_buy_50k': '$50K+ Buy',
+            'buy_25k': '$25K+ Buy',
             'major_position_increase': '50%+ Increase',
+            'doubled_position': 'Doubled Position',
             'significant_increase': '25%+ Increase',
+            'position_increase_10pct': '10%+ Increase',
+            'new_position': 'New Position',
             'c_suite_purchase': 'C-Suite',
             'strategic_investor': 'Strategic',
             'cluster_3plus_insiders': '3+ Insiders',
-            'cluster_2_insiders': '2 Insiders'
+            'cluster_2_insiders': '2 Insiders',
+            'open_market_purchase': 'Open Market',
+            'activist_investor': 'Activist',
+            'large_shareholder': '5%+ Owner',
+            '5pct_ownership': '5%+ Stake'
         };
         return flagMap[flag] || flag.replace(/_/g, ' ');
+    }
+
+    // ===========================================
+    // WATCHLIST FUNCTIONS
+    // ===========================================
+
+    let watchlistItems = [];
+
+    // Change view between all signals and watchlist
+    function changeView() {
+        const view = document.getElementById('filterView').value;
+        const watchlistPanel = document.getElementById('watchlistPanel');
+        
+        if (view === 'watchlist') {
+            watchlistPanel.style.display = 'block';
+            loadWatchlist();
+            loadWatchlistSignals();
+        } else {
+            watchlistPanel.style.display = 'none';
+            loadSignals();
+        }
+    }
+
+    // Load watchlist items
+    async function loadWatchlist() {
+        try {
+            const response = await fetch('/api/insiders/watchlist');
+            const data = await response.json();
+            
+            if (data.success) {
+                watchlistItems = data.watchlist || [];
+                renderWatchlistItems();
+            }
+        } catch (error) {
+            console.error('Failed to load watchlist:', error);
+        }
+    }
+
+    // Render watchlist items
+    function renderWatchlistItems() {
+        const container = document.getElementById('watchlistItems');
+        
+        if (watchlistItems.length === 0) {
+            container.innerHTML = '<div class="watchlist-empty">No items in watchlist. Add tickers or insider names to track.</div>';
+            return;
+        }
+        
+        container.innerHTML = watchlistItems.map(item => `
+            <div class="watchlist-item ${item.watch_type}">
+                <span class="type-badge">${item.watch_type}</span>
+                <span class="value">${item.watch_value}</span>
+                <button class="remove-btn" onclick="removeFromWatchlist(${item.id})" title="Remove">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+        `).join('');
+    }
+
+    // Add to watchlist
+    async function addToWatchlist() {
+        const type = document.getElementById('watchlistType').value;
+        const value = document.getElementById('watchlistValue').value.trim();
+        
+        if (!value) {
+            alert('Please enter a ticker or insider name');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/insiders/watchlist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, value })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('watchlistValue').value = '';
+                loadWatchlist();
+                loadWatchlistSignals();
+            } else {
+                alert(data.error || 'Failed to add to watchlist');
+            }
+        } catch (error) {
+            console.error('Error adding to watchlist:', error);
+            alert('Failed to add to watchlist');
+        }
+    }
+
+    // Remove from watchlist
+    async function removeFromWatchlist(itemId) {
+        try {
+            const response = await fetch(`/api/insiders/watchlist/${itemId}`, {
+                method: 'DELETE'
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                loadWatchlist();
+                loadWatchlistSignals();
+            }
+        } catch (error) {
+            console.error('Error removing from watchlist:', error);
+        }
+    }
+
+    // Load signals matching watchlist
+    async function loadWatchlistSignals() {
+        try {
+            const response = await fetch('/api/insiders/watchlist/signals');
+            const data = await response.json();
+            
+            if (data.success) {
+                currentSignals = data.signals || [];
+                renderSignalsTable();
+                updateCountStats();
+                
+                if (currentSignals.length === 0) {
+                    showEmptyState('No signals found for your watchlist items');
+                }
+            }
+        } catch (error) {
+            console.error('Error loading watchlist signals:', error);
+            showEmptyState('Error loading watchlist signals');
+        }
+    }
+
+    // Open TradingView chart for ticker
+    function openChart(ticker) {
+        if (ticker) {
+            window.open(`https://www.tradingview.com/chart/?symbol=${ticker}`, '_blank');
+        }
     }
 </script>
 {% endblock %}
