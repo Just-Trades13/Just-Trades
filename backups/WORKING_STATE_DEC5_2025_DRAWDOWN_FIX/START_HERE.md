@@ -95,7 +95,6 @@ LOCKED FILES - DO NOT TOUCH:
 ├── templates/recorders_list.html       ← RECORDERS LIST - ASK FIRST
 ├── templates/dashboard.html            ← DASHBOARD - ASK FIRST
 ├── templates/control_center.html       ← CONTROL CENTER - ASK FIRST
-├── templates/quant_screener.html       ← QUANT SCREENER - ASK FIRST
 └── just_trades.db                      ← DATABASE - NEVER MODIFY SCHEMA
 ```
 
@@ -123,22 +122,18 @@ LOCKED FILES - DO NOT TOUCH:
 
 ---
 
-## 🔒 WORKING STATE BACKUP (Dec 8, 2025 - LATEST)
+## 🔒 WORKING STATE BACKUP (Dec 4, 2025 - LATEST)
 
 **Everything below is CONFIRMED WORKING. Do not break it.**
 
-### Latest Backup (Quant Screener + Live Ticker)
+### Latest Backup (Position Tracking)
 ```
-backups/WORKING_STATE_DEC8_2025_QUANT_SCREENER/
-├── ultra_simple_server.py       ← Quant screener + live ticker API
-├── templates/quant_screener.html  ← Screener UI with search
-├── templates/dashboard.html       ← Live ticker carousel
-└── templates/layout.html          ← Navigation with Quant Screener tab
+backups/WORKING_STATE_DEC4_2025_POSITION_TRACKING/
+└── ultra_simple_server.py   ← Contains Trade Manager style position tracking
 ```
 
 ### Previous Backups
 ```
-backups/WORKING_STATE_DEC4_2025_POSITION_TRACKING/
 backups/WORKING_STATE_DEC4_2025_MFE_MAE/
 backups/WORKING_STATE_DEC4_2025_RESET_HISTORY/
 backups/WORKING_STATE_DEC3_2025/
@@ -146,15 +141,13 @@ backups/WORKING_STATE_DEC3_2025/
 
 ### Git Tags (Most Recent First)
 ```bash
-git tag WORKING_DEC8_2025_QUANT_SCREENER     # Quant screener + live ticker
 git tag WORKING_DEC4_2025_POSITION_TRACKING  # Trade Manager style drawdown
 git tag WORKING_DEC4_2025_RESET_HISTORY      # Reset history fix
 git tag WORKING_DEC4_2025_MFE_MAE            # Individual trade MFE/MAE
 git tag WORKING_DEC3_2025                     # Original working state
 
 # To restore any file:
-git checkout WORKING_DEC8_2025_QUANT_SCREENER -- ultra_simple_server.py
-git checkout WORKING_DEC8_2025_QUANT_SCREENER -- templates/quant_screener.html
+git checkout WORKING_DEC4_2025_POSITION_TRACKING -- ultra_simple_server.py
 ```
 
 ---
@@ -170,7 +163,6 @@ git checkout WORKING_DEC8_2025_QUANT_SCREENER -- templates/quant_screener.html
 | **Webhook Signals** | ✅ Working | `/webhook/<token>` endpoint |
 | **Trade Recording** | ✅ Working | `recorded_signals`, `recorded_trades` tables |
 | **Dashboard** | ✅ Working | `dashboard.html` |
-| **Dashboard Live Ticker** | ✅ Working | 27 instruments from TradingView (Dec 8) |
 | **Control Center** | ✅ Working | `control_center.html` |
 | **Account Management** | ✅ Working | `account_management.html` - NEVER TOUCH |
 | **Tradovate OAuth** | ✅ Working | OAuth flow in server |
@@ -180,8 +172,6 @@ git checkout WORKING_DEC8_2025_QUANT_SCREENER -- templates/quant_screener.html
 | **Reset Trade History** | ✅ Working | `/api/recorders/<id>/reset-history` endpoint |
 | **Position Tracking (TM Style)** | ✅ Working | `recorder_positions` table, 1-sec polling |
 | **Real-Time Drawdown** | ✅ Working | `worst_unrealized_pnl` tracking |
-| **Quant Stock Screener** | ✅ Working | `quant_screener.html`, API routes (Dec 8) |
-| **Ticker Search & Reports** | ✅ Working | `/api/quant-screener/ticker/<symbol>` (Dec 8) |
 
 ---
 
@@ -197,7 +187,6 @@ git checkout WORKING_DEC8_2025_QUANT_SCREENER -- templates/quant_screener.html
 | Control Center | `control_center.html`, control center routes |
 | Account Management | **NEVER TOUCH** - It's locked |
 | Settings | `settings.html` only |
-| Quant Screener | `quant_screener.html`, `/api/quant-screener/*` routes |
 
 **🚨 NEVER modify files from OTHER tabs while working on one tab!**
 
@@ -257,50 +246,6 @@ FROM recorder_positions ORDER BY id DESC;
 
 ### Handoff Document
 See `HANDOFF_DEC4_2025_POSITION_TRACKING.md` for full implementation details.
-
----
-
-## 📊 QUANT STOCK SCREENER - Dec 8, 2025
-
-### Overview
-Seeking Alpha style stock screener with real-time prices from TradingView.
-
-### Features
-- **Ticker Search**: Search any stock, get autocomplete suggestions
-- **Full Reports**: Quant score (1.0-5.0), factor grades (A+ to F), live price
-- **Stock Screening**: Filter by rating, factor grades, sector, market cap, price
-- **100+ Stock Universe**: Tech, Finance, Healthcare, Consumer, Energy, ETFs
-- **Live Prices**: Real-time from TradingView Scanner API
-
-### Files
-```
-templates/quant_screener.html     ← UI template
-ultra_simple_server.py            ← API routes & logic
-```
-
-### API Endpoints
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/quant-screener` | GET | Render screener page |
-| `/api/quant-screener/screen` | POST | Run stock screen with filters |
-| `/api/quant-screener/search?q=AAPL` | GET | Search stocks by symbol/name |
-| `/api/quant-screener/ticker/<symbol>` | GET | Full quant report for ticker |
-| `/api/quant-screener/live-prices` | POST | Batch live prices |
-| `/api/quant-screener/live-price/<symbol>` | GET | Single stock price |
-
-### Key Functions
-- `get_stock_universe()` - Returns 100+ stocks database
-- `fetch_live_stock_prices()` - TradingView Scanner API
-- `generate_quant_stock_data()` - Seeking Alpha style scoring
-- `generate_factor_grade()` - A+ to F grades based on percentile
-- `score_to_quant_rating()` - 1.0-5.0 → Strong Buy/Buy/Hold/Sell/Strong Sell
-
-### Dashboard Live Ticker (27 instruments)
-- **Futures**: ES, NQ, MES, MNQ, YM, RTY, M2K, CL, GC, SI, NG, ZB, ZN, 6E, BTC
-- **ETFs**: SPY, QQQ, IWM, DIA, SPXL, UVXY
-- **Stocks**: AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, AMD
-- Auto-refreshes every 30 seconds
-- Continuous carousel animation
 
 ---
 
@@ -741,23 +686,8 @@ sqlite3 just_trades.db "SELECT id, ticker, worst_unrealized_pnl FROM recorder_po
 ```
 
 ### ⚠️ If Drawdown Stops Working
-TradingView cookies expire! You have two options:
+TradingView cookies expire! Refresh them:
 
-#### Option A: Automatic Refresh (Recommended)
-Set up once, works forever:
-```bash
-# Store your TradingView credentials (one-time)
-cd "/Users/mylesjadwin/Trading Projects"
-python3 tradingview_auth.py store --username 'YOUR_EMAIL' --password 'YOUR_PASSWORD'
-
-# Test it works
-python3 tradingview_auth.py status
-python3 tradingview_auth.py refresh
-
-# The Trading Engine will now auto-refresh cookies when they expire!
-```
-
-#### Option B: Manual Refresh
 1. Go to TradingView.com → DevTools (F12) → Application → Cookies
 2. Copy `sessionid` and `sessionid_sign` values
 3. Store them:
@@ -770,28 +700,6 @@ curl -X POST http://localhost:8082/api/tradingview/session \
 ```bash
 pkill -f "python.*recorder_service"
 cd "/Users/mylesjadwin/Trading Projects" && python3 recorder_service.py &
-```
-
-### 🔐 TradingView Auto-Auth System (Dec 5, 2025)
-
-The system now supports automatic cookie refresh:
-
-| Component | Purpose |
-|-----------|---------|
-| `tradingview_auth.py` | Manages credentials and auto-login |
-| `tradingview_credentials` table | Encrypted credential storage |
-| Auto-refresh in Trading Engine | Detects expired cookies and refreshes |
-
-**API Endpoints:**
-- `GET /api/tradingview/auth-status` - Check auth status (port 8083)
-- `POST /api/tradingview/refresh` - Trigger manual refresh (port 8083)
-
-**CLI Commands:**
-```bash
-python3 tradingview_auth.py store --username EMAIL --password PASSWORD
-python3 tradingview_auth.py status
-python3 tradingview_auth.py refresh
-python3 tradingview_auth.py keepalive  # Run as daemon
 ```
 
 ---
@@ -910,225 +818,6 @@ sqlite3 just_trades.db "SELECT * FROM handoff_logs ORDER BY id DESC LIMIT 1;"
 
 ---
 
----
-
-## 🔴 CRITICAL: Dec 8, 2025 - Live Trade Execution + Rate Limiting Incident
-
-### ✅ MAJOR ACCOMPLISHMENT: Live Trading Now Works!
-
-**The system can now execute REAL trades on Tradovate from webhook signals!**
-
-#### The Complete Flow (Working):
-```
-TradingView Alert → Webhook (Main Server 8082) → Trading Engine (8083) → Tradovate API → REAL ORDER PLACED
-```
-
-#### What Was Fixed:
-1. **Symbol Conversion** - TradingView sends `MNQ1!`, Tradovate needs `MNQZ5` (front-month contract)
-2. **accountSpec Fix** - Was sending parent account name (`Mark`), needed subaccount name (`DEMO4419847-2`)
-3. **TradovateIntegration Adoption** - Now uses same code as Manual Trader for consistency
-4. **MD Token** - Added `md_access_token` to the SQL query for market data access
-
-#### Key Code Location:
-`recorder_service.py` - `execute_live_trades()` function (~line 400-500)
-
-#### How to Test Live Trading:
-```bash
-# Send a webhook signal with REAL market price
-curl -X POST http://localhost:8082/webhook/YOUR_WEBHOOK_TOKEN \
-  -H "Content-Type: application/json" \
-  -d '{"action": "BUY", "ticker": "MNQ1!", "price": 25800.00}'
-
-# Check Trading Engine logs for success
-tail -30 /tmp/trading_engine.log | grep -E "LIVE|order|Order|✅"
-```
-
-#### Success Log Example:
-```
-📨 Webhook received for recorder 'Test': {'action': 'BUY', 'ticker': 'MNQ1!', 'price': 25802.25}
-🚀 LIVE EXECUTION: Found 1 enabled trader(s) for recorder 14
-📤 Placing order via TradovateIntegration (demo=True)
-📤 Order data: {'accountSpec': 'DEMO4419847-2', 'orderType': 'Market', 'action': 'Buy', 'symbol': 'MNQZ5', 'orderQty': 1, 'timeInForce': 'Day', 'isAutomated': True, 'accountId': 26029294}
-✅ LIVE TRADE EXECUTED on 'Mark': Buy 1 MNQ1! | Order ID: 336150489952
-```
-
-### 🔴 CRITICAL INCIDENT: Tradovate Rate Limiting (429 Errors)
-
-#### What Happened:
-1. AI modified `/api/control-center/stats` to call `fetch_tradovate_pnl_sync()` 
-2. This endpoint gets called frequently from the UI
-3. Combined with existing WebSocket polling, API calls DOUBLED
-4. Tradovate returned 429 (rate limited) on ALL requests
-5. **EVERYTHING BROKE** - manual trades, P&L updates, positions
-
-#### Symptoms of Rate Limiting:
-- Manual trader returns `{"error":{},"success":false}` or `{"error":"Access is denied"}`
-- WebSocket broadcasts empty: `"positions":[]`, `"pnl_data":{}`
-- Server logs show no errors (silent failure)
-
-#### How to Check for Rate Limiting:
-```bash
-# Stop the server first
-pkill -f "python.*ultra_simple"
-
-# Test API directly
-TOKEN=$(sqlite3 just_trades.db "SELECT tradovate_token FROM accounts WHERE id = 2;")
-curl -s "https://demo.tradovateapi.com/v1/account/list" \
-  -H "Authorization: Bearer $TOKEN"
-
-# If response is empty or status 429, you're rate limited
-# Wait 5-10 minutes before restarting server
-```
-
-#### Recovery Steps:
-```bash
-# 1. Stop server to stop polling
-pkill -f "python.*ultra_simple"
-pkill -f "python.*recorder_service"
-
-# 2. Wait for rate limit to clear (5-10 minutes)
-# Test periodically:
-curl -s "https://demo.tradovateapi.com/v1/account/list" -H "Authorization: Bearer $TOKEN"
-
-# 3. Once you get 200 response, restore from backup
-cp backups/WORKING_STATE_DEC5_2025_COMPLETE/ultra_simple_server.py .
-
-# 4. Restart services
-./start_services.sh
-```
-
-### 🔒 NEVER DO THIS:
-- ❌ **NEVER** add API calls to frequently-called endpoints
-- ❌ **NEVER** call `fetch_tradovate_pnl_sync()` outside of the WebSocket emit loop
-- ❌ **NEVER** poll Tradovate API more than every 0.5 seconds
-- ❌ **NEVER** modify Control Center stats endpoint to make additional API calls
-
-### 📊 Tradovate API Rate Limits:
-- **~120 requests/minute** across all endpoints
-- **Rate limit cooldown**: 5-10 minutes when triggered
-- **WebSocket emit loop** already polls at 0.5s (120 req/min with 2 accounts)
-- **DO NOT add more API calls** - we're at the limit
-
-### 📍 Working Backup (Use This):
-```
-backups/WORKING_STATE_DEC5_2025_COMPLETE/
-├── ultra_simple_server.py   ← SAFE VERSION - no extra API calls
-├── recorder_service.py      ← Contains live trade execution
-├── START_HERE.md
-└── tradingview_auth.py
-```
-
-### 🔧 WebSocket P&L Updates (How They Work):
-
-The WebSocket broadcasts real-time P&L every 0.5 seconds:
-
-```python
-# In ultra_simple_server.py - emit_realtime_updates() function
-# This is the ONLY place that should call fetch_tradovate_pnl_sync()
-
-def emit_realtime_updates():
-    while True:
-        pnl_data, tradovate_positions = fetch_tradovate_pnl_sync()
-        
-        socketio.emit('pnl_update', {
-            'total_pnl': total_pnl,
-            'open_pnl': open_pnl,      # Unrealized P&L
-            'today_pnl': today_pnl,    # Realized P&L
-            'active_positions': len(positions)
-        })
-        
-        socketio.emit('position_update', {
-            'positions': positions_list,
-            'pnl_data': pnl_data       # Full account data
-        })
-        
-        time.sleep(0.5)  # Every 0.5 seconds
-```
-
-The Manual Trader listens to these events:
-```javascript
-// In manual_copy_trader.html
-socket.on('pnl_update', function(data) {
-    // Updates account cards with P&L
-});
-socket.on('position_update', function(data) {
-    // Updates position cards
-});
-```
-
-### 🔑 Key Files Modified (Dec 8, 2025):
-
-| File | Change | Status |
-|------|--------|--------|
-| `recorder_service.py` | Added live trade execution via TradovateIntegration | ✅ Working |
-| `recorder_service.py` | Fixed symbol conversion (MNQ1! → MNQZ5) | ✅ Working |
-| `recorder_service.py` | Fixed accountSpec to use subaccount name | ✅ Working |
-| `ultra_simple_server.py` | **REVERTED** - Don't touch Control Center stats | ✅ Restored |
-
-### 📋 Traders Tab (My Traders):
-
-The Traders system links Recorders to Accounts for live trading:
-
-```
-Recorder (strategy) ──► Trader (link) ──► Account (Tradovate)
-     │                      │                    │
-     │                      │                    └── Has subaccounts (DEMO4419847-2, 1381296)
-     │                      └── enabled flag (on/off)
-     └── webhook_token, TP/SL settings
-```
-
-#### Database Tables:
-- `traders` - Links recorder_id to account_id
-- `recorders` - Strategy settings
-- `accounts` - Tradovate credentials + subaccounts JSON
-
-#### Key Queries:
-```sql
--- Check trader links
-SELECT t.id, r.name as strategy, a.name as account, t.enabled
-FROM traders t
-JOIN recorders r ON t.recorder_id = r.id
-JOIN accounts a ON t.account_id = a.id;
-
--- Enable a recorder for webhooks
-UPDATE recorders SET recording_enabled = 1 WHERE id = 14;
-```
-
----
-
-## 📅 Update Log
-
-| Date | Change |
-|------|--------|
-| **Dec 8, 2025** | **LIVE TRADING WORKING** - Webhooks now execute real Tradovate orders |
-| Dec 8, 2025 | Fixed symbol conversion (TradingView → Tradovate format) |
-| Dec 8, 2025 | Fixed accountSpec to use subaccount name |
-| Dec 8, 2025 | Added TradovateIntegration to recorder_service.py |
-| Dec 8, 2025 | **INCIDENT**: Rate limiting broke everything - REVERTED changes |
-| Dec 8, 2025 | Documented rate limiting recovery process |
-| **Dec 5, 2025** | **FIX: Drawdown tracking now working** |
-| Dec 5, 2025 | Fixed TradingView Scanner API bug (was requesting invalid columns) |
-| Dec 5, 2025 | Stored TradingView session cookies for WebSocket connection |
-| Dec 5, 2025 | Real-time drawdown (`worst_unrealized_pnl`) now updates every price tick |
-| **Dec 5, 2025** | **MAJOR: Microservices Architecture Migration** |
-| Dec 5, 2025 | Split into 2-server architecture: Main Server (8082) + Trading Engine (8083) |
-| Dec 5, 2025 | Moved all webhook processing to Trading Engine |
-| Dec 5, 2025 | Moved TP/SL monitoring to Trading Engine |
-| Dec 5, 2025 | Moved drawdown tracking to Trading Engine |
-| Dec 5, 2025 | Main Server webhooks now proxy to Trading Engine |
-| Dec 5, 2025 | Added `HANDOFF_DEC5_2025_MICROSERVICES_ARCHITECTURE.md` |
-| Dec 5, 2025 | Added `handoff_logs` table to database |
-| Dec 5, 2025 | Updated `start_services.sh` for new architecture |
-| Dec 4, 2025 | Added Reset Trade History endpoint - `/api/recorders/<id>/reset-history` |
-| Dec 4, 2025 | Added MFE/MAE (drawdown) tracking - `update_trade_mfe_mae()` function |
-| Dec 4, 2025 | Added detailed database storage info (accounts.tradingview_session) |
-| Dec 4, 2025 | Added function references for TradingView WebSocket code |
-| Dec 4, 2025 | Added Recorders system documentation |
-| Dec 4, 2025 | Added cascade delete for recorder trades/signals |
-| Dec 3, 2025 | Initial working state backup |
-
----
-
-*Last updated: Dec 8, 2025 - Live Trading + Rate Limiting Documentation*
-*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC4_2025_MFE_MAE, WORKING_DEC4_2025_RESET_HISTORY, WORKING_DEC5_2025_DRAWDOWN_FIX, WORKING_DEC5_2025_COMPLETE*
-*Handoff docs: HANDOFF_DEC5_2025_COMPLETE.md, HANDOFF_DEC5_2025_MICROSERVICES_ARCHITECTURE.md, HANDOFF_DEC5_2025_DRAWDOWN_FIX.md*
+*Last updated: Dec 5, 2025 - Drawdown Tracking Fix*
+*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC4_2025_MFE_MAE, WORKING_DEC4_2025_RESET_HISTORY, WORKING_DEC5_2025_DRAWDOWN_FIX*
+*Handoff docs: HANDOFF_DEC5_2025_MICROSERVICES_ARCHITECTURE.md, HANDOFF_DEC5_2025_DRAWDOWN_FIX.md*

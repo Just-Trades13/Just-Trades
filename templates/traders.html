@@ -5,7 +5,7 @@
 <div class="traders-wrapper">
     {% if mode == 'list' %}
     <section class="list-header">
-        <input type="text" placeholder="Search strategy...">
+        <input type="text" placeholder="Search strategy..." id="searchInput" onkeyup="filterTraders()">
         <a class="btn btn-primary" href="/traders/new">Create Trader</a>
     </section>
     <table class="trader-table">
@@ -13,19 +13,41 @@
             <tr>
                 <th>ACTIONS</th>
                 <th>STRATEGY</th>
+                <th>ACCOUNT</th>
+                <th>STATUS</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="tradersTableBody">
             {% for trader in traders %}
-            <tr>
+            <tr data-trader-id="{{ trader.id }}" data-trader-name="{{ trader.recorder_name }}">
                 <td class="actions">
-                    <a href="/traders/{{ trader.id }}" title="Edit"><span class="material-icons">edit</span></a>
-                    <a href="#" title="Clone"><span class="material-icons">loop</span></a>
-                    <a href="#" title="Delete"><span class="material-icons">close</span></a>
+                    <a href="/traders/{{ trader.id }}" class="action-btn action-btn-edit" title="Edit Trader">
+                        <span class="material-icons">edit</span>
+                    </a>
+                    <button class="action-btn action-btn-refresh" onclick="refreshTrader({{ trader.id }})" title="Refresh Status">
+                        <span class="material-icons">refresh</span>
+                    </button>
+                    <button class="action-btn action-btn-toggle" onclick="toggleTrader({{ trader.id }}, {{ 0 if trader.enabled else 1 }})" title="{{ 'Pause Trading' if trader.enabled else 'Enable Trading' }}">
+                        <span class="material-icons">{{ 'pause' if trader.enabled else 'play_arrow' }}</span>
+                    </button>
+                    <button class="action-btn action-btn-delete" onclick="deleteTrader({{ trader.id }}, '{{ trader.recorder_name }}')" title="Delete Trader">
+                        <span class="material-icons">delete</span>
+                    </button>
                 </td>
-                <td><a class="strategy-link" href="/traders/{{ trader.id }}">{{ trader.name }}</a></td>
+                <td><span class="strategy-link">{{ trader.recorder_name }}</span></td>
+                <td><span class="account-name">{{ trader.account_name }}</span></td>
+                <td>
+                    <span class="status-badge {{ 'status-live' if trader.enabled else 'status-paused' }}">
+                        {{ 'LIVE' if trader.enabled else 'PAUSED' }}
+                    </span>
+                </td>
             </tr>
             {% endfor %}
+            {% if not traders %}
+            <tr>
+                <td colspan="4" class="empty-state">No traders yet. Click "Create Trader" to link a recorder to an account.</td>
+            </tr>
+            {% endif %}
         </tbody>
     </table>
     <footer class="pager">
@@ -33,47 +55,49 @@
         <span class="page-pill">1</span>
         <button>›</button>
     </footer>
-    {% else %}
+    {% elif mode == 'edit' %}
+    <!-- Edit Trader Form -->
+    <form id="traderForm" data-trader-id="{{ trader.id }}">
+    <input type="hidden" id="editTraderId" value="{{ trader.id }}">
+    <input type="hidden" id="recorderSelect" name="recorder_id" value="{{ trader.recorder_id }}">
     <section class="builder-header">
         <div>
             <h1>{{ header_title }}</h1>
-            <span class="chip">TRADER</span>
-            <p>Use this interface to configure your trading trader, including position sizing, SLTP rules, and account routing.</p>
+            <span class="chip {{ 'chip-live' if trader.enabled else 'chip-paused' }}">{{ 'LIVE' if trader.enabled else 'PAUSED' }}</span>
+            <p>Edit your trader settings. Adjust account routing and risk settings below.</p>
         </div>
         <div class="header-actions">
-            <button class="btn btn-primary">{{ header_cta }}</button>
-            <a class="link-button" href="#">Help</a>
+            <button type="submit" class="btn btn-primary" id="createTraderBtn">{{ header_cta }}</button>
+            <button type="button" class="btn {{ 'btn-warning' if trader.enabled else 'btn-success' }}" id="toggleTraderBtn" onclick="toggleTraderEdit({{ trader.id }}, {{ 0 if trader.enabled else 1 }})">
+                {{ 'Pause Trading' if trader.enabled else 'Enable Trading' }}
+            </button>
+            <a class="btn btn-secondary" href="/traders">Back to List</a>
         </div>
     </section>
 
-    <section class="builder-alert builder-alert--error">
+    <section class="builder-alert builder-alert--error" id="validationAlert" style="display: none;">
         <strong>⚠ PLEASE FIX THE FOLLOWING ISSUES:</strong>
-        <ul>
-            <li>Strategy name is required.</li>
-            <li>At least one account must be enabled.</li>
+        <ul id="validationErrors">
         </ul>
     </section>
 
     <section class="builder-form">
+        <!-- Strategy Name is LOCKED on edit - display as read-only -->
         <label class="form-field">
-            <span>Strategy Name</span>
-            <div class="select-shell">
-                <select>
-                    <option>Select strategy...</option>
-                    {% for name in strategy_names %}
-                    <option>{{ name }}</option>
-                    {% endfor %}
-                </select>
-                <span class="material-icons">expand_more</span>
+            <span>Strategy Name (Locked)</span>
+            <div class="locked-field">
+                <span class="material-icons">lock</span>
+                <span class="locked-value">{{ trader.recorder_name }}</span>
+                <a href="/my-recorders" class="edit-recorder-link">Edit Recorder →</a>
             </div>
         </label>
         <label class="form-field">
             <span>Strategy Type</span>
             <div class="select-shell">
-                <select>
-                    <option>Stock</option>
-                    <option>Futures</option>
-                    <option>Crypto</option>
+                <select id="strategyType" name="strategy_type" disabled>
+                    <option value="Futures" {% if trader.strategy_type == 'Futures' %}selected{% endif %}>Futures</option>
+                    <option value="Stock" {% if trader.strategy_type == 'Stock' %}selected{% endif %}>Stock</option>
+                    <option value="Crypto" {% if trader.strategy_type == 'Crypto' %}selected{% endif %}>Crypto</option>
                 </select>
                 <span class="material-icons">expand_more</span>
             </div>
@@ -97,17 +121,388 @@
                     </thead>
                     <tbody>
                         {% for account in accounts %}
-                        <tr>
-                            <td>{{ account }}</td>
+                        <tr data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">
+                            <td>{{ account.display_name }}</td>
                             <td>
                                 <label class="switch">
-                                    <input type="checkbox">
+                                    <input type="checkbox" class="account-enable" name="account_{{ account.id }}_enabled" {% if account.is_selected %}checked{% endif %}>
                                     <span class="slider"></span>
                                 </label>
                             </td>
-                            <td><input type="number" value="0"></td>
-                            <td><input type="text" placeholder="DISABLED"></td>
-                            <td><input type="number" value="1"></td>
+                            <td><input type="number" value="0" name="account_{{ account.id }}_max_cons" class="account-max-cons"></td>
+                            <td><input type="text" placeholder="DISABLED" name="account_{{ account.id }}_ticker" class="account-ticker"></td>
+                            <td><input type="number" value="1" name="account_{{ account.id }}_multiplier" class="account-multiplier"></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> Hide Positional Settings</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Initial Position Size</span>
+                        <input type="number" value="{{ trader.initial_position_size or 1 }}">
+                    </label>
+                    <label class="form-field">
+                        <span>Add Position Size</span>
+                        <input type="number" value="1">
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Stop Loss / Take Profit Settings (Optional)</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body collapsed-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>TP Units</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>Ticks</option>
+                                <option>Points</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="form-field">
+                        <span>Trim Units</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>Contracts</option>
+                                <option>Percent</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <button class="btn btn-outline btn-small" type="button">+ Add TP</button>
+                <div class="tp-row">
+                    <span class="tp-pill">TP #1</span>
+                    <label class="form-field">
+                        <span>TP Value</span>
+                        <input type="number" value="0">
+                    </label>
+                    <label class="form-field">
+                        <span>Trim %</span>
+                        <input type="number" value="0">
+                        <small>This TP is disabled.</small>
+                    </label>
+                    <button class="icon-btn" type="button"><span class="material-icons">delete</span></button>
+                </div>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Stop Loss</span>
+                    <span class="tag tag-disabled">Disabled</span>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Stop Loss Amount</span>
+                        <input type="number" value="0">
+                    </label>
+                    <label class="form-field">
+                        <span>SL Units</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>Ticks</option>
+                                <option>Points</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>SL Type</span>
+                    <div class="select-shell">
+                        <select>
+                            <option>Fixed</option>
+                            <option>Trail</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Averaging Down</span>
+                    <span class="tag tag-disabled">Disabled</span>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Average Down Amount</span>
+                        <input type="number" value="1">
+                    </label>
+                    <label class="form-field">
+                        <span>Average Down Point</span>
+                        <input type="number" value="0">
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Avg Down Unit</span>
+                    <div class="select-shell">
+                        <select>
+                            <option>Ticks</option>
+                            <option>Points</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
+            </div>
+        </section>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Filter Settings (Optional)</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body collapsed-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Ticker</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>ALL</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="form-field">
+                        <span>Timeframe</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>ALL</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Add Delay</span>
+                        <input type="number" value="1">
+                        <small>Currently disabled</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Max Contracts Per Trade</span>
+                        <input type="number" value="0">
+                        <small>Unlimited contracts (no limit)</small>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Option Premium Filter</span>
+                    <input type="number" value="0">
+                    <small>Currently disabled</small>
+                </label>
+                <label class="form-field">
+                    <span>Direction Filter</span>
+                    <div class="select-shell">
+                        <select>
+                            <option>Select a strategy...</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
+                <div class="time-filters">
+                    <div class="time-block">
+                        <h4>Time Filter #1</h4>
+                        <div class="time-grid">
+                            <label class="form-field">
+                                <span>Start #1</span>
+                                <div class="time-shell">
+                                    <input type="number" value="8">
+                                    <span>:</span>
+                                    <input type="number" value="45">
+                                    <select>
+                                        <option>AM</option>
+                                        <option>PM</option>
+                                    </select>
+                                </div>
+                            </label>
+                            <label class="form-field">
+                                <span>Stop #1</span>
+                                <div class="time-shell">
+                                    <input type="number" value="1">
+                                    <span>:</span>
+                                    <input type="number" value="45">
+                                    <select>
+                                        <option>PM</option>
+                                        <option>AM</option>
+                                    </select>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="time-block">
+                        <h4>Time Filter #2</h4>
+                        <div class="time-grid">
+                            <label class="form-field">
+                                <span>Start #2</span>
+                                <div class="time-shell">
+                                    <input type="number" value="12">
+                                    <span>:</span>
+                                    <input type="number" value="30">
+                                    <select>
+                                        <option>PM</option>
+                                        <option>AM</option>
+                                    </select>
+                                </div>
+                            </label>
+                            <label class="form-field">
+                                <span>Stop #2</span>
+                                <div class="time-shell">
+                                    <input type="number" value="3">
+                                    <span>:</span>
+                                    <input type="number" value="15">
+                                    <select>
+                                        <option>PM</option>
+                                        <option>AM</option>
+                                    </select>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Miscellaneous Settings</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body collapsed-body">
+                <label class="form-field">
+                    <span>Nickname</span>
+                    <input type="text" placeholder="Example nickname">
+                </label>
+                <label class="form-field">
+                    <span>Strategy Description</span>
+                    <textarea rows="3" placeholder="Optional. Max 200 characters."></textarea>
+                </label>
+                <label class="form-field">
+                    <span>Discord Channel</span>
+                    <input type="text" placeholder="#alerts-channel">
+                </label>
+                <div class="toggle-row">
+                    <span>Private</span>
+                    <label class="switch">
+                        <input type="checkbox" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-row">
+                    <span>Manual Strategy</span>
+                    <label class="switch">
+                        <input type="checkbox">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-row">
+                    <span>Inverse Strat</span>
+                    <label class="switch">
+                        <input type="checkbox">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </section>
+    </section>
+    </form>
+
+    <section class="danger-zone">
+        <h3>Danger Zone</h3>
+        <div class="danger-action">
+            <div>
+                <strong>Delete this trader</strong>
+                <p>This will stop live trading for this recorder-account link. The recorder and recorded trades will NOT be affected.</p>
+            </div>
+            <button type="button" class="btn btn-danger" onclick="deleteTraderEdit({{ trader.id }}, '{{ trader.recorder_name }}')">Delete Trader</button>
+        </div>
+    </section>
+    {% else %}
+    <!-- Create New Trader Form -->
+    <form id="traderForm">
+    <section class="builder-header">
+        <div>
+            <h1>{{ header_title }}</h1>
+            <span class="chip">TRADER</span>
+            <p>Use this interface to configure your trading trader, including position sizing, SLTP rules, and account routing.</p>
+        </div>
+        <div class="header-actions">
+            <button type="submit" class="btn btn-primary" id="createTraderBtn">{{ header_cta }}</button>
+            <a class="link-button" href="#">Help</a>
+        </div>
+    </section>
+
+    <section class="builder-alert builder-alert--error" id="validationAlert" style="display: none;">
+        <strong>⚠ PLEASE FIX THE FOLLOWING ISSUES:</strong>
+        <ul id="validationErrors">
+        </ul>
+    </section>
+
+    <section class="builder-form">
+        <label class="form-field">
+            <span>Strategy Name (Select a Recorder)</span>
+            <div class="select-shell">
+                <select id="recorderSelect" name="recorder_id" required>
+                    <option value="">Select recorder...</option>
+                    {% for recorder in recorders %}
+                    <option value="{{ recorder.id }}">{{ recorder.name }}</option>
+                    {% endfor %}
+                </select>
+                <span class="material-icons">expand_more</span>
+            </div>
+        </label>
+        <label class="form-field">
+            <span>Strategy Type</span>
+            <div class="select-shell">
+                <select id="strategyType" name="strategy_type">
+                    <option value="Futures">Futures</option>
+                    <option value="Stock">Stock</option>
+                    <option value="Crypto">Crypto</option>
+                </select>
+                <span class="material-icons">expand_more</span>
+            </div>
+        </label>
+
+        <section class="card-panel" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> Hide Account Routing (Required)</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <table class="account-routing">
+                    <thead>
+                        <tr>
+                            <th>ACCOUNT</th>
+                            <th>ENABLE</th>
+                            <th>MAX CONS</th>
+                            <th>CUSTOM TICKER</th>
+                            <th>MULTIPLIER</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in accounts %}
+                        <tr data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">
+                            <td>{{ account.display_name }}</td>
+                            <td>
+                                <label class="switch">
+                                    <input type="checkbox" class="account-enable" name="account_{{ account.id }}_enabled">
+                                    <span class="slider"></span>
+                                </label>
+                            </td>
+                            <td><input type="number" value="0" name="account_{{ account.id }}_max_cons" class="account-max-cons"></td>
+                            <td><input type="text" placeholder="DISABLED" name="account_{{ account.id }}_ticker" class="account-ticker"></td>
+                            <td><input type="number" value="1" name="account_{{ account.id }}_multiplier" class="account-multiplier"></td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -392,6 +787,7 @@
             </div>
         </section>
     </section>
+    </form>
     {% endif %}
 </div>
 {% endblock %}
@@ -409,8 +805,46 @@
     .actions { display: flex; gap: 0.75rem; }
     .actions a { color: rgba(148,163,184,0.8); text-decoration: none; }
     .actions a:hover { color: #60a5fa; }
-    .strategy-link { color: #60a5fa; text-decoration: none; font-weight: 600; }
-    .strategy-link:hover { text-decoration: underline; }
+    .strategy-link { color: #60a5fa; font-weight: 600; }
+    .account-name { color: #94a3b8; font-size: 0.9rem; }
+    .status-badge { padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+    .status-live { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .status-paused { background: rgba(248, 172, 28, 0.15); color: #facc15; border: 1px solid rgba(248, 172, 28, 0.3); }
+    .action-btn { background: rgba(15,23,42,0.6); border: 1px solid rgba(148,163,184,0.2); border-radius: 8px; color: #94a3b8; padding: 0.4rem; cursor: pointer; transition: all 0.2s ease; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+    .action-btn:hover { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border-color: rgba(59, 130, 246, 0.4); }
+    .action-btn-edit:hover { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border-color: rgba(59, 130, 246, 0.4); }
+    .action-btn-refresh:hover { background: rgba(168, 85, 247, 0.2); color: #a855f7; border-color: rgba(168, 85, 247, 0.4); }
+    .action-btn-delete:hover { background: rgba(239, 68, 68, 0.2); color: #ef4444; border-color: rgba(239, 68, 68, 0.4); }
+    .action-btn-toggle:hover { background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: rgba(16, 185, 129, 0.4); }
+    .action-btn.spinning .material-icons { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .empty-state { text-align: center; padding: 3rem !important; color: #64748b; font-style: italic; }
+
+    /* Edit View Styles */
+    .chip-live { background: rgba(16, 185, 129, 0.25); color: #10b981; }
+    .chip-paused { background: rgba(248, 172, 28, 0.15); color: #facc15; }
+    .locked-field { display: flex; align-items: center; gap: 0.75rem; background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.25); border-radius: 12px; padding: 0.75rem 1rem; }
+    .locked-field .material-icons { color: #64748b; font-size: 1.1rem; }
+    .locked-field .locked-value { color: #e2e8f0; font-size: 1rem; font-weight: 500; flex: 1; }
+    .locked-field .edit-recorder-link { color: #60a5fa; font-size: 0.85rem; text-decoration: none; white-space: nowrap; }
+    .locked-field .edit-recorder-link:hover { text-decoration: underline; }
+    .btn-success { background: linear-gradient(135deg, #10b981, #059669); color: white; }
+    .btn-warning { background: linear-gradient(135deg, #f59e0b, #d97706); color: #0b1120; }
+    .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
+    .btn-secondary { background: rgba(148,163,184,0.2); color: #e2e8f0; border: 1px solid rgba(148,163,184,0.3); }
+    .trader-details-card { background: rgba(11,18,33,0.92); border: 1px solid rgba(59,130,246,0.25); border-radius: 16px; padding: 1.5rem; }
+    .trader-details-card h3 { margin: 0 0 1.25rem 0; color: #e2e8f0; font-size: 1.1rem; }
+    .details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+    .detail-item { display: flex; flex-direction: column; gap: 0.25rem; }
+    .detail-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
+    .detail-value { font-size: 1rem; color: #e2e8f0; font-weight: 500; }
+    .edit-note { display: flex; align-items: center; gap: 0.5rem; margin-top: 1.5rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border-radius: 10px; color: #94a3b8; font-size: 0.9rem; }
+    .edit-note .material-icons { font-size: 1.1rem; color: #60a5fa; }
+    .edit-note a { color: #60a5fa; }
+    .danger-zone { background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 16px; padding: 1.5rem; margin-top: 1.5rem; }
+    .danger-zone h3 { margin: 0 0 1rem 0; color: #fca5a5; font-size: 1rem; }
+    .danger-action { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .danger-action p { margin: 0.25rem 0 0 0; color: #94a3b8; font-size: 0.85rem; }
     .pager { display: flex; align-items: center; gap: 0.75rem; justify-content: center; padding: 0.75rem; }
     .pager button { background: rgba(15,23,42,0.6); border: 1px solid rgba(148,163,184,0.2); border-radius: 10px; color: #cbd5f5; padding: 0.4rem 0.75rem; cursor: pointer; }
     .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -470,12 +904,257 @@
     @media (max-width: 900px) {
         .builder-header { flex-direction: column; align-items: flex-start; }
     }
+
+    /* Toast Notification Styles */
+    .toast-notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 16px 24px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        z-index: 9999;
+        transform: translateX(120%);
+        transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        font-weight: 500;
+        max-width: 400px;
+    }
+    .toast-notification.show {
+        transform: translateX(0);
+    }
+    .toast-success {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95));
+        border: 1px solid rgba(16, 185, 129, 0.5);
+        color: #ffffff;
+    }
+    .toast-error {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+        border: 1px solid rgba(239, 68, 68, 0.5);
+        color: #ffffff;
+    }
+    .toast-info {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.95), rgba(37, 99, 235, 0.95));
+        border: 1px solid rgba(59, 130, 246, 0.5);
+        color: #ffffff;
+    }
+    .toast-icon {
+        font-size: 1.25rem;
+        font-weight: bold;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+    }
+    .toast-message {
+        flex: 1;
+        line-height: 1.4;
+    }
 }
 </style>
 {% endblock %}
 {% block scripts %}
 <script>
+    // =============================================
+    // List Page Functions (Toggle, Delete, Filter)
+    // =============================================
+    
+    async function toggleTrader(traderId, newEnabled) {
+        try {
+            const response = await fetch(`/api/traders/${traderId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: newEnabled })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(newEnabled ? 'Trader enabled - Live trading active!' : 'Trader paused - Live trading stopped.', 'success');
+                // Reload page to reflect changes
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Error updating trader: ' + (data.error || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error toggling trader:', error);
+            showToast('Network error. Please try again.', 'error');
+        }
+    }
+    
+    async function refreshTrader(traderId) {
+        const row = document.querySelector(`tr[data-trader-id="${traderId}"]`);
+        const btn = row.querySelector('.action-btn-refresh');
+        
+        // Add spinning animation
+        btn.classList.add('spinning');
+        
+        try {
+            const response = await fetch(`/api/traders/${traderId}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('Trader status refreshed!', 'success', 2000);
+                // Reload page to show updated data
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Error refreshing: ' + (data.error || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error refreshing trader:', error);
+            showToast('Network error. Please try again.', 'error');
+        } finally {
+            btn.classList.remove('spinning');
+        }
+    }
+    
+    async function deleteTrader(traderId, traderName) {
+        // Show confirmation modal
+        if (!confirm(`Are you sure you want to delete trader "${traderName}"?\n\nThis will stop live trading for this recorder-account link.\nThe recorder and recorded trades will NOT be affected.`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/traders/${traderId}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('Trader deleted successfully.', 'success');
+                // Remove the row from the table
+                const row = document.querySelector(`tr[data-trader-id="${traderId}"]`);
+                if (row) {
+                    row.style.transition = 'opacity 0.3s ease';
+                    row.style.opacity = '0';
+                    setTimeout(() => {
+                        row.remove();
+                        // Check if table is now empty
+                        const tbody = document.getElementById('tradersTableBody');
+                        if (tbody && tbody.children.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No traders yet. Click "Create Trader" to link a recorder to an account.</td></tr>';
+                        }
+                    }, 300);
+                }
+            } else {
+                showToast('Error deleting trader: ' + (data.error || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting trader:', error);
+            showToast('Network error. Please try again.', 'error');
+        }
+    }
+    
+    function filterTraders() {
+        const input = document.getElementById('searchInput');
+        const filter = input.value.toLowerCase();
+        const rows = document.querySelectorAll('#tradersTableBody tr');
+        
+        rows.forEach(row => {
+            const name = row.dataset.traderName;
+            if (name && name.toLowerCase().includes(filter)) {
+                row.style.display = '';
+            } else if (!row.querySelector('.empty-state')) {
+                row.style.display = 'none';
+            }
+        });
+    }
+    
+    // =============================================
+    // Edit Page Functions
+    // =============================================
+    
+    async function toggleTraderEdit(traderId, newEnabled) {
+        const btn = document.getElementById('toggleTraderBtn');
+        btn.disabled = true;
+        btn.textContent = 'Updating...';
+        
+        try {
+            const response = await fetch(`/api/traders/${traderId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: newEnabled })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(newEnabled ? 'Trader enabled - Live trading active!' : 'Trader paused - Live trading stopped.', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Error updating trader: ' + (data.error || 'Unknown error'), 'error');
+                btn.disabled = false;
+                btn.textContent = newEnabled ? 'Enable Trading' : 'Pause Trading';
+            }
+        } catch (error) {
+            console.error('Error toggling trader:', error);
+            showToast('Network error. Please try again.', 'error');
+            btn.disabled = false;
+            btn.textContent = newEnabled ? 'Enable Trading' : 'Pause Trading';
+        }
+    }
+    
+    async function deleteTraderEdit(traderId, traderName) {
+        if (!confirm(`Are you sure you want to delete trader "${traderName}"?\n\nThis will stop live trading for this recorder-account link.`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/traders/${traderId}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('Trader deleted successfully.', 'success');
+                setTimeout(() => {
+                    window.location.href = '/traders';
+                }, 1000);
+            } else {
+                showToast('Error deleting trader: ' + (data.error || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting trader:', error);
+            showToast('Network error. Please try again.', 'error');
+        }
+    }
+
+    // =============================================
+    // Toast Notification
+    // =============================================
+    
+    // Toast notification function
+    function showToast(message, type = 'success', duration = 3000) {
+        // Remove any existing toast
+        const existingToast = document.querySelector('.toast-notification');
+        if (existingToast) existingToast.remove();
+        
+        const toast = document.createElement('div');
+        toast.className = 'toast-notification toast-' + type;
+        
+        const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+        toast.innerHTML = `
+            <span class="toast-icon">${icon}</span>
+            <span class="toast-message">${message}</span>
+        `;
+        
+        document.body.appendChild(toast);
+        
+        // Trigger animation
+        setTimeout(() => toast.classList.add('show'), 10);
+        
+        // Auto remove
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
+        // Panel toggle functionality
         document.querySelectorAll('[data-panel]').forEach(function(panel) {
             const toggle = panel.querySelector('.panel-toggle');
             if (!toggle) return;
@@ -487,6 +1166,148 @@
                 }
             });
         });
+        
+        // Form submission handler
+        const form = document.getElementById('traderForm');
+        if (form) {
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const validationAlert = document.getElementById('validationAlert');
+                const validationErrors = document.getElementById('validationErrors');
+                const submitBtn = document.getElementById('createTraderBtn');
+                
+                // Check if this is an edit or create
+                const editTraderId = document.getElementById('editTraderId');
+                const isEdit = editTraderId && editTraderId.value;
+                
+                // Clear previous errors
+                validationErrors.innerHTML = '';
+                validationAlert.style.display = 'none';
+                
+                // Get selected recorder
+                const recorderSelect = document.getElementById('recorderSelect');
+                const recorderId = recorderSelect.value;
+                
+                // Get enabled accounts
+                const enabledAccounts = [];
+                document.querySelectorAll('.account-enable:checked').forEach(function(checkbox) {
+                    const row = checkbox.closest('tr');
+                    const accountId = row.dataset.accountId;
+                    const accountName = row.dataset.accountName;
+                    const maxCons = row.querySelector('.account-max-cons').value || 0;
+                    const ticker = row.querySelector('.account-ticker').value || '';
+                    const multiplier = row.querySelector('.account-multiplier').value || 1;
+                    
+                    enabledAccounts.push({
+                        account_id: parseInt(accountId),
+                        account_name: accountName,
+                        max_contracts: parseInt(maxCons),
+                        custom_ticker: ticker,
+                        multiplier: parseFloat(multiplier)
+                    });
+                });
+                
+                // Validate
+                const errors = [];
+                if (!recorderId) {
+                    errors.push('Please select a recorder (strategy).');
+                }
+                if (enabledAccounts.length === 0) {
+                    errors.push('At least one account must be enabled.');
+                }
+                
+                if (errors.length > 0) {
+                    errors.forEach(function(err) {
+                        const li = document.createElement('li');
+                        li.textContent = err;
+                        validationErrors.appendChild(li);
+                    });
+                    validationAlert.style.display = 'block';
+                    return;
+                }
+                
+                // Disable button while submitting
+                submitBtn.disabled = true;
+                submitBtn.textContent = isEdit ? 'Updating...' : 'Creating...';
+                
+                try {
+                    if (isEdit) {
+                        // UPDATE existing trader
+                        const traderId = editTraderId.value;
+                        const account = enabledAccounts[0]; // For edit, use first selected account
+                        
+                        const response = await fetch(`/api/traders/${traderId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                recorder_id: parseInt(recorderId),
+                                account_id: account.account_id
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        if (data.success) {
+                            showToast('Trader updated successfully!', 'success', 2500);
+                            setTimeout(() => {
+                                window.location.href = '/traders';
+                            }, 1500);
+                        } else {
+                            showToast('Error updating trader: ' + (data.error || 'Unknown error'), 'error', 4000);
+                        }
+                    } else {
+                        // CREATE new traders
+                        let successCount = 0;
+                        let errorMessages = [];
+                        
+                        for (const account of enabledAccounts) {
+                            const response = await fetch('/api/traders', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    recorder_id: parseInt(recorderId),
+                                    account_id: account.account_id
+                                })
+                            });
+                            
+                            const data = await response.json();
+                            if (data.success) {
+                                successCount++;
+                            } else {
+                                errorMessages.push(`${account.account_name}: ${data.error || 'Unknown error'}`);
+                            }
+                        }
+                        
+                        if (successCount > 0) {
+                            showToast(`Successfully created ${successCount} trader(s)! Live trading enabled.`, 'success', 2500);
+                            setTimeout(() => {
+                                window.location.href = '/traders';
+                            }, 1500);
+                        } else {
+                            errorMessages.forEach(function(err) {
+                                const li = document.createElement('li');
+                                li.textContent = err;
+                                validationErrors.appendChild(li);
+                            });
+                            validationAlert.style.display = 'block';
+                            showToast('Failed to create trader. See errors below.', 'error', 4000);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error saving trader:', error);
+                    const li = document.createElement('li');
+                    li.textContent = 'Network error. Please try again.';
+                    validationErrors.appendChild(li);
+                    validationAlert.style.display = 'block';
+                    showToast('Network error. Please try again.', 'error', 4000);
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = isEdit ? 'Update Trader' : 'Create Trader';
+                }
+            });
+        }
     });
 </script>
 {% endblock %}

@@ -1,0 +1,456 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// SMC Auto-Trading System for NQ/ES with Webhook Alerts
+// Designed for TradersPost, 3Commas, or custom webhook receivers
+
+//@version=5
+strategy("SMC AutoTrader NQ/ES", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500, 
+     default_qty_type=strategy.fixed, default_qty_value=1, initial_capital=50000,
+     commission_type=strategy.commission.cash_per_contract, commission_value=2.50,
+     calc_on_every_tick=false, process_orders_on_close=true)
+
+//-----------------------------------------------------------------------------}
+// WEBHOOK MESSAGE TEMPLATES
+//-----------------------------------------------------------------------------{
+// These are the JSON templates sent to your auto-trader
+// Customize these to match your webhook receiver's expected format
+
+// TradersPost format:
+// {"ticker": "NQ", "action": "buy", "price": 21500.00, "stopLoss": 21480.00, "takeProfit": 21560.00}
+
+//-----------------------------------------------------------------------------}
+// Settings
+//-----------------------------------------------------------------------------{
+grpTrade = "═══ Trade Settings ═══"
+riskPercent = input.float(1.0, "Risk % per Trade", minval=0.1, maxval=5.0, step=0.1, group=grpTrade)
+useATRStop = input.bool(true, "Use ATR for Stop Loss", group=grpTrade)
+atrMultSL = input.float(1.5, "ATR Multiplier (SL)", minval=0.5, maxval=5.0, step=0.1, group=grpTrade)
+atrMultTP1 = input.float(1.5, "ATR Multiplier (TP1)", minval=0.5, maxval=5.0, step=0.1, group=grpTrade)
+atrMultTP2 = input.float(3.0, "ATR Multiplier (TP2)", minval=1.0, maxval=10.0, step=0.5, group=grpTrade)
+atrMultTP3 = input.float(5.0, "ATR Multiplier (TP3)", minval=2.0, maxval=15.0, step=0.5, group=grpTrade)
+tp1ClosePercent = input.int(50, "TP1 Exit %", minval=10, maxval=100, step=10, group=grpTrade, tooltip="Percentage to close at TP1")
+tp2ClosePercent = input.int(30, "TP2 Exit %", minval=0, maxval=50, step=10, group=grpTrade)
+
+grpSignal = "═══ Signal Settings ═══"
+useSMT = input.bool(true, "Use SMT Divergence", group=grpSignal)
+useFVG = input.bool(true, "Use FVG", group=grpSignal)
+useOB = input.bool(true, "Use Order Blocks", group=grpSignal)
+useMSS = input.bool(true, "Require MSS/BOS", group=grpSignal)
+usePDZone = input.bool(true, "Require Premium/Discount Zone", group=grpSignal)
+useKillzone = input.bool(true, "Only Trade in Killzones", group=grpSignal)
+minConfluence = input.int(3, "Min Confluence Score", minval=1, maxval=5, group=grpSignal, tooltip="How many factors must align")
+
+grpSMT = "═══ SMT Settings ═══"
+smtSymbol = input.symbol("NQ1!", "Compare Symbol", group=grpSMT, tooltip="If on ES, use NQ1!. If on NQ, use ES1!")
+smtLen = input.int(5, "SMT Lookback", minval=2, maxval=15, group=grpSMT)
+
+grpStruct = "═══ Structure Settings ═══"
+lenMS = input.int(5, "Structure Length", minval=3, maxval=15, group=grpStruct)
+lenOB = input.int(10, "OB Swing Length", minval=3, maxval=30, group=grpStruct)
+pdLen = input.int(20, "P/D Range Length", minval=10, maxval=100, group=grpStruct)
+
+grpKZ = "═══ Killzone Settings (EST) ═══"
+useNY = input.bool(true, "New York AM (8:30-11:00)", group=grpKZ)
+useLDN = input.bool(true, "London (2:00-5:00)", group=grpKZ)
+useNYPM = input.bool(true, "New York PM (1:30-4:00)", group=grpKZ)
+useSilverBullet = input.bool(true, "Silver Bullet (10:00-11:00, 2:00-3:00)", group=grpKZ)
+
+grpWebhook = "═══ Webhook Settings ═══"
+webhookTicker = input.string("NQ", "Ticker Symbol", group=grpWebhook, tooltip="Symbol name for webhook (NQ, ES, MNQ, MES)")
+webhookFormat = input.string("TradersPost", "Webhook Format", options=["TradersPost", "3Commas", "Custom"], group=grpWebhook)
+
+grpVisual = "═══ Visual Settings ═══"
+showEntryZones = input.bool(true, "Show Entry Zones", group=grpVisual)
+showTPLines = input.bool(true, "Show TP Lines", group=grpVisual)
+showSLLines = input.bool(true, "Show SL Lines", group=grpVisual)
+showInfoTable = input.bool(true, "Show Info Table", group=grpVisual)
+cBull = input.color(color.new(#00dc82, 0), "Bullish Color", group=grpVisual)
+cBear = input.color(color.new(#ff5252, 0), "Bearish Color", group=grpVisual)
+
+//-----------------------------------------------------------------------------}
+// Variables
+//-----------------------------------------------------------------------------{
+var int trend = 0  // 1 = bullish, -1 = bearish
+var float entryPrice = na
+var float stopLoss = na
+var float tp1 = na
+var float tp2 = na
+var float tp3 = na
+var bool tp1Hit = false
+var bool tp2Hit = false
+var bool inTrade = false
+var int tradeDir = 0  // 1 = long, -1 = short
+
+n = bar_index
+atr = ta.atr(14)
+posSize = strategy.position_size
+
+//-----------------------------------------------------------------------------}
+// Killzone Detection
+//-----------------------------------------------------------------------------{
+inLondon = not na(time(timeframe.period, "0200-0500", "America/New_York"))
+inNYAM = not na(time(timeframe.period, "0830-1100", "America/New_York"))
+inNYPM = not na(time(timeframe.period, "1330-1600", "America/New_York"))
+inSilverBullet1 = not na(time(timeframe.period, "1000-1100", "America/New_York"))
+inSilverBullet2 = not na(time(timeframe.period, "1400-1500", "America/New_York"))
+
+inKillzone = (useLDN and inLondon) or (useNY and inNYAM) or (useNYPM and inNYPM)
+inSilverBullet = useSilverBullet and (inSilverBullet1 or inSilverBullet2)
+
+killzoneActive = not useKillzone or inKillzone or inSilverBullet
+
+//-----------------------------------------------------------------------------}
+// Premium/Discount Zone
+//-----------------------------------------------------------------------------{
+rangeHigh = ta.highest(high, pdLen)
+rangeLow = ta.lowest(low, pdLen)
+eq = (rangeHigh + rangeLow) / 2
+
+inPremium = close > eq
+inDiscount = close < eq
+
+//-----------------------------------------------------------------------------}
+// Market Structure
+//-----------------------------------------------------------------------------{
+swingHigh = ta.pivothigh(high, lenMS, lenMS)
+swingLow = ta.pivotlow(low, lenMS, lenMS)
+
+var float lastSwingHigh = na
+var float lastSwingLow = na
+
+if not na(swingHigh)
+    lastSwingHigh := swingHigh
+if not na(swingLow)
+    lastSwingLow := swingLow
+
+// MSS/BOS Detection
+bullishMSS = not na(lastSwingHigh) and close > lastSwingHigh and trend != 1
+bearishMSS = not na(lastSwingLow) and close < lastSwingLow and trend != -1
+
+if bullishMSS
+    trend := 1
+if bearishMSS
+    trend := -1
+
+structureBull = not useMSS or trend == 1
+structureBear = not useMSS or trend == -1
+
+//-----------------------------------------------------------------------------}
+// SMT Divergence
+//-----------------------------------------------------------------------------{
+[smtO, smtH, smtL, smtC] = request.security(smtSymbol, timeframe.period, [open, high, low, close])
+
+currPH = ta.pivothigh(high, smtLen, smtLen)
+currPL = ta.pivotlow(low, smtLen, smtLen)
+compPH = ta.pivothigh(smtH, smtLen, smtLen)
+compPL = ta.pivotlow(smtL, smtLen, smtLen)
+
+var float prevCurrH = na
+var float prevCurrL = na
+var float prevCompH = na
+var float prevCompL = na
+
+if not na(currPH)
+    prevCurrH := currPH
+if not na(currPL)
+    prevCurrL := currPL
+if not na(compPH)
+    prevCompH := compPH
+if not na(compPL)
+    prevCompL := compPL
+
+// Bullish SMT: Current LL, Compare HL
+bullSMT = not na(currPL) and not na(prevCurrL[1]) and not na(compPL) and not na(prevCompL[1]) and currPL < prevCurrL[1] and compPL > prevCompL[1]
+// Bearish SMT: Current HH, Compare LH  
+bearSMT = not na(currPH) and not na(prevCurrH[1]) and not na(compPH) and not na(prevCompH[1]) and currPH > prevCurrH[1] and compPH < prevCompH[1]
+
+//-----------------------------------------------------------------------------}
+// Fair Value Gaps
+//-----------------------------------------------------------------------------{
+bullFVG = low > high[2] and close[1] > open[1]  // Gap up after bullish candle
+bearFVG = high < low[2] and close[1] < open[1]  // Gap down after bearish candle
+
+var float bullFVGTop = na
+var float bullFVGBot = na
+var float bearFVGTop = na
+var float bearFVGBot = na
+var int bullFVGBar = na
+var int bearFVGBar = na
+
+if bullFVG
+    bullFVGTop := low
+    bullFVGBot := high[2]
+    bullFVGBar := bar_index
+
+if bearFVG
+    bearFVGTop := low[2]
+    bearFVGBot := high
+    bearFVGBar := bar_index
+
+// Check if price is in FVG zone
+inBullFVG = not na(bullFVGBot) and not na(bullFVGBar) and low <= bullFVGTop and close >= bullFVGBot and (bar_index - bullFVGBar) < 50
+inBearFVG = not na(bearFVGTop) and not na(bearFVGBar) and high >= bearFVGBot and close <= bearFVGTop and (bar_index - bearFVGBar) < 50
+
+fvgBull = not useFVG or inBullFVG or bullFVG
+fvgBear = not useFVG or inBearFVG or bearFVG
+
+//-----------------------------------------------------------------------------}
+// Order Blocks
+//-----------------------------------------------------------------------------{
+var float bullOBTop = na
+var float bullOBBot = na
+var float bearOBTop = na
+var float bearOBBot = na
+
+// Simple OB detection: last opposite candle before strong move
+strongBullMove = close > open and (close - open) > atr * 1.5
+strongBearMove = close < open and (open - close) > atr * 1.5
+
+if strongBullMove and close[1] < open[1]
+    bullOBTop := high[1]
+    bullOBBot := low[1]
+
+if strongBearMove and close[1] > open[1]
+    bearOBTop := high[1]
+    bearOBBot := low[1]
+
+// Check if price is at OB
+atBullOB = not na(bullOBBot) and low <= bullOBTop and close >= bullOBBot
+atBearOB = not na(bearOBTop) and high >= bearOBBot and close <= bearOBTop
+
+//-----------------------------------------------------------------------------}
+// Confluence Scoring
+//-----------------------------------------------------------------------------{
+bullScore = 0
+bullScore := bullScore + (trend == 1 ? 1 : 0)
+bullScore := bullScore + (inDiscount ? 1 : 0)
+bullScore := bullScore + (bullSMT ? 1 : 0)
+bullScore := bullScore + ((inBullFVG or bullFVG) ? 1 : 0)
+bullScore := bullScore + (atBullOB ? 1 : 0)
+bullScore := bullScore + (inKillzone ? 1 : 0)
+bullScore := bullScore + (inSilverBullet ? 1 : 0)
+
+bearScore = 0
+bearScore := bearScore + (trend == -1 ? 1 : 0)
+bearScore := bearScore + (inPremium ? 1 : 0)
+bearScore := bearScore + (bearSMT ? 1 : 0)
+bearScore := bearScore + ((inBearFVG or bearFVG) ? 1 : 0)
+bearScore := bearScore + (atBearOB ? 1 : 0)
+bearScore := bearScore + (inKillzone ? 1 : 0)
+bearScore := bearScore + (inSilverBullet ? 1 : 0)
+
+//-----------------------------------------------------------------------------}
+// Entry Signals
+//-----------------------------------------------------------------------------{
+longCondition = bullScore >= minConfluence and killzoneActive and structureBull and (not usePDZone or inDiscount)
+shortCondition = bearScore >= minConfluence and killzoneActive and structureBear and (not usePDZone or inPremium)
+
+// Calculate levels
+longSL = useATRStop ? close - (atr * atrMultSL) : (not na(bullOBBot) ? bullOBBot - atr * 0.5 : close - atr * 2)
+longTP1 = close + (atr * atrMultTP1)
+longTP2 = close + (atr * atrMultTP2)
+longTP3 = close + (atr * atrMultTP3)
+
+shortSL = useATRStop ? close + (atr * atrMultSL) : (not na(bearOBTop) ? bearOBTop + atr * 0.5 : close + atr * 2)
+shortTP1 = close - (atr * atrMultTP1)
+shortTP2 = close - (atr * atrMultTP2)
+shortTP3 = close - (atr * atrMultTP3)
+
+//-----------------------------------------------------------------------------}
+// Strategy Execution
+//-----------------------------------------------------------------------------{
+// Long Entry
+if longCondition and posSize == 0
+    strategy.entry("Long", strategy.long, alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "sentiment": "bullish", "price": ' + str.tostring(close) + '}')
+    entryPrice := close
+    stopLoss := longSL
+    tp1 := longTP1
+    tp2 := longTP2
+    tp3 := longTP3
+    tp1Hit := false
+    tp2Hit := false
+    inTrade := true
+    tradeDir := 1
+
+// Short Entry
+if shortCondition and posSize == 0
+    strategy.entry("Short", strategy.short, alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "sentiment": "bearish", "price": ' + str.tostring(close) + '}')
+    entryPrice := close
+    stopLoss := shortSL
+    tp1 := shortTP1
+    tp2 := shortTP2
+    tp3 := shortTP3
+    tp1Hit := false
+    tp2Hit := false
+    inTrade := true
+    tradeDir := -1
+
+// Exit Logic for Long
+if posSize > 0
+    // TP1
+    if high >= tp1 and not tp1Hit
+        strategy.close("Long", comment="TP1", qty_percent=50, alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "sentiment": "flat", "comment": "TP1"}')
+        tp1Hit := true
+    // TP2
+    if high >= tp2 and not tp2Hit and tp1Hit
+        strategy.close("Long", comment="TP2", qty_percent=60, alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "sentiment": "flat", "comment": "TP2"}')
+        tp2Hit := true
+    // TP3
+    if high >= tp3 and tp2Hit
+        strategy.close("Long", comment="TP3", alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "sentiment": "flat", "comment": "TP3"}')
+        inTrade := false
+    // SL
+    if low <= stopLoss
+        strategy.close("Long", comment="SL", alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "sentiment": "flat", "comment": "StopLoss"}')
+        inTrade := false
+
+// Exit Logic for Short
+if posSize < 0
+    // TP1
+    if low <= tp1 and not tp1Hit
+        strategy.close("Short", comment="TP1", qty_percent=50, alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "sentiment": "flat", "comment": "TP1"}')
+        tp1Hit := true
+    // TP2
+    if low <= tp2 and not tp2Hit and tp1Hit
+        strategy.close("Short", comment="TP2", qty_percent=60, alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "sentiment": "flat", "comment": "TP2"}')
+        tp2Hit := true
+    // TP3
+    if low <= tp3 and tp2Hit
+        strategy.close("Short", comment="TP3", alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "sentiment": "flat", "comment": "TP3"}')
+        inTrade := false
+    // SL
+    if high >= stopLoss
+        strategy.close("Short", comment="SL", alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "sentiment": "flat", "comment": "StopLoss"}')
+        inTrade := false
+
+//-----------------------------------------------------------------------------}
+// WEBHOOK ALERT MESSAGES
+//-----------------------------------------------------------------------------{
+// Generate JSON messages for webhooks
+
+// TradersPost Format
+tpLongEntry = '{"ticker": "' + webhookTicker + '", "action": "buy", "sentiment": "bullish", "price": ' + str.tostring(close) + ', "stopLoss": ' + str.tostring(longSL, "#.##") + ', "takeProfit": ' + str.tostring(longTP1, "#.##") + '}'
+tpShortEntry = '{"ticker": "' + webhookTicker + '", "action": "sell", "sentiment": "bearish", "price": ' + str.tostring(close) + ', "stopLoss": ' + str.tostring(shortSL, "#.##") + ', "takeProfit": ' + str.tostring(shortTP1, "#.##") + '}'
+tpLongTP1 = '{"ticker": "' + webhookTicker + '", "action": "sell", "sentiment": "flat", "price": ' + str.tostring(tp1, "#.##") + ', "comment": "TP1 Hit - Partial Close 50%"}'
+tpShortTP1 = '{"ticker": "' + webhookTicker + '", "action": "buy", "sentiment": "flat", "price": ' + str.tostring(tp1, "#.##") + ', "comment": "TP1 Hit - Partial Close 50%"}'
+tpLongSL = '{"ticker": "' + webhookTicker + '", "action": "sell", "sentiment": "flat", "price": ' + str.tostring(stopLoss, "#.##") + ', "comment": "Stop Loss Hit"}'
+tpShortSL = '{"ticker": "' + webhookTicker + '", "action": "buy", "sentiment": "flat", "price": ' + str.tostring(stopLoss, "#.##") + ', "comment": "Stop Loss Hit"}'
+
+// Custom Format (most flexible)
+customLong = '{"signal": "LONG", "symbol": "' + webhookTicker + '", "entry": ' + str.tostring(close) + ', "sl": ' + str.tostring(longSL, "#.##") + ', "tp1": ' + str.tostring(longTP1, "#.##") + ', "tp2": ' + str.tostring(longTP2, "#.##") + ', "tp3": ' + str.tostring(longTP3, "#.##") + ', "confluence": ' + str.tostring(bullScore) + '}'
+customShort = '{"signal": "SHORT", "symbol": "' + webhookTicker + '", "entry": ' + str.tostring(close) + ', "sl": ' + str.tostring(shortSL, "#.##") + ', "tp1": ' + str.tostring(shortTP1, "#.##") + ', "tp2": ' + str.tostring(shortTP2, "#.##") + ', "tp3": ' + str.tostring(shortTP3, "#.##") + ', "confluence": ' + str.tostring(bearScore) + '}'
+
+// Select format based on settings
+longEntryMsg = webhookFormat == "TradersPost" ? tpLongEntry : customLong
+shortEntryMsg = webhookFormat == "TradersPost" ? tpShortEntry : customShort
+
+//-----------------------------------------------------------------------------}
+// ALERTS
+//-----------------------------------------------------------------------------{
+// Entry Alerts using alert() function for webhooks
+if longCondition and posSize[1] == 0
+    alert(longEntryMsg, alert.freq_once_per_bar)
+
+if shortCondition and posSize[1] == 0
+    alert(shortEntryMsg, alert.freq_once_per_bar)
+
+// TP Alerts
+if posSize > 0 and high >= tp1 and not tp1Hit[1]
+    alert(tpLongTP1, alert.freq_once_per_bar)
+
+if posSize < 0 and low <= tp1 and not tp1Hit[1]
+    alert(tpShortTP1, alert.freq_once_per_bar)
+
+// SL Alerts
+if posSize > 0 and low <= stopLoss
+    alert(tpLongSL, alert.freq_once_per_bar)
+
+if posSize < 0 and high >= stopLoss
+    alert(tpShortSL, alert.freq_once_per_bar)
+
+// Alert conditions for manual alert setup
+alertcondition(longCondition and posSize == 0, "🟢 LONG Entry Signal", "Long entry signal")
+alertcondition(shortCondition and posSize == 0, "🔴 SHORT Entry Signal", "Short entry signal")
+
+//-----------------------------------------------------------------------------}
+// Visual Elements
+//-----------------------------------------------------------------------------{
+// Plot entry signals
+noPosition = posSize == 0
+plotshape(longCondition and noPosition, "Long Signal", shape.triangleup, location.belowbar, cBull, size=size.small)
+plotshape(shortCondition and noPosition, "Short Signal", shape.triangledown, location.abovebar, cBear, size=size.small)
+
+// Plot SMT
+plotshape(bullSMT, "Bullish SMT", shape.diamond, location.belowbar, color.new(cBull, 50), size=size.tiny, offset=-smtLen)
+plotshape(bearSMT, "Bearish SMT", shape.diamond, location.abovebar, color.new(cBear, 50), size=size.tiny, offset=-smtLen)
+
+// TP/SL Lines
+hasPosition = posSize != 0
+plot(showTPLines and hasPosition ? tp1 : na, "TP1", color.green, 1, plot.style_linebr)
+plot(showTPLines and hasPosition ? tp2 : na, "TP2", color.lime, 1, plot.style_linebr)
+plot(showTPLines and hasPosition ? tp3 : na, "TP3", color.teal, 1, plot.style_linebr)
+plot(showSLLines and hasPosition ? stopLoss : na, "Stop Loss", color.red, 2, plot.style_linebr)
+
+// Equilibrium
+plot(eq, "Equilibrium", color.new(color.gray, 70), 1, plot.style_circles)
+
+// Killzone background
+bgcolor(inLondon and useLDN ? color.new(color.blue, 95) : na, title="London")
+bgcolor(inNYAM and useNY ? color.new(color.orange, 95) : na, title="NY AM")
+bgcolor(inNYPM and useNYPM ? color.new(color.purple, 95) : na, title="NY PM")
+bgcolor(inSilverBullet ? color.new(color.silver, 90) : na, title="Silver Bullet")
+
+// Premium/Discount
+bgcolor(inPremium ? color.new(cBear, 97) : color.new(cBull, 97), title="P/D Zone")
+
+//-----------------------------------------------------------------------------}
+// Info Table
+//-----------------------------------------------------------------------------{
+var table infoTable = table.new(position.top_right, 2, 10, bgcolor=color.new(#131722, 20), border_width=0)
+
+if barstate.islast and showInfoTable
+    // Header
+    table.cell(infoTable, 0, 0, "SMC AutoTrader", text_color=color.white, text_size=size.normal, bgcolor=color.new(color.blue, 50))
+    table.cell(infoTable, 1, 0, webhookTicker, text_color=color.yellow, text_size=size.normal, bgcolor=color.new(color.blue, 50))
+    
+    // Trend
+    trendStr = trend == 1 ? "🟢 BULLISH" : trend == -1 ? "🔴 BEARISH" : "⚪ NEUTRAL"
+    table.cell(infoTable, 0, 1, "Trend", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 1, trendStr, text_color=color.white, text_size=size.small)
+    
+    // Zone
+    zoneStr = inPremium ? "🔴 PREMIUM" : "🟢 DISCOUNT"
+    table.cell(infoTable, 0, 2, "Zone", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 2, zoneStr, text_color=color.white, text_size=size.small)
+    
+    // Session
+    sessStr = inSilverBullet ? "⚡ SILVER BULLET" : inNYAM ? "🟠 NY AM" : inNYPM ? "🟣 NY PM" : inLondon ? "🔵 LONDON" : "⚫ OFF"
+    table.cell(infoTable, 0, 3, "Session", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 3, sessStr, text_color=color.white, text_size=size.small)
+    
+    // Bull Score
+    table.cell(infoTable, 0, 4, "Bull Score", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 4, str.tostring(bullScore) + "/7", text_color=bullScore >= minConfluence ? color.lime : color.gray, text_size=size.small)
+    
+    // Bear Score
+    table.cell(infoTable, 0, 5, "Bear Score", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 5, str.tostring(bearScore) + "/7", text_color=bearScore >= minConfluence ? color.red : color.gray, text_size=size.small)
+    
+    // Position
+    posStr = posSize > 0 ? "🟢 LONG" : posSize < 0 ? "🔴 SHORT" : "⚪ FLAT"
+    table.cell(infoTable, 0, 6, "Position", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 6, posStr, text_color=color.white, text_size=size.small)
+    
+    // TP Status
+    if hasPosition
+        tpStatus = tp2Hit ? "✅✅ TP1+TP2" : tp1Hit ? "✅ TP1 Hit" : "⏳ Waiting"
+        table.cell(infoTable, 0, 7, "TP Status", text_color=color.gray, text_size=size.small)
+        table.cell(infoTable, 1, 7, tpStatus, text_color=color.white, text_size=size.small)
+        
+        // R:R
+        rrCalc = posSize > 0 ? (tp1 - entryPrice) / math.max(entryPrice - stopLoss, 0.01) : (entryPrice - tp1) / math.max(stopLoss - entryPrice, 0.01)
+        table.cell(infoTable, 0, 8, "R:R (TP1)", text_color=color.gray, text_size=size.small)
+        table.cell(infoTable, 1, 8, str.tostring(rrCalc, "#.##") + ":1", text_color=rrCalc >= 1.5 ? color.lime : color.orange, text_size=size.small)
+    
+    // Compare Symbol
+    table.cell(infoTable, 0, 9, "SMT Compare", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 9, smtSymbol, text_color=color.yellow, text_size=size.small)

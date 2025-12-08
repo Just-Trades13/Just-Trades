@@ -1,0 +1,420 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// ICT Liquidity Sweep Strategy - Actual Edge
+// Based on: Sweep → Displacement → FVG Entry → Target Opposite Liquidity
+
+//@version=5
+strategy("ICT Liquidity Sweep", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500,
+     default_qty_type=strategy.fixed, default_qty_value=1, initial_capital=50000,
+     commission_type=strategy.commission.cash_per_contract, commission_value=2.50,
+     calc_on_every_tick=false, process_orders_on_close=true, pyramiding=0)
+
+//=============================================================================
+// THE ACTUAL EDGE:
+// 1. Identify liquidity pools (equal highs/lows, session highs/lows, PDH/PDL)
+// 2. Wait for price to SWEEP that liquidity (wick through, close back)
+// 3. Look for DISPLACEMENT candle (big body, confirms reversal)
+// 4. Enter on the FVG created by displacement
+// 5. Stop loss just beyond the sweep
+// 6. Target the OPPOSITE liquidity
+//=============================================================================
+
+//-----------------------------------------------------------------------------}
+// Settings
+//-----------------------------------------------------------------------------{
+grpEntry = "═══ Entry Logic ═══"
+swingLen = input.int(10, "Swing Length", minval=5, maxval=30, group=grpEntry, tooltip="Lookback for swing highs/lows")
+dispMultiplier = input.float(1.5, "Displacement ATR Mult", minval=1.0, maxval=3.0, step=0.1, group=grpEntry, tooltip="How big the displacement candle must be")
+sweepWickMin = input.float(0.3, "Min Sweep Wick %", minval=0.1, maxval=0.8, step=0.1, group=grpEntry, tooltip="Wick must be this % of candle range to count as sweep")
+maxBarsAfterSweep = input.int(5, "Max Bars After Sweep", minval=1, maxval=10, group=grpEntry, tooltip="Enter within X bars of sweep")
+
+grpRisk = "═══ Risk Management ═══"
+riskReward = input.float(3.0, "Risk:Reward Ratio", minval=1.5, maxval=10.0, step=0.5, group=grpRisk)
+slBuffer = input.float(0.2, "SL Buffer (ATR)", minval=0.0, maxval=1.0, step=0.1, group=grpRisk, tooltip="Extra buffer beyond sweep level")
+useTrailingSL = input.bool(true, "Trail SL to Breakeven at 1R", group=grpRisk)
+
+grpTime = "═══ Time Filter ═══"
+useTimeFilter = input.bool(true, "Only Trade Killzones", group=grpTime)
+tradeLondon = input.bool(true, "London (2-5 AM EST)", group=grpTime)
+tradeNYAM = input.bool(true, "NY AM (8:30-11 AM EST)", group=grpTime)
+tradeNYPM = input.bool(false, "NY PM (1:30-4 PM EST)", group=grpTime)
+
+grpWebhook = "═══ Webhook ═══"
+webhookTicker = input.string("NQ", "Ticker", group=grpWebhook)
+
+grpVisual = "═══ Visuals ═══"
+showSwings = input.bool(true, "Show Swing Points", group=grpVisual)
+showSweeps = input.bool(true, "Show Sweeps", group=grpVisual)
+showFVG = input.bool(true, "Show FVG Zones", group=grpVisual)
+cBull = input.color(color.new(#00dc82, 0), "Bullish", group=grpVisual)
+cBear = input.color(color.new(#ff5252, 0), "Bearish", group=grpVisual)
+
+//-----------------------------------------------------------------------------}
+// Variables
+//-----------------------------------------------------------------------------{
+var float entryPrice = na
+var float stopLoss = na
+var float takeProfit = na
+var bool trailedToBE = false
+var int sweepBar = na
+var int sweepDir = 0  // 1 = bullish sweep (swept lows), -1 = bearish sweep (swept highs)
+var float sweepLevel = na
+var float targetLevel = na
+
+atr = ta.atr(14)
+posSize = strategy.position_size
+
+//-----------------------------------------------------------------------------}
+// Time Filter
+//-----------------------------------------------------------------------------{
+inLondon = not na(time(timeframe.period, "0200-0500", "America/New_York"))
+inNYAM = not na(time(timeframe.period, "0830-1100", "America/New_York"))
+inNYPM = not na(time(timeframe.period, "1330-1600", "America/New_York"))
+
+timeOK = not useTimeFilter or (tradeLondon and inLondon) or (tradeNYAM and inNYAM) or (tradeNYPM and inNYPM)
+
+//-----------------------------------------------------------------------------}
+// Swing Highs/Lows (Liquidity Pools)
+//-----------------------------------------------------------------------------{
+swingHigh = ta.pivothigh(high, swingLen, swingLen)
+swingLow = ta.pivotlow(low, swingLen, swingLen)
+
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var int lastSwingHighBar = na
+var int lastSwingLowBar = na
+
+// Track multiple swing levels for liquidity
+var float swingHigh1 = na
+var float swingHigh2 = na
+var float swingLow1 = na
+var float swingLow2 = na
+var int swingHighBar1 = na
+var int swingLowBar1 = na
+
+if not na(swingHigh)
+    swingHigh2 := swingHigh1
+    swingHigh1 := swingHigh
+    swingHighBar1 := bar_index - swingLen
+    lastSwingHigh := swingHigh
+    lastSwingHighBar := bar_index - swingLen
+
+if not na(swingLow)
+    swingLow2 := swingLow1
+    swingLow1 := swingLow
+    swingLowBar1 := bar_index - swingLen
+    lastSwingLow := swingLow
+    lastSwingLowBar := bar_index - swingLen
+
+// Plot swing points
+plotshape(showSwings and not na(swingHigh), "Swing High", shape.triangledown, location.abovebar, color.new(cBear, 60), size=size.tiny, offset=-swingLen)
+plotshape(showSwings and not na(swingLow), "Swing Low", shape.triangleup, location.belowbar, color.new(cBull, 60), size=size.tiny, offset=-swingLen)
+
+//-----------------------------------------------------------------------------}
+// Previous Day High/Low (Major Liquidity)
+//-----------------------------------------------------------------------------{
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+plot(pdh, "PDH", color.new(color.red, 50), 1, plot.style_linebr)
+plot(pdl, "PDL", color.new(color.green, 50), 1, plot.style_linebr)
+
+//-----------------------------------------------------------------------------}
+// Liquidity Sweep Detection
+//-----------------------------------------------------------------------------{
+// A sweep = wick beyond level, but CLOSE back inside
+// This shows liquidity was taken but rejected
+
+candleRange = high - low
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
+
+// Bullish Sweep (swept lows) - price wicked below swing low but closed above
+bullishSweepSwing = not na(lastSwingLow) and 
+                    low < lastSwingLow and 
+                    close > lastSwingLow and
+                    lowerWick > candleRange * sweepWickMin
+
+bullishSweepPDL = not na(pdl) and 
+                  low < pdl and 
+                  close > pdl and
+                  lowerWick > candleRange * sweepWickMin
+
+bullishSweep = bullishSweepSwing or bullishSweepPDL
+
+// Bearish Sweep (swept highs) - price wicked above swing high but closed below  
+bearishSweepSwing = not na(lastSwingHigh) and
+                    high > lastSwingHigh and 
+                    close < lastSwingHigh and
+                    upperWick > candleRange * sweepWickMin
+
+bearishSweepPDH = not na(pdh) and
+                  high > pdh and 
+                  close < pdh and
+                  upperWick > candleRange * sweepWickMin
+
+bearishSweep = bearishSweepSwing or bearishSweepPDH
+
+// Track sweep events
+if bullishSweep and posSize == 0
+    sweepBar := bar_index
+    sweepDir := 1
+    sweepLevel := low
+    targetLevel := not na(lastSwingHigh) ? lastSwingHigh : pdh
+
+if bearishSweep and posSize == 0
+    sweepBar := bar_index
+    sweepDir := -1
+    sweepLevel := high
+    targetLevel := not na(lastSwingLow) ? lastSwingLow : pdl
+
+// Visual sweep markers
+plotshape(showSweeps and bullishSweep, "Bullish Sweep", shape.labelup, location.belowbar, cBull, text="SWEEP", textcolor=color.white, size=size.small)
+plotshape(showSweeps and bearishSweep, "Bearish Sweep", shape.labeldown, location.abovebar, cBear, text="SWEEP", textcolor=color.white, size=size.small)
+
+//-----------------------------------------------------------------------------}
+// Displacement Detection (Confirms the Sweep)
+//-----------------------------------------------------------------------------{
+// Displacement = big candle body in direction away from sweep
+// This confirms smart money has reversed
+
+bodySize = math.abs(close - open)
+avgBody = ta.sma(bodySize, 14)
+
+bullishDisplacement = close > open and bodySize > avgBody * dispMultiplier
+bearishDisplacement = close < open and bodySize > avgBody * dispMultiplier
+
+// Valid displacement after sweep
+validBullDisp = sweepDir == 1 and 
+                bullishDisplacement and 
+                not na(sweepBar) and 
+                (bar_index - sweepBar) <= maxBarsAfterSweep and
+                (bar_index - sweepBar) >= 1  // At least 1 bar after sweep
+
+validBearDisp = sweepDir == -1 and 
+                bearishDisplacement and 
+                not na(sweepBar) and 
+                (bar_index - sweepBar) <= maxBarsAfterSweep and
+                (bar_index - sweepBar) >= 1
+
+//-----------------------------------------------------------------------------}
+// FVG Detection (Entry Zone)
+//-----------------------------------------------------------------------------{
+// Bullish FVG: gap between candle 2's high and current candle's low
+bullFVG = low > high[2]
+bearFVG = high < low[2]
+
+bullFVGTop = bullFVG ? low : na
+bullFVGBot = bullFVG ? high[2] : na
+bearFVGTop = bearFVG ? low[2] : na
+bearFVGBot = bearFVG ? high : na
+
+// Store FVG levels
+var float activeBullFVGTop = na
+var float activeBullFVGBot = na
+var float activeBearFVGTop = na
+var float activeBearFVGBot = na
+var int bullFVGBar = na
+var int bearFVGBar = na
+
+if bullFVG and validBullDisp
+    activeBullFVGTop := bullFVGTop
+    activeBullFVGBot := bullFVGBot
+    bullFVGBar := bar_index
+
+if bearFVG and validBearDisp
+    activeBearFVGTop := bearFVGTop
+    activeBearFVGBot := bearFVGBot
+    bearFVGBar := bar_index
+
+// Draw FVG boxes
+var box bullFVGBox = na
+var box bearFVGBox = na
+
+if showFVG and bullFVG and validBullDisp
+    box.delete(bullFVGBox)
+    bullFVGBox := box.new(bar_index - 2, bullFVGTop, bar_index + 20, bullFVGBot, 
+                          border_color=cBull, bgcolor=color.new(cBull, 85), border_width=1)
+
+if showFVG and bearFVG and validBearDisp
+    box.delete(bearFVGBox)
+    bearFVGBox := box.new(bar_index - 2, bearFVGTop, bar_index + 20, bearFVGBot,
+                          border_color=cBear, bgcolor=color.new(cBear, 85), border_width=1)
+
+//-----------------------------------------------------------------------------}
+// Entry Logic
+//-----------------------------------------------------------------------------{
+// LONG: After bullish sweep + displacement, enter when price returns to FVG
+longEntry = posSize == 0 and 
+            timeOK and
+            sweepDir == 1 and
+            not na(activeBullFVGBot) and
+            not na(sweepLevel) and
+            not na(targetLevel) and
+            low <= activeBullFVGTop and 
+            close >= activeBullFVGBot and
+            (bar_index - bullFVGBar) <= 10
+
+// SHORT: After bearish sweep + displacement, enter when price returns to FVG
+shortEntry = posSize == 0 and 
+             timeOK and
+             sweepDir == -1 and
+             not na(activeBearFVGTop) and
+             not na(sweepLevel) and
+             not na(targetLevel) and
+             high >= activeBearFVGBot and 
+             close <= activeBearFVGTop and
+             (bar_index - bearFVGBar) <= 10
+
+//-----------------------------------------------------------------------------}
+// Calculate SL/TP
+//-----------------------------------------------------------------------------{
+longSL = sweepLevel - (atr * slBuffer)
+longRisk = close - longSL
+longTP = close + (longRisk * riskReward)
+
+shortSL = sweepLevel + (atr * slBuffer)
+shortRisk = shortSL - close
+shortTP = close - (shortRisk * riskReward)
+
+//-----------------------------------------------------------------------------}
+// Execute Trades
+//-----------------------------------------------------------------------------{
+// Long Entry
+if longEntry
+    strategy.entry("Long", strategy.long, 
+        alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "price": ' + str.tostring(close) + ', "sl": ' + str.tostring(longSL, "#.##") + ', "tp": ' + str.tostring(longTP, "#.##") + '}')
+    entryPrice := close
+    stopLoss := longSL
+    takeProfit := longTP
+    trailedToBE := false
+    // Reset sweep tracking
+    sweepDir := 0
+    activeBullFVGTop := na
+    activeBullFVGBot := na
+
+// Short Entry  
+if shortEntry
+    strategy.entry("Short", strategy.short,
+        alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "price": ' + str.tostring(close) + ', "sl": ' + str.tostring(shortSL, "#.##") + ', "tp": ' + str.tostring(shortTP, "#.##") + '}')
+    entryPrice := close
+    stopLoss := shortSL
+    takeProfit := shortTP
+    trailedToBE := false
+    // Reset sweep tracking
+    sweepDir := 0
+    activeBearFVGTop := na
+    activeBearFVGBot := na
+
+//-----------------------------------------------------------------------------}
+// Exit Logic
+//-----------------------------------------------------------------------------{
+// Trail to breakeven at 1R profit
+if useTrailingSL and posSize > 0 and not trailedToBE
+    oneR = entryPrice + (entryPrice - stopLoss)
+    if high >= oneR
+        stopLoss := entryPrice
+        trailedToBE := true
+
+if useTrailingSL and posSize < 0 and not trailedToBE
+    oneR = entryPrice - (stopLoss - entryPrice)
+    if low <= oneR
+        stopLoss := entryPrice
+        trailedToBE := true
+
+// Long exits
+if posSize > 0
+    if high >= takeProfit
+        strategy.close("Long", comment="TP", 
+            alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "comment": "TakeProfit"}')
+    else if low <= stopLoss
+        strategy.close("Long", comment="SL",
+            alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "comment": "StopLoss"}')
+
+// Short exits
+if posSize < 0
+    if low <= takeProfit
+        strategy.close("Short", comment="TP",
+            alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "comment": "TakeProfit"}')
+    else if high >= stopLoss
+        strategy.close("Short", comment="SL",
+            alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "comment": "StopLoss"}')
+
+//-----------------------------------------------------------------------------}
+// Reset stale sweeps
+//-----------------------------------------------------------------------------{
+// If too much time passes without entry, reset
+if not na(sweepBar) and (bar_index - sweepBar) > 20 and posSize == 0
+    sweepDir := 0
+    sweepBar := na
+    activeBullFVGTop := na
+    activeBullFVGBot := na
+    activeBearFVGTop := na
+    activeBearFVGBot := na
+
+//-----------------------------------------------------------------------------}
+// Visuals
+//-----------------------------------------------------------------------------{
+// Entry signals
+plotshape(longEntry, "Long Entry", shape.triangleup, location.belowbar, cBull, size=size.normal)
+plotshape(shortEntry, "Short Entry", shape.triangledown, location.abovebar, cBear, size=size.normal)
+
+// TP/SL lines when in position
+hasPosition = posSize != 0
+plot(hasPosition ? stopLoss : na, "Stop Loss", color.red, 2, plot.style_linebr)
+plot(hasPosition ? takeProfit : na, "Take Profit", color.green, 2, plot.style_linebr)
+plot(hasPosition ? entryPrice : na, "Entry", color.gray, 1, plot.style_linebr)
+
+// Killzone background
+bgcolor(inLondon and tradeLondon and useTimeFilter ? color.new(color.blue, 95) : na, title="London")
+bgcolor(inNYAM and tradeNYAM and useTimeFilter ? color.new(color.orange, 95) : na, title="NY AM")
+bgcolor(inNYPM and tradeNYPM and useTimeFilter ? color.new(color.purple, 95) : na, title="NY PM")
+
+//-----------------------------------------------------------------------------}
+// Info Table
+//-----------------------------------------------------------------------------{
+var table infoTable = table.new(position.top_right, 2, 8, bgcolor=color.new(#131722, 20), border_width=0)
+
+if barstate.islast
+    table.cell(infoTable, 0, 0, "ICT Sweep Strategy", text_color=color.white, text_size=size.normal, bgcolor=color.new(color.blue, 50))
+    table.cell(infoTable, 1, 0, webhookTicker, text_color=color.yellow, text_size=size.normal, bgcolor=color.new(color.blue, 50))
+    
+    // Sweep Status
+    sweepStr = sweepDir == 1 ? "🟢 LOWS SWEPT" : sweepDir == -1 ? "🔴 HIGHS SWEPT" : "⏳ Waiting"
+    table.cell(infoTable, 0, 1, "Sweep", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 1, sweepStr, text_color=color.white, text_size=size.small)
+    
+    // FVG Status
+    fvgStr = not na(activeBullFVGBot) ? "🟢 Bull FVG Active" : not na(activeBearFVGTop) ? "🔴 Bear FVG Active" : "None"
+    table.cell(infoTable, 0, 2, "FVG", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 2, fvgStr, text_color=color.white, text_size=size.small)
+    
+    // Session
+    sessStr = inNYAM ? "🟠 NY AM" : inNYPM ? "🟣 NY PM" : inLondon ? "🔵 LONDON" : "⚫ OFF"
+    table.cell(infoTable, 0, 3, "Session", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 3, sessStr, text_color=color.white, text_size=size.small)
+    
+    // Position
+    posStr = posSize > 0 ? "🟢 LONG" : posSize < 0 ? "🔴 SHORT" : "⚪ FLAT"
+    table.cell(infoTable, 0, 4, "Position", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 4, posStr, text_color=color.white, text_size=size.small)
+    
+    // R:R
+    table.cell(infoTable, 0, 5, "Target R:R", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 5, str.tostring(riskReward, "#.#") + ":1", text_color=color.lime, text_size=size.small)
+    
+    // Trail status
+    if hasPosition
+        trailStr = trailedToBE ? "✅ At Breakeven" : "⏳ Not yet"
+        table.cell(infoTable, 0, 6, "Trail", text_color=color.gray, text_size=size.small)
+        table.cell(infoTable, 1, 6, trailStr, text_color=color.white, text_size=size.small)
+    
+    // PDH/PDL
+    table.cell(infoTable, 0, 7, "PDH/PDL", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 7, str.tostring(pdh, "#.#") + " / " + str.tostring(pdl, "#.#"), text_color=color.white, text_size=size.small)
+
+//-----------------------------------------------------------------------------}
+// Alerts
+//-----------------------------------------------------------------------------{
+alertcondition(bullishSweep, "Bullish Sweep", "Liquidity swept below - watch for long")
+alertcondition(bearishSweep, "Bearish Sweep", "Liquidity swept above - watch for short")
+alertcondition(longEntry, "Long Entry", "Long entry triggered")
+alertcondition(shortEntry, "Short Entry", "Short entry triggered")

@@ -365,196 +365,6 @@ def calculate_pnl(entry_price: float, exit_price: float, side: str, quantity: in
 
 
 # ============================================================================
-# Live Trade Execution (Auto-Execute on Linked Accounts)
-# ============================================================================
-
-def execute_live_trades(recorder_id: int, action: str, ticker: str, quantity: int, 
-                        entry_price: float = None, exit_price: float = None,
-                        tp_price: float = None, sl_price: float = None):
-    """
-    Execute live trades on all accounts linked to this recorder via the traders table.
-    
-    This is called AFTER recording the theoretical trade to recorded_trades.
-    It checks the traders table for any enabled account links and places
-    real orders via Tradovate API.
-    
-    Args:
-        recorder_id: The recorder that received the webhook
-        action: 'BUY', 'SELL', or 'CLOSE'
-        ticker: Symbol like 'MNQ1!' or 'MES'
-        quantity: Number of contracts
-        entry_price: Entry price for new positions (optional, market order if None)
-        exit_price: Exit price for closing positions (optional)
-        tp_price: Take profit price (optional)
-        sl_price: Stop loss price (optional)
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Find all enabled traders linked to this recorder
-        cursor.execute('''
-            SELECT 
-                t.id as trader_id,
-                t.account_id,
-                t.enabled,
-                a.name as account_name,
-                a.tradovate_token,
-                a.tradovate_refresh_token,
-                a.md_access_token,
-                a.environment,
-                a.tradovate_accounts
-            FROM traders t
-            JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = ? AND t.enabled = 1
-        ''', (recorder_id,))
-        
-        traders = cursor.fetchall()
-        conn.close()
-        
-        if not traders:
-            logger.debug(f"No enabled traders linked to recorder {recorder_id}")
-            return
-        
-        logger.info(f"🚀 LIVE EXECUTION: Found {len(traders)} enabled trader(s) for recorder {recorder_id}")
-        
-        # Execute on each linked account
-        for trader in traders:
-            trader = dict(trader)
-            account_name = trader['account_name']
-            access_token = trader['tradovate_token']
-            environment = trader['environment'] or 'demo'
-            
-            if not access_token:
-                logger.warning(f"⚠️ No OAuth token for account '{account_name}' - skipping live trade")
-                continue
-            
-            # Get the actual Tradovate account ID and name from tradovate_accounts JSON
-            tradovate_accounts_json = trader.get('tradovate_accounts')
-            tradovate_account_id = None
-            tradovate_account_spec = None  # The actual Tradovate account name like "DEMO4419847-2"
-            
-            if tradovate_accounts_json:
-                try:
-                    accounts_list = json.loads(tradovate_accounts_json)
-                    if accounts_list and len(accounts_list) > 0:
-                        # Use first account's ID and name
-                        tradovate_account_id = accounts_list[0].get('id')
-                        tradovate_account_spec = accounts_list[0].get('name')  # e.g., "DEMO4419847-2"
-                        logger.info(f"📋 Using Tradovate account: {tradovate_account_spec} (ID: {tradovate_account_id})")
-                    else:
-                        logger.warning(f"⚠️ No Tradovate accounts found for '{account_name}' - skipping")
-                        continue
-                except json.JSONDecodeError:
-                    logger.warning(f"⚠️ Invalid tradovate_accounts JSON for '{account_name}' - skipping")
-                    continue
-            else:
-                logger.warning(f"⚠️ No tradovate_accounts data for '{account_name}' - skipping")
-                continue
-            
-            if not tradovate_account_id or not tradovate_account_spec:
-                logger.warning(f"⚠️ Missing account ID or spec for '{account_name}' - skipping")
-                continue
-            
-            # Determine if demo based on tradovate_accounts data
-            is_demo = True  # Default to demo
-            if tradovate_accounts_json:
-                try:
-                    accounts_list = json.loads(tradovate_accounts_json)
-                    if accounts_list and len(accounts_list) > 0:
-                        first_acct = accounts_list[0]
-                        is_demo = first_acct.get('is_demo', True)
-                except:
-                    pass
-            
-            order_action = 'Buy' if action == 'BUY' else 'Sell'
-            
-            # Execute the order via TradovateIntegration (EXACTLY like manual trader)
-            try:
-                from phantom_scraper.tradovate_integration import TradovateIntegration
-                import asyncio
-                
-                logger.info(f"📤 Placing order via TradovateIntegration (demo={is_demo})")
-                
-                async def place_order_async():
-                    async with TradovateIntegration(demo=is_demo) as tradovate:
-                        # Set tokens EXACTLY like manual trader does
-                        tradovate.access_token = access_token
-                        tradovate.refresh_token = trader.get('tradovate_refresh_token')
-                        tradovate.md_access_token = trader.get('md_access_token')
-                        
-                        # Convert symbol to Tradovate front-month format
-                        # MNQ1! -> MNQZ5 (December 2025 contract)
-                        import re
-                        clean_ticker = ticker.strip().upper()
-                        if '!' in clean_ticker:
-                            match = re.match(r'^([A-Z]+)\d*!$', clean_ticker)
-                            if match:
-                                root = match.group(1)
-                                # Use Z5 for December 2025 (current front month)
-                                tradovate_symbol = f"{root}Z5"
-                            else:
-                                tradovate_symbol = clean_ticker.replace('!', '')
-                        else:
-                            tradovate_symbol = clean_ticker
-                        
-                        logger.info(f"📋 Symbol conversion: {ticker} -> {tradovate_symbol}")
-                        
-                        order_data = tradovate.create_market_order(
-                            tradovate_account_spec,
-                            tradovate_symbol,
-                            order_action,
-                            quantity,
-                            tradovate_account_id
-                        )
-                        
-                        logger.info(f"📤 Order data: {order_data}")
-                        
-                        result = await tradovate.place_order(order_data)
-                        return result
-                
-                # Run the async function
-                result = asyncio.run(place_order_async())
-                
-                logger.info(f"📥 Tradovate response: {result}")
-                
-                if result and result.get('success'):
-                    order_id = result.get('orderId') or result.get('id')
-                    logger.info(f"✅ LIVE TRADE EXECUTED on '{account_name}': {order_action} {quantity} {ticker} | Order ID: {order_id}")
-                    
-                    # Log the execution to trader_executions (optional - create table if needed)
-                    try:
-                        conn2 = get_db_connection()
-                        cursor2 = conn2.cursor()
-                        cursor2.execute('''
-                            INSERT OR IGNORE INTO trader_executions 
-                            (trader_id, recorder_id, action, ticker, quantity, order_id, status, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, 'executed', CURRENT_TIMESTAMP)
-                        ''', (trader['trader_id'], recorder_id, action, ticker, quantity, str(order_id)))
-                        conn2.commit()
-                        conn2.close()
-                    except Exception as log_err:
-                        # Table might not exist yet, that's okay
-                        logger.debug(f"Could not log execution: {log_err}")
-                else:
-                    # Order failed
-                    error_msg = result.get('error', 'Unknown error') if result else 'No response'
-                    logger.error(f"❌ Order REJECTED on '{account_name}': {error_msg}")
-                    
-            except asyncio.TimeoutError:
-                logger.error(f"❌ Timeout placing order on '{account_name}'")
-            except Exception as req_err:
-                logger.error(f"❌ Error placing order on '{account_name}': {req_err}")
-                import traceback
-                logger.error(traceback.format_exc())
-                
-    except Exception as e:
-        logger.error(f"Error in execute_live_trades: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-
-
-# ============================================================================
 # Position Index Management
 # ============================================================================
 
@@ -1116,27 +926,18 @@ async def connect_tradingview_websocket():
         logger.error("websockets not available")
         return
     
+    session = get_tradingview_session()
+    if not session or not session.get('sessionid'):
+        logger.warning("No TradingView session configured")
+        return
+    
     import websockets
     
+    sessionid = session.get('sessionid')
+    sessionid_sign = session.get('sessionid_sign', '')
     ws_url = "wss://data.tradingview.com/socket.io/websocket"
-    consecutive_failures = 0
-    max_failures_before_refresh = 3
     
     while True:
-        # Get fresh session on each connection attempt
-        session = get_tradingview_session()
-        if not session or not session.get('sessionid'):
-            logger.warning("No TradingView session configured - attempting auto-refresh...")
-            if _try_auto_refresh_cookies():
-                session = get_tradingview_session()
-            if not session or not session.get('sessionid'):
-                logger.error("❌ No TradingView session - run: python3 tradingview_auth.py store --username EMAIL --password PASSWORD")
-                await asyncio.sleep(60)  # Wait before retrying
-                continue
-        
-        sessionid = session.get('sessionid')
-        sessionid_sign = session.get('sessionid_sign', '')
-        
         try:
             logger.info("Connecting to TradingView WebSocket...")
             
@@ -1148,7 +949,6 @@ async def connect_tradingview_websocket():
                 }
             ) as ws:
                 _tradingview_ws = ws
-                consecutive_failures = 0  # Reset on successful connection
                 logger.info("✅ TradingView WebSocket connected!")
                 
                 # Auth
@@ -1169,67 +969,13 @@ async def connect_tradingview_websocket():
                         if message.startswith('~h~'):
                             await ws.send(message)
                             continue
-                        
-                        # Check for auth errors in message
-                        if 'auth' in message.lower() and 'error' in message.lower():
-                            logger.warning("⚠️ Auth error detected in WebSocket message")
-                            consecutive_failures = max_failures_before_refresh  # Trigger refresh
-                            break
-                        
                         await process_message(message)
                     except Exception as e:
                         logger.warning(f"Error processing message: {e}")
                         
         except Exception as e:
-            _tradingview_ws = None
-            consecutive_failures += 1
-            error_str = str(e).lower()
-            
-            # Check if error indicates auth/session issue
-            is_auth_error = any(x in error_str for x in ['401', '403', 'auth', 'forbidden', 'unauthorized', 'session'])
-            
-            if is_auth_error or consecutive_failures >= max_failures_before_refresh:
-                logger.warning(f"⚠️ WebSocket auth issue detected (failures: {consecutive_failures}). Attempting cookie refresh...")
-                if _try_auto_refresh_cookies():
-                    consecutive_failures = 0
-                    logger.info("✅ Cookies refreshed, reconnecting immediately...")
-                    continue
-                else:
-                    logger.error("❌ Cookie refresh failed. Will retry in 60s...")
-                    await asyncio.sleep(60)
-            else:
-                logger.warning(f"TradingView WebSocket error: {e}. Reconnecting in 10s...")
-                await asyncio.sleep(10)
-
-
-def _try_auto_refresh_cookies() -> bool:
-    """Try to auto-refresh TradingView cookies using tradingview_auth module"""
-    try:
-        # Import the auth module
-        import tradingview_auth
-        
-        logger.info("🔄 Attempting automatic cookie refresh...")
-        
-        # Check if credentials are configured
-        creds = tradingview_auth.get_credentials()
-        if not creds:
-            logger.warning("❌ No TradingView credentials stored. Run: python3 tradingview_auth.py store --username EMAIL --password PASSWORD")
-            return False
-        
-        # Try to refresh
-        if tradingview_auth.refresh_cookies():
-            logger.info("✅ Cookies auto-refreshed successfully!")
-            return True
-        else:
-            logger.error("❌ Cookie auto-refresh failed")
-            return False
-            
-    except ImportError:
-        logger.warning("tradingview_auth module not available for auto-refresh")
-        return False
-    except Exception as e:
-        logger.error(f"Error during auto-refresh: {e}")
-        return False
+            logger.warning(f"TradingView WebSocket error: {e}. Reconnecting in 10s...")
+            await asyncio.sleep(10)
 
 
 async def subscribe_symbols(ws, quote_session: str):
@@ -1327,75 +1073,6 @@ def health():
         'port': SERVICE_PORT,
         'timestamp': datetime.now().isoformat()
     })
-
-
-@app.route('/api/tradingview/refresh', methods=['POST'])
-def api_refresh_cookies():
-    """
-    Manually trigger TradingView cookie refresh.
-    Requires credentials to be stored first.
-    """
-    try:
-        if _try_auto_refresh_cookies():
-            # Restart WebSocket to use new cookies
-            global _tradingview_ws
-            if _tradingview_ws:
-                # The WebSocket loop will reconnect with new cookies
-                logger.info("WebSocket will reconnect with fresh cookies")
-            
-            return jsonify({
-                'success': True,
-                'message': 'Cookies refreshed successfully. WebSocket reconnecting...'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Cookie refresh failed. Check if credentials are stored: python3 tradingview_auth.py store --username EMAIL --password PASSWORD'
-            }), 500
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/tradingview/auth-status', methods=['GET'])
-def api_auth_status():
-    """Check TradingView authentication status"""
-    try:
-        # Check if credentials are stored
-        credentials_stored = False
-        try:
-            import tradingview_auth
-            creds = tradingview_auth.get_credentials()
-            credentials_stored = creds is not None
-        except:
-            pass
-        
-        # Check session cookies
-        session = get_tradingview_session()
-        session_valid = session is not None and session.get('sessionid') is not None
-        
-        # Get session update time
-        session_updated = session.get('updated_at') if session else None
-        auto_refreshed = session.get('auto_refreshed', False) if session else False
-        
-        return jsonify({
-            'success': True,
-            'credentials_stored': credentials_stored,
-            'session_valid': session_valid,
-            'session_updated_at': session_updated,
-            'auto_refresh_enabled': credentials_stored,
-            'last_auto_refresh': auto_refreshed,
-            'websocket_connected': _tradingview_ws is not None,
-            'subscribed_symbols': list(_tradingview_subscribed_symbols),
-            'cached_prices': {k: v.get('last') for k, v in _market_data_cache.items()}
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
 
 @app.route('/status', methods=['GET'])
@@ -2303,10 +1980,6 @@ def receive_webhook(webhook_token):
                     'position_id': pos_id, 'position_qty': total_qty
                 }
                 logger.info(f"📈 LONG opened for '{recorder_name}': {ticker} @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
-                
-                # Execute live trades on linked accounts
-                execute_live_trades(recorder_id, 'BUY', ticker, quantity, 
-                                   entry_price=current_price, tp_price=tp_price, sl_price=sl_price)
         
         elif normalized_action == 'SELL':
             # If we have an open LONG, close it first
@@ -2343,10 +2016,6 @@ def receive_webhook(webhook_token):
                     'position_id': pos_id, 'position_qty': total_qty
                 }
                 logger.info(f"📉 SHORT opened for '{recorder_name}': {ticker} @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
-                
-                # Execute live trades on linked accounts
-                execute_live_trades(recorder_id, 'SELL', ticker, quantity, 
-                                   entry_price=current_price, tp_price=tp_price, sl_price=sl_price)
         
         conn.commit()
         

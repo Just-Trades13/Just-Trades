@@ -1,0 +1,1085 @@
+{% extends "layout.html" %}
+{% block title %}Insider Signals - Just.Trades.{% endblock %}
+{% block content %}
+<style>
+    /* Insider Signals Page Styles */
+    .insider-container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    /* Header Section */
+    .insider-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .insider-header h1 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin: 0 0 8px 0;
+        color: var(--text-light);
+    }
+
+    .insider-header p {
+        color: var(--text-muted);
+        margin: 0;
+        font-size: 0.9rem;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: none;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+        color: white;
+        box-shadow: 0 4px 15px rgba(25, 184, 255, 0.3);
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(25, 184, 255, 0.4);
+    }
+
+    .btn-secondary {
+        background: rgba(148, 163, 184, 0.15);
+        color: var(--text-light);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .btn-secondary:hover {
+        background: rgba(148, 163, 184, 0.25);
+    }
+
+    /* Stats Cards */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .stat-card {
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 16px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+    }
+
+    .stat-icon.signals { background: linear-gradient(135deg, rgba(25, 184, 255, 0.2), rgba(25, 184, 255, 0.1)); color: var(--primary-color); }
+    .stat-icon.conviction { background: linear-gradient(135deg, rgba(45, 206, 137, 0.2), rgba(45, 206, 137, 0.1)); color: var(--green); }
+    .stat-icon.highlighted { background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(251, 191, 36, 0.1)); color: #fbbf24; }
+    .stat-icon.updated { background: linear-gradient(135deg, rgba(148, 163, 184, 0.2), rgba(148, 163, 184, 0.1)); color: var(--text-muted); }
+
+    .stat-content h3 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 0;
+        color: var(--text-light);
+    }
+
+    .stat-content p {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin: 4px 0 0 0;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    /* Filters Section */
+    .filters-section {
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+
+    .filters-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: flex-end;
+    }
+
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .filter-group label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    .filter-group select,
+    .filter-group input {
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 8px;
+        padding: 10px 14px;
+        color: var(--text-light);
+        font-size: 0.9rem;
+        min-width: 150px;
+    }
+
+    .filter-group select:focus,
+    .filter-group input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+
+    /* Signals Table */
+    .signals-table-container {
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .signals-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .signals-table th {
+        background: rgba(15, 23, 42, 0.8);
+        padding: 16px;
+        text-align: left;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .signals-table td {
+        padding: 16px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+        font-size: 0.9rem;
+        color: var(--text-light);
+    }
+
+    .signals-table tbody tr {
+        transition: background 0.2s ease;
+        cursor: pointer;
+    }
+
+    .signals-table tbody tr:hover {
+        background: rgba(148, 163, 184, 0.08);
+    }
+
+    .signals-table tbody tr.conviction {
+        background: rgba(45, 206, 137, 0.08);
+    }
+
+    .signals-table tbody tr.conviction:hover {
+        background: rgba(45, 206, 137, 0.12);
+    }
+
+    .signals-table tbody tr.highlighted {
+        background: rgba(251, 191, 36, 0.05);
+    }
+
+    .signals-table tbody tr.highlighted:hover {
+        background: rgba(251, 191, 36, 0.1);
+    }
+
+    /* Ticker Cell */
+    .ticker-cell {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .ticker-symbol {
+        font-weight: 700;
+        font-size: 1rem;
+        color: var(--primary-color);
+    }
+
+    .company-name {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Score Badge */
+    .score-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 32px;
+        border-radius: 8px;
+        font-weight: 700;
+        font-size: 0.9rem;
+    }
+
+    .score-badge.conviction {
+        background: linear-gradient(135deg, rgba(45, 206, 137, 0.3), rgba(45, 206, 137, 0.1));
+        color: var(--green);
+        border: 1px solid rgba(45, 206, 137, 0.3);
+    }
+
+    .score-badge.highlighted {
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.3), rgba(251, 191, 36, 0.1));
+        color: #fbbf24;
+        border: 1px solid rgba(251, 191, 36, 0.3);
+    }
+
+    .score-badge.normal {
+        background: rgba(148, 163, 184, 0.15);
+        color: var(--text-muted);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    /* Role Badge */
+    .role-badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .role-badge.ceo { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .role-badge.cfo { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+    .role-badge.director { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+    .role-badge.owner { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+    .role-badge.officer { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
+
+    /* Dollar Value */
+    .dollar-value {
+        font-weight: 600;
+        color: var(--green);
+    }
+
+    .dollar-value.large {
+        color: #22c55e;
+    }
+
+    /* Time Ago */
+    .time-ago {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+
+    /* Reason Flags */
+    .reason-flags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .reason-flag {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 500;
+        background: rgba(25, 184, 255, 0.1);
+        color: var(--primary-color);
+        border: 1px solid rgba(25, 184, 255, 0.2);
+    }
+
+    /* Signal Detail Panel */
+    .signal-detail-panel {
+        display: none;
+        background: rgba(15, 23, 42, 0.95);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 16px;
+        padding: 24px;
+        margin-top: 24px;
+        animation: slideIn 0.3s ease;
+    }
+
+    .signal-detail-panel.active {
+        display: block;
+    }
+
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .detail-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .detail-title {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .detail-title h2 {
+        margin: 0;
+        font-size: 1.5rem;
+        color: var(--primary-color);
+    }
+
+    .detail-close {
+        background: rgba(148, 163, 184, 0.15);
+        border: none;
+        border-radius: 8px;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .detail-close:hover {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+    }
+
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+    }
+
+    .detail-item {
+        background: rgba(30, 41, 59, 0.5);
+        border-radius: 12px;
+        padding: 16px;
+    }
+
+    .detail-item label {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 8px;
+    }
+
+    .detail-item .value {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-light);
+    }
+
+    .score-breakdown {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .score-breakdown h3 {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        margin: 0 0 12px 0;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    .breakdown-flags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .breakdown-flag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        background: rgba(45, 206, 137, 0.1);
+        color: var(--green);
+        border: 1px solid rgba(45, 206, 137, 0.2);
+    }
+
+    .breakdown-flag .material-icons {
+        font-size: 1rem;
+    }
+
+    .filing-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--primary-color);
+        text-decoration: none;
+        font-size: 0.9rem;
+        margin-top: 16px;
+    }
+
+    .filing-link:hover {
+        text-decoration: underline;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-muted);
+    }
+
+    .empty-state .material-icons {
+        font-size: 4rem;
+        opacity: 0.3;
+        margin-bottom: 16px;
+    }
+
+    .empty-state h3 {
+        margin: 0 0 8px 0;
+        color: var(--text-light);
+    }
+
+    .empty-state p {
+        margin: 0;
+        font-size: 0.9rem;
+    }
+
+    /* Loading State */
+    .loading-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(11, 18, 33, 0.8);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-overlay.active {
+        display: flex;
+    }
+
+    .loading-spinner {
+        width: 48px;
+        height: 48px;
+        border: 4px solid rgba(148, 163, 184, 0.2);
+        border-top-color: var(--primary-color);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Status Indicator */
+    .status-indicator {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+        animation: pulse 2s infinite;
+    }
+
+    .status-dot.error {
+        background: #ef4444;
+        animation: none;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .insider-header {
+            flex-direction: column;
+        }
+
+        .signals-table {
+            display: block;
+            overflow-x: auto;
+        }
+
+        .filters-row {
+            flex-direction: column;
+        }
+
+        .filter-group {
+            width: 100%;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            width: 100%;
+        }
+    }
+</style>
+
+<div class="insider-container">
+    <!-- Header -->
+    <div class="insider-header">
+        <div>
+            <h1>Insider Signals</h1>
+            <p>Real-time SEC insider trading signals scored by conviction</p>
+        </div>
+        <div class="header-actions">
+            <div class="status-indicator">
+                <span class="status-dot" id="serviceStatus"></span>
+                <span id="lastUpdated">Connecting...</span>
+            </div>
+            <button class="btn btn-secondary" onclick="refreshSignals()">
+                <span class="material-icons">refresh</span>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon signals">
+                <span class="material-icons">trending_up</span>
+            </div>
+            <div class="stat-content">
+                <h3 id="todaySignals">--</h3>
+                <p>Today's Signals</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon conviction">
+                <span class="material-icons">local_fire_department</span>
+            </div>
+            <div class="stat-content">
+                <h3 id="convictionCount">--</h3>
+                <p>High Conviction (85+)</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon highlighted">
+                <span class="material-icons">star</span>
+            </div>
+            <div class="stat-content">
+                <h3 id="highlightedCount">--</h3>
+                <p>Highlighted (70+)</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon updated">
+                <span class="material-icons">schedule</span>
+            </div>
+            <div class="stat-content">
+                <h3 id="totalFilings">--</h3>
+                <p>Total Filings</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters-section">
+        <div class="filters-row">
+            <div class="filter-group">
+                <label>Min Score</label>
+                <select id="filterMinScore" onchange="applyFilters()">
+                    <option value="0">All Scores</option>
+                    <option value="50">50+</option>
+                    <option value="70" selected>70+ (Highlighted)</option>
+                    <option value="85">85+ (Conviction)</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Time Period</label>
+                <select id="filterDays" onchange="applyFilters()">
+                    <option value="1">Today</option>
+                    <option value="7" selected>Last 7 Days</option>
+                    <option value="30">Last 30 Days</option>
+                    <option value="90">Last 90 Days</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Insider Role</label>
+                <select id="filterRole" onchange="applyFilters()">
+                    <option value="">All Roles</option>
+                    <option value="ceo">CEO</option>
+                    <option value="cfo">CFO</option>
+                    <option value="director">Director</option>
+                    <option value="owner">10% Owner</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Search Ticker</label>
+                <input type="text" id="filterTicker" placeholder="e.g. AAPL" onkeyup="debounceSearch()">
+            </div>
+        </div>
+    </div>
+
+    <!-- Signals Table -->
+    <div class="signals-table-container">
+        <table class="signals-table">
+            <thead>
+                <tr>
+                    <th>Ticker</th>
+                    <th>Insider</th>
+                    <th>Role</th>
+                    <th>Buy Size</th>
+                    <th>Score</th>
+                    <th>Signals</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody id="signalsTableBody">
+                <tr>
+                    <td colspan="7">
+                        <div class="empty-state">
+                            <span class="material-icons">hourglass_empty</span>
+                            <h3>Loading Signals...</h3>
+                            <p>Fetching latest insider trading data</p>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Signal Detail Panel -->
+    <div class="signal-detail-panel" id="signalDetailPanel">
+        <div class="detail-header">
+            <div class="detail-title">
+                <h2 id="detailTicker">--</h2>
+                <span class="score-badge conviction" id="detailScore">--</span>
+            </div>
+            <button class="detail-close" onclick="closeDetailPanel()">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="detail-grid">
+            <div class="detail-item">
+                <label>Company</label>
+                <div class="value" id="detailCompany">--</div>
+            </div>
+            <div class="detail-item">
+                <label>Insider Name</label>
+                <div class="value" id="detailInsider">--</div>
+            </div>
+            <div class="detail-item">
+                <label>Role / Title</label>
+                <div class="value" id="detailRole">--</div>
+            </div>
+            <div class="detail-item">
+                <label>Buy Amount</label>
+                <div class="value dollar-value" id="detailAmount">--</div>
+            </div>
+            <div class="detail-item">
+                <label>Shares Purchased</label>
+                <div class="value" id="detailShares">--</div>
+            </div>
+            <div class="detail-item">
+                <label>Price Per Share</label>
+                <div class="value" id="detailPrice">--</div>
+            </div>
+            <div class="detail-item">
+                <label>Ownership Change</label>
+                <div class="value" id="detailOwnership">--</div>
+            </div>
+            <div class="detail-item">
+                <label>Filing Date</label>
+                <div class="value" id="detailFilingDate">--</div>
+            </div>
+        </div>
+        <div class="score-breakdown">
+            <h3>Why This Signal Triggered</h3>
+            <div class="breakdown-flags" id="detailFlags">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+        <a href="#" class="filing-link" id="detailFilingLink" target="_blank">
+            <span class="material-icons">open_in_new</span>
+            View SEC Filing
+        </a>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Configuration
+    const INSIDER_SERVICE_PORT = 8084;
+    const MAIN_SERVER_PORT = 8082;
+    
+    // State
+    let currentSignals = [];
+    let searchTimeout = null;
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        checkServiceStatus();
+        loadSignals();
+        
+        // Auto-refresh every 2 minutes
+        setInterval(loadSignals, 120000);
+        
+        // Check service status every 30 seconds
+        setInterval(checkServiceStatus, 30000);
+    });
+
+    // Check if insider service is running
+    async function checkServiceStatus() {
+        try {
+            const response = await fetch(`/api/insiders/status`);
+            const data = await response.json();
+            
+            const statusDot = document.getElementById('serviceStatus');
+            const lastUpdated = document.getElementById('lastUpdated');
+            
+            if (data.status === 'running') {
+                statusDot.classList.remove('error');
+                
+                if (data.last_poll_time) {
+                    const pollTime = new Date(data.last_poll_time);
+                    const minutesAgo = Math.round((new Date() - pollTime) / 60000);
+                    lastUpdated.textContent = minutesAgo < 1 ? 'Just updated' : `Updated ${minutesAgo}m ago`;
+                } else {
+                    lastUpdated.textContent = 'Service running';
+                }
+                
+                // Update stats
+                document.getElementById('todaySignals').textContent = data.today_signals || 0;
+                document.getElementById('totalFilings').textContent = data.total_filings || 0;
+            } else {
+                statusDot.classList.add('error');
+                lastUpdated.textContent = 'Service offline';
+            }
+        } catch (error) {
+            console.error('Status check failed:', error);
+            document.getElementById('serviceStatus').classList.add('error');
+            document.getElementById('lastUpdated').textContent = 'Connection error';
+        }
+    }
+
+    // Load signals with current filters
+    async function loadSignals() {
+        const minScore = document.getElementById('filterMinScore').value;
+        const days = document.getElementById('filterDays').value;
+        const role = document.getElementById('filterRole').value;
+        const ticker = document.getElementById('filterTicker').value.trim().toUpperCase();
+        
+        try {
+            let url = `/api/insiders/top?limit=100&min_score=${minScore}&days=${days}`;
+            
+            if (ticker) {
+                url = `/api/insiders/ticker/${ticker}`;
+            }
+            
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.success) {
+                currentSignals = data.signals || [];
+                
+                // Filter by role if specified
+                if (role && !ticker) {
+                    currentSignals = currentSignals.filter(s => {
+                        const r = (s.insider_role || '').toLowerCase();
+                        return r.includes(role);
+                    });
+                }
+                
+                renderSignalsTable();
+                updateCountStats();
+            } else {
+                console.error('Failed to load signals:', data);
+                showEmptyState('Failed to load signals');
+            }
+        } catch (error) {
+            console.error('Error loading signals:', error);
+            showEmptyState('Error connecting to service');
+        }
+    }
+
+    // Render the signals table
+    function renderSignalsTable() {
+        const tbody = document.getElementById('signalsTableBody');
+        
+        if (currentSignals.length === 0) {
+            showEmptyState('No signals match your filters');
+            return;
+        }
+        
+        tbody.innerHTML = currentSignals.map((signal, index) => {
+            const rowClass = signal.is_conviction ? 'conviction' : (signal.is_highlighted ? 'highlighted' : '');
+            const scoreClass = signal.signal_score >= 85 ? 'conviction' : (signal.signal_score >= 70 ? 'highlighted' : 'normal');
+            const roleClass = getRoleClass(signal.insider_role);
+            const timeAgo = getTimeAgo(signal.created_at);
+            const dollarValue = formatDollar(signal.dollar_value);
+            const reasonFlags = parseReasonFlags(signal.reason_flags);
+            
+            return `
+                <tr class="${rowClass}" onclick="showSignalDetail(${index})">
+                    <td>
+                        <div class="ticker-cell">
+                            <span class="ticker-symbol">${signal.ticker || '--'}</span>
+                            <span class="company-name">${signal.company_name || ''}</span>
+                        </div>
+                    </td>
+                    <td>${signal.insider_name || '--'}</td>
+                    <td><span class="role-badge ${roleClass}">${formatRole(signal.insider_role)}</span></td>
+                    <td><span class="dollar-value ${signal.dollar_value >= 500000 ? 'large' : ''}">${dollarValue}</span></td>
+                    <td><span class="score-badge ${scoreClass}">${signal.signal_score}</span></td>
+                    <td>
+                        <div class="reason-flags">
+                            ${reasonFlags.slice(0, 2).map(f => `<span class="reason-flag">${formatFlag(f)}</span>`).join('')}
+                        </div>
+                    </td>
+                    <td><span class="time-ago">${timeAgo}</span></td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // Show empty state
+    function showEmptyState(message) {
+        const tbody = document.getElementById('signalsTableBody');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7">
+                    <div class="empty-state">
+                        <span class="material-icons">search_off</span>
+                        <h3>No Signals Found</h3>
+                        <p>${message}</p>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
+    // Update count statistics
+    function updateCountStats() {
+        const conviction = currentSignals.filter(s => s.is_conviction).length;
+        const highlighted = currentSignals.filter(s => s.is_highlighted && !s.is_conviction).length;
+        
+        document.getElementById('convictionCount').textContent = conviction;
+        document.getElementById('highlightedCount').textContent = highlighted;
+    }
+
+    // Show signal detail panel
+    function showSignalDetail(index) {
+        const signal = currentSignals[index];
+        if (!signal) return;
+        
+        document.getElementById('detailTicker').textContent = signal.ticker || '--';
+        document.getElementById('detailCompany').textContent = signal.company_name || '--';
+        document.getElementById('detailInsider').textContent = signal.insider_name || '--';
+        document.getElementById('detailRole').textContent = signal.insider_role || '--';
+        document.getElementById('detailAmount').textContent = formatDollar(signal.dollar_value);
+        document.getElementById('detailShares').textContent = signal.shares ? signal.shares.toLocaleString() : '--';
+        document.getElementById('detailPrice').textContent = signal.price ? `$${signal.price.toFixed(2)}` : '--';
+        document.getElementById('detailOwnership').textContent = signal.ownership_change_percent ? `+${signal.ownership_change_percent.toFixed(1)}%` : '--';
+        document.getElementById('detailFilingDate').textContent = signal.filing_date ? new Date(signal.filing_date).toLocaleDateString() : '--';
+        
+        // Score badge
+        const scoreBadge = document.getElementById('detailScore');
+        scoreBadge.textContent = signal.signal_score;
+        scoreBadge.className = 'score-badge ' + (signal.signal_score >= 85 ? 'conviction' : (signal.signal_score >= 70 ? 'highlighted' : 'normal'));
+        
+        // Reason flags
+        const flags = parseReasonFlags(signal.reason_flags);
+        document.getElementById('detailFlags').innerHTML = flags.map(f => `
+            <span class="breakdown-flag">
+                <span class="material-icons">check_circle</span>
+                ${formatFlag(f)}
+            </span>
+        `).join('');
+        
+        // Filing link
+        const filingLink = document.getElementById('detailFilingLink');
+        if (signal.filing_url) {
+            filingLink.href = signal.filing_url;
+            filingLink.style.display = 'inline-flex';
+        } else {
+            filingLink.style.display = 'none';
+        }
+        
+        // Show panel
+        document.getElementById('signalDetailPanel').classList.add('active');
+        
+        // Scroll to panel
+        document.getElementById('signalDetailPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Close detail panel
+    function closeDetailPanel() {
+        document.getElementById('signalDetailPanel').classList.remove('active');
+    }
+
+    // Apply filters
+    function applyFilters() {
+        loadSignals();
+    }
+
+    // Debounced search
+    function debounceSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(loadSignals, 500);
+    }
+
+    // Refresh signals
+    async function refreshSignals() {
+        document.getElementById('loadingOverlay').classList.add('active');
+        
+        try {
+            // Trigger backend refresh
+            await fetch('/api/insiders/refresh', { method: 'POST' });
+            
+            // Wait a moment for processing
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Reload signals
+            await loadSignals();
+            await checkServiceStatus();
+        } catch (error) {
+            console.error('Refresh failed:', error);
+        } finally {
+            document.getElementById('loadingOverlay').classList.remove('active');
+        }
+    }
+
+    // Helper functions
+    function formatDollar(value) {
+        if (!value) return '--';
+        if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+        if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
+        return `$${value.toFixed(0)}`;
+    }
+
+    function getTimeAgo(dateStr) {
+        if (!dateStr) return '--';
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diff = now - date;
+        
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(diff / 3600000);
+        const days = Math.floor(diff / 86400000);
+        
+        if (minutes < 60) return `${minutes}m ago`;
+        if (hours < 24) return `${hours}h ago`;
+        return `${days}d ago`;
+    }
+
+    function getRoleClass(role) {
+        if (!role) return 'officer';
+        const r = role.toLowerCase();
+        if (r.includes('ceo') || r.includes('chief executive')) return 'ceo';
+        if (r.includes('cfo') || r.includes('chief financial')) return 'cfo';
+        if (r.includes('director')) return 'director';
+        if (r.includes('owner') || r.includes('10%')) return 'owner';
+        return 'officer';
+    }
+
+    function formatRole(role) {
+        if (!role) return 'Officer';
+        const r = role.toLowerCase();
+        if (r.includes('ceo') || r.includes('chief executive')) return 'CEO';
+        if (r.includes('cfo') || r.includes('chief financial')) return 'CFO';
+        if (r.includes('coo') || r.includes('chief operating')) return 'COO';
+        if (r.includes('director')) return 'Director';
+        if (r.includes('10%') || r.includes('owner')) return '10% Owner';
+        if (r.includes('president')) return 'President';
+        // Truncate long titles
+        if (role.length > 15) return role.substring(0, 12) + '...';
+        return role;
+    }
+
+    function parseReasonFlags(flags) {
+        if (!flags) return [];
+        try {
+            return typeof flags === 'string' ? JSON.parse(flags) : flags;
+        } catch {
+            return [];
+        }
+    }
+
+    function formatFlag(flag) {
+        const flagMap = {
+            'million_dollar_buy': '$1M+ Buy',
+            'large_buy_500k': '$500K+ Buy',
+            'significant_buy_100k': '$100K+ Buy',
+            'major_position_increase': '50%+ Increase',
+            'significant_increase': '25%+ Increase',
+            'c_suite_purchase': 'C-Suite',
+            'strategic_investor': 'Strategic',
+            'cluster_3plus_insiders': '3+ Insiders',
+            'cluster_2_insiders': '2 Insiders'
+        };
+        return flagMap[flag] || flag.replace(/_/g, ' ');
+    }
+</script>
+{% endblock %}

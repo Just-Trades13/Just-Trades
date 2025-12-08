@@ -1,0 +1,401 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// ICT Silver Bullet Strategy - Based on documented 60-75% win rate methodology
+// Time-specific FVG entry after displacement within Silver Bullet windows
+
+//@version=5
+strategy("ICT Silver Bullet", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500,
+     default_qty_type=strategy.fixed, default_qty_value=1, initial_capital=50000,
+     commission_type=strategy.commission.cash_per_contract, commission_value=2.50,
+     calc_on_every_tick=false, process_orders_on_close=true, pyramiding=0)
+
+//=============================================================================
+// ICT SILVER BULLET - THE ACTUAL RULES:
+//
+// 1. ONLY trade during Silver Bullet windows:
+//    - London: 3:00-4:00 AM EST
+//    - NY AM: 10:00-11:00 AM EST  
+//    - NY PM: 2:00-3:00 PM EST
+//
+// 2. Before the window: Identify liquidity (PDH/PDL, session high/low)
+//
+// 3. During the window: Wait for DISPLACEMENT that sweeps liquidity
+//    - Big candle that takes out a level
+//
+// 4. Look for FVG created by displacement
+//
+// 5. Enter when price RETRACES into the FVG
+//
+// 6. Stop loss: Beyond the displacement candle (the sweep)
+//
+// 7. Take profit: 2:1 minimum (some use 3:1 or 4:1)
+//=============================================================================
+
+//-----------------------------------------------------------------------------}
+// Settings
+//-----------------------------------------------------------------------------{
+grpTime = "═══ Silver Bullet Windows (EST) ═══"
+useLondonSB = input.bool(false, "London (3-4 AM)", group=grpTime, tooltip="Often less volume for futures")
+useNYAM_SB = input.bool(true, "NY AM (10-11 AM)", group=grpTime, tooltip="Primary Silver Bullet - highest win rate")
+useNYPM_SB = input.bool(true, "NY PM (2-3 PM)", group=grpTime, tooltip="Secondary Silver Bullet")
+
+grpEntry = "═══ Entry Rules ═══"
+fvgMinSize = input.float(0.5, "Min FVG Size (ATR mult)", minval=0.1, maxval=2.0, step=0.1, group=grpEntry)
+dispMinSize = input.float(1.0, "Min Displacement (ATR mult)", minval=0.5, maxval=3.0, step=0.1, group=grpEntry)
+enterAtMid = input.bool(true, "Enter at FVG Midpoint", group=grpEntry, tooltip="More conservative entry")
+maxFVGAge = input.int(5, "Max FVG Age (bars)", minval=1, maxval=15, group=grpEntry)
+
+grpRisk = "═══ Risk Management ═══"
+riskReward = input.float(2.0, "Risk:Reward", minval=1.5, maxval=5.0, step=0.5, group=grpRisk)
+slBeyondDisp = input.bool(true, "SL Beyond Displacement", group=grpRisk)
+slBuffer = input.float(0.3, "SL Buffer (ATR)", minval=0.0, maxval=1.0, step=0.1, group=grpRisk)
+moveToBreakeven = input.bool(true, "Move SL to BE at 1R", group=grpRisk)
+onlyOneTradePerWindow = input.bool(true, "Max 1 Trade Per Window", group=grpRisk)
+
+grpBias = "═══ Bias Filter (Optional) ═══"
+useBiasFilter = input.bool(true, "Use Higher TF Bias", group=grpBias)
+biasLength = input.int(50, "Bias EMA Length", minval=10, maxval=200, group=grpBias)
+
+grpWebhook = "═══ Webhook ═══"
+webhookTicker = input.string("NQ", "Ticker", group=grpWebhook)
+
+grpVisual = "═══ Visuals ═══"
+showFVG = input.bool(true, "Show FVG Boxes", group=grpVisual)
+showLiquidity = input.bool(true, "Show PDH/PDL", group=grpVisual)
+showSessionHL = input.bool(true, "Show Session H/L", group=grpVisual)
+cBull = input.color(color.new(#00dc82, 0), "Bullish", group=grpVisual)
+cBear = input.color(color.new(#ff5252, 0), "Bearish", group=grpVisual)
+
+//-----------------------------------------------------------------------------}
+// Variables
+//-----------------------------------------------------------------------------{
+var float entryPrice = na
+var float stopLoss = na
+var float takeProfit = na
+var bool movedToBE = false
+var bool tradedThisWindow = false
+var int lastWindowBar = na
+
+// FVG tracking
+var float bullFVGTop = na
+var float bullFVGBot = na
+var float bullFVGMid = na
+var int bullFVGBar = na
+var float bullDispLow = na  // For stop loss
+
+var float bearFVGTop = na
+var float bearFVGBot = na
+var float bearFVGMid = na
+var int bearFVGBar = na
+var float bearDispHigh = na  // For stop loss
+
+var bool bullFVGActive = false
+var bool bearFVGActive = false
+
+atr = ta.atr(14)
+posSize = strategy.position_size
+
+//-----------------------------------------------------------------------------}
+// Silver Bullet Time Windows
+//-----------------------------------------------------------------------------{
+// Using exact ICT Silver Bullet times
+londonSB = not na(time(timeframe.period, "0300-0400", "America/New_York")) and useLondonSB
+nyAMSB = not na(time(timeframe.period, "1000-1100", "America/New_York")) and useNYAM_SB
+nyPMSB = not na(time(timeframe.period, "1400-1500", "America/New_York")) and useNYPM_SB
+
+inSilverBullet = londonSB or nyAMSB or nyPMSB
+
+// Detect new window
+newWindow = inSilverBullet and not inSilverBullet[1]
+if newWindow
+    tradedThisWindow := false
+    lastWindowBar := bar_index
+
+//-----------------------------------------------------------------------------}
+// Higher TF Bias
+//-----------------------------------------------------------------------------{
+ema = ta.ema(close, biasLength)
+bullishBias = close > ema
+bearishBias = close < ema
+
+biasOKLong = not useBiasFilter or bullishBias
+biasOKShort = not useBiasFilter or bearishBias
+
+//-----------------------------------------------------------------------------}
+// Liquidity Levels
+//-----------------------------------------------------------------------------{
+// Previous Day High/Low
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+// Today's session high/low (resets each day)
+var float todayHigh = na
+var float todayLow = na
+
+newDay = ta.change(time("D"))
+if newDay
+    todayHigh := high
+    todayLow := low
+else
+    todayHigh := math.max(todayHigh, high)
+    todayLow := math.min(todayLow, low)
+
+// Asian session high/low (for NY sessions)
+var float asianHigh = na
+var float asianLow = na
+
+inAsian = not na(time(timeframe.period, "1800-0000", "America/New_York"))
+newAsian = inAsian and not inAsian[1]
+if newAsian
+    asianHigh := high
+    asianLow := low
+else if inAsian
+    asianHigh := math.max(nz(asianHigh, high), high)
+    asianLow := math.min(nz(asianLow, low), low)
+
+// Plot liquidity levels
+plot(showLiquidity ? pdh : na, "PDH", color.new(color.red, 30), 2, plot.style_linebr)
+plot(showLiquidity ? pdl : na, "PDL", color.new(color.green, 30), 2, plot.style_linebr)
+plot(showSessionHL and not na(asianHigh) ? asianHigh : na, "Asian High", color.new(color.orange, 50), 1, plot.style_linebr)
+plot(showSessionHL and not na(asianLow) ? asianLow : na, "Asian Low", color.new(color.blue, 50), 1, plot.style_linebr)
+
+//-----------------------------------------------------------------------------}
+// Displacement Detection
+//-----------------------------------------------------------------------------{
+bodySize = math.abs(close - open)
+candleRange = high - low
+isLargeBody = bodySize > atr * dispMinSize
+
+bullishDisplacement = close > open and isLargeBody
+bearishDisplacement = close < open and isLargeBody
+
+// Check if displacement swept liquidity
+sweptLiquidityLow = low < pdl or low < nz(asianLow, low) or low < todayLow[1]
+sweptLiquidityHigh = high > pdh or high > nz(asianHigh, high) or high > todayHigh[1]
+
+validBullDisp = bullishDisplacement and sweptLiquidityLow
+validBearDisp = bearishDisplacement and sweptLiquidityHigh
+
+//-----------------------------------------------------------------------------}
+// FVG Detection
+//-----------------------------------------------------------------------------{
+// Bullish FVG: current low > 2 bars ago high (gap up)
+bullFVGFormed = low > high[2] and (low - high[2]) >= atr * fvgMinSize
+
+// Bearish FVG: current high < 2 bars ago low (gap down)  
+bearFVGFormed = high < low[2] and (low[2] - high) >= atr * fvgMinSize
+
+// Only activate FVG if formed during/after displacement in Silver Bullet window
+if inSilverBullet and bullFVGFormed and (validBullDisp or validBullDisp[1] or validBullDisp[2])
+    bullFVGTop := low
+    bullFVGBot := high[2]
+    bullFVGMid := (bullFVGTop + bullFVGBot) / 2
+    bullFVGBar := bar_index
+    bullDispLow := math.min(low, low[1], low[2])
+    bullFVGActive := true
+
+if inSilverBullet and bearFVGFormed and (validBearDisp or validBearDisp[1] or validBearDisp[2])
+    bearFVGTop := low[2]
+    bearFVGBot := high
+    bearFVGMid := (bearFVGTop + bearFVGBot) / 2
+    bearFVGBar := bar_index
+    bearDispHigh := math.max(high, high[1], high[2])
+    bearFVGActive := true
+
+// Invalidate old FVGs
+if bullFVGActive and (bar_index - bullFVGBar) > maxFVGAge
+    bullFVGActive := false
+
+if bearFVGActive and (bar_index - bearFVGBar) > maxFVGAge
+    bearFVGActive := false
+
+// Draw FVG boxes
+var box bullBox = na
+var box bearBox = na
+
+if showFVG
+    if bullFVGActive and bullFVGBar == bar_index
+        box.delete(bullBox)
+        bullBox := box.new(bar_index - 2, bullFVGTop, bar_index + 10, bullFVGBot, 
+                           border_color=cBull, bgcolor=color.new(cBull, 85))
+    
+    if bearFVGActive and bearFVGBar == bar_index
+        box.delete(bearBox)
+        bearBox := box.new(bar_index - 2, bearFVGTop, bar_index + 10, bearFVGBot,
+                           border_color=cBear, bgcolor=color.new(cBear, 85))
+
+//-----------------------------------------------------------------------------}
+// Entry Logic
+//-----------------------------------------------------------------------------{
+// LONG: Price retraces into bullish FVG
+entryLevel = enterAtMid ? bullFVGMid : bullFVGTop
+longEntry = posSize == 0 and 
+            inSilverBullet and
+            bullFVGActive and
+            biasOKLong and
+            low <= entryLevel and
+            close >= bullFVGBot and
+            (not onlyOneTradePerWindow or not tradedThisWindow)
+
+// SHORT: Price retraces into bearish FVG
+shortEntryLevel = enterAtMid ? bearFVGMid : bearFVGBot
+shortEntry = posSize == 0 and
+             inSilverBullet and
+             bearFVGActive and
+             biasOKShort and
+             high >= shortEntryLevel and
+             close <= bearFVGTop and
+             (not onlyOneTradePerWindow or not tradedThisWindow)
+
+//-----------------------------------------------------------------------------}
+// Calculate SL/TP
+//-----------------------------------------------------------------------------{
+// Long: SL below displacement low, TP based on R:R
+longSL = slBeyondDisp ? bullDispLow - (atr * slBuffer) : bullFVGBot - (atr * slBuffer)
+longRisk = close - longSL
+longTP = close + (longRisk * riskReward)
+
+// Short: SL above displacement high, TP based on R:R
+shortSL = slBeyondDisp ? bearDispHigh + (atr * slBuffer) : bearFVGTop + (atr * slBuffer)
+shortRisk = shortSL - close
+shortTP = close - (shortRisk * riskReward)
+
+//-----------------------------------------------------------------------------}
+// Execute Trades
+//-----------------------------------------------------------------------------{
+if longEntry
+    strategy.entry("Long", strategy.long,
+        alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "price": ' + str.tostring(close) + ', "sl": ' + str.tostring(longSL, "#.##") + ', "tp": ' + str.tostring(longTP, "#.##") + '}')
+    entryPrice := close
+    stopLoss := longSL
+    takeProfit := longTP
+    movedToBE := false
+    tradedThisWindow := true
+    bullFVGActive := false  // Consumed the FVG
+
+if shortEntry
+    strategy.entry("Short", strategy.short,
+        alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "price": ' + str.tostring(close) + ', "sl": ' + str.tostring(shortSL, "#.##") + ', "tp": ' + str.tostring(shortTP, "#.##") + '}')
+    entryPrice := close
+    stopLoss := shortSL
+    takeProfit := shortTP
+    movedToBE := false
+    tradedThisWindow := true
+    bearFVGActive := false  // Consumed the FVG
+
+//-----------------------------------------------------------------------------}
+// Trade Management
+//-----------------------------------------------------------------------------{
+// Move to breakeven at 1R
+if moveToBreakeven and posSize > 0 and not movedToBE
+    oneR = entryPrice + (entryPrice - stopLoss)
+    if high >= oneR
+        stopLoss := entryPrice + (atr * 0.1)  // Slightly above entry to cover spread
+        movedToBE := true
+
+if moveToBreakeven and posSize < 0 and not movedToBE
+    oneR = entryPrice - (stopLoss - entryPrice)
+    if low <= oneR
+        stopLoss := entryPrice - (atr * 0.1)
+        movedToBE := true
+
+// Exit logic
+if posSize > 0
+    if high >= takeProfit
+        strategy.close("Long", comment="TP",
+            alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "comment": "TP"}')
+    else if low <= stopLoss
+        strategy.close("Long", comment=movedToBE ? "BE" : "SL",
+            alert_message='{"ticker": "' + webhookTicker + '", "action": "sell", "comment": "SL"}')
+
+if posSize < 0
+    if low <= takeProfit
+        strategy.close("Short", comment="TP",
+            alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "comment": "TP"}')
+    else if high >= stopLoss
+        strategy.close("Short", comment=movedToBE ? "BE" : "SL",
+            alert_message='{"ticker": "' + webhookTicker + '", "action": "buy", "comment": "SL"}')
+
+//-----------------------------------------------------------------------------}
+// Reset when window ends
+//-----------------------------------------------------------------------------{
+windowEnded = not inSilverBullet and inSilverBullet[1]
+if windowEnded
+    bullFVGActive := false
+    bearFVGActive := false
+
+//-----------------------------------------------------------------------------}
+// Visuals
+//-----------------------------------------------------------------------------{
+// Entry markers
+plotshape(longEntry, "Long Entry", shape.triangleup, location.belowbar, cBull, size=size.normal)
+plotshape(shortEntry, "Short Entry", shape.triangledown, location.abovebar, cBear, size=size.normal)
+
+// Displacement markers
+plotshape(inSilverBullet and validBullDisp, "Bull Displacement", shape.arrowup, location.belowbar, color.new(cBull, 30), size=size.small)
+plotshape(inSilverBullet and validBearDisp, "Bear Displacement", shape.arrowdown, location.abovebar, color.new(cBear, 30), size=size.small)
+
+// Position lines
+hasPos = posSize != 0
+plot(hasPos ? stopLoss : na, "Stop Loss", color.red, 2, plot.style_linebr)
+plot(hasPos ? takeProfit : na, "Take Profit", color.green, 2, plot.style_linebr)
+plot(hasPos ? entryPrice : na, "Entry", color.gray, 1, plot.style_linebr)
+
+// EMA bias
+plot(useBiasFilter ? ema : na, "Bias EMA", color.new(color.yellow, 70), 1)
+
+// Silver Bullet window background
+bgcolor(londonSB ? color.new(color.purple, 93) : na, title="London SB")
+bgcolor(nyAMSB ? color.new(color.orange, 93) : na, title="NY AM SB")
+bgcolor(nyPMSB ? color.new(color.blue, 93) : na, title="NY PM SB")
+
+//-----------------------------------------------------------------------------}
+// Info Table
+//-----------------------------------------------------------------------------{
+var table infoTable = table.new(position.top_right, 2, 8, bgcolor=color.new(#131722, 20), border_width=0)
+
+if barstate.islast
+    table.cell(infoTable, 0, 0, "ICT Silver Bullet", text_color=color.white, text_size=size.normal, bgcolor=color.new(color.purple, 50))
+    table.cell(infoTable, 1, 0, webhookTicker, text_color=color.yellow, text_size=size.normal, bgcolor=color.new(color.purple, 50))
+    
+    // Window status
+    windowStr = nyAMSB ? "🟠 NY AM (10-11)" : nyPMSB ? "🔵 NY PM (2-3)" : londonSB ? "🟣 LONDON (3-4)" : "⚫ WAITING"
+    table.cell(infoTable, 0, 1, "Window", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 1, windowStr, text_color=color.white, text_size=size.small)
+    
+    // Bias
+    biasStr = bullishBias ? "🟢 BULLISH" : "🔴 BEARISH"
+    table.cell(infoTable, 0, 2, "Bias", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 2, biasStr, text_color=color.white, text_size=size.small)
+    
+    // FVG status
+    fvgStr = bullFVGActive ? "🟢 Bull FVG Ready" : bearFVGActive ? "🔴 Bear FVG Ready" : "⏳ None"
+    table.cell(infoTable, 0, 3, "FVG", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 3, fvgStr, text_color=color.white, text_size=size.small)
+    
+    // Position
+    posStr = posSize > 0 ? "🟢 LONG" : posSize < 0 ? "🔴 SHORT" : "⚪ FLAT"
+    table.cell(infoTable, 0, 4, "Position", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 4, posStr, text_color=color.white, text_size=size.small)
+    
+    // R:R
+    table.cell(infoTable, 0, 5, "Target R:R", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 5, str.tostring(riskReward, "#.#") + ":1", text_color=color.lime, text_size=size.small)
+    
+    // Breakeven status
+    if hasPos
+        beStr = movedToBE ? "✅ At Breakeven" : "⏳ Waiting for 1R"
+        table.cell(infoTable, 0, 6, "Trail", text_color=color.gray, text_size=size.small)
+        table.cell(infoTable, 1, 6, beStr, text_color=color.white, text_size=size.small)
+    
+    // Traded this window
+    tradedStr = tradedThisWindow ? "✅ Done" : "⏳ Open"
+    table.cell(infoTable, 0, 7, "Window Trade", text_color=color.gray, text_size=size.small)
+    table.cell(infoTable, 1, 7, tradedStr, text_color=color.white, text_size=size.small)
+
+//-----------------------------------------------------------------------------}
+// Alerts
+//-----------------------------------------------------------------------------{
+alertcondition(inSilverBullet and not inSilverBullet[1], "Silver Bullet Open", "Silver Bullet window is now open")
+alertcondition(validBullDisp and inSilverBullet, "Bullish Displacement", "Bullish displacement during Silver Bullet")
+alertcondition(validBearDisp and inSilverBullet, "Bearish Displacement", "Bearish displacement during Silver Bullet")
+alertcondition(longEntry, "Long Entry", "Long entry triggered")
+alertcondition(shortEntry, "Short Entry", "Short entry triggered")

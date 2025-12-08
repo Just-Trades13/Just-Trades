@@ -1,0 +1,648 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © SMC Strategy for NQ/ES Trading - Inspired by LuxAlgo style
+
+//@version=5
+indicator("SMC NQ/ES", max_lines_count=500, max_boxes_count=500, max_labels_count=500, max_bars_back=3000, overlay=true)
+
+//-----------------------------------------------------------------------------}
+// Constants
+//-----------------------------------------------------------------------------{
+string sp = '       '
+
+//-----------------------------------------------------------------------------}
+// Settings
+//-----------------------------------------------------------------------------{
+// Mode
+i_mode = input.string('Present', 'Mode', options=['Present', 'Historical'], tooltip='Present shows only recent bars, Historical shows all')
+
+// Market Structure
+grpMS = 'Market Structure'
+showMS = input.bool(true, '', inline='ms', group=grpMS)
+lenMS = input.int(5, sp + 'Length' + sp, inline='ms', group=grpMS, minval=3, maxval=15)
+
+iMSS = input.bool(true, sp + 'MSS' + sp, inline='mss', group=grpMS)
+cMSSbl = input.color(color.new(#00dc82, 0), '', inline='mss', group=grpMS)
+cMSSbr = input.color(color.new(#ff5252, 0), '', inline='mss', group=grpMS)
+
+iBOS = input.bool(true, sp + 'BOS' + sp, inline='bos', group=grpMS)
+cBOSbl = input.color(color.new(#00dc82, 0), '', inline='bos', group=grpMS)
+cBOSbr = input.color(color.new(#ff5252, 0), '', inline='bos', group=grpMS)
+
+// Fair Value Gaps
+grpFVG = 'Fair Value Gaps'
+showFVG = input.bool(true, '', inline='fvg', group=grpFVG)
+fvgType = input.string('FVG', sp + 'Type', options=['FVG', 'IFVG'], inline='fvg', group=grpFVG)
+visFVG = input.int(3, sp + 'Show #', inline='fvg', group=grpFVG, minval=1, maxval=10)
+cFVGbl = input.color(color.new(#00dc82, 0), 'Bullish FVG' + sp, inline='fvgc1', group=grpFVG)
+cFVGblBr = input.color(color.new(#00dc82, 80), 'Break', inline='fvgc1', group=grpFVG)
+cFVGbr = input.color(color.new(#ff5252, 0), 'Bearish FVG' + sp, inline='fvgc2', group=grpFVG)
+cFVGbrBr = input.color(color.new(#ff5252, 80), 'Break', inline='fvgc2', group=grpFVG)
+
+// Order Blocks
+grpOB = 'Order Blocks'
+showOB = input.bool(true, '', inline='ob', group=grpOB)
+lenOB = input.int(10, sp + 'Swing Length' + sp, inline='ob', group=grpOB, minval=3)
+showBullOB = input.int(2, 'Bullish OB #', inline='obc', group=grpOB, minval=0, maxval=5)
+showBearOB = input.int(2, sp + 'Bearish OB #', inline='obc', group=grpOB, minval=0, maxval=5)
+useBody = input.bool(true, 'Use Candle Body', group=grpOB)
+cOBbl = input.color(color.new(#3e89fa, 0), 'Bullish OB' + sp, inline='obc1', group=grpOB)
+cOBblBr = input.color(color.new(#3e89fa, 80), 'Break', inline='obc1', group=grpOB)
+cOBbr = input.color(color.new(#ff5252, 0), 'Bearish OB' + sp, inline='obc2', group=grpOB)
+cOBbrBr = input.color(color.new(#ff9800, 80), 'Break', inline='obc2', group=grpOB)
+
+// Liquidity
+grpLiq = 'Liquidity'
+showLiq = input.bool(true, '', inline='liq', group=grpLiq)
+liqMargin = 10 / input.float(4, sp + 'Margin' + sp, inline='liq', group=grpLiq, minval=2, maxval=7, step=0.1)
+visLiq = input.int(2, '# Visible', inline='liq', group=grpLiq, minval=1, maxval=10)
+cLiqBuy = input.color(color.new(#ff5252, 0), 'Buyside' + sp, inline='liqc', group=grpLiq)
+cLiqSell = input.color(color.new(#00bcd4, 0), 'Sellside', inline='liqc', group=grpLiq)
+
+// SMT Divergence
+grpSMT = 'SMT Divergence'
+showSMT = input.bool(true, '', inline='smt', group=grpSMT)
+smtSymbol = input.symbol('NQ1!', sp + 'Compare' + sp, inline='smt', group=grpSMT, tooltip='Compare NQ↔ES for divergence')
+smtLen = input.int(5, 'Lookback', inline='smt', group=grpSMT, minval=2, maxval=15)
+cSMTbl = input.color(color.new(#00dc82, 0), 'Bullish SMT' + sp, inline='smtc', group=grpSMT)
+cSMTbr = input.color(color.new(#ff5252, 0), 'Bearish SMT', inline='smtc', group=grpSMT)
+
+// Premium/Discount
+grpPD = 'Premium / Discount'
+showPD = input.bool(true, '', inline='pd', group=grpPD)
+pdLen = input.int(20, sp + 'Range Length' + sp, inline='pd', group=grpPD, minval=10, maxval=100)
+showEQ = input.bool(true, 'Show Equilibrium', inline='eq', group=grpPD)
+cPremium = input.color(color.new(#ff5252, 92), 'Premium' + sp, inline='pdc', group=grpPD)
+cDiscount = input.color(color.new(#00dc82, 92), 'Discount', inline='pdc', group=grpPD)
+
+// Killzones
+grpKZ = 'Killzones'
+showKZ = input.bool(true, 'Show Killzones', group=grpKZ)
+showNY = input.bool(true, 'New York' + sp, inline='ny', group=grpKZ) and showKZ
+cNY = input.color(color.new(#ff9800, 92), '', inline='ny', group=grpKZ)
+sessNY = input.session('0700-1000', '', inline='ny', group=grpKZ)
+showLDN = input.bool(true, 'London' + sp, inline='ldn', group=grpKZ) and showKZ
+cLDN = input.color(color.new(#2196f3, 92), '', inline='ldn', group=grpKZ)
+sessLDN = input.session('0200-0500', '', inline='ldn', group=grpKZ)
+showASIA = input.bool(false, 'Asia' + sp, inline='asia', group=grpKZ) and showKZ
+cASIA = input.color(color.new(#e91e63, 92), '', inline='asia', group=grpKZ)
+sessASIA = input.session('2000-0000', '', inline='asia', group=grpKZ)
+
+// Session Levels
+grpSL = 'Session Levels'
+showPrevDay = input.bool(true, 'Previous Day H/L', inline='pdhl', group=grpSL)
+cPDH = input.color(color.new(#ff9800, 20), sp + 'High', inline='pdhl', group=grpSL)
+cPDL = input.color(color.new(#2196f3, 20), sp + 'Low', inline='pdhl', group=grpSL)
+
+//-----------------------------------------------------------------------------}
+// User Defined Types
+//-----------------------------------------------------------------------------{
+type ZZ
+    int[] d
+    int[] x
+    float[] y
+    bool[] b
+
+type mss
+    int dir
+    line[] l_mssBl
+    line[] l_mssBr
+    line[] l_bosBl
+    line[] l_bosBr
+    label[] lbMssBl
+    label[] lbMssBr
+    label[] lbBosBl
+    label[] lbBosBr
+
+type liq
+    box bx
+    bool broken
+    bool brokenTop
+    bool brokenBtm
+    line ln
+
+type ob
+    float top = na
+    float btm = na
+    int loc = bar_index
+    bool breaker = false
+    int break_loc = na
+
+type swing
+    float y = na
+    int x = na
+    bool crossed = false
+
+type FVG
+    box bx
+    bool active
+    int pos
+
+type ob_display
+    box bx
+    line ln
+    label lb
+
+//-----------------------------------------------------------------------------}
+// Variables
+//-----------------------------------------------------------------------------{
+n = bar_index
+atr = ta.atr(10)
+per = i_mode == 'Present' ? last_bar_index - n <= 500 : true
+maxSize = 50
+
+var mss MSS = mss.new(0, array.new<line>(), array.new<line>(), array.new<line>(), array.new<line>(), array.new<label>(), array.new<label>(), array.new<label>(), array.new<label>())
+
+var ZZ aZZ = ZZ.new(array.new<int>(maxSize, 0), array.new<int>(maxSize, 0), array.new<float>(maxSize, na), array.new<bool>(maxSize, na))
+
+var liq[] liq_buy = array.new<liq>(1, liq.new(box(na), false, false, false, line(na)))
+var liq[] liq_sell = array.new<liq>(1, liq.new(box(na), false, false, false, line(na)))
+
+var ob[] bullish_ob = array.new<ob>()
+var ob[] bearish_ob = array.new<ob>()
+
+var ob_display[] ob_displays = array.new<ob_display>()
+
+var FVG[] fvg_up = array.new<FVG>()
+var FVG[] fvg_dn = array.new<FVG>()
+
+// Body calculations
+mx = math.max(close, open)
+mn = math.min(close, open)
+body = math.abs(close - open)
+max_price = useBody ? mx : high
+min_price = useBody ? mn : low
+
+//-----------------------------------------------------------------------------}
+// Functions
+//-----------------------------------------------------------------------------{
+method in_out(ZZ aZZ, int d, int x1, float y1, int x2, float y2) =>
+    aZZ.d.unshift(d), aZZ.x.unshift(x2), aZZ.y.unshift(y2), aZZ.b.unshift(true)
+    aZZ.d.pop(), aZZ.x.pop(), aZZ.y.pop(), aZZ.b.pop()
+
+method clear_lines(line[] arr) =>
+    if arr.size() > 0
+        for i = arr.size() - 1 to 0
+            arr.pop().delete()
+
+method clear_labels(label[] arr) =>
+    if arr.size() > 0
+        for i = arr.size() - 1 to 0
+            arr.pop().delete()
+
+method notransp(color css) => color.rgb(color.r(css), color.g(css), color.b(css))
+
+set_lab(i, str, css) =>
+    style = str == 'Bl' ? label.style_label_down : label.style_label_up
+    label.new(math.round(math.avg(aZZ.x.get(i), n)), aZZ.y.get(i), text='BOS', style=style, color=color(na), textcolor=css, size=size.tiny)
+
+set_lin(i, css) =>
+    line.new(aZZ.x.get(i), aZZ.y.get(i), n, aZZ.y.get(i), color=css, style=line.style_dotted)
+
+swings(len) =>
+    var os = 0
+    var swing top = swing.new(na, na)
+    var swing btm = swing.new(na, na)
+    
+    upper = ta.highest(len)
+    lower = ta.lowest(len)
+    
+    os := high[len] > upper ? 0 : low[len] < lower ? 1 : os
+    
+    if os == 0 and os[1] != 0
+        top := swing.new(high[len], bar_index[len])
+    if os == 1 and os[1] != 1
+        btm := swing.new(low[len], bar_index[len])
+    
+    [top, btm]
+
+method display_ob(ob id, color css, color break_css, string str) =>
+    if showOB
+        if id.breaker
+            ob_displays.unshift(ob_display.new(
+                box.new(id.loc, id.top, timenow + (timeframe.in_seconds(timeframe.period) * 1000 * 10), id.btm, na, bgcolor=break_css, extend=extend.none, xloc=xloc.bar_time),
+                line(na), label(na)))
+        else
+            y = str == 'bl' ? id.btm : id.top
+            s = str == 'bl' ? label.style_label_up : label.style_label_down
+            ob_displays.unshift(ob_display.new(
+                box(na),
+                line.new(id.loc, y, id.loc + (timeframe.in_seconds(timeframe.period) * 1000 * 10), y, xloc=xloc.bar_time, color=css, width=2),
+                label.new(id.loc + (timeframe.in_seconds(timeframe.period) * 1000 * 10), y, text=str == 'bl' ? '+OB' : '-OB', xloc=xloc.bar_time, style=s, color=color(na), textcolor=css, size=size.small)))
+
+//-----------------------------------------------------------------------------}
+// Main Drawing Logic
+//-----------------------------------------------------------------------------{
+draw(left) =>
+    var int dir = na, var int x1 = na, var float y1 = na, var int x2 = na, var float y2 = na
+    
+    sz = aZZ.d.size()
+    x2 := n - 1
+    ph = ta.pivothigh(high, left, 1)
+    pl = ta.pivotlow(low, left, 1)
+    
+    if ph
+        dir := aZZ.d.get(0)
+        x1 := aZZ.x.get(0)
+        y1 := aZZ.y.get(0)
+        y2 := nz(high[1])
+        
+        if dir < 1
+            aZZ.in_out(1, x1, y1, x2, y2)
+        else if dir == 1 and ph > y1
+            aZZ.x.set(0, x2), aZZ.y.set(0, y2)
+        
+        // Buyside Liquidity
+        if showLiq and per and sz > 0
+            count = 0
+            st_P = 0., st_B = 0, minP = 0., maxP = 10e6
+            for i = 0 to math.min(sz, 50) - 1
+                if aZZ.d.get(i) == 1
+                    if aZZ.y.get(i) > ph + (atr / liqMargin)
+                        break
+                    else if aZZ.y.get(i) > ph - (atr / liqMargin) and aZZ.y.get(i) < ph + (atr / liqMargin)
+                        count += 1
+                        st_B := aZZ.x.get(i)
+                        st_P := aZZ.y.get(i)
+                        if aZZ.y.get(i) > minP
+                            minP := aZZ.y.get(i)
+                        if aZZ.y.get(i) < maxP
+                            maxP := aZZ.y.get(i)
+            if count > 2
+                getB = liq_buy.get(0)
+                if st_B == getB.bx.get_left()
+                    getB.bx.set_top(math.avg(minP, maxP) + (atr / liqMargin))
+                    getB.bx.set_rightbottom(n + 10, math.avg(minP, maxP) - (atr / liqMargin))
+                else
+                    liq_buy.unshift(liq.new(
+                        box.new(st_B, math.avg(minP, maxP) + (atr / liqMargin), n + 10, math.avg(minP, maxP) - (atr / liqMargin),
+                            text='BSL $$$', text_size=size.tiny, text_halign=text.align_left, text_valign=text.align_bottom,
+                            text_color=color.new(cLiqBuy, 25), bgcolor=color(na), border_color=color(na)),
+                        false, false, false,
+                        line.new(st_B, st_P, n - 1, st_P, color=cLiqBuy, style=line.style_dashed)))
+                if liq_buy.size() > visLiq
+                    pop = liq_buy.pop()
+                    pop.bx.delete()
+                    pop.ln.delete()
+    
+    if pl
+        dir := aZZ.d.get(0)
+        x1 := aZZ.x.get(0)
+        y1 := aZZ.y.get(0)
+        y2 := nz(low[1])
+        
+        if dir > -1
+            aZZ.in_out(-1, x1, y1, x2, y2)
+        else if dir == -1 and pl < y1
+            aZZ.x.set(0, x2), aZZ.y.set(0, y2)
+        
+        // Sellside Liquidity
+        if showLiq and per and sz > 0
+            count = 0
+            st_P = 0., st_B = 0, minP = 0., maxP = 10e6
+            for i = 0 to math.min(sz, 50) - 1
+                if aZZ.d.get(i) == -1
+                    if aZZ.y.get(i) < pl - (atr / liqMargin)
+                        break
+                    else if aZZ.y.get(i) > pl - (atr / liqMargin) and aZZ.y.get(i) < pl + (atr / liqMargin)
+                        count += 1
+                        st_B := aZZ.x.get(i)
+                        st_P := aZZ.y.get(i)
+                        if aZZ.y.get(i) > minP
+                            minP := aZZ.y.get(i)
+                        if aZZ.y.get(i) < maxP
+                            maxP := aZZ.y.get(i)
+            if count > 2
+                getS = liq_sell.get(0)
+                if st_B == getS.bx.get_left()
+                    getS.bx.set_top(math.avg(minP, maxP) + (atr / liqMargin))
+                    getS.bx.set_rightbottom(n + 10, math.avg(minP, maxP) - (atr / liqMargin))
+                else
+                    liq_sell.unshift(liq.new(
+                        box.new(st_B, math.avg(minP, maxP) + (atr / liqMargin), n + 10, math.avg(minP, maxP) - (atr / liqMargin),
+                            text='SSL $$$', text_size=size.tiny, text_halign=text.align_left, text_valign=text.align_bottom,
+                            text_color=color.new(cLiqSell, 25), bgcolor=color(na), border_color=color(na)),
+                        false, false, false,
+                        line.new(st_B, st_P, n - 1, st_P, color=cLiqSell, style=line.style_dashed)))
+                if liq_sell.size() > visLiq
+                    pop = liq_sell.pop()
+                    pop.bx.delete()
+                    pop.ln.delete()
+    
+    // Market Structure Shift / BOS
+    if showMS
+        iH = aZZ.d.get(2) == 1 ? 2 : 1
+        iL = aZZ.d.get(2) == -1 ? 2 : 1
+        
+        // MSS Bullish
+        if close > aZZ.y.get(iH) and aZZ.d.get(iH) == 1 and MSS.dir < 1
+            MSS.dir := 1
+            if i_mode == 'Present'
+                MSS.l_bosBl.clear_lines(), MSS.l_bosBr.clear_lines()
+                MSS.lbBosBl.clear_labels(), MSS.lbBosBr.clear_labels()
+                MSS.l_mssBl.clear_lines(), MSS.l_mssBr.clear_lines()
+                MSS.lbMssBl.clear_labels(), MSS.lbMssBr.clear_labels()
+            MSS.l_mssBl.unshift(line.new(aZZ.x.get(iH), aZZ.y.get(iH), n, aZZ.y.get(iH), color=cMSSbl))
+            MSS.lbMssBl.unshift(label.new(math.round(math.avg(aZZ.x.get(iH), n)), aZZ.y.get(iH), text='MSS', style=label.style_label_down, size=size.tiny, color=color(na), textcolor=cMSSbl))
+        
+        // MSS Bearish
+        if close < aZZ.y.get(iL) and aZZ.d.get(iL) == -1 and MSS.dir > -1
+            MSS.dir := -1
+            if i_mode == 'Present'
+                MSS.l_bosBl.clear_lines(), MSS.l_bosBr.clear_lines()
+                MSS.lbBosBl.clear_labels(), MSS.lbBosBr.clear_labels()
+                MSS.l_mssBl.clear_lines(), MSS.l_mssBr.clear_lines()
+                MSS.lbMssBl.clear_labels(), MSS.lbMssBr.clear_labels()
+            MSS.l_mssBr.unshift(line.new(aZZ.x.get(iL), aZZ.y.get(iL), n, aZZ.y.get(iL), color=cMSSbr))
+            MSS.lbMssBr.unshift(label.new(math.round(math.avg(aZZ.x.get(iL), n)), aZZ.y.get(iL), text='MSS', style=label.style_label_up, size=size.tiny, color=color(na), textcolor=cMSSbr))
+        
+        // BOS Bullish
+        if MSS.dir == 1 and close > aZZ.y.get(iH) and iBOS
+            if MSS.l_bosBl.size() > 0
+                if aZZ.y.get(iH) != MSS.l_bosBl.get(0).get_y2() and aZZ.y.get(iH) != MSS.l_mssBl.get(0).get_y2()
+                    MSS.l_bosBl.unshift(set_lin(iH, cBOSbl)), MSS.lbBosBl.unshift(set_lab(iH, 'Bl', cBOSbl))
+            else if aZZ.y.get(iH) != MSS.l_mssBl.get(0).get_y2()
+                MSS.l_bosBl.unshift(set_lin(iH, cBOSbl)), MSS.lbBosBl.unshift(set_lab(iH, 'Bl', cBOSbl))
+        
+        // BOS Bearish
+        if MSS.dir == -1 and close < aZZ.y.get(iL) and iBOS
+            if MSS.l_bosBr.size() > 0
+                if aZZ.y.get(iL) != MSS.l_bosBr.get(0).get_y2() and aZZ.y.get(iL) != MSS.l_mssBr.get(0).get_y2()
+                    MSS.l_bosBr.unshift(set_lin(iL, cBOSbr)), MSS.lbBosBr.unshift(set_lab(iL, 'Br', cBOSbr))
+            else if aZZ.y.get(iL) != MSS.l_mssBr.get(0).get_y2()
+                MSS.l_bosBr.unshift(set_lin(iL, cBOSbr)), MSS.lbBosBr.unshift(set_lab(iL, 'Br', cBOSbr))
+        
+        if not iMSS and MSS.l_mssBl.size() > 0
+            MSS.l_mssBl.get(0).set_color(color(na)), MSS.lbMssBl.get(0).set_textcolor(color(na))
+        if not iMSS and MSS.l_mssBr.size() > 0
+            MSS.l_mssBr.get(0).set_color(color(na)), MSS.lbMssBr.get(0).set_textcolor(color(na))
+
+// Execute main draw
+draw(lenMS)
+
+// Limit BOS arrays
+if MSS.l_bosBl.size() > 200
+    MSS.l_bosBl.pop().delete(), MSS.lbBosBl.pop().delete()
+if MSS.l_bosBr.size() > 200
+    MSS.l_bosBr.pop().delete(), MSS.lbBosBr.pop().delete()
+
+//-----------------------------------------------------------------------------}
+// Fair Value Gaps
+//-----------------------------------------------------------------------------{
+imbalanceUP = close[1] > open[1] and (fvgType == 'FVG' ? low > high[2] : low < high[2])
+imbalanceDN = close[1] < open[1] and (fvgType == 'FVG' ? high < low[2] : high > low[2])
+
+if barstate.isfirst
+    for i = 0 to visFVG - 1
+        fvg_up.unshift(FVG.new(box(na), false, 0))
+        fvg_dn.unshift(FVG.new(box(na), false, 0))
+
+if imbalanceUP and per and showFVG
+    if imbalanceUP[1]
+        fvg_up.get(0).bx.set_lefttop(n - 2, low)
+        fvg_up.get(0).bx.set_rightbottom(n + 8, high[2])
+    else
+        fvg_up.unshift(FVG.new(
+            box.new(n - 2, fvgType == 'FVG' ? low : high[2], n, fvgType == 'FVG' ? high[2] : low,
+                bgcolor=color.new(cFVGbl, 90), border_color=color.new(cFVGbl, 65),
+                text_color=color.new(cFVGbl, 65), text_size=size.tiny, text=fvgType), true, 0))
+        fvg_up.pop().bx.delete()
+
+if imbalanceDN and per and showFVG
+    if imbalanceDN[1]
+        fvg_dn.get(0).bx.set_lefttop(n - 2, low[2])
+        fvg_dn.get(0).bx.set_rightbottom(n + 8, high)
+    else
+        fvg_dn.unshift(FVG.new(
+            box.new(n - 2, fvgType == 'FVG' ? low[2] : high, n, fvgType == 'FVG' ? high : low[2],
+                bgcolor=color.new(cFVGbr, 90), border_color=color.new(cFVGbr, 65),
+                text_color=color.new(cFVGbr, 65), text_size=size.tiny, text=fvgType), true, 0))
+        fvg_dn.pop().bx.delete()
+
+// FVG mitigation
+bxBack = 10
+for i = 0 to math.min(bxBack, fvg_up.size() - 1)
+    get = fvg_up.get(i)
+    if get.active
+        get.bx.set_right(n + 8)
+        if low < get.bx.get_top()
+            get.bx.set_border_style(line.style_dashed)
+        if low < get.bx.get_bottom()
+            get.bx.set_bgcolor(color.new(cFVGblBr, 95))
+            get.bx.set_border_style(line.style_dotted)
+            get.bx.set_right(n)
+            get.active := false
+
+for i = 0 to math.min(bxBack, fvg_dn.size() - 1)
+    get = fvg_dn.get(i)
+    if get.active
+        get.bx.set_right(n + 8)
+        if high > get.bx.get_bottom()
+            get.bx.set_border_style(line.style_dashed)
+        if high > get.bx.get_top()
+            get.bx.set_bgcolor(color.new(cFVGbrBr, 95))
+            get.bx.set_border_style(line.style_dotted)
+            get.bx.set_right(n)
+            get.active := false
+
+//-----------------------------------------------------------------------------}
+// Order Blocks
+//-----------------------------------------------------------------------------{
+[top, btm] = swings(lenOB)
+
+if showOB and per
+    // Bullish OB
+    if close > top.y and not top.crossed
+        top.crossed := true
+        minima = max_price[1]
+        maxima = min_price[1]
+        loc = time[1]
+        for i = 1 to (n - top.x) - 1
+            minima := math.min(min_price[i], minima)
+            maxima := minima == min_price[i] ? max_price[i] : maxima
+            loc := minima == min_price[i] ? time[i] : loc
+        bullish_ob.unshift(ob.new(maxima, minima, loc))
+    
+    if bullish_ob.size() > 0
+        for i = bullish_ob.size() - 1 to 0
+            element = bullish_ob.get(i)
+            if not element.breaker
+                if math.min(close, open) < element.btm
+                    element.breaker := true
+                    element.break_loc := time
+            else
+                if close > element.top
+                    bullish_ob.remove(i)
+    
+    // Bearish OB
+    if close < btm.y and not btm.crossed
+        btm.crossed := true
+        minima = min_price[1]
+        maxima = max_price[1]
+        loc = time[1]
+        for i = 1 to (n - btm.x) - 1
+            maxima := math.max(max_price[i], maxima)
+            minima := maxima == max_price[i] ? min_price[i] : minima
+            loc := maxima == max_price[i] ? time[i] : loc
+        bearish_ob.unshift(ob.new(maxima, minima, loc))
+    
+    if bearish_ob.size() > 0
+        for i = bearish_ob.size() - 1 to 0
+            element = bearish_ob.get(i)
+            if not element.breaker
+                if math.max(close, open) > element.top
+                    element.breaker := true
+                    element.break_loc := time
+            else
+                if close < element.btm
+                    bearish_ob.remove(i)
+
+// Display Order Blocks
+if barstate.islast and showOB
+    if ob_displays.size() > 0
+        for i = ob_displays.size() - 1 to 0
+            item = ob_displays.remove(i)
+            item.bx.delete()
+            item.ln.delete()
+            item.lb.delete()
+    
+    if showBullOB > 0 and bullish_ob.size() > 0
+        for i = 0 to math.min(showBullOB, bullish_ob.size()) - 1
+            bullish_ob.get(i).display_ob(cOBbl, cOBblBr, 'bl')
+    
+    if showBearOB > 0 and bearish_ob.size() > 0
+        for i = 0 to math.min(showBearOB, bearish_ob.size()) - 1
+            bearish_ob.get(i).display_ob(cOBbr, cOBbrBr, 'br')
+
+//-----------------------------------------------------------------------------}
+// Liquidity Management
+//-----------------------------------------------------------------------------{
+for i = 0 to liq_buy.size() - 1
+    x = liq_buy.get(i)
+    if not x.broken
+        x.bx.set_right(n + 3)
+        x.ln.set_x2(n + 3)
+        if not x.brokenTop and close > x.bx.get_top()
+            x.brokenTop := true
+        if not x.brokenBtm and close > x.bx.get_bottom()
+            x.brokenBtm := true
+        if x.brokenBtm
+            x.bx.set_bgcolor(color.new(cLiqBuy, 90))
+            x.ln.delete()
+            if x.brokenTop
+                x.broken := true
+                x.bx.set_right(n)
+
+for i = 0 to liq_sell.size() - 1
+    x = liq_sell.get(i)
+    if not x.broken
+        x.bx.set_right(n + 3)
+        x.ln.set_x2(n + 3)
+        if not x.brokenTop and close < x.bx.get_top()
+            x.brokenTop := true
+        if not x.brokenBtm and close < x.bx.get_bottom()
+            x.brokenBtm := true
+        if x.brokenTop
+            x.bx.set_bgcolor(color.new(cLiqSell, 90))
+            x.ln.delete()
+            if x.brokenBtm
+                x.broken := true
+                x.bx.set_right(n)
+
+//-----------------------------------------------------------------------------}
+// SMT Divergence
+//-----------------------------------------------------------------------------{
+[smtO, smtH, smtL, smtC] = request.security(smtSymbol, timeframe.period, [open, high, low, close])
+
+currSwingH = ta.pivothigh(high, smtLen, smtLen)
+currSwingL = ta.pivotlow(low, smtLen, smtLen)
+compSwingH = ta.pivothigh(smtH, smtLen, smtLen)
+compSwingL = ta.pivotlow(smtL, smtLen, smtLen)
+
+var float prevCurrH = na, var float prevCurrL = na
+var float prevCompH = na, var float prevCompL = na
+
+if not na(currSwingH)
+    prevCurrH := currSwingH
+if not na(currSwingL)
+    prevCurrL := currSwingL
+if not na(compSwingH)
+    prevCompH := compSwingH
+if not na(compSwingL)
+    prevCompL := compSwingL
+
+// Bearish SMT: Current HH, Compare LH
+bearSMT = showSMT and not na(currSwingH) and not na(prevCurrH[1]) and not na(compSwingH) and not na(prevCompH[1]) and currSwingH > prevCurrH[1] and compSwingH < prevCompH[1]
+
+// Bullish SMT: Current LL, Compare HL
+bullSMT = showSMT and not na(currSwingL) and not na(prevCurrL[1]) and not na(compSwingL) and not na(prevCompL[1]) and currSwingL < prevCurrL[1] and compSwingL > prevCompL[1]
+
+plotshape(bullSMT and per, 'Bullish SMT', shape.diamond, location.belowbar, cSMTbl, size=size.tiny, offset=-smtLen)
+plotshape(bearSMT and per, 'Bearish SMT', shape.diamond, location.abovebar, cSMTbr, size=size.tiny, offset=-smtLen)
+
+//-----------------------------------------------------------------------------}
+// Premium / Discount
+//-----------------------------------------------------------------------------{
+rangeHigh = ta.highest(high, pdLen)
+rangeLow = ta.lowest(low, pdLen)
+eq = (rangeHigh + rangeLow) / 2
+
+var box pdBoxPrem = na, var box pdBoxDisc = na
+var line eqLine = na
+
+if showPD
+    box.delete(pdBoxPrem[1])
+    box.delete(pdBoxDisc[1])
+    pdBoxPrem := box.new(n - 1, rangeHigh, n, eq, border_color=na, bgcolor=cPremium)
+    pdBoxDisc := box.new(n - 1, eq, n, rangeLow, border_color=na, bgcolor=cDiscount)
+
+if showEQ and showPD
+    line.delete(eqLine[1])
+    eqLine := line.new(n - pdLen, eq, n, eq, color=color.new(color.gray, 50), style=line.style_dotted)
+
+//-----------------------------------------------------------------------------}
+// Killzones
+//-----------------------------------------------------------------------------{
+inNY = time(timeframe.period, sessNY, 'America/New_York') and showNY
+inLDN = time(timeframe.period, sessLDN, 'America/New_York') and showLDN
+inASIA = time(timeframe.period, sessASIA, 'America/New_York') and showASIA
+
+bgcolor(per and inNY ? cNY : na, title='NY Session')
+bgcolor(per and inLDN ? cLDN : na, title='London Session')
+bgcolor(per and inASIA ? cASIA : na, title='Asia Session')
+
+//-----------------------------------------------------------------------------}
+// Previous Day High/Low
+//-----------------------------------------------------------------------------{
+[pdh, pdl] = request.security(syminfo.tickerid, 'D', [high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+plot(showPrevDay ? pdh : na, 'PDH', cPDH, 1, plot.style_linebr)
+plot(showPrevDay ? pdl : na, 'PDL', cPDL, 1, plot.style_linebr)
+
+//-----------------------------------------------------------------------------}
+// Alerts
+//-----------------------------------------------------------------------------{
+alertcondition(bullSMT, 'Bullish SMT', 'Bullish SMT Divergence on {{ticker}}')
+alertcondition(bearSMT, 'Bearish SMT', 'Bearish SMT Divergence on {{ticker}}')
+alertcondition(imbalanceUP, 'Bullish FVG', 'Bullish FVG formed on {{ticker}}')
+alertcondition(imbalanceDN, 'Bearish FVG', 'Bearish FVG formed on {{ticker}}')
+
+//-----------------------------------------------------------------------------}
+// Info Table
+//-----------------------------------------------------------------------------{
+var table infoTbl = table.new(position.top_right, 2, 5, bgcolor=color.new(#131722, 30), border_width=0)
+
+if barstate.islast
+    trend_str = MSS.dir == 1 ? '🟢 BULLISH' : MSS.dir == -1 ? '🔴 BEARISH' : '⚪ NEUTRAL'
+    zone_str = close > eq ? '🔴 PREMIUM' : '🟢 DISCOUNT'
+    session_str = inNY ? '🟠 NEW YORK' : inLDN ? '🔵 LONDON' : inASIA ? '🟣 ASIA' : '⚫ OFF'
+    
+    table.cell(infoTbl, 0, 0, 'Structure', text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 0, trend_str, text_color=color.white, text_size=size.small)
+    table.cell(infoTbl, 0, 1, 'Zone', text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 1, zone_str, text_color=color.white, text_size=size.small)
+    table.cell(infoTbl, 0, 2, 'Session', text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 2, session_str, text_color=color.white, text_size=size.small)
+    table.cell(infoTbl, 0, 3, 'EQ', text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 3, str.tostring(eq, '#.##'), text_color=color.white, text_size=size.small)
+    table.cell(infoTbl, 0, 4, 'Compare', text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 4, smtSymbol, text_color=color.yellow, text_size=size.small)

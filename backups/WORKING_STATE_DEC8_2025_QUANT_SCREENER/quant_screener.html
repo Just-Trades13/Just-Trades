@@ -1,0 +1,2359 @@
+{# Quant Stock Screener Tab
+   Tab: Quant Screener (/quant-screener)
+   Allowed Files: This file, /api/quant-screener/* endpoints
+#}
+{% extends "layout.html" %}
+{% block title %}Quant Screener - Just.Trades.{% endblock %}
+{% block page_title %}QUANT STOCK SCREENER{% endblock %}
+
+{% block content %}
+<div class="screener-wrapper">
+    <!-- Ticker Search Section -->
+    <section class="ticker-search-section">
+        <div class="search-container">
+            <div class="search-input-wrapper">
+                <i class="material-icons search-icon">search</i>
+                <input type="text" id="tickerSearchInput" placeholder="Search any ticker (e.g., AAPL, TSLA, MSFT)..." autocomplete="off">
+                <button class="btn btn-primary" id="tickerSearchBtn">
+                    <i class="material-icons">analytics</i> Get Report
+                </button>
+            </div>
+            <div class="search-suggestions" id="searchSuggestions"></div>
+        </div>
+    </section>
+
+    <!-- Screener Controls -->
+    <section class="screener-controls">
+        <header>
+            <div>
+                <h1>Quant Stock Screener</h1>
+                <p class="screener-subtitle">Find stocks using quantitative factor analysis</p>
+            </div>
+            <div class="screener-actions">
+                <button class="btn btn-secondary" id="saveScreenBtn">
+                    <i class="material-icons">save</i> Save Screen
+                </button>
+                <button class="btn btn-secondary" id="loadScreenBtn">
+                    <i class="material-icons">folder_open</i> Load Screen
+                </button>
+            </div>
+        </header>
+        
+        <div class="filters-grid">
+            <!-- Quant Rating Filter -->
+            <div class="filter-card">
+                <h3><i class="material-icons">analytics</i> Quant Rating</h3>
+                <div class="filter-row">
+                    <label>
+                        <span>Minimum Rating</span>
+                        <div class="select-shell">
+                            <select id="filterMinRating">
+                                <option value="">Any</option>
+                                <option value="strong_buy">Strong Buy</option>
+                                <option value="buy">Buy</option>
+                                <option value="hold">Hold</option>
+                                <option value="sell">Sell</option>
+                                <option value="strong_sell">Strong Sell</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label>
+                        <span>Min Quant Score (1.0-5.0)</span>
+                        <input type="number" id="filterMinScore" placeholder="1.0" min="1" max="5" step="0.1" value="">
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Factor Grades Filter -->
+            <div class="filter-card">
+                <h3><i class="material-icons">grade</i> Factor Grades</h3>
+                <div class="factor-filters">
+                    <label class="factor-filter">
+                        <span>Value</span>
+                        <div class="select-shell small">
+                            <select id="filterValue">
+                                <option value="">Any</option>
+                                <option value="A">A or better</option>
+                                <option value="B">B or better</option>
+                                <option value="C">C or better</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="factor-filter">
+                        <span>Growth</span>
+                        <div class="select-shell small">
+                            <select id="filterGrowth">
+                                <option value="">Any</option>
+                                <option value="A">A or better</option>
+                                <option value="B">B or better</option>
+                                <option value="C">C or better</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="factor-filter">
+                        <span>Profitability</span>
+                        <div class="select-shell small">
+                            <select id="filterProfitability">
+                                <option value="">Any</option>
+                                <option value="A">A or better</option>
+                                <option value="B">B or better</option>
+                                <option value="C">C or better</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="factor-filter">
+                        <span>Momentum</span>
+                        <div class="select-shell small">
+                            <select id="filterMomentum">
+                                <option value="">Any</option>
+                                <option value="A">A or better</option>
+                                <option value="B">B or better</option>
+                                <option value="C">C or better</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="factor-filter">
+                        <span>EPS Revisions</span>
+                        <div class="select-shell small">
+                            <select id="filterEpsRevisions">
+                                <option value="">Any</option>
+                                <option value="A">A or better</option>
+                                <option value="B">B or better</option>
+                                <option value="C">C or better</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Market Filters -->
+            <div class="filter-card">
+                <h3><i class="material-icons">business</i> Market Filters</h3>
+                <div class="filter-row">
+                    <label>
+                        <span>Sector</span>
+                        <div class="select-shell">
+                            <select id="filterSector">
+                                <option value="">All Sectors</option>
+                                <option value="technology">Technology</option>
+                                <option value="healthcare">Healthcare</option>
+                                <option value="financials">Financials</option>
+                                <option value="consumer_discretionary">Consumer Discretionary</option>
+                                <option value="consumer_staples">Consumer Staples</option>
+                                <option value="industrials">Industrials</option>
+                                <option value="energy">Energy</option>
+                                <option value="utilities">Utilities</option>
+                                <option value="materials">Materials</option>
+                                <option value="real_estate">Real Estate</option>
+                                <option value="communication_services">Communication Services</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label>
+                        <span>Market Cap</span>
+                        <div class="select-shell">
+                            <select id="filterMarketCap">
+                                <option value="">Any</option>
+                                <option value="mega">Mega Cap ($200B+)</option>
+                                <option value="large">Large Cap ($10B-$200B)</option>
+                                <option value="mid">Mid Cap ($2B-$10B)</option>
+                                <option value="small">Small Cap ($300M-$2B)</option>
+                                <option value="micro">Micro Cap (<$300M)</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="filter-row">
+                    <label>
+                        <span>Min Price ($)</span>
+                        <input type="number" id="filterMinPrice" placeholder="0" min="0" step="1">
+                    </label>
+                    <label>
+                        <span>Max Price ($)</span>
+                        <input type="number" id="filterMaxPrice" placeholder="No max" min="0" step="1">
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Quick Screens -->
+            <div class="filter-card quick-screens">
+                <h3><i class="material-icons">bolt</i> Quick Screens</h3>
+                <div class="quick-screen-buttons">
+                    <button class="quick-screen-btn" data-screen="strong_buys">
+                        <span class="qs-icon">🚀</span>
+                        <span class="qs-label">Strong Buys</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="value_plays">
+                        <span class="qs-icon">💎</span>
+                        <span class="qs-label">Value Plays</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="growth_stocks">
+                        <span class="qs-icon">📈</span>
+                        <span class="qs-label">Growth Stocks</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="momentum">
+                        <span class="qs-icon">⚡</span>
+                        <span class="qs-label">Momentum</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="dividend">
+                        <span class="qs-icon">💰</span>
+                        <span class="qs-label">Dividend</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="quality">
+                        <span class="qs-icon">⭐</span>
+                        <span class="qs-label">Quality</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="run-screen-container">
+            <button class="btn btn-primary btn-large" id="runScreenBtn">
+                <i class="material-icons">search</i> Run Screen
+            </button>
+            <span class="results-count" id="resultsCount">Ready to screen</span>
+        </div>
+    </section>
+    
+    <!-- Results Section -->
+    <section class="screener-results">
+        <header>
+            <div>
+                <h2>Screening Results</h2>
+                <p class="results-subtitle" id="resultsSubtitle">Run a screen to see results</p>
+            </div>
+            <div class="results-actions">
+                <button class="btn btn-secondary btn-small active" id="toggleLivePricesBtn" onclick="toggleLivePrices()" title="Toggle Live Price Updates">
+                    <i class="material-icons">sync</i> Live Prices ON
+                </button>
+                <button class="btn-icon" id="exportCsvBtn" title="Export to CSV">
+                    <i class="material-icons">download</i>
+                </button>
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="table" title="Table View">
+                        <i class="material-icons">view_list</i>
+                    </button>
+                    <button class="view-btn" data-view="cards" title="Card View">
+                        <i class="material-icons">grid_view</i>
+                    </button>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Table View -->
+        <div class="results-table-wrapper" id="tableView">
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="symbol">Symbol <i class="material-icons sort-icon">unfold_more</i></th>
+                        <th class="sortable" data-sort="name">Company <i class="material-icons sort-icon">unfold_more</i></th>
+                        <th class="sortable" data-sort="price">Price <i class="material-icons sort-icon">unfold_more</i></th>
+                        <th class="sortable" data-sort="change">Change <i class="material-icons sort-icon">unfold_more</i></th>
+                        <th class="sortable" data-sort="quant_score">Quant Score <i class="material-icons sort-icon">unfold_more</i></th>
+                        <th class="sortable" data-sort="rating">Rating <i class="material-icons sort-icon">unfold_more</i></th>
+                        <th>Value</th>
+                        <th>Growth</th>
+                        <th>Profit</th>
+                        <th>Momentum</th>
+                        <th>EPS Rev</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsTableBody">
+                    <tr class="placeholder-row">
+                        <td colspan="12">
+                            <div class="results-placeholder">
+                                <i class="material-icons">search</i>
+                                <p>Configure your filters and click "Run Screen" to find stocks</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Card View (hidden by default) -->
+        <div class="results-cards-wrapper" id="cardView" style="display: none;">
+            <div class="results-cards" id="resultsCards">
+                <div class="results-placeholder">
+                    <i class="material-icons">search</i>
+                    <p>Configure your filters and click "Run Screen" to find stocks</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Pagination -->
+        <div class="results-pagination" id="resultsPagination" style="display: none;">
+            <div class="pagination-info">
+                Showing <span id="showingStart">1</span>-<span id="showingEnd">25</span> of <span id="totalResults">0</span> results
+            </div>
+            <div class="pagination-controls">
+                <button class="pager-btn" id="prevPageBtn" disabled>
+                    <i class="material-icons">chevron_left</i>
+                </button>
+                <span class="page-indicator">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
+                <button class="pager-btn" id="nextPageBtn">
+                    <i class="material-icons">chevron_right</i>
+                </button>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Stock Detail Modal -->
+    <div class="stock-modal-overlay" id="stockModalOverlay">
+        <div class="stock-modal" id="stockModal">
+            <header class="modal-header">
+                <div class="modal-title">
+                    <h2 id="modalSymbol">AAPL</h2>
+                    <span class="modal-company" id="modalCompany">Apple Inc.</span>
+                </div>
+                <button class="modal-close" id="modalCloseBtn">
+                    <i class="material-icons">close</i>
+                </button>
+            </header>
+            <div class="modal-body">
+                <div class="modal-price-section">
+                    <div class="modal-price" id="modalPrice">$0.00</div>
+                    <div class="modal-change" id="modalChange">+0.00 (+0.00%)</div>
+                </div>
+                
+                <div class="modal-rating-section">
+                    <div class="quant-rating-display">
+                        <div class="rating-badge" id="modalRatingBadge">Strong Buy</div>
+                        <div class="quant-score-display">
+                            <span class="score-label">Quant Score</span>
+                            <span class="score-value" id="modalQuantScore">0.85</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="factor-grades-section">
+                    <h3>Factor Grades</h3>
+                    <div class="factor-grades-grid" id="modalFactorGrades">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <a href="#" class="btn btn-secondary" id="modalYahooLink" target="_blank">
+                        <i class="material-icons">open_in_new</i> Yahoo Finance
+                    </a>
+                    <a href="#" class="btn btn-secondary" id="modalTradingViewLink" target="_blank">
+                        <i class="material-icons">show_chart</i> TradingView
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .screener-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    
+    /* Ticker Search Section */
+    .ticker-search-section {
+        background: linear-gradient(135deg, rgba(11, 18, 33, 0.95) 0%, rgba(20, 30, 55, 0.95) 100%);
+        border-radius: 18px;
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        padding: 1.5rem 2rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .search-container {
+        position: relative;
+    }
+    
+    .search-input-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 12px;
+        padding: 0.5rem 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: all 0.3s ease;
+    }
+    
+    .search-input-wrapper:focus-within {
+        border-color: rgba(59, 130, 246, 0.6);
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+    }
+    
+    .search-icon {
+        color: var(--text-muted);
+        font-size: 1.5rem;
+    }
+    
+    #tickerSearchInput {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--text-primary);
+        font-size: 1.1rem;
+        padding: 0.75rem 0;
+        outline: none;
+    }
+    
+    #tickerSearchInput::placeholder {
+        color: var(--text-muted);
+    }
+    
+    #tickerSearchBtn {
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        white-space: nowrap;
+    }
+    
+    .search-suggestions {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: rgba(11, 18, 33, 0.98);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 12px;
+        margin-top: 0.5rem;
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 100;
+        display: none;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    }
+    
+    .search-suggestions.active {
+        display: block;
+    }
+    
+    .suggestion-item {
+        padding: 0.75rem 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .suggestion-item:hover {
+        background: rgba(59, 130, 246, 0.15);
+    }
+    
+    .suggestion-item:last-child {
+        border-bottom: none;
+    }
+    
+    .suggestion-symbol {
+        font-weight: 700;
+        color: var(--text-primary);
+        min-width: 60px;
+    }
+    
+    .suggestion-name {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        flex: 1;
+    }
+    
+    .suggestion-sector {
+        color: var(--primary-blue);
+        font-size: 0.8rem;
+        padding: 0.2rem 0.5rem;
+        background: rgba(59, 130, 246, 0.1);
+        border-radius: 4px;
+    }
+    
+    /* Screener Controls Section */
+    .screener-controls {
+        background: rgba(11, 18, 33, 0.92);
+        border-radius: 18px;
+        border: 1px solid rgba(59, 130, 246, 0.25);
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    
+    .screener-controls header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    
+    .screener-controls h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 600;
+    }
+    
+    .screener-subtitle {
+        margin: 0.25rem 0 0;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+    
+    .screener-actions {
+        display: flex;
+        gap: 0.75rem;
+    }
+    
+    /* Filter Cards Grid - 2x2 layout */
+    .filters-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: auto auto;
+        gap: 1rem;
+    }
+    
+    @media (max-width: 1200px) {
+        .filters-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+    }
+    
+    @media (max-width: 768px) {
+        .filters-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    
+    .filter-card {
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 14px;
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .filter-card h3 {
+        margin: 0;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(226, 232, 240, 0.9);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .filter-card h3 i {
+        font-size: 1.1rem;
+        color: var(--primary-color);
+    }
+    
+    .filter-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+    
+    .filter-card label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+    
+    .filter-card label > span {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+    }
+    
+    .filter-card input,
+    .filter-card select {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 10px;
+        color: #e2e8f0;
+        padding: 0.6rem 0.75rem;
+        font-size: 0.9rem;
+        font-family: inherit;
+    }
+    
+    .filter-card input:focus,
+    .filter-card select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(25, 184, 255, 0.15);
+    }
+    
+    .select-shell {
+        position: relative;
+    }
+    
+    .select-shell select {
+        width: 100%;
+        appearance: none;
+        padding-right: 2.5rem;
+    }
+    
+    .select-shell .material-icons {
+        position: absolute;
+        right: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        font-size: 1.1rem;
+        pointer-events: none;
+    }
+    
+    .select-shell.small select {
+        padding: 0.45rem 2rem 0.45rem 0.6rem;
+        font-size: 0.85rem;
+    }
+    
+    .select-shell.small .material-icons {
+        font-size: 1rem;
+        right: 0.5rem;
+    }
+    
+    /* Factor Filters */
+    .factor-filters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+        gap: 0.75rem;
+    }
+    
+    .factor-filter {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .factor-filter > span {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+    }
+    
+    /* Quick Screens - sits next to Market Filters */
+    .quick-screens {
+        /* No span - fits in the grid naturally */
+    }
+    
+    .quick-screen-buttons {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 0.75rem;
+    }
+    
+    .quick-screen-btn {
+        background: rgba(25, 184, 255, 0.1);
+        border: 1px solid rgba(25, 184, 255, 0.25);
+        border-radius: 12px;
+        padding: 0.85rem 1rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .quick-screen-btn:hover {
+        background: rgba(25, 184, 255, 0.2);
+        border-color: rgba(25, 184, 255, 0.4);
+        transform: translateY(-2px);
+    }
+    
+    .quick-screen-btn.active {
+        background: rgba(25, 184, 255, 0.25);
+        border-color: var(--primary-color);
+    }
+    
+    .qs-icon {
+        font-size: 1.5rem;
+    }
+    
+    .qs-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: rgba(226, 232, 240, 0.9);
+    }
+    
+    /* Run Screen Button */
+    .run-screen-container {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        padding-top: 0.5rem;
+    }
+    
+    .btn {
+        border: none;
+        border-radius: 12px;
+        padding: 0.7rem 1.4rem;
+        font-weight: 600;
+        font-size: 0.85rem;
+        letter-spacing: 0.06em;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s ease;
+        font-family: inherit;
+        text-decoration: none;
+    }
+    
+    .btn i {
+        font-size: 1.1rem;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+        color: #0b1120;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(25, 184, 255, 0.3);
+    }
+    
+    .btn-secondary {
+        background: rgba(148, 163, 184, 0.15);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        color: #e2e8f0;
+    }
+    
+    .btn-secondary:hover {
+        background: rgba(148, 163, 184, 0.25);
+    }
+    
+    .btn-small {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.75rem;
+    }
+    
+    .btn-secondary.active {
+        background: rgba(16, 185, 129, 0.2);
+        border-color: rgba(16, 185, 129, 0.5);
+        color: #10b981;
+    }
+    
+    #toggleLivePricesBtn {
+        transition: all 0.2s ease;
+    }
+    
+    #toggleLivePricesBtn.active i {
+        animation: pulse-sync 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes pulse-sync {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    .btn-large {
+        padding: 0.85rem 2rem;
+        font-size: 0.95rem;
+    }
+    
+    .results-count {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+    
+    /* Results Section */
+    .screener-results {
+        background: rgba(11, 18, 33, 0.92);
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
+    
+    .screener-results header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    
+    .screener-results h2 {
+        margin: 0;
+        font-size: 1.25rem;
+    }
+    
+    .results-subtitle {
+        margin: 0.25rem 0 0;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    
+    .results-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .btn-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: rgba(148, 163, 184, 0.08);
+        color: var(--text-muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .btn-icon:hover {
+        background: rgba(148, 163, 184, 0.15);
+        color: #e2e8f0;
+    }
+    
+    .view-toggle {
+        display: inline-flex;
+        background: rgba(148, 163, 184, 0.1);
+        border-radius: 10px;
+        padding: 3px;
+    }
+    
+    .view-btn {
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .view-btn.active {
+        background: rgba(25, 184, 255, 0.2);
+        color: var(--primary-color);
+    }
+    
+    .view-btn:hover:not(.active) {
+        color: #e2e8f0;
+    }
+    
+    /* Results Table */
+    .results-table-wrapper {
+        overflow-x: auto;
+    }
+    
+    .results-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.88rem;
+        min-width: 1000px;
+    }
+    
+    .results-table th {
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        text-align: left;
+        padding: 0.85rem 0.6rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        white-space: nowrap;
+    }
+    
+    .results-table th.sortable {
+        cursor: pointer;
+        user-select: none;
+    }
+    
+    .results-table th.sortable:hover {
+        color: #e2e8f0;
+    }
+    
+    .results-table th .sort-icon {
+        font-size: 1rem;
+        vertical-align: middle;
+        opacity: 0.5;
+    }
+    
+    .results-table th.sorted-asc .sort-icon,
+    .results-table th.sorted-desc .sort-icon {
+        opacity: 1;
+        color: var(--primary-color);
+    }
+    
+    .results-table td {
+        padding: 0.85rem 0.6rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+        color: #e2e8f0;
+    }
+    
+    .results-table tr:hover td {
+        background: rgba(59, 130, 246, 0.05);
+    }
+    
+    .results-table .placeholder-row td {
+        padding: 0;
+    }
+    
+    .results-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        color: var(--text-muted);
+        text-align: center;
+    }
+    
+    .results-placeholder i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+    
+    /* Stock Symbol Cell */
+    .stock-symbol {
+        font-weight: 700;
+        color: var(--primary-color);
+        cursor: pointer;
+    }
+    
+    .stock-symbol:hover {
+        text-decoration: underline;
+    }
+    
+    .stock-name {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    /* Price & Change */
+    .price-cell {
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+    
+    .change-cell {
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+    
+    .change-cell.positive {
+        color: #10b981;
+    }
+    
+    .change-cell.negative {
+        color: #f87171;
+    }
+    
+    /* Quant Score */
+    .quant-score-cell {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .score-bar {
+        width: 60px;
+        height: 6px;
+        background: rgba(148, 163, 184, 0.2);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    
+    .score-bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.3s ease;
+    }
+    
+    .score-bar-fill.excellent {
+        background: linear-gradient(90deg, #10b981, #34d399);
+    }
+    
+    .score-bar-fill.good {
+        background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    }
+    
+    .score-bar-fill.average {
+        background: linear-gradient(90deg, #f59e0b, #fbbf24);
+    }
+    
+    .score-bar-fill.poor {
+        background: linear-gradient(90deg, #f87171, #ef4444);
+    }
+    
+    /* Rating Badge */
+    .rating-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.3rem 0.65rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        white-space: nowrap;
+    }
+    
+    .rating-badge.strong-buy {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+    }
+    
+    .rating-badge.buy {
+        background: rgba(59, 130, 246, 0.2);
+        color: #60a5fa;
+    }
+    
+    .rating-badge.hold {
+        background: rgba(245, 158, 11, 0.2);
+        color: #fbbf24;
+    }
+    
+    .rating-badge.sell {
+        background: rgba(248, 113, 113, 0.2);
+        color: #f87171;
+    }
+    
+    .rating-badge.strong-sell {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+    }
+    
+    /* Grade Badges */
+    .grade-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+    
+    .grade-badge.grade-a {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+    }
+    
+    .grade-badge.grade-b {
+        background: rgba(59, 130, 246, 0.2);
+        color: #60a5fa;
+    }
+    
+    .grade-badge.grade-c {
+        background: rgba(245, 158, 11, 0.2);
+        color: #fbbf24;
+    }
+    
+    .grade-badge.grade-d {
+        background: rgba(248, 113, 113, 0.2);
+        color: #f87171;
+    }
+    
+    .grade-badge.grade-f {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+    }
+    
+    /* Action Buttons */
+    .action-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: none;
+        background: rgba(148, 163, 184, 0.1);
+        color: var(--text-muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .action-btn:hover {
+        background: rgba(25, 184, 255, 0.2);
+        color: var(--primary-color);
+    }
+    
+    .action-btn i {
+        font-size: 1rem;
+    }
+    
+    /* Results Cards View */
+    .results-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+    
+    .stock-card {
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 14px;
+        padding: 1rem 1.25rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        min-height: 160px;
+    }
+    
+    .stock-card:hover {
+        border-color: rgba(25, 184, 255, 0.4);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+    
+    .stock-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 0.75rem;
+        gap: 0.5rem;
+    }
+    
+    .stock-card-header > div:first-child {
+        flex: 1;
+        min-width: 0; /* Allow text truncation */
+    }
+    
+    .stock-card-symbol {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--primary-color);
+        line-height: 1.2;
+    }
+    
+    .stock-card-name {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 0.2rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 160px;
+        line-height: 1.3;
+    }
+    
+    .stock-card-price {
+        text-align: right;
+        flex-shrink: 0;
+    }
+    
+    .stock-card-price-value {
+        font-size: 1rem;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+    
+    .stock-card-change {
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-top: 0.15rem;
+    }
+    
+    .stock-card-body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        flex: 1;
+    }
+    
+    .stock-card-rating {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .stock-card-rating .rating-badge {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.6rem;
+    }
+    
+    .stock-card-score {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        white-space: nowrap;
+    }
+    
+    .stock-card-score strong {
+        color: #e2e8f0;
+        font-weight: 600;
+    }
+    
+    .stock-card-factors {
+        display: flex;
+        gap: 0.35rem;
+        flex-wrap: nowrap;
+        justify-content: space-between;
+    }
+    
+    .factor-mini {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.15rem;
+        padding: 0.35rem 0.4rem;
+        background: rgba(148, 163, 184, 0.08);
+        border-radius: 6px;
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .factor-mini .grade-badge {
+        width: 26px !important;
+        height: 26px !important;
+        font-size: 0.65rem !important;
+        padding: 0 !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .factor-mini-label {
+        font-size: 0.55rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+    
+    /* Pagination */
+    .results-pagination {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    
+    .pagination-info {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    
+    .pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .page-indicator {
+        color: #e2e8f0;
+        font-size: 0.85rem;
+    }
+    
+    .pager-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: rgba(148, 163, 184, 0.08);
+        color: #e2e8f0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .pager-btn:hover:not(:disabled) {
+        background: rgba(148, 163, 184, 0.15);
+    }
+    
+    .pager-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+    
+    /* Stock Detail Modal */
+    .stock-modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.75);
+        z-index: 2000;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    
+    .stock-modal-overlay.active {
+        display: flex;
+    }
+    
+    .stock-modal {
+        background: var(--background-light);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 18px;
+        width: 100%;
+        max-width: 500px;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+    
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 1.5rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    
+    .modal-title h2 {
+        margin: 0;
+        font-size: 1.5rem;
+        color: var(--primary-color);
+    }
+    
+    .modal-company {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+    
+    .modal-close {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        border: none;
+        background: rgba(148, 163, 184, 0.1);
+        color: var(--text-muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .modal-close:hover {
+        background: rgba(248, 113, 113, 0.2);
+        color: #f87171;
+    }
+    
+    .modal-body {
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    
+    .modal-price-section {
+        display: flex;
+        align-items: baseline;
+        gap: 1rem;
+    }
+    
+    .modal-price {
+        font-size: 2rem;
+        font-weight: 700;
+    }
+    
+    .modal-change {
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    
+    .modal-change.positive {
+        color: #10b981;
+    }
+    
+    .modal-change.negative {
+        color: #f87171;
+    }
+    
+    .modal-rating-section {
+        display: flex;
+        justify-content: center;
+    }
+    
+    .quant-rating-display {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 1.25rem 2rem;
+        background: rgba(15, 23, 42, 0.5);
+        border-radius: 14px;
+    }
+    
+    .quant-rating-display .rating-badge {
+        font-size: 0.85rem;
+        padding: 0.5rem 1rem;
+    }
+    
+    .quant-score-display {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    
+    .score-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+    }
+    
+    .score-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #e2e8f0;
+    }
+    
+    .factor-grades-section h3 {
+        margin: 0 0 1rem;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+    }
+    
+    .factor-grades-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 0.75rem;
+    }
+    
+    .factor-grade-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.75rem 0.5rem;
+        background: rgba(15, 23, 42, 0.5);
+        border-radius: 10px;
+    }
+    
+    .factor-grade-item .grade-badge {
+        width: 36px;
+        height: 36px;
+        font-size: 0.9rem;
+    }
+    
+    .factor-grade-label {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        text-align: center;
+    }
+    
+    .modal-actions {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+    }
+    
+    /* Loading State */
+    .loading-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: var(--primary-color);
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .filters-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .quick-screens {
+            grid-column: span 1;
+        }
+        
+        .filter-row {
+            grid-template-columns: 1fr;
+        }
+        
+        .factor-grades-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        .screener-controls header {
+            flex-direction: column;
+        }
+        
+        .screener-actions {
+            width: 100%;
+            justify-content: flex-end;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // ============================================================================
+    // Quant Stock Screener JavaScript
+    // ============================================================================
+    
+    // State
+    let currentResults = [];
+    let currentPage = 1;
+    const resultsPerPage = 25;
+    let currentSort = { field: 'quant_score', direction: 'desc' };
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeEventListeners();
+    });
+    
+    function initializeEventListeners() {
+        // Ticker Search
+        const searchInput = document.getElementById('tickerSearchInput');
+        const searchBtn = document.getElementById('tickerSearchBtn');
+        const suggestions = document.getElementById('searchSuggestions');
+        
+        searchInput?.addEventListener('input', debounce(handleSearchInput, 300));
+        searchInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchTicker(searchInput.value.trim().toUpperCase());
+            }
+        });
+        searchBtn?.addEventListener('click', () => {
+            searchTicker(searchInput.value.trim().toUpperCase());
+        });
+        
+        // Close suggestions when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search-container')) {
+                suggestions?.classList.remove('active');
+            }
+        });
+        
+        // Run Screen button
+        document.getElementById('runScreenBtn')?.addEventListener('click', runScreen);
+        
+        // Quick screen buttons
+        document.querySelectorAll('.quick-screen-btn').forEach(btn => {
+            btn.addEventListener('click', () => applyQuickScreen(btn.dataset.screen));
+        });
+        
+        // View toggle
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.addEventListener('click', () => toggleView(btn.dataset.view));
+        });
+        
+        // Sortable columns
+        document.querySelectorAll('.results-table th.sortable').forEach(th => {
+            th.addEventListener('click', () => sortResults(th.dataset.sort));
+        });
+        
+        // Modal close
+        document.getElementById('modalCloseBtn')?.addEventListener('click', closeModal);
+        document.getElementById('stockModalOverlay')?.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeModal();
+        });
+        
+        // Pagination
+        document.getElementById('prevPageBtn')?.addEventListener('click', () => changePage(-1));
+        document.getElementById('nextPageBtn')?.addEventListener('click', () => changePage(1));
+        
+        // Export CSV
+        document.getElementById('exportCsvBtn')?.addEventListener('click', exportToCsv);
+        
+        // Save/Load screens
+        document.getElementById('saveScreenBtn')?.addEventListener('click', saveScreen);
+        document.getElementById('loadScreenBtn')?.addEventListener('click', loadScreen);
+    }
+    
+    // Debounce helper
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+    
+    // Handle search input for suggestions
+    async function handleSearchInput(e) {
+        const query = e.target.value.trim().toUpperCase();
+        const suggestions = document.getElementById('searchSuggestions');
+        
+        if (query.length < 1) {
+            suggestions.classList.remove('active');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/quant-screener/search?q=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            
+            if (data.success && data.results.length > 0) {
+                suggestions.innerHTML = data.results.map(stock => `
+                    <div class="suggestion-item" onclick="searchTicker('${stock.symbol}')">
+                        <span class="suggestion-symbol">${stock.symbol}</span>
+                        <span class="suggestion-name">${stock.name}</span>
+                        <span class="suggestion-sector">${stock.sector}</span>
+                    </div>
+                `).join('');
+                suggestions.classList.add('active');
+            } else {
+                suggestions.innerHTML = `
+                    <div class="suggestion-item" onclick="searchTicker('${query}')">
+                        <span class="suggestion-symbol">${query}</span>
+                        <span class="suggestion-name">Search for ${query}</span>
+                        <span class="suggestion-sector">Any</span>
+                    </div>
+                `;
+                suggestions.classList.add('active');
+            }
+        } catch (error) {
+            console.error('Error fetching suggestions:', error);
+        }
+    }
+    
+    // Search for a specific ticker and show report
+    async function searchTicker(symbol) {
+        if (!symbol) {
+            showToast('Please enter a ticker symbol', 'warning');
+            return;
+        }
+        
+        const searchBtn = document.getElementById('tickerSearchBtn');
+        const originalContent = searchBtn.innerHTML;
+        searchBtn.innerHTML = '<span class="loading-spinner"></span> Loading...';
+        searchBtn.disabled = true;
+        
+        // Hide suggestions
+        document.getElementById('searchSuggestions')?.classList.remove('active');
+        
+        try {
+            const response = await fetch(`/api/quant-screener/ticker/${symbol}`);
+            const data = await response.json();
+            
+            if (data.success && data.stock) {
+                openStockModal(data.stock);
+                showToast(`Loaded report for ${symbol}`, 'success');
+            } else {
+                showToast(data.error || `Could not find data for ${symbol}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error searching ticker:', error);
+            showToast('Error fetching ticker data', 'error');
+        } finally {
+            searchBtn.innerHTML = originalContent;
+            searchBtn.disabled = false;
+        }
+    }
+    
+    // Run the screen with current filters
+    async function runScreen() {
+        const btn = document.getElementById('runScreenBtn');
+        const originalContent = btn.innerHTML;
+        btn.innerHTML = '<span class="loading-spinner"></span> Screening...';
+        btn.disabled = true;
+        
+        try {
+            const filters = collectFilters();
+            
+            const response = await fetch('/api/quant-screener/screen', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(filters)
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                currentResults = data.results || [];
+                currentPage = 1;
+                displayResults();
+                
+                document.getElementById('resultsCount').textContent = 
+                    `${currentResults.length} stocks found`;
+                document.getElementById('resultsSubtitle').textContent = 
+                    `Showing ${currentResults.length} stocks matching your criteria`;
+            } else {
+                showToast(`Error: ${data.error || 'Failed to run screen'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error running screen:', error);
+            showToast('Error running screen', 'error');
+        } finally {
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
+        }
+    }
+    
+    // Collect filter values
+    function collectFilters() {
+        return {
+            min_rating: document.getElementById('filterMinRating')?.value || '',
+            min_score: parseFloat(document.getElementById('filterMinScore')?.value) || 0,
+            value_grade: document.getElementById('filterValue')?.value || '',
+            growth_grade: document.getElementById('filterGrowth')?.value || '',
+            profitability_grade: document.getElementById('filterProfitability')?.value || '',
+            momentum_grade: document.getElementById('filterMomentum')?.value || '',
+            eps_revisions_grade: document.getElementById('filterEpsRevisions')?.value || '',
+            sector: document.getElementById('filterSector')?.value || '',
+            market_cap: document.getElementById('filterMarketCap')?.value || '',
+            min_price: parseFloat(document.getElementById('filterMinPrice')?.value) || 0,
+            max_price: parseFloat(document.getElementById('filterMaxPrice')?.value) || null
+        };
+    }
+    
+    // Apply quick screen preset
+    function applyQuickScreen(screenType) {
+        // Reset all filters first
+        resetFilters();
+        
+        // Apply preset filters
+        switch (screenType) {
+            // Seeking Alpha style: 1.0-5.0 scale
+            case 'strong_buys':
+                document.getElementById('filterMinRating').value = 'strong_buy';
+                document.getElementById('filterMinScore').value = '4.5';  // Strong Buy threshold
+                break;
+            case 'value_plays':
+                document.getElementById('filterValue').value = 'A';
+                document.getElementById('filterMinScore').value = '3.0';
+                break;
+            case 'growth_stocks':
+                document.getElementById('filterGrowth').value = 'A';
+                document.getElementById('filterMomentum').value = 'B';
+                document.getElementById('filterMinScore').value = '3.0';
+                break;
+            case 'momentum':
+                document.getElementById('filterMomentum').value = 'A';
+                document.getElementById('filterMinScore').value = '3.5';  // Buy threshold
+                break;
+            case 'dividend':
+                document.getElementById('filterValue').value = 'B';
+                document.getElementById('filterProfitability').value = 'B';
+                break;
+            case 'quality':
+                document.getElementById('filterProfitability').value = 'A';
+                document.getElementById('filterGrowth').value = 'B';
+                document.getElementById('filterMinScore').value = '4.0';
+                break;
+        }
+        
+        // Highlight active quick screen
+        document.querySelectorAll('.quick-screen-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.screen === screenType);
+        });
+        
+        // Auto-run the screen
+        runScreen();
+    }
+    
+    function resetFilters() {
+        document.getElementById('filterMinRating').value = '';
+        document.getElementById('filterMinScore').value = '';
+        document.getElementById('filterValue').value = '';
+        document.getElementById('filterGrowth').value = '';
+        document.getElementById('filterProfitability').value = '';
+        document.getElementById('filterMomentum').value = '';
+        document.getElementById('filterEpsRevisions').value = '';
+        document.getElementById('filterSector').value = '';
+        document.getElementById('filterMarketCap').value = '';
+        document.getElementById('filterMinPrice').value = '';
+        document.getElementById('filterMaxPrice').value = '';
+    }
+    
+    // Display results
+    function displayResults() {
+        const sortedResults = sortResultsArray([...currentResults]);
+        const startIdx = (currentPage - 1) * resultsPerPage;
+        const endIdx = startIdx + resultsPerPage;
+        const pageResults = sortedResults.slice(startIdx, endIdx);
+        
+        // Update table view
+        updateTableView(pageResults);
+        
+        // Update card view
+        updateCardView(pageResults);
+        
+        // Update pagination
+        updatePagination(sortedResults.length);
+    }
+    
+    function updateTableView(results) {
+        const tbody = document.getElementById('resultsTableBody');
+        if (!tbody) return;
+        
+        if (results.length === 0) {
+            tbody.innerHTML = `
+                <tr class="placeholder-row">
+                    <td colspan="12">
+                        <div class="results-placeholder">
+                            <i class="material-icons">search_off</i>
+                            <p>No stocks match your criteria. Try adjusting your filters.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tbody.innerHTML = results.map(stock => `
+            <tr>
+                <td><span class="stock-symbol" onclick="openStockModal('${stock.symbol}')">${stock.symbol}</span></td>
+                <td class="stock-name" title="${stock.name}">${stock.name}</td>
+                <td class="price-cell">$${stock.price.toFixed(2)}</td>
+                <td class="change-cell ${stock.change >= 0 ? 'positive' : 'negative'}">
+                    ${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%
+                </td>
+                <td>
+                    <div class="quant-score-cell">
+                        <span>${stock.quant_score.toFixed(2)}</span>
+                        <div class="score-bar">
+                            <div class="score-bar-fill ${getScoreClass(stock.quant_score)}" 
+                                 style="width: ${((stock.quant_score - 1) / 4) * 100}%"></div>
+                        </div>
+                    </div>
+                </td>
+                <td><span class="rating-badge ${getRatingClass(stock.rating)}">${stock.rating}</span></td>
+                <td><span class="grade-badge ${getGradeClass(stock.factors.value.grade)}">${stock.factors.value.grade}</span></td>
+                <td><span class="grade-badge ${getGradeClass(stock.factors.growth.grade)}">${stock.factors.growth.grade}</span></td>
+                <td><span class="grade-badge ${getGradeClass(stock.factors.profitability.grade)}">${stock.factors.profitability.grade}</span></td>
+                <td><span class="grade-badge ${getGradeClass(stock.factors.momentum.grade)}">${stock.factors.momentum.grade}</span></td>
+                <td><span class="grade-badge ${getGradeClass(stock.factors.eps_revisions.grade)}">${stock.factors.eps_revisions.grade}</span></td>
+                <td>
+                    <button class="action-btn" onclick="openStockModal('${stock.symbol}')" title="View Details">
+                        <i class="material-icons">visibility</i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+    
+    function updateCardView(results) {
+        const container = document.getElementById('resultsCards');
+        if (!container) return;
+        
+        if (results.length === 0) {
+            container.innerHTML = `
+                <div class="results-placeholder">
+                    <i class="material-icons">search_off</i>
+                    <p>No stocks match your criteria. Try adjusting your filters.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = results.map(stock => `
+            <div class="stock-card" onclick="openStockModal('${stock.symbol}')">
+                <div class="stock-card-header">
+                    <div>
+                        <div class="stock-card-symbol">${stock.symbol}</div>
+                        <div class="stock-card-name" title="${stock.name}">${stock.name}</div>
+                    </div>
+                    <div class="stock-card-price">
+                        <div class="stock-card-price-value">$${stock.price.toFixed(2)}</div>
+                        <div class="stock-card-change ${stock.change >= 0 ? 'positive' : 'negative'}">
+                            ${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%
+                        </div>
+                    </div>
+                </div>
+                <div class="stock-card-body">
+                    <div class="stock-card-rating">
+                        <span class="rating-badge ${getRatingClass(stock.rating)}">${stock.rating}</span>
+                        <span class="stock-card-score">Score: <strong>${stock.quant_score.toFixed(2)}</strong></span>
+                    </div>
+                    <div class="stock-card-factors">
+                        <div class="factor-mini">
+                            <span class="grade-badge ${getGradeClass(stock.factors.value.grade)}">${stock.factors.value.grade}</span>
+                            <span class="factor-mini-label">Val</span>
+                        </div>
+                        <div class="factor-mini">
+                            <span class="grade-badge ${getGradeClass(stock.factors.growth.grade)}">${stock.factors.growth.grade}</span>
+                            <span class="factor-mini-label">Grw</span>
+                        </div>
+                        <div class="factor-mini">
+                            <span class="grade-badge ${getGradeClass(stock.factors.profitability.grade)}">${stock.factors.profitability.grade}</span>
+                            <span class="factor-mini-label">Prof</span>
+                        </div>
+                        <div class="factor-mini">
+                            <span class="grade-badge ${getGradeClass(stock.factors.momentum.grade)}">${stock.factors.momentum.grade}</span>
+                            <span class="factor-mini-label">Mom</span>
+                        </div>
+                        <div class="factor-mini">
+                            <span class="grade-badge ${getGradeClass(stock.factors.eps_revisions.grade)}">${stock.factors.eps_revisions.grade}</span>
+                            <span class="factor-mini-label">EPS</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    function updatePagination(totalResults) {
+        const pagination = document.getElementById('resultsPagination');
+        if (!pagination) return;
+        
+        const totalPages = Math.ceil(totalResults / resultsPerPage);
+        
+        if (totalResults <= resultsPerPage) {
+            pagination.style.display = 'none';
+            return;
+        }
+        
+        pagination.style.display = 'flex';
+        
+        document.getElementById('showingStart').textContent = ((currentPage - 1) * resultsPerPage) + 1;
+        document.getElementById('showingEnd').textContent = Math.min(currentPage * resultsPerPage, totalResults);
+        document.getElementById('totalResults').textContent = totalResults;
+        document.getElementById('currentPage').textContent = currentPage;
+        document.getElementById('totalPages').textContent = totalPages;
+        
+        document.getElementById('prevPageBtn').disabled = currentPage <= 1;
+        document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
+    }
+    
+    function changePage(delta) {
+        const totalPages = Math.ceil(currentResults.length / resultsPerPage);
+        const newPage = currentPage + delta;
+        
+        if (newPage >= 1 && newPage <= totalPages) {
+            currentPage = newPage;
+            displayResults();
+        }
+    }
+    
+    // Sorting
+    function sortResults(field) {
+        if (currentSort.field === field) {
+            currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            currentSort.field = field;
+            currentSort.direction = 'desc';
+        }
+        
+        // Update sort indicators
+        document.querySelectorAll('.results-table th.sortable').forEach(th => {
+            th.classList.remove('sorted-asc', 'sorted-desc');
+            if (th.dataset.sort === field) {
+                th.classList.add(`sorted-${currentSort.direction}`);
+            }
+        });
+        
+        displayResults();
+    }
+    
+    function sortResultsArray(results) {
+        return results.sort((a, b) => {
+            let aVal = a[currentSort.field];
+            let bVal = b[currentSort.field];
+            
+            // Handle nested values (factors)
+            if (currentSort.field.includes('.')) {
+                const parts = currentSort.field.split('.');
+                aVal = a[parts[0]][parts[1]];
+                bVal = b[parts[0]][parts[1]];
+            }
+            
+            // Handle string comparison
+            if (typeof aVal === 'string') {
+                aVal = aVal.toLowerCase();
+                bVal = bVal.toLowerCase();
+            }
+            
+            if (currentSort.direction === 'asc') {
+                return aVal > bVal ? 1 : -1;
+            } else {
+                return aVal < bVal ? 1 : -1;
+            }
+        });
+    }
+    
+    // View toggle
+    function toggleView(view) {
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === view);
+        });
+        
+        document.getElementById('tableView').style.display = view === 'table' ? 'block' : 'none';
+        document.getElementById('cardView').style.display = view === 'cards' ? 'block' : 'none';
+    }
+    
+    // Modal - accepts either a symbol string or a stock object
+    function openStockModal(symbolOrStock) {
+        let stock;
+        
+        // Check if we received a stock object directly or a symbol string
+        if (typeof symbolOrStock === 'object' && symbolOrStock !== null) {
+            stock = symbolOrStock;
+        } else {
+            // Look up by symbol in current results
+            stock = currentResults.find(s => s.symbol === symbolOrStock);
+            if (!stock) {
+                console.error('Stock not found in results:', symbolOrStock);
+                showToast(`Stock ${symbolOrStock} not found in current results. Try searching for it above.`, 'warning');
+                return;
+            }
+        }
+        
+        document.getElementById('modalSymbol').textContent = stock.symbol;
+        document.getElementById('modalCompany').textContent = stock.name;
+        
+        // Handle price display
+        if (stock.price !== null && stock.price !== undefined) {
+            document.getElementById('modalPrice').textContent = `$${stock.price.toFixed(2)}`;
+        } else {
+            document.getElementById('modalPrice').textContent = 'N/A';
+        }
+        
+        const changeEl = document.getElementById('modalChange');
+        const change = stock.change || 0;
+        changeEl.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
+        changeEl.className = `modal-change ${change >= 0 ? 'positive' : 'negative'}`;
+        
+        const ratingBadge = document.getElementById('modalRatingBadge');
+        ratingBadge.textContent = stock.rating;
+        ratingBadge.className = `rating-badge ${getRatingClass(stock.rating)}`;
+        
+        document.getElementById('modalQuantScore').textContent = stock.quant_score.toFixed(2);
+        
+        // Factor grades
+        const factorsHtml = Object.entries(stock.factors).map(([key, factor]) => `
+            <div class="factor-grade-item">
+                <span class="grade-badge ${getGradeClass(factor.grade)}">${factor.grade}</span>
+                <span class="factor-grade-label">${formatFactorName(key)}</span>
+            </div>
+        `).join('');
+        document.getElementById('modalFactorGrades').innerHTML = factorsHtml;
+        
+        // Links
+        document.getElementById('modalYahooLink').href = `https://finance.yahoo.com/quote/${stock.symbol}`;
+        document.getElementById('modalTradingViewLink').href = `https://www.tradingview.com/symbols/${stock.symbol}`;
+        
+        document.getElementById('stockModalOverlay').classList.add('active');
+    }
+    
+    function closeModal() {
+        document.getElementById('stockModalOverlay').classList.remove('active');
+    }
+    
+    // Helper functions
+    // Seeking Alpha style: 1.0 (Strong Sell) to 5.0 (Strong Buy)
+    function getScoreClass(score) {
+        if (score >= 4.5) return 'excellent';  // Strong Buy
+        if (score >= 3.5) return 'good';       // Buy
+        if (score >= 2.5) return 'average';    // Hold
+        return 'poor';                          // Sell/Strong Sell
+    }
+    
+    function getRatingClass(rating) {
+        const r = rating.toLowerCase().replace(' ', '-');
+        return r;
+    }
+    
+    function getGradeClass(grade) {
+        // Seeking Alpha style grades: A+, A, A-, B+, B, B-, C+, C, C-, D+, D, F
+        const g = grade.charAt(0).toLowerCase();
+        if (g === 'a') return 'grade-a';
+        if (g === 'b') return 'grade-b';
+        if (g === 'c') return 'grade-c';
+        if (g === 'd') return 'grade-d';
+        return 'grade-f';
+    }
+    
+    function formatFactorName(key) {
+        return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+    
+    // Export to CSV
+    function exportToCsv() {
+        if (currentResults.length === 0) {
+            showToast('No results to export', 'error');
+            return;
+        }
+        
+        const headers = ['Symbol', 'Company', 'Price', 'Change %', 'Quant Score', 'Rating', 'Value', 'Growth', 'Profitability', 'Momentum', 'EPS Revisions'];
+        const rows = currentResults.map(s => [
+            s.symbol,
+            `"${s.name}"`,
+            s.price.toFixed(2),
+            s.change.toFixed(2),
+            s.quant_score.toFixed(2),
+            s.rating,
+            s.factors.value.grade,
+            s.factors.growth.grade,
+            s.factors.profitability.grade,
+            s.factors.momentum.grade,
+            s.factors.eps_revisions.grade
+        ]);
+        
+        const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `quant_screen_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        
+        URL.revokeObjectURL(url);
+        showToast('CSV exported successfully', 'success');
+    }
+    
+    // Save/Load screens
+    function saveScreen() {
+        const filters = collectFilters();
+        const name = prompt('Enter a name for this screen:');
+        if (!name) return;
+        
+        const screens = JSON.parse(localStorage.getItem('quantScreens') || '{}');
+        screens[name] = filters;
+        localStorage.setItem('quantScreens', JSON.stringify(screens));
+        
+        showToast(`Screen "${name}" saved`, 'success');
+    }
+    
+    function loadScreen() {
+        const screens = JSON.parse(localStorage.getItem('quantScreens') || '{}');
+        const names = Object.keys(screens);
+        
+        if (names.length === 0) {
+            showToast('No saved screens found', 'error');
+            return;
+        }
+        
+        const name = prompt(`Available screens:\n${names.join('\n')}\n\nEnter screen name to load:`);
+        if (!name || !screens[name]) {
+            showToast('Screen not found', 'error');
+            return;
+        }
+        
+        const filters = screens[name];
+        
+        // Apply filters
+        document.getElementById('filterMinRating').value = filters.min_rating || '';
+        document.getElementById('filterMinScore').value = filters.min_score || 0;
+        document.getElementById('filterValue').value = filters.value_grade || '';
+        document.getElementById('filterGrowth').value = filters.growth_grade || '';
+        document.getElementById('filterProfitability').value = filters.profitability_grade || '';
+        document.getElementById('filterMomentum').value = filters.momentum_grade || '';
+        document.getElementById('filterEpsRevisions').value = filters.eps_revisions_grade || '';
+        document.getElementById('filterSector').value = filters.sector || '';
+        document.getElementById('filterMarketCap').value = filters.market_cap || '';
+        document.getElementById('filterMinPrice').value = filters.min_price || '';
+        document.getElementById('filterMaxPrice').value = filters.max_price || '';
+        
+        showToast(`Screen "${name}" loaded`, 'success');
+    }
+    
+    // Toast notifications
+    function showToast(message, type = 'info') {
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.style.cssText = 'position: fixed; top: 1.5rem; right: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; z-index: 3000;';
+            document.body.appendChild(container);
+        }
+        
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid ${type === 'success' ? 'rgba(16, 185, 129, 0.6)' : type === 'error' ? 'rgba(248, 113, 113, 0.6)' : 'rgba(148, 163, 184, 0.2)'};
+            border-radius: 999px;
+            padding: 0.65rem 1.1rem;
+            font-size: 0.85rem;
+            color: ${type === 'success' ? '#bbf7d0' : type === 'error' ? '#fecaca' : '#e2e8f0'};
+            box-shadow: 0 10px 20px rgba(2, 6, 23, 0.45);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        `;
+        toast.textContent = message;
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(-8px)';
+        }, 2500);
+        setTimeout(() => toast.remove(), 3000);
+    }
+    
+    // ============================================================================
+    // LIVE PRICE UPDATES FROM TRADINGVIEW
+    // ============================================================================
+    
+    let livePricesEnabled = true;
+    let livePriceUpdateInterval = null;
+    
+    /**
+     * Fetch live prices from TradingView via our backend API
+     * Uses the same session cookies as the recorder system
+     */
+    async function fetchLivePrices(symbols) {
+        if (!symbols || symbols.length === 0) return {};
+        
+        try {
+            const response = await fetch('/api/quant-screener/live-prices', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbols: symbols })
+            });
+            
+            if (!response.ok) {
+                console.warn('Failed to fetch live prices:', response.status);
+                return {};
+            }
+            
+            const data = await response.json();
+            return data.prices || {};
+        } catch (error) {
+            console.error('Error fetching live prices:', error);
+            return {};
+        }
+    }
+    
+    /**
+     * Update displayed prices with live data
+     */
+    async function updateLivePrices() {
+        if (!livePricesEnabled || currentResults.length === 0) return;
+        
+        const symbols = currentResults.map(s => s.symbol);
+        const livePrices = await fetchLivePrices(symbols);
+        
+        if (Object.keys(livePrices).length === 0) return;
+        
+        let updated = false;
+        
+        // Update currentResults with live prices
+        currentResults.forEach(stock => {
+            if (livePrices[stock.symbol]) {
+                const live = livePrices[stock.symbol];
+                if (live.price && live.price !== stock.price) {
+                    stock.price = live.price;
+                    stock.change = live.change_pct || stock.change;
+                    stock._live = true;  // Mark as live data
+                    updated = true;
+                }
+            }
+        });
+        
+        if (updated) {
+            // Re-render with live prices (without re-fetching)
+            displayResults();
+            console.log('📊 Live prices updated for', Object.keys(livePrices).length, 'stocks');
+        }
+    }
+    
+    /**
+     * Start live price updates (every 30 seconds)
+     */
+    function startLivePriceUpdates() {
+        if (livePriceUpdateInterval) {
+            clearInterval(livePriceUpdateInterval);
+        }
+        
+        // Initial update
+        setTimeout(updateLivePrices, 1000);
+        
+        // Update every 30 seconds
+        livePriceUpdateInterval = setInterval(updateLivePrices, 30000);
+        
+        console.log('✅ Live price updates started (30s interval)');
+    }
+    
+    /**
+     * Stop live price updates
+     */
+    function stopLivePriceUpdates() {
+        if (livePriceUpdateInterval) {
+            clearInterval(livePriceUpdateInterval);
+            livePriceUpdateInterval = null;
+        }
+        console.log('⏹️ Live price updates stopped');
+    }
+    
+    /**
+     * Toggle live price updates
+     */
+    function toggleLivePrices() {
+        livePricesEnabled = !livePricesEnabled;
+        
+        const btn = document.getElementById('toggleLivePricesBtn');
+        if (btn) {
+            btn.classList.toggle('active', livePricesEnabled);
+            btn.innerHTML = livePricesEnabled 
+                ? '<i class="material-icons">sync</i> Live Prices ON'
+                : '<i class="material-icons">sync_disabled</i> Live Prices OFF';
+        }
+        
+        if (livePricesEnabled) {
+            startLivePriceUpdates();
+            showToast('Live price updates enabled', 'success');
+        } else {
+            stopLivePriceUpdates();
+            showToast('Live price updates disabled', 'info');
+        }
+    }
+    
+    // Start live updates when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        // Start live price updates after initial screen runs
+        setTimeout(() => {
+            if (currentResults.length > 0) {
+                startLivePriceUpdates();
+            }
+        }, 2000);
+    });
+    
+    // Stop updates when page is hidden (save resources)
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            stopLivePriceUpdates();
+        } else if (livePricesEnabled && currentResults.length > 0) {
+            startLivePriceUpdates();
+        }
+    });
+</script>
+{% endblock %}
+

@@ -95,7 +95,6 @@ LOCKED FILES - DO NOT TOUCH:
 ├── templates/recorders_list.html       ← RECORDERS LIST - ASK FIRST
 ├── templates/dashboard.html            ← DASHBOARD - ASK FIRST
 ├── templates/control_center.html       ← CONTROL CENTER - ASK FIRST
-├── templates/quant_screener.html       ← QUANT SCREENER - ASK FIRST
 └── just_trades.db                      ← DATABASE - NEVER MODIFY SCHEMA
 ```
 
@@ -123,22 +122,18 @@ LOCKED FILES - DO NOT TOUCH:
 
 ---
 
-## 🔒 WORKING STATE BACKUP (Dec 8, 2025 - LATEST)
+## 🔒 WORKING STATE BACKUP (Dec 4, 2025 - LATEST)
 
 **Everything below is CONFIRMED WORKING. Do not break it.**
 
-### Latest Backup (Quant Screener + Live Ticker)
+### Latest Backup (Position Tracking)
 ```
-backups/WORKING_STATE_DEC8_2025_QUANT_SCREENER/
-├── ultra_simple_server.py       ← Quant screener + live ticker API
-├── templates/quant_screener.html  ← Screener UI with search
-├── templates/dashboard.html       ← Live ticker carousel
-└── templates/layout.html          ← Navigation with Quant Screener tab
+backups/WORKING_STATE_DEC4_2025_POSITION_TRACKING/
+└── ultra_simple_server.py   ← Contains Trade Manager style position tracking
 ```
 
 ### Previous Backups
 ```
-backups/WORKING_STATE_DEC4_2025_POSITION_TRACKING/
 backups/WORKING_STATE_DEC4_2025_MFE_MAE/
 backups/WORKING_STATE_DEC4_2025_RESET_HISTORY/
 backups/WORKING_STATE_DEC3_2025/
@@ -146,15 +141,13 @@ backups/WORKING_STATE_DEC3_2025/
 
 ### Git Tags (Most Recent First)
 ```bash
-git tag WORKING_DEC8_2025_QUANT_SCREENER     # Quant screener + live ticker
 git tag WORKING_DEC4_2025_POSITION_TRACKING  # Trade Manager style drawdown
 git tag WORKING_DEC4_2025_RESET_HISTORY      # Reset history fix
 git tag WORKING_DEC4_2025_MFE_MAE            # Individual trade MFE/MAE
 git tag WORKING_DEC3_2025                     # Original working state
 
 # To restore any file:
-git checkout WORKING_DEC8_2025_QUANT_SCREENER -- ultra_simple_server.py
-git checkout WORKING_DEC8_2025_QUANT_SCREENER -- templates/quant_screener.html
+git checkout WORKING_DEC4_2025_POSITION_TRACKING -- ultra_simple_server.py
 ```
 
 ---
@@ -170,7 +163,6 @@ git checkout WORKING_DEC8_2025_QUANT_SCREENER -- templates/quant_screener.html
 | **Webhook Signals** | ✅ Working | `/webhook/<token>` endpoint |
 | **Trade Recording** | ✅ Working | `recorded_signals`, `recorded_trades` tables |
 | **Dashboard** | ✅ Working | `dashboard.html` |
-| **Dashboard Live Ticker** | ✅ Working | 27 instruments from TradingView (Dec 8) |
 | **Control Center** | ✅ Working | `control_center.html` |
 | **Account Management** | ✅ Working | `account_management.html` - NEVER TOUCH |
 | **Tradovate OAuth** | ✅ Working | OAuth flow in server |
@@ -180,8 +172,6 @@ git checkout WORKING_DEC8_2025_QUANT_SCREENER -- templates/quant_screener.html
 | **Reset Trade History** | ✅ Working | `/api/recorders/<id>/reset-history` endpoint |
 | **Position Tracking (TM Style)** | ✅ Working | `recorder_positions` table, 1-sec polling |
 | **Real-Time Drawdown** | ✅ Working | `worst_unrealized_pnl` tracking |
-| **Quant Stock Screener** | ✅ Working | `quant_screener.html`, API routes (Dec 8) |
-| **Ticker Search & Reports** | ✅ Working | `/api/quant-screener/ticker/<symbol>` (Dec 8) |
 
 ---
 
@@ -197,7 +187,6 @@ git checkout WORKING_DEC8_2025_QUANT_SCREENER -- templates/quant_screener.html
 | Control Center | `control_center.html`, control center routes |
 | Account Management | **NEVER TOUCH** - It's locked |
 | Settings | `settings.html` only |
-| Quant Screener | `quant_screener.html`, `/api/quant-screener/*` routes |
 
 **🚨 NEVER modify files from OTHER tabs while working on one tab!**
 
@@ -257,50 +246,6 @@ FROM recorder_positions ORDER BY id DESC;
 
 ### Handoff Document
 See `HANDOFF_DEC4_2025_POSITION_TRACKING.md` for full implementation details.
-
----
-
-## 📊 QUANT STOCK SCREENER - Dec 8, 2025
-
-### Overview
-Seeking Alpha style stock screener with real-time prices from TradingView.
-
-### Features
-- **Ticker Search**: Search any stock, get autocomplete suggestions
-- **Full Reports**: Quant score (1.0-5.0), factor grades (A+ to F), live price
-- **Stock Screening**: Filter by rating, factor grades, sector, market cap, price
-- **100+ Stock Universe**: Tech, Finance, Healthcare, Consumer, Energy, ETFs
-- **Live Prices**: Real-time from TradingView Scanner API
-
-### Files
-```
-templates/quant_screener.html     ← UI template
-ultra_simple_server.py            ← API routes & logic
-```
-
-### API Endpoints
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/quant-screener` | GET | Render screener page |
-| `/api/quant-screener/screen` | POST | Run stock screen with filters |
-| `/api/quant-screener/search?q=AAPL` | GET | Search stocks by symbol/name |
-| `/api/quant-screener/ticker/<symbol>` | GET | Full quant report for ticker |
-| `/api/quant-screener/live-prices` | POST | Batch live prices |
-| `/api/quant-screener/live-price/<symbol>` | GET | Single stock price |
-
-### Key Functions
-- `get_stock_universe()` - Returns 100+ stocks database
-- `fetch_live_stock_prices()` - TradingView Scanner API
-- `generate_quant_stock_data()` - Seeking Alpha style scoring
-- `generate_factor_grade()` - A+ to F grades based on percentile
-- `score_to_quant_rating()` - 1.0-5.0 → Strong Buy/Buy/Hold/Sell/Strong Sell
-
-### Dashboard Live Ticker (27 instruments)
-- **Futures**: ES, NQ, MES, MNQ, YM, RTY, M2K, CL, GC, SI, NG, ZB, ZN, 6E, BTC
-- **ETFs**: SPY, QQQ, IWM, DIA, SPXL, UVXY
-- **Stocks**: AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, AMD
-- Auto-refreshes every 30 seconds
-- Continuous carousel animation
 
 ---
 
