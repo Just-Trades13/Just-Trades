@@ -855,6 +855,225 @@ sqlite3 just_trades.db "SELECT * FROM handoff_logs ORDER BY id DESC LIMIT 1;"
 
 ---
 
-*Last updated: Dec 5, 2025 - Drawdown Fix + Auto-Refresh + Cascade Delete*
-*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC4_2025_MFE_MAE, WORKING_DEC4_2025_RESET_HISTORY, WORKING_DEC5_2025_DRAWDOWN_FIX*
+---
+
+## 🔴 CRITICAL: Dec 8, 2025 - Live Trade Execution + Rate Limiting Incident
+
+### ✅ MAJOR ACCOMPLISHMENT: Live Trading Now Works!
+
+**The system can now execute REAL trades on Tradovate from webhook signals!**
+
+#### The Complete Flow (Working):
+```
+TradingView Alert → Webhook (Main Server 8082) → Trading Engine (8083) → Tradovate API → REAL ORDER PLACED
+```
+
+#### What Was Fixed:
+1. **Symbol Conversion** - TradingView sends `MNQ1!`, Tradovate needs `MNQZ5` (front-month contract)
+2. **accountSpec Fix** - Was sending parent account name (`Mark`), needed subaccount name (`DEMO4419847-2`)
+3. **TradovateIntegration Adoption** - Now uses same code as Manual Trader for consistency
+4. **MD Token** - Added `md_access_token` to the SQL query for market data access
+
+#### Key Code Location:
+`recorder_service.py` - `execute_live_trades()` function (~line 400-500)
+
+#### How to Test Live Trading:
+```bash
+# Send a webhook signal with REAL market price
+curl -X POST http://localhost:8082/webhook/YOUR_WEBHOOK_TOKEN \
+  -H "Content-Type: application/json" \
+  -d '{"action": "BUY", "ticker": "MNQ1!", "price": 25800.00}'
+
+# Check Trading Engine logs for success
+tail -30 /tmp/trading_engine.log | grep -E "LIVE|order|Order|✅"
+```
+
+#### Success Log Example:
+```
+📨 Webhook received for recorder 'Test': {'action': 'BUY', 'ticker': 'MNQ1!', 'price': 25802.25}
+🚀 LIVE EXECUTION: Found 1 enabled trader(s) for recorder 14
+📤 Placing order via TradovateIntegration (demo=True)
+📤 Order data: {'accountSpec': 'DEMO4419847-2', 'orderType': 'Market', 'action': 'Buy', 'symbol': 'MNQZ5', 'orderQty': 1, 'timeInForce': 'Day', 'isAutomated': True, 'accountId': 26029294}
+✅ LIVE TRADE EXECUTED on 'Mark': Buy 1 MNQ1! | Order ID: 336150489952
+```
+
+### 🔴 CRITICAL INCIDENT: Tradovate Rate Limiting (429 Errors)
+
+#### What Happened:
+1. AI modified `/api/control-center/stats` to call `fetch_tradovate_pnl_sync()` 
+2. This endpoint gets called frequently from the UI
+3. Combined with existing WebSocket polling, API calls DOUBLED
+4. Tradovate returned 429 (rate limited) on ALL requests
+5. **EVERYTHING BROKE** - manual trades, P&L updates, positions
+
+#### Symptoms of Rate Limiting:
+- Manual trader returns `{"error":{},"success":false}` or `{"error":"Access is denied"}`
+- WebSocket broadcasts empty: `"positions":[]`, `"pnl_data":{}`
+- Server logs show no errors (silent failure)
+
+#### How to Check for Rate Limiting:
+```bash
+# Stop the server first
+pkill -f "python.*ultra_simple"
+
+# Test API directly
+TOKEN=$(sqlite3 just_trades.db "SELECT tradovate_token FROM accounts WHERE id = 2;")
+curl -s "https://demo.tradovateapi.com/v1/account/list" \
+  -H "Authorization: Bearer $TOKEN"
+
+# If response is empty or status 429, you're rate limited
+# Wait 5-10 minutes before restarting server
+```
+
+#### Recovery Steps:
+```bash
+# 1. Stop server to stop polling
+pkill -f "python.*ultra_simple"
+pkill -f "python.*recorder_service"
+
+# 2. Wait for rate limit to clear (5-10 minutes)
+# Test periodically:
+curl -s "https://demo.tradovateapi.com/v1/account/list" -H "Authorization: Bearer $TOKEN"
+
+# 3. Once you get 200 response, restore from backup
+cp backups/WORKING_STATE_DEC5_2025_COMPLETE/ultra_simple_server.py .
+
+# 4. Restart services
+./start_services.sh
+```
+
+### 🔒 NEVER DO THIS:
+- ❌ **NEVER** add API calls to frequently-called endpoints
+- ❌ **NEVER** call `fetch_tradovate_pnl_sync()` outside of the WebSocket emit loop
+- ❌ **NEVER** poll Tradovate API more than every 0.5 seconds
+- ❌ **NEVER** modify Control Center stats endpoint to make additional API calls
+
+### 📊 Tradovate API Rate Limits:
+- **~120 requests/minute** across all endpoints
+- **Rate limit cooldown**: 5-10 minutes when triggered
+- **WebSocket emit loop** already polls at 0.5s (120 req/min with 2 accounts)
+- **DO NOT add more API calls** - we're at the limit
+
+### 📍 Working Backup (Use This):
+```
+backups/WORKING_STATE_DEC5_2025_COMPLETE/
+├── ultra_simple_server.py   ← SAFE VERSION - no extra API calls
+├── recorder_service.py      ← Contains live trade execution
+├── START_HERE.md
+└── tradingview_auth.py
+```
+
+### 🔧 WebSocket P&L Updates (How They Work):
+
+The WebSocket broadcasts real-time P&L every 0.5 seconds:
+
+```python
+# In ultra_simple_server.py - emit_realtime_updates() function
+# This is the ONLY place that should call fetch_tradovate_pnl_sync()
+
+def emit_realtime_updates():
+    while True:
+        pnl_data, tradovate_positions = fetch_tradovate_pnl_sync()
+        
+        socketio.emit('pnl_update', {
+            'total_pnl': total_pnl,
+            'open_pnl': open_pnl,      # Unrealized P&L
+            'today_pnl': today_pnl,    # Realized P&L
+            'active_positions': len(positions)
+        })
+        
+        socketio.emit('position_update', {
+            'positions': positions_list,
+            'pnl_data': pnl_data       # Full account data
+        })
+        
+        time.sleep(0.5)  # Every 0.5 seconds
+```
+
+The Manual Trader listens to these events:
+```javascript
+// In manual_copy_trader.html
+socket.on('pnl_update', function(data) {
+    // Updates account cards with P&L
+});
+socket.on('position_update', function(data) {
+    // Updates position cards
+});
+```
+
+### 🔑 Key Files Modified (Dec 8, 2025):
+
+| File | Change | Status |
+|------|--------|--------|
+| `recorder_service.py` | Added live trade execution via TradovateIntegration | ✅ Working |
+| `recorder_service.py` | Fixed symbol conversion (MNQ1! → MNQZ5) | ✅ Working |
+| `recorder_service.py` | Fixed accountSpec to use subaccount name | ✅ Working |
+| `ultra_simple_server.py` | **REVERTED** - Don't touch Control Center stats | ✅ Restored |
+
+### 📋 Traders Tab (My Traders):
+
+The Traders system links Recorders to Accounts for live trading:
+
+```
+Recorder (strategy) ──► Trader (link) ──► Account (Tradovate)
+     │                      │                    │
+     │                      │                    └── Has subaccounts (DEMO4419847-2, 1381296)
+     │                      └── enabled flag (on/off)
+     └── webhook_token, TP/SL settings
+```
+
+#### Database Tables:
+- `traders` - Links recorder_id to account_id
+- `recorders` - Strategy settings
+- `accounts` - Tradovate credentials + subaccounts JSON
+
+#### Key Queries:
+```sql
+-- Check trader links
+SELECT t.id, r.name as strategy, a.name as account, t.enabled
+FROM traders t
+JOIN recorders r ON t.recorder_id = r.id
+JOIN accounts a ON t.account_id = a.id;
+
+-- Enable a recorder for webhooks
+UPDATE recorders SET recording_enabled = 1 WHERE id = 14;
+```
+
+---
+
+## 📅 Update Log
+
+| Date | Change |
+|------|--------|
+| **Dec 8, 2025** | **LIVE TRADING WORKING** - Webhooks now execute real Tradovate orders |
+| Dec 8, 2025 | Fixed symbol conversion (TradingView → Tradovate format) |
+| Dec 8, 2025 | Fixed accountSpec to use subaccount name |
+| Dec 8, 2025 | Added TradovateIntegration to recorder_service.py |
+| Dec 8, 2025 | **INCIDENT**: Rate limiting broke everything - REVERTED changes |
+| Dec 8, 2025 | Documented rate limiting recovery process |
+| **Dec 5, 2025** | **FIX: Drawdown tracking now working** |
+| Dec 5, 2025 | Fixed TradingView Scanner API bug (was requesting invalid columns) |
+| Dec 5, 2025 | Stored TradingView session cookies for WebSocket connection |
+| Dec 5, 2025 | Real-time drawdown (`worst_unrealized_pnl`) now updates every price tick |
+| **Dec 5, 2025** | **MAJOR: Microservices Architecture Migration** |
+| Dec 5, 2025 | Split into 2-server architecture: Main Server (8082) + Trading Engine (8083) |
+| Dec 5, 2025 | Moved all webhook processing to Trading Engine |
+| Dec 5, 2025 | Moved TP/SL monitoring to Trading Engine |
+| Dec 5, 2025 | Moved drawdown tracking to Trading Engine |
+| Dec 5, 2025 | Main Server webhooks now proxy to Trading Engine |
+| Dec 5, 2025 | Added `HANDOFF_DEC5_2025_MICROSERVICES_ARCHITECTURE.md` |
+| Dec 5, 2025 | Added `handoff_logs` table to database |
+| Dec 5, 2025 | Updated `start_services.sh` for new architecture |
+| Dec 4, 2025 | Added Reset Trade History endpoint - `/api/recorders/<id>/reset-history` |
+| Dec 4, 2025 | Added MFE/MAE (drawdown) tracking - `update_trade_mfe_mae()` function |
+| Dec 4, 2025 | Added detailed database storage info (accounts.tradingview_session) |
+| Dec 4, 2025 | Added function references for TradingView WebSocket code |
+| Dec 4, 2025 | Added Recorders system documentation |
+| Dec 4, 2025 | Added cascade delete for recorder trades/signals |
+| Dec 3, 2025 | Initial working state backup |
+
+---
+
+*Last updated: Dec 8, 2025 - Live Trading + Rate Limiting Documentation*
+*Backup tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC4_2025_MFE_MAE, WORKING_DEC4_2025_RESET_HISTORY, WORKING_DEC5_2025_DRAWDOWN_FIX, WORKING_DEC5_2025_COMPLETE*
 *Handoff docs: HANDOFF_DEC5_2025_COMPLETE.md, HANDOFF_DEC5_2025_MICROSERVICES_ARCHITECTURE.md, HANDOFF_DEC5_2025_DRAWDOWN_FIX.md*
