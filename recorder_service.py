@@ -295,24 +295,22 @@ def init_trading_engine_db():
 # ============================================================================
 
 def extract_symbol_root(ticker: str) -> str:
-    """Extract root symbol: MNQ1! -> MNQ, CME_MINI:MNQ1! -> MNQ"""
+    """Extract root symbol: MNQ1! -> MNQ, CME_MINI:MNQ1! -> MNQ, MNQZ5 -> MNQ"""
     if not ticker:
         return ''
     if ':' in ticker:
         ticker = ticker.split(':')[-1]
     ticker = ticker.upper().replace('1!', '').replace('!', '')
-    # Remove month codes and numbers
+    
+    # Check for known symbols FIRST before applying regex
+    for known_symbol in CONTRACT_MULTIPLIERS.keys():
+        if ticker.startswith(known_symbol):
+            return known_symbol
+    
+    # Remove month codes and numbers for unknown symbols
     ticker = re.sub(r'[0-9!]+', '', ticker)
     ticker = re.sub(r'[FGHJKMNQUVXZ]$', '', ticker)
     
-    if len(ticker) > 3:
-        base = ticker[:3]
-        if base in CONTRACT_MULTIPLIERS:
-            return base
-    if ticker[:3] in CONTRACT_MULTIPLIERS:
-        return ticker[:3]
-    if ticker[:2] in CONTRACT_MULTIPLIERS:
-        return ticker[:2]
     return ticker
 
 
@@ -365,193 +363,632 @@ def calculate_pnl(entry_price: float, exit_price: float, side: str, quantity: in
 
 
 # ============================================================================
-# Live Trade Execution (Auto-Execute on Linked Accounts)
+# Live Trade Execution (Auto-Execute on Linked Accounts) - BROKER-FIRST
 # ============================================================================
 
-def execute_live_trades(recorder_id: int, action: str, ticker: str, quantity: int, 
-                        entry_price: float = None, exit_price: float = None,
-                        tp_price: float = None, sl_price: float = None):
+def check_broker_position_exists(recorder_id: int, ticker: str) -> bool:
     """
-    Execute live trades on all accounts linked to this recorder via the traders table.
-    
-    This is called AFTER recording the theoretical trade to recorded_trades.
-    It checks the traders table for any enabled account links and places
-    real orders via Tradovate API.
-    
-    Args:
-        recorder_id: The recorder that received the webhook
-        action: 'BUY', 'SELL', or 'CLOSE'
-        ticker: Symbol like 'MNQ1!' or 'MES'
-        quantity: Number of contracts
-        entry_price: Entry price for new positions (optional, market order if None)
-        exit_price: Exit price for closing positions (optional)
-        tp_price: Take profit price (optional)
-        sl_price: Stop loss price (optional)
+    Check if broker still has an open position for this symbol.
+    Used to prevent sending redundant close orders when TP limit already filled.
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Find all enabled traders linked to this recorder
         cursor.execute('''
-            SELECT 
-                t.id as trader_id,
-                t.account_id,
-                t.enabled,
-                a.name as account_name,
-                a.tradovate_token,
-                a.tradovate_refresh_token,
-                a.md_access_token,
-                a.environment,
-                a.tradovate_accounts
+            SELECT t.subaccount_id, t.is_demo, a.tradovate_token
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = ? AND t.enabled = 1
+            LIMIT 1
         ''', (recorder_id,))
         
-        traders = cursor.fetchall()
+        trader = cursor.fetchone()
         conn.close()
         
-        if not traders:
-            logger.debug(f"No enabled traders linked to recorder {recorder_id}")
-            return
+        if not trader:
+            return False  # No trader, assume no position
         
-        logger.info(f"🚀 LIVE EXECUTION: Found {len(traders)} enabled trader(s) for recorder {recorder_id}")
+        trader = dict(trader)
+        tradovate_account_id = trader.get('subaccount_id')
+        is_demo = bool(trader.get('is_demo'))
+        access_token = trader.get('tradovate_token')
         
-        # Execute on each linked account
-        for trader in traders:
-            trader = dict(trader)
-            account_name = trader['account_name']
-            access_token = trader['tradovate_token']
-            environment = trader['environment'] or 'demo'
-            
-            if not access_token:
-                logger.warning(f"⚠️ No OAuth token for account '{account_name}' - skipping live trade")
-                continue
-            
-            # Get the actual Tradovate account ID and name from tradovate_accounts JSON
-            tradovate_accounts_json = trader.get('tradovate_accounts')
-            tradovate_account_id = None
-            tradovate_account_spec = None  # The actual Tradovate account name like "DEMO4419847-2"
-            
-            if tradovate_accounts_json:
-                try:
-                    accounts_list = json.loads(tradovate_accounts_json)
-                    if accounts_list and len(accounts_list) > 0:
-                        # Use first account's ID and name
-                        tradovate_account_id = accounts_list[0].get('id')
-                        tradovate_account_spec = accounts_list[0].get('name')  # e.g., "DEMO4419847-2"
-                        logger.info(f"📋 Using Tradovate account: {tradovate_account_spec} (ID: {tradovate_account_id})")
-                    else:
-                        logger.warning(f"⚠️ No Tradovate accounts found for '{account_name}' - skipping")
-                        continue
-                except json.JSONDecodeError:
-                    logger.warning(f"⚠️ Invalid tradovate_accounts JSON for '{account_name}' - skipping")
-                    continue
-            else:
-                logger.warning(f"⚠️ No tradovate_accounts data for '{account_name}' - skipping")
-                continue
-            
-            if not tradovate_account_id or not tradovate_account_spec:
-                logger.warning(f"⚠️ Missing account ID or spec for '{account_name}' - skipping")
-                continue
-            
-            # Determine if demo based on tradovate_accounts data
-            is_demo = True  # Default to demo
-            if tradovate_accounts_json:
-                try:
-                    accounts_list = json.loads(tradovate_accounts_json)
-                    if accounts_list and len(accounts_list) > 0:
-                        first_acct = accounts_list[0]
-                        is_demo = first_acct.get('is_demo', True)
-                except:
-                    pass
-            
-            order_action = 'Buy' if action == 'BUY' else 'Sell'
-            
-            # Execute the order via TradovateIntegration (EXACTLY like manual trader)
-            try:
-                from phantom_scraper.tradovate_integration import TradovateIntegration
-                import asyncio
+        if not access_token or not tradovate_account_id:
+            return False
+        
+        tradovate_symbol = convert_ticker_to_tradovate(ticker)
+        
+        from phantom_scraper.tradovate_integration import TradovateIntegration
+        import asyncio
+        
+        async def check_position():
+            async with TradovateIntegration(demo=is_demo) as tradovate:
+                tradovate.access_token = access_token
+                positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
-                logger.info(f"📤 Placing order via TradovateIntegration (demo={is_demo})")
+                for pos in positions:
+                    pos_symbol = pos.get('symbol', '') or ''
+                    net_pos = pos.get('netPos', 0)
+                    if tradovate_symbol[:3] in pos_symbol and net_pos != 0:
+                        logger.info(f"📊 Broker has position: {net_pos} {pos_symbol}")
+                        return True
                 
-                async def place_order_async():
-                    async with TradovateIntegration(demo=is_demo) as tradovate:
-                        # Set tokens EXACTLY like manual trader does
-                        tradovate.access_token = access_token
-                        tradovate.refresh_token = trader.get('tradovate_refresh_token')
-                        tradovate.md_access_token = trader.get('md_access_token')
-                        
-                        # Convert symbol to Tradovate front-month format
-                        # MNQ1! -> MNQZ5 (December 2025 contract)
-                        import re
-                        clean_ticker = ticker.strip().upper()
-                        if '!' in clean_ticker:
-                            match = re.match(r'^([A-Z]+)\d*!$', clean_ticker)
-                            if match:
-                                root = match.group(1)
-                                # Use Z5 for December 2025 (current front month)
-                                tradovate_symbol = f"{root}Z5"
-                            else:
-                                tradovate_symbol = clean_ticker.replace('!', '')
-                        else:
-                            tradovate_symbol = clean_ticker
-                        
-                        logger.info(f"📋 Symbol conversion: {ticker} -> {tradovate_symbol}")
-                        
-                        order_data = tradovate.create_market_order(
-                            tradovate_account_spec,
-                            tradovate_symbol,
-                            order_action,
-                            quantity,
-                            tradovate_account_id
-                        )
-                        
-                        logger.info(f"📤 Order data: {order_data}")
-                        
-                        result = await tradovate.place_order(order_data)
-                        return result
-                
-                # Run the async function
-                result = asyncio.run(place_order_async())
-                
-                logger.info(f"📥 Tradovate response: {result}")
-                
-                if result and result.get('success'):
-                    order_id = result.get('orderId') or result.get('id')
-                    logger.info(f"✅ LIVE TRADE EXECUTED on '{account_name}': {order_action} {quantity} {ticker} | Order ID: {order_id}")
-                    
-                    # Log the execution to trader_executions (optional - create table if needed)
-                    try:
-                        conn2 = get_db_connection()
-                        cursor2 = conn2.cursor()
-                        cursor2.execute('''
-                            INSERT OR IGNORE INTO trader_executions 
-                            (trader_id, recorder_id, action, ticker, quantity, order_id, status, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, 'executed', CURRENT_TIMESTAMP)
-                        ''', (trader['trader_id'], recorder_id, action, ticker, quantity, str(order_id)))
-                        conn2.commit()
-                        conn2.close()
-                    except Exception as log_err:
-                        # Table might not exist yet, that's okay
-                        logger.debug(f"Could not log execution: {log_err}")
-                else:
-                    # Order failed
-                    error_msg = result.get('error', 'Unknown error') if result else 'No response'
-                    logger.error(f"❌ Order REJECTED on '{account_name}': {error_msg}")
-                    
-            except asyncio.TimeoutError:
-                logger.error(f"❌ Timeout placing order on '{account_name}'")
-            except Exception as req_err:
-                logger.error(f"❌ Error placing order on '{account_name}': {req_err}")
-                import traceback
-                logger.error(traceback.format_exc())
-                
+                logger.info(f"📊 Broker has NO position for {tradovate_symbol}")
+                return False
+        
+        return asyncio.run(check_position())
+        
     except Exception as e:
-        logger.error(f"Error in execute_live_trades: {e}")
+        logger.warning(f"Error checking broker position: {e}")
+        return True  # Assume position exists on error (safer)
+
+
+def convert_ticker_to_tradovate(ticker: str) -> str:
+    """Convert TradingView ticker to Tradovate format (e.g., MNQ1! -> MNQZ5)"""
+    clean_ticker = ticker.strip().upper()
+    if '!' in clean_ticker:
+        match = re.match(r'^([A-Z]+)\d*!$', clean_ticker)
+        if match:
+            root = match.group(1)
+            # Use Z5 for December 2025 (current front month)
+            return f"{root}Z5"
+        return clean_ticker.replace('!', '')
+    return clean_ticker
+
+
+def execute_live_trade_with_bracket(
+    recorder_id: int, 
+    action: str, 
+    ticker: str, 
+    quantity: int,
+    tp_ticks: int = None,
+    sl_ticks: int = None,
+    is_dca: bool = False
+) -> Dict[str, Any]:
+    """
+    Execute trade on broker with simple, reliable approach:
+    1. Market order for entry (fast fill)
+    2. Limit order for TP immediately after
+    
+    Args:
+        recorder_id: The recorder that received the webhook
+        action: 'BUY' or 'SELL' for entries, 'CLOSE' for exits
+        ticker: Symbol like 'MNQ1!' or 'MES'
+        quantity: Number of contracts
+        tp_ticks: Take profit in ticks
+        sl_ticks: Stop loss in ticks (not used currently)
+        is_dca: If True, this is a DCA addition
+    
+    Returns:
+        {success, fill_price, order_id, broker_position, error}
+    """
+    result = {
+        'success': False,
+        'fill_price': None,
+        'order_id': None,
+        'tp_order_id': None,
+        'broker_position': None,
+        'error': None
+    }
+    
+    logger.info(f"🎯 EXECUTE: {action} {quantity} {ticker} (TP:{tp_ticks} ticks, DCA:{is_dca})")
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Find enabled trader
+        cursor.execute('''
+            SELECT 
+                t.subaccount_id, t.subaccount_name, t.is_demo,
+                a.name as account_name, a.tradovate_token,
+                a.tradovate_refresh_token, a.md_access_token
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.recorder_id = ? AND t.enabled = 1
+            LIMIT 1
+        ''', (recorder_id,))
+        
+        trader = cursor.fetchone()
+        conn.close()
+        
+        if not trader:
+            logger.info(f"📝 No enabled trader - recording only")
+            result['success'] = True
+            return result
+        
+        trader = dict(trader)
+        tradovate_account_id = trader.get('subaccount_id')
+        tradovate_account_spec = trader.get('subaccount_name')
+        is_demo = bool(trader.get('is_demo'))
+        access_token = trader.get('tradovate_token')
+        
+        if not access_token or not tradovate_account_id:
+            result['error'] = "Missing credentials"
+            return result
+        
+        tradovate_symbol = convert_ticker_to_tradovate(ticker)
+        order_action = 'Buy' if action == 'BUY' else 'Sell'
+        
+        logger.info(f"📤 {order_action} {quantity} {tradovate_symbol}")
+        
+        from phantom_scraper.tradovate_integration import TradovateIntegration
+        import asyncio
+        
+        async def execute_simple():
+            async with TradovateIntegration(demo=is_demo) as tradovate:
+                tradovate.access_token = access_token
+                tradovate.refresh_token = trader.get('tradovate_refresh_token')
+                tradovate.md_access_token = trader.get('md_access_token')
+                
+                # STEP 1: Place market order
+                order_data = tradovate.create_market_order(
+                    tradovate_account_spec,
+                    tradovate_symbol,
+                    order_action,
+                    quantity,
+                    tradovate_account_id
+                )
+                
+                order_result = await tradovate.place_order(order_data)
+                
+                if not order_result or not order_result.get('success'):
+                    error = order_result.get('error', 'Order failed') if order_result else 'No response'
+                    return {'success': False, 'error': error}
+                
+                order_id = order_result.get('orderId') or order_result.get('id')
+                logger.info(f"✅ Market order filled: {order_id}")
+                
+                # STEP 2: Get position to confirm fill price
+                await asyncio.sleep(0.3)  # Brief wait for fill to settle
+                positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                
+                broker_pos = None
+                for pos in positions:
+                    pos_symbol = pos.get('symbol', '')
+                    if tradovate_symbol[:3] in pos_symbol:
+                        broker_pos = pos
+                        break
+                
+                fill_price = broker_pos.get('netPrice') if broker_pos else None
+                net_pos = broker_pos.get('netPos', 0) if broker_pos else 0
+                
+                logger.info(f"📊 Position: {net_pos} @ {fill_price}")
+                
+                # STEP 3: Place TP limit order (if not closing and TP specified)
+                tp_order_id = None
+                if tp_ticks and action != 'CLOSE' and fill_price:
+                    symbol_root = extract_symbol_root(ticker)
+                    tick_size = TICK_SIZES.get(symbol_root, 0.25)
+                    
+                    # Calculate TP price
+                    if action == 'BUY':  # LONG position
+                        tp_price = fill_price + (tp_ticks * tick_size)
+                        tp_side = 'Sell'
+                    else:  # SHORT position
+                        tp_price = fill_price - (tp_ticks * tick_size)
+                        tp_side = 'Buy'
+                    
+                    # Determine total quantity for TP (use broker's position size)
+                    tp_qty = abs(net_pos) if net_pos else quantity
+                    
+                    logger.info(f"📊 Placing TP: {tp_side} {tp_qty} @ {tp_price}")
+                    
+                    tp_order_data = {
+                        "accountId": tradovate_account_id,
+                        "accountSpec": tradovate_account_spec,
+                        "symbol": tradovate_symbol,
+                        "action": tp_side,
+                        "orderQty": tp_qty,
+                        "orderType": "Limit",
+                        "price": tp_price,
+                        "timeInForce": "GTC",
+                        "isAutomated": True
+                    }
+                    
+                    tp_result = await tradovate.place_order(tp_order_data)
+                    if tp_result and tp_result.get('success'):
+                        tp_order_id = tp_result.get('orderId') or tp_result.get('id')
+                        logger.info(f"✅ TP order placed: {tp_order_id} @ {tp_price}")
+                    else:
+                        logger.warning(f"⚠️ TP order failed: {tp_result}")
+                
+                return {
+                    'success': True,
+                    'order_id': str(order_id) if order_id else None,
+                    'tp_order_id': str(tp_order_id) if tp_order_id else None,
+                    'fill_price': fill_price,
+                    'broker_position': broker_pos
+                }
+        
+        exec_result = asyncio.run(execute_simple())
+        
+        if exec_result.get('success'):
+            result['success'] = True
+            result['fill_price'] = exec_result.get('fill_price')
+            result['order_id'] = exec_result.get('order_id')
+            result['tp_order_id'] = exec_result.get('tp_order_id')
+            result['broker_position'] = exec_result.get('broker_position')
+            logger.info(f"✅ CONFIRMED: {action} {quantity} {ticker} @ {result['fill_price']}")
+        else:
+            result['error'] = exec_result.get('error', 'Failed')
+            logger.error(f"❌ REJECTED: {result['error']}")
+            
+    except Exception as e:
+        result['error'] = str(e)
+        logger.error(f"❌ Error: {e}")
         import traceback
         logger.error(traceback.format_exc())
+    
+    return result
+
+
+def update_exit_brackets(recorder_id: int, ticker: str, side: str, 
+                         total_quantity: int, tp_price: float, sl_price: float = None) -> Dict[str, Any]:
+    """
+    Cancel ALL working limit/stop orders for this symbol, then place new TP.
+    Simple and reliable approach for DCA updates.
+    """
+    result = {'success': False, 'order_id': None, 'cancelled': 0, 'error': None}
+    
+    logger.info(f"🔄 UPDATE TP: {side} {total_quantity} {ticker} @ {tp_price}")
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
+                   a.tradovate_token, a.tradovate_refresh_token, a.md_access_token
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.recorder_id = ? AND t.enabled = 1
+            LIMIT 1
+        ''', (recorder_id,))
+        
+        trader = cursor.fetchone()
+        conn.close()
+        
+        if not trader:
+            result['error'] = "No trader"
+            return result
+        
+        trader = dict(trader)
+        tradovate_account_id = trader.get('subaccount_id')
+        tradovate_account_spec = trader.get('subaccount_name')
+        is_demo = bool(trader.get('is_demo'))
+        access_token = trader.get('tradovate_token')
+        
+        if not access_token:
+            result['error'] = "No token"
+            return result
+        
+        tradovate_symbol = convert_ticker_to_tradovate(ticker)
+        exit_side = 'Sell' if side == 'LONG' else 'Buy'
+        
+        from phantom_scraper.tradovate_integration import TradovateIntegration
+        import asyncio
+        
+        async def cancel_and_place():
+            async with TradovateIntegration(demo=is_demo) as tradovate:
+                tradovate.access_token = access_token
+                tradovate.refresh_token = trader.get('tradovate_refresh_token')
+                tradovate.md_access_token = trader.get('md_access_token')
+                
+                cancelled = 0
+                
+                # STEP 1: Cancel ALL working orders for this symbol
+                try:
+                    orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                    
+                    for order in orders:
+                        order_id = order.get('id')
+                        order_symbol = order.get('symbol', '') or ''
+                        order_status = order.get('ordStatus', '') or ''
+                        
+                        # Match symbol (first 3 chars)
+                        if tradovate_symbol[:3] in order_symbol:
+                            # Cancel if working
+                            if order_status in ['Working', 'Accepted', 'PendingNew', 'New', '']:
+                                logger.info(f"📛 Cancel {order_id}: {order_symbol} {order_status}")
+                                if await tradovate.cancel_order(order_id):
+                                    cancelled += 1
+                except Exception as e:
+                    logger.warning(f"⚠️ Cancel error: {e}")
+                
+                logger.info(f"📛 Cancelled {cancelled} orders")
+                await asyncio.sleep(0.2)
+                
+                # STEP 2: Place new TP limit order
+                logger.info(f"📊 New TP: {exit_side} {total_quantity} @ {tp_price}")
+                
+                tp_order = {
+                    "accountId": tradovate_account_id,
+                    "accountSpec": tradovate_account_spec,
+                    "symbol": tradovate_symbol,
+                    "action": exit_side,
+                    "orderQty": total_quantity,
+                    "orderType": "Limit",
+                    "price": tp_price,
+                    "timeInForce": "GTC",
+                    "isAutomated": True
+                }
+                
+                tp_result = await tradovate.place_order(tp_order)
+                
+                if tp_result and tp_result.get('success'):
+                    order_id = tp_result.get('orderId') or tp_result.get('id')
+                    logger.info(f"✅ TP placed: {order_id} @ {tp_price}")
+                    return {'success': True, 'order_id': order_id, 'cancelled': cancelled}
+                else:
+                    return {'success': False, 'error': tp_result.get('error') if tp_result else 'Failed'}
+        
+        res = asyncio.run(cancel_and_place())
+        
+        result['success'] = res.get('success', False)
+        result['order_id'] = res.get('order_id')
+        result['cancelled'] = res.get('cancelled', 0)
+        result['error'] = res.get('error')
+        
+        if result['success']:
+            logger.info(f"✅ TP updated: {result['cancelled']} cancelled, new @ {tp_price}")
+            
+    except Exception as e:
+        result['error'] = str(e)
+        logger.error(f"❌ Update error: {e}")
+    
+    return result
+
+
+def execute_live_trades(recorder_id: int, action: str, ticker: str, quantity: int, 
+                        entry_price: float = None, exit_price: float = None,
+                        tp_price: float = None, sl_price: float = None):
+    """
+    LEGACY WRAPPER: Execute live trades on linked accounts.
+    This wraps the new broker-first function for backward compatibility.
+    """
+    logger.info(f"🔄 execute_live_trades called: {action} {quantity} {ticker} for recorder {recorder_id}")
+    
+    # Get TP/SL in ticks from the recorder settings
+    tp_ticks = None
+    sl_ticks = None
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT r.tp_targets, r.sl_amount, r.sl_enabled
+            FROM recorders r
+            WHERE r.id = ?
+        ''', (recorder_id,))
+        rec = cursor.fetchone()
+        conn.close()
+        
+        if rec:
+            rec = dict(rec)
+            # Parse TP targets JSON
+            tp_targets_json = rec.get('tp_targets', '[]')
+            try:
+                tp_targets = json.loads(tp_targets_json) if tp_targets_json else []
+                if tp_targets and len(tp_targets) > 0:
+                    tp_ticks = int(tp_targets[0].get('ticks', 5))
+            except:
+                tp_ticks = 5  # Default
+            
+            # Get SL
+            if rec.get('sl_enabled'):
+                sl_ticks = int(rec.get('sl_amount', 10))
+    except Exception as e:
+        logger.warning(f"Could not get TP/SL settings: {e}")
+        tp_ticks = 5  # Default
+        sl_ticks = 10
+    
+    # Call the new broker-first function
+    result = execute_live_trade_with_bracket(
+        recorder_id=recorder_id,
+        action=action,
+        ticker=ticker,
+        quantity=quantity,
+        tp_ticks=tp_ticks,
+        sl_ticks=sl_ticks,
+        is_dca=False
+    )
+    
+    return result
+
+
+def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
+    """
+    Fetch actual position from Tradovate and sync with DB.
+    
+    This ensures DB always reflects broker reality.
+    Called after DCA fills, periodically, and on Control Center load.
+    
+    Returns:
+        {
+            'success': bool,
+            'broker_position': {netPos, netPrice, ...} or None,
+            'db_updated': bool,
+            'error': str or None
+        }
+    """
+    result = {
+        'success': False,
+        'broker_position': None,
+        'db_updated': False,
+        'error': None
+    }
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get trader linked to this recorder
+        cursor.execute('''
+            SELECT 
+                t.subaccount_id,
+                t.subaccount_name,
+                t.is_demo,
+                a.tradovate_token,
+                a.tradovate_refresh_token,
+                a.md_access_token
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.recorder_id = ? AND t.enabled = 1
+            LIMIT 1
+        ''', (recorder_id,))
+        
+        trader = cursor.fetchone()
+        
+        if not trader:
+            result['error'] = "No enabled trader for this recorder"
+            conn.close()
+            return result
+        
+        trader = dict(trader)
+        tradovate_account_id = trader.get('subaccount_id')
+        is_demo = bool(trader.get('is_demo'))
+        access_token = trader.get('tradovate_token')
+        
+        if not access_token:
+            result['error'] = "No OAuth token"
+            conn.close()
+            return result
+        
+        tradovate_symbol = convert_ticker_to_tradovate(ticker)
+        
+        from phantom_scraper.tradovate_integration import TradovateIntegration
+        import asyncio
+        
+        async def fetch_position():
+            async with TradovateIntegration(demo=is_demo) as tradovate:
+                tradovate.access_token = access_token
+                tradovate.refresh_token = trader.get('tradovate_refresh_token')
+                tradovate.md_access_token = trader.get('md_access_token')
+                
+                positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                
+                # Find position for this symbol
+                for pos in positions:
+                    if pos.get('symbol', '').startswith(tradovate_symbol[:3]):
+                        return pos
+                return None
+        
+        broker_pos = asyncio.run(fetch_position())
+        
+        if broker_pos:
+            result['broker_position'] = broker_pos
+            broker_qty = abs(broker_pos.get('netPos', 0))
+            broker_avg = broker_pos.get('netPrice')
+            broker_side = 'LONG' if broker_pos.get('netPos', 0) > 0 else 'SHORT'
+            
+            logger.info(f"📊 Broker position: {broker_side} {broker_qty} @ {broker_avg}")
+            
+            if broker_qty > 0 and broker_avg:
+                # Get current DB state
+                cursor.execute('''
+                    SELECT id, quantity, entry_price, side, tp_price, sl_price
+                    FROM recorded_trades 
+                    WHERE recorder_id = ? AND status = 'open'
+                    ORDER BY id DESC LIMIT 1
+                ''', (recorder_id,))
+                db_trade = cursor.fetchone()
+                
+                if db_trade:
+                    db_trade = dict(db_trade)
+                    db_qty = db_trade['quantity']
+                    db_entry = db_trade['entry_price']
+                    
+                    # Check for mismatch
+                    if db_qty != broker_qty or abs(db_entry - broker_avg) > 0.01:
+                        logger.warning(f"⚠️ MISMATCH: DB={db_qty}@{db_entry:.2f} vs Broker={broker_qty}@{broker_avg:.2f}")
+                        
+                        # Get TP/SL settings to recalculate
+                        cursor.execute('SELECT tp_targets, sl_amount, sl_enabled FROM recorders WHERE id = ?', (recorder_id,))
+                        rec = cursor.fetchone()
+                        if rec:
+                            rec = dict(rec)
+                            try:
+                                tp_targets = json.loads(rec.get('tp_targets', '[]'))
+                                tp_ticks = int(tp_targets[0].get('value', 5)) if tp_targets else 5
+                            except:
+                                tp_ticks = 5
+                            sl_amount = rec.get('sl_amount', 10) if rec.get('sl_enabled') else 0
+                        else:
+                            tp_ticks = 5
+                            sl_amount = 0
+                        
+                        # Get tick size for symbol
+                        root = extract_symbol_root(ticker)
+                        tick_size = TICK_SIZES.get(root, 0.25)
+                        
+                        # Recalculate TP/SL based on broker's avg price
+                        # (inline calculation since calculate_tp_sl_prices is defined in webhook handler)
+                        if broker_side == 'LONG':
+                            new_tp = broker_avg + (tp_ticks * tick_size) if tp_ticks else None
+                            new_sl = broker_avg - (sl_amount * tick_size) if sl_amount else None
+                        else:  # SHORT
+                            new_tp = broker_avg - (tp_ticks * tick_size) if tp_ticks else None
+                            new_sl = broker_avg + (sl_amount * tick_size) if sl_amount else None
+                        
+                        # Update DB to match broker
+                        cursor.execute('''
+                            UPDATE recorded_trades 
+                            SET quantity = ?, entry_price = ?, tp_price = ?, sl_price = ?,
+                                broker_fill_price = ?
+                            WHERE id = ?
+                        ''', (broker_qty, broker_avg, new_tp, new_sl, broker_avg, db_trade['id']))
+                        
+                        # Update position tracking
+                        cursor.execute('''
+                            UPDATE recorder_positions 
+                            SET total_quantity = ?, avg_entry_price = ?
+                            WHERE recorder_id = ? AND status = 'open'
+                        ''', (broker_qty, broker_avg, recorder_id))
+                        
+                        conn.commit()
+                        result['db_updated'] = True
+                        logger.info(f"✅ DB synced with broker: {broker_qty} @ {broker_avg:.2f} | TP: {new_tp}")
+                        
+                        # Also update the exit bracket on broker to match new TP
+                        if new_tp:
+                            update_exit_brackets(
+                                recorder_id=recorder_id,
+                                ticker=ticker,
+                                side=broker_side,
+                                total_quantity=broker_qty,
+                                tp_price=new_tp,
+                                sl_price=new_sl
+                            )
+            else:
+                # No broker position - check if we have an orphaned DB position
+                cursor.execute('''
+                    SELECT id FROM recorded_trades 
+                    WHERE recorder_id = ? AND status = 'open'
+                ''', (recorder_id,))
+                db_trade = cursor.fetchone()
+                
+                if db_trade:
+                    logger.warning(f"⚠️ DB has open trade but broker has no position - marking as closed")
+                    cursor.execute('''
+                        UPDATE recorded_trades SET status = 'closed', exit_reason = 'broker_sync'
+                        WHERE id = ?
+                    ''', (db_trade['id'],))
+                    cursor.execute('''
+                        DELETE FROM recorder_positions WHERE recorder_id = ? AND status = 'open'
+                    ''', (recorder_id,))
+                    conn.commit()
+                    result['db_updated'] = True
+        
+        result['success'] = True
+        conn.close()
+        
+    except Exception as e:
+        result['error'] = str(e)
+        logger.error(f"Position sync error: {e}")
+    
+    return result
 
 
 # ============================================================================
@@ -763,18 +1200,22 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
     """
     Check if any open trades for this symbol have hit their TP or SL.
     Called on every price update for real-time monitoring.
+    
+    SKIPS trades with broker_managed_tp_sl=1 (Tradovate handles those exits)
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get open trades for this symbol with TP or SL set
+        # SKIP broker-managed positions - Tradovate's bracket orders handle those
         cursor.execute('''
             SELECT t.*, r.name as recorder_name 
             FROM recorded_trades t
             JOIN recorders r ON t.recorder_id = r.id
             WHERE t.status = 'open' 
             AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
+            AND COALESCE(t.broker_managed_tp_sl, 0) = 0
         ''')
         
         open_trades = [dict(row) for row in cursor.fetchall()]
@@ -796,6 +1237,7 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
             
             if side == 'LONG':
                 # LONG: TP hit if price >= tp_price, SL hit if price <= sl_price
+                logger.debug(f"LONG check: price={current_price}, tp={tp_price}, sl={sl_price}")
                 if tp_price and current_price >= tp_price:
                     hit_type = 'tp'
                     exit_price = tp_price
@@ -804,9 +1246,11 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
                     exit_price = sl_price
             else:  # SHORT
                 # SHORT: TP hit if price <= tp_price, SL hit if price >= sl_price
+                logger.info(f"📍 SHORT check: price={current_price} vs TP={tp_price} (need price <= TP)")
                 if tp_price and current_price <= tp_price:
                     hit_type = 'tp'
                     exit_price = tp_price
+                    logger.info(f"🎯 TP CONDITION MET! {current_price} <= {tp_price}")
                 elif sl_price and current_price >= sl_price:
                     hit_type = 'sl'
                     exit_price = sl_price
@@ -815,15 +1259,16 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
                 # Calculate PnL
                 tick_size = get_tick_size(ticker)
                 tick_value = get_tick_value(ticker)
+                quantity = trade['quantity'] or 1
                 
                 if side == 'LONG':
                     pnl_ticks = (exit_price - entry_price) / tick_size
                 else:
                     pnl_ticks = (entry_price - exit_price) / tick_size
                 
-                pnl = pnl_ticks * tick_value * trade['quantity']
+                pnl = pnl_ticks * tick_value * quantity
                 
-                # Close the trade
+                # Close the trade in database
                 cursor.execute('''
                     UPDATE recorded_trades 
                     SET exit_price = ?, exit_time = CURRENT_TIMESTAMP, 
@@ -849,6 +1294,27 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
                 logger.info(f"🎯 {hit_type.upper()} HIT via price stream for '{trade.get('recorder_name', 'Unknown')}': "
                            f"{side} {ticker} | Entry: {entry_price} | Exit: {exit_price} | "
                            f"PnL: ${pnl:.2f} ({pnl_ticks:.1f} ticks)")
+                
+                # CHECK BROKER FIRST - only send close if broker still has position
+                # The TP limit order may have already filled on broker
+                broker_has_position = check_broker_position_exists(trade['recorder_id'], ticker)
+                
+                if broker_has_position:
+                    # EXECUTE CLOSING TRADE ON BROKER
+                    # LONG position closes with SELL, SHORT position closes with BUY
+                    close_action = 'SELL' if side == 'LONG' else 'BUY'
+                    logger.info(f"📤 Executing {hit_type.upper()} exit: {close_action} {quantity} {ticker} on broker")
+                    execute_live_trade_with_bracket(
+                        recorder_id=trade['recorder_id'],
+                        action=close_action,  # Pass actual action, not 'CLOSE'
+                        ticker=ticker,
+                        quantity=quantity,
+                        tp_ticks=None,
+                        sl_ticks=None,
+                        is_dca=True
+                    )
+                else:
+                    logger.info(f"✅ Broker position already closed (TP limit filled) - skipping redundant close")
         
         conn.close()
         
@@ -902,9 +1368,9 @@ def get_price_from_tradingview_api(symbol: str) -> Optional[float]:
 def poll_tp_sl():
     """
     Polling fallback for TP/SL monitoring when WebSocket isn't connected.
-    Polls every 5 seconds.
+    Polls every 1 second for faster TP/SL detection.
     """
-    logger.info("🔄 Starting TP/SL polling thread (every 5 seconds)")
+    logger.info("🔄 Starting TP/SL polling thread (every 1 second)")
     
     while True:
         try:
@@ -930,6 +1396,8 @@ def poll_tp_sl():
                 time.sleep(5)
                 continue
             
+            logger.info(f"🔍 TP/SL polling: monitoring {len(symbols_needed)} symbol(s): {symbols_needed}")
+            
             # Fetch prices and check TP/SL
             for symbol in symbols_needed:
                 price = get_price_from_tradingview_api(symbol)
@@ -944,12 +1412,17 @@ def poll_tp_sl():
                     # Check TP/SL
                     check_tp_sl_for_symbol(root, price)
                     
-                    logger.debug(f"📊 Polled price for {symbol}: {price}")
+                    # Log price every poll for monitoring
+                    logger.info(f"📊 {symbol}: {price}")
+                else:
+                    logger.warning(f"⚠️ Could not fetch price for {symbol}")
             
-            time.sleep(5)  # Poll every 5 seconds
+            time.sleep(1)  # Poll every 1 second for faster TP/SL detection
             
         except Exception as e:
-            logger.warning(f"Error in TP/SL polling: {e}")
+            logger.error(f"❌ Error in TP/SL polling: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             time.sleep(10)
 
 
@@ -963,6 +1436,179 @@ def start_tp_sl_polling():
     _tp_sl_polling_thread = threading.Thread(target=poll_tp_sl, daemon=True)
     _tp_sl_polling_thread.start()
     logger.info("✅ TP/SL polling thread started")
+
+
+# ============================================================================
+# Bracket Order Fill Monitor (Detects when Tradovate closes positions)
+# ============================================================================
+
+_bracket_monitor_thread = None
+
+def monitor_bracket_fills():
+    """
+    Monitor broker-managed positions to detect when bracket orders fill.
+    
+    When Tradovate's bracket order (TP or SL) fills, the position closes
+    on the broker. This thread detects that and updates our DB accordingly.
+    
+    Polls every 5 seconds for positions with broker_managed_tp_sl=1.
+    """
+    logger.info("🔄 Starting bracket fill monitor (every 5 seconds)")
+    
+    while True:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Get trades with broker-managed TP/SL that are still open in DB
+            cursor.execute('''
+                SELECT t.id, t.recorder_id, t.ticker, t.side, t.entry_price, 
+                       t.quantity, t.tp_price, t.sl_price, t.broker_strategy_id,
+                       r.name as recorder_name
+                FROM recorded_trades t
+                JOIN recorders r ON t.recorder_id = r.id
+                WHERE t.status = 'open' AND t.broker_managed_tp_sl = 1
+            ''')
+            
+            broker_managed_trades = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+            
+            if not broker_managed_trades:
+                time.sleep(10)  # No broker-managed trades, check less frequently
+                continue
+            
+            logger.debug(f"📊 Monitoring {len(broker_managed_trades)} broker-managed trade(s)")
+            
+            # Group by recorder to minimize API calls
+            by_recorder = {}
+            for trade in broker_managed_trades:
+                rid = trade['recorder_id']
+                if rid not in by_recorder:
+                    by_recorder[rid] = []
+                by_recorder[rid].append(trade)
+            
+            # Check each recorder's broker positions
+            for recorder_id, trades in by_recorder.items():
+                try:
+                    # Sync with broker - this will detect if position closed
+                    ticker = trades[0]['ticker']  # Use first trade's ticker
+                    sync_result = sync_position_from_broker(recorder_id, ticker)
+                    
+                    if sync_result.get('success'):
+                        broker_pos = sync_result.get('broker_position')
+                        
+                        # If broker has no position but DB does, bracket must have filled
+                        if not broker_pos or broker_pos.get('netPos', 0) == 0:
+                            # Position closed on broker - update DB
+                            for trade in trades:
+                                trade_ticker = trade['ticker']
+                                trade_root = extract_symbol_root(trade_ticker)
+                                
+                                # Fetch current price to estimate exit
+                                current_price = get_price_from_tradingview_api(trade_ticker)
+                                
+                                if not current_price:
+                                    # Use TP or SL as exit price estimate
+                                    if trade['side'] == 'LONG':
+                                        # If price above entry, likely hit TP
+                                        current_price = trade.get('tp_price') or trade.get('entry_price')
+                                    else:
+                                        current_price = trade.get('tp_price') or trade.get('entry_price')
+                                
+                                # Determine if TP or SL hit based on price
+                                side = trade['side']
+                                tp_price = trade.get('tp_price')
+                                sl_price = trade.get('sl_price')
+                                entry_price = trade['entry_price']
+                                
+                                if side == 'LONG':
+                                    if tp_price and current_price >= tp_price:
+                                        exit_reason = 'tp'
+                                        exit_price = tp_price
+                                    elif sl_price and current_price <= sl_price:
+                                        exit_reason = 'sl'
+                                        exit_price = sl_price
+                                    else:
+                                        exit_reason = 'broker_closed'
+                                        exit_price = current_price
+                                else:  # SHORT
+                                    if tp_price and current_price <= tp_price:
+                                        exit_reason = 'tp'
+                                        exit_price = tp_price
+                                    elif sl_price and current_price >= sl_price:
+                                        exit_reason = 'sl'
+                                        exit_price = sl_price
+                                    else:
+                                        exit_reason = 'broker_closed'
+                                        exit_price = current_price
+                                
+                                # Calculate PnL
+                                tick_size = get_tick_size(trade_ticker)
+                                tick_value = get_tick_value(trade_ticker)
+                                quantity = trade['quantity'] or 1
+                                
+                                if side == 'LONG':
+                                    pnl_ticks = (exit_price - entry_price) / tick_size
+                                else:
+                                    pnl_ticks = (entry_price - exit_price) / tick_size
+                                
+                                pnl = pnl_ticks * tick_value * quantity
+                                
+                                # Update DB
+                                conn2 = get_db_connection()
+                                cursor2 = conn2.cursor()
+                                
+                                cursor2.execute('''
+                                    UPDATE recorded_trades 
+                                    SET exit_price = ?, exit_time = CURRENT_TIMESTAMP,
+                                        pnl = ?, pnl_ticks = ?, status = 'closed',
+                                        exit_reason = ?, updated_at = CURRENT_TIMESTAMP
+                                    WHERE id = ?
+                                ''', (exit_price, pnl, pnl_ticks, exit_reason, trade['id']))
+                                
+                                # Close position record
+                                cursor2.execute('''
+                                    UPDATE recorder_positions 
+                                    SET status = 'closed'
+                                    WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                                ''', (recorder_id, trade_ticker))
+                                
+                                conn2.commit()
+                                conn2.close()
+                                
+                                # Rebuild index
+                                rebuild_index()
+                                
+                                logger.info(f"🎯 BRACKET {exit_reason.upper()} detected for '{trade.get('recorder_name')}': "
+                                           f"{side} {trade_ticker} | Entry: {entry_price:.2f} | Exit: {exit_price:.2f} | "
+                                           f"PnL: ${pnl:.2f} ({pnl_ticks:.1f} ticks)")
+                        
+                        elif sync_result.get('db_updated'):
+                            # Position synced (quantities/avg updated) 
+                            logger.debug(f"📊 Position synced for recorder {recorder_id}")
+                
+                except Exception as e:
+                    logger.warning(f"⚠️ Error checking recorder {recorder_id}: {e}")
+            
+            time.sleep(5)  # Check every 5 seconds
+            
+        except Exception as e:
+            logger.error(f"❌ Error in bracket fill monitor: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            time.sleep(30)
+
+
+def start_bracket_monitor():
+    """Start the bracket fill monitor thread"""
+    global _bracket_monitor_thread
+    
+    if _bracket_monitor_thread and _bracket_monitor_thread.is_alive():
+        return
+    
+    _bracket_monitor_thread = threading.Thread(target=monitor_bracket_fills, daemon=True)
+    _bracket_monitor_thread.start()
+    logger.info("✅ Bracket fill monitor started")
 
 
 # ============================================================================
@@ -2154,7 +2800,18 @@ def receive_webhook(webhook_token):
         # TRADE PROCESSING LOGIC
         # =====================================================
         trade_result = None
-        current_price = float(price) if price else 0
+        webhook_price = float(price) if price else 0
+        
+        # CRITICAL: Get LIVE market price for accurate TP/SL calculation
+        # The webhook price may be delayed/stale from TradingView
+        live_price = get_price_from_tradingview_api(ticker)
+        if live_price:
+            current_price = live_price
+            if webhook_price and abs(webhook_price - live_price) > 2:  # More than 2 points difference
+                logger.warning(f"⚠️ Webhook price ({webhook_price}) differs from live price ({live_price}) by {abs(webhook_price - live_price):.2f} points - using live price")
+        else:
+            current_price = webhook_price
+            logger.warning(f"⚠️ Could not fetch live price for {ticker}, using webhook price: {webhook_price}")
         
         # Get position size from recorder settings or signal
         quantity = int(position_size) if position_size else recorder.get('initial_position_size', 1)
@@ -2276,37 +2933,144 @@ def receive_webhook(webhook_token):
                 logger.info(f"📊 SHORT closed by BUY reversal: ${pnl:.2f}")
                 open_trade = None
             
+            # DCA: If we already have an open LONG, add to it
+            if open_trade and open_trade['side'] == 'LONG':
+                logger.info(f"📈 DCA LONG signal for '{recorder_name}': adding {quantity} to existing position")
+                
+                # BROKER-FIRST: Execute on broker first, get confirmed fill
+                broker_result = execute_live_trade_with_bracket(
+                    recorder_id=recorder_id,
+                    action='BUY',
+                    ticker=ticker,
+                    quantity=quantity,
+                    tp_ticks=tp_ticks,
+                    sl_ticks=int(sl_amount) if sl_enabled else None,
+                    is_dca=True  # DCA doesn't place new brackets yet
+                )
+                
+                if broker_result.get('success') and broker_result.get('broker_position'):
+                    # Use broker's data for DB update
+                    broker_pos = broker_result['broker_position']
+                    broker_qty = abs(broker_pos.get('netPos', 0))
+                    broker_avg = broker_pos.get('netPrice', current_price)
+                    
+                    logger.info(f"📊 BROKER CONFIRMED DCA: {broker_qty} contracts @ avg {broker_avg}")
+                    
+                    # Calculate new TP based on broker's average price
+                    new_tp_price, new_sl_price = calculate_tp_sl_prices(
+                        broker_avg, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                    )
+                    
+                    # Update DB with broker's confirmed data
+                    cursor.execute('''
+                        UPDATE recorded_trades 
+                        SET entry_price = ?, quantity = ?, tp_price = ?, sl_price = ?,
+                            broker_fill_price = ?, broker_order_id = ?
+                        WHERE id = ?
+                    ''', (broker_avg, broker_qty, new_tp_price, new_sl_price,
+                          broker_result.get('fill_price'), broker_result.get('order_id'),
+                          open_trade['id']))
+                    
+                    # Update position tracking with broker data
+                    cursor.execute('''
+                        UPDATE recorder_positions 
+                        SET total_quantity = ?, avg_entry_price = ?
+                        WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                    ''', (broker_qty, broker_avg, recorder_id, ticker))
+                    
+                    trade_result = {
+                        'action': 'dca', 'trade_id': open_trade['id'], 'side': 'LONG',
+                        'dca_price': broker_result.get('fill_price', current_price),
+                        'avg_entry_price': broker_avg,
+                        'quantity': quantity, 'total_quantity': broker_qty,
+                        'tp_price': new_tp_price, 'sl_price': new_sl_price,
+                        'broker_confirmed': True
+                    }
+                    logger.info(f"📈 DCA LONG CONFIRMED for '{recorder_name}': {ticker} | Broker: {broker_qty} @ {broker_avg:.2f} | TP: {new_tp_price}")
+                    
+                    # UPDATE EXIT BRACKETS to new TP based on average price
+                    bracket_result = update_exit_brackets(
+                        recorder_id=recorder_id,
+                        ticker=ticker,
+                        side='LONG',
+                        total_quantity=broker_qty,
+                        tp_price=new_tp_price,
+                        sl_price=new_sl_price
+                    )
+                    if bracket_result.get('success'):
+                        logger.info(f"✅ Exit brackets updated to TP @ {new_tp_price}")
+                else:
+                    # Broker execution failed - DO NOT update DB position
+                    if broker_result.get('error'):
+                        logger.error(f"❌ DCA LONG REJECTED by broker: {broker_result['error']} - NOT updating position")
+                        trade_result = {'action': 'dca_rejected', 'error': broker_result['error']}
+                    else:
+                        # No broker linked - just log signal, don't track position
+                        logger.info(f"📝 No broker linked - DCA signal logged only")
+                        trade_result = {'action': 'signal_only', 'side': 'LONG'}
+
             # Open new LONG trade if no open trade
-            if not open_trade:
-                tp_price, sl_price = calculate_tp_sl_prices(
-                    current_price, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+            elif not open_trade:
+                logger.info(f"📈 NEW LONG signal for '{recorder_name}': {quantity} {ticker}")
+                
+                # BROKER-FIRST: Execute on broker with bracket order
+                broker_result = execute_live_trade_with_bracket(
+                    recorder_id=recorder_id,
+                    action='BUY',
+                    ticker=ticker,
+                    quantity=quantity,
+                    tp_ticks=tp_ticks,
+                    sl_ticks=int(sl_amount) if sl_enabled else None,
+                    is_dca=False
                 )
                 
-                cursor.execute('''
-                    INSERT INTO recorded_trades 
-                    (recorder_id, signal_id, ticker, action, side, entry_price, entry_time,
-                     quantity, status, tp_price, sl_price)
-                    VALUES (?, ?, ?, 'BUY', 'LONG', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?)
-                ''', (recorder_id, signal_id, ticker, current_price, quantity, tp_price, sl_price))
-                
-                new_trade_id = cursor.lastrowid
-                
-                # Update position tracking
-                pos_id, is_new_pos, total_qty = update_recorder_position_helper(
-                    cursor, recorder_id, ticker, 'LONG', current_price, quantity
-                )
-                
-                trade_result = {
-                    'action': 'opened', 'trade_id': new_trade_id, 'side': 'LONG',
-                    'entry_price': current_price, 'quantity': quantity,
-                    'tp_price': tp_price, 'sl_price': sl_price,
-                    'position_id': pos_id, 'position_qty': total_qty
-                }
-                logger.info(f"📈 LONG opened for '{recorder_name}': {ticker} @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
-                
-                # Execute live trades on linked accounts
-                execute_live_trades(recorder_id, 'BUY', ticker, quantity, 
-                                   entry_price=current_price, tp_price=tp_price, sl_price=sl_price)
+                # CRITICAL: Only record trade if broker confirmed OR no broker linked
+                # If broker rejected (error), DO NOT record - prevents DB/broker mismatch
+                if broker_result.get('error'):
+                    logger.error(f"❌ LONG REJECTED by broker: {broker_result['error']} - NOT recording trade")
+                    trade_result = {'action': 'rejected', 'error': broker_result['error']}
+                elif broker_result.get('success') and broker_result.get('fill_price'):
+                    fill_price = broker_result['fill_price']
+                    broker_managed = broker_result.get('bracket_managed', False)
+                    logger.info(f"📊 BROKER CONFIRMED: Filled @ {fill_price}, brackets={broker_managed}")
+
+                    # Calculate TP/SL based on actual fill price
+                    tp_price, sl_price = calculate_tp_sl_prices(
+                        fill_price, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                    )
+
+                    # Insert trade with broker data
+                    cursor.execute('''
+                        INSERT INTO recorded_trades
+                        (recorder_id, signal_id, ticker, action, side, entry_price, entry_time,
+                         quantity, status, tp_price, sl_price,
+                         broker_order_id, broker_strategy_id, broker_fill_price, broker_managed_tp_sl)
+                        VALUES (?, ?, ?, 'BUY', 'LONG', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?,
+                                ?, ?, ?, ?)
+                    ''', (recorder_id, signal_id, ticker, fill_price, quantity, tp_price, sl_price,
+                          broker_result.get('order_id'), broker_result.get('strategy_id'),
+                          broker_result.get('fill_price'), 1 if broker_managed else 0))
+
+                    new_trade_id = cursor.lastrowid
+
+                    # Update position tracking
+                    pos_id, is_new_pos, total_qty = update_recorder_position_helper(
+                        cursor, recorder_id, ticker, 'LONG', fill_price, quantity
+                    )
+
+                    trade_result = {
+                        'action': 'opened', 'trade_id': new_trade_id, 'side': 'LONG',
+                        'entry_price': fill_price, 'quantity': quantity,
+                        'tp_price': tp_price, 'sl_price': sl_price,
+                        'position_id': pos_id, 'position_qty': total_qty,
+                        'broker_managed_tp_sl': broker_managed,
+                        'broker_confirmed': True
+                    }
+                    logger.info(f"📈 LONG OPENED for '{recorder_name}': {ticker} @ {fill_price} x{quantity} | TP: {tp_price} | Broker-managed: {broker_managed}")
+                else:
+                    # No broker linked (success=True but no fill_price) - record for signal tracking only
+                    logger.info(f"📝 No broker linked - recording signal only (no position)")
+                    trade_result = {'action': 'signal_only', 'side': 'LONG'}
         
         elif normalized_action == 'SELL':
             # If we have an open LONG, close it first
@@ -2316,37 +3080,144 @@ def receive_webhook(webhook_token):
                 logger.info(f"📊 LONG closed by SELL reversal: ${pnl:.2f}")
                 open_trade = None
             
+            # DCA: If we already have an open SHORT, add to it
+            if open_trade and open_trade['side'] == 'SHORT':
+                logger.info(f"📉 DCA SHORT signal for '{recorder_name}': adding {quantity} to existing position")
+                
+                # BROKER-FIRST: Execute on broker first, get confirmed fill
+                broker_result = execute_live_trade_with_bracket(
+                    recorder_id=recorder_id,
+                    action='SELL',
+                    ticker=ticker,
+                    quantity=quantity,
+                    tp_ticks=tp_ticks,
+                    sl_ticks=int(sl_amount) if sl_enabled else None,
+                    is_dca=True
+                )
+                
+                if broker_result.get('success') and broker_result.get('broker_position'):
+                    # Use broker's data for DB update
+                    broker_pos = broker_result['broker_position']
+                    broker_qty = abs(broker_pos.get('netPos', 0))
+                    broker_avg = broker_pos.get('netPrice', current_price)
+                    
+                    logger.info(f"📊 BROKER CONFIRMED DCA: {broker_qty} contracts @ avg {broker_avg}")
+                    
+                    # Calculate new TP based on broker's average price
+                    new_tp_price, new_sl_price = calculate_tp_sl_prices(
+                        broker_avg, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                    )
+                    
+                    # Update DB with broker's confirmed data
+                    cursor.execute('''
+                        UPDATE recorded_trades 
+                        SET entry_price = ?, quantity = ?, tp_price = ?, sl_price = ?,
+                            broker_fill_price = ?, broker_order_id = ?
+                        WHERE id = ?
+                    ''', (broker_avg, broker_qty, new_tp_price, new_sl_price,
+                          broker_result.get('fill_price'), broker_result.get('order_id'),
+                          open_trade['id']))
+                    
+                    # Update position tracking with broker data
+                    cursor.execute('''
+                        UPDATE recorder_positions 
+                        SET total_quantity = ?, avg_entry_price = ?
+                        WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                    ''', (broker_qty, broker_avg, recorder_id, ticker))
+                    
+                    trade_result = {
+                        'action': 'dca', 'trade_id': open_trade['id'], 'side': 'SHORT',
+                        'dca_price': broker_result.get('fill_price', current_price),
+                        'avg_entry_price': broker_avg,
+                        'quantity': quantity, 'total_quantity': broker_qty,
+                        'tp_price': new_tp_price, 'sl_price': new_sl_price,
+                        'broker_confirmed': True
+                    }
+                    logger.info(f"📉 DCA SHORT CONFIRMED for '{recorder_name}': {ticker} | Broker: {broker_qty} @ {broker_avg:.2f} | TP: {new_tp_price}")
+                    
+                    # UPDATE EXIT BRACKETS to new TP based on average price
+                    bracket_result = update_exit_brackets(
+                        recorder_id=recorder_id,
+                        ticker=ticker,
+                        side='SHORT',
+                        total_quantity=broker_qty,
+                        tp_price=new_tp_price,
+                        sl_price=new_sl_price
+                    )
+                    if bracket_result.get('success'):
+                        logger.info(f"✅ Exit brackets updated to TP @ {new_tp_price}")
+                else:
+                    # Broker execution failed - DO NOT update DB position
+                    if broker_result.get('error'):
+                        logger.error(f"❌ DCA SHORT REJECTED by broker: {broker_result['error']} - NOT updating position")
+                        trade_result = {'action': 'dca_rejected', 'error': broker_result['error']}
+                    else:
+                        # No broker linked - just log signal, don't track position
+                        logger.info(f"📝 No broker linked - DCA signal logged only")
+                        trade_result = {'action': 'signal_only', 'side': 'SHORT'}
+
             # Open new SHORT trade if no open trade
-            if not open_trade:
-                tp_price, sl_price = calculate_tp_sl_prices(
-                    current_price, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+            elif not open_trade:
+                logger.info(f"📉 NEW SHORT signal for '{recorder_name}': {quantity} {ticker}")
+                
+                # BROKER-FIRST: Execute on broker with bracket order
+                broker_result = execute_live_trade_with_bracket(
+                    recorder_id=recorder_id,
+                    action='SELL',
+                    ticker=ticker,
+                    quantity=quantity,
+                    tp_ticks=tp_ticks,
+                    sl_ticks=int(sl_amount) if sl_enabled else None,
+                    is_dca=False
                 )
                 
-                cursor.execute('''
-                    INSERT INTO recorded_trades 
-                    (recorder_id, signal_id, ticker, action, side, entry_price, entry_time,
-                     quantity, status, tp_price, sl_price)
-                    VALUES (?, ?, ?, 'SELL', 'SHORT', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?)
-                ''', (recorder_id, signal_id, ticker, current_price, quantity, tp_price, sl_price))
-                
-                new_trade_id = cursor.lastrowid
-                
-                # Update position tracking
-                pos_id, is_new_pos, total_qty = update_recorder_position_helper(
-                    cursor, recorder_id, ticker, 'SHORT', current_price, quantity
-                )
-                
-                trade_result = {
-                    'action': 'opened', 'trade_id': new_trade_id, 'side': 'SHORT',
-                    'entry_price': current_price, 'quantity': quantity,
-                    'tp_price': tp_price, 'sl_price': sl_price,
-                    'position_id': pos_id, 'position_qty': total_qty
-                }
-                logger.info(f"📉 SHORT opened for '{recorder_name}': {ticker} @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
-                
-                # Execute live trades on linked accounts
-                execute_live_trades(recorder_id, 'SELL', ticker, quantity, 
-                                   entry_price=current_price, tp_price=tp_price, sl_price=sl_price)
+                # CRITICAL: Only record trade if broker confirmed OR no broker linked
+                # If broker rejected (error), DO NOT record - prevents DB/broker mismatch
+                if broker_result.get('error'):
+                    logger.error(f"❌ SHORT REJECTED by broker: {broker_result['error']} - NOT recording trade")
+                    trade_result = {'action': 'rejected', 'error': broker_result['error']}
+                elif broker_result.get('success') and broker_result.get('fill_price'):
+                    fill_price = broker_result['fill_price']
+                    broker_managed = broker_result.get('bracket_managed', False)
+                    logger.info(f"📊 BROKER CONFIRMED: Filled @ {fill_price}, brackets={broker_managed}")
+
+                    # Calculate TP/SL based on actual fill price
+                    tp_price, sl_price = calculate_tp_sl_prices(
+                        fill_price, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                    )
+
+                    # Insert trade with broker data
+                    cursor.execute('''
+                        INSERT INTO recorded_trades
+                        (recorder_id, signal_id, ticker, action, side, entry_price, entry_time,
+                         quantity, status, tp_price, sl_price,
+                         broker_order_id, broker_strategy_id, broker_fill_price, broker_managed_tp_sl)
+                        VALUES (?, ?, ?, 'SELL', 'SHORT', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?,
+                                ?, ?, ?, ?)
+                    ''', (recorder_id, signal_id, ticker, fill_price, quantity, tp_price, sl_price,
+                          broker_result.get('order_id'), broker_result.get('strategy_id'),
+                          broker_result.get('fill_price'), 1 if broker_managed else 0))
+
+                    new_trade_id = cursor.lastrowid
+
+                    # Update position tracking
+                    pos_id, is_new_pos, total_qty = update_recorder_position_helper(
+                        cursor, recorder_id, ticker, 'SHORT', fill_price, quantity
+                    )
+
+                    trade_result = {
+                        'action': 'opened', 'trade_id': new_trade_id, 'side': 'SHORT',
+                        'entry_price': fill_price, 'quantity': quantity,
+                        'tp_price': tp_price, 'sl_price': sl_price,
+                        'position_id': pos_id, 'position_qty': total_qty,
+                        'broker_managed_tp_sl': broker_managed,
+                        'broker_confirmed': True
+                    }
+                    logger.info(f"📉 SHORT OPENED for '{recorder_name}': {ticker} @ {fill_price} x{quantity} | TP: {tp_price} | Broker-managed: {broker_managed}")
+                else:
+                    # No broker linked (success=True but no fill_price) - record for signal tracking only
+                    logger.info(f"📝 No broker linked - recording signal only (no position)")
+                    trade_result = {'action': 'signal_only', 'side': 'SHORT'}
         
         conn.commit()
         
@@ -2507,11 +3378,15 @@ def initialize():
     # Start TP/SL polling thread (fallback when WebSocket not available)
     start_tp_sl_polling()
     logger.info("✅ TP/SL monitoring active")
-    
+
+    # Start bracket fill monitor (detects when Tradovate closes positions)
+    start_bracket_monitor()
+    logger.info("✅ Bracket fill monitor active")
+
     # Start position drawdown polling thread (Trade Manager style tracking)
     start_position_drawdown_polling()
     logger.info("✅ Position drawdown tracking active")
-    
+
     logger.info(f"✅ Trading Engine ready on port {SERVICE_PORT}")
     logger.info("=" * 60)
 

@@ -2,6 +2,38 @@
 
 ---
 
+## 🔴 CRITICAL UPDATE - DEC 8, 2025 (Evening Session) 🔴
+
+**THREE MAJOR BUGS FIXED IN TRADING ENGINE:**
+
+### 1. ✅ FIXED: SHORT Close Was Sending SELL Instead of BUY
+**File:** `recorder_service.py` line ~1304
+**Problem:** When SHORT position hit TP, system sent SELL (adding to short) instead of BUY (closing short)
+**Impact:** Position went from -3 to -4 instead of closing, caused $3+ losses
+**Fix:** Changed `action='CLOSE'` to `action=close_action` where `close_action = 'BUY' for SHORT`
+
+### 2. ✅ FIXED: Trades Recording When Broker Rejected
+**File:** `recorder_service.py` lines ~3048, ~3213
+**Problem:** Even when broker returned error `{}`, system recorded trade in DB anyway
+**Impact:** DB showed 3 contracts, broker had 0 = complete mismatch
+**Fix:** Only record trade if `broker_result.get('success') and broker_result.get('fill_price')`
+
+### 3. ✅ FIXED: Redundant Close Orders Flipping Position
+**File:** `recorder_service.py` line ~1298
+**Problem:** TP limit filled on broker, but system detected TP via polling and sent ANOTHER close
+**Impact:** Position flipped to opposite side
+**Fix:** Added `check_broker_position_exists()` - query broker BEFORE sending close order
+
+### 📍 Latest Working Files:
+```
+recorder_service.py  ← ALL 3 FIXES APPLIED
+```
+
+### 📝 Full Details:
+See **`HANDOFF_DEC8_2025_TRADING_ENGINE.md`** for complete documentation.
+
+---
+
 ## 🏗️ ARCHITECTURE UPDATE - DEC 5, 2025 🏗️
 
 **⚠️ THE SYSTEM NOW USES A 3-SERVER MICROSERVICES ARCHITECTURE**
