@@ -2,46 +2,6 @@
 
 ---
 
-## 🔴🔴🔴 CRITICAL FIX - DEC 16, 2025 🔴🔴🔴
-
-### ⚠️ POSITION API ENDPOINT FIX - DO NOT REVERT ⚠️
-
-**Problem:** `get_positions()` was returning 0 positions even when broker had open positions.
-
-**Root Cause:** Code was trying LIVE API endpoint first for DEMO accounts. Live endpoint doesn't have demo positions → returns empty → system thought no position → broke everything (DCA, TP management, etc.)
-
-**Location:** `phantom_scraper/tradovate_integration.py` line ~923-930
-
-**THE FIX (ONE LINE - DO NOT CHANGE):**
-```python
-# ❌ BROKEN (was trying live first for demo):
-# urls_to_try = [live_url, demo_url] if "demo" in self.base_url else [self.base_url]
-
-# ✅ FIXED (always use correct endpoint for account type):
-urls_to_try = [self.base_url]  # Use the configured endpoint only
-```
-
-**Why This Matters:**
-- Demo accounts → MUST use demo.tradovateapi.com
-- Live accounts → MUST use live.tradovateapi.com  
-- Cross-API calls return 0 positions (not an error, just empty)
-
-**What Works Now:**
-- ✅ Real broker position data (qty + avg price)
-- ✅ TP calculated from REAL average (5 ticks above/below)
-- ✅ Single TP order that gets MODIFIED on DCA (not cancelled+replaced)
-- ✅ DCA properly updates existing TP order price and quantity
-
-**⛔ NEVER:**
-- Add code that tries live endpoint for demo positions
-- Add code that tries demo endpoint for live positions
-- Revert to trying multiple endpoints for position data
-
-**Backup:** `backups/WORKING_STATE_DEC16_2025_POSITION_API_FIX/`
-**Git Tag:** `WORKING_DEC16_2025_POSITION_API_FIX`
-
----
-
 ## 🔴 CRITICAL UPDATE - DEC 11, 2025 🔴
 
 **V2 TRADING ENGINE - TRADEMANAGER REPLICA IMPLEMENTATION COMPLETE**
@@ -220,21 +180,15 @@ LOCKED FILES - DO NOT TOUCH:
 
 ### Latest Backup
 ```
-backups/WORKING_STATE_DEC16_2025_POSITION_API_FIX/    ← LATEST
-├── tradovate_integration.py     ← Position API fix (endpoint routing)
-├── recorder_service.py          ← DCA TP modification logic
-└── START_HERE.md                ← This file
-
 backups/WORKING_STATE_DEC11_2025_V2_ENGINE/
 ├── recorder_service_v2.py       ← V2 Engine with TradeManager replica
 ├── tradovate_integration.py     ← TV routing detection
 ├── ultra_simple_server.py       ← Main server
-└── START_HERE.md
+└── START_HERE.md                ← This file
 ```
 
 ### Git Tags
 ```bash
-git tag WORKING_DEC16_2025_POSITION_API_FIX   # ← LATEST: Position API fix + DCA TP modification
 git tag WORKING_DEC11_2025_V2_ENGINE
 git tag WORKING_DEC8_2025_TRADING_FIX
 git tag WORKING_DEC5_2025_COMPLETE
@@ -248,38 +202,6 @@ git tag WORKING_DEC5_2025_COMPLETE
 - **Trigger Types:** TICKS, PERCENT, ATR
 - **State Persistence:** `dca_triggered_indices_json` column prevents double-triggers after restart
 - **Max Qty Limits:** Configurable per strategy
-
-### 🎯 DCA TP ORDER MANAGEMENT (Dec 16, 2025)
-
-**THE RULE: ONE TP ORDER ON SCREEN - MODIFIED, NEVER REPLACED**
-
-When DCA adds to position:
-1. System gets **real broker position** (qty + avg price) from `get_positions()`
-2. Calculates new TP = avg_price ± (5 × tick_size)
-3. **MODIFIES** existing TP order (same order ID, new price + qty)
-4. Stores `tp_order_id` in `recorded_trades` table
-
-**Key Functions:**
-- `ensure_single_tp_limit()` in `recorder_service.py` (~line 1628)
-  - Takes `existing_tp_order_id` parameter
-  - If order is still WORKING → MODIFY it
-  - If order is FILLED/CANCELLED → place new one
-- `update_exit_brackets()` in `recorder_service.py` (~line 1743)
-  - Fetches `tp_order_id` from DB for open trade
-  - Passes it to `ensure_single_tp_limit()` for modification
-- `get_order_item()` in `tradovate_integration.py` (~line 1141)
-  - Fetches full order details (status, price, qty)
-
-**Database:**
-```sql
--- tp_order_id column stores the broker's TP order ID
-ALTER TABLE recorded_trades ADD COLUMN tp_order_id TEXT;
-```
-
-**⛔ NEVER:**
-- Cancel and replace TP orders (creates multiple resting orders)
-- Use `/order/list` to find TP orders (doesn't return full details)
-- Assume broker position is 0 without checking endpoint correctness
 
 ### Exit Manager
 - **ALWAYS uses MARKET orders** (no limit orders)
@@ -337,10 +259,6 @@ curl http://localhost:8082/api/accounts/1/check-tradingview-routing
 
 | Date | Change |
 |------|--------|
-| **Dec 16, 2025** | **CRITICAL FIX: Position API endpoint - Demo accounts must use demo endpoint only** |
-| Dec 16, 2025 | Fixed `get_positions()` returning 0 for demo accounts (was trying live endpoint first) |
-| Dec 16, 2025 | DCA now properly MODIFIES existing TP order (single order on screen, updates price+qty) |
-| Dec 16, 2025 | TP calculated from REAL broker average price (5 ticks above/below) |
 | **Dec 11, 2025** | **V2 ENGINE: TradeManager replica complete** |
 | Dec 11, 2025 | Added `BrokerEventLoop`, `AdvancedExitManager`, `ExitConfirmationLoop` |
 | Dec 11, 2025 | Added `ForceFlattenKillSwitch`, `PositionDriftReconciler` |
@@ -354,6 +272,6 @@ curl http://localhost:8082/api/accounts/1/check-tradingview-routing
 
 ---
 
-*Last updated: Dec 16, 2025 - CRITICAL Position API Fix + DCA TP Modification*
-*Backup tags: WORKING_DEC16_2025_POSITION_API_FIX, WORKING_DEC11_2025_V2_ENGINE*
+*Last updated: Dec 11, 2025 - V2 TradeManager Replica Complete*
+*Backup tags: WORKING_DEC11_2025_V2_ENGINE*
 *Architecture docs: JUST_TRADES_TRADEMANAGER_REPLICA.md*
