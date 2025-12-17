@@ -7,3 +7,18 @@ requests==2.31.0
 feedparser==6.0.10
 python-dotenv==1.0.0
 
+# Production Database (PostgreSQL)
+psycopg2-binary==2.9.9
+asyncpg==0.29.0
+
+# Redis for caching and message queue
+redis==5.0.1
+hiredis==2.3.2
+
+# Connection pooling
+sqlalchemy[asyncio]==2.0.23
+
+# Async support
+aiohttp==3.9.1
+celery==5.3.4
+

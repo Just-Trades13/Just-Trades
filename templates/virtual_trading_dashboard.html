@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Trading Dashboard - TradeManager Style</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0a0e27;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #1a1f3a;
+        }
+        
+        h1 {
+            color: #4CAF50;
+            font-size: 28px;
+        }
+        
+        .status {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .status-connected {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .status-disconnected {
+            background: #f44336;
+            color: white;
+        }
+        
+        .positions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .position-card {
+            background: #1a1f3a;
+            border: 1px solid #2a2f4a;
+            border-radius: 12px;
+            padding: 20px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .position-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(76, 175, 80, 0.2);
+        }
+        
+        .position-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .strategy-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: #4CAF50;
+        }
+        
+        .side-badge {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .side-long {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .side-short {
+            background: #f44336;
+            color: white;
+        }
+        
+        .position-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .info-label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        
+        .info-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+        
+        .pnl {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .pnl-positive {
+            color: #4CAF50;
+        }
+        
+        .pnl-negative {
+            color: #f44336;
+        }
+        
+        .levels {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #2a2f4a;
+        }
+        
+        .level-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .level-label {
+            color: #888;
+        }
+        
+        .level-value {
+            font-weight: 600;
+        }
+        
+        .tp-level {
+            color: #4CAF50;
+        }
+        
+        .sl-level {
+            color: #f44336;
+        }
+        
+        .dca-badge {
+            display: inline-block;
+            background: #ff9800;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .empty-state h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .refresh-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+            transition: transform 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .last-update {
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 Virtual Trading Dashboard</h1>
+        <div class="status">
+            <div class="status-badge" id="mdStatus">Checking...</div>
+            <div class="status-badge" id="positionCount">0 Positions</div>
+        </div>
+    </div>
+    
+    <div id="positionsContainer" class="positions-grid">
+        <div class="empty-state">
+            <h2>No Open Positions</h2>
+            <p>Positions will appear here when opened via webhooks</p>
+        </div>
+    </div>
+    
+    <button class="refresh-btn" onclick="loadPositions()">🔄 Refresh</button>
+    
+    <script>
+        let updateInterval;
+        
+        async function loadPositions() {
+            try {
+                const response = await fetch('http://localhost:8085/api/virtual/positions');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayPositions(data.positions);
+                    updateStatus(data);
+                }
+            } catch (error) {
+                console.error('Error loading positions:', error);
+                document.getElementById('mdStatus').textContent = 'Disconnected';
+                document.getElementById('mdStatus').className = 'status-badge status-disconnected';
+            }
+        }
+        
+        function displayPositions(positions) {
+            const container = document.getElementById('positionsContainer');
+            
+            if (positions.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h2>No Open Positions</h2>
+                        <p>Positions will appear here when opened via webhooks</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = positions.map(pos => `
+                <div class="position-card">
+                    <div class="position-header">
+                        <div>
+                            <span class="strategy-name">${pos.strategy}</span>
+                            <span class="symbol">${pos.symbol}</span>
+                            ${pos.dca_count > 0 ? `<span class="dca-badge">${pos.dca_count} DCA</span>` : ''}
+                        </div>
+                        <span class="side-badge side-${pos.side.toLowerCase()}">${pos.side}</span>
+                    </div>
+                    
+                    <div class="position-info">
+                        <div class="info-item">
+                            <span class="info-label">Quantity</span>
+                            <span class="info-value">${pos.qty}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Avg Entry</span>
+                            <span class="info-value">$${pos.avg_entry.toFixed(2)}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Current Price</span>
+                            <span class="info-value">$${pos.current_price.toFixed(2)}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">PnL</span>
+                            <span class="info-value pnl ${pos.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                                ${pos.unrealized_pnl >= 0 ? '+' : ''}$${pos.unrealized_pnl.toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="levels">
+                        <div class="level-row">
+                            <span class="level-label">Take Profit:</span>
+                            <span class="level-value tp-level">$${pos.tp_price.toFixed(2)}</span>
+                        </div>
+                        <div class="level-row">
+                            <span class="level-label">Stop Loss:</span>
+                            <span class="level-value sl-level">$${pos.sl_price.toFixed(2)}</span>
+                        </div>
+                        <div class="level-row">
+                            <span class="level-label">PnL (Ticks):</span>
+                            <span class="level-value ${pos.pnl_ticks >= 0 ? 'tp-level' : 'sl-level'}">
+                                ${pos.pnl_ticks >= 0 ? '+' : ''}${pos.pnl_ticks.toFixed(1)}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="last-update">
+                        Opened: ${new Date(pos.opened_at).toLocaleString()}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function updateStatus(data) {
+            document.getElementById('positionCount').textContent = `${data.count} Position${data.count !== 1 ? 's' : ''}`;
+            
+            // Check health
+            fetch('http://localhost:8085/api/virtual/health')
+                .then(r => r.json())
+                .then(health => {
+                    const statusEl = document.getElementById('mdStatus');
+                    if (health.md_connected) {
+                        statusEl.textContent = 'Market Data: Connected';
+                        statusEl.className = 'status-badge status-connected';
+                    } else {
+                        statusEl.textContent = 'Market Data: Disconnected';
+                        statusEl.className = 'status-badge status-disconnected';
+                    }
+                });
+        }
+        
+        // Auto-refresh every 1 second
+        updateInterval = setInterval(loadPositions, 1000);
+        
+        // Initial load
+        loadPositions();
+    </script>
+</body>
+</html>

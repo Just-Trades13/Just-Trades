@@ -6,6 +6,7 @@
     <title>Just.Trade - My Traders</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Cache bust: v2024120803 -->
     <style>
         * {
             margin: 0;
@@ -624,6 +625,99 @@
         .strategy-option:last-child {
             border-bottom: none;
         }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: rgba(11,18,33,0.95);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            padding: 1rem 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 3000;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        .toast.success { border-color: rgba(34,197,94,0.5); color: #86efac; }
+        .toast.error { border-color: rgba(239,68,68,0.5); color: #fca5a5; }
+        .toast.info { border-color: rgba(59, 130, 246, 0.5); color: #93c5fd; }
+
+        /* Confirm Modal */
+        .confirm-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2500;
+            justify-content: center;
+            align-items: center;
+        }
+        .confirm-modal-content {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            border: 1px solid #444;
+        }
+        .confirm-modal-content h3 {
+            color: #ffffff;
+            margin: 0 0 15px 0;
+            font-size: 20px;
+        }
+        .confirm-modal-content p {
+            color: #94a3b8;
+            margin: 0 0 25px 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .confirm-modal-content .highlight {
+            color: #3b82f6;
+            font-weight: 600;
+        }
+        .confirm-modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        .confirm-modal-actions .btn-cancel {
+            background: #4b5563;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .confirm-modal-actions .btn-cancel:hover {
+            background: #6b7280;
+        }
+        .confirm-modal-actions .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .confirm-modal-actions .btn-danger:hover {
+            background: linear-gradient(135deg, #f87171, #ef4444);
+        }
     </style>
 </head>
 <body>
@@ -788,6 +882,58 @@
                     </select>
                 </div>
 
+                <!-- Risk Settings Section (populated from recorder, customizable) -->
+                <div id="riskSettingsSection" style="display: none; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                    <h6 style="color: #10b981; margin: 0 0 15px 0; font-size: 14px;">
+                        <i class="fas fa-shield-alt"></i> Risk Settings <span style="color: #888; font-weight: normal;">(from recorder - customize if needed)</span>
+                    </h6>
+                    
+                    <!-- Position Size Row -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 5px;">Initial Position Size</label>
+                            <input type="number" id="initialPositionSize" name="initial_position_size" class="form-control" min="1" value="1" style="padding: 8px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 5px;">Add Position Size</label>
+                            <input type="number" id="addPositionSize" name="add_position_size" class="form-control" min="1" value="1" style="padding: 8px;">
+                        </div>
+                    </div>
+                    
+                    <!-- Take Profit Section -->
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 5px;">Take Profit Targets</label>
+                        <div id="tpTargetsDisplay" style="background: #1a1a1a; border-radius: 4px; padding: 10px; font-size: 13px; color: #888;">
+                            No TP targets configured
+                        </div>
+                        <input type="hidden" id="tpTargetsJson" name="tp_targets" value="[]">
+                    </div>
+                    
+                    <!-- Stop Loss Row -->
+                    <div style="display: grid; grid-template-columns: auto 1fr 1fr; gap: 10px; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="slEnabled" name="sl_enabled" style="width: 18px; height: 18px;">
+                            <label for="slEnabled" style="font-size: 12px; color: #ccc; margin: 0;">Stop Loss</label>
+                        </div>
+                        <div>
+                            <input type="number" id="slAmount" name="sl_amount" class="form-control" min="0" step="0.25" value="0" style="padding: 8px;" placeholder="Amount">
+                        </div>
+                        <div>
+                            <select id="slUnits" name="sl_units" class="form-control" style="padding: 8px;">
+                                <option value="Ticks">Ticks</option>
+                                <option value="Points">Points</option>
+                                <option value="Percent">Percent</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Max Daily Loss -->
+                    <div style="margin-top: 15px;">
+                        <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 5px;">Max Daily Loss ($)</label>
+                        <input type="number" id="maxDailyLoss" name="max_daily_loss" class="form-control" min="0" step="50" value="500" style="padding: 8px;">
+                    </div>
+                </div>
+
                 <!-- Info Box -->
                 <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
                     <h6 style="color: #3b82f6; margin: 0 0 10px 0; font-size: 14px;">
@@ -796,7 +942,7 @@
                     <ul style="color: #888; font-size: 13px; margin: 0; padding-left: 20px;">
                         <li>Webhook signals will still record to Dashboard (theoretical tracking)</li>
                         <li>PLUS: Signals will execute REAL trades on the selected account</li>
-                        <li>You can pause/resume live trading anytime</li>
+                        <li>Risk settings are copied from the recorder and can be customized per trader</li>
                     </ul>
                 </div>
 
@@ -809,6 +955,133 @@
             </form>
         </div>
     </div>
+
+    <!-- Edit Trader Modal -->
+    <div id="editTraderModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title">Edit Trader</h2>
+                    <p style="color: #888; margin: 5px 0 0 0; font-size: 14px;">Modify risk settings for this trader</p>
+                </div>
+                <span class="close" onclick="closeEditTraderModal()">&times;</span>
+            </div>
+            
+            <form id="editTraderForm">
+                <input type="hidden" id="editTraderId" value="">
+                
+                <!-- Strategy Name (Read-only) -->
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label class="form-label" style="font-weight: 600; margin-bottom: 8px; display: block;">
+                        Strategy <span style="color: #888; font-weight: normal;">(cannot be changed)</span>
+                    </label>
+                    <div id="editRecorderName" style="background: #1a1a1a; border: 1px solid #444; border-radius: 6px; padding: 12px; color: #3b82f6; font-weight: 500;">
+                        Loading...
+                    </div>
+                </div>
+
+                <!-- Account (Read-only) -->
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label class="form-label" style="font-weight: 600; margin-bottom: 8px; display: block;">
+                        Account <span style="color: #888; font-weight: normal;">(cannot be changed)</span>
+                    </label>
+                    <div id="editAccountName" style="background: #1a1a1a; border: 1px solid #444; border-radius: 6px; padding: 12px; color: #10b981; font-weight: 500;">
+                        Loading...
+                    </div>
+                </div>
+
+                <!-- Risk Settings Section -->
+                <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                    <h6 style="color: #10b981; margin: 0 0 15px 0; font-size: 14px;">
+                        <i class="fas fa-shield-alt"></i> Risk Settings
+                    </h6>
+                    
+                    <!-- Position Size Row -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 5px;">Initial Position Size</label>
+                            <input type="number" id="editInitialPositionSize" name="initial_position_size" class="form-control" min="1" value="1" style="padding: 8px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 5px;">Add Position Size</label>
+                            <input type="number" id="editAddPositionSize" name="add_position_size" class="form-control" min="1" value="1" style="padding: 8px;">
+                        </div>
+                    </div>
+                    
+                    <!-- Take Profit Section -->
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 5px;">Take Profit Targets</label>
+                        <div id="editTpTargetsDisplay" style="background: #1a1a1a; border-radius: 4px; padding: 10px; font-size: 13px; color: #888;">
+                            No TP targets configured
+                        </div>
+                        <input type="hidden" id="editTpTargetsJson" name="tp_targets" value="[]">
+                    </div>
+                    
+                    <!-- Stop Loss Row -->
+                    <div style="display: grid; grid-template-columns: auto 1fr 1fr; gap: 10px; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="editSlEnabled" name="sl_enabled" style="width: 18px; height: 18px;">
+                            <label for="editSlEnabled" style="font-size: 12px; color: #ccc; margin: 0;">Stop Loss</label>
+                        </div>
+                        <div>
+                            <input type="number" id="editSlAmount" name="sl_amount" class="form-control" min="0" step="0.25" value="0" style="padding: 8px;" placeholder="Amount">
+                        </div>
+                        <div>
+                            <select id="editSlUnits" name="sl_units" class="form-control" style="padding: 8px;">
+                                <option value="Ticks">Ticks</option>
+                                <option value="Points">Points</option>
+                                <option value="Percent">Percent</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Max Daily Loss -->
+                    <div style="margin-top: 15px;">
+                        <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 5px;">Max Daily Loss ($)</label>
+                        <input type="number" id="editMaxDailyLoss" name="max_daily_loss" class="form-control" min="0" step="50" value="500" style="padding: 8px;">
+                    </div>
+                </div>
+
+                <!-- Status Toggle -->
+                <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <h6 style="color: #3b82f6; margin: 0 0 5px 0; font-size: 14px;">
+                                <i class="fas fa-power-off"></i> Trading Status
+                            </h6>
+                            <p style="color: #888; font-size: 12px; margin: 0;">Enable or disable live trading for this trader</p>
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="editTraderEnabled" style="width: 20px; height: 20px;">
+                            <span id="editTraderStatusLabel" style="font-weight: 600; color: #ef4444;">PAUSED</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="modal-footer" style="padding: 0; border: none; margin-top: 20px;">
+                    <button type="button" class="btn-secondary" onclick="closeEditTraderModal()" style="margin-right: 10px;">Cancel</button>
+                    <button type="submit" class="btn-primary" id="saveTraderBtn" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);">
+                        <i class="fas fa-save"></i> Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirm Delete Modal -->
+    <div id="confirmModal" class="confirm-modal-overlay">
+        <div class="confirm-modal-content">
+            <h3 id="confirmTitle">Delete Trader?</h3>
+            <p id="confirmMessage">Are you sure you want to remove <span class="highlight" id="confirmHighlight"></span>? This will stop live trading but won't affect the recorder or recorded trades.</p>
+            <div class="confirm-modal-actions">
+                <button class="btn-cancel" onclick="closeConfirmModal()">Cancel</button>
+                <button class="btn-danger" id="confirmActionBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
 
     <script>
         // Toggle submenu
@@ -912,19 +1185,42 @@
             
             traders.forEach(trader => {
                 const traderId = trader.id;
-                const recorderName = trader.recorder_name || 'Unknown Recorder';
-                const accountName = trader.account_name || 'No Account';
+                const recorderName = trader.recorder_name || trader.name || 'Unknown Recorder';
+                const accountName = trader.display_account || trader.account_name || 'No Account';
                 const strategyType = trader.strategy_type || '-';
-                const positionSize = trader.initial_position_size || '-';
+                const positionSize = trader.initial_position_size || trader.position_size || '-';
+                const addPositionSize = trader.add_position_size || '-';
                 const enabled = trader.enabled !== 0;
                 const symbol = trader.symbol || '-';
+                
+                // Risk settings
+                const slEnabled = trader.sl_enabled ? 'Yes' : 'No';
+                const slAmount = trader.sl_amount || 0;
+                const slUnits = trader.sl_units || 'Ticks';
+                const maxDailyLoss = trader.max_daily_loss || 500;
+                
+                // Format TP targets
+                const tpTargets = trader.tp_targets || [];
+                let tpDisplay = 'None';
+                if (tpTargets.length > 0) {
+                    tpDisplay = tpTargets.map((tp, i) => {
+                        const value = tp.value || tp.gain_ticks || 0;
+                        return `TP${i+1}: ${value} ticks`;
+                    }).join(', ');
+                }
+                
+                // Store trader data for edit modal
+                const traderDataStr = JSON.stringify(trader).replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 
                 // Create main row
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>
                         <div class="action-buttons">
-                            <button class="btn-action ${enabled ? 'btn-refresh' : 'btn-edit'}" onclick="toggleTrader(${traderId}, ${enabled ? 0 : 1})" title="${enabled ? 'Disable Trader' : 'Enable Trader'}">
+                            <button class="btn-action btn-edit" onclick="openEditTraderModal(${traderId})" title="Edit Trader Settings">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn-action ${enabled ? 'btn-refresh' : ''}" style="${enabled ? '' : 'background: #6b7280;'}" onclick="toggleTrader(${traderId}, ${enabled ? 0 : 1})" title="${enabled ? 'Disable Trader' : 'Enable Trader'}">
                                 <i class="fas fa-${enabled ? 'pause' : 'play'}"></i>
                             </button>
                             <button class="btn-action btn-remove" onclick="removeTrader(${traderId}, '${recorderName}')" title="Remove Trader">
@@ -944,7 +1240,11 @@
                 `;
                 tbody.appendChild(row);
                 
-                // Create details row
+                // Store trader data in a global object for easy access
+                window.tradersData = window.tradersData || {};
+                window.tradersData[traderId] = trader;
+                
+                // Create details row with risk settings
                 const detailsRow = document.createElement('tr');
                 detailsRow.className = 'expandable-row';
                 detailsRow.id = `details-${traderId}`;
@@ -954,7 +1254,7 @@
                         <div class="expandable-content">
                             <div class="strategy-details">
                                 <div class="strategy-details-header">
-                                    <h5 class="strategy-details-title">Trader Details</h5>
+                                    <h5 class="strategy-details-title">Trader Details & Risk Settings</h5>
                                 </div>
                                 <div class="strategy-details-body">
                                     <div class="strategy-params">
@@ -975,8 +1275,24 @@
                                             <span class="param-value">${symbol}</span>
                                         </div>
                                         <div class="param-row">
-                                            <span class="param-label">Position Size:</span>
+                                            <span class="param-label">Initial Position Size:</span>
                                             <span class="param-value">${positionSize}</span>
+                                        </div>
+                                        <div class="param-row">
+                                            <span class="param-label">Add Position Size:</span>
+                                            <span class="param-value">${addPositionSize}</span>
+                                        </div>
+                                        <div class="param-row">
+                                            <span class="param-label">Take Profit:</span>
+                                            <span class="param-value">${tpDisplay}</span>
+                                        </div>
+                                        <div class="param-row">
+                                            <span class="param-label">Stop Loss:</span>
+                                            <span class="param-value">${slEnabled === 'Yes' ? slAmount + ' ' + slUnits : 'Disabled'}</span>
+                                        </div>
+                                        <div class="param-row">
+                                            <span class="param-label">Max Daily Loss:</span>
+                                            <span class="param-value">$${maxDailyLoss}</span>
                                         </div>
                                         <div class="param-row">
                                             <span class="param-label">Status:</span>
@@ -1023,40 +1339,220 @@
                     body: JSON.stringify({ enabled: newEnabled })
                 });
                 const data = await response.json();
-                
+
                 if (data.success) {
+                    const statusText = newEnabled ? 'enabled' : 'paused';
+                    showToast(`Trader ${statusText} successfully!`, 'success');
                     loadTraders(); // Reload the list
                 } else {
-                    alert('Error updating trader: ' + (data.error || 'Unknown error'));
+                    showToast('Error updating trader: ' + (data.error || 'Unknown error'), 'error');
                 }
             } catch (error) {
                 console.error('Error updating trader:', error);
-                alert('Error updating trader. Please try again.');
+                showToast('Error updating trader. Please try again.', 'error');
             }
         }
 
-        // Remove trader (unlink recorder from account)
-        async function removeTrader(traderId, recorderName) {
-            if (!confirm(`Are you sure you want to remove trader "${recorderName}"?\n\nThis will stop live trading but won't affect the recorder or recorded trades.`)) {
+        // Open Edit Trader Modal
+        function openEditTraderModal(traderId) {
+            const trader = window.tradersData ? window.tradersData[traderId] : null;
+            if (!trader) {
+                alert('Trader data not found. Please refresh the page.');
                 return;
             }
             
+            // Store the trader ID
+            document.getElementById('editTraderId').value = traderId;
+            
+            // Set read-only fields
+            document.getElementById('editRecorderName').textContent = trader.recorder_name || trader.name || 'Unknown';
+            document.getElementById('editAccountName').textContent = trader.display_account || trader.account_name || 'Unknown';
+            
+            // Populate risk settings
+            document.getElementById('editInitialPositionSize').value = trader.initial_position_size || 1;
+            document.getElementById('editAddPositionSize').value = trader.add_position_size || 1;
+            
+            // Format TP targets display
+            const tpTargets = trader.tp_targets || [];
+            const tpDisplay = document.getElementById('editTpTargetsDisplay');
+            const tpInput = document.getElementById('editTpTargetsJson');
+            
+            if (tpTargets.length > 0) {
+                const tpHtml = tpTargets.map((tp, i) => {
+                    const trimQty = tp.trim_quantity || tp.trimQuantity || tp.trim || 'All';
+                    const value = tp.value || tp.gain_ticks || 0;
+                    return `<span style="display: inline-block; background: #2a2a2a; padding: 4px 8px; border-radius: 4px; margin: 2px;">TP${i+1}: ${value} ticks (${trimQty} contracts)</span>`;
+                }).join(' ');
+                tpDisplay.innerHTML = tpHtml;
+            } else {
+                tpDisplay.innerHTML = '<span style="color: #666;">No TP targets configured</span>';
+            }
+            tpInput.value = JSON.stringify(tpTargets);
+            
+            // Populate Stop Loss
+            document.getElementById('editSlEnabled').checked = trader.sl_enabled === true || trader.sl_enabled === 1;
+            document.getElementById('editSlAmount').value = trader.sl_amount || 0;
+            document.getElementById('editSlUnits').value = trader.sl_units || 'Ticks';
+            
+            // Populate Max Daily Loss
+            document.getElementById('editMaxDailyLoss').value = trader.max_daily_loss || 500;
+            
+            // Populate enabled status
+            const isEnabled = trader.enabled === true || trader.enabled === 1;
+            document.getElementById('editTraderEnabled').checked = isEnabled;
+            updateEditStatusLabel(isEnabled);
+            
+            // Add event listener for status toggle
+            document.getElementById('editTraderEnabled').onchange = function() {
+                updateEditStatusLabel(this.checked);
+            };
+            
+            // Show the modal
+            document.getElementById('editTraderModal').style.display = 'block';
+        }
+        
+        // Update status label in edit modal
+        function updateEditStatusLabel(isEnabled) {
+            const label = document.getElementById('editTraderStatusLabel');
+            if (isEnabled) {
+                label.textContent = 'LIVE';
+                label.style.color = '#10b981';
+            } else {
+                label.textContent = 'PAUSED';
+                label.style.color = '#ef4444';
+            }
+        }
+        
+        // Close Edit Trader Modal
+        function closeEditTraderModal() {
+            document.getElementById('editTraderModal').style.display = 'none';
+            document.getElementById('editTraderForm').reset();
+        }
+        
+        // Toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            
+            setTimeout(() => {
+                toast.className = 'toast';
+            }, 3000);
+        }
+        
+        // Confirm modal functions
+        let pendingConfirmAction = null;
+        
+        function showConfirmModal(title, message, highlight, actionText, onConfirm) {
+            document.getElementById('confirmTitle').textContent = title;
+            document.getElementById('confirmMessage').innerHTML = message.replace('{highlight}', `<span class="highlight">${highlight}</span>`);
+            document.getElementById('confirmHighlight').textContent = highlight;
+            document.getElementById('confirmActionBtn').textContent = actionText;
+            pendingConfirmAction = onConfirm;
+            document.getElementById('confirmModal').style.display = 'flex';
+        }
+        
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').style.display = 'none';
+            pendingConfirmAction = null;
+        }
+        
+        // Handle confirm button click
+        document.getElementById('confirmActionBtn').addEventListener('click', function() {
+            if (pendingConfirmAction) {
+                pendingConfirmAction();
+            }
+            closeConfirmModal();
+        });
+        
+        // Save trader changes
+        async function saveTraderChanges() {
+            const traderId = document.getElementById('editTraderId').value;
+            if (!traderId) {
+                showToast('No trader selected', 'error');
+                return;
+            }
+            
+            // Get form values
+            const initialPositionSize = parseInt(document.getElementById('editInitialPositionSize').value) || 1;
+            const addPositionSize = parseInt(document.getElementById('editAddPositionSize').value) || 1;
+            const tpTargets = document.getElementById('editTpTargetsJson').value || '[]';
+            const slEnabled = document.getElementById('editSlEnabled').checked ? 1 : 0;
+            const slAmount = parseFloat(document.getElementById('editSlAmount').value) || 0;
+            const slUnits = document.getElementById('editSlUnits').value || 'Ticks';
+            const maxDailyLoss = parseFloat(document.getElementById('editMaxDailyLoss').value) || 500;
+            const enabled = document.getElementById('editTraderEnabled').checked ? 1 : 0;
+            
+            const saveBtn = document.getElementById('saveTraderBtn');
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            
             try {
                 const response = await fetch(`/api/traders/${traderId}`, {
-                    method: 'DELETE'
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        enabled: enabled,
+                        initial_position_size: initialPositionSize,
+                        add_position_size: addPositionSize,
+                        tp_targets: tpTargets,
+                        sl_enabled: slEnabled,
+                        sl_amount: slAmount,
+                        sl_units: slUnits,
+                        max_daily_loss: maxDailyLoss
+                    })
                 });
-                const data = await response.json();
                 
+                const data = await response.json();
                 if (data.success) {
-                    alert(`Trader removed successfully`);
+                    closeEditTraderModal();
+                    showToast('Trader settings saved successfully!', 'success');
                     loadTraders(); // Reload the list
                 } else {
-                    alert('Error removing trader: ' + (data.error || 'Unknown error'));
+                    showToast('Error saving changes: ' + (data.error || 'Unknown error'), 'error');
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
                 }
             } catch (error) {
-                console.error('Error removing trader:', error);
-                alert('Error removing trader. Please try again.');
+                console.error('Error saving trader:', error);
+                showToast('Error saving changes. Please try again.', 'error');
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
             }
+        }
+        
+        // Attach edit form submission handler
+        document.getElementById('editTraderForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            saveTraderChanges();
+        });
+
+        // Remove trader (unlink recorder from account)
+        function removeTrader(traderId, recorderName) {
+            showConfirmModal(
+                'Delete Trader?',
+                'Are you sure you want to remove {highlight}? This will stop live trading but won\'t affect the recorder or recorded trades.',
+                recorderName,
+                'Delete',
+                async function() {
+                    try {
+                        const response = await fetch(`/api/traders/${traderId}`, {
+                            method: 'DELETE'
+                        });
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            showToast('Trader removed successfully!', 'success');
+                            loadTraders(); // Reload the list
+                        } else {
+                            showToast('Error removing trader: ' + (data.error || 'Unknown error'), 'error');
+                        }
+                    } catch (error) {
+                        console.error('Error removing trader:', error);
+                        showToast('Error removing trader. Please try again.', 'error');
+                    }
+                }
+            );
         }
 
         // Modal functions
@@ -1065,25 +1561,20 @@
             // Load recorders and accounts when opening modal
             await loadRecordersForSelect();
             await loadAccountsForSelect();
-            
-            // After loading, show the recorder dropdown immediately
-            console.warn('Modal opened, allRecorders loaded:', allRecorders.length);
-            if (allRecorders.length > 0) {
-                renderRecorderDropdown(allRecorders);
-                document.getElementById('strategyDropdown').style.display = 'block';
-            }
+            console.log('Modal opened, recorders and accounts loaded');
         }
 
         function closeCreateTraderModal() {
             document.getElementById('createStrategyModal').style.display = 'none';
             document.getElementById('createStrategyForm').reset();
-            document.getElementById('existingStrategySelect').value = '';
-            document.getElementById('strategySearchInput').value = '';
-            document.getElementById('strategyDropdown').style.display = 'none';
+            // Reset the select dropdowns
+            document.getElementById('recorderSelectTrader').selectedIndex = 0;
+            document.getElementById('accountSelectTrader').selectedIndex = 0;
+            // Hide risk settings section
+            document.getElementById('riskSettingsSection').style.display = 'none';
+            // Reset selected recorder
             selectedRecorderId = null;
-            // Remove any info divs
-            const infoDivs = document.querySelectorAll('.strategy-selected-info');
-            infoDivs.forEach(div => div.remove());
+            selectedRecorderSettings = null;
         }
 
         // Close modal when clicking outside
@@ -1096,6 +1587,7 @@
 
         let allRecorders = []; // Store all recorders for search
         let selectedRecorderId = null;
+        let selectedRecorderSettings = null; // Store selected recorder's settings
         
         // Load recorders for dropdown
         async function loadRecordersForSelect() {
@@ -1119,11 +1611,22 @@
                         select.appendChild(option);
                     });
                     
-                    // Add change event listener
+                    // Add change event listener to populate risk settings
                     select.addEventListener('change', function() {
                         const selectedId = this.value;
                         document.getElementById('existingStrategySelect').value = selectedId;
                         selectedRecorderId = selectedId ? parseInt(selectedId) : null;
+                        
+                        if (selectedId) {
+                            // Find the selected recorder and populate risk settings
+                            const recorder = allRecorders.find(r => r.id == selectedId);
+                            if (recorder) {
+                                populateRiskSettings(recorder);
+                            }
+                        } else {
+                            // Hide risk settings section if no recorder selected
+                            document.getElementById('riskSettingsSection').style.display = 'none';
+                        }
                     });
                 }
             } catch (error) {
@@ -1131,124 +1634,46 @@
             }
         }
         
-        // Render recorder dropdown options
-        function renderRecorderDropdown(recorders) {
-            const dropdown = document.getElementById('strategyDropdown');
-            dropdown.innerHTML = '';
+        // Populate risk settings from selected recorder
+        function populateRiskSettings(recorder) {
+            selectedRecorderSettings = recorder;
             
-            if (recorders.length === 0) {
-                const noResults = document.createElement('div');
-                noResults.className = 'strategy-option';
-                noResults.style.cssText = 'padding: 10px; color: #888; font-style: italic;';
-                noResults.textContent = 'No recorders found. Create one in "My Recorders" first.';
-                dropdown.appendChild(noResults);
-                return;
-            }
+            // Show the risk settings section
+            document.getElementById('riskSettingsSection').style.display = 'block';
             
-            recorders.forEach(recorder => {
-                const option = document.createElement('div');
-                option.className = 'strategy-option';
-                option.style.cssText = 'padding: 10px; cursor: pointer; border-bottom: 1px solid rgba(59, 130, 246, 0.2);';
-                option.onclick = () => selectRecorder(recorder);
-                
-                option.innerHTML = `
-                    <div><strong>${recorder.name}</strong></div>
-                    <div style="font-size: 0.85rem; color: #888;">
-                        Type: ${recorder.strategy_type || 'Futures'} | 
-                        Symbol: ${recorder.symbol || 'Any'} |
-                        Size: ${recorder.initial_position_size || 1}
-                    </div>
-                `;
-                dropdown.appendChild(option);
-            });
-        }
-        
-        // Filter recorder options based on search
-        function filterRecorderOptions() {
-            const searchTerm = document.getElementById('strategySearchInput').value.toLowerCase();
-            const filtered = allRecorders.filter(r => 
-                r.name.toLowerCase().includes(searchTerm) ||
-                (r.strategy_type && r.strategy_type.toLowerCase().includes(searchTerm)) ||
-                (r.symbol && r.symbol.toLowerCase().includes(searchTerm))
-            );
-            renderRecorderDropdown(filtered);
-            showRecorderDropdown();
-        }
-        
-        // Show recorder dropdown
-        function showRecorderDropdown() {
-            console.warn('showRecorderDropdown called, allRecorders.length:', allRecorders.length);
-            const dropdown = document.getElementById('strategyDropdown');
+            // Populate position sizes
+            document.getElementById('initialPositionSize').value = recorder.initial_position_size || 1;
+            document.getElementById('addPositionSize').value = recorder.add_position_size || 1;
             
-            // Re-render dropdown content if we have recorders
-            if (allRecorders.length > 0) {
-                renderRecorderDropdown(allRecorders);
+            // Populate TP targets display
+            const tpTargets = recorder.tp_targets || [];
+            const tpDisplay = document.getElementById('tpTargetsDisplay');
+            const tpInput = document.getElementById('tpTargetsJson');
+            
+            if (tpTargets.length > 0) {
+                const tpHtml = tpTargets.map((tp, i) => {
+                    const trimQty = tp.trim_quantity || tp.trimQuantity || 'All';
+                    const value = tp.value || tp.gain_ticks || 0;
+                    return `<span style="display: inline-block; background: #2a2a2a; padding: 4px 8px; border-radius: 4px; margin: 2px;">TP${i+1}: ${value} ticks (${trimQty} contracts)</span>`;
+                }).join(' ');
+                tpDisplay.innerHTML = tpHtml;
             } else {
-                // If no recorders loaded yet, show a message
-                dropdown.innerHTML = '<div style="padding: 10px; color: #888;">Loading recorders...</div>';
+                tpDisplay.innerHTML = '<span style="color: #666;">No TP targets configured</span>';
             }
+            tpInput.value = JSON.stringify(tpTargets);
             
-            dropdown.style.display = 'block';
-            console.warn('Dropdown display set to block, dropdown exists:', !!dropdown);
+            // Populate Stop Loss
+            document.getElementById('slEnabled').checked = recorder.sl_enabled == 1;
+            document.getElementById('slAmount').value = recorder.sl_amount || 0;
+            document.getElementById('slUnits').value = recorder.sl_units || 'Ticks';
+            
+            // Populate Max Daily Loss
+            document.getElementById('maxDailyLoss').value = recorder.max_daily_loss || 500;
+            
+            console.log('Risk settings populated from recorder:', recorder.name);
         }
         
-        // Hide recorder dropdown
-        function hideRecorderDropdown() {
-            setTimeout(() => {
-                const dropdown = document.getElementById('strategyDropdown');
-                if (dropdown && !dropdown.matches(':hover') && !document.getElementById('strategySearchInput').matches(':focus')) {
-                    dropdown.style.display = 'none';
-                }
-            }, 200);
-        }
-        
-        // Close dropdown when clicking outside (with delay to allow onfocus to fire first)
-        document.addEventListener('click', function(event) {
-            const searchInput = document.getElementById('strategySearchInput');
-            const dropdown = document.getElementById('strategyDropdown');
-            
-            // Don't close if clicking on the search input itself
-            if (searchInput && searchInput.contains(event.target)) {
-                return; // Let the onfocus handler show the dropdown
-            }
-            
-            if (dropdown && !dropdown.contains(event.target)) {
-                dropdown.style.display = 'none';
-            }
-        });
-        
-        // Select a recorder
-        function selectRecorder(recorder) {
-            const searchInput = document.getElementById('strategySearchInput');
-            const hiddenInput = document.getElementById('existingStrategySelect');
-            
-            if (recorder) {
-                searchInput.value = recorder.name;
-                hiddenInput.value = recorder.id;
-                selectedRecorderId = recorder.id;
-                
-                // Show info about selected recorder
-                const existingInfo = document.querySelectorAll('.strategy-selected-info');
-                existingInfo.forEach(div => div.remove());
-                
-                const infoDiv = document.createElement('div');
-                infoDiv.className = 'alert alert-info strategy-selected-info';
-                infoDiv.style.cssText = 'margin-top: 1rem; padding: 1rem; background-color: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px;';
-                infoDiv.innerHTML = `
-                    <strong>Selected Recorder:</strong> ${recorder.name}<br>
-                    <small>Type: ${recorder.strategy_type || 'Futures'} | 
-                    Position Size: ${recorder.initial_position_size || 1} | 
-                    TP/SL settings will be used from this recorder</small>
-                `;
-                document.getElementById('strategySearchInput').parentNode.appendChild(infoDiv);
-            } else {
-                searchInput.value = '';
-                hiddenInput.value = '';
-                selectedRecorderId = null;
-            }
-            
-            hideRecorderDropdown();
-        }
+        // Old custom dropdown functions removed - now using standard <select> elements
         
         // Load accounts for dropdown - shows individual subaccounts (demo and live)
         async function loadAccountsForSelect() {
@@ -1282,10 +1707,10 @@
                                 });
                             } else {
                                 // Fallback: just show the account name if no subaccounts
-                                const option = document.createElement('option');
-                                option.value = account.id;
-                                option.textContent = `${account.name} (${account.broker || 'Tradovate'})`;
-                                select.appendChild(option);
+                            const option = document.createElement('option');
+                            option.value = account.id;
+                            option.textContent = `${account.name} (${account.broker || 'Tradovate'})`;
+                            select.appendChild(option);
                             }
                         }
                     });
@@ -1295,27 +1720,47 @@
             }
         }
         
-        // Handle form submission - Create Trader (link recorder to account)
+        // Handle form submission - Create Trader (link recorder to account with risk settings)
         async function submitTraderForm() {
-            const accountId = document.getElementById('accountSelectTrader').value;
-            const recorderId = document.getElementById('existingStrategySelect').value;
+            // Get recorder from the select element
+            const recorderSelect = document.getElementById('recorderSelectTrader');
+            const recorderId = recorderSelect.value;
+            
+            // Get account and subaccount info from the select element
+            const accountSelect = document.getElementById('accountSelectTrader');
+            const accountId = accountSelect.value;
+            const selectedOption = accountSelect.options[accountSelect.selectedIndex];
+            
+            // Get subaccount details from data attributes
+            const subaccountId = selectedOption ? selectedOption.dataset.subaccountId : null;
+            const subaccountName = selectedOption ? selectedOption.dataset.subaccountName : null;
+            const isDemo = selectedOption ? selectedOption.dataset.isDemo === 'true' : null;
             
             if (!recorderId) {
-                alert('Please select a recorder from My Recorders');
+                showToast('Please select a recorder from My Recorders', 'error');
                 return;
             }
             
             if (!accountId) {
-                alert('Please select an account to trade on');
+                showToast('Please select an account to trade on', 'error');
                 return;
             }
             
+            // Get risk settings from form
+            const initialPositionSize = parseInt(document.getElementById('initialPositionSize').value) || 1;
+            const addPositionSize = parseInt(document.getElementById('addPositionSize').value) || 1;
+            const tpTargets = document.getElementById('tpTargetsJson').value || '[]';
+            const slEnabled = document.getElementById('slEnabled').checked ? 1 : 0;
+            const slAmount = parseFloat(document.getElementById('slAmount').value) || 0;
+            const slUnits = document.getElementById('slUnits').value || 'Ticks';
+            const maxDailyLoss = parseFloat(document.getElementById('maxDailyLoss').value) || 500;
+            
             const submitBtn = document.getElementById('submitStrategyBtn');
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Creating Trader...';
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
             
             try {
-                // Create trader (link recorder to account)
+                // Create trader (link recorder to account with subaccount info and risk settings)
                 const response = await fetch('/api/traders', {
                     method: 'POST',
                     headers: {
@@ -1323,25 +1768,36 @@
                     },
                     body: JSON.stringify({
                         recorder_id: parseInt(recorderId),
-                        account_id: parseInt(accountId)
+                        account_id: parseInt(accountId),
+                        subaccount_id: subaccountId ? parseInt(subaccountId) : null,
+                        subaccount_name: subaccountName,
+                        is_demo: isDemo,
+                        // Risk settings
+                        initial_position_size: initialPositionSize,
+                        add_position_size: addPositionSize,
+                        tp_targets: tpTargets,
+                        sl_enabled: slEnabled,
+                        sl_amount: slAmount,
+                        sl_units: slUnits,
+                        max_daily_loss: maxDailyLoss
                     })
                 });
                 
                 const data = await response.json();
                 if (data.success) {
-                    alert('Trader created successfully! Live trading is now enabled for this recorder on the selected account.');
                     closeCreateTraderModal();
+                    showToast('Trader created successfully! Live trading enabled.', 'success');
                     loadTraders(); // Reload the list
                 } else {
-                    alert('Error creating trader: ' + (data.error || 'Unknown error'));
+                    showToast('Error creating trader: ' + (data.error || 'Unknown error'), 'error');
                     submitBtn.disabled = false;
-                    submitBtn.textContent = 'Create Trader';
+                    submitBtn.innerHTML = '<i class="fas fa-bolt"></i> Create Trader';
                 }
             } catch (error) {
                 console.error('Error creating trader:', error);
-                alert('Error creating trader. Please try again.');
+                showToast('Error creating trader. Please try again.', 'error');
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Create Trader';
+                submitBtn.innerHTML = '<i class="fas fa-bolt"></i> Create Trader';
             }
         }
         
@@ -1376,6 +1832,32 @@
                 });
             }
         });
+        
+        // Close modals on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeCreateTraderModal();
+                closeEditTraderModal();
+                closeConfirmModal();
+            }
+        });
+        
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const createModal = document.getElementById('createStrategyModal');
+            const editModal = document.getElementById('editTraderModal');
+            const confirmModal = document.getElementById('confirmModal');
+            
+            if (event.target === createModal) {
+                closeCreateTraderModal();
+            }
+            if (event.target === editModal) {
+                closeEditTraderModal();
+            }
+            if (event.target === confirmModal) {
+                closeConfirmModal();
+            }
+        };
     </script>
 </body>
 </html>

@@ -1,70 +1,42 @@
-
-
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-
-# Python cache
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
 .Python
-
-# Logs
-*.log
-flask_output.log
-
-# Session files
-.frolic-session.json
-
-# Virtual environment
-venv/
-env/
-.venv
-
-# Environment variables (contains API keys - DO NOT COMMIT)
-.env
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-
-# Large backup files
-.frolic-backup-*.json
-.frolic-session.json
-
-# HAR files
-*.har
+*.so
+.eggs/
+*.egg-info/
+*.egg
 
 # Virtual environments
 venv/
-phantom_scraper/venv/
+ENV/
+.venv/
 
-# Large binary files
-*.so
-*.dylib
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Downloaded sites
-phantom_scraper/trademanagergroup.com/
-phantom_scraper/trademanagergroup_full/
+# Local files
+*.db-shm
+*.db-wal
+.env
+.frolic-session.json
 
+# Logs
+*.log
+/logs/
 
-# Node modules
-node_modules/
-phantom_scraper/trade_manager_replica/frontend/node_modules/
+# Temporary
+*.tmp
+*.temp
+netlog*.json
 
-# Large media files
-*.gif
-*.mp4
-*.mov
+# Mac
+.DS_Store
 
-# Database files (already in gitignore but ensure they're not tracked)
-*.db
-*.sqlite
-*.sqlite3
-
+# Keep the database for migration but don't sync it
+# just_trades.db

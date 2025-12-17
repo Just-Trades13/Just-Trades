@@ -8,9 +8,9 @@
             <header>
                 <h2>Live Trading Panel</h2>
                 <div class="panel-actions">
-                    <button class="btn btn-danger">Close All</button>
-                    <button class="btn btn-warning">Clear All</button>
-                    <button class="btn btn-outline">Disable All Strats</button>
+                    <button class="btn btn-danger" onclick="closeAllPositions()">Close All</button>
+                    <button class="btn btn-warning" onclick="clearAllTrades()">Clear All</button>
+                    <button class="btn btn-outline" onclick="toggleAllStrategies()">Disable All Strats</button>
                 </div>
             </header>
             <table>
@@ -123,7 +123,7 @@
         
         // Refresh stats periodically
         loadControlCenterStats();
-        setInterval(loadControlCenterStats, 5000);  // Refresh every 5 seconds
+        setInterval(loadControlCenterStats, 30000);  // Refresh every 30 seconds (trades are priority, PnL is secondary)
         
         // WebSocket connection for real-time updates (like Trade Manager)
         const socket = io();
@@ -279,6 +279,95 @@
             }
         } catch (error) {
             console.error('Error toggling recorder:', error);
+        }
+    }
+    
+    async function closeAllPositions() {
+        if (!confirm('⚠️ Close ALL open positions on ALL accounts for ALL strategies?\n\nThis will execute close orders on the broker.')) {
+            return;
+        }
+        
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = 'Closing...';
+        
+        try {
+            const response = await fetch('/api/control-center/close-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ ${data.message}`);
+                location.reload();
+            } else {
+                alert(`❌ Error: ${data.error || 'Unknown error'}`);
+                btn.disabled = false;
+                btn.textContent = 'Close All';
+            }
+        } catch (error) {
+            console.error('Error closing positions:', error);
+            alert('❌ Network error. Please try again.');
+            btn.disabled = false;
+            btn.textContent = 'Close All';
+        }
+    }
+    
+    async function clearAllTrades() {
+        if (!confirm('⚠️ Clear ALL trade records from database?\n\nThis will DELETE all trade records but will NOT close broker positions.\n\nAre you sure?')) {
+            return;
+        }
+        
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = 'Clearing...';
+        
+        try {
+            const response = await fetch('/api/control-center/clear-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ ${data.message}`);
+                location.reload();
+            } else {
+                alert(`❌ Error: ${data.error || 'Unknown error'}`);
+                btn.disabled = false;
+                btn.textContent = 'Clear All';
+            }
+        } catch (error) {
+            console.error('Error clearing trades:', error);
+            alert('❌ Network error. Please try again.');
+            btn.disabled = false;
+            btn.textContent = 'Clear All';
+        }
+    }
+    
+    async function toggleAllStrategies() {
+        // Get current state from first checkbox
+        const firstCheckbox = document.querySelector('input[type="checkbox"]');
+        const currentState = firstCheckbox ? firstCheckbox.checked : false;
+        const newState = !currentState;
+        
+        try {
+            const response = await fetch('/api/control-center/toggle-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: newState })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(`❌ Error: ${data.error || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error('Error toggling strategies:', error);
+            alert('❌ Network error. Please try again.');
         }
     }
     

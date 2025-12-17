@@ -1215,6 +1215,36 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
 def index():
     return redirect(url_for('dashboard'))
 
+@app.route('/health')
+def health():
+    """Health check endpoint for load balancers and monitoring."""
+    try:
+        # Check database connection
+        conn = get_db_connection()
+        conn.execute("SELECT 1")
+        conn.close()
+        db_status = "healthy"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
+    # Check Redis if available
+    redis_status = "not configured"
+    try:
+        from production_db import db as prod_db
+        health = prod_db.health_check()
+        redis_status = health.get('redis', 'unknown')
+    except:
+        pass
+    
+    status = {
+        "status": "healthy" if db_status == "healthy" else "degraded",
+        "database": db_status,
+        "redis": redis_status,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    return jsonify(status), 200 if db_status == "healthy" else 503
+
 @app.route('/dashboard')
 def dashboard():
     return render_template('dashboard.html')

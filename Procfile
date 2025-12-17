@@ -1,2 +1,5 @@
-web: python3 -m gunicorn --bind 0.0.0.0:$PORT ultra_simple_server:app
-
+# Railway/Heroku Procfile
+web: python ultra_simple_server.py
+worker: python webhook_worker.py
+position_listener: python position_websocket_listener.py
+recorder: python recorder_service.py

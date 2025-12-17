@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: trading_postgres
+    environment:
+      POSTGRES_USER: trading
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trading_secret}
+      POSTGRES_DB: just_trades
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema_postgres.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading -d just_trades"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache & Message Queue
+  redis:
+    image: redis:7-alpine
+    container_name: trading_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Main Trading API (Flask)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_api
+    environment:
+      DATABASE_URL: postgresql://trading:${POSTGRES_PASSWORD:-trading_secret}@postgres:5432/just_trades
+      REDIS_URL: redis://redis:6379
+      FLASK_ENV: production
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  # Position WebSocket Listener
+  position_listener:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_position_listener
+    command: python position_websocket_listener.py
+    environment:
+      DATABASE_URL: postgresql://trading:${POSTGRES_PASSWORD:-trading_secret}@postgres:5432/just_trades
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Webhook Queue Worker
+  webhook_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_webhook_worker
+    command: python webhook_worker.py --workers 2
+    environment:
+      DATABASE_URL: postgresql://trading:${POSTGRES_PASSWORD:-trading_secret}@postgres:5432/just_trades
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Recorder Service (existing trading logic)
+  recorder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_recorder
+    command: python recorder_service.py
+    environment:
+      DATABASE_URL: postgresql://trading:${POSTGRES_PASSWORD:-trading_secret}@postgres:5432/just_trades
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: trading_network
