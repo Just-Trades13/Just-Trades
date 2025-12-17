@@ -42,6 +42,34 @@ urls_to_try = [self.base_url]  # Use the configured endpoint only
 
 ---
 
+### ⚠️ BROKER SYNC - MUST ALWAYS RUN ⚠️
+
+**Problem:** DB can drift out of sync with broker (stale trades, missing TPs, wrong quantities)
+
+**Solution:** Position reconciliation runs every 60 seconds and TAKES ACTION
+
+**Location:** `recorder_service.py` → `start_position_reconciliation()`
+
+**What It Does:**
+| Scenario | Action |
+|----------|--------|
+| DB shows position, broker is flat | **CLOSES** DB record automatically |
+| DB qty ≠ broker qty | **UPDATES** DB qty to match broker |
+| DB avg ≠ broker avg | **UPDATES** DB avg to match broker |
+| Position exists but no TP on broker | **AUTO-PLACES** TP order |
+
+**⛔ NEVER:**
+- Comment out `start_position_reconciliation()`
+- Disable "to avoid rate limiting" (it's designed to be safe)
+- Remove the SYNC FIX logic that takes action
+
+**Verification:**
+```bash
+tail -f /tmp/recorder_service.log | grep -E "SYNC FIX|reconcil"
+```
+
+---
+
 ## 🔴 CRITICAL UPDATE - DEC 11, 2025 🔴
 
 **V2 TRADING ENGINE - TRADEMANAGER REPLICA IMPLEMENTATION COMPLETE**

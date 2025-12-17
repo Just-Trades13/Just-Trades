@@ -2880,10 +2880,25 @@ def poll_tp_sl():
             time.sleep(10)
 
 
+# ============================================================
+# 🚨🚨🚨 CRITICAL FUNCTION - DO NOT MODIFY WITHOUT APPROVAL 🚨🚨🚨
+# ============================================================
+# This function syncs DB with broker every 60 seconds.
+# It TAKES ACTION (not just logs) - closes stale trades, updates quantities,
+# and AUTO-PLACES missing TP orders.
+# Disabling this = broken sync = missing TPs = unprotected trades
+# ============================================================
 def start_position_reconciliation():
-    """Start the position reconciliation thread (runs every 30 seconds)"""
-    global _position_reconciliation_thread
+    """Start the position reconciliation thread (runs every 60 seconds)
     
+    CRITICAL: This must ALWAYS run. It:
+    1. Closes DB records when broker is flat
+    2. Updates DB quantity to match broker
+    3. Updates DB avg price to match broker  
+    4. AUTO-PLACES missing TP orders
+    """
+    global _position_reconciliation_thread
+
     if _position_reconciliation_thread and _position_reconciliation_thread.is_alive():
         return
     
@@ -4979,10 +4994,20 @@ def initialize():
     start_tp_sl_polling()
     logger.info("✅ TP/SL monitoring active")
 
-    # Start position reconciliation (compares DB with broker every 60 seconds)
-    # This is CRITICAL - it keeps DB in sync with broker and auto-places missing TPs
+    # ============================================================
+    # 🚨🚨🚨 CRITICAL: BROKER SYNC - DO NOT DISABLE 🚨🚨🚨
+    # ============================================================
+    # This keeps DB in sync with broker and auto-places missing TPs.
+    # WITHOUT THIS:
+    # - DB will drift out of sync with broker
+    # - Stale trades will remain "open" in DB when broker is flat
+    # - Missing TP orders won't be detected or fixed
+    # - DCA will break because DB doesn't reflect real position
+    #
+    # NEVER COMMENT OUT OR DISABLE THIS LINE:
     start_position_reconciliation()
     logger.info("✅ Position reconciliation ENABLED (syncs DB with broker every 60s, auto-places missing TPs)")
+    # ============================================================
 
     # Start bracket fill monitor (detects when Tradovate closes positions)
     start_bracket_monitor()

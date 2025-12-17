@@ -71,6 +71,34 @@
 ## - 429 rate limiting causes 20+ minute OAuth failures
 ## - Empty tokens get stored, showing "connected" when not connected
 
+## 🚨🚨🚨 CRITICAL: BROKER POSITION SYNC (Dec 16, 2025) 🚨🚨🚨
+## NEVER DISABLE start_position_reconciliation() in recorder_service.py
+## NEVER COMMENT OUT the reconciliation thread startup
+## See POSITION_API_CRITICAL_FIX.md for details
+##
+## This sync runs every 60 seconds and:
+## - Closes DB records when broker is flat (prevents stale trades)
+## - Updates DB quantity to match broker (prevents qty drift)
+## - Updates DB avg price to match broker (prevents price drift)
+## - AUTO-PLACES missing TP orders (prevents unprotected trades)
+##
+## WITHOUT THIS:
+## - DB will drift out of sync with broker
+## - Trades will show "open" in DB when broker is flat
+## - Missing TP orders won't be detected or fixed
+## - DCA will break because DB doesn't reflect real position
+##
+## LOCATION: recorder_service.py → start_position_reconciliation()
+
+## 🚨🚨🚨 CRITICAL: POSITION API ENDPOINT (Dec 16, 2025) 🚨🚨🚨
+## NEVER change get_positions() to try live API for demo accounts
+## Demo positions ONLY exist on demo.tradovateapi.com
+## Live positions ONLY exist on live.tradovateapi.com
+## See POSITION_API_CRITICAL_FIX.md for details
+##
+## The fix: urls_to_try = [self.base_url]  # Use configured endpoint ONLY
+## LOCATION: phantom_scraper/tradovate_integration.py → get_positions()
+
 ## 🚨 ABSOLUTE REQUIREMENT: ASK BEFORE MODIFYING
 
 **BEFORE touching ANY code, you MUST:**
