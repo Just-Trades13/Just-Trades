@@ -99,6 +99,14 @@
 ## The fix: urls_to_try = [self.base_url]  # Use configured endpoint ONLY
 ## LOCATION: phantom_scraper/tradovate_integration.py → get_positions()
 
+## 🚨🚨🚨 CRITICAL: CANCEL OLD TPs BEFORE NEW (Dec 16, 2025) 🚨🚨🚨
+## When placing a NEW TP order, ALWAYS cancel existing TP orders first
+## Otherwise multiple TPs stack up → all fill → accidental position flip
+## See POSITION_API_CRITICAL_FIX.md for details
+##
+## NEVER remove the "Cancelling any old TP orders" block before PLACE NEW TP
+## LOCATION: recorder_service.py → execute_simple() → before "PLACE NEW TP"
+
 ## 🚨 ABSOLUTE REQUIREMENT: ASK BEFORE MODIFYING
 
 **BEFORE touching ANY code, you MUST:**

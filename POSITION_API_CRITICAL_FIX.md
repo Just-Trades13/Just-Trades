@@ -256,6 +256,52 @@ def calculate_avg_price(position):
 
 ---
 
+---
+
+## CANCEL OLD TPs BEFORE PLACING NEW (Dec 16, 2025)
+
+### The Bug
+
+When placing a NEW TP order (not modifying existing), old TP orders weren't cancelled.
+
+**Result:** Multiple TP orders stacked up → all filled → accidental position flip
+
+**Example:**
+- Had 2 LONG contracts
+- Old TP: SELL 1 (from previous trade, should have been cancelled)
+- New TP: SELL 2 (correct for current position)
+- Both fill: SELL 3 total
+- 2 long - 3 sold = SHORT 1 (accidental flip!)
+
+### The Fix
+
+**File:** `recorder_service.py` → Before "PLACE NEW TP"
+
+```python
+# CRITICAL: First cancel any old TP orders to prevent duplicates
+logger.info(f"🗑️ Cancelling any old TP orders before placing new one...")
+all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+for old_order in (all_orders or []):
+    if old_status in ['WORKING', 'NEW', 'PENDINGNEW']:
+        # Cancel if same action as our new TP
+        if is_tp_order:
+            await tradovate.cancel_order(int(old_order_id))
+```
+
+### Verification
+
+```bash
+# Watch for the cancel messages
+tail -f /tmp/recorder_service.log | grep -E "Cancelling.*old|PLACE NEW TP"
+
+# Should see:
+# 🗑️ Cancelling old TP order XXXXX before placing new
+# 📊 PLACE NEW TP: Buy 3 @ 25321.5
+# ✅ TP PLACED: ...
+```
+
+---
+
 *This fix took 2+ days to diagnose. The root cause was a single line of code trying the wrong API endpoint. PRESERVE THIS FIX.*
 
 ---

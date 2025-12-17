@@ -42,6 +42,28 @@ urls_to_try = [self.base_url]  # Use the configured endpoint only
 
 ---
 
+### ⚠️ CANCEL OLD TPs BEFORE PLACING NEW ⚠️
+
+**Problem:** Old TP orders weren't cancelled when placing new ones → multiple TPs filled → position flip
+
+**Example:** Had 2 LONG, old TP SELL 1 + new TP SELL 2 both fill = SELL 3 = accidental SHORT 1
+
+**Fix:** Before placing any new TP, cancel all existing TP orders for that symbol
+
+**Location:** `recorder_service.py` → Before "PLACE NEW TP" block
+
+**Verification:**
+```bash
+tail -f /tmp/recorder_service.log | grep -E "Cancelling.*old|PLACE NEW TP"
+# Should see: 🗑️ Cancelling old TP order XXXXX before placing new
+```
+
+**⛔ NEVER:**
+- Remove the "Cancelling any old TP orders" logic
+- Place a new TP without checking for existing ones
+
+---
+
 ### ⚠️ BROKER SYNC - MUST ALWAYS RUN ⚠️
 
 **Problem:** DB can drift out of sync with broker (stale trades, missing TPs, wrong quantities)
