@@ -9565,24 +9565,32 @@ def get_contract_name_cached(contract_id, base_url, headers):
     return str(contract_id)
 
 def calculate_avg_price(position):
-    """Calculate average entry price from position data"""
+    """Get average entry price from position data.
+    
+    CRITICAL: Use netPrice from broker - this IS the correct average entry price.
+    Don't calculate from boughtValue/bought - that gives wrong values for DCA positions.
+    """
+    # netPrice IS the broker's calculated average entry price - use it directly!
+    net_price = position.get('netPrice')
+    if net_price:
+        return net_price
+    
+    # Fallback only if netPrice not available (shouldn't happen)
     net_pos = position.get('netPos', 0)
     if net_pos == 0:
         return 0
-    
+
     if net_pos > 0:
-        # Long position - use bought value
         bought = position.get('bought', 0)
         bought_value = position.get('boughtValue', 0)
         if bought > 0:
             return bought_value / bought
     else:
-        # Short position - use sold value
         sold = position.get('sold', 0)
         sold_value = position.get('soldValue', 0)
         if sold > 0:
             return sold_value / sold
-    
+
     return 0
 
 # ============================================================================
