@@ -191,4 +191,69 @@ curl -X POST http://localhost:8083/api/recorders/123/sync-broker
 
 ---
 
+---
+
+## ORDER STATUS SPELLING BUG (Dec 16, 2025)
+
+### The Bug
+
+When checking if a TP order can be modified, code checked:
+```python
+if order_status not in ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED']:
+```
+
+**Problem:** Tradovate returns `'Canceled'` (single L), which becomes `'CANCELED'` after `.upper()`
+
+`'CANCELED'` NOT IN `['CANCELLED']` = TRUE → tried to modify a canceled order!
+
+### The Symptom
+
+```
+📋 [SINGLE-TP] Order 350151480801 is CANCELED, modifying...
+✅ [SINGLE-TP] MODIFIED: Order 350151480801 -> Buy 3 @ 25357.92
+```
+
+Looked successful, but the order was already canceled - **no TP on broker!**
+
+### The Fix
+
+**File:** `recorder_service.py` (~line 1663)
+
+```python
+# NOW HANDLES BOTH SPELLINGS:
+if order_status not in ['FILLED', 'CANCELED', 'CANCELLED', 'REJECTED', 'EXPIRED']:
+```
+
+### Lesson Learned
+
+Always check the ACTUAL values returned by APIs, not assume standard spellings.
+
+---
+
+## UI AVG PRICE BUG (Dec 16, 2025)
+
+### The Bug
+
+The Manual Trader UI was showing wrong average price (25321.31 instead of 25355.75).
+
+### Root Cause
+
+**File:** `ultra_simple_server.py` → `calculate_avg_price()` function
+
+Code was calculating: `boughtValue / bought` instead of using `position.get('netPrice')`.
+
+### The Fix
+
+```python
+def calculate_avg_price(position):
+    # Use broker's netPrice directly - it's already the correct average
+    net_price = position.get('netPrice')
+    if net_price:
+        return net_price
+    # Fallback calculation only if netPrice not available
+    ...
+```
+
+---
+
 *This fix took 2+ days to diagnose. The root cause was a single line of code trying the wrong API endpoint. PRESERVE THIS FIX.*
