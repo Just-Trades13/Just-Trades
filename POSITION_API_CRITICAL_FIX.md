@@ -257,3 +257,43 @@ def calculate_avg_price(position):
 ---
 
 *This fix took 2+ days to diagnose. The root cause was a single line of code trying the wrong API endpoint. PRESERVE THIS FIX.*
+
+---
+
+## BULLETPROOF BROKER SYNC (Dec 16, 2025 - ENABLED)
+
+### What It Does
+
+Every 60 seconds, the system compares DB with broker and **TAKES ACTION**:
+
+| Scenario | Action |
+|----------|--------|
+| DB shows position, broker is flat | **CLOSES** DB record automatically |
+| DB qty ≠ broker qty | **UPDATES** DB qty to match broker |
+| DB avg ≠ broker avg | **UPDATES** DB avg to match broker |
+| Position exists but no TP on broker | **AUTO-PLACES** TP order |
+
+### Why This Matters
+
+Previously, the sync just logged warnings. Now it:
+- Prevents stale trades in DB
+- Prevents missing TP orders
+- Keeps DB as accurate reflection of broker state
+- Uses broker as single source of truth
+
+### Key Code Location
+
+**File:** `recorder_service.py` → `reconcile_positions_with_broker()`
+
+### Verification
+
+```bash
+# Watch sync in action
+tail -f /tmp/recorder_service.log | grep -E "SYNC FIX|reconcil"
+
+# Should see:
+# "🔄 SYNC FIX: Broker is FLAT but DB shows..."
+# "✅ SYNC FIX COMPLETE: Closed DB record..."
+# "🔄 SYNC FIX: MISSING TP ORDER - PLACING NOW"
+```
+
