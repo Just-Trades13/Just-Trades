@@ -340,6 +340,8 @@ curl http://localhost:8082/api/accounts/1/check-tradingview-routing
 | **Dec 16, 2025** | **CRITICAL FIX: Position API endpoint - Demo accounts must use demo endpoint only** |
 | Dec 16, 2025 | Fixed `get_positions()` returning 0 for demo accounts (was trying live endpoint first) |
 | Dec 16, 2025 | DCA now properly MODIFIES existing TP order (single order on screen, updates price+qty) |
+| Dec 16, 2025 | Added broker position sync - detects manual closes, partial closes, drift |
+| Dec 16, 2025 | New endpoints: `/api/broker-sync`, `/api/recorders/<id>/sync-broker` |
 | Dec 16, 2025 | TP calculated from REAL broker average price (5 ticks above/below) |
 | **Dec 11, 2025** | **V2 ENGINE: TradeManager replica complete** |
 | Dec 11, 2025 | Added `BrokerEventLoop`, `AdvancedExitManager`, `ExitConfirmationLoop` |

@@ -156,4 +156,39 @@ tail -f /tmp/recorder_service.log | grep -E "positions|Found position|BROKER CON
 
 ---
 
+---
+
+## BROKER POSITION SYNC (Dec 16, 2025)
+
+### Auto-Sync Every 60 Seconds
+
+The system now automatically compares DB with broker positions every 60 seconds:
+
+| Scenario | Action |
+|----------|--------|
+| DB shows position, broker shows 0 | Close trade in DB (`exit_reason = 'manual_broker_close'`) |
+| DB qty > broker qty | Update DB qty (partial close detected) |
+| DB avg ≠ broker avg | Update DB avg price |
+| Broker has position, DB doesn't | Alert (orphan position) |
+
+### Manual Sync Endpoints
+
+```bash
+# Force sync all positions immediately
+curl -X POST http://localhost:8083/api/broker-sync
+
+# Sync specific recorder
+curl -X POST http://localhost:8083/api/recorders/123/sync-broker
+```
+
+### Use Case
+
+1. Strategy is in a 5-contract DCA position
+2. User sees volatility spike, manually closes on Tradovate
+3. Within 60 seconds, system detects broker is flat
+4. DB automatically marked as closed
+5. No ghost trades, no drift, no DCA adding to closed position
+
+---
+
 *This fix took 2+ days to diagnose. The root cause was a single line of code trying the wrong API endpoint. PRESERVE THIS FIX.*
