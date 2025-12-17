@@ -1531,6 +1531,33 @@ def execute_live_trade_with_bracket(
                         
                             if not existing_tp_order:
                                 # PLACE NEW TP (only if no existing one to modify)
+                                # CRITICAL: First cancel any old TP orders to prevent duplicates
+                                logger.info(f"🗑️ Cancelling any old TP orders before placing new one...")
+                                try:
+                                    # Get all working orders and cancel any TPs for this symbol
+                                    all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                                    for old_order in (all_orders or []):
+                                        old_status = str(old_order.get('ordStatus', '')).upper()
+                                        old_action = old_order.get('action', '')
+                                        old_contract = old_order.get('contractId')
+                                        old_order_id = old_order.get('id')
+                                        
+                                        # Cancel if it's a working limit order that would be a TP
+                                        # (opposite side of our new position)
+                                        if old_status in ['WORKING', 'NEW', 'PENDINGNEW'] and old_order_id:
+                                            # For LONG position, TP is Sell; for SHORT, TP is Buy
+                                            is_tp_order = (tp_side == 'Sell' and old_action == 'Sell') or \
+                                                          (tp_side == 'Buy' and old_action == 'Buy')
+                                            if is_tp_order:
+                                                logger.info(f"🗑️ Cancelling old TP order {old_order_id} before placing new")
+                                                try:
+                                                    await tradovate.cancel_order(int(old_order_id))
+                                                    await asyncio.sleep(0.1)
+                                                except Exception as cancel_err:
+                                                    logger.warning(f"⚠️ Could not cancel old order {old_order_id}: {cancel_err}")
+                                except Exception as cancel_all_err:
+                                    logger.warning(f"⚠️ Error checking/cancelling old orders: {cancel_all_err}")
+                                
                                 logger.info(f"📊 PLACE NEW TP: {tp_side} {tp_qty} @ {tp_price}")
                             
                                 tp_order_data = {
