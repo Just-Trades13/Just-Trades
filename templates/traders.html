@@ -121,7 +121,7 @@
                     </thead>
                     <tbody>
                         {% for account in accounts %}
-                        <tr data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">
+                        <tr data-account-id="{{ account.id }}" data-account-name="{{ account.name }}" data-subaccount-id="{{ account.subaccount_id }}" data-subaccount-name="{{ account.name }}" data-is-demo="{{ account.is_demo|lower }}">
                             <td>{{ account.display_name }}</td>
                             <td>
                                 <label class="switch">
@@ -148,11 +148,11 @@
                 <div class="form-two">
                     <label class="form-field">
                         <span>Initial Position Size</span>
-                        <input type="number" value="{{ trader.initial_position_size or 1 }}">
+                        <input type="number" id="initialPositionSize" name="initial_position_size" value="{{ trader.initial_position_size or 1 }}" min="1">
                     </label>
                     <label class="form-field">
                         <span>Add Position Size</span>
-                        <input type="number" value="1">
+                        <input type="number" id="addPositionSize" name="add_position_size" value="{{ trader.add_position_size or 1 }}" min="1">
                     </label>
                 </div>
             </div>
@@ -160,17 +160,17 @@
 
         <section class="card-panel" data-panel>
             <header>
-                <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Stop Loss / Take Profit Settings (Optional)</button>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> Hide Stop Loss / Take Profit Settings</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
-            <div class="panel-body collapsed-body">
+            <div class="panel-body">
                 <div class="form-two">
                     <label class="form-field">
                         <span>TP Units</span>
                         <div class="select-shell">
-                            <select>
-                                <option>Ticks</option>
-                                <option>Points</option>
+                            <select id="tpUnits" name="tp_units">
+                                <option value="Ticks" {% if trader.tp_units == 'Ticks' %}selected{% endif %}>Ticks</option>
+                                <option value="Points" {% if trader.tp_units == 'Points' %}selected{% endif %}>Points</option>
                             </select>
                             <span class="material-icons">expand_more</span>
                         </div>
@@ -178,44 +178,44 @@
                     <label class="form-field">
                         <span>Trim Units</span>
                         <div class="select-shell">
-                            <select>
-                                <option>Contracts</option>
-                                <option>Percent</option>
+                            <select id="trimUnits" name="trim_units">
+                                <option value="Contracts" {% if trader.trim_units == 'Contracts' %}selected{% endif %}>Contracts</option>
+                                <option value="Percent" {% if trader.trim_units == 'Percent' %}selected{% endif %}>Percent</option>
                             </select>
                             <span class="material-icons">expand_more</span>
                         </div>
                     </label>
                 </div>
-                <button class="btn btn-outline btn-small" type="button">+ Add TP</button>
                 <div class="tp-row">
                     <span class="tp-pill">TP #1</span>
                     <label class="form-field">
-                        <span>TP Value</span>
-                        <input type="number" value="0">
+                        <span>TP Value (Ticks)</span>
+                        <input type="number" id="tpValue" name="tp_value" value="{{ trader.tp_value or 5 }}" min="0">
                     </label>
                     <label class="form-field">
                         <span>Trim %</span>
-                        <input type="number" value="0">
-                        <small>This TP is disabled.</small>
+                        <input type="number" id="tpTrim" name="tp_trim" value="{{ trader.tp_trim or 100 }}" min="0" max="100">
                     </label>
-                    <button class="icon-btn" type="button"><span class="material-icons">delete</span></button>
                 </div>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Stop Loss</span>
-                    <span class="tag tag-disabled">Disabled</span>
+                    <label class="switch">
+                        <input type="checkbox" id="slEnabled" name="sl_enabled" {% if trader.sl_enabled %}checked{% endif %}>
+                        <span class="slider"></span>
+                    </label>
                 </div>
                 <div class="form-two">
                     <label class="form-field">
                         <span>Stop Loss Amount</span>
-                        <input type="number" value="0">
+                        <input type="number" id="slAmount" name="sl_amount" value="{{ trader.sl_amount or 0 }}" min="0" step="0.25">
                     </label>
                     <label class="form-field">
                         <span>SL Units</span>
                         <div class="select-shell">
-                            <select>
-                                <option>Ticks</option>
-                                <option>Points</option>
+                            <select id="slUnits" name="sl_units">
+                                <option value="Ticks" {% if trader.sl_units == 'Ticks' %}selected{% endif %}>Ticks</option>
+                                <option value="Points" {% if trader.sl_units == 'Points' %}selected{% endif %}>Points</option>
                             </select>
                             <span class="material-icons">expand_more</span>
                         </div>
@@ -224,34 +224,37 @@
                 <label class="form-field">
                     <span>SL Type</span>
                     <div class="select-shell">
-                        <select>
-                            <option>Fixed</option>
-                            <option>Trail</option>
+                        <select id="slType" name="sl_type">
+                            <option value="Fixed" {% if trader.sl_type == 'Fixed' %}selected{% endif %}>Fixed</option>
+                            <option value="Trail" {% if trader.sl_type == 'Trail' %}selected{% endif %}>Trail</option>
                         </select>
                         <span class="material-icons">expand_more</span>
                     </div>
                 </label>
                 <div class="separator"></div>
                 <div class="toggle-row">
-                    <span>Averaging Down</span>
-                    <span class="tag tag-disabled">Disabled</span>
+                    <span>Averaging Down (DCA)</span>
+                    <label class="switch">
+                        <input type="checkbox" id="avgDownEnabled" name="avg_down_enabled" {% if trader.avg_down_enabled %}checked{% endif %}>
+                        <span class="slider"></span>
+                    </label>
                 </div>
                 <div class="form-two">
                     <label class="form-field">
-                        <span>Average Down Amount</span>
-                        <input type="number" value="1">
+                        <span>Average Down Amount (contracts)</span>
+                        <input type="number" id="avgDownAmount" name="avg_down_amount" value="{{ trader.avg_down_amount or 1 }}" min="1">
                     </label>
                     <label class="form-field">
-                        <span>Average Down Point</span>
-                        <input type="number" value="0">
+                        <span>Average Down Point (ticks against)</span>
+                        <input type="number" id="avgDownPoint" name="avg_down_point" value="{{ trader.avg_down_point or 10 }}" min="0" step="0.25">
                     </label>
                 </div>
                 <label class="form-field">
                     <span>Avg Down Unit</span>
                     <div class="select-shell">
-                        <select>
-                            <option>Ticks</option>
-                            <option>Points</option>
+                        <select id="avgDownUnits" name="avg_down_units">
+                            <option value="Ticks" {% if trader.avg_down_units == 'Ticks' %}selected{% endif %}>Ticks</option>
+                            <option value="Points" {% if trader.avg_down_units == 'Points' %}selected{% endif %}>Points</option>
                         </select>
                         <span class="material-icons">expand_more</span>
                     </div>
@@ -492,7 +495,7 @@
                     </thead>
                     <tbody>
                         {% for account in accounts %}
-                        <tr data-account-id="{{ account.id }}" data-account-name="{{ account.name }}">
+                        <tr data-account-id="{{ account.id }}" data-account-name="{{ account.name }}" data-subaccount-id="{{ account.subaccount_id }}" data-subaccount-name="{{ account.name }}" data-is-demo="{{ account.is_demo|lower }}">
                             <td>{{ account.display_name }}</td>
                             <td>
                                 <label class="switch">
@@ -1189,12 +1192,15 @@
                 const recorderSelect = document.getElementById('recorderSelect');
                 const recorderId = recorderSelect.value;
                 
-                // Get enabled accounts
+                // Get enabled accounts with subaccount info
                 const enabledAccounts = [];
                 document.querySelectorAll('.account-enable:checked').forEach(function(checkbox) {
                     const row = checkbox.closest('tr');
                     const accountId = row.dataset.accountId;
                     const accountName = row.dataset.accountName;
+                    const subaccountId = row.dataset.subaccountId;
+                    const subaccountName = row.dataset.subaccountName;
+                    const isDemo = row.dataset.isDemo === 'true';
                     const maxCons = row.querySelector('.account-max-cons').value || 0;
                     const ticker = row.querySelector('.account-ticker').value || '';
                     const multiplier = row.querySelector('.account-multiplier').value || 1;
@@ -1202,6 +1208,9 @@
                     enabledAccounts.push({
                         account_id: parseInt(accountId),
                         account_name: accountName,
+                        subaccount_id: subaccountId ? parseInt(subaccountId) : null,
+                        subaccount_name: subaccountName,
+                        is_demo: isDemo,
                         max_contracts: parseInt(maxCons),
                         custom_ticker: ticker,
                         multiplier: parseFloat(multiplier)
@@ -1235,18 +1244,72 @@
                     if (isEdit) {
                         // UPDATE existing trader
                         const traderId = editTraderId.value;
-                        const account = enabledAccounts[0]; // For edit, use first selected account
+                        const account = enabledAccounts[0]; // Primary account (for backward compatibility)
+                        
+                        // Collect all risk settings
+                        const initialPositionSize = parseInt(document.getElementById('initialPositionSize')?.value) || 1;
+                        const addPositionSize = parseInt(document.getElementById('addPositionSize')?.value) || 1;
+                        const tpUnits = document.getElementById('tpUnits')?.value || 'Ticks';
+                        const tpValue = parseInt(document.getElementById('tpValue')?.value) || 5;
+                        const tpTrim = parseInt(document.getElementById('tpTrim')?.value) || 100;
+                        const slEnabled = document.getElementById('slEnabled')?.checked ? 1 : 0;
+                        const slAmount = parseFloat(document.getElementById('slAmount')?.value) || 0;
+                        const slUnits = document.getElementById('slUnits')?.value || 'Ticks';
+                        const slType = document.getElementById('slType')?.value || 'Fixed';
+                        const avgDownEnabled = document.getElementById('avgDownEnabled')?.checked ? 1 : 0;
+                        const avgDownAmount = parseInt(document.getElementById('avgDownAmount')?.value) || 1;
+                        const avgDownPoint = parseFloat(document.getElementById('avgDownPoint')?.value) || 10;
+                        const avgDownUnits = document.getElementById('avgDownUnits')?.value || 'Ticks';
+                        
+                        // Build TP targets array
+                        const tpTargets = JSON.stringify([{ value: tpValue, trim: tpTrim }]);
+                        
+                        // Log what we're sending
+                        console.log('Saving trader with settings:', {
+                            initial_position_size: initialPositionSize,
+                            add_position_size: addPositionSize,
+                            tp_targets: tpTargets,
+                            sl_enabled: slEnabled,
+                            sl_amount: slAmount,
+                            avg_down_enabled: avgDownEnabled
+                        });
                         
                         const response = await fetch(`/api/traders/${traderId}`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 recorder_id: parseInt(recorderId),
-                                account_id: account.account_id
+                                account_id: account.account_id,
+                                enabled_accounts: enabledAccounts,
+                                // Risk settings
+                                initial_position_size: initialPositionSize,
+                                add_position_size: addPositionSize,
+                                tp_units: tpUnits,
+                                tp_targets: tpTargets,
+                                sl_enabled: slEnabled,
+                                sl_amount: slAmount,
+                                sl_units: slUnits,
+                                sl_type: slType,
+                                avg_down_enabled: avgDownEnabled,
+                                avg_down_amount: avgDownAmount,
+                                avg_down_point: avgDownPoint,
+                                avg_down_units: avgDownUnits
                             })
                         });
                         
+                        // Check response status first
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            console.error('Server error response:', response.status, errorText);
+                            showToast('Network error: ' + response.status + ' - ' + errorText.substring(0, 100), 'error', 5000);
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = isEdit ? 'Update Trader' : 'Create Trader';
+                            return;
+                        }
+                        
+                        // Parse response only once
                         const data = await response.json();
+                        console.log('Server response:', data);
                         if (data.success) {
                             showToast('Trader updated successfully!', 'success', 2500);
                             setTimeout(() => {
@@ -1254,6 +1317,8 @@
                             }, 1500);
                         } else {
                             showToast('Error updating trader: ' + (data.error || 'Unknown error'), 'error', 4000);
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = isEdit ? 'Update Trader' : 'Create Trader';
                         }
                     } else {
                         // CREATE new traders
@@ -1268,7 +1333,10 @@
                                 },
                                 body: JSON.stringify({
                                     recorder_id: parseInt(recorderId),
-                                    account_id: account.account_id
+                                    account_id: account.account_id,
+                                    subaccount_id: account.subaccount_id,
+                                    subaccount_name: account.subaccount_name,
+                                    is_demo: account.is_demo
                                 })
                             });
                             

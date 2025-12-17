@@ -170,7 +170,7 @@ def get_market_price_simple(symbol: str) -> Optional[float]:
 
 # Cache for price data to avoid excessive API calls
 _price_cache = {}
-_price_cache_ttl = 5  # seconds
+_price_cache_ttl = 60  # seconds (increased to 60s - trades are priority, PnL is secondary)
 
 
 def get_cached_price(symbol: str) -> Optional[float]:
@@ -223,7 +223,10 @@ TICK_INFO = {
 
 
 def convert_tradingview_to_tradovate_symbol(symbol: str, access_token: str | None = None, demo: bool = True) -> str:
-    """Convert TradingView symbol (MNQ1!) to Tradovate front-month symbol (MNQZ5)."""
+    """
+    Convert TradingView symbol (MNQ1!) to Tradovate front-month symbol (MNQZ5).
+    Calculates the current front month contract based on today's date.
+    """
     if not symbol:
         return symbol
     clean = symbol.strip().upper()
@@ -240,11 +243,47 @@ def convert_tradingview_to_tradovate_symbol(symbol: str, access_token: str | Non
         value, expires = cached
         if datetime.utcnow() < expires:
             return value
-    # Fallback to map
-    converted = SYMBOL_FALLBACK_MAP.get(root)
-    if not converted:
-        # Default to December contract for safety
-        converted = f"{root}Z5"
+    
+    # Calculate front month contract based on current date
+    now = datetime.utcnow()
+    current_month = now.month
+    current_year = now.year % 10  # Last digit of year (e.g., 2025 -> 5)
+    
+    # Month codes: F=Jan, G=Feb, H=Mar, J=Apr, K=May, M=Jun, N=Jul, Q=Aug, U=Sep, V=Oct, X=Nov, Z=Dec
+    month_codes = ['F', 'G', 'H', 'J', 'K', 'M', 'N', 'Q', 'U', 'V', 'X', 'Z']
+    
+    # For quarterly contracts (MNQ, MES, ES, NQ, etc.), use quarterly months: H(Mar), M(Jun), U(Sep), Z(Dec)
+    quarterly_contracts = ['MNQ', 'MES', 'ES', 'NQ', 'YM', 'RTY', 'M2K', 'CL', 'MCL', 'GC', 'MGC']
+    
+    if root in quarterly_contracts:
+        # Quarterly contracts: Find next quarterly expiration
+        quarterly_months = [2, 5, 8, 11]  # Mar, Jun, Sep, Dec (0-indexed: 2, 5, 8, 11)
+        quarterly_codes = ['H', 'M', 'U', 'Z']
+        
+        # Find the next quarterly month
+        for i, qm in enumerate(quarterly_months):
+            if current_month <= qm + 1:  # Add 1 month buffer for rollover
+                month_code = quarterly_codes[i]
+                year = current_year
+                break
+        else:
+            # Past December, use March of next year
+            month_code = 'H'
+            year = (current_year + 1) % 10
+        
+        converted = f"{root}{month_code}{year}"
+    else:
+        # Monthly contracts: Use current month or next month
+        if current_month == 12:
+            month_code = 'F'  # January
+            year = (current_year + 1) % 10
+        else:
+            month_code = month_codes[current_month]  # Current month
+            year = current_year
+        
+        converted = f"{root}{month_code}{year}"
+    
+    logger.info(f"📅 Converted {symbol} → {converted} (front month for {now.strftime('%Y-%m')})")
     SYMBOL_CONVERSION_CACHE[cache_key] = (converted, datetime.utcnow() + SYMBOL_CACHE_TTL)
     return converted
 
@@ -263,17 +302,43 @@ def get_tick_info(symbol: str) -> dict:
     return TICK_INFO.get(root, {'tick_size': 0.25, 'tick_value': 1.0})
 
 
-async def wait_for_position_fill(tradovate, account_id: int, symbol: str, expected_side: str, timeout: float = 7.5):
+async def wait_for_position_fill(tradovate, account_id: int, symbol: str, expected_side: str, timeout: float = 10.0):
+    """
+    Wait for position to appear after order fill.
+    Increased timeout to 10 seconds and added better logging.
+    """
     expected_side = expected_side.lower()
+    symbol_upper = symbol.upper()
     deadline = time.time() + timeout
+    attempt = 0
+    
+    logger.info(f"🔍 Waiting for position fill: symbol={symbol_upper}, side={expected_side}, account_id={account_id}")
+    
     while time.time() < deadline:
-        positions = await tradovate.get_positions(account_id)
-        for pos in positions:
-            if str(pos.get('symbol', '')).upper() == symbol.upper():
+        attempt += 1
+        try:
+            positions = await tradovate.get_positions(account_id)
+            logger.debug(f"  Attempt {attempt}: Found {len(positions)} positions")
+            
+            for pos in positions:
+                pos_symbol = str(pos.get('symbol', '')).upper()
                 net_pos = pos.get('netPos') or 0
-                if (expected_side == 'buy' and net_pos > 0) or (expected_side == 'sell' and net_pos < 0):
-                    return pos
-        await asyncio.sleep(0.25)
+                
+                # Match by root symbol (e.g., "MNQ" matches "MNQZ5", "MNQ1!", etc.)
+                symbol_root = symbol_upper[:3] if len(symbol_upper) >= 3 else symbol_upper
+                pos_root = pos_symbol[:3] if len(pos_symbol) >= 3 else pos_symbol
+                
+                if symbol_root == pos_root or symbol_upper in pos_symbol or pos_symbol in symbol_upper:
+                    logger.debug(f"  Symbol match: {pos_symbol} (netPos={net_pos})")
+                    if (expected_side == 'buy' and net_pos > 0) or (expected_side == 'sell' and net_pos < 0):
+                        logger.info(f"✅ Position found: {pos_symbol} {net_pos} @ {pos.get('netPrice', 'N/A')}")
+                        return pos
+        except Exception as e:
+            logger.warning(f"  Error checking positions (attempt {attempt}): {e}")
+        
+        await asyncio.sleep(0.5)  # Check every 0.5 seconds
+    
+    logger.warning(f"⏱️ Timeout waiting for position: {symbol_upper} (checked {attempt} times)")
     return None
 
 
@@ -296,14 +361,20 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
         logger.info(f"🎯 No risk config or quantity=0, skipping bracket orders")
         return
     symbol_upper = symbol.upper()
+    logger.info(f"🔍 Waiting for position fill to calculate TP/SL prices...")
     fill = await wait_for_position_fill(tradovate, account_id, symbol_upper, entry_side)
     if not fill:
-        logger.warning(f"Unable to locate filled position for {symbol_upper} to apply brackets")
+        logger.error(f"❌ Unable to locate filled position for {symbol_upper} to apply brackets")
+        logger.error(f"   This means TP/SL orders will NOT be placed!")
+        logger.error(f"   Possible causes: Position not visible yet, symbol mismatch, or timeout")
         return
-    entry_price = fill.get('netPrice') or fill.get('price')
+    entry_price = fill.get('netPrice') or fill.get('price') or fill.get('avgPrice')
     if not entry_price:
-        logger.warning(f"No entry price found for {symbol_upper}; skipping bracket creation")
+        logger.error(f"❌ No entry price found for {symbol_upper}; skipping bracket creation")
+        logger.error(f"   Position data: {fill}")
         return
+    
+    logger.info(f"✅ Position found: Entry price = {entry_price}, will calculate TP/SL from here")
     tick_info = get_tick_info(symbol_upper)
     tick_size = tick_info['tick_size']
     is_long = entry_side.lower() == 'buy'
@@ -2861,15 +2932,25 @@ def api_create_trader():
             conn.close()
             return jsonify({'success': False, 'error': 'This recorder is already linked to this account'}), 400
         
+        # Get enabled_accounts if provided (for account routing - multiple accounts per trader)
+        enabled_accounts = data.get('enabled_accounts')
+        if enabled_accounts and isinstance(enabled_accounts, list):
+            enabled_accounts = json.dumps(enabled_accounts)
+            logger.info(f"📋 Creating trader with {len(data.get('enabled_accounts', []))} enabled accounts")
+        else:
+            enabled_accounts = None
+        
         # Create the trader link with subaccount info and risk settings
         cursor.execute('''
             INSERT INTO traders (
                 recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
-                initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss
+                initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
+                enabled_accounts
             )
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
-              initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss))
+              initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
+              enabled_accounts))
         
         trader_id = cursor.lastrowid
         conn.commit()
@@ -2948,22 +3029,104 @@ def api_update_trader(trader_id):
             updates.append('max_daily_loss = ?')
             params.append(float(data['max_daily_loss']))
         
+        # Update account routing if provided
+        if 'enabled_accounts' in data:
+            enabled_accounts = data['enabled_accounts']
+            logger.info(f"  - Received enabled_accounts: {enabled_accounts}")
+            # Convert to JSON string if it's a list
+            if isinstance(enabled_accounts, list):
+                enabled_accounts = json.dumps(enabled_accounts)
+                logger.info(f"  - Converted to JSON: {enabled_accounts}")
+            updates.append('enabled_accounts = ?')
+            params.append(enabled_accounts)
+            logger.info(f"  - Will update enabled_accounts field")
+        
         # Execute update if there are fields to update
         if updates:
             params.append(trader_id)
             query = f"UPDATE traders SET {', '.join(updates)} WHERE id = ?"
             cursor.execute(query, params)
         
+        # ALSO update the linked RECORDER with risk settings
+        # (The trading engine reads from the recorder, not the trader)
+        cursor.execute('SELECT recorder_id FROM traders WHERE id = ?', (trader_id,))
+        recorder_row = cursor.fetchone()
+        if recorder_row:
+            recorder_id = recorder_row[0]
+            recorder_updates = []
+            recorder_params = []
+            
+            if 'initial_position_size' in data:
+                recorder_updates.append('initial_position_size = ?')
+                recorder_params.append(int(data['initial_position_size']))
+            
+            if 'add_position_size' in data:
+                recorder_updates.append('add_position_size = ?')
+                recorder_params.append(int(data['add_position_size']))
+            
+            if 'tp_targets' in data:
+                tp_targets = data['tp_targets']
+                if isinstance(tp_targets, list):
+                    tp_targets = json.dumps(tp_targets)
+                recorder_updates.append('tp_targets = ?')
+                recorder_params.append(tp_targets)
+            
+            if 'tp_units' in data:
+                recorder_updates.append('tp_units = ?')
+                recorder_params.append(data['tp_units'])
+            
+            if 'sl_enabled' in data:
+                recorder_updates.append('sl_enabled = ?')
+                recorder_params.append(1 if data['sl_enabled'] else 0)
+            
+            if 'sl_amount' in data:
+                recorder_updates.append('sl_amount = ?')
+                recorder_params.append(float(data['sl_amount']))
+            
+            if 'sl_units' in data:
+                recorder_updates.append('sl_units = ?')
+                recorder_params.append(data['sl_units'])
+            
+            if 'sl_type' in data:
+                recorder_updates.append('sl_type = ?')
+                recorder_params.append(data['sl_type'])
+            
+            if 'avg_down_enabled' in data:
+                recorder_updates.append('avg_down_enabled = ?')
+                recorder_params.append(1 if data['avg_down_enabled'] else 0)
+            
+            if 'avg_down_amount' in data:
+                recorder_updates.append('avg_down_amount = ?')
+                recorder_params.append(int(data['avg_down_amount']))
+            
+            if 'avg_down_point' in data:
+                recorder_updates.append('avg_down_point = ?')
+                recorder_params.append(float(data['avg_down_point']))
+            
+            if 'avg_down_units' in data:
+                recorder_updates.append('avg_down_units = ?')
+                recorder_params.append(data['avg_down_units'])
+            
+            if recorder_updates:
+                recorder_params.append(recorder_id)
+                recorder_query = f"UPDATE recorders SET {', '.join(recorder_updates)}, updated_at = datetime('now') WHERE id = ?"
+                cursor.execute(recorder_query, recorder_params)
+                logger.info(f"✅ Updated recorder {recorder_id} with risk settings")
+        
         conn.commit()
         conn.close()
         
         logger.info(f"Updated trader {trader_id}: {list(data.keys())}")
-        return jsonify({'success': True, 'message': 'Trader updated'})
+        if 'enabled_accounts' in data:
+            logger.info(f"  - Account routing: {len(data['enabled_accounts']) if isinstance(data['enabled_accounts'], list) else 'N/A'} accounts enabled")
+        return jsonify({'success': True, 'message': 'Trader and recorder settings updated'})
         
     except Exception as e:
-        logger.error(f"Error updating trader {trader_id}: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"❌ Error updating trader {trader_id}: {e}")
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(error_trace)
+        return jsonify({'success': False, 'error': str(e), 'traceback': error_trace}), 500
 
 @app.route('/api/traders/<int:trader_id>', methods=['DELETE'])
 def api_delete_trader(trader_id):
@@ -4198,9 +4361,23 @@ def traders_edit(trader_id):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # Get the trader with its recorder info
+    # Get the trader with its recorder info (CRITICAL: include all recorder settings for risk management)
     cursor.execute('''
-        SELECT t.*, r.name as recorder_name, r.strategy_type, r.symbol,
+        SELECT t.*, 
+               r.name as recorder_name, r.strategy_type, r.symbol,
+               r.initial_position_size as r_initial_position_size,
+               r.add_position_size as r_add_position_size,
+               r.tp_targets as r_tp_targets,
+               r.tp_units as r_tp_units,
+               r.trim_units as r_trim_units,
+               r.sl_enabled as r_sl_enabled,
+               r.sl_amount as r_sl_amount,
+               r.sl_units as r_sl_units,
+               r.sl_type as r_sl_type,
+               r.avg_down_enabled as r_avg_down_enabled,
+               r.avg_down_amount as r_avg_down_amount,
+               r.avg_down_point as r_avg_down_point,
+               r.avg_down_units as r_avg_down_units,
                a.name as account_name, a.id as parent_account_id
         FROM traders t
         JOIN recorders r ON t.recorder_id = r.id
@@ -4213,14 +4390,21 @@ def traders_edit(trader_id):
         conn.close()
         return redirect('/traders')
     
-    # Parse TP targets from JSON
+    # Parse TP targets from JSON (prefer recorder settings)
     tp_targets = []
+    tp_value = 5
+    tp_trim = 100
     try:
-        tp_targets = json.loads(trader_row['tp_targets']) if trader_row['tp_targets'] else []
+        tp_targets_raw = trader_row['r_tp_targets'] or trader_row['tp_targets']
+        if tp_targets_raw:
+            tp_targets = json.loads(tp_targets_raw)
+            if tp_targets and len(tp_targets) > 0:
+                tp_value = tp_targets[0].get('value', 5)
+                tp_trim = tp_targets[0].get('trim', 100)
     except:
         tp_targets = []
     
-    # Build trader object with all settings from traders table
+    # Build trader object with settings (prefer recorder settings which are authoritative)
     trader = {
         'id': trader_row['id'],
         'recorder_id': trader_row['recorder_id'],
@@ -4232,14 +4416,45 @@ def traders_edit(trader_id):
         'subaccount_name': trader_row['subaccount_name'],
         'is_demo': bool(trader_row['is_demo']),
         'enabled': bool(trader_row['enabled']),
-        'initial_position_size': trader_row['initial_position_size'] or 1,
-        'add_position_size': trader_row['add_position_size'] or 1,
+        # Position sizes - prefer recorder settings
+        'initial_position_size': trader_row['r_initial_position_size'] or trader_row['initial_position_size'] or 1,
+        'add_position_size': trader_row['r_add_position_size'] or trader_row['add_position_size'] or 1,
+        # TP settings from recorder
         'tp_targets': tp_targets,
-        'sl_enabled': bool(trader_row['sl_enabled']),
-        'sl_amount': trader_row['sl_amount'] or 0,
-        'sl_units': trader_row['sl_units'] or 'Ticks',
+        'tp_value': tp_value,
+        'tp_trim': tp_trim,
+        'tp_units': trader_row['r_tp_units'] or 'Ticks',
+        'trim_units': trader_row['r_trim_units'] or 'Contracts',
+        # SL settings from recorder
+        'sl_enabled': bool(trader_row['r_sl_enabled']),
+        'sl_amount': trader_row['r_sl_amount'] or 0,
+        'sl_units': trader_row['r_sl_units'] or 'Ticks',
+        'sl_type': trader_row['r_sl_type'] or 'Fixed',
+        # DCA/Averaging Down settings from recorder
+        'avg_down_enabled': bool(trader_row['r_avg_down_enabled']),
+        'avg_down_amount': trader_row['r_avg_down_amount'] or 1,
+        'avg_down_point': trader_row['r_avg_down_point'] or 10,
+        'avg_down_units': trader_row['r_avg_down_units'] or 'Ticks',
         'max_daily_loss': trader_row['max_daily_loss'] or 500
     }
+    
+    # Get enabled accounts from routing (if stored)
+    enabled_accounts = []
+    try:
+        # sqlite3.Row uses dict-style access, not .get()
+        enabled_accounts_raw = trader_row['enabled_accounts'] if 'enabled_accounts' in trader_row.keys() else None
+        if enabled_accounts_raw and enabled_accounts_raw != '[]' and str(enabled_accounts_raw).strip():
+            enabled_accounts = json.loads(enabled_accounts_raw)
+            logger.info(f"✅ Loaded enabled_accounts for trader {trader_id}: {len(enabled_accounts)} accounts")
+            for acct in enabled_accounts:
+                logger.info(f"  - Enabled: {acct.get('account_name')} (subaccount_id={acct.get('subaccount_id')})")
+        else:
+            logger.info(f"⚠️ No enabled_accounts found for trader {trader_id} (raw value: '{enabled_accounts_raw}')")
+    except Exception as e:
+        logger.warning(f"❌ Error parsing enabled_accounts: {e}")
+        import traceback
+        logger.warning(traceback.format_exc())
+        enabled_accounts = []
     
     # Get all accounts with subaccounts for the routing table
     cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
@@ -4253,15 +4468,27 @@ def traders_edit(trader_id):
                 for acct in tradovate_accts:
                     if isinstance(acct, dict) and acct.get('name'):
                         env_label = "🟠 DEMO" if acct.get('is_demo') else "🟢 LIVE"
-                        # Check if this subaccount is the one selected for this trader
-                        is_selected = (acct.get('id') == trader['subaccount_id'])
+                        # Check if this subaccount is enabled in account routing
+                        is_enabled = False
+                        acct_subaccount_id = acct.get('id')  # This is the subaccount ID from tradovate_accounts
+                        for enabled_acct in enabled_accounts:
+                            # Match by subaccount_id (most reliable)
+                            enabled_subaccount_id = enabled_acct.get('subaccount_id')
+                            if enabled_subaccount_id and enabled_subaccount_id == acct_subaccount_id:
+                                is_enabled = True
+                                logger.info(f"  ✓ Account {acct.get('name')} (subaccount_id={acct_subaccount_id}) is ENABLED")
+                                break
+                        # If no enabled_accounts stored, use legacy: check if it's the primary account
+                        if not enabled_accounts:
+                            is_enabled = (acct_subaccount_id == trader['subaccount_id'])
+                            logger.debug(f"  - Using legacy check: {acct.get('name')} is_selected={is_enabled}")
                         accounts.append({
                             'id': parent_id,
                             'name': acct['name'],
                             'display_name': f"{env_label} - {acct['name']} ({parent_name})",
                             'subaccount_id': acct.get('id'),
                             'is_demo': acct.get('is_demo', False),
-                            'is_selected': is_selected
+                            'is_selected': is_enabled
                         })
             except:
                 pass
@@ -5278,17 +5505,31 @@ def api_control_center_stats():
                 open_trades_by_recorder[rid] = []
             open_trades_by_recorder[rid].append(dict(trade))
         
-        # Get current prices for open trade symbols
+        # Get current prices for open trade symbols (with caching to avoid rate limits)
         symbols_needed = set()
         for trade in open_trades:
             ticker = trade['ticker']
             if ticker:
                 symbols_needed.add(ticker)
         
-        # Fetch current prices
+        # Use cached prices to avoid excessive API calls
+        # Prices are cached for 10 seconds to reduce rate limiting
+        global _price_cache
+        import time
         current_prices = {}
+        current_time = time.time()
+        
         for symbol in symbols_needed:
-            price = get_market_price_simple(symbol)
+            # Check cache first (30 second TTL - trades are priority)
+            cache_key = f"stats_{symbol}"
+            if cache_key in _price_cache:
+                cached_price, cached_time = _price_cache[cache_key]
+                if current_time - cached_time < 30:  # 30 second cache (trades are priority)
+                    current_prices[symbol] = cached_price
+                    continue
+            
+            # Only fetch if cache expired (use cached price function)
+            price = get_cached_price(symbol)
             if price:
                 current_prices[symbol] = price
         
@@ -5390,69 +5631,88 @@ def api_control_center_stats():
 
 @app.route('/api/control-center/close-all', methods=['POST'])
 def api_control_center_close_all():
-    """Close all open positions across all recorders"""
+    """Close all open positions on broker for all recorders and all enabled accounts"""
     try:
         conn = sqlite3.connect('just_trades.db')
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Get all open trades
+        # Get all open positions grouped by recorder and ticker
         cursor.execute('''
-            SELECT rt.id, rt.recorder_id, rt.ticker, rt.side, rt.entry_price, rt.quantity,
-                   r.name as recorder_name, r.webhook_token
-            FROM recorded_trades rt
-            JOIN recorders r ON rt.recorder_id = r.id
-            WHERE rt.status = 'open'
+            SELECT DISTINCT 
+                rp.recorder_id, rp.ticker, rp.side, rp.total_quantity,
+                r.name as recorder_name
+            FROM recorder_positions rp
+            JOIN recorders r ON rp.recorder_id = r.id
+            WHERE rp.status = 'open'
         ''')
-        open_trades = cursor.fetchall()
+        open_positions = cursor.fetchall()
         
-        if not open_trades:
+        if not open_positions:
             conn.close()
             return jsonify({'success': True, 'message': 'No open positions to close', 'closed_count': 0})
         
         closed_count = 0
         errors = []
         
-        # Close each trade by updating status
-        for trade in open_trades:
+        # Import here to avoid circular imports
+        import sys
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if current_dir not in sys.path:
+            sys.path.insert(0, current_dir)
+        
+        # Import the execute function
+        try:
+            from recorder_service import execute_live_trade_with_bracket
+        except ImportError:
+            # If recorder_service is not importable, use alternative approach
+            logger.error("Cannot import execute_live_trade_with_bracket - using alternative close method")
+            conn.close()
+            return jsonify({'success': False, 'error': 'Cannot import trade execution function'}), 500
+        
+        # Close each position on broker for all enabled accounts
+        for pos in open_positions:
             try:
-                # Get current price (use entry as fallback)
-                current_price = get_market_price_simple(trade['ticker']) or trade['entry_price']
+                recorder_id = pos['recorder_id']
+                ticker = pos['ticker']
+                side = pos['side']
+                quantity = pos['total_quantity']
                 
-                # Calculate P&L
-                tick_values = {'MNQ': 0.50, 'NQ': 5.00, 'MES': 1.25, 'ES': 12.50, 'M2K': 0.50, 'RTY': 5.00}
-                ticker = trade['ticker'] or ''
-                root = ticker.upper().replace('1!', '').replace('!', '')
-                tick_value = 1.0
-                for key in tick_values:
-                    if root.startswith(key):
-                        tick_value = tick_values[key]
-                        break
+                logger.info(f"📤 Closing {side} {quantity} {ticker} for {pos['recorder_name']}")
                 
-                if trade['side'] == 'LONG':
-                    pnl = (current_price - trade['entry_price']) * tick_value * trade['quantity']
+                # Execute close order on broker (will execute on all enabled accounts)
+                # Use CLOSE action - it will automatically determine close side from position
+                result = execute_live_trade_with_bracket(
+                    recorder_id=recorder_id,
+                    action='CLOSE',  # CLOSE automatically determines side from broker position
+                    ticker=ticker,
+                    quantity=quantity,  # Will be overridden by actual position size
+                    tp_ticks=None,  # No TP for close
+                    sl_ticks=None,  # No SL for close
+                    is_dca=False
+                )
+                
+                if result.get('success'):
+                    closed_count += 1
+                    logger.info(f"✅ Closed {side} {quantity} {ticker} for {pos['recorder_name']}")
                 else:
-                    pnl = (trade['entry_price'] - current_price) * tick_value * trade['quantity']
-                
-                # Update trade to closed
-                cursor.execute('''
-                    UPDATE recorded_trades 
-                    SET status = 'closed', exit_price = ?, exit_time = CURRENT_TIMESTAMP, pnl = ?
-                    WHERE id = ?
-                ''', (current_price, pnl, trade['id']))
-                
-                closed_count += 1
-                logger.info(f"📊 Closed {trade['side']} {trade['ticker']} for {trade['recorder_name']}: PnL ${pnl:.2f}")
+                    error_msg = result.get('error', 'Unknown error')
+                    errors.append(f"{pos['recorder_name']} {ticker}: {error_msg}")
+                    logger.error(f"❌ Failed to close {pos['recorder_name']} {ticker}: {error_msg}")
                 
             except Exception as e:
-                errors.append(f"{trade['recorder_name']}: {str(e)}")
+                error_msg = str(e)
+                errors.append(f"{pos['recorder_name']} {ticker}: {error_msg}")
+                logger.error(f"❌ Error closing {pos['recorder_name']} {ticker}: {error_msg}")
+                import traceback
+                logger.error(traceback.format_exc())
         
-        conn.commit()
         conn.close()
         
-        message = f"Closed {closed_count} position(s)"
+        message = f"Closed {closed_count} position(s) on broker"
         if errors:
-            message += f" with {len(errors)} error(s)"
+            message += f" ({len(errors)} error(s))"
         
         return jsonify({
             'success': True, 
@@ -5463,6 +5723,48 @@ def api_control_center_close_all():
         
     except Exception as e:
         logger.error(f"Error closing all positions: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/control-center/clear-all', methods=['POST'])
+def api_control_center_clear_all():
+    """Clear all trade records from database (does NOT close broker positions)"""
+    try:
+        conn = sqlite3.connect('just_trades.db')
+        cursor = conn.cursor()
+        
+        # Delete all recorded trades
+        cursor.execute('DELETE FROM recorded_trades')
+        trades_deleted = cursor.rowcount
+        
+        # Delete all recorder positions
+        cursor.execute('DELETE FROM recorder_positions')
+        positions_deleted = cursor.rowcount
+        
+        # Delete all recorded signals
+        cursor.execute('DELETE FROM recorded_signals')
+        signals_deleted = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        message = f"Cleared {trades_deleted} trade(s), {positions_deleted} position(s), {signals_deleted} signal(s)"
+        logger.info(f"🧹 {message}")
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'trades_deleted': trades_deleted,
+            'positions_deleted': positions_deleted,
+            'signals_deleted': signals_deleted
+        })
+        
+    except Exception as e:
+        logger.error(f"Error clearing all trades: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -8717,9 +9019,29 @@ def monitor_break_even():
                         monitors_to_remove.append(key)
                         continue
                     
-                    # Get current price (from position's netPrice or last trade)
-                    current_price = position.get('netPrice', 0)
+                    # Get current MARKET price (NOT position.netPrice which is entry price!)
+                    # Use market data cache for real-time prices
+                    symbol_root = extract_symbol_root(symbol)
+                    current_price = None
+                    
+                    # Try market data cache first (real-time WebSocket prices)
+                    if symbol_root in _market_data_cache:
+                        current_price = _market_data_cache[symbol_root].get('last')
+                    
+                    # Try exact symbol match
+                    if not current_price and symbol in _market_data_cache:
+                        current_price = _market_data_cache[symbol].get('last')
+                    
+                    # Fallback to cached price function
                     if not current_price:
+                        current_price = get_cached_price(symbol)
+                    
+                    # Last resort: try TradingView API
+                    if not current_price:
+                        current_price = get_market_price_simple(symbol)
+                    
+                    if not current_price:
+                        logger.debug(f"Break-even monitor: No market price for {symbol}, skipping check")
                         continue
                     
                     # Calculate profit in ticks
@@ -8727,6 +9049,11 @@ def monitor_break_even():
                         profit_ticks = (current_price - entry_price) / tick_size
                     else:
                         profit_ticks = (entry_price - current_price) / tick_size
+                    
+                    # Log monitoring progress (every ~10 seconds)
+                    monitor_age = time.time() - monitor.get('created_at', time.time())
+                    if int(monitor_age) % 10 < 2:  # Log roughly every 10 seconds
+                        logger.debug(f"📊 Break-even monitor: {symbol} | Entry: {entry_price:.2f} | Current: {current_price:.2f} | Profit: {profit_ticks:.1f}/{activation_ticks} ticks")
                     
                     # Check if activation threshold reached
                     if profit_ticks >= activation_ticks:
@@ -9040,7 +9367,9 @@ def fetch_tradovate_pnl_sync():
     num_accounts = _tradovate_pnl_cache.get('account_count', 2)
     if not isinstance(num_accounts, int) or num_accounts < 1:
         num_accounts = 2
-    min_interval = max(0.5, num_accounts * 0.2)  # Scale up as accounts increase
+    # Increased minimum interval to reduce rate limiting (trades are priority, PnL is secondary)
+    # Formula: max(3.0, num_accounts * 0.6) - very conservative to stay under 120 req/min
+    min_interval = max(3.0, num_accounts * 0.6)  # Scale up as accounts increase (very conservative - trades priority)
     
     if current_time - _tradovate_pnl_cache['last_fetch'] < min_interval:
         return _tradovate_pnl_cache['data'], _tradovate_pnl_cache['positions']
@@ -9329,13 +9658,14 @@ def proactive_token_refresh():
         time.sleep(30 * 60)
 
 def emit_realtime_updates():
-    """Emit real-time updates every second (like Trade Manager)"""
+    """Emit real-time updates (throttled to avoid rate limits)"""
     global _position_cache
     while True:
         try:
             # ============================================================
             # FETCH REAL-TIME PnL DIRECTLY FROM TRADOVATE
             # This is the correct approach - no market data needed!
+            # Note: fetch_tradovate_pnl_sync() has built-in throttling
             # ============================================================
             
             total_pnl = 0.0
@@ -9344,7 +9674,7 @@ def emit_realtime_updates():
             active_positions = 0
             positions_list = []
             
-            # Fetch PnL from Tradovate's cashBalance API
+            # Fetch PnL from Tradovate's cashBalance API (throttled internally)
             pnl_data, tradovate_positions = fetch_tradovate_pnl_sync()
             
             if pnl_data:
@@ -9407,7 +9737,9 @@ def emit_realtime_updates():
             logger.error(f"Error emitting real-time updates: {e}")
             import traceback
             logger.debug(f"Traceback: {traceback.format_exc()}")
-        time.sleep(0.5)  # Every 0.5 seconds for maximum speed
+        # Sleep 5 seconds - trades are priority, PnL updates are secondary
+        # fetch_tradovate_pnl_sync() has its own throttling, so this just reduces check frequency
+        time.sleep(5)  # Check every 5 seconds (trades are priority, PnL is secondary)
 
 def record_strategy_pnl_continuously():
     """Record P&L for all active strategies every second (like Trade Manager)"""

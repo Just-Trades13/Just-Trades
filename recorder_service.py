@@ -1552,18 +1552,18 @@ def execute_live_trade_with_bracket(
                                     logger.error(f"❌ TP PLACE FAILED: {tp_result}")
                         else:
                             logger.warning(f"⚠️ TP invalid - skipping (would fill instantly)")
-                    
+                
                     # ALWAYS return result after order placed (whether TP placed or not)
                     # CRITICAL: Set bracket_managed=True if we placed TP order
                     # This flags the trade for bracket_fill_monitor instead of TP/SL polling
-                    return {
-                        'success': True,
-                        'order_id': str(order_id) if order_id else None,
-                        'tp_order_id': str(tp_order_id) if tp_order_id else None,
-                        'fill_price': fill_price,
+                        return {
+                            'success': True,
+                            'order_id': str(order_id) if order_id else None,
+                            'tp_order_id': str(tp_order_id) if tp_order_id else None,
+                            'fill_price': fill_price,
                         'broker_position': broker_pos,
                         'bracket_managed': bool(tp_order_id)  # True if TP was placed on broker
-                    }
+                        }
             
             # Execute for this account
             exec_result = asyncio.run(execute_simple())
@@ -2623,117 +2623,15 @@ def reconcile_positions_with_broker():
                         broker_qty = broker_pos.get('netPos', 0) if broker_pos else 0
                         broker_avg = broker_pos.get('netPrice') if broker_pos else None
                         
-                        # Compare and TAKE ACTION on drift
+                        # Compare
                         if broker_qty == 0 and db_qty != 0:
-                            # =====================================================
-                            # MANUAL CLOSE DETECTED - User closed on broker directly
-                            # =====================================================
-                            logger.warning(f"🔄 BROKER SYNC: DB shows {db_qty} {ticker} but broker shows 0 - MANUAL CLOSE DETECTED")
-                            
-                            # Get current price for P/L calculation
-                            current_price = get_price_from_tradingview_api(ticker) or broker_avg or db_avg
-                            
-                            # Calculate P/L
-                            db_side = db_pos.get('side', 'LONG')
-                            tick_size = 0.25
-                            if db_side == 'LONG':
-                                pnl = (current_price - db_avg) * db_qty / tick_size * 0.5  # $0.50 per tick for MNQ
-                            else:
-                                pnl = (db_avg - current_price) * db_qty / tick_size * 0.5
-                            
-                            # Close the trade in DB
-                            conn2 = get_db_connection()
-                            cursor2 = conn2.cursor()
-                            
-                            # Update recorded_trades
-                            cursor2.execute('''
-                                UPDATE recorded_trades 
-                                SET status = 'closed', 
-                                    exit_price = ?,
-                                    exit_time = datetime('now'),
-                                    exit_reason = 'manual_broker_close',
-                                    pnl = ?
-                                WHERE recorder_id = ? AND status = 'open'
-                            ''', (current_price, pnl, recorder_id))
-                            
-                            # Update recorder_positions
-                            cursor2.execute('''
-                                UPDATE recorder_positions 
-                                SET status = 'closed', total_quantity = 0
-                                WHERE recorder_id = ? AND status = 'open'
-                            ''', (recorder_id,))
-                            
-                            conn2.commit()
-                            conn2.close()
-                            
-                            logger.info(f"✅ BROKER SYNC: Closed DB trade for {ticker} - Manual close @ {current_price}, P/L: ${pnl:.2f}")
-                            
+                            logger.warning(f"⚠️ POSITION DRIFT: DB shows {db_qty} {ticker} but broker shows 0 - position may have closed")
                         elif broker_qty != 0 and db_qty == 0:
-                            # =====================================================
-                            # ORPHAN POSITION - Broker has position, DB doesn't
-                            # =====================================================
-                            logger.warning(f"⚠️ BROKER SYNC: ORPHAN POSITION - Broker shows {broker_qty} {ticker} but DB shows 0")
-                            logger.warning(f"⚠️ User should manually close this position or add it to tracking")
-                            # Don't auto-create - user should handle this manually
-                            
+                            logger.warning(f"⚠️ POSITION DRIFT: DB shows 0 but broker shows {broker_qty} {ticker} - position exists on broker but not in DB")
                         elif abs(broker_qty) != abs(db_qty):
-                            # =====================================================
-                            # PARTIAL CLOSE - User reduced position size manually
-                            # =====================================================
-                            logger.warning(f"🔄 BROKER SYNC: QTY MISMATCH - DB shows {db_qty} but broker shows {broker_qty} for {ticker}")
-                            
-                            if abs(broker_qty) < abs(db_qty):
-                                # User reduced position - update DB to match
-                                closed_qty = abs(db_qty) - abs(broker_qty)
-                                current_price = get_price_from_tradingview_api(ticker) or broker_avg
-                                
-                                conn2 = get_db_connection()
-                                cursor2 = conn2.cursor()
-                                
-                                # Update quantity in recorded_trades
-                                cursor2.execute('''
-                                    UPDATE recorded_trades 
-                                    SET quantity = ?
-                                    WHERE recorder_id = ? AND status = 'open'
-                                ''', (abs(broker_qty), recorder_id))
-                                
-                                # Update recorder_positions
-                                cursor2.execute('''
-                                    UPDATE recorder_positions 
-                                    SET total_quantity = ?
-                                    WHERE recorder_id = ? AND status = 'open'
-                                ''', (abs(broker_qty), recorder_id))
-                                
-                                conn2.commit()
-                                conn2.close()
-                                
-                                logger.info(f"✅ BROKER SYNC: Updated {ticker} qty from {db_qty} to {broker_qty} (partial close of {closed_qty})")
-                            else:
-                                # Broker has MORE than DB - log but don't auto-add
-                                logger.warning(f"⚠️ BROKER SYNC: Broker has MORE contracts than DB ({broker_qty} vs {db_qty}) - not auto-adding")
-                                
-                        elif broker_avg and db_avg and abs(broker_avg - db_avg) > 1.0:
-                            # =====================================================
-                            # PRICE DRIFT - Update DB average to match broker
-                            # =====================================================
-                            logger.info(f"🔄 BROKER SYNC: Updating avg price from {db_avg} to {broker_avg} for {ticker}")
-                            
-                            conn2 = get_db_connection()
-                            cursor2 = conn2.cursor()
-                            
-                            cursor2.execute('''
-                                UPDATE recorded_trades SET entry_price = ?
-                                WHERE recorder_id = ? AND status = 'open'
-                            ''', (broker_avg, recorder_id))
-                            
-                            cursor2.execute('''
-                                UPDATE recorder_positions SET avg_entry_price = ?
-                                WHERE recorder_id = ? AND status = 'open'
-                            ''', (broker_avg, recorder_id))
-                            
-                            conn2.commit()
-                            conn2.close()
-                            
+                            logger.warning(f"⚠️ POSITION DRIFT: DB shows {db_qty} {ticker} but broker shows {broker_qty} - quantity mismatch")
+                        elif broker_avg and db_avg and abs(broker_avg - db_avg) > 0.5:
+                            logger.warning(f"⚠️ POSITION DRIFT: DB avg {db_avg} but broker avg {broker_avg} for {ticker} - price mismatch")
                         else:
                             logger.debug(f"✅ Position in sync: {ticker} - DB: {db_qty} @ {db_avg}, Broker: {broker_qty} @ {broker_avg}")
                         
@@ -3815,62 +3713,6 @@ def api_clone_recorder(recorder_id):
         logger.error(f"Error cloning recorder {recorder_id}: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/broker-sync', methods=['POST'])
-def api_force_broker_sync():
-    """
-    Force an immediate sync between database and broker positions.
-    Use this after manually closing trades on the broker.
-    """
-    try:
-        logger.info("🔄 Manual broker sync triggered via API")
-        
-        # Run the reconciliation function
-        reconcile_positions_with_broker()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Broker sync completed - check logs for details'
-        })
-    except Exception as e:
-        logger.error(f"Error in manual broker sync: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/recorders/<int:recorder_id>/sync-broker', methods=['POST'])
-def api_sync_recorder_broker(recorder_id):
-    """
-    Sync a specific recorder's position with the broker.
-    Use this after manually closing a trade for this recorder.
-    """
-    try:
-        logger.info(f"🔄 Manual broker sync triggered for recorder {recorder_id}")
-        
-        # Get recorder details
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT ticker FROM recorder_positions WHERE recorder_id = ? AND status = "open"', (recorder_id,))
-        pos = cursor.fetchone()
-        conn.close()
-        
-        if pos:
-            ticker = pos['ticker']
-            result = sync_position_from_broker(recorder_id, ticker)
-            return jsonify({
-                'success': True,
-                'message': f'Synced {ticker} position with broker',
-                'result': result
-            })
-        else:
-            return jsonify({
-                'success': True,
-                'message': 'No open position to sync'
-            })
-            
-    except Exception as e:
-        logger.error(f"Error syncing recorder {recorder_id} with broker: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -5006,9 +4848,10 @@ def initialize():
     logger.info("✅ TP/SL monitoring active")
 
     # Start position reconciliation (compares DB with broker every 60 seconds)
-    # This detects manual closes, partial closes, and keeps DB in sync with broker
-    start_position_reconciliation()
-    logger.info("✅ Position reconciliation active (syncs DB with broker every 60s)")
+    # TEMPORARILY DISABLED to avoid rate limiting - re-enable once rate limits are resolved
+    # start_position_reconciliation()
+    # logger.info("✅ Position reconciliation active")
+    logger.info("ℹ️ Position reconciliation disabled (to avoid rate limiting)")
 
     # Start bracket fill monitor (detects when Tradovate closes positions)
     start_bracket_monitor()

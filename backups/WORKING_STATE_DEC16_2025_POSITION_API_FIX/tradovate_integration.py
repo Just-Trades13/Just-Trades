@@ -1133,7 +1133,7 @@ class TradovateIntegration:
         except Exception as e:
             logger.error(f"Error getting orders: {e}", exc_info=True)
             return []
-
+    
     async def get_order_item(self, order_id: int) -> Optional[Dict[str, Any]]:
         """
         Get full details for a specific order using order/item endpoint.
