@@ -17,17 +17,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir \
     websockets \
     uvloop \
-    supervisor
+    supervisor \
+    eventlet \
+    gevent \
+    gevent-websocket
 
-# Copy application code
+# Copy application code - cache bust: v2
 COPY . .
 
 # Create logs directory
 RUN mkdir -p /app/logs
 
-# Default command (overridden by docker-compose)
-CMD ["python", "ultra_simple_server.py"]
+# Set environment
+ENV PYTHONUNBUFFERED=1
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8083/health')" || exit 1
+# Default command - use eventlet for socketio
+CMD ["python", "ultra_simple_server.py"]
