@@ -1556,14 +1556,14 @@ def execute_live_trade_with_bracket(
                     # ALWAYS return result after order placed (whether TP placed or not)
                     # CRITICAL: Set bracket_managed=True if we placed TP order
                     # This flags the trade for bracket_fill_monitor instead of TP/SL polling
-                        return {
-                            'success': True,
-                            'order_id': str(order_id) if order_id else None,
-                            'tp_order_id': str(tp_order_id) if tp_order_id else None,
-                            'fill_price': fill_price,
+                    return {
+                        'success': True,
+                        'order_id': str(order_id) if order_id else None,
+                        'tp_order_id': str(tp_order_id) if tp_order_id else None,
+                        'fill_price': fill_price,
                         'broker_position': broker_pos,
                         'bracket_managed': bool(tp_order_id)  # True if TP was placed on broker
-                        }
+                    }
             
             # Execute for this account
             exec_result = asyncio.run(execute_simple())
