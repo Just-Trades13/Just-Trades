@@ -50,6 +50,215 @@ except ImportError:
     # python-dotenv not installed, skip (optional dependency)
     pass
 
+# ============================================================
+# DATABASE CONNECTION - Supports both SQLite and PostgreSQL
+# ============================================================
+DATABASE_URL = os.getenv('DATABASE_URL')
+_pg_pool = None
+
+def get_db_connection():
+    """
+    Get database connection - uses PostgreSQL if DATABASE_URL is set,
+    otherwise falls back to SQLite for local development.
+    """
+    global _pg_pool
+    
+    if DATABASE_URL and DATABASE_URL.startswith('postgres'):
+        # PostgreSQL for production
+        try:
+            import psycopg2
+            import psycopg2.pool
+            from psycopg2.extras import RealDictCursor
+            
+            db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+            
+            # Initialize pool if not exists
+            if _pg_pool is None:
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(2, 20, dsn=db_url)
+                print("✅ PostgreSQL connection pool initialized")
+                # Create tables on first connection
+                _init_postgres_tables()
+            
+            conn = _pg_pool.getconn()
+            # Make it act like sqlite3 with row_factory
+            conn.cursor_factory = RealDictCursor
+            return PostgresConnectionWrapper(conn, _pg_pool)
+        except ImportError:
+            print("⚠️ psycopg2 not installed, falling back to SQLite")
+        except Exception as e:
+            print(f"⚠️ PostgreSQL connection failed: {e}, falling back to SQLite")
+    
+    # SQLite for local development
+    conn = sqlite3.connect('just_trades.db', timeout=30)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+class PostgresConnectionWrapper:
+    """Wrapper to make PostgreSQL connection behave like SQLite."""
+    def __init__(self, conn, pool):
+        self._conn = conn
+        self._pool = pool
+    
+    def cursor(self):
+        return self._conn.cursor()
+    
+    def execute(self, sql, params=None):
+        # Convert SQLite ? placeholders to PostgreSQL %s
+        sql = sql.replace('?', '%s')
+        cursor = self._conn.cursor()
+        cursor.execute(sql, params or ())
+        return cursor
+    
+    def commit(self):
+        self._conn.commit()
+    
+    def rollback(self):
+        self._conn.rollback()
+    
+    def close(self):
+        self._pool.putconn(self._conn)
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, *args):
+        self.close()
+
+def _init_postgres_tables():
+    """Initialize PostgreSQL tables if they don't exist."""
+    import psycopg2
+    db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    conn = psycopg2.connect(db_url)
+    cursor = conn.cursor()
+    
+    print("📊 Creating PostgreSQL tables...")
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS accounts (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(255),
+            password VARCHAR(255),
+            tradovate_token TEXT,
+            tradovate_refresh_token TEXT,
+            md_access_token TEXT,
+            tradovate_accounts TEXT,
+            subaccounts TEXT,
+            token_expires_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS traders (
+            id SERIAL PRIMARY KEY,
+            account_id INTEGER,
+            name VARCHAR(255) NOT NULL,
+            subaccount_id INTEGER,
+            subaccount_name VARCHAR(255),
+            is_demo BOOLEAN DEFAULT TRUE,
+            max_contracts INTEGER DEFAULT 10,
+            custom_ticker VARCHAR(50),
+            multiplier REAL DEFAULT 1.0,
+            enabled BOOLEAN DEFAULT TRUE,
+            enabled_accounts TEXT,
+            risk_percent REAL,
+            max_daily_loss REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorders (
+            id SERIAL PRIMARY KEY,
+            trader_id INTEGER,
+            name VARCHAR(255) NOT NULL,
+            enabled BOOLEAN DEFAULT TRUE,
+            webhook_token VARCHAR(255),
+            ticker VARCHAR(50),
+            position_size INTEGER DEFAULT 1,
+            tp_enabled BOOLEAN DEFAULT TRUE,
+            tp_targets TEXT,
+            sl_enabled BOOLEAN DEFAULT FALSE,
+            sl_amount REAL,
+            trailing_sl BOOLEAN DEFAULT FALSE,
+            account_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorded_trades (
+            id SERIAL PRIMARY KEY,
+            recorder_id INTEGER,
+            signal_id VARCHAR(255),
+            ticker VARCHAR(50),
+            action VARCHAR(20),
+            side VARCHAR(10),
+            entry_price REAL,
+            entry_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            exit_price REAL,
+            exit_time TIMESTAMP,
+            quantity INTEGER DEFAULT 1,
+            status VARCHAR(20) DEFAULT 'open',
+            tp_price REAL,
+            sl_price REAL,
+            tp_order_id VARCHAR(100),
+            sl_order_id VARCHAR(100),
+            pnl REAL,
+            pnl_ticks REAL,
+            exit_reason VARCHAR(50),
+            broker_order_id VARCHAR(100),
+            broker_strategy_id VARCHAR(100),
+            broker_fill_price REAL,
+            broker_managed_tp_sl BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorder_positions (
+            id SERIAL PRIMARY KEY,
+            recorder_id INTEGER,
+            ticker VARCHAR(50),
+            side VARCHAR(10),
+            total_quantity INTEGER DEFAULT 0,
+            fills TEXT,
+            avg_entry_price REAL,
+            realized_pnl REAL DEFAULT 0,
+            unrealized_pnl REAL DEFAULT 0,
+            worst_unrealized_pnl REAL DEFAULT 0,
+            exit_price REAL,
+            exit_time TIMESTAMP,
+            status VARCHAR(20) DEFAULT 'open',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            closed_at TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS signals (
+            id SERIAL PRIMARY KEY,
+            recorder_id INTEGER,
+            raw_data TEXT,
+            action VARCHAR(20),
+            ticker VARCHAR(50),
+            price REAL,
+            processed BOOLEAN DEFAULT FALSE,
+            result TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    cursor.close()
+    conn.close()
+    print("✅ PostgreSQL tables created!")
+
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
@@ -850,7 +1059,7 @@ def init_db():
     conn.close()
     
     # Initialize just_trades.db with positions table (like Trade Manager)
-    conn = sqlite3.connect('just_trades.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS open_positions (
@@ -1093,7 +1302,7 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
         }
 
         # First, get EXISTING data from the database to preserve accounts we can't access
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT tradovate_accounts, subaccounts FROM accounts WHERE id = ?", (account_id,))
@@ -1196,7 +1405,7 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
         live_count = sum(1 for a in combined_accounts if not a.get('is_demo'))
         logger.info(f"Storing {demo_count} demo + {live_count} live accounts for account {account_id}")
 
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE accounts
@@ -1372,7 +1581,7 @@ def accounts():
 def get_accounts():
     """Get all accounts"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM accounts")
@@ -1443,7 +1652,7 @@ def create_account():
         if not account_name:
             return jsonify({'success': False, 'error': 'Account name is required'}), 400
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Check if account name already exists
@@ -1491,7 +1700,7 @@ def set_broker(account_id):
         data = request.get_json()
         broker_name = data.get('broker') or data.get('brokerName', 'Tradovate')
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE accounts SET broker = ? WHERE id = ?", (broker_name, account_id))
         conn.commit()
@@ -1523,7 +1732,7 @@ def store_credentials(account_id):
             }), 400
         
         # Store credentials in database
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE accounts 
@@ -1723,7 +1932,7 @@ def oauth_callback():
                 logger.info(f"Storing actual expiration time: {expires_at}")
             
             # Store tokens in database with actual expiration time
-            conn = sqlite3.connect('just_trades.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE accounts 
@@ -1740,7 +1949,7 @@ def oauth_callback():
             if not md_access_token and access_token:
                 try:
                     # Check if we have username/password stored
-                    conn = sqlite3.connect('just_trades.db')
+                    conn = get_db_connection()
                     cursor = conn.cursor()
                     cursor.execute("""
                         SELECT username, password, client_id, client_secret, environment
@@ -1794,7 +2003,7 @@ def oauth_callback():
                                 md_access_token = token_data.get('mdAccessToken') or token_data.get('md_access_token')
                                 if md_access_token:
                                     # Update mdAccessToken in database
-                                    conn = sqlite3.connect('just_trades.db')
+                                    conn = get_db_connection()
                                     cursor = conn.cursor()
                                     cursor.execute("""
                                         UPDATE accounts SET md_access_token = ? WHERE id = ?
@@ -1838,7 +2047,7 @@ def oauth_callback():
 def delete_account(account_id):
     """Delete an account"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
         conn.commit()
@@ -1860,7 +2069,7 @@ def delete_account(account_id):
 def refresh_account_subaccounts(account_id):
     """Refresh Tradovate subaccounts for an account using stored tokens"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("""
@@ -1897,7 +2106,7 @@ def fetch_md_access_token(account_id):
         if not username or not password:
             if use_stored:
                 # Try to get from database
-                conn = sqlite3.connect('just_trades.db')
+                conn = get_db_connection()
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT username, password, client_id, client_secret, environment
@@ -1921,7 +2130,7 @@ def fetch_md_access_token(account_id):
                 }), 400
         else:
             # Get environment and client credentials from database
-            conn = sqlite3.connect('just_trades.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT client_id, client_secret, environment
@@ -1988,7 +2197,7 @@ def fetch_md_access_token(account_id):
                     expires_at = (datetime.now() + timedelta(minutes=85)).strftime('%Y-%m-%d %H:%M:%S')
                 
                 # Update tokens in database
-                conn = sqlite3.connect('just_trades.db')
+                conn = get_db_connection()
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE accounts 
@@ -2060,7 +2269,7 @@ def store_tradingview_session():
             'updated_at': datetime.now().isoformat()
         })
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE accounts SET tradingview_session = ? WHERE id = 1", (tv_session,))
         conn.commit()
@@ -2085,7 +2294,7 @@ def store_tradingview_session():
 def get_tradingview_session_status():
     """Check if TradingView session is configured"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT tradingview_session FROM accounts WHERE id = 1")
         row = cursor.fetchone()
@@ -2113,7 +2322,7 @@ def get_tradingview_session_status():
 def get_strategies():
     """Get all strategies"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM strategies")
@@ -2141,7 +2350,7 @@ def get_strategies():
 def get_live_strategies():
     """Get all live/active strategies"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         # Try to get enabled strategies, fallback to all if enabled column doesn't exist
@@ -2177,7 +2386,7 @@ def strategies():
 @app.route('/recorders', methods=['GET'])
 def recorders_list():
     """Render the recorders list page"""
-    conn = sqlite3.connect('just_trades.db')
+    conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('SELECT id, name, symbol, is_recording, created_at FROM recorders ORDER BY created_at DESC')
@@ -2189,7 +2398,7 @@ def recorders_list():
 def recorders_new():
     """Render the new recorder form"""
     # Get accounts for dropdown
-    conn = sqlite3.connect('just_trades.db')
+    conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('SELECT id, name FROM accounts WHERE enabled = 1')
@@ -2200,7 +2409,7 @@ def recorders_new():
 @app.route('/recorders/<int:recorder_id>')
 def recorders_edit(recorder_id):
     """Render the edit recorder form"""
-    conn = sqlite3.connect('just_trades.db')
+    conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
@@ -2233,7 +2442,7 @@ def api_get_recorders():
         per_page = int(request.args.get('per_page', 20))
         offset = (page - 1) * per_page
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -2287,7 +2496,7 @@ def api_get_recorders():
 def api_get_recorder(recorder_id):
     """Get a single recorder by ID"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
@@ -2324,7 +2533,7 @@ def api_create_recorder():
         import secrets
         webhook_token = secrets.token_urlsafe(16)
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Serialize TP targets
@@ -2404,7 +2613,7 @@ def api_update_recorder(recorder_id):
         if not data:
             return jsonify({'success': False, 'error': 'No data provided'}), 400
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -2500,7 +2709,7 @@ def api_update_recorder(recorder_id):
 def api_delete_recorder(recorder_id):
     """Delete a recorder and ALL associated data (trades, signals, positions)"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Check if recorder exists
@@ -2541,7 +2750,7 @@ def api_delete_recorder(recorder_id):
 def api_clone_recorder(recorder_id):
     """Clone an existing recorder"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -2630,7 +2839,7 @@ def api_clone_recorder(recorder_id):
 def api_start_recorder(recorder_id):
     """Start recording for a recorder"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute('SELECT name, is_recording FROM recorders WHERE id = ?', (recorder_id,))
@@ -2662,7 +2871,7 @@ def api_start_recorder(recorder_id):
 def api_stop_recorder(recorder_id):
     """Stop recording for a recorder"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute('SELECT name, is_recording FROM recorders WHERE id = ?', (recorder_id,))
@@ -2694,7 +2903,7 @@ def api_stop_recorder(recorder_id):
 def api_reset_recorder_history(recorder_id):
     """Reset trade history for a recorder (delete all trades and signals)"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -2739,7 +2948,7 @@ def api_reset_recorder_history(recorder_id):
 def api_get_recorder_webhook(recorder_id):
     """Get webhook details for a recorder"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('SELECT name, webhook_token FROM recorders WHERE id = ?', (recorder_id,))
@@ -2801,7 +3010,7 @@ def api_get_recorder_webhook(recorder_id):
 def api_get_traders():
     """Get all traders (recorder-account links) with joined data and risk settings"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -2909,7 +3118,7 @@ def api_create_trader():
         if not recorder_id or not account_id:
             return jsonify({'success': False, 'error': 'recorder_id and account_id are required'}), 400
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -3007,7 +3216,7 @@ def api_update_trader(trader_id):
     try:
         data = request.get_json()
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Check trader exists
@@ -3162,7 +3371,7 @@ def api_update_trader(trader_id):
 def api_delete_trader(trader_id):
     """Delete a trader (unlink recorder from account)"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Check trader exists
@@ -3199,7 +3408,7 @@ def get_cached_recorder(webhook_token):
         if now - recorder_cache_time.get(webhook_token, 0) < CACHE_TTL:
             return recorder_cache[webhook_token]
     
-    conn = sqlite3.connect('just_trades.db')
+    conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM recorders WHERE webhook_token = ? AND recording_enabled = 1', (webhook_token,))
@@ -3218,7 +3427,7 @@ def process_signal_batch(signals):
     if not signals:
         return
     
-    conn = sqlite3.connect('just_trades.db')
+    conn = get_db_connection()
     conn.execute('PRAGMA journal_mode=WAL')
     conn.execute('PRAGMA synchronous=NORMAL')
     cursor = conn.cursor()
@@ -3348,7 +3557,7 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
     """
     try:
         # Find recorder by webhook token
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -3976,7 +4185,7 @@ def api_get_recorder_signals(recorder_id):
     try:
         limit = int(request.args.get('limit', 50))
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -4008,7 +4217,7 @@ def api_get_recorder_trades(recorder_id):
         per_page = int(request.args.get('per_page', 20))
         status = request.args.get('status')  # open, closed, or all
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -4061,7 +4270,7 @@ def api_get_recorder_pnl(recorder_id):
     try:
         timeframe = request.args.get('timeframe', 'all')  # today, week, month, 3months, 6months, year, all
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -4186,7 +4395,7 @@ def api_get_all_recorders_pnl():
         timeframe = request.args.get('timeframe', 'month')
         recorder_id = request.args.get('recorder_id')  # Optional filter
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -4285,7 +4494,7 @@ def api_get_all_recorders_pnl():
 @app.route('/traders')
 def traders_list():
     """Traders list page - show all recorder-account links"""
-    conn = sqlite3.connect('just_trades.db')
+    conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
@@ -4333,7 +4542,7 @@ def my_traders():
 @app.route('/traders/new')
 def traders_new():
     """Create new trader page - select recorder and accounts"""
-    conn = sqlite3.connect('just_trades.db')
+    conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
@@ -4387,7 +4596,7 @@ def traders_new():
 @app.route('/traders/<int:trader_id>')
 def traders_edit(trader_id):
     """Edit existing trader - load all saved settings"""
-    conn = sqlite3.connect('just_trades.db')
+    conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
@@ -4538,7 +4747,7 @@ def traders_edit(trader_id):
 def control_center():
     """Control Center with live recorder/strategy data and PnL"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -5220,7 +5429,7 @@ _stock_price_cache_ttl = 30
 def get_tradingview_session_for_stocks():
     """Get TradingView session cookies from database"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('SELECT tradingview_session FROM accounts WHERE tradingview_session IS NOT NULL LIMIT 1')
@@ -5488,7 +5697,7 @@ def format_ticker_item(config, price, change_pct):
 def api_control_center_stats():
     """Get live recorder stats for control center (real-time updates)"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -5663,7 +5872,7 @@ def api_control_center_stats():
 def api_control_center_close_all():
     """Close all open positions on broker for all recorders and all enabled accounts"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -5762,7 +5971,7 @@ def api_control_center_close_all():
 def api_control_center_clear_all():
     """Clear all trade records from database (does NOT close broker positions)"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Delete all recorded trades
@@ -5805,7 +6014,7 @@ def api_control_center_toggle_all():
         data = request.get_json() or {}
         enabled = data.get('enabled', False)
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute('UPDATE recorders SET recording_enabled = ?', (1 if enabled else 0,))
@@ -5832,7 +6041,7 @@ def api_control_center_toggle_all():
 def api_close_recorder_positions(recorder_id):
     """Close all open positions for a specific recorder"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -5910,7 +6119,7 @@ def api_close_recorder_positions(recorder_id):
 def get_open_trades():
     """Get open positions (like Trade Manager's /api/trades/open/)"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -5982,7 +6191,7 @@ def manual_trade():
         account_id = int(parts[0])
         subaccount_id = parts[1] if len(parts) > 1 and parts[1] else None
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("""
@@ -6365,7 +6574,7 @@ def manual_trade():
                                 _position_cache[cache_key] = position
                                 
                                 # Store position in database (like Trade Manager)
-                                conn = sqlite3.connect('just_trades.db')
+                                conn = get_db_connection()
                                 cursor = conn.cursor()
                                 cursor.execute('''
                                     INSERT OR REPLACE INTO open_positions 
@@ -6515,7 +6724,7 @@ def api_dashboard_users():
 def api_dashboard_strategies():
     """Get list of strategies (recorders) for filter dropdown"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -6571,7 +6780,7 @@ def api_dashboard_chart_data():
         symbol = request.args.get('symbol')
         timeframe = request.args.get('timeframe', 'month')
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -6675,7 +6884,7 @@ def api_dashboard_trade_history():
         page = int(request.args.get('page', 1))
         per_page = 20
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -6902,7 +7111,7 @@ def api_dashboard_metrics():
         symbol = request.args.get('symbol')
         timeframe = request.args.get('timeframe', 'all')
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -7053,7 +7262,7 @@ def api_dashboard_calendar_data():
         symbol = request.args.get('symbol')
         timeframe = request.args.get('timeframe', 'month')
         
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -7556,7 +7765,7 @@ def calculate_strategy_pnl(strategy_id):
             
         except ImportError:
             # Fallback to SQLite direct query
-            conn = sqlite3.connect('just_trades.db')
+            conn = get_db_connection()
             cursor = conn.execute('''
                 SELECT COALESCE(SUM(pnl), 0.0) as total_pnl
                 FROM trades
@@ -7629,7 +7838,7 @@ async def connect_tradovate_market_data_websocket():
     account_id = None
     
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('''
@@ -7729,7 +7938,7 @@ async def subscribe_to_market_data_symbols(ws):
     
     # Also check database for open positions
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT DISTINCT symbol FROM open_positions WHERE symbol IS NOT NULL")
         for row in cursor.fetchall():
@@ -7743,7 +7952,7 @@ async def subscribe_to_market_data_symbols(ws):
     
     # Get symbols from open recorder trades (for TP/SL monitoring)
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT DISTINCT ticker FROM recorded_trades 
@@ -7849,7 +8058,7 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
     global _market_data_cache
     
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -8087,7 +8296,7 @@ def poll_recorder_trades_tp_sl():
     while True:
         try:
             # Get all open trades with TP/SL set
-            conn = sqlite3.connect('just_trades.db')
+            conn = get_db_connection()
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
@@ -8156,7 +8365,7 @@ def poll_recorder_positions_drawdown():
     
     while True:
         try:
-            conn = sqlite3.connect('just_trades.db')
+            conn = get_db_connection()
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
@@ -8255,7 +8464,7 @@ _tradingview_subscribed_symbols = set()
 def get_tradingview_session():
     """Get TradingView session cookies from database"""
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT tradingview_session FROM accounts WHERE id = 1")
         row = cursor.fetchone()
@@ -8360,7 +8569,7 @@ async def subscribe_tradingview_symbols(ws, quote_session):
     
     # Get symbols from open recorder trades
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT DISTINCT ticker FROM recorded_trades 
@@ -8525,7 +8734,7 @@ def update_position_pnl():
             
             # Update in database
             try:
-                conn = sqlite3.connect('just_trades.db')
+                conn = get_db_connection()
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE open_positions 
@@ -8615,7 +8824,7 @@ def monitor_oco_orders():
                 continue
             
             # Get ALL accounts with tokens (for multi-account support)
-            conn = sqlite3.connect('just_trades.db')
+            conn = get_db_connection()
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute('''
@@ -8805,7 +9014,7 @@ def cleanup_orphaned_orders():
     
     try:
         # Get all accounts with tokens
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('''
@@ -8960,7 +9169,7 @@ def monitor_break_even():
                 continue
             
             # Get tokens from database
-            conn = sqlite3.connect('just_trades.db')
+            conn = get_db_connection()
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute('''
@@ -9188,7 +9397,7 @@ def get_valid_tradovate_token(account_id: int) -> str | None:
     Returns the access token string, or None if unavailable.
     """
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('''
@@ -9235,7 +9444,7 @@ def get_valid_tradovate_token(account_id: int) -> str | None:
             logger.info(f"Refreshing token for account {account_id}")
             if try_refresh_tradovate_token(account_id):
                 # Get the new token
-                conn = sqlite3.connect('just_trades.db')
+                conn = get_db_connection()
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute('SELECT tradovate_token FROM accounts WHERE id = ?', (account_id,))
@@ -9272,7 +9481,7 @@ def try_refresh_tradovate_token(account_id: int) -> bool:
     _last_refresh_attempt[account_id] = time.time()
     
     try:
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('''
@@ -9406,7 +9615,7 @@ def fetch_tradovate_pnl_sync():
     
     try:
         # Get ALL connected accounts from database (multi-account support for copy trading)
-        conn = sqlite3.connect('just_trades.db')
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('''
@@ -9643,7 +9852,7 @@ def proactive_token_refresh():
     
     while True:
         try:
-            conn = sqlite3.connect('just_trades.db')
+            conn = get_db_connection()
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
