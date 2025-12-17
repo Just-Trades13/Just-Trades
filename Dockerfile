@@ -28,5 +28,9 @@ RUN mkdir -p /app/logs
 # Set environment
 ENV PYTHONUNBUFFERED=1
 
-# Default command - init DB then start app
-CMD python init_db.py && python ultra_simple_server.py
+# Make start script executable
+COPY start.sh .
+RUN chmod +x start.sh
+
+# Default command - use startup script
+CMD ["./start.sh"]
