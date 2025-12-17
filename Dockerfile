@@ -7,29 +7,26 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional production dependencies
+# Install additional production dependencies (no eventlet - causes issues)
 RUN pip install --no-cache-dir \
     websockets \
-    uvloop \
-    supervisor \
-    eventlet \
-    gevent \
-    gevent-websocket
+    gunicorn
 
-# Copy application code - cache bust: v2
+# Copy application code - cache bust: v3
 COPY . .
 
-# Create logs directory
+# Create logs directory and initialize database
 RUN mkdir -p /app/logs
 
 # Set environment
 ENV PYTHONUNBUFFERED=1
 
-# Default command - use eventlet for socketio
-CMD ["python", "ultra_simple_server.py"]
+# Default command - init DB then start app
+CMD python init_db.py && python ultra_simple_server.py
