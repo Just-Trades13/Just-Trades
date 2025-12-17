@@ -484,12 +484,13 @@ def sync_position_with_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                     db_side = db_pos_dict['side']
                     
                     # Broker shows 0 but DB shows open
-                    # DISABLED: Broker position API is unreliable (returns 0 even when position exists)
-                    # This was causing DCA to fail because it cleared the DB trade before DCA signal came in
-                    # Trust the DB state instead - let TP order fill handle actual position closure
+                    # NOTE: Now that position API is fixed (Dec 16, 2025), we can trust broker
+                    # BUT: Right after placing order, position may not be visible yet
+                    # So we keep DB state here (during trade execution) and let the
+                    # 60-second reconciliation handle actual mismatches
                     if broker_net_pos == 0 and db_qty > 0:
-                        logger.info(f"ℹ️ SYNC: Broker API returned 0 but DB={db_side} {db_qty} for {ticker} - KEEPING database (API unreliable)")
-                        # DO NOT CLEAR - broker API is unreliable
+                        logger.info(f"ℹ️ Broker shows 0 but DB={db_side} {db_qty} for {ticker} - keeping DB (may be timing)")
+                        # Don't clear DB here - reconciliation will handle if actually closed
                     # Broker has position but DB doesn't match -> SYNC
                     elif broker_net_pos != 0 and broker_price:
                         broker_side = 'LONG' if broker_net_pos > 0 else 'SHORT'
@@ -1194,10 +1195,10 @@ def execute_live_trade_with_bracket(
                             db_side = db_pos['side']
                         
                             # If broker shows 0 but DB shows open position
-                            # DISABLED: Broker position API is unreliable (returns 0 even when position exists)
-                            # Trust DB state - let TP order fill handle actual closure
+                            # NOTE: Position API is now fixed, but we keep DB here for timing reasons
+                            # The 60-second reconciliation will catch actual closures
                             if existing_net_pos == 0 and db_qty > 0:
-                                logger.info(f"ℹ️ Broker API returned 0 but DB shows {db_side} {db_qty} - KEEPING database (API unreliable)")
+                                logger.info(f"ℹ️ Broker shows 0 but DB shows {db_side} {db_qty} - keeping DB (reconciliation will verify)")
                             # If broker has position but DB doesn't match - SYNC IT
                             elif existing_net_pos != 0:
                                 broker_side = 'LONG' if existing_net_pos > 0 else 'SHORT'
@@ -2644,8 +2645,8 @@ def reconcile_positions_with_broker():
                             
                             # Clear recorder_positions
                             cursor_fix.execute('''
-                                UPDATE recorder_positions 
-                                SET quantity = 0, avg_entry_price = NULL
+                                UPDATE recorder_positions
+                                SET total_quantity = 0, avg_entry_price = NULL, status = 'closed'
                                 WHERE recorder_id = ?
                             ''', (recorder_id,))
                             
@@ -2672,7 +2673,7 @@ def reconcile_positions_with_broker():
                             
                             cursor_fix.execute('''
                                 UPDATE recorder_positions 
-                                SET quantity = ?
+                                SET total_quantity = ?
                                 WHERE recorder_id = ?
                             ''', (abs(broker_qty), recorder_id))
                             
