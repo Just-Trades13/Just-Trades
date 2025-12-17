@@ -9882,12 +9882,14 @@ logger.info("ℹ️ Recorder price streaming handled by Trading Engine (port 808
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 if __name__ == '__main__':
-    # For local development
+    # Railway/Production uses PORT env variable, local dev uses --port arg
     parser = argparse.ArgumentParser(description='Start the trading webhook server.')
     parser.add_argument('--port', type=int, default=8082, help='Port to run the server on.')
     args = parser.parse_args()
 
-    port = args.port
-    logger.info(f"Starting Just.Trades. server on 0.0.0.0:{port}")
+    # Railway sets PORT env variable - use it if available
+    port = int(os.getenv('PORT', args.port))
+    
+    logger.info(f"Starting Just.Trades server on 0.0.0.0:{port}")
     logger.info("WebSocket support enabled (like Trade Manager)")
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
