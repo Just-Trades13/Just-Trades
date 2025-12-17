@@ -2624,15 +2624,85 @@ def reconcile_positions_with_broker():
                         broker_qty = broker_pos.get('netPos', 0) if broker_pos else 0
                         broker_avg = broker_pos.get('netPrice') if broker_pos else None
                         
-                        # Compare
+                        # Compare AND TAKE ACTION
                         if broker_qty == 0 and db_qty != 0:
-                            logger.warning(f"⚠️ POSITION DRIFT: DB shows {db_qty} {ticker} but broker shows 0 - position may have closed")
+                            # BROKER IS FLAT BUT DB SHOWS OPEN - CLOSE IT!
+                            logger.warning(f"🔄 SYNC FIX: Broker is FLAT but DB shows {db_qty} {ticker} - CLOSING DB RECORD")
+                            
+                            conn_fix = get_db_connection()
+                            cursor_fix = conn_fix.cursor()
+                            
+                            # Close the recorded_trades entry
+                            cursor_fix.execute('''
+                                UPDATE recorded_trades 
+                                SET status = 'closed', 
+                                    exit_reason = 'broker_sync_flat',
+                                    exit_time = datetime('now'),
+                                    updated_at = datetime('now')
+                                WHERE recorder_id = ? AND status = 'open'
+                            ''', (recorder_id,))
+                            
+                            # Clear recorder_positions
+                            cursor_fix.execute('''
+                                UPDATE recorder_positions 
+                                SET quantity = 0, avg_entry_price = NULL
+                                WHERE recorder_id = ?
+                            ''', (recorder_id,))
+                            
+                            conn_fix.commit()
+                            conn_fix.close()
+                            logger.info(f"✅ SYNC FIX COMPLETE: Closed DB record for {ticker} (broker was flat)")
+                            
                         elif broker_qty != 0 and db_qty == 0:
-                            logger.warning(f"⚠️ POSITION DRIFT: DB shows 0 but broker shows {broker_qty} {ticker} - position exists on broker but not in DB")
+                            logger.warning(f"⚠️ ORPHAN: Broker shows {broker_qty} {ticker} but DB shows 0 - manual intervention needed")
+                            
                         elif abs(broker_qty) != abs(db_qty):
-                            logger.warning(f"⚠️ POSITION DRIFT: DB shows {db_qty} {ticker} but broker shows {broker_qty} - quantity mismatch")
+                            # QUANTITY MISMATCH - UPDATE DB TO MATCH BROKER
+                            logger.warning(f"🔄 SYNC FIX: DB shows {db_qty} but broker shows {broker_qty} for {ticker} - UPDATING DB")
+                            
+                            conn_fix = get_db_connection()
+                            cursor_fix = conn_fix.cursor()
+                            
+                            cursor_fix.execute('''
+                                UPDATE recorded_trades 
+                                SET quantity = ?,
+                                    updated_at = datetime('now')
+                                WHERE recorder_id = ? AND status = 'open'
+                            ''', (abs(broker_qty), recorder_id))
+                            
+                            cursor_fix.execute('''
+                                UPDATE recorder_positions 
+                                SET quantity = ?
+                                WHERE recorder_id = ?
+                            ''', (abs(broker_qty), recorder_id))
+                            
+                            conn_fix.commit()
+                            conn_fix.close()
+                            logger.info(f"✅ SYNC FIX: Updated {ticker} quantity to {abs(broker_qty)}")
+                            
                         elif broker_avg and db_avg and abs(broker_avg - db_avg) > 0.5:
-                            logger.warning(f"⚠️ POSITION DRIFT: DB avg {db_avg} but broker avg {broker_avg} for {ticker} - price mismatch")
+                            # PRICE MISMATCH - UPDATE DB AVG TO MATCH BROKER
+                            logger.warning(f"🔄 SYNC FIX: DB avg {db_avg} but broker avg {broker_avg} for {ticker} - UPDATING DB")
+                            
+                            conn_fix = get_db_connection()
+                            cursor_fix = conn_fix.cursor()
+                            
+                            cursor_fix.execute('''
+                                UPDATE recorded_trades 
+                                SET entry_price = ?,
+                                    updated_at = datetime('now')
+                                WHERE recorder_id = ? AND status = 'open'
+                            ''', (broker_avg, recorder_id))
+                            
+                            cursor_fix.execute('''
+                                UPDATE recorder_positions 
+                                SET avg_entry_price = ?
+                                WHERE recorder_id = ?
+                            ''', (broker_avg, recorder_id))
+                            
+                            conn_fix.commit()
+                            conn_fix.close()
+                            logger.info(f"✅ SYNC FIX: Updated {ticker} avg price to {broker_avg}")
                         else:
                             logger.debug(f"✅ Position in sync: {ticker} - DB: {db_qty} @ {db_avg}, Broker: {broker_qty} @ {broker_avg}")
                         
@@ -2676,8 +2746,69 @@ def reconcile_positions_with_broker():
                                                 break
                                     
                                     if not has_tp_order:
-                                        logger.warning(f"⚠️ MISSING TP ORDER: DB shows TP @ {db_tp_price} for {ticker} but no TP order on broker - should place TP order")
-                                        # Note: We don't auto-place here to avoid conflicts - user should trigger via webhook or manual action
+                                        logger.warning(f"🔄 SYNC FIX: MISSING TP ORDER for {ticker} - PLACING NOW")
+                                        
+                                        # Calculate correct TP based on broker avg price
+                                        is_long = db_side == 'LONG'
+                                        tick_size = 0.25  # MNQ tick size
+                                        tp_ticks = 5  # Default TP distance
+                                        
+                                        # Get TP ticks from recorder settings
+                                        conn_tp = get_db_connection()
+                                        cursor_tp = conn_tp.cursor()
+                                        cursor_tp.execute('SELECT tp_targets FROM recorders WHERE id = ?', (recorder_id,))
+                                        rec_row = cursor_tp.fetchone()
+                                        conn_tp.close()
+                                        
+                                        if rec_row and rec_row['tp_targets']:
+                                            try:
+                                                import json
+                                                tp_config = json.loads(rec_row['tp_targets'])
+                                                if isinstance(tp_config, list) and len(tp_config) > 0:
+                                                    tp_ticks = tp_config[0].get('ticks', 5)
+                                                elif isinstance(tp_config, dict):
+                                                    tp_ticks = tp_config.get('ticks', 5)
+                                            except:
+                                                pass
+                                        
+                                        # Calculate TP price from BROKER avg (source of truth)
+                                        if is_long:
+                                            new_tp_price = broker_avg + (tp_ticks * tick_size)
+                                            tp_action = 'Sell'
+                                        else:
+                                            new_tp_price = broker_avg - (tp_ticks * tick_size)
+                                            tp_action = 'Buy'
+                                        
+                                        # Place the TP order
+                                        try:
+                                            result = await tradovate.place_order(
+                                                account_id=str(subaccount_id),
+                                                symbol=tradovate_symbol,
+                                                action=tp_action,
+                                                quantity=abs(broker_qty),
+                                                order_type='Limit',
+                                                price=new_tp_price,
+                                                time_in_force='GTC'
+                                            )
+                                            
+                                            if result and result.get('orderId'):
+                                                new_tp_order_id = result.get('orderId')
+                                                logger.info(f"✅ SYNC FIX: Placed TP order {new_tp_order_id}: {tp_action} {abs(broker_qty)} @ {new_tp_price}")
+                                                
+                                                # Update DB with new TP order ID
+                                                conn_upd = get_db_connection()
+                                                cursor_upd = conn_upd.cursor()
+                                                cursor_upd.execute('''
+                                                    UPDATE recorded_trades 
+                                                    SET tp_order_id = ?, tp_price = ?
+                                                    WHERE recorder_id = ? AND status = 'open'
+                                                ''', (str(new_tp_order_id), new_tp_price, recorder_id))
+                                                conn_upd.commit()
+                                                conn_upd.close()
+                                            else:
+                                                logger.error(f"❌ Failed to place TP order: {result}")
+                                        except Exception as tp_err:
+                                            logger.error(f"❌ Error placing TP order: {tp_err}")
                             
                 except Exception as e:
                     logger.error(f"Error reconciling position for {db_pos.get('ticker', 'unknown')}: {e}")
@@ -4849,10 +4980,9 @@ def initialize():
     logger.info("✅ TP/SL monitoring active")
 
     # Start position reconciliation (compares DB with broker every 60 seconds)
-    # TEMPORARILY DISABLED to avoid rate limiting - re-enable once rate limits are resolved
-    # start_position_reconciliation()
-    # logger.info("✅ Position reconciliation active")
-    logger.info("ℹ️ Position reconciliation disabled (to avoid rate limiting)")
+    # This is CRITICAL - it keeps DB in sync with broker and auto-places missing TPs
+    start_position_reconciliation()
+    logger.info("✅ Position reconciliation ENABLED (syncs DB with broker every 60s, auto-places missing TPs)")
 
     # Start bracket fill monitor (detects when Tradovate closes positions)
     start_bracket_monitor()
