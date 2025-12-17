@@ -1660,7 +1660,8 @@ async def ensure_single_tp_limit(
             if current_order:
                 order_status = str(current_order.get('ordStatus', '')).upper()
                 
-                if order_status not in ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED']:
+                # NOTE: Tradovate uses 'Canceled' (single L), so after .upper() it's 'CANCELED'
+                if order_status not in ['FILLED', 'CANCELED', 'CANCELLED', 'REJECTED', 'EXPIRED']:
                     # Order is still working - MODIFY it
                     logger.info(f"📋 [SINGLE-TP] Order {existing_tp_order_id} is {order_status}, modifying...")
                     
