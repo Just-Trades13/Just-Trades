@@ -51,10 +51,17 @@ from flask import Flask, request, jsonify, render_template
 # ============================================================================
 # Configuration
 # ============================================================================
+import os
 
 SERVICE_PORT = 8083
 DATABASE_PATH = 'just_trades.db'
 LOG_LEVEL = logging.INFO
+
+# ============================================================================
+# DATABASE CONNECTION - Supports both SQLite and PostgreSQL
+# ============================================================================
+DATABASE_URL = os.getenv('DATABASE_URL')
+_pg_pool = None
 
 # ============================================================================
 # Contract Specifications (matching main server exactly)
@@ -171,11 +178,64 @@ except ImportError:
 
 
 # ============================================================================
-# Database Helpers
+# Database Helpers - PostgreSQL + SQLite Support
 # ============================================================================
 
-def get_db_connection() -> sqlite3.Connection:
-    """Get database connection with WAL mode for concurrent access"""
+class PostgresConnectionWrapper:
+    """Wrapper to make PostgreSQL connection behave like SQLite."""
+    def __init__(self, conn, pool):
+        self._conn = conn
+        self._pool = pool
+    
+    def cursor(self):
+        return self._conn.cursor()
+    
+    def execute(self, sql, params=None):
+        sql = sql.replace('?', '%s')
+        cursor = self._conn.cursor()
+        cursor.execute(sql, params or ())
+        return cursor
+    
+    def commit(self):
+        self._conn.commit()
+    
+    def rollback(self):
+        self._conn.rollback()
+    
+    def close(self):
+        self._pool.putconn(self._conn)
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, *args):
+        self.close()
+
+def get_db_connection():
+    """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite"""
+    global _pg_pool
+    
+    if DATABASE_URL and DATABASE_URL.startswith('postgres'):
+        try:
+            import psycopg2
+            import psycopg2.pool
+            from psycopg2.extras import RealDictCursor
+            
+            db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+            
+            if _pg_pool is None:
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(2, 20, dsn=db_url)
+                logger.info("✅ recorder_service: PostgreSQL pool initialized")
+            
+            conn = _pg_pool.getconn()
+            conn.cursor_factory = RealDictCursor
+            return PostgresConnectionWrapper(conn, _pg_pool)
+        except ImportError:
+            logger.warning("⚠️ psycopg2 not installed, using SQLite")
+        except Exception as e:
+            logger.warning(f"⚠️ PostgreSQL failed: {e}, using SQLite")
+    
+    # SQLite fallback
     conn = sqlite3.connect(DATABASE_PATH, timeout=30)
     conn.execute('PRAGMA journal_mode=WAL')
     conn.execute('PRAGMA busy_timeout=30000')

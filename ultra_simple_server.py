@@ -3489,58 +3489,181 @@ signal_processor_thread = threading.Thread(target=signal_processor_worker, daemo
 signal_processor_thread.start()
 
 # ============================================================
-# WEBHOOK PROXY - Forwards to Trading Engine (port 8083)
+# WEBHOOK HANDLER - Direct Processing (No Proxy)
 # ============================================================
-# All webhook processing is now handled by the Trading Engine.
-# These routes proxy requests there for backward compatibility.
+# Webhook processing is done directly here using recorder_service logic.
+# This works on Railway (single container) without needing separate service.
 # ============================================================
-
-TRADING_ENGINE_URL = "http://localhost:8083"
 
 @app.route('/webhook/fast/<webhook_token>', methods=['POST'])
 def receive_webhook_fast(webhook_token):
-    """
-    Proxy to Trading Engine for backward compatibility.
-    Fast webhook endpoint - forwards to Trading Engine.
-    """
-    try:
-        import requests as req
-        response = req.post(
-            f"{TRADING_ENGINE_URL}/webhook/{webhook_token}",
-            json=request.get_json(force=True, silent=True) or {},
-            headers={'Content-Type': 'application/json'},
-            timeout=5
-        )
-        return jsonify(response.json()), response.status_code
-    except Exception as e:
-        logger.error(f"Error proxying webhook to Trading Engine: {e}")
-        return jsonify({'success': False, 'error': f'Trading Engine unavailable: {e}'}), 503
-
-# ============================================================
-# WEBHOOK RECEIVER - Proxies to Trading Engine (port 8083)
-# ============================================================
-# All webhook processing has been moved to the Trading Engine.
-# This route proxies requests there for backward compatibility.
-# ============================================================
+    """Fast webhook endpoint - processes directly."""
+    return process_webhook_directly(webhook_token)
 
 @app.route('/webhook/<webhook_token>', methods=['POST'])
 def receive_webhook(webhook_token):
+    """Main webhook endpoint - processes directly using DCA logic."""
+    return process_webhook_directly(webhook_token)
+
+def process_webhook_directly(webhook_token):
     """
-    Proxy to Trading Engine for backward compatibility.
-    Main webhook endpoint - forwards all requests to Trading Engine.
+    Process webhook directly using recorder_service DCA logic.
+    This is the REAL webhook handler with proper DCA, TP calculation, etc.
     """
     try:
-        import requests as req
-        response = req.post(
-            f"{TRADING_ENGINE_URL}/webhook/{webhook_token}",
-            json=request.get_json(force=True, silent=True) or {},
-            headers={'Content-Type': 'application/json'},
-            timeout=10
+        # Import the heavy-duty trading functions from recorder_service
+        from recorder_service import (
+            execute_live_trade_with_bracket,
+            sync_position_with_broker,
+            get_price_from_tradingview_api,
+            convert_ticker_to_tradovate,
+            get_tick_size,
+            get_tick_value
         )
-        return jsonify(response.json()), response.status_code
+        
+        # Find recorder by webhook token
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM recorders WHERE webhook_token = ?', (webhook_token,))
+        recorder_row = cursor.fetchone()
+        
+        if not recorder_row:
+            logger.warning(f"Webhook received for unknown token: {webhook_token[:8]}...")
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid webhook token'}), 404
+        
+        recorder = dict(recorder_row)
+        recorder_id = recorder['id']
+        recorder_name = recorder['name']
+        
+        # Parse incoming data
+        data = request.get_json(force=True, silent=True) or {}
+        if not data:
+            try:
+                data = json.loads(request.data.decode('utf-8'))
+            except:
+                data = request.form.to_dict() or {}
+        
+        if not data:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No data received'}), 400
+        
+        logger.info(f"📨 Webhook received for recorder '{recorder_name}': {data}")
+        
+        # Extract signal data
+        action = str(data.get('action', '')).lower().strip()
+        ticker = data.get('ticker', data.get('symbol', ''))
+        price = data.get('price', data.get('close', 0))
+        quantity = int(data.get('quantity', data.get('qty', data.get('contracts', 1))) or 1)
+        
+        # Validate action
+        valid_actions = ['buy', 'sell', 'long', 'short', 'close', 'flat', 'exit']
+        if action not in valid_actions:
+            logger.warning(f"Invalid action '{action}' for recorder {recorder_name}")
+            conn.close()
+            return jsonify({'success': False, 'error': f'Invalid action: {action}'}), 400
+        
+        # CRITICAL: Sync with broker BEFORE processing to prevent drift
+        if ticker:
+            try:
+                sync_result = sync_position_with_broker(recorder_id, ticker)
+                if sync_result.get('cleared'):
+                    logger.info(f"🔄 Cleared database position - broker has no position for {ticker}")
+                elif sync_result.get('synced'):
+                    logger.info(f"🔄 Synced database with broker position for {ticker}")
+            except Exception as e:
+                logger.warning(f"⚠️ Sync failed (continuing anyway): {e}")
+        
+        # Get LIVE market price for accurate TP calculation
+        live_price = get_price_from_tradingview_api(ticker) if ticker else None
+        current_price = live_price if live_price else (float(price) if price else 0)
+        
+        # Get TP settings from recorder
+        tp_targets_raw = recorder.get('tp_targets', '[]')
+        try:
+            tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
+        except:
+            tp_targets = []
+        tp_ticks = tp_targets[0].get('value', 10) if tp_targets else 10  # Default 10 ticks
+        
+        # Get tick size for this symbol
+        tick_size = get_tick_size(ticker) if ticker else 0.25
+        
+        # Get linked trader for live execution
+        cursor.execute('''
+            SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.recorder_id = ? AND t.enabled = 1
+            LIMIT 1
+        ''', (recorder_id,))
+        trader_row = cursor.fetchone()
+        trader = dict(trader_row) if trader_row else None
+        
+        conn.close()
+        
+        if not trader:
+            logger.warning(f"No active trader linked to recorder '{recorder_name}'")
+            return jsonify({'success': False, 'error': 'No trader linked'}), 400
+        
+        # Determine side
+        if action in ['buy', 'long']:
+            side = 'LONG'
+            trade_action = 'BUY'
+        elif action in ['sell', 'short']:
+            side = 'SHORT'
+            trade_action = 'SELL'
+        elif action in ['close', 'flat', 'exit']:
+            # Close position
+            logger.info(f"🔄 CLOSE signal received for {recorder_name}")
+            return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed'})
+        else:
+            return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
+        
+        # Execute the trade with DCA/TP logic
+        logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP Ticks: {tp_ticks}")
+        
+        try:
+            result = execute_live_trade_with_bracket(
+                recorder_id=recorder_id,
+                action=trade_action,
+                side=side,
+                ticker=ticker,
+                quantity=quantity,
+                fill_price=current_price,
+                tp_ticks=tp_ticks,
+                sl_ticks=0,
+                tick_size=tick_size
+            )
+            
+            if result.get('success'):
+                logger.info(f"✅ Trade executed: {result}")
+                return jsonify({
+                    'success': True,
+                    'action': trade_action,
+                    'side': side,
+                    'quantity': quantity,
+                    'price': current_price,
+                    'tp_price': result.get('tp_price'),
+                    'is_dca': result.get('is_dca', False),
+                    'result': result
+                })
+            else:
+                logger.error(f"❌ Trade execution failed: {result}")
+                return jsonify({'success': False, 'error': result.get('error', 'Execution failed')}), 500
+                
+        except Exception as e:
+            logger.error(f"❌ Trade execution error: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'success': False, 'error': str(e)}), 500
+            
     except Exception as e:
-        logger.error(f"Error proxying webhook to Trading Engine: {e}")
-        return jsonify({'success': False, 'error': f'Trading Engine unavailable: {e}'}), 503
+        logger.error(f"❌ Webhook processing error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ============================================================
