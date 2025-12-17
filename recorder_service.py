@@ -243,6 +243,298 @@ def get_db_connection():
     return conn
 
 
+# ============================================================================
+# SIMPLE TRADE EXECUTION - The Formula
+# ============================================================================
+# 
+# This is the SIMPLE approach:
+# 1. Place market order
+# 2. Wait for fill
+# 3. Query broker for position (avg price + qty) 
+# 4. Calculate TP: avg_price +/- (tp_ticks * tick_size)
+# 5. Place or MODIFY single TP order
+#
+# NO separate DCA logic needed - broker tracks average for us!
+# ============================================================================
+
+def execute_trade_simple(
+    recorder_id: int,
+    action: str,  # 'BUY' or 'SELL'
+    ticker: str,
+    quantity: int,
+    tp_ticks: int = 10
+) -> Dict[str, Any]:
+    """
+    SIMPLE TRADE EXECUTION WITH TP.
+    
+    The Formula:
+    1. Place market order for entry
+    2. Get broker's position (netPrice = average, netPos = quantity)
+    3. Calculate TP = average +/- (tp_ticks * tick_size)
+    4. Place or modify ONE TP order
+    
+    Works for new trades AND DCA - no special logic needed!
+    """
+    result = {
+        'success': False,
+        'fill_price': None,
+        'broker_avg': None,
+        'broker_qty': None,
+        'tp_price': None,
+        'tp_order_id': None,
+        'error': None
+    }
+    
+    logger.info(f"🎯 SIMPLE EXECUTE: {action} {quantity} {ticker} (TP: {tp_ticks} ticks)")
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get trader credentials
+        cursor.execute('''
+            SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
+                   a.tradovate_token, a.username, a.password, a.id as account_id
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.recorder_id = ? AND t.enabled = 1
+            LIMIT 1
+        ''', (recorder_id,))
+        trader_row = cursor.fetchone()
+        
+        if not trader_row:
+            conn.close()
+            result['error'] = 'No trader linked'
+            logger.warning(f"⚠️ No trader linked to recorder {recorder_id}")
+            return result
+        
+        trader = dict(trader_row)
+        conn.close()
+        
+        tradovate_account_id = trader['subaccount_id']
+        tradovate_account_spec = trader['subaccount_name']
+        is_demo = bool(trader.get('is_demo', True))
+        username = trader.get('username')
+        password = trader.get('password')
+        
+        # Get tick size for this symbol
+        symbol_root = ticker[:3].upper() if ticker else 'MNQ'
+        tick_size = TICK_SIZES.get(symbol_root, 0.25)
+        
+        # Convert ticker to Tradovate format
+        tradovate_symbol = convert_ticker_to_tradovate(ticker)
+        
+        from phantom_scraper.tradovate_integration import TradovateIntegration
+        from tradovate_api_access import TradovateAPIAccess
+        import asyncio
+        
+        async def do_trade():
+            # Authenticate
+            api_access = TradovateAPIAccess(demo=is_demo)
+            access_token = trader.get('tradovate_token')
+            
+            if not access_token and username and password:
+                logger.info(f"🔐 Authenticating...")
+                login_result = await api_access.login(
+                    username=username, password=password,
+                    db_path=DATABASE_PATH, account_id=trader['account_id']
+                )
+                if login_result.get('success'):
+                    access_token = login_result['accessToken']
+                else:
+                    return {'success': False, 'error': f"Auth failed: {login_result.get('error')}"}
+            
+            async with TradovateIntegration(demo=is_demo) as tradovate:
+                tradovate.access_token = access_token
+                
+                # STEP 1: Place market order
+                order_action = 'Buy' if action == 'BUY' else 'Sell'
+                order_data = tradovate.create_market_order(
+                    tradovate_account_spec, tradovate_symbol, 
+                    order_action, quantity, tradovate_account_id
+                )
+                
+                logger.info(f"📤 Placing {order_action} {quantity} {tradovate_symbol}...")
+                order_result = await tradovate.place_order(order_data)
+                
+                if not order_result or not order_result.get('success'):
+                    error = order_result.get('error', 'Order failed') if order_result else 'No response'
+                    return {'success': False, 'error': error}
+                
+                order_id = order_result.get('orderId') or order_result.get('id')
+                logger.info(f"✅ Market order placed: {order_id}")
+                
+                # STEP 2: Wait for fill and get broker position
+                await asyncio.sleep(0.5)  # Give broker time to update position
+                
+                broker_avg = None
+                broker_qty = 0
+                broker_side = None
+                contract_id = None
+                
+                for attempt in range(5):
+                    positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                    for pos in positions:
+                        pos_symbol = str(pos.get('symbol', '')).upper()
+                        if symbol_root in pos_symbol:
+                            net_pos = pos.get('netPos', 0)
+                            if net_pos != 0:
+                                broker_avg = pos.get('netPrice')
+                                broker_qty = abs(net_pos)
+                                broker_side = 'LONG' if net_pos > 0 else 'SHORT'
+                                contract_id = pos.get('contractId')
+                                logger.info(f"📊 BROKER POSITION: {broker_side} {broker_qty} @ {broker_avg}")
+                                break
+                    if broker_avg:
+                        break
+                    await asyncio.sleep(0.3)
+                
+                if not broker_avg:
+                    logger.warning(f"⚠️ Could not get broker position - using fill estimate")
+                    # Try to get fill price from order
+                    fill_price = order_result.get('avgFillPrice') or order_result.get('price')
+                    return {
+                        'success': True, 
+                        'fill_price': fill_price,
+                        'error': 'Could not get broker position for TP'
+                    }
+                
+                # STEP 3: Calculate TP price using broker's average
+                if broker_side == 'LONG':
+                    tp_price = broker_avg + (tp_ticks * tick_size)
+                    tp_action = 'Sell'
+                else:
+                    tp_price = broker_avg - (tp_ticks * tick_size)
+                    tp_action = 'Buy'
+                
+                logger.info(f"🎯 TP CALCULATION: {broker_avg} {'+'if broker_side=='LONG' else '-'} ({tp_ticks} × {tick_size}) = {tp_price}")
+                
+                # STEP 4: Find existing TP order to modify, or place new one
+                existing_tp_id = None
+                all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                
+                for order in (all_orders or []):
+                    order_status = str(order.get('ordStatus', '')).upper()
+                    order_act = order.get('action', '')
+                    order_contract = order.get('contractId')
+                    
+                    # Find working limit order on same contract, same exit side
+                    if order_status in ['WORKING', 'NEW', 'PENDINGNEW']:
+                        if order_act == tp_action and (order_contract == contract_id or not contract_id):
+                            existing_tp_id = order.get('id')
+                            logger.info(f"📋 Found existing TP order: {existing_tp_id}")
+                            break
+                
+                tp_order_id = None
+                
+                if existing_tp_id:
+                    # MODIFY existing TP
+                    logger.info(f"🔄 MODIFYING TP {existing_tp_id}: price={tp_price}, qty={broker_qty}")
+                    modify_result = await tradovate.modify_order(
+                        order_id=int(existing_tp_id),
+                        new_price=tp_price,
+                        new_qty=broker_qty,
+                        order_type="Limit",
+                        time_in_force="GTC"
+                    )
+                    if modify_result and modify_result.get('success'):
+                        tp_order_id = existing_tp_id
+                        logger.info(f"✅ TP MODIFIED: {tp_order_id} @ {tp_price} (qty: {broker_qty})")
+                    else:
+                        logger.warning(f"⚠️ Modify failed, placing new: {modify_result}")
+                        existing_tp_id = None  # Fall through to place new
+                
+                if not existing_tp_id:
+                    # PLACE new TP
+                    # First cancel any stale TP orders
+                    for order in (all_orders or []):
+                        order_status = str(order.get('ordStatus', '')).upper()
+                        order_act = order.get('action', '')
+                        old_id = order.get('id')
+                        if order_status in ['WORKING', 'NEW'] and order_act == tp_action and old_id:
+                            try:
+                                await tradovate.cancel_order(int(old_id))
+                                logger.info(f"🗑️ Cancelled old TP: {old_id}")
+                            except:
+                                pass
+                    
+                    logger.info(f"📊 PLACING NEW TP: {tp_action} {broker_qty} @ {tp_price}")
+                    tp_order_data = {
+                        "accountId": tradovate_account_id,
+                        "accountSpec": tradovate_account_spec,
+                        "symbol": tradovate_symbol,
+                        "action": tp_action,
+                        "orderQty": broker_qty,
+                        "orderType": "Limit",
+                        "price": tp_price,
+                        "timeInForce": "GTC",
+                        "isAutomated": True
+                    }
+                    tp_result = await tradovate.place_order(tp_order_data)
+                    if tp_result and tp_result.get('success'):
+                        tp_order_id = tp_result.get('orderId') or tp_result.get('id')
+                        logger.info(f"✅ TP PLACED: {tp_order_id} @ {tp_price} (qty: {broker_qty})")
+                    else:
+                        logger.error(f"❌ TP placement failed: {tp_result}")
+                
+                return {
+                    'success': True,
+                    'fill_price': broker_avg,  # Use broker's average as "fill"
+                    'broker_avg': broker_avg,
+                    'broker_qty': broker_qty,
+                    'broker_side': broker_side,
+                    'tp_price': tp_price,
+                    'tp_order_id': tp_order_id
+                }
+        
+        # Run the async trade
+        trade_result = asyncio.run(do_trade())
+        
+        result.update(trade_result)
+        
+        # Update database with trade info
+        if result.get('success') and result.get('broker_avg'):
+            try:
+                conn2 = get_db_connection()
+                cursor2 = conn2.cursor()
+                
+                side = result.get('broker_side', 'LONG' if action == 'BUY' else 'SHORT')
+                
+                # Update or insert recorded_trades
+                cursor2.execute('''
+                    UPDATE recorded_trades 
+                    SET entry_price = ?, quantity = ?, tp_price = ?, tp_order_id = ?, 
+                        updated_at = datetime('now')
+                    WHERE recorder_id = ? AND status = 'open'
+                ''', (result['broker_avg'], result['broker_qty'], result['tp_price'], 
+                      result.get('tp_order_id'), recorder_id))
+                
+                if cursor2.rowcount == 0:
+                    # No open trade, create one
+                    cursor2.execute('''
+                        INSERT INTO recorded_trades 
+                        (recorder_id, ticker, action, side, entry_price, quantity, 
+                         tp_price, tp_order_id, status, entry_time)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', datetime('now'))
+                    ''', (recorder_id, ticker, action, side, result['broker_avg'], 
+                          result['broker_qty'], result['tp_price'], result.get('tp_order_id')))
+                
+                conn2.commit()
+                conn2.close()
+                logger.info(f"✅ DB updated: {side} {result['broker_qty']} @ {result['broker_avg']} | TP: {result['tp_price']}")
+            except Exception as e:
+                logger.warning(f"⚠️ DB update failed: {e}")
+        
+        return result
+        
+    except Exception as e:
+        result['error'] = str(e)
+        logger.error(f"❌ Trade execution error: {e}")
+        import traceback
+        traceback.print_exc()
+        return result
+
+
 def init_trading_engine_db():
     """
     Initialize/verify database tables for the Trading Engine.
@@ -4618,192 +4910,47 @@ def receive_webhook(webhook_token):
         
         elif normalized_action == 'BUY':
             # ============================================================
-            # BROKER-FIRST POSITION CHECK (Source of Truth)
-            # Check broker for existing position BEFORE deciding DCA vs NEW
-            # This makes TP calculation deterministic regardless of DB state
+            # SIMPLE BUY LOGIC - The Formula
+            # 1. Place market order
+            # 2. Get broker's position (avg + qty)
+            # 3. Place/modify TP at avg + (ticks * tick_size)
+            # 
+            # NO separate DCA logic needed - broker tracks average for us!
             # ============================================================
-            broker_has_long = False
-            broker_has_short = False
-            broker_existing_qty = 0
-            broker_existing_avg = 0
+            logger.info(f"📈 BUY signal for '{recorder_name}': {quantity} {ticker}")
             
-            try:
-                # Get trader info to check broker position
-                cursor.execute('''
-                    SELECT t.subaccount_id, t.is_demo, a.tradovate_token
-                    FROM traders t
-                    JOIN accounts a ON t.account_id = a.id
-                    WHERE t.id = (SELECT trader_id FROM recorders WHERE id = ?)
-                ''', (recorder_id,))
-                trader_row = cursor.fetchone()
-                
-                if trader_row and trader_row['tradovate_token']:
-                    import asyncio
-                    from phantom_scraper.tradovate_integration import TradovateIntegration
-                    
-                    async def check_broker_position():
-                        async with TradovateIntegration(demo=trader_row['is_demo']) as tradovate:
-                            tradovate.access_token = trader_row['tradovate_token']
-                            positions = await tradovate.get_positions(account_id=str(trader_row['subaccount_id']))
-                            
-                            symbol_root = extract_symbol_root(ticker)
-                            for pos in (positions or []):
-                                pos_contract = pos.get('contractId', 0)
-                                pos_net = pos.get('netPos', 0)
-                                # Match by checking if this is an MNQ/MES/etc position
-                                if pos_net != 0:
-                                    # Get contract info to match symbol
-                                    tradovate_sym = convert_ticker_to_tradovate(ticker)
-                                    if tradovate_sym[:3] in str(pos_contract) or pos_net != 0:
-                                        # Found a position - check direction
-                                        return {
-                                            'qty': pos_net,
-                                            'avg': pos.get('netPrice', 0),
-                                            'contract_id': pos_contract
-                                        }
-                            return None
-                    
-                    broker_pos_check = asyncio.run(check_broker_position())
-                    if broker_pos_check:
-                        if broker_pos_check['qty'] > 0:
-                            broker_has_long = True
-                            broker_existing_qty = broker_pos_check['qty']
-                            broker_existing_avg = broker_pos_check['avg']
-                            logger.info(f"🔍 BROKER CHECK: Found LONG {broker_existing_qty} @ {broker_existing_avg}")
-                        elif broker_pos_check['qty'] < 0:
-                            broker_has_short = True
-                            broker_existing_qty = abs(broker_pos_check['qty'])
-                            broker_existing_avg = broker_pos_check['avg']
-                            logger.info(f"🔍 BROKER CHECK: Found SHORT {broker_existing_qty} @ {broker_existing_avg}")
-                    else:
-                        logger.info(f"🔍 BROKER CHECK: FLAT (no position)")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not check broker position: {e} - falling back to DB")
+            # Close any existing SHORT first (reversal)
+            if open_trade and open_trade['side'] == 'SHORT':
+                pnl_ticks = (open_trade['entry_price'] - current_price) / tick_size
+                pnl, _ = close_trade_helper(cursor, open_trade, current_price, pnl_ticks, tick_value, 'reversal')
+                logger.info(f"📊 SHORT closed by BUY reversal: ${pnl:.2f}")
             
-            # If we have an open SHORT (broker or DB), close it first
-            if broker_has_short or (open_trade and open_trade['side'] == 'SHORT'):
-                if open_trade:
-                    pnl_ticks = (open_trade['entry_price'] - current_price) / tick_size
-                    pnl, _ = close_trade_helper(cursor, open_trade, current_price, pnl_ticks, tick_value, 'reversal')
-                    logger.info(f"📊 SHORT closed by BUY reversal: ${pnl:.2f}")
-                open_trade = None
-                broker_has_long = False  # Will be a new trade after reversal
+            # SIMPLE EXECUTION: Place order, get broker position, place/modify TP
+            broker_result = execute_trade_simple(
+                recorder_id=recorder_id,
+                action='BUY',
+                ticker=ticker,
+                quantity=quantity,
+                tp_ticks=tp_ticks
+            )
             
-            # DCA: If BROKER has LONG position, this is DCA (regardless of DB state!)
-            if broker_has_long:
-                logger.info(f"📈 DCA LONG signal for '{recorder_name}': adding {quantity} to existing position")
-                
-                # BROKER-FIRST: Execute on broker first, get confirmed fill
-                broker_result = execute_live_trade_with_bracket(
-                    recorder_id=recorder_id,
-                    action='BUY',
-                    ticker=ticker,
-                    quantity=quantity,
-                    tp_ticks=tp_ticks,
-                    sl_ticks=int(sl_amount) if sl_enabled else None,
-                    is_dca=True  # DCA doesn't place new brackets yet
-                )
-                
-                if broker_result.get('success'):
-                    # BROKER CONFIRMED - now get position data (broker or calculated)
-                    broker_pos = broker_result.get('broker_position')
-                    fill_price = broker_result.get('fill_price', current_price)
-                    
-                    if broker_pos and broker_pos.get('netPos', 0) != 0:
-                        # BEST CASE: Use broker's confirmed position data
-                        broker_qty = abs(broker_pos.get('netPos', 0))
-                        broker_avg = broker_pos.get('netPrice', current_price)
-                        logger.info(f"📊 BROKER CONFIRMED DCA: {broker_qty} contracts @ avg {broker_avg}")
-                    else:
-                        # FALLBACK: Use broker position data we already fetched
-                        # (broker_existing_qty and broker_existing_avg from pre-check)
-                        existing_qty = broker_existing_qty if broker_existing_qty > 0 else (open_trade.get('quantity', 0) if open_trade else 1)
-                        existing_avg = broker_existing_avg if broker_existing_avg > 0 else (open_trade.get('entry_price', current_price) if open_trade else current_price)
-                        
-                        # Calculate new average: (old_qty * old_price + new_qty * new_price) / total_qty
-                        broker_qty = existing_qty + quantity
-                        broker_avg = ((existing_qty * existing_avg) + (quantity * fill_price)) / broker_qty
-                        logger.warning(f"⚠️ No post-fill broker data - calculated: {broker_qty} @ {broker_avg:.2f} (existing {existing_qty}@{existing_avg}, fill {fill_price})")
-                    
-                    # Calculate new TP based on average price
-                    new_tp_price, new_sl_price = calculate_tp_sl_prices(
-                        broker_avg, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
-                    )
-                    
-                    # Update or INSERT DB record (handle case where DB was out of sync)
-                    if open_trade:
-                        # Normal case: update existing record
-                        cursor.execute('''
-                            UPDATE recorded_trades 
-                            SET entry_price = ?, quantity = ?, tp_price = ?, sl_price = ?,
-                                broker_fill_price = ?, broker_order_id = ?, updated_at = datetime('now')
-                            WHERE id = ?
-                        ''', (broker_avg, broker_qty, new_tp_price, new_sl_price,
-                              fill_price, broker_result.get('order_id'),
-                              open_trade['id']))
-                        trade_id = open_trade['id']
-                    else:
-                        # DB was out of sync - create new record to match broker
-                        logger.warning(f"⚠️ DB had no open trade but broker had position - creating record")
-                        cursor.execute('''
-                            INSERT INTO recorded_trades
-                            (recorder_id, ticker, action, side, entry_price, entry_time,
-                             quantity, status, tp_price, sl_price, broker_fill_price, broker_order_id)
-                            VALUES (?, ?, 'BUY', 'LONG', ?, datetime('now'), ?, 'open', ?, ?, ?, ?)
-                        ''', (recorder_id, ticker, broker_avg, broker_qty, new_tp_price, new_sl_price,
-                              fill_price, broker_result.get('order_id')))
-                        trade_id = cursor.lastrowid
-                    
-                    # Update position tracking
-                    cursor.execute('''
-                        UPDATE recorder_positions 
-                        SET total_quantity = ?, avg_entry_price = ?, updated_at = datetime('now')
-                        WHERE recorder_id = ? AND ticker = ? AND status = 'open'
-                    ''', (broker_qty, broker_avg, recorder_id, ticker))
-                    
-                    # If no position record exists, create one
-                    if cursor.rowcount == 0:
-                        cursor.execute('''
-                            INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
-                            VALUES (?, ?, 'LONG', ?, ?, 'open')
-                        ''', (recorder_id, ticker, broker_qty, broker_avg))
-                    
-                    trade_result = {
-                        'action': 'dca', 'trade_id': trade_id, 'side': 'LONG',
-                        'dca_price': fill_price,
-                        'avg_entry_price': broker_avg,
-                        'quantity': quantity, 'total_quantity': broker_qty,
-                        'tp_price': new_tp_price, 'sl_price': new_sl_price,
-                        'broker_confirmed': True
-                    }
-                    logger.info(f"📈 DCA LONG CONFIRMED for '{recorder_name}': {ticker} | {broker_qty} @ {broker_avg:.2f} | TP: {new_tp_price}")
-                    
-                    # UPDATE EXIT BRACKETS to new TP based on average price
-                    bracket_result = update_exit_brackets(
-                        recorder_id=recorder_id,
-                        ticker=ticker,
-                        side='LONG',
-                        total_quantity=broker_qty,
-                        tp_price=new_tp_price,
-                        sl_price=new_sl_price
-                    )
-                    if bracket_result.get('success'):
-                        logger.info(f"✅ Exit brackets updated to TP @ {new_tp_price}")
-                    else:
-                        logger.warning(f"⚠️ Exit brackets update failed: {bracket_result.get('error')}")
-                else:
-                    # Broker execution failed - DO NOT update DB position
-                    if broker_result.get('error'):
-                        logger.error(f"❌ DCA LONG REJECTED by broker: {broker_result['error']} - NOT updating position")
-                        trade_result = {'action': 'dca_rejected', 'error': broker_result['error']}
-                    else:
-                        # No broker linked - just log signal, don't track position
-                        logger.info(f"📝 No broker linked - DCA signal logged only")
-                        trade_result = {'action': 'signal_only', 'side': 'LONG'}
-
-            # Open new LONG trade if broker has no LONG position
+            if broker_result.get('success') and broker_result.get('broker_avg'):
+                trade_result = {
+                    'action': 'executed',
+                    'side': 'LONG',
+                    'avg_entry_price': broker_result['broker_avg'],
+                    'total_quantity': broker_result['broker_qty'],
+                    'tp_price': broker_result['tp_price'],
+                    'tp_order_id': broker_result.get('tp_order_id'),
+                    'broker_confirmed': True
+                }
+                logger.info(f"✅ BUY EXECUTED: {broker_result['broker_qty']} @ {broker_result['broker_avg']:.2f} | TP: {broker_result['tp_price']}")
+            elif broker_result.get('error'):
+                logger.error(f"❌ BUY REJECTED: {broker_result['error']}")
+                trade_result = {'action': 'rejected', 'error': broker_result['error']}
             else:
-                logger.info(f"📈 NEW LONG signal for '{recorder_name}': {quantity} {ticker}")
+                logger.warning(f"⚠️ BUY executed but no position confirmed")
+                trade_result = {'action': 'executed', 'side': 'LONG', 'warning': 'No position data'}
                 
                 # BROKER-FIRST: Execute on broker with bracket order
                 broker_result = execute_live_trade_with_bracket(
@@ -4874,243 +5021,47 @@ def receive_webhook(webhook_token):
         
         elif normalized_action == 'SELL':
             # ============================================================
-            # BROKER-FIRST POSITION CHECK (Source of Truth) - SHORT
+            # SIMPLE SELL LOGIC - The Formula
+            # 1. Place market order
+            # 2. Get broker's position (avg + qty)
+            # 3. Place/modify TP at avg - (ticks * tick_size)
+            # 
+            # NO separate DCA logic needed - broker tracks average for us!
             # ============================================================
-            broker_has_long = False
-            broker_has_short = False
-            broker_existing_qty = 0
-            broker_existing_avg = 0
+            logger.info(f"📉 SELL signal for '{recorder_name}': {quantity} {ticker}")
             
-            try:
-                cursor.execute('''
-                    SELECT t.subaccount_id, t.is_demo, a.tradovate_token
-                    FROM traders t
-                    JOIN accounts a ON t.account_id = a.id
-                    WHERE t.id = (SELECT trader_id FROM recorders WHERE id = ?)
-                ''', (recorder_id,))
-                trader_row = cursor.fetchone()
-                
-                if trader_row and trader_row['tradovate_token']:
-                    import asyncio
-                    from phantom_scraper.tradovate_integration import TradovateIntegration
-                    
-                    async def check_broker_position():
-                        async with TradovateIntegration(demo=trader_row['is_demo']) as tradovate:
-                            tradovate.access_token = trader_row['tradovate_token']
-                            positions = await tradovate.get_positions(account_id=str(trader_row['subaccount_id']))
-                            
-                            for pos in (positions or []):
-                                pos_net = pos.get('netPos', 0)
-                                if pos_net != 0:
-                                    return {
-                                        'qty': pos_net,
-                                        'avg': pos.get('netPrice', 0)
-                                    }
-                            return None
-                    
-                    broker_pos_check = asyncio.run(check_broker_position())
-                    if broker_pos_check:
-                        if broker_pos_check['qty'] > 0:
-                            broker_has_long = True
-                            broker_existing_qty = broker_pos_check['qty']
-                            broker_existing_avg = broker_pos_check['avg']
-                            logger.info(f"🔍 BROKER CHECK: Found LONG {broker_existing_qty} @ {broker_existing_avg}")
-                        elif broker_pos_check['qty'] < 0:
-                            broker_has_short = True
-                            broker_existing_qty = abs(broker_pos_check['qty'])
-                            broker_existing_avg = broker_pos_check['avg']
-                            logger.info(f"🔍 BROKER CHECK: Found SHORT {broker_existing_qty} @ {broker_existing_avg}")
-                    else:
-                        logger.info(f"🔍 BROKER CHECK: FLAT (no position)")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not check broker position: {e} - falling back to DB")
+            # Close any existing LONG first (reversal)
+            if open_trade and open_trade['side'] == 'LONG':
+                pnl_ticks = (current_price - open_trade['entry_price']) / tick_size
+                pnl, _ = close_trade_helper(cursor, open_trade, current_price, pnl_ticks, tick_value, 'reversal')
+                logger.info(f"📊 LONG closed by SELL reversal: ${pnl:.2f}")
             
-            # If we have an open LONG (broker or DB), close it first
-            if broker_has_long or (open_trade and open_trade['side'] == 'LONG'):
-                if open_trade:
-                    pnl_ticks = (current_price - open_trade['entry_price']) / tick_size
-                    pnl, _ = close_trade_helper(cursor, open_trade, current_price, pnl_ticks, tick_value, 'reversal')
-                    logger.info(f"📊 LONG closed by SELL reversal: ${pnl:.2f}")
-                open_trade = None
-                broker_has_short = False  # Will be a new trade after reversal
+            # SIMPLE EXECUTION: Place order, get broker position, place/modify TP
+            broker_result = execute_trade_simple(
+                recorder_id=recorder_id,
+                action='SELL',
+                ticker=ticker,
+                quantity=quantity,
+                tp_ticks=tp_ticks
+            )
             
-            # DCA: If BROKER has SHORT position, this is DCA (regardless of DB state!)
-            if broker_has_short:
-                logger.info(f"📉 DCA SHORT signal for '{recorder_name}': adding {quantity} to existing position")
-                
-                # BROKER-FIRST: Execute on broker first, get confirmed fill
-                broker_result = execute_live_trade_with_bracket(
-                    recorder_id=recorder_id,
-                    action='SELL',
-                    ticker=ticker,
-                    quantity=quantity,
-                    tp_ticks=tp_ticks,
-                    sl_ticks=int(sl_amount) if sl_enabled else None,
-                    is_dca=True
-                )
-                
-                if broker_result.get('success'):
-                    # BROKER CONFIRMED - now get position data (broker or calculated)
-                    broker_pos = broker_result.get('broker_position')
-                    fill_price = broker_result.get('fill_price', current_price)
-                    
-                    if broker_pos and broker_pos.get('netPos', 0) != 0:
-                        # BEST CASE: Use broker's confirmed position data
-                        broker_qty = abs(broker_pos.get('netPos', 0))
-                        broker_avg = broker_pos.get('netPrice', current_price)
-                        logger.info(f"📊 BROKER CONFIRMED DCA: {broker_qty} contracts @ avg {broker_avg}")
-                    else:
-                        # FALLBACK: Use broker position data we already fetched
-                        existing_qty = broker_existing_qty if broker_existing_qty > 0 else (open_trade.get('quantity', 0) if open_trade else 1)
-                        existing_avg = broker_existing_avg if broker_existing_avg > 0 else (open_trade.get('entry_price', current_price) if open_trade else current_price)
-                        
-                        broker_qty = existing_qty + quantity
-                        broker_avg = ((existing_qty * existing_avg) + (quantity * fill_price)) / broker_qty
-                        logger.warning(f"⚠️ No post-fill broker data - calculated: {broker_qty} @ {broker_avg:.2f} (existing {existing_qty}@{existing_avg}, fill {fill_price})")
-                    
-                    # Calculate new TP based on average price
-                    new_tp_price, new_sl_price = calculate_tp_sl_prices(
-                        broker_avg, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
-                    )
-                    
-                    # Update or INSERT DB record (handle case where DB was out of sync)
-                    if open_trade:
-                        cursor.execute('''
-                            UPDATE recorded_trades 
-                            SET entry_price = ?, quantity = ?, tp_price = ?, sl_price = ?,
-                                broker_fill_price = ?, broker_order_id = ?, updated_at = datetime('now')
-                            WHERE id = ?
-                        ''', (broker_avg, broker_qty, new_tp_price, new_sl_price,
-                              fill_price, broker_result.get('order_id'),
-                              open_trade['id']))
-                        trade_id = open_trade['id']
-                    else:
-                        logger.warning(f"⚠️ DB had no open trade but broker had position - creating record")
-                        cursor.execute('''
-                            INSERT INTO recorded_trades
-                            (recorder_id, ticker, action, side, entry_price, entry_time,
-                             quantity, status, tp_price, sl_price, broker_fill_price, broker_order_id)
-                            VALUES (?, ?, 'SELL', 'SHORT', ?, datetime('now'), ?, 'open', ?, ?, ?, ?)
-                        ''', (recorder_id, ticker, broker_avg, broker_qty, new_tp_price, new_sl_price,
-                              fill_price, broker_result.get('order_id')))
-                        trade_id = cursor.lastrowid
-                    
-                    # Update position tracking
-                    cursor.execute('''
-                        UPDATE recorder_positions 
-                        SET total_quantity = ?, avg_entry_price = ?, updated_at = datetime('now')
-                        WHERE recorder_id = ? AND ticker = ? AND status = 'open'
-                    ''', (broker_qty, broker_avg, recorder_id, ticker))
-                    
-                    if cursor.rowcount == 0:
-                        cursor.execute('''
-                            INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
-                            VALUES (?, ?, 'SHORT', ?, ?, 'open')
-                        ''', (recorder_id, ticker, broker_qty, broker_avg))
-                    
-                    trade_result = {
-                        'action': 'dca', 'trade_id': trade_id, 'side': 'SHORT',
-                        'dca_price': fill_price,
-                        'avg_entry_price': broker_avg,
-                        'quantity': quantity, 'total_quantity': broker_qty,
-                        'tp_price': new_tp_price, 'sl_price': new_sl_price,
-                        'broker_confirmed': True
-                    }
-                    logger.info(f"📉 DCA SHORT CONFIRMED for '{recorder_name}': {ticker} | {broker_qty} @ {broker_avg:.2f} | TP: {new_tp_price}")
-                    
-                    # UPDATE EXIT BRACKETS to new TP based on average price
-                    bracket_result = update_exit_brackets(
-                        recorder_id=recorder_id,
-                        ticker=ticker,
-                        side='SHORT',
-                        total_quantity=broker_qty,
-                        tp_price=new_tp_price,
-                        sl_price=new_sl_price
-                    )
-                    if bracket_result.get('success'):
-                        logger.info(f"✅ Exit brackets updated to TP @ {new_tp_price}")
-                    else:
-                        logger.warning(f"⚠️ Exit brackets update failed: {bracket_result.get('error')}")
-                else:
-                    # Broker execution failed - DO NOT update DB position
-                    if broker_result.get('error'):
-                        logger.error(f"❌ DCA SHORT REJECTED by broker: {broker_result['error']} - NOT updating position")
-                        trade_result = {'action': 'dca_rejected', 'error': broker_result['error']}
-                    else:
-                        # No broker linked - just log signal, don't track position
-                        logger.info(f"📝 No broker linked - DCA signal logged only")
-                        trade_result = {'action': 'signal_only', 'side': 'SHORT'}
-
-            # Open new SHORT trade if broker has no SHORT position
+            if broker_result.get('success') and broker_result.get('broker_avg'):
+                trade_result = {
+                    'action': 'executed',
+                    'side': 'SHORT',
+                    'avg_entry_price': broker_result['broker_avg'],
+                    'total_quantity': broker_result['broker_qty'],
+                    'tp_price': broker_result['tp_price'],
+                    'tp_order_id': broker_result.get('tp_order_id'),
+                    'broker_confirmed': True
+                }
+                logger.info(f"✅ SELL EXECUTED: {broker_result['broker_qty']} @ {broker_result['broker_avg']:.2f} | TP: {broker_result['tp_price']}")
+            elif broker_result.get('error'):
+                logger.error(f"❌ SELL REJECTED: {broker_result['error']}")
+                trade_result = {'action': 'rejected', 'error': broker_result['error']}
             else:
-                logger.info(f"📉 NEW SHORT signal for '{recorder_name}': {quantity} {ticker}")
-                
-                # BROKER-FIRST: Execute on broker with bracket order
-                broker_result = execute_live_trade_with_bracket(
-                    recorder_id=recorder_id,
-                    action='SELL',
-                    ticker=ticker,
-                    quantity=quantity,
-                    tp_ticks=tp_ticks,
-                    sl_ticks=int(sl_amount) if sl_enabled else None,
-                    is_dca=False
-                )
-                
-                # CRITICAL: Only record trade if broker confirmed OR no broker linked
-                # If broker rejected (error), DO NOT record - prevents DB/broker mismatch
-                if broker_result.get('error'):
-                    logger.error(f"❌ SHORT REJECTED by broker: {broker_result['error']} - NOT recording trade")
-                    trade_result = {'action': 'rejected', 'error': broker_result['error']}
-                elif broker_result.get('success') and broker_result.get('fill_price'):
-                    fill_price = broker_result['fill_price']
-                    broker_managed = broker_result.get('bracket_managed', False)
-                    logger.info(f"📊 BROKER CONFIRMED: Filled @ {fill_price}, brackets={broker_managed}")
-
-                    # Calculate TP/SL based on actual fill price
-                    calculated_tp, sl_price = calculate_tp_sl_prices(
-                        fill_price, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
-                    )
-                    
-                    # Only store TP price if TP order was actually placed
-                    # If TP was skipped (marketability check), set tp_price = NULL so TP/SL polling won't check it
-                    tp_order_id = broker_result.get('tp_order_id')
-                    tp_price = calculated_tp if tp_order_id else None
-                    if not tp_order_id and calculated_tp:
-                        logger.warning(f"⚠️ TP order was not placed (marketability check failed) - setting tp_price=NULL to prevent instant close")
-
-                    # Insert trade with broker data (including tp_order_id for later modification)
-                    cursor.execute('''
-                        INSERT INTO recorded_trades
-                        (recorder_id, signal_id, ticker, action, side, entry_price, entry_time,
-                         quantity, status, tp_price, sl_price,
-                         broker_order_id, broker_strategy_id, broker_fill_price, broker_managed_tp_sl, tp_order_id)
-                        VALUES (?, ?, ?, 'SELL', 'SHORT', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?,
-                                ?, ?, ?, ?, ?)
-                    ''', (recorder_id, signal_id, ticker, fill_price, quantity, tp_price, sl_price,
-                          broker_result.get('order_id'), broker_result.get('strategy_id'),
-                          broker_result.get('fill_price'), 1 if broker_managed else 0,
-                          broker_result.get('tp_order_id')))
-
-                    new_trade_id = cursor.lastrowid
-
-                    # Update position tracking
-                    pos_id, is_new_pos, total_qty = update_recorder_position_helper(
-                        cursor, recorder_id, ticker, 'SHORT', fill_price, quantity
-                    )
-
-                    trade_result = {
-                        'action': 'opened', 'trade_id': new_trade_id, 'side': 'SHORT',
-                        'entry_price': fill_price, 'quantity': quantity,
-                        'tp_price': tp_price, 'sl_price': sl_price,
-                        'position_id': pos_id, 'position_qty': total_qty,
-                        'broker_managed_tp_sl': broker_managed,
-                        'broker_confirmed': True
-                    }
-                    logger.info(f"📉 SHORT OPENED for '{recorder_name}': {ticker} @ {fill_price} x{quantity} | TP: {tp_price} | Broker-managed: {broker_managed}")
-                else:
-                    # No broker linked (success=True but no fill_price) - record for signal tracking only
-                    logger.info(f"📝 No broker linked - recording signal only (no position)")
-                    trade_result = {'action': 'signal_only', 'side': 'SHORT'}
+                logger.warning(f"⚠️ SELL executed but no position confirmed")
+                trade_result = {'action': 'executed', 'side': 'SHORT', 'warning': 'No position data'}
         
         conn.commit()
         
