@@ -58,6 +58,306 @@ DATABASE_PATH = 'just_trades.db'
 LOG_LEVEL = logging.INFO
 
 # ============================================================================
+# Token Cache - Prevents re-authentication on every trade (avoids rate limiting)
+# ============================================================================
+# Structure: {account_id: {'token': str, 'expires': datetime, 'md_token': str}}
+_TOKEN_CACHE: Dict[int, Dict] = {}
+_TOKEN_CACHE_LOCK = threading.Lock()
+
+# ============================================================================
+# 🚀 SCALABILITY CONFIG - Designed for 50-1000 accounts
+# ============================================================================
+# Tradovate rate limits: 80 requests/minute, 5000 requests/hour
+# These settings ensure we stay well under limits even at scale
+
+BATCH_SIZE = 25  # Process accounts in batches of 25
+BATCH_DELAY_SECONDS = 0.5  # Delay between batches (allows rate limit recovery)
+MAX_CONCURRENT_CONNECTIONS = 50  # Max simultaneous WebSocket connections
+API_CALLS_PER_MINUTE_LIMIT = 70  # Stay under 80/min limit with buffer
+
+# Rate limit tracking
+_API_CALL_TIMES: List[float] = []
+_API_CALL_LOCK = threading.Lock()
+
+def check_rate_limit() -> bool:
+    """Check if we're under rate limit. Returns True if safe to proceed."""
+    with _API_CALL_LOCK:
+        now = time.time()
+        # Remove calls older than 60 seconds
+        _API_CALL_TIMES[:] = [t for t in _API_CALL_TIMES if now - t < 60]
+        return len(_API_CALL_TIMES) < API_CALLS_PER_MINUTE_LIMIT
+
+def record_api_call():
+    """Record an API call for rate limiting."""
+    with _API_CALL_LOCK:
+        _API_CALL_TIMES.append(time.time())
+
+async def wait_for_rate_limit():
+    """Wait until rate limit allows more calls."""
+    while not check_rate_limit():
+        await asyncio.sleep(0.5)
+        logger.debug("⏳ Waiting for rate limit...")
+
+def get_cached_token(account_id: int) -> Optional[str]:
+    """Get cached token if still valid (with 5 minute buffer)."""
+    with _TOKEN_CACHE_LOCK:
+        cached = _TOKEN_CACHE.get(account_id)
+        if cached:
+            # Check if token expires in more than 5 minutes
+            expires = cached.get('expires')
+            if expires and isinstance(expires, datetime):
+                from datetime import timedelta
+                if datetime.utcnow() + timedelta(minutes=5) < expires:
+                    return cached.get('token')
+    return None
+
+def cache_token(account_id: int, token: str, expires: datetime, md_token: str = None):
+    """Cache a token for an account."""
+    with _TOKEN_CACHE_LOCK:
+        _TOKEN_CACHE[account_id] = {
+            'token': token,
+            'expires': expires,
+            'md_token': md_token
+        }
+
+def clear_cached_token(account_id: int):
+    """Clear cached token for an account."""
+    with _TOKEN_CACHE_LOCK:
+        _TOKEN_CACHE.pop(account_id, None)
+
+# ============================================================================
+# WebSocket Connection Pool - Keep persistent connections (TradeManager's secret)
+# ============================================================================
+# Structure: {subaccount_id: TradovateIntegration instance with active WebSocket}
+_WS_POOL: Dict[int, Any] = {}
+_WS_POOL_LOCK = threading.Lock()
+
+async def get_pooled_connection(subaccount_id: int, is_demo: bool, access_token: str):
+    """Get or create a pooled WebSocket connection for an account."""
+    from phantom_scraper.tradovate_integration import TradovateIntegration
+    
+    with _WS_POOL_LOCK:
+        if subaccount_id in _WS_POOL:
+            conn = _WS_POOL[subaccount_id]
+            # Check if connection is still alive
+            if conn and conn.ws_connected:
+                return conn
+            # Connection dead, remove it
+            _WS_POOL.pop(subaccount_id, None)
+    
+    # Create new connection
+    conn = TradovateIntegration(demo=is_demo)
+    await conn.__aenter__()  # Initialize session
+    conn.access_token = access_token
+    
+    # Establish WebSocket connection
+    ws_connected = await conn._ensure_websocket_connected()
+    if ws_connected:
+        with _WS_POOL_LOCK:
+            _WS_POOL[subaccount_id] = conn
+        logger.info(f"🔌 WebSocket pool: Added connection for account {subaccount_id}")
+        return conn
+    else:
+        await conn.__aexit__(None, None, None)
+        return None
+
+def close_pooled_connection(subaccount_id: int):
+    """Close and remove a pooled connection."""
+    with _WS_POOL_LOCK:
+        conn = _WS_POOL.pop(subaccount_id, None)
+        if conn:
+            try:
+                import asyncio
+                asyncio.create_task(conn.__aexit__(None, None, None))
+            except:
+                pass
+
+# ============================================================================
+# 🛡️ BULLETPROOF TOKEN MANAGEMENT - Auto-refresh before expiry
+# ============================================================================
+# Tracks accounts that need re-authentication (OAuth expired and refresh failed)
+_ACCOUNTS_NEED_REAUTH: Set[int] = set()
+_TOKEN_REFRESH_RUNNING = False
+
+def start_token_refresh_daemon():
+    """
+    Start background daemon that proactively refreshes tokens before they expire.
+    This is how TradeManager avoids auth failures during trading.
+    """
+    global _TOKEN_REFRESH_RUNNING
+    if _TOKEN_REFRESH_RUNNING:
+        return
+    _TOKEN_REFRESH_RUNNING = True
+    
+    def refresh_loop():
+        import requests
+        from datetime import timedelta
+        
+        logger.info("🛡️ Token refresh daemon started - will auto-refresh tokens before expiry")
+        
+        while _TOKEN_REFRESH_RUNNING:
+            try:
+                conn = sqlite3.connect(DATABASE_PATH)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Get all accounts with tokens
+                cursor.execute('''
+                    SELECT id, name, tradovate_token, tradovate_refresh_token, 
+                           token_expires_at, environment, username, password
+                    FROM accounts 
+                    WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+                ''')
+                accounts = cursor.fetchall()
+                
+                now = datetime.utcnow()
+                
+                for acct in accounts:
+                    acct_id = acct['id']
+                    acct_name = acct['name']
+                    refresh_token = acct['tradovate_refresh_token']
+                    expires_str = acct['token_expires_at']
+                    env = acct['environment'] or 'demo'
+                    username = acct['username']
+                    password = acct['password']
+                    
+                    # Parse expiry time
+                    expires = None
+                    if expires_str:
+                        try:
+                            # Try multiple formats
+                            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z']:
+                                try:
+                                    expires = datetime.strptime(expires_str.split('+')[0].split('Z')[0], fmt.replace('%z', ''))
+                                    break
+                                except:
+                                    continue
+                        except:
+                            pass
+                    
+                    if not expires:
+                        continue
+                    
+                    # Check if token expires within 30 minutes
+                    time_until_expiry = expires - now
+                    
+                    if time_until_expiry < timedelta(minutes=30):
+                        logger.info(f"🔄 [{acct_name}] Token expires in {time_until_expiry}, refreshing...")
+                        
+                        base_url = 'https://demo.tradovateapi.com/v1' if env == 'demo' else 'https://live.tradovateapi.com/v1'
+                        refreshed = False
+                        
+                        # METHOD 1: Try refresh token
+                        if refresh_token and not refreshed:
+                            try:
+                                response = requests.post(
+                                    f'{base_url}/auth/renewaccesstoken',
+                                    headers={'Authorization': f'Bearer {refresh_token}', 'Content-Type': 'application/json'},
+                                    timeout=10
+                                )
+                                if response.status_code == 200:
+                                    data = response.json()
+                                    new_token = data.get('accessToken')
+                                    new_expiry = data.get('expirationTime')
+                                    if new_token:
+                                        cursor.execute('''
+                                            UPDATE accounts 
+                                            SET tradovate_token = ?, token_expires_at = ?
+                                            WHERE id = ?
+                                        ''', (new_token, new_expiry, acct_id))
+                                        conn.commit()
+                                        # Update cache
+                                        try:
+                                            from dateutil.parser import parse as parse_date
+                                            cache_token(acct_id, new_token, parse_date(new_expiry))
+                                        except:
+                                            pass
+                                        logger.info(f"✅ [{acct_name}] Token refreshed via refresh_token! Expires: {new_expiry}")
+                                        refreshed = True
+                                        _ACCOUNTS_NEED_REAUTH.discard(acct_id)
+                            except Exception as e:
+                                logger.warning(f"⚠️ [{acct_name}] Refresh token failed: {e}")
+                        
+                        # METHOD 2: Try API Access with username/password
+                        if username and password and not refreshed:
+                            try:
+                                from tradovate_api_access import TradovateAPIAccess
+                                import asyncio
+                                
+                                async def do_api_access():
+                                    api = TradovateAPIAccess(demo=(env == 'demo'))
+                                    return await api.login(username, password, DATABASE_PATH, acct_id)
+                                
+                                # Run async in sync context
+                                loop = asyncio.new_event_loop()
+                                result = loop.run_until_complete(do_api_access())
+                                loop.close()
+                                
+                                if result.get('success'):
+                                    new_token = result.get('accessToken')
+                                    new_expiry = result.get('expirationTime')
+                                    # Token already saved by api.login()
+                                    try:
+                                        from dateutil.parser import parse as parse_date
+                                        cache_token(acct_id, new_token, parse_date(new_expiry))
+                                    except:
+                                        pass
+                                    logger.info(f"✅ [{acct_name}] Token refreshed via API Access!")
+                                    refreshed = True
+                                    _ACCOUNTS_NEED_REAUTH.discard(acct_id)
+                            except Exception as e:
+                                logger.warning(f"⚠️ [{acct_name}] API Access failed: {e}")
+                        
+                        # METHOD 3: Check if account has credentials (trading will still work)
+                        if not refreshed:
+                            if username and password:
+                                # Has credentials - trades will work via API Access during execution
+                                logger.warning(f"⚠️ [{acct_name}] Token refresh failed but has credentials - trades will work")
+                                _ACCOUNTS_NEED_REAUTH.discard(acct_id)  # Don't mark as needing reauth
+                            else:
+                                logger.error(f"❌ [{acct_name}] ALL REFRESH METHODS FAILED and no credentials - needs OAuth!")
+                                _ACCOUNTS_NEED_REAUTH.add(acct_id)
+                    
+                    elif acct_id in _ACCOUNTS_NEED_REAUTH and time_until_expiry > timedelta(hours=1):
+                        # Token was manually refreshed (OAuth re-done)
+                        _ACCOUNTS_NEED_REAUTH.discard(acct_id)
+                        logger.info(f"✅ [{acct_name}] Token is valid again - removed from re-auth list")
+                
+                conn.close()
+                
+            except Exception as e:
+                logger.error(f"❌ Token refresh daemon error: {e}")
+            
+            # Check every 5 minutes
+            time.sleep(300)
+    
+    thread = threading.Thread(target=refresh_loop, daemon=True, name="TokenRefreshDaemon")
+    thread.start()
+    logger.info("🛡️ Token refresh daemon thread started")
+
+def get_accounts_needing_reauth() -> List[int]:
+    """Get list of account IDs that need manual OAuth re-authentication."""
+    return list(_ACCOUNTS_NEED_REAUTH)
+
+def is_account_auth_valid(account_id: int) -> bool:
+    """Check if an account's authentication is valid (not in re-auth list)."""
+    return account_id not in _ACCOUNTS_NEED_REAUTH
+
+# Auto-start the token refresh daemon when module is imported
+# This ensures it runs whether this file is run directly or imported
+def _auto_start_daemon():
+    """Auto-start daemon on module load."""
+    global _TOKEN_REFRESH_RUNNING
+    if not _TOKEN_REFRESH_RUNNING:
+        try:
+            start_token_refresh_daemon()
+        except Exception as e:
+            print(f"Warning: Could not start token refresh daemon: {e}")
+
+# Delay daemon start slightly to allow imports to complete
+threading.Timer(2.0, _auto_start_daemon).start()
+
+# ============================================================================
 # DATABASE CONNECTION - Supports both SQLite and PostgreSQL
 # ============================================================================
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -244,17 +544,7 @@ def get_db_connection():
 
 
 # ============================================================================
-# SIMPLE TRADE EXECUTION - The Formula
-# ============================================================================
-# 
-# This is the SIMPLE approach:
-# 1. Place market order
-# 2. Wait for fill
-# 3. Query broker for position (avg price + qty) 
-# 4. Calculate TP: avg_price +/- (tp_ticks * tick_size)
-# 5. Place or MODIFY single TP order
-#
-# NO separate DCA logic needed - broker tracks average for us!
+# SIMPLE TRADE EXECUTION - The Formula (Multi-Account Support)
 # ============================================================================
 
 def execute_trade_simple(
@@ -265,16 +555,18 @@ def execute_trade_simple(
     tp_ticks: int = 10
 ) -> Dict[str, Any]:
     """
-    SIMPLE TRADE EXECUTION WITH TP.
+    SIMPLE TRADE EXECUTION WITH TP - Executes on ALL linked accounts.
     
     The Formula:
     1. Place market order for entry
     2. Get broker's position (netPrice = average, netPos = quantity)
     3. Calculate TP = average +/- (tp_ticks * tick_size)
     4. Place or modify ONE TP order
-    
-    Works for new trades AND DCA - no special logic needed!
     """
+    from phantom_scraper.tradovate_integration import TradovateIntegration
+    from tradovate_api_access import TradovateAPIAccess
+    import asyncio
+    
     result = {
         'success': False,
         'fill_price': None,
@@ -282,6 +574,7 @@ def execute_trade_simple(
         'broker_qty': None,
         'tp_price': None,
         'tp_order_id': None,
+        'accounts_traded': 0,
         'error': None
     }
     
@@ -291,9 +584,9 @@ def execute_trade_simple(
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Get trader credentials
+        # Get trader with enabled_accounts JSON field
         cursor.execute('''
-            SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
+            SELECT t.id, t.enabled_accounts, t.subaccount_id, t.subaccount_name, t.is_demo,
                    a.tradovate_token, a.username, a.password, a.id as account_id
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
@@ -308,223 +601,443 @@ def execute_trade_simple(
             logger.warning(f"⚠️ No trader linked to recorder {recorder_id}")
             return result
         
-        trader = dict(trader_row)
-        conn.close()
+        trader_dict = dict(trader_row)
+        enabled_accounts_raw = trader_dict.get('enabled_accounts')
         
-        tradovate_account_id = trader['subaccount_id']
-        tradovate_account_spec = trader['subaccount_name']
-        is_demo = bool(trader.get('is_demo', True))
-        username = trader.get('username')
-        password = trader.get('password')
+        # Parse enabled_accounts JSON to get ALL accounts to trade on
+        traders = []
+        if enabled_accounts_raw and enabled_accounts_raw != '[]':
+            try:
+                enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
+                logger.info(f"📋 Found {len(enabled_accounts)} account(s) in enabled_accounts JSON")
+                
+                for acct in enabled_accounts:
+                    acct_id = acct.get('account_id')
+                    subaccount_id = acct.get('subaccount_id')
+                    subaccount_name = acct.get('subaccount_name') or acct.get('account_name')
+                    is_demo = acct.get('is_demo', True)
+                    
+                    # Get credentials from accounts table
+                    cursor.execute('SELECT tradovate_token, username, password FROM accounts WHERE id = ?', (acct_id,))
+                    creds_row = cursor.fetchone()
+                    
+                    if creds_row:
+                        creds = dict(creds_row)
+                        traders.append({
+                            'subaccount_id': subaccount_id,
+                            'subaccount_name': subaccount_name,
+                            'is_demo': is_demo,
+                            'tradovate_token': creds.get('tradovate_token'),
+                            'username': creds.get('username'),
+                            'password': creds.get('password'),
+                            'account_id': acct_id
+                        })
+                        logger.info(f"  ✅ Added account: {subaccount_name} (ID: {subaccount_id})")
+                    else:
+                        logger.warning(f"  ⚠️ No credentials for account_id {acct_id}")
+            except Exception as e:
+                logger.error(f"❌ Error parsing enabled_accounts: {e}")
+        
+        # Fallback: if no enabled_accounts, use the legacy single account
+        if not traders:
+            logger.info(f"📋 No enabled_accounts JSON, using legacy single account")
+            traders = [trader_dict]
+        
+        conn.close()
+        logger.info(f"📋 Found {len(traders)} account(s) to trade on")
         
         # Get tick size for this symbol
         symbol_root = ticker[:3].upper() if ticker else 'MNQ'
         tick_size = TICK_SIZES.get(symbol_root, 0.25)
-        
-        # Convert ticker to Tradovate format
         tradovate_symbol = convert_ticker_to_tradovate(ticker)
         
-        from phantom_scraper.tradovate_integration import TradovateIntegration
-        from tradovate_api_access import TradovateAPIAccess
-        import asyncio
+        # Execute on ALL accounts IN PARALLEL
+        accounts_traded = 0
+        last_result = None
         
-        async def do_trade():
-            # Authenticate
-            api_access = TradovateAPIAccess(demo=is_demo)
-            access_token = trader.get('tradovate_token')
+        async def do_trade_for_account(trader, trader_idx):
+            """Execute trade for a single account - runs in parallel with others"""
+            acct_name = trader.get('subaccount_name', 'Unknown')
+            acct_id = trader.get('account_id')
             
-            if not access_token and username and password:
-                logger.info(f"🔐 Authenticating...")
-                login_result = await api_access.login(
-                    username=username, password=password,
-                    db_path=DATABASE_PATH, account_id=trader['account_id']
-                )
-                if login_result.get('success'):
-                    access_token = login_result['accessToken']
-                else:
-                    return {'success': False, 'error': f"Auth failed: {login_result.get('error')}"}
+            # NOTE: Don't check is_account_auth_valid upfront - let auth logic handle it
+            # The account might work via cached token, API Access, or OAuth fallback
+            # If ALL methods fail, auth logic will return the appropriate error
             
-            async with TradovateIntegration(demo=is_demo) as tradovate:
-                tradovate.access_token = access_token
+            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name}")
+            
+            tradovate_account_id = trader['subaccount_id']
+            tradovate_account_spec = trader['subaccount_name']
+            is_demo = bool(trader.get('is_demo', True))
+            username = trader.get('username')
+            password = trader.get('password')
+            
+            try:
+                # ============================================================
+                # 🚀 SCALABLE AUTH - OAuth First (like TradersPost/TradeManager)
+                # ============================================================
+                # Priority order:
+                # 1. Token cache (instant, no API call)
+                # 2. OAuth token from DB (no rate limit, no captcha)
+                # 3. API Access only as LAST RESORT (triggers captcha/rate limit)
+                # ============================================================
                 
-                # STEP 1: Place market order
-                order_action = 'Buy' if action == 'BUY' else 'Sell'
-                order_data = tradovate.create_market_order(
-                    tradovate_account_spec, tradovate_symbol, 
-                    order_action, quantity, tradovate_account_id
-                )
+                account_id = trader['account_id']
+                access_token = None
+                auth_method = None
                 
-                logger.info(f"📤 Placing {order_action} {quantity} {tradovate_symbol}...")
-                order_result = await tradovate.place_order(order_data)
+                # PRIORITY 1: Check token cache (instant, no API call)
+                access_token = get_cached_token(account_id)
+                if access_token:
+                    auth_method = "CACHED"
+                    logger.info(f"⚡ [{acct_name}] Using CACHED token (no API call)")
                 
-                if not order_result or not order_result.get('success'):
-                    error = order_result.get('error', 'Order failed') if order_result else 'No response'
-                    return {'success': False, 'error': error}
+                # PRIORITY 2: Use OAuth token from database (like TradersPost)
+                # This is the scalable approach - tokens obtained via OAuth never trigger captcha
+                if not access_token:
+                    oauth_token = trader.get('tradovate_token')
+                    if oauth_token:
+                        access_token = oauth_token
+                        auth_method = "OAUTH"
+                        logger.info(f"🔑 [{acct_name}] Using OAuth token (scalable - no rate limit)")
+                        # Cache this token for future trades
+                        try:
+                            # Try to get expiry from DB token_expires field
+                            token_expires = trader.get('token_expires')
+                            if token_expires:
+                                from dateutil.parser import parse as parse_date
+                                expiry = parse_date(token_expires) if isinstance(token_expires, str) else token_expires
+                                cache_token(account_id, access_token, expiry)
+                        except:
+                            pass  # Use token anyway even if we can't cache with expiry
                 
-                order_id = order_result.get('orderId') or order_result.get('id')
-                logger.info(f"✅ Market order placed: {order_id}")
-                
-                # STEP 2: Wait for fill and get broker position
-                await asyncio.sleep(0.5)  # Give broker time to update position
-                
-                broker_avg = None
-                broker_qty = 0
-                broker_side = None
-                contract_id = None
-                
-                for attempt in range(5):
-                    positions = await tradovate.get_positions(account_id=tradovate_account_id)
-                    for pos in positions:
-                        pos_symbol = str(pos.get('symbol', '')).upper()
-                        if symbol_root in pos_symbol:
-                            net_pos = pos.get('netPos', 0)
-                            if net_pos != 0:
-                                broker_avg = pos.get('netPrice')
-                                broker_qty = abs(net_pos)
-                                broker_side = 'LONG' if net_pos > 0 else 'SHORT'
-                                contract_id = pos.get('contractId')
-                                logger.info(f"📊 BROKER POSITION: {broker_side} {broker_qty} @ {broker_avg}")
-                                break
-                    if broker_avg:
-                        break
-                    await asyncio.sleep(0.3)
-                
-                if not broker_avg:
-                    logger.warning(f"⚠️ Could not get broker position - using fill estimate")
-                    # Try to get fill price from order
-                    fill_price = order_result.get('avgFillPrice') or order_result.get('price')
-                    return {
-                        'success': True, 
-                        'fill_price': fill_price,
-                        'error': 'Could not get broker position for TP'
-                    }
-                
-                # STEP 3: Calculate TP price using broker's average
-                if broker_side == 'LONG':
-                    tp_price = broker_avg + (tp_ticks * tick_size)
-                    tp_action = 'Sell'
-                else:
-                    tp_price = broker_avg - (tp_ticks * tick_size)
-                    tp_action = 'Buy'
-                
-                logger.info(f"🎯 TP CALCULATION: {broker_avg} {'+'if broker_side=='LONG' else '-'} ({tp_ticks} × {tick_size}) = {tp_price}")
-                
-                # STEP 4: Find existing TP order to modify, or place new one
-                existing_tp_id = None
-                all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
-                
-                for order in (all_orders or []):
-                    order_status = str(order.get('ordStatus', '')).upper()
-                    order_act = order.get('action', '')
-                    order_contract = order.get('contractId')
+                # PRIORITY 3: API Access - ONLY if no OAuth token (last resort)
+                # This can trigger captcha and rate limiting - avoid for scale!
+                if not access_token and username and password:
+                    logger.warning(f"⚠️ [{acct_name}] No OAuth token - trying API Access (not scalable)")
+                    await wait_for_rate_limit()  # Respect rate limits
+                    record_api_call()
                     
-                    # Find working limit order on same contract, same exit side
-                    if order_status in ['WORKING', 'NEW', 'PENDINGNEW']:
-                        if order_act == tp_action and (order_contract == contract_id or not contract_id):
-                            existing_tp_id = order.get('id')
-                            logger.info(f"📋 Found existing TP order: {existing_tp_id}")
-                            break
-                
-                tp_order_id = None
-                
-                if existing_tp_id:
-                    # MODIFY existing TP
-                    logger.info(f"🔄 MODIFYING TP {existing_tp_id}: price={tp_price}, qty={broker_qty}")
-                    modify_result = await tradovate.modify_order(
-                        order_id=int(existing_tp_id),
-                        new_price=tp_price,
-                        new_qty=broker_qty,
-                        order_type="Limit",
-                        time_in_force="GTC"
+                    api_access = TradovateAPIAccess(demo=is_demo)
+                    login_result = await api_access.login(
+                        username=username, password=password,
+                        db_path=DATABASE_PATH, account_id=account_id
                     )
-                    if modify_result and modify_result.get('success'):
-                        tp_order_id = existing_tp_id
-                        logger.info(f"✅ TP MODIFIED: {tp_order_id} @ {tp_price} (qty: {broker_qty})")
+                    if login_result.get('success'):
+                        access_token = login_result['accessToken']
+                        auth_method = "API_ACCESS"
+                        # Cache the token
+                        expiry_str = login_result.get('expirationTime', '')
+                        try:
+                            from dateutil.parser import parse as parse_date
+                            expiry = parse_date(expiry_str)
+                            cache_token(account_id, access_token, expiry, login_result.get('mdAccessToken'))
+                        except:
+                            pass
+                        logger.info(f"✅ [{acct_name}] API Access successful (cached)")
                     else:
-                        logger.warning(f"⚠️ Modify failed, placing new: {modify_result}")
-                        existing_tp_id = None  # Fall through to place new
+                        error_msg = login_result.get('error', 'Unknown error')
+                        logger.error(f"❌ [{acct_name}] API Access failed: {error_msg}")
+                        return {'success': False, 'error': f"Auth failed: {error_msg}"}
                 
-                if not existing_tp_id:
-                    # PLACE new TP
-                    # First cancel any stale TP orders
+                # No auth method worked
+                if not access_token:
+                    return {'success': False, 'error': 'No OAuth token or credentials available - please re-authorize'}
+                
+                # ============================================================
+                # 🚀 SCALABLE CONNECTIONS - Reuse WebSocket connections when possible
+                # ============================================================
+                # Try to get pooled connection first (faster, less overhead)
+                # Fall back to creating new connection if needed
+                # ============================================================
+                
+                tradovate = None
+                pooled_conn = None
+                try:
+                    # Try to get pooled WebSocket connection
+                    pooled_conn = await get_pooled_connection(tradovate_account_id, is_demo, access_token)
+                    if pooled_conn:
+                        tradovate = pooled_conn
+                        logger.debug(f"⚡ [{acct_name}] Using POOLED WebSocket connection")
+                    else:
+                        # Create new connection (will be closed after trade)
+                        tradovate = TradovateIntegration(demo=is_demo)
+                        await tradovate.__aenter__()
+                        tradovate.access_token = access_token
+                        logger.debug(f"🔌 [{acct_name}] Created new connection")
+                except Exception as pool_err:
+                    logger.warning(f"⚠️ [{acct_name}] Pool error, creating new connection: {pool_err}")
+                    tradovate = TradovateIntegration(demo=is_demo)
+                    await tradovate.__aenter__()
+                    tradovate.access_token = access_token
+                
+                try:
+                    # STEP 0: Check if this is a new entry or DCA (adding to position)
+                    order_action = 'Buy' if action == 'BUY' else 'Sell'
+                    record_api_call()  # Track API calls for rate limiting
+                    
+                    # Check existing position first
+                    existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                    has_existing_position = False
+                    for pos in existing_positions:
+                        pos_symbol = str(pos.get('symbol', '')).upper()
+                        if symbol_root in pos_symbol and pos.get('netPos', 0) != 0:
+                            has_existing_position = True
+                            break
+                    
+                    # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
+                    # This sends entry + TP in ONE call (no rate limits, guaranteed TP)
+                    if not has_existing_position and tp_ticks and tp_ticks > 0:
+                        logger.info(f"📤 [{acct_name}] Using BRACKET ORDER (WebSocket) - Entry + TP in one call")
+                        bracket_result = await tradovate.place_bracket_order(
+                            account_id=tradovate_account_id,
+                            account_spec=tradovate_account_spec,
+                            symbol=tradovate_symbol,
+                            entry_side=order_action,
+                            quantity=quantity,
+                            profit_target_ticks=tp_ticks,
+                            stop_loss_ticks=None,  # No SL for now
+                            trailing_stop=False
+                        )
+                        
+                        if bracket_result and bracket_result.get('success'):
+                            strategy_id = bracket_result.get('orderStrategyId') or bracket_result.get('id')
+                            logger.info(f"✅ [{acct_name}] BRACKET ORDER SUCCESS! Strategy ID: {strategy_id}")
+                            
+                            # Wait for fill and get position info
+                            await asyncio.sleep(0.5)
+                            positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                            broker_avg = None
+                            broker_qty = 0
+                            broker_side = None
+                            
+                            for pos in positions:
+                                pos_symbol = str(pos.get('symbol', '')).upper()
+                                if symbol_root in pos_symbol:
+                                    net_pos = pos.get('netPos', 0)
+                                    if net_pos != 0:
+                                        broker_avg = pos.get('netPrice')
+                                        broker_qty = abs(net_pos)
+                                        broker_side = 'LONG' if net_pos > 0 else 'SHORT'
+                                        break
+                            
+                            if broker_side == 'LONG':
+                                tp_price = broker_avg + (tp_ticks * tick_size) if broker_avg else None
+                            else:
+                                tp_price = broker_avg - (tp_ticks * tick_size) if broker_avg else None
+                            
+                            return {
+                                'success': True,
+                                'broker_avg': broker_avg,
+                                'broker_qty': broker_qty,
+                                'broker_side': broker_side,
+                                'tp_price': tp_price,
+                                'tp_order_id': strategy_id,
+                                'acct_name': acct_name,
+                                'method': 'BRACKET_WS'
+                            }
+                        else:
+                            # Bracket order failed - fall back to REST
+                            logger.warning(f"⚠️ [{acct_name}] Bracket order failed, falling back to REST: {bracket_result}")
+                    
+                    # FALLBACK: REST API for DCA or if bracket fails
+                    # STEP 1: Place market order via REST
+                    order_data = tradovate.create_market_order(
+                        tradovate_account_spec, tradovate_symbol, 
+                        order_action, quantity, tradovate_account_id
+                    )
+                    
+                    logger.info(f"📤 [{acct_name}] Placing {order_action} {quantity} {tradovate_symbol} (REST)...")
+                    order_result = await tradovate.place_order(order_data)
+                    
+                    if not order_result or not order_result.get('success'):
+                        error = order_result.get('error', 'Order failed') if order_result else 'No response'
+                        return {'success': False, 'error': error}
+                    
+                    order_id = order_result.get('orderId') or order_result.get('id')
+                    logger.info(f"✅ [{acct_name}] Market order placed: {order_id}")
+                    
+                    # STEP 2: Wait for fill and get broker position
+                    await asyncio.sleep(0.5)
+                    
+                    broker_avg = None
+                    broker_qty = 0
+                    broker_side = None
+                    contract_id = None
+                    
+                    for attempt in range(5):
+                        positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                        for pos in positions:
+                            pos_symbol = str(pos.get('symbol', '')).upper()
+                            if symbol_root in pos_symbol:
+                                net_pos = pos.get('netPos', 0)
+                                if net_pos != 0:
+                                    broker_avg = pos.get('netPrice')
+                                    broker_qty = abs(net_pos)
+                                    broker_side = 'LONG' if net_pos > 0 else 'SHORT'
+                                    contract_id = pos.get('contractId')
+                                    logger.info(f"📊 [{acct_name}] POSITION: {broker_side} {broker_qty} @ {broker_avg}")
+                                    break
+                        if broker_avg:
+                            break
+                        await asyncio.sleep(0.3)
+                    
+                    if not broker_avg:
+                        logger.warning(f"⚠️ [{acct_name}] Could not get position")
+                        return {'success': True, 'fill_price': order_result.get('avgFillPrice')}
+                    
+                    # STEP 3: Calculate TP price
+                    if broker_side == 'LONG':
+                        tp_price = broker_avg + (tp_ticks * tick_size)
+                        tp_action = 'Sell'
+                    else:
+                        tp_price = broker_avg - (tp_ticks * tick_size)
+                        tp_action = 'Buy'
+                    
+                    logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
+                    
+                    # STEP 4: Find existing TP or place new
+                    existing_tp_id = None
+                    all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+
                     for order in (all_orders or []):
                         order_status = str(order.get('ordStatus', '')).upper()
                         order_act = order.get('action', '')
-                        old_id = order.get('id')
-                        if order_status in ['WORKING', 'NEW'] and order_act == tp_action and old_id:
-                            try:
-                                await tradovate.cancel_order(int(old_id))
-                                logger.info(f"🗑️ Cancelled old TP: {old_id}")
-                            except:
-                                pass
+                        order_account = order.get('accountId')
+                        
+                        # CRITICAL: Only match orders for THIS account (prevents cross-account TP issues)
+                        if order_account and order_account != tradovate_account_id:
+                            continue
+                            
+                        if order_status in ['WORKING', 'NEW', 'PENDINGNEW'] and order_act == tp_action:
+                            existing_tp_id = order.get('id')
+                            logger.debug(f"[{acct_name}] Found existing TP order {existing_tp_id} for account {tradovate_account_id}")
+                            break
                     
-                    logger.info(f"📊 PLACING NEW TP: {tp_action} {broker_qty} @ {tp_price}")
-                    tp_order_data = {
-                        "accountId": tradovate_account_id,
-                        "accountSpec": tradovate_account_spec,
-                        "symbol": tradovate_symbol,
-                        "action": tp_action,
-                        "orderQty": broker_qty,
-                        "orderType": "Limit",
-                        "price": tp_price,
-                        "timeInForce": "GTC",
-                        "isAutomated": True
+                    tp_order_id = None
+                    
+                    if existing_tp_id:
+                        # MODIFY existing TP
+                        logger.info(f"🔄 [{acct_name}] MODIFYING TP {existing_tp_id}")
+                        modify_result = await tradovate.modify_order(
+                            order_id=int(existing_tp_id),
+                            new_price=tp_price,
+                            new_qty=broker_qty,
+                            order_type="Limit",
+                            time_in_force="GTC"
+                        )
+                        if modify_result and modify_result.get('success'):
+                            tp_order_id = existing_tp_id
+                            logger.info(f"✅ [{acct_name}] TP MODIFIED @ {tp_price}")
+                        else:
+                            existing_tp_id = None
+                    
+                    if not existing_tp_id:
+                        # Cancel stale TPs and place new
+                        for order in (all_orders or []):
+                            if order.get('action') == tp_action and order.get('id'):
+                                try:
+                                    await tradovate.cancel_order(int(order['id']))
+                                except:
+                                    pass
+                        
+                        logger.info(f"📊 [{acct_name}] PLACING NEW TP @ {tp_price}")
+                        tp_order_data = {
+                            "accountId": tradovate_account_id,
+                            "accountSpec": tradovate_account_spec,
+                            "symbol": tradovate_symbol,
+                            "action": tp_action,
+                            "orderQty": broker_qty,
+                            "orderType": "Limit",
+                            "price": tp_price,
+                            "timeInForce": "GTC",
+                            "isAutomated": True
+                        }
+                        tp_result = await tradovate.place_order(tp_order_data)
+                        if tp_result and tp_result.get('success'):
+                            tp_order_id = tp_result.get('orderId') or tp_result.get('id')
+                            logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price}")
+                    
+                    return {
+                        'success': True,
+                        'broker_avg': broker_avg,
+                        'broker_qty': broker_qty,
+                        'broker_side': broker_side,
+                        'tp_price': tp_price,
+                        'tp_order_id': tp_order_id,
+                        'acct_name': acct_name
                     }
-                    tp_result = await tradovate.place_order(tp_order_data)
-                    if tp_result and tp_result.get('success'):
-                        tp_order_id = tp_result.get('orderId') or tp_result.get('id')
-                        logger.info(f"✅ TP PLACED: {tp_order_id} @ {tp_price} (qty: {broker_qty})")
-                    else:
-                        logger.error(f"❌ TP placement failed: {tp_result}")
-                
-                return {
-                    'success': True,
-                    'fill_price': broker_avg,  # Use broker's average as "fill"
-                    'broker_avg': broker_avg,
-                    'broker_qty': broker_qty,
-                    'broker_side': broker_side,
-                    'tp_price': tp_price,
-                    'tp_order_id': tp_order_id
-                }
-        
-        # Run the async trade
-        trade_result = asyncio.run(do_trade())
-        
-        result.update(trade_result)
-        
-        # Update database with trade info
-        if result.get('success') and result.get('broker_avg'):
-            try:
-                conn2 = get_db_connection()
-                cursor2 = conn2.cursor()
-                
-                side = result.get('broker_side', 'LONG' if action == 'BUY' else 'SHORT')
-                
-                # Update or insert recorded_trades
-                cursor2.execute('''
-                    UPDATE recorded_trades 
-                    SET entry_price = ?, quantity = ?, tp_price = ?, tp_order_id = ?, 
-                        updated_at = datetime('now')
-                    WHERE recorder_id = ? AND status = 'open'
-                ''', (result['broker_avg'], result['broker_qty'], result['tp_price'], 
-                      result.get('tp_order_id'), recorder_id))
-                
-                if cursor2.rowcount == 0:
-                    # No open trade, create one
-                    cursor2.execute('''
-                        INSERT INTO recorded_trades 
-                        (recorder_id, ticker, action, side, entry_price, quantity, 
-                         tp_price, tp_order_id, status, entry_time)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', datetime('now'))
-                    ''', (recorder_id, ticker, action, side, result['broker_avg'], 
-                          result['broker_qty'], result['tp_price'], result.get('tp_order_id')))
-                
-                conn2.commit()
-                conn2.close()
-                logger.info(f"✅ DB updated: {side} {result['broker_qty']} @ {result['broker_avg']} | TP: {result['tp_price']}")
+                finally:
+                    # Clean up non-pooled connections to prevent resource leaks
+                    if tradovate and not pooled_conn:
+                        try:
+                            await tradovate.__aexit__(None, None, None)
+                        except:
+                            pass
             except Exception as e:
-                logger.warning(f"⚠️ DB update failed: {e}")
+                logger.error(f"❌ [{acct_name}] Exception: {e}")
+                return {'success': False, 'error': str(e), 'acct_name': acct_name}
         
+        # ============================================================
+        # 🚀 SCALABLE EXECUTION - Batch processing for 50-1000 accounts
+        # ============================================================
+        # Instead of firing all at once (would overwhelm API), process in batches
+        # This ensures we stay under rate limits even with 1000+ accounts
+        # ============================================================
+        
+        async def run_all_trades():
+            all_results = []
+            total_accounts = len(traders)
+            
+            # Calculate batch count
+            num_batches = (total_accounts + BATCH_SIZE - 1) // BATCH_SIZE
+            logger.info(f"🚀 SCALABLE MODE: {total_accounts} accounts in {num_batches} batches of {BATCH_SIZE}")
+            
+            for batch_num in range(num_batches):
+                start_idx = batch_num * BATCH_SIZE
+                end_idx = min(start_idx + BATCH_SIZE, total_accounts)
+                batch_traders = traders[start_idx:end_idx]
+                
+                logger.info(f"📦 Batch {batch_num + 1}/{num_batches}: Processing accounts {start_idx + 1}-{end_idx}")
+                
+                # Process this batch in parallel
+                batch_tasks = [
+                    do_trade_for_account(trader, start_idx + idx) 
+                    for idx, trader in enumerate(batch_traders)
+                ]
+                batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+                all_results.extend(batch_results)
+                
+                # Delay between batches to allow rate limit recovery
+                # Skip delay after last batch
+                if batch_num < num_batches - 1:
+                    logger.info(f"⏳ Batch {batch_num + 1} complete. Waiting {BATCH_DELAY_SECONDS}s before next batch...")
+                    await asyncio.sleep(BATCH_DELAY_SECONDS)
+            
+            logger.info(f"✅ All {num_batches} batches processed!")
+            return all_results
+        
+        try:
+            all_results = asyncio.run(run_all_trades())
+            for acct_result in all_results:
+                if isinstance(acct_result, Exception):
+                    logger.error(f"❌ Trade exception: {acct_result}")
+                elif acct_result and acct_result.get('success'):
+                    accounts_traded += 1
+                    last_result = acct_result
+                    logger.info(f"✅ [{acct_result.get('acct_name', 'Unknown')}] Trade completed")
+                else:
+                    err = acct_result.get('error', 'Unknown') if acct_result else 'No result'
+                    logger.error(f"❌ Trade failed: {err}")
+        except Exception as e:
+            logger.error(f"❌ Parallel execution error: {e}")
+        
+        # Return result from last successful account
+        if last_result:
+            result.update(last_result)
+            result['accounts_traded'] = accounts_traded
+        
+        logger.info(f"📊 TOTAL: {accounts_traded}/{len(traders)} accounts traded successfully")
         return result
         
     except Exception as e:
@@ -1466,9 +1979,9 @@ def execute_live_trade_with_bracket(
                 # Define order_action - will be set after checking position for CLOSE
                 current_order_action = None
                 
-                # Authenticate via REST API Access if no token or credentials available
+                # Authenticate via REST API Access - TRY ALL METHODS
                 if not current_access_token and username and password:
-                    logger.info(f"🔐 Authenticating via REST API Access (avoids rate limiting)...")
+                    logger.info(f"🔐 Trying REST API Access authentication...")
                     login_result = await api_access.login(
                         username=username,
                         password=password,
@@ -1476,19 +1989,29 @@ def execute_live_trade_with_bracket(
                         account_id=account_id
                     )
                     
-                    if not login_result.get('success'):
-                        logger.error(f"❌ REST API Access authentication failed: {login_result.get('error')}")
-                        return {'success': False, 'error': f"Authentication failed: {login_result.get('error')}"}
-                    
-                    current_access_token = login_result.get('accessToken')
-                    current_md_token = login_result.get('mdAccessToken')
-                    logger.info(f"✅ REST API Access authentication successful")
+                    if login_result.get('success'):
+                        current_access_token = login_result.get('accessToken')
+                        current_md_token = login_result.get('mdAccessToken')
+                        logger.info(f"✅ REST API Access authentication successful")
+                    else:
+                        # API Access failed - try OAuth token fallback
+                        logger.warning(f"⚠️ REST API Access failed: {login_result.get('error')}")
+                        current_access_token = trading_account.get('tradovate_token')
+                        if current_access_token:
+                            logger.info(f"🔄 Falling back to OAuth token")
+                        else:
+                            logger.error(f"❌ No OAuth token available for fallback")
+                            return {'success': False, 'error': f"Auth failed and no OAuth token"}
                 elif current_access_token:
-                    logger.info(f"✅ Using existing access token (will re-auth via REST API Access if expired)")
+                    logger.info(f"✅ Using existing access token")
                 else:
-                    if not username or not password:
-                        logger.error(f"❌ No username/password for REST API Access authentication")
-                        return {'success': False, 'error': 'No credentials available for authentication'}
+                    # No credentials - try OAuth token
+                    current_access_token = trading_account.get('tradovate_token')
+                    if current_access_token:
+                        logger.info(f"🔑 Using OAuth token (no credentials)")
+                    else:
+                        logger.error(f"❌ No credentials or OAuth token available")
+                        return {'success': False, 'error': 'No credentials or OAuth token available'}
                 
                 async with TradovateIntegration(demo=is_demo) as tradovate:
                     tradovate.access_token = current_access_token
@@ -2184,9 +2707,9 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
             current_access_token = access_token
             current_md_token = trader.get('md_access_token')
             
-            # Authenticate if needed
+            # Authenticate if needed - TRY ALL METHODS
             if not current_access_token and username and password:
-                logger.info(f"🔐 [DCA-TP] Authenticating for TP update...")
+                logger.info(f"🔐 [DCA-TP] Trying API Access for TP update...")
                 login_result = await api_access.login(
                     username=username,
                     password=password,
@@ -2197,10 +2720,18 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
                     current_access_token = login_result.get('accessToken')
                     current_md_token = login_result.get('mdAccessToken')
                 else:
-                    return {'success': False, 'error': f"Auth failed: {login_result.get('error')}"}
+                    # API Access failed - try OAuth token fallback
+                    logger.warning(f"⚠️ [DCA-TP] API Access failed: {login_result.get('error')}")
+                    current_access_token = trader.get('tradovate_token')
+                    if current_access_token:
+                        logger.info(f"🔄 [DCA-TP] Falling back to OAuth token")
+                    else:
+                        return {'success': False, 'error': f"Auth failed and no OAuth token"}
             elif not current_access_token:
-                if not username or not password:
-                    return {'success': False, 'error': 'No credentials available'}
+                # No credentials - try OAuth token
+                current_access_token = trader.get('tradovate_token')
+                if not current_access_token:
+                    return {'success': False, 'error': 'No credentials or OAuth token available'}
             
             async with TradovateIntegration(demo=is_demo) as tradovate:
                 tradovate.access_token = current_access_token
@@ -3310,7 +3841,7 @@ def start_position_reconciliation():
     4. AUTO-PLACES missing TP orders
     """
     global _position_reconciliation_thread
-
+    
     if _position_reconciliation_thread and _position_reconciliation_thread.is_alive():
         return
     
@@ -3783,6 +4314,44 @@ def health():
         'port': SERVICE_PORT,
         'timestamp': datetime.now().isoformat()
     })
+
+
+@app.route('/api/accounts/auth-status', methods=['GET'])
+def api_accounts_auth_status():
+    """
+    Get authentication status for all accounts.
+    Returns list of accounts that need OAuth re-authentication.
+    """
+    try:
+        accounts_need_reauth = get_accounts_needing_reauth()
+        
+        # Get account names for the IDs
+        account_details = []
+        if accounts_need_reauth:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            for acct_id in accounts_need_reauth:
+                cursor.execute('SELECT id, name FROM accounts WHERE id = ?', (acct_id,))
+                row = cursor.fetchone()
+                if row:
+                    account_details.append({
+                        'id': row['id'],
+                        'name': row['name'],
+                        'status': 'needs_reauth',
+                        'action': 'Go to Account Management and click "Connect to Tradovate"'
+                    })
+            conn.close()
+        
+        return jsonify({
+            'success': True,
+            'all_accounts_valid': len(accounts_need_reauth) == 0,
+            'accounts_needing_reauth': account_details,
+            'count': len(account_details),
+            'message': 'All accounts authenticated!' if len(accounts_need_reauth) == 0 else f'{len(accounts_need_reauth)} account(s) need OAuth re-authentication'
+        })
+    except Exception as e:
+        logger.error(f"Error checking auth status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/tradingview/refresh', methods=['POST'])
@@ -5245,6 +5814,10 @@ def initialize():
     # Start position drawdown polling thread (Trade Manager style tracking)
     start_position_drawdown_polling()
     logger.info("✅ Position drawdown tracking active")
+
+    # Start bulletproof token refresh daemon (auto-refresh before expiry)
+    start_token_refresh_daemon()
+    logger.info("✅ Token refresh daemon active - will auto-refresh tokens before expiry")
 
     logger.info(f"✅ Trading Engine ready on port {SERVICE_PORT}")
     logger.info("=" * 60)

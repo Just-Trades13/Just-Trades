@@ -1103,6 +1103,8 @@ class TradovateIntegration:
         Get orders for an account or all orders.
         If account_id is None, uses /order/list to get all orders (includes order strategies).
         Fallback: if account-scoped fetch returns empty, retry with /order/list to avoid missing working exits.
+        
+        CRITICAL: When using fallback, MUST filter by account_id to avoid cross-account order confusion!
         """
         try:
             async def fetch(url: str) -> List[Dict[str, Any]]:
@@ -1124,7 +1126,18 @@ class TradovateIntegration:
                 if not orders:
                     fallback_url = f"{self.base_url}/order/list"
                     logger.info(f"Account-scoped orders empty, retrying with {fallback_url}")
-                    orders = await fetch(fallback_url)
+                    all_orders = await fetch(fallback_url)
+                    # CRITICAL FIX: Filter to only orders for THIS account!
+                    # Without this, we'd return orders from ALL accounts causing cross-account TP issues
+                    account_id_int = int(account_id) if account_id else None
+                    if account_id_int:
+                        orders = [
+                            o for o in all_orders 
+                            if o.get('accountId') == account_id_int
+                        ]
+                        logger.info(f"Filtered to {len(orders)} orders for account {account_id} (from {len(all_orders)} total)")
+                    else:
+                        orders = all_orders
                 return orders
             else:
                 url = f"{self.base_url}/order/list"

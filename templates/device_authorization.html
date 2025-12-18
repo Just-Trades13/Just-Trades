@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authorize Device - Tradovate</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        h1 { font-size: 28px; margin-bottom: 10px; }
+        h2 { font-size: 20px; margin-bottom: 15px; color: #00d4ff; }
+        p { line-height: 1.6; margin-bottom: 15px; color: #ccc; }
+        .device-id {
+            background: #0a0a15;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+            word-break: break-all;
+            margin: 15px 0;
+            border: 1px solid #00d4ff;
+        }
+        .steps {
+            list-style: none;
+            counter-reset: steps;
+        }
+        .steps li {
+            counter-increment: steps;
+            padding: 15px 15px 15px 50px;
+            position: relative;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .steps li:before {
+            content: counter(steps);
+            position: absolute;
+            left: 10px;
+            top: 15px;
+            background: #00d4ff;
+            color: #000;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #00d4ff, #0099cc);
+            color: #000;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            margin-top: 20px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,212,255,0.3); }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            margin-left: 10px;
+        }
+        .status { padding: 15px; border-radius: 8px; margin-top: 20px; }
+        .status.pending { background: rgba(255,193,7,0.2); border: 1px solid #ffc107; }
+        .status.success { background: rgba(40,167,69,0.2); border: 1px solid #28a745; }
+        .status.error { background: rgba(220,53,69,0.2); border: 1px solid #dc3545; }
+        .copy-btn {
+            background: #00d4ff;
+            color: #000;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .account-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .info-item { background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; }
+        .info-label { font-size: 12px; color: #888; }
+        .info-value { font-size: 16px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🔐 Device Authorization Required</h1>
+            <p>Tradovate requires device verification before API trading can be enabled for this account.</p>
+            
+            <div class="account-info">
+                <div class="info-item">
+                    <div class="info-label">Account</div>
+                    <div class="info-value" id="accountName">Loading...</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Device ID</div>
+                    <div class="info-value" id="deviceIdShort">Loading...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Step-by-Step Authorization</h2>
+            <ol class="steps">
+                <li>
+                    <strong>Open Tradovate Trader</strong><br>
+                    <span style="color: #888;">Log into <a href="https://trader.tradovate.com" target="_blank" style="color: #00d4ff;">trader.tradovate.com</a> in a new browser tab</span>
+                </li>
+                <li>
+                    <strong>Go to Settings → Security & Privacy</strong><br>
+                    <span style="color: #888;">Click the gear icon → Security & Privacy tab</span>
+                </li>
+                <li>
+                    <strong>Enable "Sign In On A Trusted Device"</strong><br>
+                    <span style="color: #888;">This allows device-based authentication</span>
+                </li>
+                <li>
+                    <strong>Click "Test Authorization" below</strong><br>
+                    <span style="color: #888;">We'll send a login request with your Device ID</span>
+                </li>
+                <li>
+                    <strong>Check Your Email</strong><br>
+                    <span style="color: #888;">Tradovate will send an approval email. Click "Approve"</span>
+                </li>
+                <li>
+                    <strong>Complete 2FA if prompted</strong><br>
+                    <span style="color: #888;">Enter your authenticator code or SMS code</span>
+                </li>
+            </ol>
+            
+            <div id="deviceIdSection">
+                <h3 style="margin-top: 20px; color: #00d4ff;">Your Device ID:</h3>
+                <div class="device-id">
+                    <span id="deviceId">Loading...</span>
+                    <button class="copy-btn" onclick="copyDeviceId()">Copy</button>
+                </div>
+            </div>
+            
+            <button class="btn" onclick="testAuthorization()">🔑 Test Authorization</button>
+            <button class="btn btn-secondary" onclick="location.href='/account_management'">← Back to Accounts</button>
+            
+            <div id="status" class="status pending" style="display: none;"></div>
+        </div>
+        
+        <div class="card">
+            <h2>Why is this needed?</h2>
+            <p>Tradovate uses device verification as a security measure. When you first use API trading from a new device, Tradovate requires you to verify that you authorize this device.</p>
+            <p>Once verified, your Device ID becomes "trusted" and API trading will work automatically.</p>
+        </div>
+    </div>
+    
+    <script>
+        const accountId = new URLSearchParams(window.location.search).get('account_id') || '1';
+        let deviceId = '';
+        let accountName = '';
+        
+        async function loadAccountInfo() {
+            try {
+                const resp = await fetch(`/api/account/${accountId}/device-info`);
+                const data = await resp.json();
+                
+                if (data.success) {
+                    deviceId = data.device_id;
+                    accountName = data.account_name;
+                    
+                    document.getElementById('accountName').textContent = accountName;
+                    document.getElementById('deviceId').textContent = deviceId;
+                    document.getElementById('deviceIdShort').textContent = deviceId.substring(0, 12) + '...';
+                } else {
+                    showStatus('error', 'Failed to load account info: ' + data.error);
+                }
+            } catch (e) {
+                showStatus('error', 'Error loading account: ' + e.message);
+            }
+        }
+        
+        async function testAuthorization() {
+            showStatus('pending', '🔄 Testing API authorization...');
+            
+            try {
+                const resp = await fetch(`/api/account/${accountId}/test-api-access`, {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                
+                if (data.success) {
+                    showStatus('success', '✅ SUCCESS! API Access is now working. Device is trusted!');
+                } else if (data.p_captcha) {
+                    showStatus('pending', 
+                        `⏳ Device verification required!<br><br>` +
+                        `<strong>Check your email from Tradovate</strong> and click "Approve" to authorize this device.<br><br>` +
+                        `After approving, click "Test Authorization" again.`
+                    );
+                } else {
+                    showStatus('error', '❌ ' + (data.error || 'Authorization failed'));
+                }
+            } catch (e) {
+                showStatus('error', '❌ Error: ' + e.message);
+            }
+        }
+        
+        function copyDeviceId() {
+            navigator.clipboard.writeText(deviceId);
+            alert('Device ID copied!');
+        }
+        
+        function showStatus(type, message) {
+            const el = document.getElementById('status');
+            el.className = 'status ' + type;
+            el.innerHTML = message;
+            el.style.display = 'block';
+        }
+        
+        loadAccountInfo();
+    </script>
+</body>
+</html>

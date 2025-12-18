@@ -33,6 +33,32 @@ signal_queue = Queue(maxsize=10000)
 BATCH_SIZE = 50  # Process signals in batches for faster DB writes
 BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 
+# ============================================================================
+# 🛡️ BULLETPROOF AUTH TRACKING - Track accounts that need OAuth re-authentication
+# ============================================================================
+_ACCOUNTS_NEED_REAUTH = set()  # Set of account IDs that need manual OAuth re-auth
+_ACCOUNTS_NEED_REAUTH_LOCK = threading.Lock()
+
+def mark_account_needs_reauth(account_id: int):
+    """Mark an account as needing OAuth re-authentication."""
+    with _ACCOUNTS_NEED_REAUTH_LOCK:
+        _ACCOUNTS_NEED_REAUTH.add(account_id)
+
+def clear_account_reauth(account_id: int):
+    """Clear the re-auth flag for an account (after successful OAuth)."""
+    with _ACCOUNTS_NEED_REAUTH_LOCK:
+        _ACCOUNTS_NEED_REAUTH.discard(account_id)
+
+def get_accounts_needing_reauth():
+    """Get list of account IDs that need OAuth re-authentication."""
+    with _ACCOUNTS_NEED_REAUTH_LOCK:
+        return list(_ACCOUNTS_NEED_REAUTH)
+
+def is_account_auth_valid(account_id: int) -> bool:
+    """Check if an account's authentication is valid."""
+    with _ACCOUNTS_NEED_REAUTH_LOCK:
+        return account_id not in _ACCOUNTS_NEED_REAUTH
+
 # WebSocket support for Tradovate market data
 try:
     import websockets
@@ -1454,6 +1480,204 @@ def health():
     
     return jsonify(status), 200 if db_status == "healthy" else 503
 
+
+@app.route('/api/accounts/auth-status')
+def api_accounts_auth_status():
+    """
+    Get authentication status for all accounts.
+    Returns list of accounts that need OAuth re-authentication.
+    Use this to show warnings in the UI when accounts need manual reconnection.
+    """
+    try:
+        accounts_need_reauth = get_accounts_needing_reauth()
+        
+        # Get account names for the IDs
+        account_details = []
+        if accounts_need_reauth:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            for acct_id in accounts_need_reauth:
+                cursor.execute('SELECT id, name FROM accounts WHERE id = ?', (acct_id,))
+                row = cursor.fetchone()
+                if row:
+                    account_details.append({
+                        'id': row['id'] if isinstance(row, dict) else row[0],
+                        'name': row['name'] if isinstance(row, dict) else row[1],
+                        'status': 'needs_reauth',
+                        'action': 'Go to Account Management and click "Connect to Tradovate"'
+                    })
+            conn.close()
+        
+        return jsonify({
+            'success': True,
+            'all_accounts_valid': len(accounts_need_reauth) == 0,
+            'accounts_needing_reauth': account_details,
+            'count': len(account_details),
+            'message': 'All accounts authenticated!' if len(accounts_need_reauth) == 0 else f'{len(accounts_need_reauth)} account(s) need OAuth re-authentication'
+        })
+    except Exception as e:
+        logger.error(f"Error checking auth status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
+# DEVICE AUTHORIZATION ROUTES (Captcha/Device Trust)
+# =============================================================================
+
+@app.route('/device-authorization')
+def device_authorization():
+    """Device authorization page for API Access verification"""
+    return render_template('device_authorization.html')
+
+@app.route('/api/account/<int:account_id>/device-info')
+def get_account_device_info(account_id):
+    """Get device ID and account info for device authorization"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, name, device_id FROM accounts WHERE id = ?', (account_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'success': False, 'error': 'Account not found'})
+        
+        return jsonify({
+            'success': True,
+            'account_id': row['id'],
+            'account_name': row['name'],
+            'device_id': row['device_id'] or f'Just.Trade-{account_id}'
+        })
+    except Exception as e:
+        logger.error(f"Error getting device info: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/account/<int:account_id>/api-credentials', methods=['GET'])
+def get_api_credentials(account_id):
+    """Get API credentials for an account (CID only, not secret)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT api_key FROM accounts WHERE id = ?', (account_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'success': False, 'error': 'Account not found'})
+        
+        return jsonify({
+            'success': True,
+            'api_key': row['api_key'] or ''
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/account/<int:account_id>/api-credentials', methods=['POST'])
+def save_api_credentials(account_id):
+    """Save API credentials (CID and Secret) for an account"""
+    try:
+        data = request.get_json()
+        api_key = data.get('api_key', '').strip()
+        api_secret = data.get('api_secret', '').strip()
+        
+        if not api_key:
+            return jsonify({'success': False, 'error': 'Client ID (CID) is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Update API credentials
+        if api_secret:
+            cursor.execute('UPDATE accounts SET api_key = ?, api_secret = ? WHERE id = ?', 
+                          (api_key, api_secret, account_id))
+        else:
+            # Only update CID if no secret provided (preserve existing secret)
+            cursor.execute('UPDATE accounts SET api_key = ? WHERE id = ?', 
+                          (api_key, account_id))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ API credentials saved for account {account_id}")
+        return jsonify({'success': True, 'message': 'API credentials saved'})
+    except Exception as e:
+        logger.error(f"Error saving API credentials: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/account/<int:account_id>/test-api-access', methods=['POST'])
+def test_api_access(account_id):
+    """Test if API Access works for an account (triggers device verification if needed)"""
+    import aiohttp
+    import asyncio
+    
+    async def do_test():
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, username, password, device_id, environment, api_key, api_secret FROM accounts WHERE id = ?', (account_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return {'success': False, 'error': 'Account not found'}
+        
+        if not row['username'] or not row['password']:
+            return {'success': False, 'error': 'No username/password stored for this account'}
+        
+        device_id = row['device_id'] or f'Just.Trade-{account_id}'
+        is_demo = row['environment'] == 'demo'
+        base_url = "https://demo.tradovateapi.com/v1" if is_demo else "https://live.tradovateapi.com/v1"
+        
+        # Use per-account API key if available (TradeManager's approach!)
+        use_cid = int(row['api_key']) if row['api_key'] else int(os.getenv("TRADOVATE_API_CID", "8949"))
+        use_sec = row['api_secret'] if row['api_secret'] else os.getenv("TRADOVATE_API_SECRET", "c8440ba5-6315-4845-8c69-977651d5c77a")
+        
+        body = {
+            'name': row['username'],
+            'password': row['password'],
+            'appId': 'JustTrades',
+            'appVersion': '1.0',
+            'deviceId': device_id,
+            'cid': use_cid,
+            'sec': use_sec
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{base_url}/auth/accesstokenrequest", json=body) as resp:
+                data = await resp.json()
+                
+                if data.get('p-captcha'):
+                    logger.info(f"Device verification triggered for {row['name']} (device: {device_id})")
+                    return {
+                        'success': False,
+                        'p_captcha': True,
+                        'p_time': data.get('p-time', 60),
+                        'device_id': device_id,
+                        'message': 'Device verification required. Check your email from Tradovate.'
+                    }
+                elif data.get('accessToken'):
+                    logger.info(f"✅ API Access successful for {row['name']} - device is trusted!")
+                    return {
+                        'success': True,
+                        'message': 'API Access is working! Device is trusted.'
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': data.get('error', 'Unknown error'),
+                        'response': data
+                    }
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(do_test())
+        loop.close()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error testing API access: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+
 @app.route('/dashboard')
 def dashboard():
     return render_template('dashboard.html')
@@ -1466,6 +1690,7 @@ def dashboard():
 INSIDER_SERVICE_URL = "http://localhost:8084"
 
 @app.route('/insider-signals')
+@app.route('/insider_signals')
 def insider_signals():
     """Render the Insider Signals tab"""
     return render_template('insider_signals.html')
@@ -1944,6 +2169,10 @@ def oauth_callback():
             """, (access_token, refresh_token, md_access_token, expires_at, account_id))
             conn.commit()
             conn.close()
+            
+            # Clear any reauth flag - account is now authenticated!
+            clear_account_reauth(account_id)
+            logger.info(f"✅ Account {account_id} OAuth successful - cleared reauth flag")
             
             # OAuth token exchange doesn't return mdAccessToken - try to get it via accessTokenRequest
             if not md_access_token and access_token:
@@ -3621,20 +3850,19 @@ def process_webhook_directly(webhook_token):
         else:
             return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
         
-        # Execute the trade with DCA/TP logic
+        # Execute the trade with SIMPLE DCA/TP logic
         logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP Ticks: {tp_ticks}")
         
         try:
-            result = execute_live_trade_with_bracket(
+            # Import the SIMPLE trade function
+            from recorder_service import execute_trade_simple
+            
+            result = execute_trade_simple(
                 recorder_id=recorder_id,
                 action=trade_action,
-                side=side,
                 ticker=ticker,
                 quantity=quantity,
-                fill_price=current_price,
-                tp_ticks=tp_ticks,
-                sl_ticks=0,
-                tick_size=tick_size
+                tp_ticks=tp_ticks
             )
             
             if result.get('success'):
@@ -3644,9 +3872,10 @@ def process_webhook_directly(webhook_token):
                     'action': trade_action,
                     'side': side,
                     'quantity': quantity,
-                    'price': current_price,
+                    'broker_avg': result.get('broker_avg'),
+                    'broker_qty': result.get('broker_qty'),
                     'tp_price': result.get('tp_price'),
-                    'is_dca': result.get('is_dca', False),
+                    'tp_order_id': result.get('tp_order_id'),
                     'result': result
                 })
             else:
@@ -9687,10 +9916,34 @@ def try_refresh_tradovate_token(account_id: int) -> bool:
                 logger.debug(f"Request error at {token_url}: {e}")
                 continue
         
+        # CHECK: Does this account have credentials that will work for trading?
+        # API Access during trades uses username/password (bypasses refresh token issues)
+        try:
+            cursor = conn.cursor()
+            cursor.execute('SELECT username, password FROM accounts WHERE id = ?', (account_id,))
+            creds_row = cursor.fetchone()
+            username = None
+            password = None
+            if creds_row:
+                username = creds_row['username'] if isinstance(creds_row, dict) else creds_row[0]
+                password = creds_row['password'] if isinstance(creds_row, dict) else creds_row[1]
+            
+            if username and password:
+                # Account has credentials - trades will work via API Access
+                conn.close()
+                logger.info(f"⚠️ [{account_name}] Refresh token expired, but has credentials for API Access - trades will still work")
+                # Don't mark as needing reauth - trading will work
+                clear_account_reauth(account_id)
+                return True  # Consider it "refreshed" since trading will work
+        except Exception as e:
+            logger.debug(f"Error checking credentials: {e}")
+        
         conn.close()
-        logger.error(f"❌ CRITICAL: Failed to refresh token for '{account_name}' (ID: {account_id}) - all endpoints failed")
-        logger.error(f"❌ This account will NOT be able to execute trades until token is refreshed!")
+        logger.error(f"❌ CRITICAL: No valid auth for '{account_name}' (ID: {account_id}) - no refresh token AND no credentials")
+        logger.error(f"❌ This account will NOT be able to execute trades!")
         logger.error(f"❌ User must re-authenticate via OAuth to restore connection")
+        # Mark account as needing re-auth (only if no credentials)
+        mark_account_needs_reauth(account_id)
         return False
     except Exception as e:
         logger.error(f"Error refreshing Tradovate token: {e}")
@@ -9941,7 +10194,7 @@ def calculate_avg_price(position):
     net_pos = position.get('netPos', 0)
     if net_pos == 0:
         return 0
-
+    
     if net_pos > 0:
         bought = position.get('bought', 0)
         bought_value = position.get('boughtValue', 0)
@@ -9952,7 +10205,7 @@ def calculate_avg_price(position):
         sold_value = position.get('soldValue', 0)
         if sold > 0:
             return sold_value / sold
-
+    
     return 0
 
 # ============================================================================

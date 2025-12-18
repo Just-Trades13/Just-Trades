@@ -48,6 +48,22 @@
     </div>
 </div>
 
+
+<!-- API Key Modal -->
+<div id="api-key-modal" class="acct-modal" style="display: none;">
+    <div class="acct-modal-content" style="max-width: 500px;">
+        <h2>🔑 API Key Setup</h2>
+        <p style="font-size: 0.9rem; color: #888;">Enter your Tradovate API credentials. <a href="https://trader.tradovate.com" target="_blank" style="color: #00d4ff;">Generate them here</a></p>
+        <input type="text" id="api-key-cid" class="acct-modal-input" placeholder="Client ID (CID)" style="margin-bottom: 10px;">
+        <input type="password" id="api-key-secret" class="acct-modal-input" placeholder="API Secret">
+        <p style="font-size: 0.8rem; color: #666; margin-top: 10px;">Each user needs their own API key for direct API trading without captcha.</p>
+        <div class="acct-modal-actions">
+            <button class="acct-btn acct-btn-outline" onclick="closeApiKeyModal()">Cancel</button>
+            <button class="acct-btn acct-btn-primary" onclick="saveApiKey()">Save API Key</button>
+        </div>
+    </div>
+</div>
+
 <!-- Toast Notification -->
 <div id="acct-toast" class="acct-toast"></div>
 {% endblock %}
@@ -373,6 +389,7 @@
                         <div class="account-actions-inline">
                             <button class="btn-inline btn-refresh-sub" data-account-id="${account.id}">Refresh</button>
                             <button class="btn-inline btn-reconnect" data-account-id="${account.id}">Reconnect</button>
+                            <button class="btn-inline btn-apikey" data-account-id="${account.id}">API Key</button>
                         </div>
                         <div class="tradovate-logo">
                             <i class="material-icons" style="color: #5e72e4;">trending_up</i>
@@ -558,6 +575,57 @@
         setTimeout(() => {
             toast.className = 'acct-toast';
         }, 3000);
+    }
+    
+    
+    // API Key Modal Functions
+    let pendingApiKeyAcctId = null;
+    
+    function showApiKeyModal(accountId) {
+        pendingApiKeyAcctId = accountId;
+        document.getElementById('api-key-cid').value = '';
+        document.getElementById('api-key-secret').value = '';
+        document.getElementById('api-key-modal').style.display = 'flex';
+        
+        // Load existing values
+        fetch(`/api/account/${accountId}/api-credentials`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.api_key) document.getElementById('api-key-cid').value = data.api_key;
+            });
+    }
+    
+    function closeApiKeyModal() {
+        document.getElementById('api-key-modal').style.display = 'none';
+        pendingApiKeyAcctId = null;
+    }
+    
+    async function saveApiKey() {
+        const cid = document.getElementById('api-key-cid').value.trim();
+        const secret = document.getElementById('api-key-secret').value.trim();
+        
+        if (!cid) {
+            showAcctToast('Please enter Client ID (CID)', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/account/${pendingApiKeyAcctId}/api-credentials`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: cid, api_secret: secret })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                showAcctToast('API Key saved! Try trading now.', 'success');
+                closeApiKeyModal();
+            } else {
+                showAcctToast(data.error || 'Failed to save', 'error');
+            }
+        } catch (e) {
+            showAcctToast('Error: ' + e.message, 'error');
+        }
     }
     
     // Close modals on escape key
