@@ -3582,6 +3582,54 @@ def api_update_trader(trader_id):
                 logger.info(f"✅ Updated recorder {recorder_id} with risk settings")
         
         conn.commit()
+        
+        # ============================================================
+        # 🔄 CRITICAL: Refresh tokens when strategy is ENABLED
+        # ============================================================
+        # When user comes back after being away, tokens may have expired.
+        # Force refresh all linked account tokens to ensure trading works.
+        # ============================================================
+        if 'enabled' in data and data['enabled']:
+            logger.info(f"🔄 Strategy enabled - validating/refreshing account tokens...")
+            try:
+                # Get accounts linked to this trader
+                cursor.execute('''
+                    SELECT enabled_accounts FROM traders WHERE id = ?
+                ''', (trader_id,))
+                trader_row = cursor.fetchone()
+                if trader_row and trader_row[0]:
+                    enabled_accounts = json.loads(trader_row[0]) if isinstance(trader_row[0], str) else trader_row[0]
+                    account_ids = set()
+                    for acct in enabled_accounts:
+                        if 'account_id' in acct:
+                            account_ids.add(acct['account_id'])
+                    
+                    logger.info(f"🔄 Refreshing tokens for {len(account_ids)} account(s)...")
+                    for account_id in account_ids:
+                        # Force token refresh (bypasses rate limit for this critical path)
+                        try:
+                            refreshed = try_refresh_tradovate_token(account_id)
+                            if refreshed:
+                                logger.info(f"✅ Token refreshed for account {account_id}")
+                            else:
+                                # Check if token is still valid
+                                cursor.execute('SELECT token_expires_at FROM accounts WHERE id = ?', (account_id,))
+                                exp_row = cursor.fetchone()
+                                if exp_row and exp_row[0]:
+                                    from datetime import datetime
+                                    try:
+                                        exp_time = datetime.strptime(str(exp_row[0]).split('.')[0], '%Y-%m-%d %H:%M:%S')
+                                        if exp_time > datetime.now():
+                                            logger.info(f"✅ Token for account {account_id} still valid (expires {exp_row[0]})")
+                                        else:
+                                            logger.warning(f"⚠️ Token for account {account_id} EXPIRED - user may need to re-authenticate")
+                                    except:
+                                        pass
+                        except Exception as refresh_err:
+                            logger.warning(f"⚠️ Could not refresh token for account {account_id}: {refresh_err}")
+            except Exception as e:
+                logger.warning(f"⚠️ Error during token refresh on enable: {e}")
+        
         conn.close()
         
         logger.info(f"Updated trader {trader_id}: {list(data.keys())}")
@@ -8268,11 +8316,17 @@ async def connect_tradovate_market_data_websocket():
                 get_valid_tradovate_token(account_id)  # Auto-refresh if needed
             await asyncio.sleep(5)
         except Exception as e:
-            logger.error(f"Market data WebSocket error: {e}. Reconnecting in 10 seconds...")
-            # Validate tokens before reconnecting
-            if account_id:
-                get_valid_tradovate_token(account_id)  # Auto-refresh if needed
-            await asyncio.sleep(10)
+            error_str = str(e)
+            # Check for rate limiting (429)
+            if '429' in error_str:
+                logger.error(f"Market data WebSocket rate limited (429). Backing off for 120 seconds...")
+                await asyncio.sleep(120)  # Long backoff for rate limiting
+            else:
+                logger.error(f"Market data WebSocket error: {e}. Reconnecting in 30 seconds...")
+                # Validate tokens before reconnecting
+                if account_id:
+                    get_valid_tradovate_token(account_id)  # Auto-refresh if needed
+                await asyncio.sleep(30)  # Increased from 10 to 30 seconds
 
 async def subscribe_to_market_data_symbols(ws):
     """Subscribe to market data quotes for symbols we have positions in AND open recorder trades"""

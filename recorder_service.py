@@ -125,6 +125,12 @@ def clear_cached_token(account_id: int):
     with _TOKEN_CACHE_LOCK:
         _TOKEN_CACHE.pop(account_id, None)
 
+def clear_all_cached_tokens():
+    """Clear all cached tokens - useful when re-enabling strategies after being away."""
+    with _TOKEN_CACHE_LOCK:
+        _TOKEN_CACHE.clear()
+        logger.info("🧹 Cleared all cached tokens")
+
 # ============================================================================
 # WebSocket Connection Pool - Keep persistent connections (TradeManager's secret)
 # ============================================================================
