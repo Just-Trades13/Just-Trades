@@ -694,22 +694,39 @@ def execute_trade_simple(
                 
                 # PRIORITY 2: Use OAuth token from database (like TradersPost)
                 # This is the scalable approach - tokens obtained via OAuth never trigger captcha
+                # BUT we must check if token is expired first!
                 if not access_token:
                     oauth_token = trader.get('tradovate_token')
-                    if oauth_token:
+                    token_expires = trader.get('token_expires')
+                    
+                    # Check if token is expired
+                    token_is_valid = False
+                    if oauth_token and token_expires:
+                        try:
+                            from dateutil.parser import parse as parse_date
+                            from datetime import datetime, timedelta
+                            expiry = parse_date(token_expires) if isinstance(token_expires, str) else token_expires
+                            # Make timezone-naive for comparison
+                            if expiry.tzinfo:
+                                expiry = expiry.replace(tzinfo=None)
+                            # Token is valid if it expires more than 2 minutes from now
+                            if expiry > datetime.utcnow() + timedelta(minutes=2):
+                                token_is_valid = True
+                                cache_token(account_id, oauth_token, expiry)
+                            else:
+                                logger.warning(f"⚠️ [{acct_name}] OAuth token expired (expires: {expiry})")
+                        except Exception as e:
+                            # If we can't parse expiry, assume token might be valid
+                            logger.warning(f"⚠️ [{acct_name}] Could not check token expiry: {e}")
+                            token_is_valid = True  # Try it anyway
+                    elif oauth_token:
+                        # No expiry info, assume token might be valid
+                        token_is_valid = True
+                    
+                    if oauth_token and token_is_valid:
                         access_token = oauth_token
                         auth_method = "OAUTH"
                         logger.info(f"🔑 [{acct_name}] Using OAuth token (scalable - no rate limit)")
-                        # Cache this token for future trades
-                        try:
-                            # Try to get expiry from DB token_expires field
-                            token_expires = trader.get('token_expires')
-                            if token_expires:
-                                from dateutil.parser import parse as parse_date
-                                expiry = parse_date(token_expires) if isinstance(token_expires, str) else token_expires
-                                cache_token(account_id, access_token, expiry)
-                        except:
-                            pass  # Use token anyway even if we can't cache with expiry
                 
                 # PRIORITY 3: API Access - ONLY if no OAuth token (last resort)
                 # This can trigger captcha and rate limiting - avoid for scale!

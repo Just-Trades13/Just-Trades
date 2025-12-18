@@ -9819,19 +9819,24 @@ def get_valid_tradovate_token(account_id: int) -> str | None:
 
 def try_refresh_tradovate_token(account_id: int) -> bool:
     """
-    Try to refresh the Tradovate access token using the refresh token.
-    Uses LIVE endpoint first (less rate-limited), then falls back to DEMO.
+    Try to refresh the Tradovate access token.
+    
+    CRITICAL FIX (Dec 18, 2025): Tradovate doesn't use traditional refresh tokens!
+    Instead, you renew the ACCESS TOKEN using Authorization header.
+    See: https://community.tradovate.com/t/token-expiry/5276
+    
+    Uses environment-specific endpoint based on account settings.
     Includes rate limit protection to avoid 429 errors.
     """
     global _last_refresh_attempt
-    
-    # Rate limit protection: don't try more than once per 60 seconds per account
+
+    # Rate limit protection: don't try more than once per 30 seconds per account
     last_attempt = _last_refresh_attempt.get(account_id, 0)
-    if time.time() - last_attempt < 60:
+    if time.time() - last_attempt < 30:
         logger.debug(f"Skipping refresh for account {account_id} - tried recently")
         return False
     _last_refresh_attempt[account_id] = time.time()
-    
+
     try:
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
@@ -9841,34 +9846,44 @@ def try_refresh_tradovate_token(account_id: int) -> bool:
             FROM accounts WHERE id = ?
         ''', (account_id,))
         account = cursor.fetchone()
-        
-        if not account or not account['tradovate_refresh_token']:
+
+        if not account or not account['tradovate_token']:
             conn.close()
+            logger.warning(f"No access token found for account {account_id}")
             return False
-        
-        refresh_token = account['tradovate_refresh_token']
+
+        current_token = account['tradovate_token']
         account_name = account['name'] or f'Account {account_id}'
-        
-        # Try LIVE endpoint first (less rate-limited), then DEMO
-        # This matches the OAuth token exchange fix from Dec 4, 2025
-        token_endpoints = [
-            'https://live.tradovateapi.com/v1/auth/renewAccessToken',
-            'https://demo.tradovateapi.com/v1/auth/renewAccessToken'
-        ]
-        
+        env = account['environment'] or 'demo'
+
+        # Use environment-specific endpoint (demo tokens only work on demo, live on live)
+        if env == 'live':
+            token_endpoints = [
+                'https://live.tradovateapi.com/v1/auth/renewAccessToken'
+            ]
+        else:
+            token_endpoints = [
+                'https://demo.tradovateapi.com/v1/auth/renewAccessToken'
+            ]
+
         for token_url in token_endpoints:
             try:
+                # CRITICAL: Use Authorization header with current access token!
+                # NOT json body with refreshToken (that's the old broken way)
                 response = requests.post(
                     token_url,
-                    headers={'Content-Type': 'application/json'},
-                    json={'refreshToken': refresh_token},
+                    headers={
+                        'Authorization': f'Bearer {current_token}',
+                        'Content-Type': 'application/json'
+                    },
                     timeout=10
                 )
                 
                 if response.status_code == 200:
                     data = response.json()
                     new_access_token = data.get('accessToken') or data.get('access_token')
-                    new_refresh_token = data.get('refreshToken') or data.get('refresh_token') or refresh_token
+                    # Keep the existing refresh token (Tradovate renewal doesn't return a new one)
+                    existing_refresh_token = account['tradovate_refresh_token']
                     
                     if new_access_token:
                         # Calculate actual expiration time from Tradovate response
@@ -9899,7 +9914,7 @@ def try_refresh_tradovate_token(account_id: int) -> bool:
                                 tradovate_refresh_token = ?,
                                 token_expires_at = ?
                             WHERE id = ?
-                        ''', (new_access_token, new_refresh_token, expires_at, account_id))
+                        ''', (new_access_token, existing_refresh_token, expires_at, account_id))
                         conn.commit()
                         conn.close()
                         logger.info(f"✅ Successfully refreshed token for '{account_name}' via {token_url.split('/')[2]}")
@@ -10211,17 +10226,21 @@ def calculate_avg_price(position):
 # ============================================================================
 # PROACTIVE TOKEN REFRESH - Prevents session expiration throughout the day
 # ============================================================================
-# This thread runs every 30 minutes and refreshes any Tradovate tokens that
-# will expire within 2 hours. This prevents the need to re-login frequently.
+# This thread runs every 5 minutes and refreshes any Tradovate tokens that
+# will expire within 30 minutes. This keeps connections alive INDEFINITELY.
 # ============================================================================
 
 def proactive_token_refresh():
     """
     Background thread that proactively refreshes Tradovate tokens BEFORE they expire.
-    Runs every 30 minutes and refreshes tokens expiring within 2 hours.
-    This keeps sessions alive throughout the trading day without manual re-login.
+    
+    CRITICAL FIX (Dec 18, 2025): 
+    - Changed from 30 min to 5 min intervals (tokens can expire in 90 min!)
+    - Changed from 2 hour to 30 min threshold (refresh well before expiry)
+    
+    This keeps sessions alive INDEFINITELY without manual re-login.
     """
-    logger.info("🔐 Proactive token refresh thread started (checks every 30 minutes)")
+    logger.info("🔐 Proactive token refresh thread started (checks every 5 minutes)")
     
     # Wait 60 seconds before first check to let server fully start
     time.sleep(60)
@@ -10232,8 +10251,9 @@ def proactive_token_refresh():
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Find accounts with tokens that expire within 2 hours
+            # Find accounts with tokens that expire within 30 minutes
             # Also refresh tokens where we don't know the expiration (NULL)
+            # More aggressive refresh keeps connections alive INDEFINITELY
             cursor.execute('''
                 SELECT id, name, tradovate_token, tradovate_refresh_token, 
                        token_expires_at, environment
@@ -10242,7 +10262,7 @@ def proactive_token_refresh():
                   AND tradovate_refresh_token IS NOT NULL
                   AND (
                       token_expires_at IS NULL 
-                      OR token_expires_at < datetime('now', '+2 hours')
+                      OR token_expires_at < datetime('now', '+30 minutes')
                   )
             ''')
             accounts_to_refresh = cursor.fetchall()
@@ -10272,13 +10292,13 @@ def proactive_token_refresh():
                     # Small delay between accounts to avoid rate limiting
                     time.sleep(2)
             else:
-                logger.info("🔐 All Tradovate tokens are fresh (not expiring within 2 hours)")
+                logger.info("🔐 All Tradovate tokens are fresh (not expiring within 30 minutes)")
                 
         except Exception as e:
             logger.error(f"Error in proactive token refresh: {e}")
-        
-        # Check every 30 minutes
-        time.sleep(30 * 60)
+
+        # Check every 5 minutes (more aggressive to keep tokens fresh)
+        time.sleep(5 * 60)
 
 def emit_realtime_updates():
     """Emit real-time updates (throttled to avoid rate limits)"""
