@@ -160,10 +160,19 @@ def get_db_connection():
     
     # SQLite for local development (or fallback)
     _using_postgres = False
-    conn = sqlite3.connect('just_trades.db', timeout=30)
-    conn.row_factory = sqlite3.Row
-    # Initialize tables if they don't exist (prevents "no such table" errors)
-    _init_sqlite_tables(conn)
+    print("🔴 FALLING BACK TO SQLITE - PostgreSQL not available")
+    try:
+        conn = sqlite3.connect('just_trades.db', timeout=30)
+        conn.row_factory = sqlite3.Row
+        print("📁 SQLite connection opened: just_trades.db")
+        # Initialize tables if they don't exist (prevents "no such table" errors)
+        _init_sqlite_tables(conn)
+        print("✅ SQLite tables initialized successfully")
+    except Exception as e:
+        print(f"❌ SQLite initialization failed: {e}")
+        import traceback
+        print(traceback.format_exc())
+        raise
     return conn
 
 class DictRow:
