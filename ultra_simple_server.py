@@ -2840,7 +2840,7 @@ def dashboard():
 # Proxies to insider_service.py running on port 8084
 # =============================================================================
 
-INSIDER_SERVICE_URL = "http://localhost:8084"
+INSIDER_SERVICE_URL = os.getenv("INSIDER_SERVICE_URL", "http://localhost:8084")
 
 @app.route('/insider-signals')
 @app.route('/insider_signals')
