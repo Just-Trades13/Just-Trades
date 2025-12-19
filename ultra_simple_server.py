@@ -6716,18 +6716,19 @@ def traders_list():
     # Require login if auth is available
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
-               r.name as recorder_name,
-               a.name as account_name
-        FROM traders t
-        LEFT JOIN recorders r ON t.recorder_id = r.id
-        LEFT JOIN accounts a ON t.account_id = a.id
-        ORDER BY t.created_at DESC
-    ''')
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
+                   r.name as recorder_name,
+                   a.name as account_name
+            FROM traders t
+            LEFT JOIN recorders r ON t.recorder_id = r.id
+            LEFT JOIN accounts a ON t.account_id = a.id
+            ORDER BY t.created_at DESC
+        ''')
     
     rows = cursor.fetchall()
     traders = []
@@ -6756,14 +6757,19 @@ def traders_list():
             'account_name': display_account,
             'enabled': bool(row_dict.get('enabled'))
         })
-    
-    conn.close()
-    
-    return render_template(
-        'traders.html',
-        mode='list',
-        traders=traders
-    )
+        
+        conn.close()
+        
+        return render_template(
+            'traders.html',
+            mode='list',
+            traders=traders
+        )
+    except Exception as e:
+        logger.error(f"Error in traders_list: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return f"Error loading traders: {str(e)}", 500
 
 @app.route('/my-traders')
 def my_traders():
@@ -6773,56 +6779,74 @@ def my_traders():
 @app.route('/traders/new')
 def traders_new():
     """Create new trader page - select recorder and accounts"""
-    conn = get_db_connection()
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    # Get recorders with their IDs for the dropdown
-    cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
-    recorders = [{'id': row['id'], 'name': row['name'], 'strategy_type': row['strategy_type']} for row in cursor.fetchall()]
-    
-    # Get accounts with their tradovate subaccounts for account routing table
-    cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
-    accounts = []
-    for row in cursor.fetchall():
-        parent_id = row['id']
-        parent_name = row['name']
-        # Parse tradovate_accounts JSON if available
-        if row['tradovate_accounts']:
-            try:
-                tradovate_accts = json.loads(row['tradovate_accounts'])
-                for acct in tradovate_accts:
-                    if isinstance(acct, dict) and acct.get('name'):
-                        env_label = "🟠 DEMO" if acct.get('is_demo') else "🟢 LIVE"
-                        accounts.append({
-                            'id': parent_id,
-                            'name': acct['name'],
-                            'display_name': f"{env_label} - {acct['name']} ({parent_name})",
-                            'subaccount_id': acct.get('id'),
-                            'is_demo': acct.get('is_demo', False)
-                        })
-            except:
-                pass
-        # Fallback to account name if no tradovate_accounts
-        if not accounts:
-            accounts.append({
-                'id': parent_id,
-                'name': parent_name,
-                'display_name': parent_name,
-                'subaccount_id': None,
-                'is_demo': False
-            })
-    
-    conn.close()
-    
-    return render_template(
-        'traders.html',
-        mode='builder',
-        header_title='Create New Trader',
-        header_cta='Create Trader',
-        recorders=recorders,
-        accounts=accounts
-    )
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get recorders with their IDs for the dropdown
+        cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
+        rows = cursor.fetchall()
+        recorders = []
+        for row in rows:
+            if hasattr(row, 'keys'):
+                recorders.append({'id': row['id'], 'name': row['name'], 'strategy_type': row.get('strategy_type', 'Futures')})
+            else:
+                recorders.append({'id': row[0], 'name': row[1], 'strategy_type': row[2] if len(row) > 2 else 'Futures'})
+        
+        # Get accounts with their tradovate subaccounts for account routing table
+        cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+        accounts = []
+        for row in cursor.fetchall():
+            if hasattr(row, 'keys'):
+                parent_id = row['id']
+                parent_name = row['name']
+                tradovate_accounts_json = row.get('tradovate_accounts')
+            else:
+                parent_id = row[0]
+                parent_name = row[1]
+                tradovate_accounts_json = row[2] if len(row) > 2 else None
+            
+            # Parse tradovate_accounts JSON if available
+            if tradovate_accounts_json:
+                try:
+                    tradovate_accts = json.loads(tradovate_accounts_json)
+                    for acct in tradovate_accts:
+                        if isinstance(acct, dict) and acct.get('name'):
+                            env_label = "🟠 DEMO" if acct.get('is_demo') else "🟢 LIVE"
+                            accounts.append({
+                                'id': parent_id,
+                                'name': acct['name'],
+                                'display_name': f"{env_label} - {acct['name']} ({parent_name})",
+                                'subaccount_id': acct.get('id'),
+                                'is_demo': acct.get('is_demo', False)
+                            })
+                except:
+                    pass
+            # Fallback to account name if no tradovate_accounts
+            if not accounts:
+                accounts.append({
+                    'id': parent_id,
+                    'name': parent_name,
+                    'display_name': parent_name,
+                    'subaccount_id': None,
+                    'is_demo': False
+                })
+        
+        conn.close()
+        
+        return render_template(
+            'traders.html',
+            mode='builder',
+            header_title='Create New Trader',
+            header_cta='Create Trader',
+            recorders=recorders,
+            accounts=accounts
+        )
+    except Exception as e:
+        logger.error(f"Error in traders_new: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return f"Error loading new trader page: {str(e)}", 500
 
 @app.route('/traders/<int:trader_id>')
 def traders_edit(trader_id):
