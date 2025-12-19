@@ -8633,11 +8633,6 @@ def traders_edit(trader_id):
                     pass
         
         conn.close()
-    except Exception as e:
-        logger.error(f"Error loading trader: {e}")
-        if 'conn' in locals():
-            conn.close()
-        return redirect('/traders')
         
         return render_template(
             'traders.html',
