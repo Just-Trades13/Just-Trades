@@ -689,7 +689,8 @@ def execute_trade_simple(
                         seen_subaccounts.add(subaccount_id)
                         
                         # Get credentials from accounts table
-                        cursor.execute('SELECT tradovate_token, username, password FROM accounts WHERE id = ?', (acct_id,))
+                        placeholder = '%s' if is_postgres else '?'
+                        cursor.execute(f'SELECT tradovate_token, username, password FROM accounts WHERE id = {placeholder}', (acct_id,))
                         creds_row = cursor.fetchone()
                         
                         if creds_row:
