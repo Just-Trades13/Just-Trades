@@ -15361,9 +15361,10 @@ def auto_flat_after_cutoff_worker():
                     logger.info(f"🕐 [{recorder_name}] At cutoff time ({cutoff_time}) - checking for open positions")
                     
                     # Check for open positions
-                    cursor.execute('''
+                    placeholder = '%s' if is_using_postgres() else '?'
+                    cursor.execute(f'''
                         SELECT id, ticker, side, quantity FROM recorded_trades
-                        WHERE recorder_id = ? AND status = 'open'
+                        WHERE recorder_id = {placeholder} AND status = 'open'
                     ''', (recorder_id,))
                     open_trades = cursor.fetchall()
                     
@@ -15371,22 +15372,14 @@ def auto_flat_after_cutoff_worker():
                         logger.info(f"🔄 [{recorder_name}] Found {len(open_trades)} open trades - AUTO-FLATTENING")
                         
                         # Get trader info for closing
-                        if is_using_postgres():
-                            cursor.execute('''
-                                SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id
-                                FROM traders t
-                                JOIN accounts a ON t.account_id = a.id
-                                WHERE t.recorder_id = %s AND t.enabled = true
-                                LIMIT 1
-                            ''', (recorder_id,))
-                        else:
-                            cursor.execute('''
-                                SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id
-                                FROM traders t
-                                JOIN accounts a ON t.account_id = a.id
-                                WHERE t.recorder_id = ? AND t.enabled = 1
-                                LIMIT 1
-                            ''', (recorder_id,))
+                        enabled_val = 'true' if is_using_postgres() else '1'
+                        cursor.execute(f'''
+                            SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id
+                            FROM traders t
+                            JOIN accounts a ON t.account_id = a.id
+                            WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
+                            LIMIT 1
+                        ''', (recorder_id,))
                         trader_row = cursor.fetchone()
                         
                         if trader_row:
