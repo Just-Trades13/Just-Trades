@@ -6976,13 +6976,13 @@ def process_webhook_directly(webhook_token):
         if signal_cooldown > 0:
             if is_postgres:
                 cursor.execute(f'''
-                    SELECT MAX(timestamp) FROM recorded_signals 
-                    WHERE recorder_id = %s AND timestamp > NOW() - INTERVAL '{signal_cooldown} seconds'
+                    SELECT MAX(created_at) FROM recorded_signals 
+                    WHERE recorder_id = %s AND created_at > NOW() - INTERVAL '{signal_cooldown} seconds'
                 ''', (recorder_id,))
             else:
                 cursor.execute('''
-                    SELECT MAX(timestamp) FROM recorded_signals 
-                    WHERE recorder_id = ? AND timestamp > datetime('now', ?)
+                    SELECT MAX(created_at) FROM recorded_signals 
+                    WHERE recorder_id = ? AND created_at > datetime('now', ?)
                 ''', (recorder_id, f'-{signal_cooldown} seconds'))
             last_signal = cursor.fetchone()
             if last_signal and last_signal[0]:
@@ -6998,12 +6998,12 @@ def process_webhook_directly(webhook_token):
             if is_postgres:
                 cursor.execute('''
                     SELECT COUNT(*) FROM recorded_signals 
-                    WHERE recorder_id = %s AND DATE(timestamp) = CURRENT_DATE
+                    WHERE recorder_id = %s AND DATE(created_at) = CURRENT_DATE
                 ''', (recorder_id,))
             else:
                 cursor.execute('''
                     SELECT COUNT(*) FROM recorded_signals 
-                    WHERE recorder_id = ? AND DATE(timestamp) = DATE('now')
+                    WHERE recorder_id = ? AND DATE(created_at) = DATE('now')
                 ''', (recorder_id,))
             signal_count = cursor.fetchone()[0] or 0
             if signal_count >= max_signals:
@@ -7050,11 +7050,18 @@ def process_webhook_directly(webhook_token):
             if signal_number % add_delay != 0:
                 logger.warning(f"🚫 [{recorder_name}] Signal delay BLOCKED: Signal #{signal_number} (executing every {add_delay})")
                 # Still record the signal but don't execute
-                timestamp_fn = 'NOW()' if is_postgres else "datetime('now')"
-                cursor.execute(f'''
-                    INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, timestamp, executed)
-                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 0)
-                ''', (recorder_id, action, ticker, price, quantity))
+                # For PostgreSQL: created_at has DEFAULT, no need to insert it
+                if is_postgres:
+                    cursor.execute(f'''
+                        INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, processed)
+                        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, false)
+                    ''', (recorder_id, action, ticker, price, quantity))
+                else:
+                    timestamp_fn = "datetime('now')"
+                    cursor.execute(f'''
+                        INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, created_at, processed)
+                        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 0)
+                    ''', (recorder_id, action, ticker, price, quantity))
                 conn.commit()
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Signal delay ({signal_number} mod {add_delay} != 0)'}), 200
@@ -7064,11 +7071,18 @@ def process_webhook_directly(webhook_token):
         # 📊 RECORD THE SIGNAL (after filters pass)
         # ============================================================
         try:
-            timestamp_fn = 'NOW()' if is_postgres else "datetime('now')"
-            cursor.execute(f'''
-                INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, timestamp, executed)
-                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 1)
-            ''', (recorder_id, action, ticker, price, quantity))
+            # For PostgreSQL: created_at has DEFAULT, no need to insert it
+            if is_postgres:
+                cursor.execute(f'''
+                    INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, processed)
+                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, true)
+                ''', (recorder_id, action, ticker, price, quantity))
+            else:
+                timestamp_fn = "datetime('now')"
+                cursor.execute(f'''
+                    INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, created_at, processed)
+                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 1)
+                ''', (recorder_id, action, ticker, price, quantity))
             conn.commit()
         except Exception as e:
             logger.warning(f"Could not record signal: {e}")
