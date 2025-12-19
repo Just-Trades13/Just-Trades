@@ -132,31 +132,41 @@ def get_db_connection():
     
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
         # PostgreSQL for production
-        try:
-            import psycopg2
-            import psycopg2.pool
-            from psycopg2.extras import RealDictCursor
-            
-            db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-            
-            # Initialize pool if not exists
-            if _pg_pool is None:
-                _pg_pool = psycopg2.pool.ThreadedConnectionPool(2, 20, dsn=db_url)
-                print("✅ PostgreSQL connection pool initialized")
-                _using_postgres = True
-                # Create tables on first connection
-                _init_postgres_tables()
-            
-            conn = _pg_pool.getconn()
-            # Make it act like sqlite3 with row_factory
-            conn.cursor_factory = RealDictCursor
-            return PostgresConnectionWrapper(conn, _pg_pool)
-        except ImportError:
-            print("⚠️ psycopg2 not installed, falling back to SQLite")
-            _using_postgres = False
-        except Exception as e:
-            print(f"⚠️ PostgreSQL connection failed: {e}, falling back to SQLite")
-            _using_postgres = False
+        import psycopg2
+        import psycopg2.pool
+        from psycopg2.extras import RealDictCursor
+        
+        db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+        
+        # Try up to 3 times to get a PostgreSQL connection
+        for attempt in range(3):
+            try:
+                # Initialize pool if not exists
+                if _pg_pool is None:
+                    _pg_pool = psycopg2.pool.ThreadedConnectionPool(2, 20, dsn=db_url)
+                    print("✅ PostgreSQL connection pool initialized")
+                    _using_postgres = True
+                    # Create tables on first connection
+                    _init_postgres_tables()
+                
+                conn = _pg_pool.getconn()
+                # Test the connection is alive
+                conn.cursor().execute("SELECT 1")
+                # Make it act like sqlite3 with row_factory
+                conn.cursor_factory = RealDictCursor
+                return PostgresConnectionWrapper(conn, _pg_pool)
+            except Exception as e:
+                print(f"⚠️ PostgreSQL connection attempt {attempt + 1} failed: {e}")
+                # Reset pool on failure so we can retry fresh
+                if _pg_pool is not None:
+                    try:
+                        _pg_pool.closeall()
+                    except:
+                        pass
+                    _pg_pool = None
+                if attempt == 2:  # Last attempt failed
+                    print("❌ All PostgreSQL connection attempts failed, falling back to SQLite")
+                    _using_postgres = False
     
     # SQLite for local development (or fallback)
     _using_postgres = False
