@@ -6725,54 +6725,60 @@ def traders_list():
     # Require login if auth is available
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
-               r.name as recorder_name,
-               a.name as account_name
-        FROM traders t
-        LEFT JOIN recorders r ON t.recorder_id = r.id
-        LEFT JOIN accounts a ON t.account_id = a.id
-        ORDER BY t.created_at DESC
-    ''')
-    
-    rows = cursor.fetchall()
-    traders = []
-    columns = ['id', 'enabled', 'subaccount_name', 'is_demo', 'recorder_name', 'account_name']
-    
-    for row in rows:
-        if hasattr(row, 'keys'):
-            row_dict = dict(row)
-        else:
-            row_dict = dict(zip(columns[:len(row)], row))
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        is_demo = bool(row_dict.get('is_demo')) if row_dict.get('is_demo') is not None else None
-        env_label = "🟠 DEMO" if is_demo else "🟢 LIVE" if is_demo is not None else ""
-        account_name = row_dict.get('account_name') or 'Unknown'
-        subaccount_name = row_dict.get('subaccount_name')
+        cursor.execute('''
+            SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
+                   r.name as recorder_name,
+                   a.name as account_name
+            FROM traders t
+            LEFT JOIN recorders r ON t.recorder_id = r.id
+            LEFT JOIN accounts a ON t.account_id = a.id
+            ORDER BY t.created_at DESC
+        ''')
         
-        if subaccount_name:
-            display_account = f"{account_name} {env_label} ({subaccount_name})"
-        else:
-            display_account = account_name
+        rows = cursor.fetchall()
+        traders = []
+        columns = ['id', 'enabled', 'subaccount_name', 'is_demo', 'recorder_name', 'account_name']
         
-        traders.append({
-            'id': row_dict.get('id'),
-            'recorder_name': row_dict.get('recorder_name') or 'Unknown',
-            'strategy_type': row_dict.get('strategy_type', 'Futures'),
-            'account_name': display_account,
-            'enabled': bool(row_dict.get('enabled'))
-        })
-    
-    conn.close()
-    
-    return render_template(
-        'traders.html',
-        mode='list',
-        traders=traders
-    )
+        for row in rows:
+            if hasattr(row, 'keys'):
+                row_dict = dict(row)
+            else:
+                row_dict = dict(zip(columns[:len(row)], row))
+            
+            is_demo = bool(row_dict.get('is_demo')) if row_dict.get('is_demo') is not None else None
+            env_label = "🟠 DEMO" if is_demo else "🟢 LIVE" if is_demo is not None else ""
+            account_name = row_dict.get('account_name') or 'Unknown'
+            subaccount_name = row_dict.get('subaccount_name')
+            
+            if subaccount_name:
+                display_account = f"{account_name} {env_label} ({subaccount_name})"
+            else:
+                display_account = account_name
+            
+            traders.append({
+                'id': row_dict.get('id'),
+                'recorder_name': row_dict.get('recorder_name') or 'Unknown',
+                'strategy_type': row_dict.get('strategy_type', 'Futures'),
+                'account_name': display_account,
+                'enabled': bool(row_dict.get('enabled'))
+            })
+        
+        conn.close()
+        
+        return render_template(
+            'traders.html',
+            mode='list',
+            traders=traders
+        )
+    except Exception as e:
+        logger.error(f"Error in traders_list: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return f"<h1>Error loading traders</h1><pre>{str(e)}</pre>", 500
 
 @app.route('/my-traders')
 def my_traders():
@@ -6782,56 +6788,77 @@ def my_traders():
 @app.route('/traders/new')
 def traders_new():
     """Create new trader page - select recorder and accounts"""
-    conn = get_db_connection()
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    # Get recorders with their IDs for the dropdown
-    cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
-    recorders = [{'id': row['id'], 'name': row['name'], 'strategy_type': row['strategy_type']} for row in cursor.fetchall()]
-    
-    # Get accounts with their tradovate subaccounts for account routing table
-    cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
-    accounts = []
-    for row in cursor.fetchall():
-        parent_id = row['id']
-        parent_name = row['name']
-        # Parse tradovate_accounts JSON if available
-        if row['tradovate_accounts']:
-            try:
-                tradovate_accts = json.loads(row['tradovate_accounts'])
-                for acct in tradovate_accts:
-                    if isinstance(acct, dict) and acct.get('name'):
-                        env_label = "🟠 DEMO" if acct.get('is_demo') else "🟢 LIVE"
-                        accounts.append({
-                            'id': parent_id,
-                            'name': acct['name'],
-                            'display_name': f"{env_label} - {acct['name']} ({parent_name})",
-                            'subaccount_id': acct.get('id'),
-                            'is_demo': acct.get('is_demo', False)
-                        })
-            except:
-                pass
-        # Fallback to account name if no tradovate_accounts
-        if not accounts:
-            accounts.append({
-                'id': parent_id,
-                'name': parent_name,
-                'display_name': parent_name,
-                'subaccount_id': None,
-                'is_demo': False
-            })
-    
-    conn.close()
-    
-    return render_template(
-        'traders.html',
-        mode='builder',
-        header_title='Create New Trader',
-        header_cta='Create Trader',
-        recorders=recorders,
-        accounts=accounts
-    )
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get recorders with their IDs for the dropdown
+        cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
+        recorders = []
+        for row in cursor.fetchall():
+            # Handle both dict-style and tuple-style rows
+            if hasattr(row, 'get'):
+                recorders.append({'id': row.get('id'), 'name': row.get('name'), 'strategy_type': row.get('strategy_type', 'Futures')})
+            elif hasattr(row, '__getitem__'):
+                recorders.append({'id': row['id'], 'name': row['name'], 'strategy_type': row.get('strategy_type', 'Futures') if hasattr(row, 'get') else 'Futures'})
+            else:
+                recorders.append({'id': row[0], 'name': row[1], 'strategy_type': row[2] if len(row) > 2 else 'Futures'})
+        
+        # Get accounts with their tradovate subaccounts for account routing table
+        cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+        accounts = []
+        for row in cursor.fetchall():
+            # Handle both dict-style and tuple-style rows
+            if hasattr(row, 'get'):
+                parent_id = row.get('id')
+                parent_name = row.get('name')
+                tradovate_json = row.get('tradovate_accounts')
+            else:
+                parent_id = row['id'] if hasattr(row, '__getitem__') else row[0]
+                parent_name = row['name'] if hasattr(row, '__getitem__') else row[1]
+                tradovate_json = row['tradovate_accounts'] if hasattr(row, '__getitem__') else (row[2] if len(row) > 2 else None)
+            
+            # Parse tradovate_accounts JSON if available
+            if tradovate_json:
+                try:
+                    tradovate_accts = json.loads(tradovate_json)
+                    for acct in tradovate_accts:
+                        if isinstance(acct, dict) and acct.get('name'):
+                            env_label = "🟠 DEMO" if acct.get('is_demo') else "🟢 LIVE"
+                            accounts.append({
+                                'id': parent_id,
+                                'name': acct['name'],
+                                'display_name': f"{env_label} - {acct['name']} ({parent_name})",
+                                'subaccount_id': acct.get('id'),
+                                'is_demo': acct.get('is_demo', False)
+                            })
+                except:
+                    pass
+            # Fallback to account name if no tradovate_accounts parsed
+            if not accounts or (accounts and accounts[-1].get('id') != parent_id):
+                accounts.append({
+                    'id': parent_id,
+                    'name': parent_name,
+                    'display_name': parent_name,
+                    'subaccount_id': None,
+                    'is_demo': False
+                })
+        
+        conn.close()
+        
+        return render_template(
+            'traders.html',
+            mode='builder',
+            header_title='Create New Trader',
+            header_cta='Create Trader',
+            recorders=recorders,
+            accounts=accounts
+        )
+    except Exception as e:
+        logger.error(f"Error in traders_new: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return f"<h1>Error loading page</h1><pre>{str(e)}</pre>", 500
 
 @app.route('/traders/<int:trader_id>')
 def traders_edit(trader_id):
