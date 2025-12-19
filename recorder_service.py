@@ -647,64 +647,71 @@ def execute_trade_simple(
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Get trader with enabled_accounts JSON field
+        # Get ALL traders linked to this recorder (multi-user support)
         cursor.execute('''
             SELECT t.id, t.enabled_accounts, t.subaccount_id, t.subaccount_name, t.is_demo,
                    a.tradovate_token, a.username, a.password, a.id as account_id
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = ? AND t.enabled = 1
-            LIMIT 1
         ''', (recorder_id,))
-        trader_row = cursor.fetchone()
+        trader_rows = cursor.fetchall()
         
-        if not trader_row:
+        if not trader_rows:
             conn.close()
             result['error'] = 'No trader linked'
             logger.warning(f"⚠️ No trader linked to recorder {recorder_id}")
             return result
         
-        trader_dict = dict(trader_row)
-        enabled_accounts_raw = trader_dict.get('enabled_accounts')
-        
-        # Parse enabled_accounts JSON to get ALL accounts to trade on
+        # Build list of ALL accounts to trade on from ALL traders
         traders = []
-        if enabled_accounts_raw and enabled_accounts_raw != '[]':
-            try:
-                enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
-                logger.info(f"📋 Found {len(enabled_accounts)} account(s) in enabled_accounts JSON")
-                
-                for acct in enabled_accounts:
-                    acct_id = acct.get('account_id')
-                    subaccount_id = acct.get('subaccount_id')
-                    subaccount_name = acct.get('subaccount_name') or acct.get('account_name')
-                    is_demo = acct.get('is_demo', True)
-                    
-                    # Get credentials from accounts table
-                    cursor.execute('SELECT tradovate_token, username, password FROM accounts WHERE id = ?', (acct_id,))
-                    creds_row = cursor.fetchone()
-                    
-                    if creds_row:
-                        creds = dict(creds_row)
-                        traders.append({
-                            'subaccount_id': subaccount_id,
-                            'subaccount_name': subaccount_name,
-                            'is_demo': is_demo,
-                            'tradovate_token': creds.get('tradovate_token'),
-                            'username': creds.get('username'),
-                            'password': creds.get('password'),
-                            'account_id': acct_id
-                        })
-                        logger.info(f"  ✅ Added account: {subaccount_name} (ID: {subaccount_id})")
-                    else:
-                        logger.warning(f"  ⚠️ No credentials for account_id {acct_id}")
-            except Exception as e:
-                logger.error(f"❌ Error parsing enabled_accounts: {e}")
+        seen_subaccounts = set()  # Prevent duplicates
         
-        # Fallback: if no enabled_accounts, use the legacy single account
-        if not traders:
-            logger.info(f"📋 No enabled_accounts JSON, using legacy single account")
-            traders = [trader_dict]
+        for trader_row in trader_rows:
+            trader_dict = dict(trader_row)
+            enabled_accounts_raw = trader_dict.get('enabled_accounts')
+            
+            # Check if this trader has enabled_accounts JSON (multi-account feature)
+            if enabled_accounts_raw and enabled_accounts_raw != '[]':
+                try:
+                    enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
+                    
+                    for acct in enabled_accounts:
+                        acct_id = acct.get('account_id')
+                        subaccount_id = acct.get('subaccount_id')
+                        subaccount_name = acct.get('subaccount_name') or acct.get('account_name')
+                        is_demo = acct.get('is_demo', True)
+                        
+                        # Skip duplicates
+                        if subaccount_id in seen_subaccounts:
+                            continue
+                        seen_subaccounts.add(subaccount_id)
+                        
+                        # Get credentials from accounts table
+                        cursor.execute('SELECT tradovate_token, username, password FROM accounts WHERE id = ?', (acct_id,))
+                        creds_row = cursor.fetchone()
+                        
+                        if creds_row:
+                            creds = dict(creds_row)
+                            traders.append({
+                                'subaccount_id': subaccount_id,
+                                'subaccount_name': subaccount_name,
+                                'is_demo': is_demo,
+                                'tradovate_token': creds.get('tradovate_token'),
+                                'username': creds.get('username'),
+                                'password': creds.get('password'),
+                                'account_id': acct_id
+                            })
+                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id})")
+                except Exception as e:
+                    logger.error(f"❌ Error parsing enabled_accounts: {e}")
+            else:
+                # Use the trader's own subaccount (legacy single-account mode)
+                subaccount_id = trader_dict.get('subaccount_id')
+                if subaccount_id and subaccount_id not in seen_subaccounts:
+                    seen_subaccounts.add(subaccount_id)
+                    traders.append(trader_dict)
+                    logger.info(f"  ✅ Added trader: {trader_dict.get('subaccount_name')} (ID: {subaccount_id})")
         
         conn.close()
         logger.info(f"📋 Found {len(traders)} account(s) to trade on")
