@@ -4029,16 +4029,25 @@ def connect_account(account_id):
 
         client_id = DEFAULT_CLIENT_ID  # Always use 8699
 
-        # Build redirect URI - use Railway URL if deployed, otherwise localhost
-        # Check for Railway deployment first
+        # Build redirect URI - check Railway, then ngrok, then localhost
         railway_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
         if railway_url:
             redirect_uri = f'https://{railway_url}/api/oauth/callback'
             logger.info(f"Using Railway redirect_uri: {redirect_uri}")
         else:
-            # Local development - use localhost
-            redirect_uri = 'http://localhost:8082/api/oauth/callback'
-            logger.info(f"Using localhost redirect_uri: {redirect_uri}")
+            # Check for ngrok URL file (local dev with ngrok)
+            try:
+                with open('ngrok_url.txt', 'r') as f:
+                    ngrok_url = f.read().strip()
+                    if ngrok_url and ngrok_url.startswith('http'):
+                        redirect_uri = f'{ngrok_url.rstrip("/")}/api/oauth/callback'
+                        logger.info(f"Using ngrok redirect_uri: {redirect_uri}")
+                    else:
+                        redirect_uri = 'http://localhost:8082/api/oauth/callback'
+                        logger.info(f"Using localhost redirect_uri: {redirect_uri}")
+            except FileNotFoundError:
+                redirect_uri = 'http://localhost:8082/api/oauth/callback'
+                logger.info(f"Using localhost redirect_uri: {redirect_uri}")
         
         # Build OAuth URL - Tradovate OAuth endpoint (TradersPost pattern)
         # TradersPost uses: https://trader.tradovate.com/oauth with scope=All
@@ -4098,7 +4107,16 @@ def oauth_callback():
         if railway_url:
             redirect_uri = f'https://{railway_url}/api/oauth/callback'
         else:
-            redirect_uri = 'http://localhost:8082/api/oauth/callback'
+            # Check for ngrok URL file (local dev with ngrok)
+            try:
+                with open('ngrok_url.txt', 'r') as f:
+                    ngrok_url = f.read().strip()
+                    if ngrok_url and ngrok_url.startswith('http'):
+                        redirect_uri = f'{ngrok_url.rstrip("/")}/api/oauth/callback'
+                    else:
+                        redirect_uri = 'http://localhost:8082/api/oauth/callback'
+            except FileNotFoundError:
+                redirect_uri = 'http://localhost:8082/api/oauth/callback'
         
         # Exchange authorization code for access token
         # Try LIVE endpoint first (demo often rate-limited), then fallback to DEMO
@@ -5169,14 +5187,14 @@ def api_get_recorders():
             if search and user_id:
                 cursor.execute('''
                     SELECT * FROM recorders
-                    WHERE name LIKE %s AND user_id = %s
+                    WHERE name LIKE %s AND (user_id = %s OR user_id IS NULL)
                     ORDER BY created_at DESC
                     LIMIT %s OFFSET %s
                 ''', (f'%{search}%', user_id, per_page, offset))
             elif user_id:
                 cursor.execute('''
                     SELECT * FROM recorders
-                    WHERE user_id = %s
+                    WHERE (user_id = %s OR user_id IS NULL)
                     ORDER BY created_at DESC
                     LIMIT %s OFFSET %s
                 ''', (user_id, per_page, offset))
@@ -5238,21 +5256,21 @@ def api_get_recorders():
                 recorder['tp_targets'] = []
             recorders.append(recorder)
         
-        # Get total count with user filter - STRICT: only user's own recorders
+        # Get total count with user filter - includes shared recorders (user_id IS NULL)
         if is_postgres:
             if user_id and search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s AND user_id = %s', (f'%{search}%', user_id))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s AND (user_id = %s OR user_id IS NULL)', (f'%{search}%', user_id))
             elif user_id:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = %s', (user_id,))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (user_id = %s OR user_id IS NULL)', (user_id,))
             elif search:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s', (f'%{search}%',))
             else:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders')
         elif USER_AUTH_AVAILABLE and is_logged_in():
             if search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND user_id = ?', (f'%{search}%', user_id))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND (user_id = ? OR user_id IS NULL)', (f'%{search}%', user_id))
             else:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = ?', (user_id,))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (user_id = ? OR user_id IS NULL)', (user_id,))
         else:
             if search:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ?', (f'%{search}%',))
@@ -6058,11 +6076,13 @@ def api_create_trader():
             cursor.execute('''
                 INSERT INTO traders (
                     recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
-                    max_contracts, user_id
+                    initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
+                    user_id, enabled_accounts
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
-            ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo, True,
-                  initial_position_size, current_user_id))
+                VALUES (%s, %s, %s, %s, %s, true, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+            ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo,
+                  initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
+                  current_user_id, None))
             result = cursor.fetchone()
             if result:
                 trader_id = result.get('id') if isinstance(result, dict) else result[0]
@@ -6107,9 +6127,11 @@ def api_update_trader(trader_id):
         
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
         
         # Check trader exists
-        cursor.execute('SELECT id FROM traders WHERE id = ?', (trader_id,))
+        cursor.execute(f'SELECT id FROM traders WHERE id = {placeholder}', (trader_id,))
         if not cursor.fetchone():
             conn.close()
             return jsonify({'success': False, 'error': 'Trader not found'}), 404
@@ -6120,17 +6142,19 @@ def api_update_trader(trader_id):
         
         # Update enabled status if provided
         if 'enabled' in data:
-            enabled = 1 if data['enabled'] else 0
-            updates.append('enabled = ?')
+            enabled = True if is_postgres else (1 if data['enabled'] else 0)
+            if is_postgres:
+                enabled = data['enabled']
+            updates.append(f'enabled = {placeholder}')
             params.append(enabled)
         
         # Update risk settings if provided
         if 'initial_position_size' in data:
-            updates.append('initial_position_size = ?')
+            updates.append(f'initial_position_size = {placeholder}')
             params.append(int(data['initial_position_size']))
         
         if 'add_position_size' in data:
-            updates.append('add_position_size = ?')
+            updates.append(f'add_position_size = {placeholder}')
             params.append(int(data['add_position_size']))
         
         if 'tp_targets' in data:
@@ -6138,23 +6162,23 @@ def api_update_trader(trader_id):
             # Convert to JSON string if it's a list
             if isinstance(tp_targets, list):
                 tp_targets = json.dumps(tp_targets)
-            updates.append('tp_targets = ?')
+            updates.append(f'tp_targets = {placeholder}')
             params.append(tp_targets)
         
         if 'sl_enabled' in data:
-            updates.append('sl_enabled = ?')
-            params.append(1 if data['sl_enabled'] else 0)
+            updates.append(f'sl_enabled = {placeholder}')
+            params.append(data['sl_enabled'] if is_postgres else (1 if data['sl_enabled'] else 0))
         
         if 'sl_amount' in data:
-            updates.append('sl_amount = ?')
+            updates.append(f'sl_amount = {placeholder}')
             params.append(float(data['sl_amount']))
         
         if 'sl_units' in data:
-            updates.append('sl_units = ?')
+            updates.append(f'sl_units = {placeholder}')
             params.append(data['sl_units'])
         
         if 'max_daily_loss' in data:
-            updates.append('max_daily_loss = ?')
+            updates.append(f'max_daily_loss = {placeholder}')
             params.append(float(data['max_daily_loss']))
         
         # Update account routing if provided
@@ -6165,19 +6189,19 @@ def api_update_trader(trader_id):
             if isinstance(enabled_accounts, list):
                 enabled_accounts = json.dumps(enabled_accounts)
                 logger.info(f"  - Converted to JSON: {enabled_accounts}")
-            updates.append('enabled_accounts = ?')
+            updates.append(f'enabled_accounts = {placeholder}')
             params.append(enabled_accounts)
             logger.info(f"  - Will update enabled_accounts field")
         
         # Execute update if there are fields to update (with retry for db locks)
         if updates:
             params.append(trader_id)
-            query = f"UPDATE traders SET {', '.join(updates)} WHERE id = ?"
+            query = f"UPDATE traders SET {', '.join(updates)} WHERE id = {placeholder}"
             for attempt in range(5):
                 try:
                     cursor.execute(query, params)
                     break
-                except sqlite3.OperationalError as e:
+                except Exception as e:
                     if 'locked' in str(e) and attempt < 4:
                         import time
                         time.sleep(0.2 * (attempt + 1))
@@ -6186,7 +6210,7 @@ def api_update_trader(trader_id):
         
         # ALSO update the linked RECORDER with risk settings
         # (The trading engine reads from the recorder, not the trader)
-        cursor.execute('SELECT recorder_id FROM traders WHERE id = ?', (trader_id,))
+        cursor.execute(f'SELECT recorder_id FROM traders WHERE id = {placeholder}', (trader_id,))
         recorder_row = cursor.fetchone()
         if recorder_row:
             recorder_id = recorder_row[0]
@@ -6194,59 +6218,60 @@ def api_update_trader(trader_id):
             recorder_params = []
             
             if 'initial_position_size' in data:
-                recorder_updates.append('initial_position_size = ?')
+                recorder_updates.append(f'initial_position_size = {placeholder}')
                 recorder_params.append(int(data['initial_position_size']))
             
             if 'add_position_size' in data:
-                recorder_updates.append('add_position_size = ?')
+                recorder_updates.append(f'add_position_size = {placeholder}')
                 recorder_params.append(int(data['add_position_size']))
             
             if 'tp_targets' in data:
                 tp_targets = data['tp_targets']
                 if isinstance(tp_targets, list):
                     tp_targets = json.dumps(tp_targets)
-                recorder_updates.append('tp_targets = ?')
+                recorder_updates.append(f'tp_targets = {placeholder}')
                 recorder_params.append(tp_targets)
             
             if 'tp_units' in data:
-                recorder_updates.append('tp_units = ?')
+                recorder_updates.append(f'tp_units = {placeholder}')
                 recorder_params.append(data['tp_units'])
             
             if 'sl_enabled' in data:
-                recorder_updates.append('sl_enabled = ?')
-                recorder_params.append(1 if data['sl_enabled'] else 0)
+                recorder_updates.append(f'sl_enabled = {placeholder}')
+                recorder_params.append(data['sl_enabled'] if is_postgres else (1 if data['sl_enabled'] else 0))
             
             if 'sl_amount' in data:
-                recorder_updates.append('sl_amount = ?')
+                recorder_updates.append(f'sl_amount = {placeholder}')
                 recorder_params.append(float(data['sl_amount']))
             
             if 'sl_units' in data:
-                recorder_updates.append('sl_units = ?')
+                recorder_updates.append(f'sl_units = {placeholder}')
                 recorder_params.append(data['sl_units'])
             
             if 'sl_type' in data:
-                recorder_updates.append('sl_type = ?')
+                recorder_updates.append(f'sl_type = {placeholder}')
                 recorder_params.append(data['sl_type'])
             
             if 'avg_down_enabled' in data:
-                recorder_updates.append('avg_down_enabled = ?')
-                recorder_params.append(1 if data['avg_down_enabled'] else 0)
+                recorder_updates.append(f'avg_down_enabled = {placeholder}')
+                recorder_params.append(data['avg_down_enabled'] if is_postgres else (1 if data['avg_down_enabled'] else 0))
             
             if 'avg_down_amount' in data:
-                recorder_updates.append('avg_down_amount = ?')
+                recorder_updates.append(f'avg_down_amount = {placeholder}')
                 recorder_params.append(int(data['avg_down_amount']))
             
             if 'avg_down_point' in data:
-                recorder_updates.append('avg_down_point = ?')
+                recorder_updates.append(f'avg_down_point = {placeholder}')
                 recorder_params.append(float(data['avg_down_point']))
             
             if 'avg_down_units' in data:
-                recorder_updates.append('avg_down_units = ?')
+                recorder_updates.append(f'avg_down_units = {placeholder}')
                 recorder_params.append(data['avg_down_units'])
             
             if recorder_updates:
                 recorder_params.append(recorder_id)
-                recorder_query = f"UPDATE recorders SET {', '.join(recorder_updates)}, updated_at = datetime('now') WHERE id = ?"
+                timestamp_fn = 'NOW()' if is_postgres else "datetime('now')"
+                recorder_query = f"UPDATE recorders SET {', '.join(recorder_updates)}, updated_at = {timestamp_fn} WHERE id = {placeholder}"
                 cursor.execute(recorder_query, recorder_params)
                 logger.info(f"✅ Updated recorder {recorder_id} with risk settings")
         
@@ -6262,8 +6287,8 @@ def api_update_trader(trader_id):
             logger.info(f"🔄 Strategy enabled - validating/refreshing account tokens...")
             try:
                 # Get accounts linked to this trader
-                cursor.execute('''
-                    SELECT enabled_accounts FROM traders WHERE id = ?
+                cursor.execute(f'''
+                    SELECT enabled_accounts FROM traders WHERE id = {placeholder}
                 ''', (trader_id,))
                 trader_row = cursor.fetchone()
                 if trader_row and trader_row[0]:
@@ -6282,7 +6307,7 @@ def api_update_trader(trader_id):
                                 logger.info(f"✅ Token refreshed for account {account_id}")
                             else:
                                 # Check if token is still valid
-                                cursor.execute('SELECT token_expires_at FROM accounts WHERE id = ?', (account_id,))
+                                cursor.execute(f'SELECT token_expires_at FROM accounts WHERE id = {placeholder}', (account_id,))
                                 exp_row = cursor.fetchone()
                                 if exp_row and exp_row[0]:
                                     from datetime import datetime
@@ -6319,14 +6344,16 @@ def api_delete_trader(trader_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
         
         # Check trader exists
-        cursor.execute('SELECT id FROM traders WHERE id = ?', (trader_id,))
+        cursor.execute(f'SELECT id FROM traders WHERE id = {placeholder}', (trader_id,))
         if not cursor.fetchone():
             conn.close()
             return jsonify({'success': False, 'error': 'Trader not found'}), 404
         
-        cursor.execute('DELETE FROM traders WHERE id = ?', (trader_id,))
+        cursor.execute(f'DELETE FROM traders WHERE id = {placeholder}', (trader_id,))
         conn.commit()
         conn.close()
         
@@ -8160,12 +8187,12 @@ def traders_new():
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
         
-        # Get recorders with their IDs for the dropdown - STRICT: only user's own recorders
+        # Get recorders with their IDs for the dropdown - includes shared recorders (user_id IS NULL)
         if user_id:
             if is_postgres:
-                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE user_id = %s ORDER BY name', (user_id,))
+                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE (user_id = %s OR user_id IS NULL) ORDER BY name', (user_id,))
             else:
-                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE user_id = ? ORDER BY name', (user_id,))
+                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE (user_id = ? OR user_id IS NULL) ORDER BY name', (user_id,))
         else:
             # Not logged in - show nothing
             cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE 1=0')
@@ -8274,7 +8301,8 @@ def traders_edit(trader_id):
             current_user_id = get_current_user_id()
         
         # Get the trader with its recorder info (CRITICAL: include all recorder settings for risk management)
-        cursor.execute('''
+        placeholder = '%s' if is_postgres else '?'
+        cursor.execute(f'''
             SELECT t.*, 
                    r.name as recorder_name, r.strategy_type, r.symbol,
                    r.initial_position_size as r_initial_position_size,
@@ -8294,7 +8322,7 @@ def traders_edit(trader_id):
             FROM traders t
             JOIN recorders r ON t.recorder_id = r.id
             JOIN accounts a ON t.account_id = a.id
-            WHERE t.id = ?
+            WHERE t.id = {placeholder}
         ''', (trader_id,))
         trader_row = cursor.fetchone()
         
@@ -8376,12 +8404,17 @@ def traders_edit(trader_id):
             logger.warning(traceback.format_exc())
             enabled_accounts = []
         
-        # Get all accounts with subaccounts for the routing table
-        is_postgres = is_using_postgres()
-        if is_postgres:
-            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
+        # Get all accounts with subaccounts for the routing table (only user's accounts)
+        if current_user_id:
+            if is_postgres:
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true AND user_id = %s', (current_user_id,))
+            else:
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1 AND user_id = ?', (current_user_id,))
         else:
-            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+            if is_postgres:
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
+            else:
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
         accounts = []
         for row in cursor.fetchall():
             parent_id = row['id']
