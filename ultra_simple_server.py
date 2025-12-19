@@ -6353,7 +6353,7 @@ def api_update_trader(trader_id):
         
         if 'sl_enabled' in data:
             updates.append(f'sl_enabled = {placeholder}')
-            params.append(data['sl_enabled'] if is_postgres else (1 if data['sl_enabled'] else 0))
+            params.append(bool(data['sl_enabled']) if is_postgres else (1 if data['sl_enabled'] else 0))
         
         if 'sl_amount' in data:
             updates.append(f'sl_amount = {placeholder}')
