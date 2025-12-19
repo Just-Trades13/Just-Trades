@@ -6,6 +6,9 @@ alembic==1.13.1
 requests==2.31.0
 feedparser==6.0.10
 python-dotenv==1.0.0
+beautifulsoup4==4.12.2
+lxml==5.1.0
+pytz==2024.1
 
 # Production Database (PostgreSQL)
 psycopg2-binary==2.9.9
