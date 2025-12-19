@@ -2827,21 +2827,168 @@ def dashboard():
 # Integrated directly - no separate service needed
 # =============================================================================
 
-# Import insider service functions
+# Initialize insider tables for PostgreSQL/SQLite
+def _init_insider_tables():
+    """Create insider tables if they don't exist (works with both SQLite and PostgreSQL)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        if is_postgres:
+            # PostgreSQL table creation
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS insider_filings (
+                    id SERIAL PRIMARY KEY,
+                    accession_number TEXT UNIQUE,
+                    form_type TEXT,
+                    ticker TEXT,
+                    company_name TEXT,
+                    insider_name TEXT,
+                    insider_title TEXT,
+                    transaction_type TEXT,
+                    shares INTEGER,
+                    price REAL,
+                    total_value REAL,
+                    ownership_change_percent REAL,
+                    shares_owned_after REAL,
+                    filing_date TEXT,
+                    transaction_date TEXT,
+                    filing_url TEXT,
+                    raw_data TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS insider_signals (
+                    id SERIAL PRIMARY KEY,
+                    filing_id INTEGER,
+                    ticker TEXT,
+                    signal_score INTEGER,
+                    insider_name TEXT,
+                    insider_role TEXT,
+                    transaction_type TEXT,
+                    dollar_value REAL,
+                    reason_flags TEXT,
+                    is_highlighted INTEGER DEFAULT 0,
+                    is_conviction INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS insider_poll_status (
+                    id INTEGER PRIMARY KEY,
+                    last_poll_time TEXT,
+                    last_filing_date TEXT,
+                    filings_processed INTEGER DEFAULT 0,
+                    errors_count INTEGER DEFAULT 0,
+                    last_error TEXT
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS insider_watchlist (
+                    id SERIAL PRIMARY KEY,
+                    watch_type TEXT NOT NULL,
+                    watch_value TEXT NOT NULL,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(watch_type, watch_value)
+                )
+            ''')
+            # Initialize poll status if not exists
+            cursor.execute('SELECT COUNT(*) FROM insider_poll_status')
+            if cursor.fetchone()[0] == 0:
+                cursor.execute('INSERT INTO insider_poll_status (id, last_poll_time, filings_processed) VALUES (1, %s, 0)', (datetime.now().isoformat(),))
+        else:
+            # SQLite table creation
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS insider_filings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    accession_number TEXT UNIQUE,
+                    form_type TEXT,
+                    ticker TEXT,
+                    company_name TEXT,
+                    insider_name TEXT,
+                    insider_title TEXT,
+                    transaction_type TEXT,
+                    shares INTEGER,
+                    price REAL,
+                    total_value REAL,
+                    ownership_change_percent REAL,
+                    shares_owned_after REAL,
+                    filing_date TEXT,
+                    transaction_date TEXT,
+                    filing_url TEXT,
+                    raw_data TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS insider_signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filing_id INTEGER,
+                    ticker TEXT,
+                    signal_score INTEGER,
+                    insider_name TEXT,
+                    insider_role TEXT,
+                    transaction_type TEXT,
+                    dollar_value REAL,
+                    reason_flags TEXT,
+                    is_highlighted INTEGER DEFAULT 0,
+                    is_conviction INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS insider_poll_status (
+                    id INTEGER PRIMARY KEY,
+                    last_poll_time TEXT,
+                    last_filing_date TEXT,
+                    filings_processed INTEGER DEFAULT 0,
+                    errors_count INTEGER DEFAULT 0,
+                    last_error TEXT
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS insider_watchlist (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    watch_type TEXT NOT NULL,
+                    watch_value TEXT NOT NULL,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(watch_type, watch_value)
+                )
+            ''')
+            # Initialize poll status if not exists
+            cursor.execute('SELECT COUNT(*) FROM insider_poll_status')
+            if cursor.fetchone()[0] == 0:
+                cursor.execute('INSERT INTO insider_poll_status (id, last_poll_time, filings_processed) VALUES (1, ?, 0)', (datetime.now().isoformat(),))
+        
+        conn.commit()
+        conn.close()
+        print("✅ Insider tables initialized")
+        return True
+    except Exception as e:
+        print(f"⚠️ Insider tables init failed: {e}")
+        return False
+
+# Import insider service functions for polling
+INSIDER_SERVICE_AVAILABLE = False
 try:
     import insider_service
-    INSIDER_SERVICE_AVAILABLE = True
-    # Initialize insider database tables
-    insider_service.init_database()
-    # Start the polling thread for SEC data
-    _insider_polling_thread = threading.Thread(target=insider_service.polling_loop, daemon=True)
-    _insider_polling_thread.start()
-    print("✅ Insider Signals service integrated and polling started")
+    # Initialize tables using our PostgreSQL-compatible function
+    if _init_insider_tables():
+        INSIDER_SERVICE_AVAILABLE = True
+        # Only start polling thread if NOT using PostgreSQL (insider_service uses SQLite)
+        if not is_using_postgres():
+            _insider_polling_thread = threading.Thread(target=insider_service.polling_loop, daemon=True)
+            _insider_polling_thread.start()
+            print("✅ Insider Signals polling started (SQLite mode)")
+        else:
+            print("✅ Insider Signals tables ready (PostgreSQL mode - polling disabled)")
 except ImportError as e:
-    INSIDER_SERVICE_AVAILABLE = False
     print(f"⚠️ Insider service not available: {e}")
 except Exception as e:
-    INSIDER_SERVICE_AVAILABLE = False
     print(f"⚠️ Insider service init failed: {e}")
 
 @app.route('/insider-signals')
@@ -2859,19 +3006,11 @@ def api_insiders_status():
         return jsonify({"status": "offline", "error": "Service not available"}), 503
     
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
-        # Check if tables exist
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='insider_poll_status'")
-        if not cursor.fetchone():
-            conn.close()
-            return jsonify({"status": "initializing", "message": "Database initializing..."}), 200
-        
-        cursor.execute('SELECT * FROM insider_poll_status WHERE id = 1')
-        poll_status = cursor.fetchone()
-        
+        # Get counts
         cursor.execute('SELECT COUNT(*) FROM insider_filings')
         total_filings = cursor.fetchone()[0]
         
@@ -2882,8 +3021,21 @@ def api_insiders_status():
         conviction_signals = cursor.fetchone()[0]
         
         today = datetime.now().strftime('%Y-%m-%d')
-        cursor.execute('SELECT COUNT(*) FROM insider_signals WHERE DATE(created_at) = ?', (today,))
+        if is_postgres:
+            cursor.execute("SELECT COUNT(*) FROM insider_signals WHERE DATE(created_at) = %s", (today,))
+        else:
+            cursor.execute("SELECT COUNT(*) FROM insider_signals WHERE DATE(created_at) = ?", (today,))
         today_signals = cursor.fetchone()[0]
+        
+        # Get poll status
+        cursor.execute('SELECT * FROM insider_poll_status WHERE id = 1')
+        row = cursor.fetchone()
+        poll_status = None
+        if row:
+            if is_postgres:
+                poll_status = {'last_poll_time': row[1], 'filings_processed': row[3], 'errors_count': row[4]}
+            else:
+                poll_status = {'last_poll_time': row[1], 'filings_processed': row[3], 'errors_count': row[4]}
         
         conn.close()
         
@@ -2909,22 +3061,40 @@ def api_insiders_today():
         return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
     
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
         today = datetime.now().strftime('%Y-%m-%d')
         
-        cursor.execute('''
-            SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
-                   f.ownership_change_percent, f.filing_date, f.transaction_date
-            FROM insider_signals s
-            JOIN insider_filings f ON s.filing_id = f.id
-            WHERE DATE(s.created_at) = ?
-            ORDER BY s.signal_score DESC
-        ''', (today,))
+        if is_postgres:
+            cursor.execute('''
+                SELECT s.id, s.filing_id, s.ticker, s.signal_score, s.insider_name, s.insider_role,
+                       s.transaction_type, s.dollar_value, s.reason_flags, s.is_highlighted, s.is_conviction,
+                       s.created_at, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE DATE(s.created_at) = %s
+                ORDER BY s.signal_score DESC
+            ''', (today,))
+        else:
+            cursor.execute('''
+                SELECT s.id, s.filing_id, s.ticker, s.signal_score, s.insider_name, s.insider_role,
+                       s.transaction_type, s.dollar_value, s.reason_flags, s.is_highlighted, s.is_conviction,
+                       s.created_at, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE DATE(s.created_at) = ?
+                ORDER BY s.signal_score DESC
+            ''', (today,))
         
-        signals = [dict(row) for row in cursor.fetchall()]
+        columns = ['id', 'filing_id', 'ticker', 'signal_score', 'insider_name', 'insider_role',
+                   'transaction_type', 'dollar_value', 'reason_flags', 'is_highlighted', 'is_conviction',
+                   'created_at', 'company_name', 'filing_url', 'shares', 'price',
+                   'ownership_change_percent', 'filing_date', 'transaction_date']
+        signals = [dict(zip(columns, row)) for row in cursor.fetchall()]
         conn.close()
         
         return jsonify({
@@ -2947,24 +3117,44 @@ def api_insiders_top():
         min_score = request.args.get('min_score', 0, type=int)
         days = request.args.get('days', 7, type=int)
         
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
         since_date = (datetime.now() - timedelta(days=days)).isoformat()
         
-        cursor.execute('''
-            SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
-                   f.ownership_change_percent, f.filing_date, f.transaction_date
-            FROM insider_signals s
-            JOIN insider_filings f ON s.filing_id = f.id
-            WHERE s.signal_score >= ?
-            AND s.created_at >= ?
-            ORDER BY s.signal_score DESC, s.created_at DESC
-            LIMIT ?
-        ''', (min_score, since_date, limit))
+        if is_postgres:
+            cursor.execute('''
+                SELECT s.id, s.filing_id, s.ticker, s.signal_score, s.insider_name, s.insider_role,
+                       s.transaction_type, s.dollar_value, s.reason_flags, s.is_highlighted, s.is_conviction,
+                       s.created_at, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE s.signal_score >= %s
+                AND s.created_at >= %s
+                ORDER BY s.signal_score DESC, s.created_at DESC
+                LIMIT %s
+            ''', (min_score, since_date, limit))
+        else:
+            cursor.execute('''
+                SELECT s.id, s.filing_id, s.ticker, s.signal_score, s.insider_name, s.insider_role,
+                       s.transaction_type, s.dollar_value, s.reason_flags, s.is_highlighted, s.is_conviction,
+                       s.created_at, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE s.signal_score >= ?
+                AND s.created_at >= ?
+                ORDER BY s.signal_score DESC, s.created_at DESC
+                LIMIT ?
+            ''', (min_score, since_date, limit))
         
-        signals = [dict(row) for row in cursor.fetchall()]
+        columns = ['id', 'filing_id', 'ticker', 'signal_score', 'insider_name', 'insider_role',
+                   'transaction_type', 'dollar_value', 'reason_flags', 'is_highlighted', 'is_conviction',
+                   'created_at', 'company_name', 'filing_url', 'shares', 'price',
+                   'ownership_change_percent', 'filing_date', 'transaction_date']
+        signals = [dict(zip(columns, row)) for row in cursor.fetchall()]
         conn.close()
         
         return jsonify({
@@ -2986,21 +3176,40 @@ def api_insiders_ticker(symbol):
         symbol = symbol.upper()
         limit = request.args.get('limit', 20, type=int)
         
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
-        cursor.execute('''
-            SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
-                   f.ownership_change_percent, f.filing_date, f.transaction_date
-            FROM insider_signals s
-            JOIN insider_filings f ON s.filing_id = f.id
-            WHERE s.ticker = ?
-            ORDER BY s.created_at DESC
-            LIMIT ?
-        ''', (symbol, limit))
+        if is_postgres:
+            cursor.execute('''
+                SELECT s.id, s.filing_id, s.ticker, s.signal_score, s.insider_name, s.insider_role,
+                       s.transaction_type, s.dollar_value, s.reason_flags, s.is_highlighted, s.is_conviction,
+                       s.created_at, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE s.ticker = %s
+                ORDER BY s.created_at DESC
+                LIMIT %s
+            ''', (symbol, limit))
+        else:
+            cursor.execute('''
+                SELECT s.id, s.filing_id, s.ticker, s.signal_score, s.insider_name, s.insider_role,
+                       s.transaction_type, s.dollar_value, s.reason_flags, s.is_highlighted, s.is_conviction,
+                       s.created_at, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE s.ticker = ?
+                ORDER BY s.created_at DESC
+                LIMIT ?
+            ''', (symbol, limit))
         
-        signals = [dict(row) for row in cursor.fetchall()]
+        columns = ['id', 'filing_id', 'ticker', 'signal_score', 'insider_name', 'insider_role',
+                   'transaction_type', 'dollar_value', 'reason_flags', 'is_highlighted', 'is_conviction',
+                   'created_at', 'company_name', 'filing_url', 'shares', 'price',
+                   'ownership_change_percent', 'filing_date', 'transaction_date']
+        signals = [dict(zip(columns, row)) for row in cursor.fetchall()]
         conn.close()
         
         return jsonify({
@@ -3022,24 +3231,44 @@ def api_insiders_conviction():
         limit = request.args.get('limit', 20, type=int)
         days = request.args.get('days', 30, type=int)
         
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
         since_date = (datetime.now() - timedelta(days=days)).isoformat()
         
-        cursor.execute('''
-            SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
-                   f.ownership_change_percent, f.filing_date, f.transaction_date
-            FROM insider_signals s
-            JOIN insider_filings f ON s.filing_id = f.id
-            WHERE s.is_conviction = 1
-            AND s.created_at >= ?
-            ORDER BY s.signal_score DESC, s.created_at DESC
-            LIMIT ?
-        ''', (since_date, limit))
+        if is_postgres:
+            cursor.execute('''
+                SELECT s.id, s.filing_id, s.ticker, s.signal_score, s.insider_name, s.insider_role,
+                       s.transaction_type, s.dollar_value, s.reason_flags, s.is_highlighted, s.is_conviction,
+                       s.created_at, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE s.is_conviction = 1
+                AND s.created_at >= %s
+                ORDER BY s.signal_score DESC, s.created_at DESC
+                LIMIT %s
+            ''', (since_date, limit))
+        else:
+            cursor.execute('''
+                SELECT s.id, s.filing_id, s.ticker, s.signal_score, s.insider_name, s.insider_role,
+                       s.transaction_type, s.dollar_value, s.reason_flags, s.is_highlighted, s.is_conviction,
+                       s.created_at, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE s.is_conviction = 1
+                AND s.created_at >= ?
+                ORDER BY s.signal_score DESC, s.created_at DESC
+                LIMIT ?
+            ''', (since_date, limit))
         
-        signals = [dict(row) for row in cursor.fetchall()]
+        columns = ['id', 'filing_id', 'ticker', 'signal_score', 'insider_name', 'insider_role',
+                   'transaction_type', 'dollar_value', 'reason_flags', 'is_highlighted', 'is_conviction',
+                   'created_at', 'company_name', 'filing_url', 'shares', 'price',
+                   'ownership_change_percent', 'filing_date', 'transaction_date']
+        signals = [dict(zip(columns, row)) for row in cursor.fetchall()]
         conn.close()
         
         return jsonify({
@@ -3052,11 +3281,16 @@ def api_insiders_conviction():
 
 @app.route('/api/insiders/refresh', methods=['POST'])
 def api_insiders_refresh():
-    """Trigger manual refresh"""
+    """Trigger manual refresh - only works in SQLite mode"""
     if not INSIDER_SERVICE_AVAILABLE:
         return jsonify({"success": False, "error": "Service not available"}), 503
     
     try:
+        if is_using_postgres():
+            return jsonify({
+                'success': True,
+                'message': 'PostgreSQL mode - manual refresh not available (data is from SEC filings)'
+            })
         thread = threading.Thread(target=insider_service.process_filings, daemon=True)
         thread.start()
         return jsonify({
@@ -3068,16 +3302,41 @@ def api_insiders_refresh():
 
 @app.route('/api/insiders/price/<ticker>')
 def api_insiders_price(ticker):
-    """Get stock price"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"success": False, "error": "Service not available"}), 503
-    
+    """Get stock price using Yahoo Finance"""
     try:
-        price_data = insider_service.get_stock_price(ticker)
-        if price_data:
-            return jsonify({'success': True, 'ticker': ticker.upper(), **price_data})
-        else:
-            return jsonify({'success': False, 'ticker': ticker.upper(), 'error': 'Price unavailable'}), 404
+        # Use Yahoo Finance directly (no insider_service dependency)
+        import time as time_module
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker.upper()}"
+        params = {'interval': '1d', 'range': '5d'}
+        headers = {'User-Agent': 'JustTrades/1.0'}
+        
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            result = data.get('chart', {}).get('result', [])
+            
+            if result:
+                meta = result[0].get('meta', {})
+                price = meta.get('regularMarketPrice')
+                prev_close = meta.get('previousClose') or meta.get('chartPreviousClose')
+                
+                if price:
+                    change = None
+                    change_pct = None
+                    if prev_close:
+                        change = round(price - prev_close, 2)
+                        change_pct = round((change / prev_close) * 100, 2)
+                    
+                    return jsonify({
+                        'success': True,
+                        'ticker': ticker.upper(),
+                        'price': round(price, 2),
+                        'change': change,
+                        'change_pct': change_pct
+                    })
+        
+        return jsonify({'success': False, 'ticker': ticker.upper(), 'error': 'Price unavailable'}), 404
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -3088,9 +3347,9 @@ def api_insiders_watchlist():
         return jsonify({"success": False, "error": "Service not available"}), 503
     
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
         if request.method == 'POST':
             data = request.get_json()
@@ -3102,20 +3361,30 @@ def api_insiders_watchlist():
                 return jsonify({'success': False, 'error': 'Value is required'}), 400
             
             try:
-                cursor.execute('''
-                    INSERT INTO insider_watchlist (watch_type, watch_value, notes)
-                    VALUES (?, ?, ?)
-                ''', (watch_type, watch_value, notes))
+                if is_postgres:
+                    cursor.execute('''
+                        INSERT INTO insider_watchlist (watch_type, watch_value, notes)
+                        VALUES (%s, %s, %s) RETURNING id
+                    ''', (watch_type, watch_value, notes))
+                    watchlist_id = cursor.fetchone()[0]
+                else:
+                    cursor.execute('''
+                        INSERT INTO insider_watchlist (watch_type, watch_value, notes)
+                        VALUES (?, ?, ?)
+                    ''', (watch_type, watch_value, notes))
+                    watchlist_id = cursor.lastrowid
                 conn.commit()
-                watchlist_id = cursor.lastrowid
                 conn.close()
                 return jsonify({'success': True, 'id': watchlist_id, 'message': f'Added {watch_value} to watchlist'})
-            except sqlite3.IntegrityError:
+            except Exception as e:
                 conn.close()
-                return jsonify({'success': False, 'error': 'Already in watchlist'}), 409
+                if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
+                    return jsonify({'success': False, 'error': 'Already in watchlist'}), 409
+                raise
         else:
-            cursor.execute('SELECT * FROM insider_watchlist ORDER BY created_at DESC')
-            items = [dict(row) for row in cursor.fetchall()]
+            cursor.execute('SELECT id, watch_type, watch_value, notes, created_at FROM insider_watchlist ORDER BY created_at DESC')
+            columns = ['id', 'watch_type', 'watch_value', 'notes', 'created_at']
+            items = [dict(zip(columns, row)) for row in cursor.fetchall()]
             conn.close()
             return jsonify({'success': True, 'count': len(items), 'watchlist': items})
     except Exception as e:
@@ -3128,9 +3397,14 @@ def api_insiders_watchlist_delete(item_id):
         return jsonify({"success": False, "error": "Service not available"}), 503
     
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('DELETE FROM insider_watchlist WHERE id = ?', (item_id,))
+        is_postgres = is_using_postgres()
+        
+        if is_postgres:
+            cursor.execute('DELETE FROM insider_watchlist WHERE id = %s', (item_id,))
+        else:
+            cursor.execute('DELETE FROM insider_watchlist WHERE id = ?', (item_id,))
         deleted = cursor.rowcount > 0
         conn.commit()
         conn.close()
@@ -3149,9 +3423,9 @@ def api_insiders_watchlist_signals():
         return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
     
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
         cursor.execute('SELECT watch_type, watch_value FROM insider_watchlist')
         watchlist = cursor.fetchall()
@@ -3160,21 +3434,33 @@ def api_insiders_watchlist_signals():
             conn.close()
             return jsonify({'success': True, 'count': 0, 'signals': []})
         
-        ticker_list = [w['watch_value'] for w in watchlist if w['watch_type'] == 'ticker']
+        ticker_list = [w[1] for w in watchlist if w[0] == 'ticker']
         signals = []
         
         if ticker_list:
-            placeholders = ','.join(['?' for _ in ticker_list])
-            cursor.execute(f'''
-                SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
+            if is_postgres:
+                placeholders = ','.join(['%s' for _ in ticker_list])
+            else:
+                placeholders = ','.join(['?' for _ in ticker_list])
+            
+            query = f'''
+                SELECT s.id, s.filing_id, s.ticker, s.signal_score, s.insider_name, s.insider_role,
+                       s.transaction_type, s.dollar_value, s.reason_flags, s.is_highlighted, s.is_conviction,
+                       s.created_at, f.company_name, f.filing_url, f.shares, f.price,
                        f.ownership_change_percent, f.filing_date, f.transaction_date
                 FROM insider_signals s
                 JOIN insider_filings f ON s.filing_id = f.id
                 WHERE s.ticker IN ({placeholders})
                 ORDER BY s.created_at DESC
                 LIMIT 50
-            ''', ticker_list)
-            signals = [dict(row) for row in cursor.fetchall()]
+            '''
+            cursor.execute(query, ticker_list)
+            
+            columns = ['id', 'filing_id', 'ticker', 'signal_score', 'insider_name', 'insider_role',
+                       'transaction_type', 'dollar_value', 'reason_flags', 'is_highlighted', 'is_conviction',
+                       'created_at', 'company_name', 'filing_url', 'shares', 'price',
+                       'ownership_change_percent', 'filing_date', 'transaction_date']
+            signals = [dict(zip(columns, row)) for row in cursor.fetchall()]
         
         conn.close()
         return jsonify({'success': True, 'count': len(signals), 'signals': signals})
