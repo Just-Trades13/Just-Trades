@@ -117,79 +117,61 @@ except ImportError:
 # ============================================================
 DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('DATABASE_PRIVATE_URL') or os.getenv('DATABASE_PUBLIC_URL')
 _pg_pool = None
-_using_postgres = False  # Track if we're actually using PostgreSQL
-
-# Debug: Print database configuration at startup
-print("=" * 60)
-print("🔍 DATABASE CONFIGURATION DEBUG")
-print(f"DATABASE_URL set: {'YES' if DATABASE_URL else 'NO'}")
-if DATABASE_URL:
-    # Don't print full URL (contains password), just show it exists
-    print(f"DATABASE_URL starts with: {DATABASE_URL[:30]}...")
-print("=" * 60)
+_using_postgres = False
+_tables_initialized = False
 
 def is_using_postgres():
-    """Check if we're actually using PostgreSQL (not just if DATABASE_URL is set)"""
+    """Check if we're actually using PostgreSQL"""
     return _using_postgres
 
+def _ensure_tables_exist(conn, is_postgres):
+    """Ensure all tables exist - called on EVERY connection to be safe"""
+    global _tables_initialized
+    if _tables_initialized:
+        return
+    try:
+        if is_postgres:
+            _init_postgres_tables()
+        else:
+            _init_sqlite_tables(conn)
+        _tables_initialized = True
+        print("✅ Database tables initialized")
+    except Exception as e:
+        print(f"⚠️ Table initialization warning: {e}")
+        # Don't fail - tables might already exist
+
 def get_db_connection():
-    """
-    Get database connection - uses PostgreSQL if DATABASE_URL is set,
-    otherwise falls back to SQLite for local development.
-    """
+    """Get database connection - PostgreSQL for production, SQLite for dev/fallback."""
     global _pg_pool, _using_postgres
     
+    # Try PostgreSQL if DATABASE_URL is set
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
-        # PostgreSQL for production
-        print(f"🔄 Attempting PostgreSQL connection...")
         try:
             import psycopg2
             import psycopg2.pool
             from psycopg2.extras import RealDictCursor
-            print("✅ psycopg2 imported successfully")
             
             db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
             
-            # Initialize pool if not exists
             if _pg_pool is None:
-                print("🔄 Creating new connection pool...")
-                _pg_pool = psycopg2.pool.ThreadedConnectionPool(2, 20, dsn=db_url)
-                print("✅ PostgreSQL connection pool initialized")
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 20, dsn=db_url)
                 _using_postgres = True
-                # Create tables on first connection
-                print("🔄 Creating PostgreSQL tables...")
-                _init_postgres_tables()
-                print("✅ PostgreSQL tables created")
+                print("✅ PostgreSQL connected")
             
             conn = _pg_pool.getconn()
-            print("✅ Got connection from pool")
-            # Make it act like sqlite3 with row_factory
             conn.cursor_factory = RealDictCursor
+            _ensure_tables_exist(None, True)
             return PostgresConnectionWrapper(conn, _pg_pool)
-        except ImportError as e:
-            print(f"⚠️ psycopg2 not installed: {e}, falling back to SQLite")
-            _using_postgres = False
         except Exception as e:
-            import traceback
-            print(f"❌ PostgreSQL connection failed: {e}")
-            print(f"❌ Full traceback: {traceback.format_exc()}")
+            print(f"⚠️ PostgreSQL failed: {e}, using SQLite")
             _using_postgres = False
+            _pg_pool = None
     
-    # SQLite for local development (or fallback)
+    # SQLite fallback
     _using_postgres = False
-    print("🔴 FALLING BACK TO SQLITE - PostgreSQL not available")
-    try:
-        conn = sqlite3.connect('just_trades.db', timeout=30)
-        conn.row_factory = sqlite3.Row
-        print("📁 SQLite connection opened: just_trades.db")
-        # Initialize tables if they don't exist (prevents "no such table" errors)
-        _init_sqlite_tables(conn)
-        print("✅ SQLite tables initialized successfully")
-    except Exception as e:
-        print(f"❌ SQLite initialization failed: {e}")
-        import traceback
-        print(traceback.format_exc())
-        raise
+    conn = sqlite3.connect('just_trades.db', timeout=30)
+    conn.row_factory = sqlite3.Row
+    _ensure_tables_exist(conn, False)
     return conn
 
 class DictRow:
