@@ -3008,6 +3008,318 @@ def _ensure_insider_tables():
 INSIDER_SERVICE_AVAILABLE = True
 print("✅ Insider Signals module ready (tables will init on first use)")
 
+# =============================================================================
+# SEC EDGAR POLLING (PostgreSQL-compatible)
+# =============================================================================
+SEC_USER_AGENT = "JustTrades/1.0 (Contact: support@just.trades)"
+INSIDER_POLL_INTERVAL = 300  # 5 minutes
+INSIDER_HIGHLIGHT_THRESHOLD = 70
+INSIDER_CONVICTION_THRESHOLD = 85
+
+# Scoring weights
+INSIDER_SCORING_WEIGHTS = {
+    'dollar_value': 0.35, 'ownership_change': 0.20, 'insider_role': 0.15,
+    'cluster': 0.15, 'recency': 0.15
+}
+INSIDER_ROLE_WEIGHTS = {
+    'ceo': 1.0, 'chief executive': 1.0, 'cfo': 0.95, 'chief financial': 0.95,
+    'coo': 0.9, 'president': 0.9, 'director': 0.7, '10%': 1.1, 'chairman': 0.85
+}
+
+def _insider_parse_atom_feed(xml_content):
+    """Parse SEC EDGAR Atom feed for Form 4 filings"""
+    import xml.etree.ElementTree as ET
+    import re
+    filings = []
+    seen = set()
+    try:
+        root = ET.fromstring(xml_content)
+        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+        for entry in root.findall('.//atom:entry', ns):
+            try:
+                title = entry.find('atom:title', ns)
+                link = entry.find('atom:link', ns)
+                updated = entry.find('atom:updated', ns)
+                entry_id = entry.find('atom:id', ns)
+                if title is not None and title.text:
+                    if '(Issuer)' in title.text:
+                        continue
+                    accession = None
+                    if entry_id is not None and entry_id.text:
+                        m = re.search(r'accession-number=(\d{10}-\d{2}-\d{6})', entry_id.text)
+                        if m:
+                            accession = m.group(1)
+                    if accession and accession in seen:
+                        continue
+                    if accession:
+                        seen.add(accession)
+                    filing = {
+                        'form_type': '4', 'accession_number': accession,
+                        'filing_url': link.get('href') if link is not None else None,
+                        'filing_date': updated.text if updated is not None else None
+                    }
+                    if ' - ' in title.text:
+                        parts = title.text.split(' - ', 1)
+                        if len(parts) > 1 and '(' in parts[1]:
+                            filing['insider_name'] = parts[1].split('(')[0].strip()
+                    filings.append(filing)
+            except:
+                continue
+    except:
+        pass
+    return filings
+
+def _insider_fetch_form4_details(filing_url):
+    """Fetch detailed Form 4 data from filing URL"""
+    import xml.etree.ElementTree as ET
+    import re
+    details = {'ticker': None, 'insider_name': None, 'insider_title': None, 'transaction_type': None,
+               'shares': 0, 'price': 0.0, 'total_value': 0.0, 'shares_owned_after': 0, 'ownership_change_percent': 0.0}
+    try:
+        if not filing_url:
+            return details
+        headers = {'User-Agent': SEC_USER_AGENT}
+        resp = requests.get(filing_url, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            return details
+        xml_links = re.findall(r'href="([^"]*\.xml)"', resp.text, re.IGNORECASE)
+        primary_xml = None
+        for link in xml_links:
+            if 'xsl' in link.lower() and 'form4' not in link.lower():
+                continue
+            if 'form4' in link.lower() or 'primary' in link.lower():
+                primary_xml = link
+                break
+            if primary_xml is None:
+                primary_xml = link
+        if not primary_xml:
+            return details
+        if primary_xml.startswith('http'):
+            xml_url = primary_xml
+        elif primary_xml.startswith('/'):
+            xml_url = f"https://www.sec.gov{primary_xml}"
+        else:
+            base_url = '/'.join(filing_url.rstrip('/').split('/')[:-1])
+            xml_url = f"{base_url}/{primary_xml}"
+        xml_resp = requests.get(xml_url, headers=headers, timeout=30)
+        if xml_resp.status_code != 200:
+            return details
+        # Parse Form 4 XML
+        root = ET.fromstring(xml_resp.text)
+        issuer = root.find('.//issuer')
+        if issuer is not None:
+            ticker_elem = issuer.find('issuerTradingSymbol')
+            if ticker_elem is not None and ticker_elem.text:
+                details['ticker'] = ticker_elem.text.strip().upper()
+        owner = root.find('.//reportingOwner')
+        if owner is not None:
+            owner_id = owner.find('reportingOwnerId')
+            if owner_id is not None:
+                name_elem = owner_id.find('rptOwnerName')
+                if name_elem is not None and name_elem.text:
+                    details['insider_name'] = name_elem.text.strip()
+            rel = owner.find('reportingOwnerRelationship')
+            if rel is not None:
+                for tf in ['officerTitle', 'otherText']:
+                    te = rel.find(tf)
+                    if te is not None and te.text:
+                        details['insider_title'] = te.text.strip()
+                        break
+        total_shares = 0
+        total_value = 0.0
+        for trans in root.findall('.//nonDerivativeTransaction'):
+            code_elem = trans.find('.//transactionCoding/transactionCode')
+            if code_elem is not None and code_elem.text:
+                c = code_elem.text.upper()
+                details['transaction_type'] = {'P': 'BUY', 'S': 'SELL', 'A': 'AWARD', 'G': 'GIFT', 'M': 'EXERCISE'}.get(c, c)
+            shares_elem = trans.find('.//transactionAmounts/transactionShares/value')
+            if shares_elem is not None and shares_elem.text:
+                try:
+                    total_shares += float(shares_elem.text)
+                except:
+                    pass
+            price_elem = trans.find('.//transactionAmounts/transactionPricePerShare/value')
+            if price_elem is not None and price_elem.text:
+                try:
+                    p = float(price_elem.text)
+                    details['price'] = p
+                    if shares_elem and shares_elem.text:
+                        total_value += float(shares_elem.text) * p
+                except:
+                    pass
+            after_elem = trans.find('.//postTransactionAmounts/sharesOwnedFollowingTransaction/value')
+            if after_elem is not None and after_elem.text:
+                try:
+                    details['shares_owned_after'] = float(after_elem.text)
+                except:
+                    pass
+        details['shares'] = int(total_shares)
+        details['total_value'] = round(total_value, 2)
+        if details['shares_owned_after'] > 0 and total_shares > 0:
+            before = details['shares_owned_after'] - total_shares if details['transaction_type'] == 'BUY' else details['shares_owned_after'] + total_shares
+            if before > 0:
+                details['ownership_change_percent'] = round((total_shares / before) * 100, 2)
+    except:
+        pass
+    return details
+
+def _insider_calculate_score(filing_data):
+    """Calculate signal score (0-100) for an insider filing"""
+    if filing_data.get('transaction_type') != 'BUY':
+        return 0, ['not_buy']
+    score = 0
+    flags = []
+    tv = filing_data.get('total_value', 0) or 0
+    if tv >= 1000000:
+        ds, flags = 100, flags + ['million_dollar_buy']
+    elif tv >= 500000:
+        ds, flags = 95, flags + ['large_buy_500k']
+    elif tv >= 100000:
+        ds, flags = 75, flags + ['significant_buy_100k']
+    elif tv >= 50000:
+        ds, flags = 65, flags + ['notable_buy_50k']
+    else:
+        ds = max(20, min(55, tv / 1000))
+    score += ds * INSIDER_SCORING_WEIGHTS['dollar_value']
+    oc = filing_data.get('ownership_change_percent', 0) or 0
+    if oc >= 100:
+        os_score, flags = 100, flags + ['doubled_position']
+    elif oc >= 50:
+        os_score, flags = 90, flags + ['major_position_increase']
+    elif oc >= 25:
+        os_score = 75
+    else:
+        os_score = 30
+    score += os_score * INSIDER_SCORING_WEIGHTS['ownership_change']
+    title = (filing_data.get('insider_title') or '').lower()
+    rw = 0.5
+    for rk, w in INSIDER_ROLE_WEIGHTS.items():
+        if rk in title:
+            rw = w
+            if w >= 0.9:
+                flags.append('c_suite_purchase')
+            break
+    score += (rw * 100) * INSIDER_SCORING_WEIGHTS['insider_role']
+    score += 60 * INSIDER_SCORING_WEIGHTS['recency']
+    if filing_data.get('price', 0) > 0:
+        score += 5
+        flags.append('open_market_purchase')
+    return min(100, max(0, round(score))), flags
+
+def _insider_process_filings():
+    """Fetch and process SEC filings (works with PostgreSQL and SQLite)"""
+    import json
+    try:
+        _ensure_insider_tables()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        # Fetch recent Form 4 filings
+        api_url = "https://www.sec.gov/cgi-bin/browse-edgar"
+        params = {'action': 'getcurrent', 'type': '4', 'owner': 'only', 'count': '100', 'output': 'atom'}
+        headers = {'User-Agent': SEC_USER_AGENT, 'Accept': 'application/atom+xml'}
+        
+        resp = requests.get(api_url, params=params, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            conn.close()
+            return
+        
+        filings = _insider_parse_atom_feed(resp.text)
+        processed = 0
+        
+        for filing in filings:
+            try:
+                acc = filing.get('accession_number')
+                if not acc:
+                    continue
+                # Check if exists
+                if is_postgres:
+                    cursor.execute('SELECT id FROM insider_filings WHERE accession_number = %s', (acc,))
+                else:
+                    cursor.execute('SELECT id FROM insider_filings WHERE accession_number = ?', (acc,))
+                if cursor.fetchone():
+                    continue
+                # Fetch details
+                details = _insider_fetch_form4_details(filing.get('filing_url'))
+                if not details.get('ticker'):
+                    continue
+                # Insert filing
+                if is_postgres:
+                    cursor.execute('''INSERT INTO insider_filings (accession_number, form_type, ticker, company_name,
+                        insider_name, insider_title, transaction_type, shares, price, total_value,
+                        ownership_change_percent, shares_owned_after, filing_date, transaction_date, filing_url, raw_data)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id''',
+                        (acc, '4', details.get('ticker'), filing.get('company_name'), details.get('insider_name'),
+                         details.get('insider_title'), details.get('transaction_type'), details.get('shares'),
+                         details.get('price'), details.get('total_value'), details.get('ownership_change_percent'),
+                         details.get('shares_owned_after'), filing.get('filing_date'), details.get('transaction_date'),
+                         filing.get('filing_url'), json.dumps(details)))
+                    filing_id = cursor.fetchone()[0]
+                else:
+                    cursor.execute('''INSERT INTO insider_filings (accession_number, form_type, ticker, company_name,
+                        insider_name, insider_title, transaction_type, shares, price, total_value,
+                        ownership_change_percent, shares_owned_after, filing_date, transaction_date, filing_url, raw_data)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        (acc, '4', details.get('ticker'), filing.get('company_name'), details.get('insider_name'),
+                         details.get('insider_title'), details.get('transaction_type'), details.get('shares'),
+                         details.get('price'), details.get('total_value'), details.get('ownership_change_percent'),
+                         details.get('shares_owned_after'), filing.get('filing_date'), details.get('transaction_date'),
+                         filing.get('filing_url'), json.dumps(details)))
+                    filing_id = cursor.lastrowid
+                # Score and create signal
+                score, flags = _insider_calculate_score(details)
+                if details.get('transaction_type') == 'BUY' and score > 0:
+                    is_high = 1 if score >= INSIDER_HIGHLIGHT_THRESHOLD else 0
+                    is_conv = 1 if score >= INSIDER_CONVICTION_THRESHOLD else 0
+                    if is_postgres:
+                        cursor.execute('''INSERT INTO insider_signals (filing_id, ticker, signal_score, insider_name,
+                            insider_role, transaction_type, dollar_value, reason_flags, is_highlighted, is_conviction)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                            (filing_id, details.get('ticker'), score, details.get('insider_name'),
+                             details.get('insider_title'), details.get('transaction_type'), details.get('total_value'),
+                             json.dumps(flags), is_high, is_conv))
+                    else:
+                        cursor.execute('''INSERT INTO insider_signals (filing_id, ticker, signal_score, insider_name,
+                            insider_role, transaction_type, dollar_value, reason_flags, is_highlighted, is_conviction)
+                            VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                            (filing_id, details.get('ticker'), score, details.get('insider_name'),
+                             details.get('insider_title'), details.get('transaction_type'), details.get('total_value'),
+                             json.dumps(flags), is_high, is_conv))
+                processed += 1
+                time.sleep(0.1)  # Rate limit
+            except Exception as e:
+                continue
+        
+        # Update poll status
+        if is_postgres:
+            cursor.execute('UPDATE insider_poll_status SET last_poll_time = %s, filings_processed = filings_processed + %s WHERE id = 1',
+                          (datetime.now().isoformat(), processed))
+        else:
+            cursor.execute('UPDATE insider_poll_status SET last_poll_time = ?, filings_processed = filings_processed + ? WHERE id = 1',
+                          (datetime.now().isoformat(), processed))
+        conn.commit()
+        conn.close()
+        if processed > 0:
+            print(f"📊 Insider polling: {processed} new filings processed")
+    except Exception as e:
+        print(f"⚠️ Insider polling error: {e}")
+
+def _insider_polling_loop():
+    """Background thread for SEC polling"""
+    print(f"🚀 Starting SEC insider polling (every {INSIDER_POLL_INTERVAL}s)")
+    time.sleep(10)  # Initial delay
+    while True:
+        try:
+            _insider_process_filings()
+        except Exception as e:
+            print(f"⚠️ Polling error: {e}")
+        time.sleep(INSIDER_POLL_INTERVAL)
+
+# Start the polling thread
+_insider_poll_thread = threading.Thread(target=_insider_polling_loop, daemon=True)
+_insider_poll_thread.start()
+
 @app.route('/insider-signals')
 @app.route('/insider_signals')
 def insider_signals():
@@ -7710,16 +8022,48 @@ def traders_list():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
-        cursor.execute('''
-            SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
-                   r.name as recorder_name,
-                   a.name as account_name
-            FROM traders t
-            LEFT JOIN recorders r ON t.recorder_id = r.id
-            LEFT JOIN accounts a ON t.account_id = a.id
-            ORDER BY t.created_at DESC
-        ''')
+        # Get current user ID for filtering
+        user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user_id = get_current_user_id()
+        
+        # Filter by user_id if logged in
+        if user_id:
+            if is_postgres:
+                cursor.execute('''
+                    SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
+                           r.name as recorder_name,
+                           a.name as account_name
+                    FROM traders t
+                    LEFT JOIN recorders r ON t.recorder_id = r.id
+                    LEFT JOIN accounts a ON t.account_id = a.id
+                    WHERE t.user_id = %s
+                    ORDER BY t.created_at DESC
+                ''', (user_id,))
+            else:
+                cursor.execute('''
+                    SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
+                           r.name as recorder_name,
+                           a.name as account_name
+                    FROM traders t
+                    LEFT JOIN recorders r ON t.recorder_id = r.id
+                    LEFT JOIN accounts a ON t.account_id = a.id
+                    WHERE t.user_id = ?
+                    ORDER BY t.created_at DESC
+                ''', (user_id,))
+        else:
+            # Fallback: show all (shouldn't happen if login required)
+            cursor.execute('''
+                SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
+                       r.name as recorder_name,
+                       a.name as account_name
+                FROM traders t
+                LEFT JOIN recorders r ON t.recorder_id = r.id
+                LEFT JOIN accounts a ON t.account_id = a.id
+                ORDER BY t.created_at DESC
+            ''')
         
         rows = cursor.fetchall()
         traders = []
@@ -7912,59 +8256,76 @@ def traders_new():
 @app.route('/traders/<int:trader_id>')
 def traders_edit(trader_id):
     """Edit existing trader - load all saved settings"""
-    conn = get_db_connection()
-    is_postgres = is_using_postgres()
-    # Only set row_factory for SQLite - PostgreSQL already uses RealDictCursor
-    if not is_postgres:
-        conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    # Require login
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     
-    # Get the trader with its recorder info (CRITICAL: include all recorder settings for risk management)
-    # Use %s for PostgreSQL, ? for SQLite (wrapper handles conversion)
-    cursor.execute('''
-        SELECT t.*, 
-               r.name as recorder_name, r.strategy_type, r.symbol,
-               r.initial_position_size as r_initial_position_size,
-               r.add_position_size as r_add_position_size,
-               r.tp_targets as r_tp_targets,
-               r.tp_units as r_tp_units,
-               r.trim_units as r_trim_units,
-               r.sl_enabled as r_sl_enabled,
-               r.sl_amount as r_sl_amount,
-               r.sl_units as r_sl_units,
-               r.sl_type as r_sl_type,
-               r.avg_down_enabled as r_avg_down_enabled,
-               r.avg_down_amount as r_avg_down_amount,
-               r.avg_down_point as r_avg_down_point,
-               r.avg_down_units as r_avg_down_units,
-               a.name as account_name, a.id as parent_account_id
-        FROM traders t
-        JOIN recorders r ON t.recorder_id = r.id
-        JOIN accounts a ON t.account_id = a.id
-        WHERE t.id = ?
-    ''', (trader_id,))
-    trader_row = cursor.fetchone()
-    
-    if not trader_row:
-        conn.close()
-        return redirect('/traders')
-    
-    # Parse TP targets from JSON (prefer recorder settings)
-    tp_targets = []
-    tp_value = 0  # Default to 0 (no TP) if not set
-    tp_trim = 100
     try:
-        tp_targets_raw = trader_row['r_tp_targets'] or trader_row['tp_targets']
-        if tp_targets_raw:
-            tp_targets = json.loads(tp_targets_raw)
-            if tp_targets and len(tp_targets) > 0:
-                tp_value = tp_targets[0].get('value', 0)
-                tp_trim = tp_targets[0].get('trim', 100)
-    except:
+        conn = get_db_connection()
+        is_postgres = is_using_postgres()
+        # Only set row_factory for SQLite - PostgreSQL already uses RealDictCursor
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get current user ID for ownership check
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+        
+        # Get the trader with its recorder info (CRITICAL: include all recorder settings for risk management)
+        cursor.execute('''
+            SELECT t.*, 
+                   r.name as recorder_name, r.strategy_type, r.symbol,
+                   r.initial_position_size as r_initial_position_size,
+                   r.add_position_size as r_add_position_size,
+                   r.tp_targets as r_tp_targets,
+                   r.tp_units as r_tp_units,
+                   r.trim_units as r_trim_units,
+                   r.sl_enabled as r_sl_enabled,
+                   r.sl_amount as r_sl_amount,
+                   r.sl_units as r_sl_units,
+                   r.sl_type as r_sl_type,
+                   r.avg_down_enabled as r_avg_down_enabled,
+                   r.avg_down_amount as r_avg_down_amount,
+                   r.avg_down_point as r_avg_down_point,
+                   r.avg_down_units as r_avg_down_units,
+                   a.name as account_name, a.id as parent_account_id
+            FROM traders t
+            JOIN recorders r ON t.recorder_id = r.id
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.id = ?
+        ''', (trader_id,))
+        trader_row = cursor.fetchone()
+        
+        if not trader_row:
+            conn.close()
+            logger.warning(f"Trader {trader_id} not found")
+            return redirect('/traders')
+        
+        # Check ownership - only allow editing own traders
+        trader_user_id = trader_row.get('user_id') if hasattr(trader_row, 'get') else (trader_row['user_id'] if 'user_id' in (trader_row.keys() if hasattr(trader_row, 'keys') else []) else None)
+        if current_user_id and trader_user_id and trader_user_id != current_user_id:
+            conn.close()
+            logger.warning(f"User {current_user_id} tried to edit trader {trader_id} owned by user {trader_user_id}")
+            return redirect('/traders')
+        
+        # Parse TP targets from JSON (prefer recorder settings)
         tp_targets = []
-    
-    # Build trader object with settings (prefer recorder settings which are authoritative)
-    trader = {
+        tp_value = 0  # Default to 0 (no TP) if not set
+        tp_trim = 100
+        try:
+            tp_targets_raw = trader_row['r_tp_targets'] or trader_row['tp_targets']
+            if tp_targets_raw:
+                tp_targets = json.loads(tp_targets_raw)
+                if tp_targets and len(tp_targets) > 0:
+                    tp_value = tp_targets[0].get('value', 0)
+                    tp_trim = tp_targets[0].get('trim', 100)
+        except:
+            tp_targets = []
+        
+        # Build trader object with settings (prefer recorder settings which are authoritative)
+        trader = {
         'id': trader_row['id'],
         'recorder_id': trader_row['recorder_id'],
         'recorder_name': trader_row['recorder_name'],
@@ -7993,79 +8354,89 @@ def traders_edit(trader_id):
         'avg_down_enabled': bool(trader_row['r_avg_down_enabled']),
         'avg_down_amount': trader_row['r_avg_down_amount'] or 1,
         'avg_down_point': trader_row['r_avg_down_point'] or 10,
-        'avg_down_units': trader_row['r_avg_down_units'] or 'Ticks',
-        'max_daily_loss': trader_row['max_daily_loss'] or 500
-    }
-    
-    # Get enabled accounts from routing (if stored)
-    enabled_accounts = []
-    try:
-        # sqlite3.Row uses dict-style access, not .get()
-        enabled_accounts_raw = trader_row['enabled_accounts'] if 'enabled_accounts' in trader_row.keys() else None
-        if enabled_accounts_raw and enabled_accounts_raw != '[]' and str(enabled_accounts_raw).strip():
-            enabled_accounts = json.loads(enabled_accounts_raw)
-            logger.info(f"✅ Loaded enabled_accounts for trader {trader_id}: {len(enabled_accounts)} accounts")
-            for acct in enabled_accounts:
-                logger.info(f"  - Enabled: {acct.get('account_name')} (subaccount_id={acct.get('subaccount_id')})")
-        else:
-            logger.info(f"⚠️ No enabled_accounts found for trader {trader_id} (raw value: '{enabled_accounts_raw}')")
-    except Exception as e:
-        logger.warning(f"❌ Error parsing enabled_accounts: {e}")
-        import traceback
-        logger.warning(traceback.format_exc())
+            'avg_down_units': trader_row['r_avg_down_units'] or 'Ticks',
+            'max_daily_loss': trader_row['max_daily_loss'] or 500
+        }
+        
+        # Get enabled accounts from routing (if stored)
         enabled_accounts = []
-    
-    # Get all accounts with subaccounts for the routing table
-    is_postgres = is_using_postgres()
-    if is_postgres:
-        cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
-    else:
-        cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
-    accounts = []
-    for row in cursor.fetchall():
-        parent_id = row['id']
-        parent_name = row['name']
-        if row['tradovate_accounts']:
-            try:
-                tradovate_accts = json.loads(row['tradovate_accounts'])
-                for acct in tradovate_accts:
-                    if isinstance(acct, dict) and acct.get('name'):
-                        env_label = "🟠 DEMO" if acct.get('is_demo') else "🟢 LIVE"
-                        # Check if this subaccount is enabled in account routing
-                        is_enabled = False
-                        acct_subaccount_id = acct.get('id')  # This is the subaccount ID from tradovate_accounts
-                        for enabled_acct in enabled_accounts:
-                            # Match by subaccount_id (most reliable)
-                            enabled_subaccount_id = enabled_acct.get('subaccount_id')
-                            if enabled_subaccount_id and enabled_subaccount_id == acct_subaccount_id:
-                                is_enabled = True
-                                logger.info(f"  ✓ Account {acct.get('name')} (subaccount_id={acct_subaccount_id}) is ENABLED")
-                                break
-                        # If no enabled_accounts stored, use legacy: check if it's the primary account
-                        if not enabled_accounts:
-                            is_enabled = (acct_subaccount_id == trader['subaccount_id'])
-                            logger.debug(f"  - Using legacy check: {acct.get('name')} is_selected={is_enabled}")
-                        accounts.append({
-                            'id': parent_id,
-                            'name': acct['name'],
-                            'display_name': f"{env_label} - {acct['name']} ({parent_name})",
-                            'subaccount_id': acct.get('id'),
-                            'is_demo': acct.get('is_demo', False),
-                            'is_selected': is_enabled
-                        })
-            except:
-                pass
-    
-    conn.close()
-    
-    return render_template(
-        'traders.html',
-        mode='edit',
-        header_title='Edit Trader',
-        header_cta='Update Trader',
-        trader=trader,
-        accounts=accounts
-    )
+        try:
+            # sqlite3.Row uses dict-style access, not .get()
+            enabled_accounts_raw = trader_row['enabled_accounts'] if 'enabled_accounts' in trader_row.keys() else None
+            if enabled_accounts_raw and enabled_accounts_raw != '[]' and str(enabled_accounts_raw).strip():
+                enabled_accounts = json.loads(enabled_accounts_raw)
+                logger.info(f"✅ Loaded enabled_accounts for trader {trader_id}: {len(enabled_accounts)} accounts")
+                for acct in enabled_accounts:
+                    logger.info(f"  - Enabled: {acct.get('account_name')} (subaccount_id={acct.get('subaccount_id')})")
+            else:
+                logger.info(f"⚠️ No enabled_accounts found for trader {trader_id} (raw value: '{enabled_accounts_raw}')")
+        except Exception as e:
+            logger.warning(f"❌ Error parsing enabled_accounts: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
+            enabled_accounts = []
+        
+        # Get all accounts with subaccounts for the routing table
+        is_postgres = is_using_postgres()
+        if is_postgres:
+            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
+        else:
+            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+        accounts = []
+        for row in cursor.fetchall():
+            parent_id = row['id']
+            parent_name = row['name']
+            if row['tradovate_accounts']:
+                try:
+                    tradovate_accts = json.loads(row['tradovate_accounts'])
+                    for acct in tradovate_accts:
+                        if isinstance(acct, dict) and acct.get('name'):
+                            env_label = "🟠 DEMO" if acct.get('is_demo') else "🟢 LIVE"
+                            # Check if this subaccount is enabled in account routing
+                            is_enabled = False
+                            acct_subaccount_id = acct.get('id')  # This is the subaccount ID from tradovate_accounts
+                            for enabled_acct in enabled_accounts:
+                                # Match by subaccount_id (most reliable)
+                                enabled_subaccount_id = enabled_acct.get('subaccount_id')
+                                if enabled_subaccount_id and enabled_subaccount_id == acct_subaccount_id:
+                                    is_enabled = True
+                                    logger.info(f"  ✓ Account {acct.get('name')} (subaccount_id={acct_subaccount_id}) is ENABLED")
+                                    break
+                            # If no enabled_accounts stored, use legacy: check if it's the primary account
+                            if not enabled_accounts:
+                                is_enabled = (acct_subaccount_id == trader['subaccount_id'])
+                                logger.debug(f"  - Using legacy check: {acct.get('name')} is_selected={is_enabled}")
+                            accounts.append({
+                                'id': parent_id,
+                                'name': acct['name'],
+                                'display_name': f"{env_label} - {acct['name']} ({parent_name})",
+                                'subaccount_id': acct.get('id'),
+                                'is_demo': acct.get('is_demo', False),
+                                'is_selected': is_enabled
+                            })
+                except:
+                    pass
+        
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error loading trader: {e}")
+        if 'conn' in locals():
+            conn.close()
+        return redirect('/traders')
+        
+        return render_template(
+            'traders.html',
+            mode='edit',
+            header_title='Edit Trader',
+            header_cta='Update Trader',
+            trader=trader,
+            accounts=accounts
+        )
+    except Exception as e:
+        logger.error(f"Error in traders_edit for trader {trader_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return f"<h1>Error loading trader</h1><pre>{str(e)}</pre>", 500
 
 @app.route('/control-center')
 def control_center():
