@@ -3758,8 +3758,11 @@ def get_live_strategies():
         cursor = conn.cursor()
         # Try to get enabled strategies, fallback to all if enabled column doesn't exist
         try:
-            cursor.execute("SELECT * FROM strategies WHERE enabled = 1")
-        except sqlite3.OperationalError:
+            if is_using_postgres():
+                cursor.execute("SELECT * FROM strategies WHERE enabled = true")
+            else:
+                cursor.execute("SELECT * FROM strategies WHERE enabled = 1")
+        except (sqlite3.OperationalError, Exception):
             # enabled column doesn't exist, get all strategies
             cursor.execute("SELECT * FROM strategies")
         strategies = cursor.fetchall()
@@ -5240,7 +5243,10 @@ def get_cached_recorder(webhook_token):
     conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM recorders WHERE webhook_token = ? AND recording_enabled = 1', (webhook_token,))
+    if is_using_postgres():
+        cursor.execute('SELECT * FROM recorders WHERE webhook_token = %s AND recording_enabled = true', (webhook_token,))
+    else:
+        cursor.execute('SELECT * FROM recorders WHERE webhook_token = ? AND recording_enabled = 1', (webhook_token,))
     row = cursor.fetchone()
     conn.close()
     
@@ -5741,13 +5747,22 @@ def process_webhook_directly(webhook_token):
         logger.info(f"📊 {signal_type}: TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
         
         # Get linked trader for live execution
-        cursor.execute('''
-            SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
-            FROM traders t
-            JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = ? AND t.enabled = 1
-            LIMIT 1
-        ''', (recorder_id,))
+        if is_using_postgres():
+            cursor.execute('''
+                SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
+                FROM traders t
+                JOIN accounts a ON t.account_id = a.id
+                WHERE t.recorder_id = %s AND t.enabled = true
+                LIMIT 1
+            ''', (recorder_id,))
+        else:
+            cursor.execute('''
+                SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
+                FROM traders t
+                JOIN accounts a ON t.account_id = a.id
+                WHERE t.recorder_id = ? AND t.enabled = 1
+                LIMIT 1
+            ''', (recorder_id,))
         trader_row = cursor.fetchone()
         trader = dict(trader_row) if trader_row else None
         
@@ -5825,9 +5840,14 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        cursor.execute('''
-            SELECT * FROM recorders WHERE webhook_token = ? AND recording_enabled = 1
-        ''', (webhook_token,))
+        if is_using_postgres():
+            cursor.execute('''
+                SELECT * FROM recorders WHERE webhook_token = %s AND recording_enabled = true
+            ''', (webhook_token,))
+        else:
+            cursor.execute('''
+                SELECT * FROM recorders WHERE webhook_token = ? AND recording_enabled = 1
+            ''', (webhook_token,))
         recorder = cursor.fetchone()
         
         if not recorder:
@@ -13653,9 +13673,14 @@ def record_strategy_pnl_continuously():
                 try:
                     conn = get_db_connection()
                     cursor = conn.cursor()
-                    cursor.execute('''
-                        SELECT id, name FROM strategies WHERE enabled = 1
-                    ''')
+                    if is_using_postgres():
+                        cursor.execute('''
+                            SELECT id, name FROM strategies WHERE enabled = true
+                        ''')
+                    else:
+                        cursor.execute('''
+                            SELECT id, name FROM strategies WHERE enabled = 1
+                        ''')
                     strategies = cursor.fetchall()
                     conn.close()
                 except Exception as e:
@@ -13747,12 +13772,20 @@ def auto_flat_after_cutoff_worker():
             cursor = conn.cursor()
             
             # Find recorders with auto_flat_after_cutoff enabled and time filters set
-            cursor.execute('''
-                SELECT r.id, r.name, r.time_filter_1_stop, r.time_filter_2_stop, r.auto_flat_after_cutoff
-                FROM recorders r
-                WHERE r.auto_flat_after_cutoff = 1
-                AND (r.time_filter_1_stop IS NOT NULL OR r.time_filter_2_stop IS NOT NULL)
-            ''')
+            if is_using_postgres():
+                cursor.execute('''
+                    SELECT r.id, r.name, r.time_filter_1_stop, r.time_filter_2_stop, r.auto_flat_after_cutoff
+                    FROM recorders r
+                    WHERE r.auto_flat_after_cutoff = true
+                    AND (r.time_filter_1_stop IS NOT NULL OR r.time_filter_2_stop IS NOT NULL)
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT r.id, r.name, r.time_filter_1_stop, r.time_filter_2_stop, r.auto_flat_after_cutoff
+                    FROM recorders r
+                    WHERE r.auto_flat_after_cutoff = 1
+                    AND (r.time_filter_1_stop IS NOT NULL OR r.time_filter_2_stop IS NOT NULL)
+                ''')
             recorders = cursor.fetchall()
             
             for rec in recorders:
@@ -13781,13 +13814,22 @@ def auto_flat_after_cutoff_worker():
                         logger.info(f"🔄 [{recorder_name}] Found {len(open_trades)} open trades - AUTO-FLATTENING")
                         
                         # Get trader info for closing
-                        cursor.execute('''
-                            SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id
-                            FROM traders t
-                            JOIN accounts a ON t.account_id = a.id
-                            WHERE t.recorder_id = ? AND t.enabled = 1
-                            LIMIT 1
-                        ''', (recorder_id,))
+                        if is_using_postgres():
+                            cursor.execute('''
+                                SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id
+                                FROM traders t
+                                JOIN accounts a ON t.account_id = a.id
+                                WHERE t.recorder_id = %s AND t.enabled = true
+                                LIMIT 1
+                            ''', (recorder_id,))
+                        else:
+                            cursor.execute('''
+                                SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id
+                                FROM traders t
+                                JOIN accounts a ON t.account_id = a.id
+                                WHERE t.recorder_id = ? AND t.enabled = 1
+                                LIMIT 1
+                            ''', (recorder_id,))
                         trader_row = cursor.fetchone()
                         
                         if trader_row:
