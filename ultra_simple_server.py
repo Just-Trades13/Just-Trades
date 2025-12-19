@@ -6856,7 +6856,11 @@ def traders_new():
                 recorders.append({'id': row[0], 'name': row[1], 'strategy_type': row[2] if len(row) > 2 else 'Futures'})
         
         # Get accounts with their tradovate subaccounts for account routing table
-        cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+        is_postgres = is_using_postgres()
+        if is_postgres:
+            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
+        else:
+            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
         accounts = []
         for row in cursor.fetchall():
             # Handle both dict-style and tuple-style rows
@@ -7014,7 +7018,11 @@ def traders_edit(trader_id):
         enabled_accounts = []
     
     # Get all accounts with subaccounts for the routing table
-    cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+    is_postgres = is_using_postgres()
+    if is_postgres:
+        cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
+    else:
+        cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
     accounts = []
     for row in cursor.fetchall():
         parent_id = row['id']
