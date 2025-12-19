@@ -1141,6 +1141,35 @@ app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
 # ============================================================================
+# GLOBAL ERROR HANDLER - Catch ALL errors and display them
+# ============================================================================
+@app.errorhandler(500)
+def internal_error(error):
+    import traceback
+    tb = traceback.format_exc()
+    print(f"❌ 500 ERROR: {error}")
+    print(f"❌ TRACEBACK: {tb}")
+    return f"""
+    <h1>500 Internal Server Error</h1>
+    <h2>Error: {error}</h2>
+    <h3>Traceback:</h3>
+    <pre>{tb}</pre>
+    """, 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    tb = traceback.format_exc()
+    print(f"❌ EXCEPTION: {e}")
+    print(f"❌ TRACEBACK: {tb}")
+    return f"""
+    <h1>Error</h1>
+    <h2>{type(e).__name__}: {e}</h2>
+    <h3>Traceback:</h3>
+    <pre>{tb}</pre>
+    """, 500
+
+# ============================================================================
 # SESSION CONFIGURATION - Required for User Authentication
 # ============================================================================
 # Use environment variable for production, or generate a secure random key
