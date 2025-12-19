@@ -6172,19 +6172,57 @@ def api_create_trader():
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         
-        # Verify recorder exists
+        # Verify recorder exists AND get its settings to inherit
         if is_postgres:
-            cursor.execute('SELECT id, name FROM recorders WHERE id = %s', (recorder_id,))
+            cursor.execute('''
+                SELECT id, name, initial_position_size, add_position_size, tp_targets,
+                       sl_enabled, sl_amount, sl_units, max_daily_loss
+                FROM recorders WHERE id = %s
+            ''', (recorder_id,))
         else:
-            cursor.execute('SELECT id, name FROM recorders WHERE id = ?', (recorder_id,))
+            cursor.execute('''
+                SELECT id, name, initial_position_size, add_position_size, tp_targets,
+                       sl_enabled, sl_amount, sl_units, max_daily_loss
+                FROM recorders WHERE id = ?
+            ''', (recorder_id,))
         recorder = cursor.fetchone()
         if not recorder:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
         
-        # Use defaults if not provided
+        # Extract recorder settings (handle both dict and tuple results)
+        if isinstance(recorder, dict):
+            rec_initial = recorder.get('initial_position_size', 1)
+            rec_add = recorder.get('add_position_size', 1)
+            rec_tp = recorder.get('tp_targets', '[]')
+            rec_sl_enabled = recorder.get('sl_enabled', False)
+            rec_sl_amount = recorder.get('sl_amount', 0)
+            rec_sl_units = recorder.get('sl_units', 'Ticks')
+            rec_max_loss = recorder.get('max_daily_loss', 500)
+        else:
+            rec_initial = recorder[2] if recorder[2] is not None else 1
+            rec_add = recorder[3] if recorder[3] is not None else 1
+            rec_tp = recorder[4] if recorder[4] is not None else '[]'
+            rec_sl_enabled = recorder[5] if recorder[5] is not None else False
+            rec_sl_amount = recorder[6] if recorder[6] is not None else 0
+            rec_sl_units = recorder[7] if recorder[7] is not None else 'Ticks'
+            rec_max_loss = recorder[8] if recorder[8] is not None else 500
+        
+        # INHERIT from recorder if user didn't provide custom values
         if initial_position_size is None:
-            initial_position_size = 1
+            initial_position_size = rec_initial
+        if add_position_size is None:
+            add_position_size = rec_add
+        if tp_targets is None:
+            tp_targets = rec_tp
+        if sl_enabled is None:
+            sl_enabled = rec_sl_enabled
+        if sl_amount is None:
+            sl_amount = rec_sl_amount
+        if sl_units is None:
+            sl_units = rec_sl_units
+        if max_daily_loss is None:
+            max_daily_loss = rec_max_loss
         
         # Verify account exists
         if is_postgres:
