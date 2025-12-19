@@ -125,18 +125,21 @@ def is_using_postgres():
     """Check if we're actually using PostgreSQL"""
     return _using_postgres
 
+_pg_init_error = None  # Store PostgreSQL init error for debugging
+
 def _init_db_once():
     """Initialize database once on startup."""
-    global _using_postgres, _tables_initialized, _db_url
-    
+    global _using_postgres, _tables_initialized, _db_url, _pg_init_error
+
     if _tables_initialized:
         return
-    
+
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
         try:
             import psycopg2
             _db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-            
+            print(f"🔄 Attempting PostgreSQL connection...")
+
             # Test connection and create tables
             conn = psycopg2.connect(_db_url)
             conn.close()
@@ -146,8 +149,13 @@ def _init_db_once():
             print("✅ PostgreSQL connected and tables initialized")
             return
         except Exception as e:
+            _pg_init_error = str(e)
             print(f"⚠️ PostgreSQL init failed: {e}")
+            import traceback
+            traceback.print_exc()
             _using_postgres = False
+    else:
+        print(f"⚠️ DATABASE_URL not set or invalid. DATABASE_URL exists: {bool(DATABASE_URL)}")
     
     # SQLite fallback
     _using_postgres = False
@@ -2605,14 +2613,19 @@ def health():
     # Check async utils
     async_status = "available" if ASYNC_UTILS_AVAILABLE else "not loaded"
     
+    # Use our own is_using_postgres() for accurate type
+    actual_db_type = "postgresql" if is_using_postgres() else "sqlite"
+    
     status = {
         "status": "healthy" if db_status == "healthy" else "degraded",
         "database": db_status,
-        "database_type": db_type,
+        "database_type": actual_db_type,
+        "database_url_set": bool(DATABASE_URL),
+        "pg_error": _pg_init_error if not is_using_postgres() else None,
         "cache": cache_status,
         "async_utils": async_status,
         "timestamp": datetime.now().isoformat(),
-        "version": "2025-12-19-v4-auth-fix"
+        "version": "2025-12-19-v5-db-debug"
     }
     
     return jsonify(status), 200 if db_status == "healthy" else 503
