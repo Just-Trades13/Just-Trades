@@ -218,8 +218,83 @@
             text-transform: uppercase;
         }
         .user-chip .material-icons { font-size: 1rem; }
-        .user-chip .chevron { font-size: 1.1rem; }
+        .user-chip .chevron { font-size: 1.1rem; transition: transform 0.2s ease; }
+        .user-chip.active .chevron { transform: rotate(180deg); }
         .user-name { font-weight: 600; }
+
+        /* User Dropdown Menu */
+        .user-dropdown-wrapper {
+            position: relative;
+        }
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 200px;
+            background: rgba(15, 23, 42, 0.98);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(16px);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+            z-index: 1000;
+            overflow: hidden;
+        }
+        .user-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .user-dropdown-header {
+            padding: 16px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            background: rgba(25, 184, 255, 0.08);
+        }
+        .user-dropdown-header .user-email {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        .user-dropdown-header .user-display-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .user-dropdown-menu {
+            list-style: none;
+            margin: 0;
+            padding: 8px 0;
+        }
+        .user-dropdown-menu li a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: var(--text-light);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: background 0.2s ease;
+        }
+        .user-dropdown-menu li a:hover {
+            background: rgba(148, 163, 184, 0.12);
+        }
+        .user-dropdown-menu li a .material-icons {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+        }
+        .user-dropdown-menu li.divider {
+            height: 1px;
+            background: rgba(148, 163, 184, 0.12);
+            margin: 8px 0;
+        }
+        .user-dropdown-menu li a.logout-link {
+            color: #f87171;
+        }
+        .user-dropdown-menu li a.logout-link .material-icons {
+            color: #f87171;
+        }
 
         /* Main Content */
         .main-content { padding: 30px; }
@@ -478,10 +553,26 @@
                     <button class="mode-toggle" type="button" aria-label="Toggle theme">
                         <span class="material-icons">dark_mode</span>
                     </button>
-                    <div class="user-chip" tabindex="0">
-                        <span class="material-icons">person</span>
-                        <span class="user-name">J.T.M.J</span>
-                        <span class="material-icons chevron">expand_more</span>
+                    <div class="user-dropdown-wrapper">
+                        <div class="user-chip" tabindex="0" id="userChip">
+                            <span class="material-icons">person</span>
+                            <span class="user-name">{% if current_user and current_user.is_authenticated %}{{ current_user.display_name or current_user.username }}{% else %}Guest{% endif %}</span>
+                            <span class="material-icons chevron">expand_more</span>
+                        </div>
+                        <div class="user-dropdown" id="userDropdown">
+                            {% if current_user and current_user.is_authenticated %}
+                            <div class="user-dropdown-header">
+                                <div class="user-display-name">{{ current_user.display_name or current_user.username }}</div>
+                                <div class="user-email">{{ current_user.email or '' }}</div>
+                            </div>
+                            {% endif %}
+                            <ul class="user-dropdown-menu">
+                                <li><a href="/settings"><span class="material-icons">settings</span> Settings</a></li>
+                                <li><a href="/accounts"><span class="material-icons">account_balance</span> Account Management</a></li>
+                                <li class="divider"></li>
+                                <li><a href="/logout" class="logout-link"><span class="material-icons">logout</span> Sign Out</a></li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </nav>
@@ -554,6 +645,34 @@
                     sidebarOverlay.classList.remove('active');
                 }
             });
+
+            // User dropdown toggle
+            const userChip = document.getElementById('userChip');
+            const userDropdown = document.getElementById('userDropdown');
+            
+            if (userChip && userDropdown) {
+                userChip.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    userChip.classList.toggle('active');
+                    userDropdown.classList.toggle('show');
+                });
+
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!userChip.contains(e.target) && !userDropdown.contains(e.target)) {
+                        userChip.classList.remove('active');
+                        userDropdown.classList.remove('show');
+                    }
+                });
+
+                // Close dropdown on Escape key
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape') {
+                        userChip.classList.remove('active');
+                        userDropdown.classList.remove('show');
+                    }
+                });
+            }
         });
     </script>
     {% block scripts %}{% endblock %}
