@@ -647,14 +647,15 @@ def execute_trade_simple(
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        placeholder = '%s' if is_postgres else '?'
         
         # Get ALL traders linked to this recorder (multi-user support)
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT t.id, t.enabled_accounts, t.subaccount_id, t.subaccount_name, t.is_demo,
                    a.tradovate_token, a.username, a.password, a.id as account_id
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = ? AND t.enabled = 1
+            WHERE t.recorder_id = {placeholder} AND t.enabled = {'true' if is_postgres else '1'}
         ''', (recorder_id,))
         trader_rows = cursor.fetchall()
         
