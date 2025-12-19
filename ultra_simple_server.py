@@ -141,30 +141,38 @@ def get_db_connection():
     
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
         # PostgreSQL for production
+        print(f"🔄 Attempting PostgreSQL connection...")
         try:
             import psycopg2
             import psycopg2.pool
             from psycopg2.extras import RealDictCursor
+            print("✅ psycopg2 imported successfully")
             
             db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
             
             # Initialize pool if not exists
             if _pg_pool is None:
+                print("🔄 Creating new connection pool...")
                 _pg_pool = psycopg2.pool.ThreadedConnectionPool(2, 20, dsn=db_url)
                 print("✅ PostgreSQL connection pool initialized")
                 _using_postgres = True
                 # Create tables on first connection
+                print("🔄 Creating PostgreSQL tables...")
                 _init_postgres_tables()
+                print("✅ PostgreSQL tables created")
             
             conn = _pg_pool.getconn()
+            print("✅ Got connection from pool")
             # Make it act like sqlite3 with row_factory
             conn.cursor_factory = RealDictCursor
             return PostgresConnectionWrapper(conn, _pg_pool)
-        except ImportError:
-            print("⚠️ psycopg2 not installed, falling back to SQLite")
+        except ImportError as e:
+            print(f"⚠️ psycopg2 not installed: {e}, falling back to SQLite")
             _using_postgres = False
         except Exception as e:
-            print(f"⚠️ PostgreSQL connection failed: {e}, falling back to SQLite")
+            import traceback
+            print(f"❌ PostgreSQL connection failed: {e}")
+            print(f"❌ Full traceback: {traceback.format_exc()}")
             _using_postgres = False
     
     # SQLite for local development (or fallback)
