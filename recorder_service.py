@@ -497,10 +497,15 @@ class PostgresCursorWrapper:
         # Convert SQLite ? placeholders to PostgreSQL %s
         # Also convert SQLite boolean 1/0 to PostgreSQL true/false
         sql = sql.replace('?', '%s')
+        # Handle both with and without table prefix (t.enabled, enabled)
+        sql = sql.replace('t.enabled = 1', 't.enabled = true')
+        sql = sql.replace('t.enabled = 0', 't.enabled = false')
         sql = sql.replace('enabled = 1', 'enabled = true')
         sql = sql.replace('enabled = 0', 'enabled = false')
         sql = sql.replace('recording_enabled = 1', 'recording_enabled = true')
         sql = sql.replace('recording_enabled = 0', 'recording_enabled = false')
+        sql = sql.replace('r.recording_enabled = 1', 'r.recording_enabled = true')
+        sql = sql.replace('r.recording_enabled = 0', 'r.recording_enabled = false')
         if params:
             self._cursor.execute(sql, params)
         else:
@@ -539,33 +544,33 @@ class PostgresConnectionWrapper:
     def __init__(self, conn, pool):
         self._conn = conn
         self._pool = pool
-
+    
     def cursor(self):
         # Return wrapped cursor that auto-converts ? to %s
         return PostgresCursorWrapper(self._conn.cursor())
-
+    
     def execute(self, sql, params=None):
         sql = sql.replace('?', '%s')
         cursor = self._conn.cursor()
         cursor.execute(sql, params or ())
         return PostgresCursorWrapper(cursor)
-
+    
     def commit(self):
         self._conn.commit()
-
+    
     def rollback(self):
         self._conn.rollback()
-
+    
     def close(self):
         try:
             self._conn.rollback()  # Clear any pending transaction
         except:
             pass
         self._pool.putconn(self._conn)
-
+    
     def __enter__(self):
         return self
-
+    
     def __exit__(self, *args):
         self.close()
 
