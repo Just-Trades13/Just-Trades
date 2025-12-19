@@ -3893,20 +3893,24 @@ def create_account():
         if not account_name:
             return jsonify({'success': False, 'error': 'Account name is required'}), 400
         
+        # Get current user_id for data isolation FIRST
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         
-        # Check if account name already exists (wrapper auto-converts ? to %s)
-        cursor.execute("SELECT id FROM accounts WHERE name = ?", (account_name,))
+        # Check if account name already exists FOR THIS USER (not globally)
+        if current_user_id:
+            cursor.execute("SELECT id FROM accounts WHERE name = ? AND user_id = ?", (account_name, current_user_id))
+        else:
+            cursor.execute("SELECT id FROM accounts WHERE name = ? AND user_id IS NULL", (account_name,))
+        
         if cursor.fetchone():
             conn.close()
-            return jsonify({'success': False, 'error': 'Account name already exists'}), 400
-        
-        # Get current user_id for data isolation
-        current_user_id = None
-        if USER_AUTH_AVAILABLE and is_logged_in():
-            current_user_id = get_current_user_id()
+            return jsonify({'success': False, 'error': 'You already have an account with this name'}), 400
         
         # Insert new account with default auth_type and user_id
         if is_postgres:
