@@ -115,9 +115,18 @@ except ImportError:
 # ============================================================
 # DATABASE CONNECTION - Supports both SQLite and PostgreSQL
 # ============================================================
-DATABASE_URL = os.getenv('DATABASE_URL')
+DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('DATABASE_PRIVATE_URL') or os.getenv('DATABASE_PUBLIC_URL')
 _pg_pool = None
 _using_postgres = False  # Track if we're actually using PostgreSQL
+
+# Debug: Print database configuration at startup
+print("=" * 60)
+print("🔍 DATABASE CONFIGURATION DEBUG")
+print(f"DATABASE_URL set: {'YES' if DATABASE_URL else 'NO'}")
+if DATABASE_URL:
+    # Don't print full URL (contains password), just show it exists
+    print(f"DATABASE_URL starts with: {DATABASE_URL[:30]}...")
+print("=" * 60)
 
 def is_using_postgres():
     """Check if we're actually using PostgreSQL (not just if DATABASE_URL is set)"""
