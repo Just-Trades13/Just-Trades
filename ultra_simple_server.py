@@ -4556,6 +4556,150 @@ def create_strategy():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/strategies/<int:strategy_id>', methods=['PUT'])
+def update_strategy(strategy_id):
+    """Update an existing strategy template"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        # Get current user to verify ownership
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+        
+        # Verify ownership (only owner can update)
+        if is_postgres:
+            cursor.execute('SELECT user_id FROM strategies WHERE id = %s', (strategy_id,))
+        else:
+            cursor.execute('SELECT user_id FROM strategies WHERE id = ?', (strategy_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Strategy not found'}), 404
+        
+        owner_id = row[0] if isinstance(row, tuple) else row.get('user_id')
+        if current_user_id and owner_id and owner_id != current_user_id:
+            conn.close()
+            return jsonify({'success': False, 'error': 'You can only edit your own strategies'}), 403
+        
+        # Build update query dynamically based on provided fields
+        update_fields = []
+        update_values = []
+        
+        field_mapping = {
+            'name': 'name',
+            'symbol': 'symbol',
+            'strat_type': 'strat_type',
+            'position_size': 'position_size',
+            'position_add': 'position_add',
+            'take_profit': 'take_profit',
+            'stop_loss': 'stop_loss',
+            'trim': 'trim',
+            'tpsl_units': 'tpsl_units',
+            'max_contracts': 'max_contracts',
+            'max_daily_loss': 'max_daily_loss',
+            'delay_seconds': 'delay_seconds',
+            'entry_delay': 'entry_delay',
+            'signal_cooldown': 'signal_cooldown',
+            'direction_filter': 'direction_filter',
+            'time_filter_enabled': 'time_filter_enabled',
+            'time_filter_start': 'time_filter_start',
+            'time_filter_end': 'time_filter_end',
+            'notes': 'notes',
+            'is_public': 'is_public'
+        }
+        
+        for key, db_field in field_mapping.items():
+            if key in data:
+                value = data[key]
+                # Convert boolean to int for SQLite
+                if key in ['is_public', 'time_filter_enabled'] and not is_postgres:
+                    value = 1 if value else 0
+                update_fields.append(f"{db_field} = %s" if is_postgres else f"{db_field} = ?")
+                update_values.append(value)
+        
+        if not update_fields:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No fields to update'}), 400
+        
+        # Add updated_at
+        update_fields.append("updated_at = CURRENT_TIMESTAMP")
+        
+        # Execute update
+        update_values.append(strategy_id)
+        query = f"UPDATE strategies SET {', '.join(update_fields)} WHERE id = %s" if is_postgres else f"UPDATE strategies SET {', '.join(update_fields)} WHERE id = ?"
+        cursor.execute(query, tuple(update_values))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Updated strategy {strategy_id}")
+        return jsonify({'success': True, 'message': 'Strategy updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating strategy: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/strategies/<int:strategy_id>', methods=['DELETE'])
+def delete_strategy(strategy_id):
+    """Delete a strategy template"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        # Get current user to verify ownership
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+        
+        # Verify ownership
+        if is_postgres:
+            cursor.execute('SELECT user_id, name FROM strategies WHERE id = %s', (strategy_id,))
+        else:
+            cursor.execute('SELECT user_id, name FROM strategies WHERE id = ?', (strategy_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Strategy not found'}), 404
+        
+        owner_id = row[0] if isinstance(row, tuple) else row.get('user_id')
+        strategy_name = row[1] if isinstance(row, tuple) else row.get('name')
+        
+        if current_user_id and owner_id and owner_id != current_user_id:
+            conn.close()
+            return jsonify({'success': False, 'error': 'You can only delete your own strategies'}), 403
+        
+        # Delete the strategy
+        if is_postgres:
+            cursor.execute('DELETE FROM strategies WHERE id = %s', (strategy_id,))
+        else:
+            cursor.execute('DELETE FROM strategies WHERE id = ?', (strategy_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Deleted strategy {strategy_id}: {strategy_name}")
+        return jsonify({'success': True, 'message': f"Strategy '{strategy_name}' deleted"})
+        
+    except Exception as e:
+        logger.error(f"Error deleting strategy: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/recorders', methods=['GET'])
 def recorders_list():
     """Render the recorders list page"""
@@ -7769,10 +7913,14 @@ def traders_new():
 def traders_edit(trader_id):
     """Edit existing trader - load all saved settings"""
     conn = get_db_connection()
-    conn.row_factory = sqlite3.Row
+    is_postgres = is_using_postgres()
+    # Only set row_factory for SQLite - PostgreSQL already uses RealDictCursor
+    if not is_postgres:
+        conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
     # Get the trader with its recorder info (CRITICAL: include all recorder settings for risk management)
+    # Use %s for PostgreSQL, ? for SQLite (wrapper handles conversion)
     cursor.execute('''
         SELECT t.*, 
                r.name as recorder_name, r.strategy_type, r.symbol,
