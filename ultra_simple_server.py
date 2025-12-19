@@ -6836,6 +6836,42 @@ def my_traders():
     """My Traders page - link recorders to accounts"""
     return render_template('my_traders_tab.html')
 
+@app.route('/traders/new/debug')
+def traders_new_debug():
+    """Debug endpoint to test traders/new logic without template"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get recorders
+        cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
+        recorders = cursor.fetchall()
+        
+        # Get accounts - use PostgreSQL compatible query
+        is_postgres = is_using_postgres()
+        if is_postgres:
+            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
+        else:
+            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+        accounts = cursor.fetchall()
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'is_postgres': is_postgres,
+            'recorders_count': len(recorders) if recorders else 0,
+            'accounts_count': len(accounts) if accounts else 0,
+            'deploy_time': '2025-12-19T01:15:00Z'
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/traders/new')
 def traders_new():
     """Create new trader page - select recorder and accounts"""
