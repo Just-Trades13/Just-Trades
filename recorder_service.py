@@ -367,6 +367,7 @@ threading.Timer(2.0, _auto_start_daemon).start()
 # DATABASE CONNECTION - Supports both SQLite and PostgreSQL
 # ============================================================================
 DATABASE_URL = os.getenv('DATABASE_URL')
+is_postgres = bool(DATABASE_URL and DATABASE_URL.startswith('postgres'))
 _pg_pool = None
 
 # ============================================================================
@@ -3383,15 +3384,26 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
         # CRITICAL: Only check trades where TP/SL was actually placed (tp_price IS NOT NULL)
         # SKIP broker-managed positions - Tradovate's bracket orders handle those
         # Also skip trades that were just opened (give TP order time to settle - 5 second grace period)
-        cursor.execute('''
-            SELECT t.*, r.name as recorder_name 
-            FROM recorded_trades t
-            JOIN recorders r ON t.recorder_id = r.id
-            WHERE t.status = 'open' 
-            AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
-            AND COALESCE(t.broker_managed_tp_sl, 0) = 0
-            AND datetime(t.entry_time, '+5 seconds') < datetime('now')
-        ''')
+        if is_postgres:
+            cursor.execute('''
+                SELECT t.*, r.name as recorder_name 
+                FROM recorded_trades t
+                JOIN recorders r ON t.recorder_id = r.id
+                WHERE t.status = 'open' 
+                AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
+                AND COALESCE(t.broker_managed_tp_sl, 0) = 0
+                AND t.entry_time + INTERVAL '5 seconds' < NOW()
+            ''')
+        else:
+            cursor.execute('''
+                SELECT t.*, r.name as recorder_name 
+                FROM recorded_trades t
+                JOIN recorders r ON t.recorder_id = r.id
+                WHERE t.status = 'open' 
+                AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
+                AND COALESCE(t.broker_managed_tp_sl, 0) = 0
+                AND datetime(t.entry_time, '+5 seconds') < datetime('now')
+            ''')
         
         open_trades = [dict(row) for row in cursor.fetchall()]
         
@@ -3656,14 +3668,24 @@ def reconcile_positions_with_broker():
                             cursor_fix = conn_fix.cursor()
                             
                             # Close the recorded_trades entry
-                            cursor_fix.execute('''
-                                UPDATE recorded_trades 
-                                SET status = 'closed', 
-                                    exit_reason = 'broker_sync_flat',
-                                    exit_time = datetime('now'),
-                                    updated_at = datetime('now')
-                                WHERE recorder_id = ? AND status = 'open'
-                            ''', (recorder_id,))
+                            if is_postgres:
+                                cursor_fix.execute('''
+                                    UPDATE recorded_trades 
+                                    SET status = 'closed', 
+                                        exit_reason = 'broker_sync_flat',
+                                        exit_time = NOW(),
+                                        updated_at = NOW()
+                                    WHERE recorder_id = %s AND status = 'open'
+                                ''', (recorder_id,))
+                            else:
+                                cursor_fix.execute('''
+                                    UPDATE recorded_trades 
+                                    SET status = 'closed', 
+                                        exit_reason = 'broker_sync_flat',
+                                        exit_time = datetime('now'),
+                                        updated_at = datetime('now')
+                                    WHERE recorder_id = ? AND status = 'open'
+                                ''', (recorder_id,))
                             
                             # Clear recorder_positions
                             cursor_fix.execute('''
@@ -3686,18 +3708,32 @@ def reconcile_positions_with_broker():
                             conn_fix = get_db_connection()
                             cursor_fix = conn_fix.cursor()
                             
-                            cursor_fix.execute('''
-                                UPDATE recorded_trades 
-                                SET quantity = ?,
-                                    updated_at = datetime('now')
-                                WHERE recorder_id = ? AND status = 'open'
-                            ''', (abs(broker_qty), recorder_id))
-                            
-                            cursor_fix.execute('''
-                                UPDATE recorder_positions 
-                                SET total_quantity = ?
-                                WHERE recorder_id = ?
-                            ''', (abs(broker_qty), recorder_id))
+                            if is_postgres:
+                                cursor_fix.execute('''
+                                    UPDATE recorded_trades 
+                                    SET quantity = %s,
+                                        updated_at = NOW()
+                                    WHERE recorder_id = %s AND status = 'open'
+                                ''', (abs(broker_qty), recorder_id))
+                                
+                                cursor_fix.execute('''
+                                    UPDATE recorder_positions 
+                                    SET total_quantity = %s
+                                    WHERE recorder_id = %s
+                                ''', (abs(broker_qty), recorder_id))
+                            else:
+                                cursor_fix.execute('''
+                                    UPDATE recorded_trades 
+                                    SET quantity = ?,
+                                        updated_at = datetime('now')
+                                    WHERE recorder_id = ? AND status = 'open'
+                                ''', (abs(broker_qty), recorder_id))
+                                
+                                cursor_fix.execute('''
+                                    UPDATE recorder_positions 
+                                    SET total_quantity = ?
+                                    WHERE recorder_id = ?
+                                ''', (abs(broker_qty), recorder_id))
                             
                             conn_fix.commit()
                             conn_fix.close()
@@ -3710,12 +3746,20 @@ def reconcile_positions_with_broker():
                             conn_fix = get_db_connection()
                             cursor_fix = conn_fix.cursor()
                             
-                            cursor_fix.execute('''
-                                UPDATE recorded_trades 
-                                SET entry_price = ?,
-                                    updated_at = datetime('now')
-                                WHERE recorder_id = ? AND status = 'open'
-                            ''', (broker_avg, recorder_id))
+                            if is_postgres:
+                                cursor_fix.execute('''
+                                    UPDATE recorded_trades 
+                                    SET entry_price = %s,
+                                        updated_at = NOW()
+                                    WHERE recorder_id = %s AND status = 'open'
+                                ''', (broker_avg, recorder_id))
+                            else:
+                                cursor_fix.execute('''
+                                    UPDATE recorded_trades 
+                                    SET entry_price = ?,
+                                        updated_at = datetime('now')
+                                    WHERE recorder_id = ? AND status = 'open'
+                                ''', (broker_avg, recorder_id))
                             
                             cursor_fix.execute('''
                                 UPDATE recorder_positions 
