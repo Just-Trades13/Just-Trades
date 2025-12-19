@@ -6622,8 +6622,10 @@ def process_webhook_directly(webhook_token):
         # Find recorder by webhook token
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
         
-        cursor.execute('SELECT * FROM recorders WHERE webhook_token = ?', (webhook_token,))
+        cursor.execute(f'SELECT * FROM recorders WHERE webhook_token = {placeholder}', (webhook_token,))
         recorder_row = cursor.fetchone()
         
         if not recorder_row:
@@ -6841,10 +6843,16 @@ def process_webhook_directly(webhook_token):
         # --- FILTER 3: Signal Cooldown ---
         signal_cooldown = int(recorder.get('signal_cooldown', 0) or 0)
         if signal_cooldown > 0:
-            cursor.execute('''
-                SELECT MAX(timestamp) FROM recorded_signals 
-                WHERE recorder_id = ? AND timestamp > datetime('now', ?)
-            ''', (recorder_id, f'-{signal_cooldown} seconds'))
+            if is_postgres:
+                cursor.execute(f'''
+                    SELECT MAX(timestamp) FROM recorded_signals 
+                    WHERE recorder_id = %s AND timestamp > NOW() - INTERVAL '{signal_cooldown} seconds'
+                ''', (recorder_id,))
+            else:
+                cursor.execute('''
+                    SELECT MAX(timestamp) FROM recorded_signals 
+                    WHERE recorder_id = ? AND timestamp > datetime('now', ?)
+                ''', (recorder_id, f'-{signal_cooldown} seconds'))
             last_signal = cursor.fetchone()
             if last_signal and last_signal[0]:
                 logger.warning(f"🚫 [{recorder_name}] Cooldown BLOCKED: Last signal was within {signal_cooldown}s")
@@ -6856,10 +6864,16 @@ def process_webhook_directly(webhook_token):
         max_signals = int(recorder.get('max_signals_per_session', 0) or 0)
         if max_signals > 0:
             # Count signals today
-            cursor.execute('''
-                SELECT COUNT(*) FROM recorded_signals 
-                WHERE recorder_id = ? AND DATE(timestamp) = DATE('now')
-            ''', (recorder_id,))
+            if is_postgres:
+                cursor.execute('''
+                    SELECT COUNT(*) FROM recorded_signals 
+                    WHERE recorder_id = %s AND DATE(timestamp) = CURRENT_DATE
+                ''', (recorder_id,))
+            else:
+                cursor.execute('''
+                    SELECT COUNT(*) FROM recorded_signals 
+                    WHERE recorder_id = ? AND DATE(timestamp) = DATE('now')
+                ''', (recorder_id,))
             signal_count = cursor.fetchone()[0] or 0
             if signal_count >= max_signals:
                 logger.warning(f"🚫 [{recorder_name}] Max signals BLOCKED: {signal_count}/{max_signals} signals today")
@@ -6871,10 +6885,16 @@ def process_webhook_directly(webhook_token):
         max_daily_loss = float(recorder.get('max_daily_loss', 0) or 0)
         if max_daily_loss > 0:
             # Calculate today's P&L from closed trades
-            cursor.execute('''
-                SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades 
-                WHERE recorder_id = ? AND DATE(exit_time) = DATE('now') AND status = 'closed'
-            ''', (recorder_id,))
+            if is_postgres:
+                cursor.execute('''
+                    SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades 
+                    WHERE recorder_id = %s AND DATE(exit_time) = CURRENT_DATE AND status = 'closed'
+                ''', (recorder_id,))
+            else:
+                cursor.execute('''
+                    SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades 
+                    WHERE recorder_id = ? AND DATE(exit_time) = DATE('now') AND status = 'closed'
+                ''', (recorder_id,))
             daily_pnl = cursor.fetchone()[0] or 0
             if daily_pnl <= -max_daily_loss:
                 logger.warning(f"🚫 [{recorder_name}] Max daily loss BLOCKED: ${daily_pnl:.2f} (limit: -${max_daily_loss})")
@@ -6892,16 +6912,17 @@ def process_webhook_directly(webhook_token):
         add_delay = int(recorder.get('add_delay', 1) or 1)
         if add_delay > 1:
             # Count total signals for this recorder
-            cursor.execute('SELECT COUNT(*) FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+            cursor.execute(f'SELECT COUNT(*) FROM recorded_signals WHERE recorder_id = {placeholder}', (recorder_id,))
             total_signals = cursor.fetchone()[0] or 0
             signal_number = total_signals + 1  # This will be the Nth signal
             
             if signal_number % add_delay != 0:
                 logger.warning(f"🚫 [{recorder_name}] Signal delay BLOCKED: Signal #{signal_number} (executing every {add_delay})")
                 # Still record the signal but don't execute
-                cursor.execute('''
+                timestamp_fn = 'NOW()' if is_postgres else "datetime('now')"
+                cursor.execute(f'''
                     INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, timestamp, executed)
-                    VALUES (?, ?, ?, ?, ?, datetime('now'), 0)
+                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 0)
                 ''', (recorder_id, action, ticker, price, quantity))
                 conn.commit()
                 conn.close()
@@ -6912,9 +6933,10 @@ def process_webhook_directly(webhook_token):
         # 📊 RECORD THE SIGNAL (after filters pass)
         # ============================================================
         try:
-            cursor.execute('''
+            timestamp_fn = 'NOW()' if is_postgres else "datetime('now')"
+            cursor.execute(f'''
                 INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, timestamp, executed)
-                VALUES (?, ?, ?, ?, ?, datetime('now'), 1)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 1)
             ''', (recorder_id, action, ticker, price, quantity))
             conn.commit()
         except Exception as e:
