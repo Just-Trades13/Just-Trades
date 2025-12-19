@@ -5577,11 +5577,14 @@ def api_update_recorder(recorder_id):
             return jsonify({'success': False, 'error': 'No data provided'}), 400
         
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
+        is_postgres = is_using_postgres()
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        placeholder = '%s' if is_postgres else '?'
         
         # Check if recorder exists
-        cursor.execute('SELECT id FROM recorders WHERE id = ?', (recorder_id,))
+        cursor.execute(f'SELECT id FROM recorders WHERE id = {placeholder}', (recorder_id,))
         if not cursor.fetchone():
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
@@ -5622,35 +5625,36 @@ def api_update_recorder(recorder_id):
         
         for key, db_field in field_mapping.items():
             if key in data:
-                fields.append(f'{db_field} = ?')
+                fields.append(f'{db_field} = {placeholder}')
                 values.append(data[key])
         
-        # Handle boolean fields
+        # Handle boolean fields - PostgreSQL needs True/False, SQLite needs 1/0
         if 'sl_enabled' in data:
-            fields.append('sl_enabled = ?')
-            values.append(1 if data['sl_enabled'] else 0)
+            fields.append(f'sl_enabled = {placeholder}')
+            values.append(bool(data['sl_enabled']) if is_postgres else (1 if data['sl_enabled'] else 0))
         if 'avg_down_enabled' in data:
-            fields.append('avg_down_enabled = ?')
-            values.append(1 if data['avg_down_enabled'] else 0)
+            fields.append(f'avg_down_enabled = {placeholder}')
+            values.append(bool(data['avg_down_enabled']) if is_postgres else (1 if data['avg_down_enabled'] else 0))
         if 'auto_flat_after_cutoff' in data:
-            fields.append('auto_flat_after_cutoff = ?')
-            values.append(1 if data['auto_flat_after_cutoff'] else 0)
+            fields.append(f'auto_flat_after_cutoff = {placeholder}')
+            values.append(bool(data['auto_flat_after_cutoff']) if is_postgres else (1 if data['auto_flat_after_cutoff'] else 0))
         if 'recording_enabled' in data:
-            fields.append('recording_enabled = ?')
-            values.append(1 if data['recording_enabled'] else 0)
+            fields.append(f'recording_enabled = {placeholder}')
+            values.append(bool(data['recording_enabled']) if is_postgres else (1 if data['recording_enabled'] else 0))
         
         # Handle TP targets JSON
         if 'tp_targets' in data:
-            fields.append('tp_targets = ?')
+            fields.append(f'tp_targets = {placeholder}')
             values.append(json.dumps(data['tp_targets']))
         
         # Always update updated_at
-        fields.append('updated_at = CURRENT_TIMESTAMP')
+        timestamp_fn = 'NOW()' if is_postgres else 'CURRENT_TIMESTAMP'
+        fields.append(f'updated_at = {timestamp_fn}')
         
         if fields:
             values.append(recorder_id)
             cursor.execute(f'''
-                UPDATE recorders SET {', '.join(fields)} WHERE id = ?
+                UPDATE recorders SET {', '.join(fields)} WHERE id = {placeholder}
             ''', values)
             conn.commit()
         
