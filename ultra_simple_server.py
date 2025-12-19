@@ -6744,9 +6744,7 @@ def process_webhook_directly(webhook_token):
                 action=close_action,
                 ticker=ticker,
                 quantity=close_qty,
-                tp_ticks=0,  # No TP - this is a close
-                sl_ticks=0,  # No SL - this is a close
-                sl_type='Fixed'
+                tp_ticks=0  # No TP - this is a close
             )
             
             logger.info(f"✅ CLOSE executed for {recorder_name}: {result}")
@@ -7051,14 +7049,14 @@ def process_webhook_directly(webhook_token):
             # Import the SIMPLE trade function
             from recorder_service import execute_trade_simple
             
+            # Note: execute_trade_simple handles TP only
+            # SL is handled separately via bracket orders or trailing stop logic
             result = execute_trade_simple(
                 recorder_id=recorder_id,
                 action=trade_action,
                 ticker=ticker,
                 quantity=quantity,
-                tp_ticks=tp_ticks,
-                sl_ticks=sl_ticks,
-                sl_type=sl_type
+                tp_ticks=tp_ticks
             )
             
             if result.get('success'):
