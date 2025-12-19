@@ -125,21 +125,18 @@ def is_using_postgres():
     """Check if we're actually using PostgreSQL"""
     return _using_postgres
 
-_pg_init_error = None  # Store PostgreSQL init error for debugging
-
 def _init_db_once():
     """Initialize database once on startup."""
-    global _using_postgres, _tables_initialized, _db_url, _pg_init_error
-
+    global _using_postgres, _tables_initialized, _db_url
+    
     if _tables_initialized:
         return
-
+    
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
         try:
             import psycopg2
             _db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-            print(f"🔄 Attempting PostgreSQL connection...")
-
+            
             # Test connection and create tables
             conn = psycopg2.connect(_db_url)
             conn.close()
@@ -149,13 +146,8 @@ def _init_db_once():
             print("✅ PostgreSQL connected and tables initialized")
             return
         except Exception as e:
-            _pg_init_error = str(e)
             print(f"⚠️ PostgreSQL init failed: {e}")
-            import traceback
-            traceback.print_exc()
             _using_postgres = False
-    else:
-        print(f"⚠️ DATABASE_URL not set or invalid. DATABASE_URL exists: {bool(DATABASE_URL)}")
     
     # SQLite fallback
     _using_postgres = False
@@ -2613,19 +2605,14 @@ def health():
     # Check async utils
     async_status = "available" if ASYNC_UTILS_AVAILABLE else "not loaded"
     
-    # Use our own is_using_postgres() for accurate type
-    actual_db_type = "postgresql" if is_using_postgres() else "sqlite"
-    
     status = {
         "status": "healthy" if db_status == "healthy" else "degraded",
         "database": db_status,
-        "database_type": actual_db_type,
-        "database_url_set": bool(DATABASE_URL),
-        "pg_error": _pg_init_error if not is_using_postgres() else None,
+        "database_type": db_type,
         "cache": cache_status,
         "async_utils": async_status,
         "timestamp": datetime.now().isoformat(),
-        "version": "2025-12-19-v5-db-debug"
+        "version": "2025-12-19-v4-auth-fix"
     }
     
     return jsonify(status), 200 if db_status == "healthy" else 503
@@ -2837,117 +2824,362 @@ def dashboard():
 
 # =============================================================================
 # INSIDER SIGNALS ROUTES (Added Dec 8, 2025)
-# Proxies to insider_service.py running on port 8084
+# Integrated directly - no separate service needed
 # =============================================================================
 
-INSIDER_SERVICE_URL = os.getenv("INSIDER_SERVICE_URL", "http://localhost:8084")
+# Import insider service functions
+try:
+    import insider_service
+    INSIDER_SERVICE_AVAILABLE = True
+    # Initialize insider database tables
+    insider_service.init_database()
+    # Start the polling thread for SEC data
+    _insider_polling_thread = threading.Thread(target=insider_service.polling_loop, daemon=True)
+    _insider_polling_thread.start()
+    print("✅ Insider Signals service integrated and polling started")
+except ImportError as e:
+    INSIDER_SERVICE_AVAILABLE = False
+    print(f"⚠️ Insider service not available: {e}")
+except Exception as e:
+    INSIDER_SERVICE_AVAILABLE = False
+    print(f"⚠️ Insider service init failed: {e}")
 
 @app.route('/insider-signals')
 @app.route('/insider_signals')
 def insider_signals():
     """Render the Insider Signals tab"""
-    # Require login if auth is available
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
     return render_template('insider_signals.html')
 
 @app.route('/api/insiders/status')
 def api_insiders_status():
-    """Proxy to insider service status"""
+    """Get insider service status"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"status": "offline", "error": "Service not available"}), 503
+    
     try:
-        resp = requests.get(f"{INSIDER_SERVICE_URL}/status", timeout=5)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "offline", "error": str(e)}), 503
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Check if tables exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='insider_poll_status'")
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({"status": "initializing", "message": "Database initializing..."}), 200
+        
+        cursor.execute('SELECT * FROM insider_poll_status WHERE id = 1')
+        poll_status = cursor.fetchone()
+        
+        cursor.execute('SELECT COUNT(*) FROM insider_filings')
+        total_filings = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM insider_signals')
+        total_signals = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM insider_signals WHERE is_conviction = 1')
+        conviction_signals = cursor.fetchone()[0]
+        
+        today = datetime.now().strftime('%Y-%m-%d')
+        cursor.execute('SELECT COUNT(*) FROM insider_signals WHERE DATE(created_at) = ?', (today,))
+        today_signals = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return jsonify({
+            'service': 'insider_signals_integrated',
+            'status': 'running',
+            'poll_interval_seconds': 300,
+            'last_poll_time': poll_status['last_poll_time'] if poll_status else None,
+            'total_filings': total_filings,
+            'total_signals': total_signals,
+            'conviction_signals': conviction_signals,
+            'today_signals': today_signals,
+            'filings_processed': poll_status['filings_processed'] if poll_status else 0,
+            'errors_count': poll_status['errors_count'] if poll_status else 0
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 @app.route('/api/insiders/today')
 def api_insiders_today():
-    """Proxy to insider service - today's signals"""
+    """Get today's insider signals"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
+    
     try:
-        resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/today", timeout=10)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": str(e), "signals": []}), 503
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        cursor.execute('''
+            SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
+                   f.ownership_change_percent, f.filing_date, f.transaction_date
+            FROM insider_signals s
+            JOIN insider_filings f ON s.filing_id = f.id
+            WHERE DATE(s.created_at) = ?
+            ORDER BY s.signal_score DESC
+        ''', (today,))
+        
+        signals = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'date': today,
+            'count': len(signals),
+            'signals': signals
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "signals": []}), 500
 
 @app.route('/api/insiders/top')
 def api_insiders_top():
-    """Proxy to insider service - top signals with filters"""
+    """Get top signals with filters"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
+    
     try:
-        # Forward query parameters
-        params = request.args.to_dict()
-        resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/top", params=params, timeout=10)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": str(e), "signals": []}), 503
+        limit = request.args.get('limit', 50, type=int)
+        min_score = request.args.get('min_score', 0, type=int)
+        days = request.args.get('days', 7, type=int)
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        since_date = (datetime.now() - timedelta(days=days)).isoformat()
+        
+        cursor.execute('''
+            SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
+                   f.ownership_change_percent, f.filing_date, f.transaction_date
+            FROM insider_signals s
+            JOIN insider_filings f ON s.filing_id = f.id
+            WHERE s.signal_score >= ?
+            AND s.created_at >= ?
+            ORDER BY s.signal_score DESC, s.created_at DESC
+            LIMIT ?
+        ''', (min_score, since_date, limit))
+        
+        signals = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(signals),
+            'filters': {'limit': limit, 'min_score': min_score, 'days': days},
+            'signals': signals
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "signals": []}), 500
 
 @app.route('/api/insiders/ticker/<symbol>')
 def api_insiders_ticker(symbol):
-    """Proxy to insider service - signals for specific ticker"""
+    """Get signals for specific ticker"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
+    
     try:
-        params = request.args.to_dict()
-        resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/ticker/{symbol}", params=params, timeout=10)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": str(e), "signals": []}), 503
+        symbol = symbol.upper()
+        limit = request.args.get('limit', 20, type=int)
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
+                   f.ownership_change_percent, f.filing_date, f.transaction_date
+            FROM insider_signals s
+            JOIN insider_filings f ON s.filing_id = f.id
+            WHERE s.ticker = ?
+            ORDER BY s.created_at DESC
+            LIMIT ?
+        ''', (symbol, limit))
+        
+        signals = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'ticker': symbol,
+            'count': len(signals),
+            'signals': signals
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "signals": []}), 500
 
 @app.route('/api/insiders/conviction')
 def api_insiders_conviction():
-    """Proxy to insider service - high conviction signals"""
+    """Get high conviction signals"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
+    
     try:
-        params = request.args.to_dict()
-        resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/conviction", params=params, timeout=10)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": str(e), "signals": []}), 503
+        limit = request.args.get('limit', 20, type=int)
+        days = request.args.get('days', 30, type=int)
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        since_date = (datetime.now() - timedelta(days=days)).isoformat()
+        
+        cursor.execute('''
+            SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
+                   f.ownership_change_percent, f.filing_date, f.transaction_date
+            FROM insider_signals s
+            JOIN insider_filings f ON s.filing_id = f.id
+            WHERE s.is_conviction = 1
+            AND s.created_at >= ?
+            ORDER BY s.signal_score DESC, s.created_at DESC
+            LIMIT ?
+        ''', (since_date, limit))
+        
+        signals = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(signals),
+            'signals': signals
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "signals": []}), 500
 
 @app.route('/api/insiders/refresh', methods=['POST'])
 def api_insiders_refresh():
-    """Proxy to insider service - trigger manual refresh"""
+    """Trigger manual refresh"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"success": False, "error": "Service not available"}), 503
+    
     try:
-        resp = requests.post(f"{INSIDER_SERVICE_URL}/api/insiders/refresh", timeout=10)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": str(e)}), 503
+        thread = threading.Thread(target=insider_service.process_filings, daemon=True)
+        thread.start()
+        return jsonify({
+            'success': True,
+            'message': 'Refresh triggered - processing in background'
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/insiders/price/<ticker>')
 def api_insiders_price(ticker):
-    """Proxy to insider service - get stock price"""
+    """Get stock price"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"success": False, "error": "Service not available"}), 503
+    
     try:
-        resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/price/{ticker}", timeout=10)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": str(e)}), 503
+        price_data = insider_service.get_stock_price(ticker)
+        if price_data:
+            return jsonify({'success': True, 'ticker': ticker.upper(), **price_data})
+        else:
+            return jsonify({'success': False, 'ticker': ticker.upper(), 'error': 'Price unavailable'}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/insiders/watchlist', methods=['GET', 'POST'])
 def api_insiders_watchlist():
-    """Proxy to insider service - watchlist operations"""
+    """Watchlist operations"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"success": False, "error": "Service not available"}), 503
+    
     try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
         if request.method == 'POST':
-            resp = requests.post(f"{INSIDER_SERVICE_URL}/api/insiders/watchlist", 
-                               json=request.get_json(), timeout=10)
+            data = request.get_json()
+            watch_type = data.get('type', 'ticker')
+            watch_value = data.get('value', '').strip().upper() if watch_type == 'ticker' else data.get('value', '').strip()
+            notes = data.get('notes', '')
+            
+            if not watch_value:
+                return jsonify({'success': False, 'error': 'Value is required'}), 400
+            
+            try:
+                cursor.execute('''
+                    INSERT INTO insider_watchlist (watch_type, watch_value, notes)
+                    VALUES (?, ?, ?)
+                ''', (watch_type, watch_value, notes))
+                conn.commit()
+                watchlist_id = cursor.lastrowid
+                conn.close()
+                return jsonify({'success': True, 'id': watchlist_id, 'message': f'Added {watch_value} to watchlist'})
+            except sqlite3.IntegrityError:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Already in watchlist'}), 409
         else:
-            resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/watchlist", timeout=10)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": str(e)}), 503
+            cursor.execute('SELECT * FROM insider_watchlist ORDER BY created_at DESC')
+            items = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+            return jsonify({'success': True, 'count': len(items), 'watchlist': items})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/insiders/watchlist/<int:item_id>', methods=['DELETE'])
 def api_insiders_watchlist_delete(item_id):
-    """Proxy to insider service - delete watchlist item"""
+    """Delete watchlist item"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"success": False, "error": "Service not available"}), 503
+    
     try:
-        resp = requests.delete(f"{INSIDER_SERVICE_URL}/api/insiders/watchlist/{item_id}", timeout=10)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": str(e)}), 503
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM insider_watchlist WHERE id = ?', (item_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        if deleted:
+            return jsonify({'success': True, 'message': 'Removed from watchlist'})
+        else:
+            return jsonify({'success': False, 'error': 'Item not found'}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/insiders/watchlist/signals')
 def api_insiders_watchlist_signals():
-    """Proxy to insider service - signals matching watchlist"""
+    """Get signals matching watchlist"""
+    if not INSIDER_SERVICE_AVAILABLE:
+        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
+    
     try:
-        resp = requests.get(f"{INSIDER_SERVICE_URL}/api/insiders/watchlist/signals", timeout=10)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": str(e)}), 503
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT watch_type, watch_value FROM insider_watchlist')
+        watchlist = cursor.fetchall()
+        
+        if not watchlist:
+            conn.close()
+            return jsonify({'success': True, 'count': 0, 'signals': []})
+        
+        ticker_list = [w['watch_value'] for w in watchlist if w['watch_type'] == 'ticker']
+        signals = []
+        
+        if ticker_list:
+            placeholders = ','.join(['?' for _ in ticker_list])
+            cursor.execute(f'''
+                SELECT s.*, f.company_name, f.filing_url, f.shares, f.price,
+                       f.ownership_change_percent, f.filing_date, f.transaction_date
+                FROM insider_signals s
+                JOIN insider_filings f ON s.filing_id = f.id
+                WHERE s.ticker IN ({placeholders})
+                ORDER BY s.created_at DESC
+                LIMIT 50
+            ''', ticker_list)
+            signals = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        return jsonify({'success': True, 'count': len(signals), 'signals': signals})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "signals": []}), 500
 
 # =============================================================================
 # END INSIDER SIGNALS ROUTES
