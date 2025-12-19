@@ -114,75 +114,72 @@ except ImportError:
 
 # ============================================================
 # DATABASE CONNECTION - Supports both SQLite and PostgreSQL
+# NO POOLING - Create fresh connection each time (more reliable)
 # ============================================================
 DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('DATABASE_PRIVATE_URL') or os.getenv('DATABASE_PUBLIC_URL')
-_pg_pool = None
 _using_postgres = False
 _tables_initialized = False
+_db_url = None
 
 def is_using_postgres():
     """Check if we're actually using PostgreSQL"""
     return _using_postgres
 
-def _ensure_tables_exist(conn, is_postgres):
-    """Ensure all tables exist - called once on startup"""
-    global _tables_initialized
+def _init_db_once():
+    """Initialize database once on startup."""
+    global _using_postgres, _tables_initialized, _db_url
+    
     if _tables_initialized:
         return
-    try:
-        if is_postgres:
-            _init_postgres_tables()
-        else:
-            _init_sqlite_tables(conn)
-        _tables_initialized = True
-        print("✅ Database tables initialized")
-    except Exception as e:
-        print(f"⚠️ Table initialization warning: {e}")
-
-def get_db_connection():
-    """Get database connection - PostgreSQL for production, SQLite for dev/fallback."""
-    global _pg_pool, _using_postgres
     
-    # Try PostgreSQL if DATABASE_URL is set
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
         try:
             import psycopg2
-            import psycopg2.pool
-            from psycopg2.extras import RealDictCursor
+            _db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
             
-            db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-            
-            # Create pool with MORE connections and proper settings
-            if _pg_pool is None:
-                _pg_pool = psycopg2.pool.ThreadedConnectionPool(
-                    minconn=2,
-                    maxconn=50,  # Increased from 20 to 50
-                    dsn=db_url
-                )
-                _using_postgres = True
-                print("✅ PostgreSQL pool created (2-50 connections)")
-                _ensure_tables_exist(None, True)
-            
-            # Get connection with timeout handling
-            try:
-                conn = _pg_pool.getconn()
-            except psycopg2.pool.PoolError as e:
-                # Pool exhausted - create a direct connection as fallback
-                print(f"⚠️ Pool exhausted, creating direct connection")
-                conn = psycopg2.connect(db_url)
-            
-            conn.cursor_factory = RealDictCursor
-            return PostgresConnectionWrapper(conn, _pg_pool)
+            # Test connection and create tables
+            conn = psycopg2.connect(_db_url)
+            conn.close()
+            _using_postgres = True
+            _init_postgres_tables()
+            _tables_initialized = True
+            print("✅ PostgreSQL connected and tables initialized")
+            return
         except Exception as e:
-            print(f"⚠️ PostgreSQL failed: {e}, using SQLite")
+            print(f"⚠️ PostgreSQL init failed: {e}")
             _using_postgres = False
-            # Don't reset pool - might just be temporary issue
     
     # SQLite fallback
     _using_postgres = False
     conn = sqlite3.connect('just_trades.db', timeout=30)
+    _init_sqlite_tables(conn)
+    conn.close()
+    _tables_initialized = True
+    print("✅ SQLite initialized")
+
+def get_db_connection():
+    """Get fresh database connection - NO POOLING."""
+    global _using_postgres, _db_url
+    
+    # Initialize on first call
+    _init_db_once()
+    
+    # PostgreSQL - create fresh connection each time
+    if _using_postgres and _db_url:
+        try:
+            import psycopg2
+            from psycopg2.extras import RealDictCursor
+            
+            conn = psycopg2.connect(_db_url)
+            conn.cursor_factory = RealDictCursor
+            return PostgresConnectionWrapper(conn, None)  # No pool
+        except Exception as e:
+            print(f"⚠️ PostgreSQL connection failed: {e}")
+            # Fall through to SQLite
+    
+    # SQLite fallback
+    conn = sqlite3.connect('just_trades.db', timeout=30)
     conn.row_factory = sqlite3.Row
-    _ensure_tables_exist(conn, False)
     return conn
 
 class DictRow:
