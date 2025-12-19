@@ -169,9 +169,14 @@ def get_db_connection():
         try:
             import psycopg2
             from psycopg2.extras import RealDictCursor
-            
+
             conn = psycopg2.connect(_db_url)
             conn.cursor_factory = RealDictCursor
+            # Ensure clean state - rollback any previous transaction
+            try:
+                conn.rollback()
+            except:
+                pass
             return PostgresConnectionWrapper(conn, None)  # No pool
         except Exception as e:
             print(f"⚠️ PostgreSQL connection failed: {e}")
@@ -312,6 +317,11 @@ class PostgresConnectionWrapper:
             return
         self._closed = True
         try:
+            # Always rollback before closing to clear any partial transaction
+            try:
+                self._conn.rollback()
+            except:
+                pass
             if self._pool:
                 self._pool.putconn(self._conn)
             else:
