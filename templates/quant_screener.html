@@ -353,6 +353,142 @@
             </div>
         </div>
     </div>
+    
+    <!-- ================================================================== -->
+    <!-- WATCHLIST & DIGEST SECTION (Added Dec 18, 2025) -->
+    <!-- ================================================================== -->
+    
+    <!-- Watchlist Management Section -->
+    <section class="watchlist-section">
+        <header>
+            <div>
+                <h2><i class="material-icons">playlist_add</i> My Watchlist</h2>
+                <p class="section-subtitle">Track your favorite stocks with twice-daily digest reports</p>
+            </div>
+            <div class="watchlist-actions">
+                <button class="btn btn-primary" id="runDigestBtn">
+                    <i class="material-icons">summarize</i> Run Digest Now
+                </button>
+            </div>
+        </header>
+        
+        <div class="watchlist-add-form">
+            <div class="add-ticker-wrapper">
+                <input type="text" id="addTickerInput" placeholder="Enter ticker to add (e.g., AAPL)" autocomplete="off">
+                <button class="btn btn-primary" id="addTickerBtn">
+                    <i class="material-icons">add</i> Add to Watchlist
+                </button>
+            </div>
+        </div>
+        
+        <div class="watchlist-tickers" id="watchlistTickers">
+            <div class="watchlist-loading">
+                <i class="material-icons">hourglass_empty</i>
+                <span>Loading watchlist...</span>
+            </div>
+        </div>
+        
+        <!-- Digest Schedule Info -->
+        <div class="digest-schedule-info">
+            <i class="material-icons">schedule</i>
+            <span>Automated digests run at <strong>7:30 AM CT</strong> and <strong>2:45 PM CT</strong></span>
+        </div>
+    </section>
+    
+    <!-- Digest Results Section -->
+    <section class="digest-section" id="digestSection" style="display: none;">
+        <header>
+            <div>
+                <h2><i class="material-icons">newspaper</i> Watchlist Digest</h2>
+                <p class="section-subtitle" id="digestTimestamp">Last updated: --</p>
+            </div>
+            <div class="digest-tabs">
+                <button class="digest-tab active" data-tab="movers">
+                    <i class="material-icons">trending_up</i> Movers
+                </button>
+                <button class="digest-tab" data-tab="news">
+                    <i class="material-icons">article</i> News
+                </button>
+                <button class="digest-tab" data-tab="ratings">
+                    <i class="material-icons">stars</i> Ratings
+                </button>
+                <button class="digest-tab" data-tab="politicians">
+                    <i class="material-icons">account_balance</i> Politicians
+                </button>
+                <button class="digest-tab" data-tab="market">
+                    <i class="material-icons">analytics</i> Market
+                </button>
+            </div>
+        </header>
+        
+        <!-- Movers Tab -->
+        <div class="digest-tab-content active" id="digestMovers">
+            <div class="movers-grid" id="moversGrid">
+                <div class="digest-placeholder">
+                    <i class="material-icons">trending_flat</i>
+                    <p>No significant movers (±2%) detected</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- News Tab -->
+        <div class="digest-tab-content" id="digestNews">
+            <div class="news-list" id="newsList">
+                <div class="digest-placeholder">
+                    <i class="material-icons">article</i>
+                    <p>Loading news...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Ratings Tab -->
+        <div class="digest-tab-content" id="digestRatings">
+            <div class="ratings-changes-list" id="ratingsChangesList">
+                <div class="digest-placeholder">
+                    <i class="material-icons">stars</i>
+                    <p>No rating changes since last digest</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Politicians Tab -->
+        <div class="digest-tab-content" id="digestPoliticians">
+            <div class="politician-trades-list" id="politicianTradesList">
+                <div class="digest-placeholder">
+                    <i class="material-icons">account_balance</i>
+                    <p>Loading politician trades...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Market Context Tab -->
+        <div class="digest-tab-content" id="digestMarket">
+            <div class="market-context-grid" id="marketContextGrid">
+                <div class="market-card">
+                    <h4><i class="material-icons">show_chart</i> NDX Expected Move</h4>
+                    <div class="market-value" id="ndxExpectedMove">--</div>
+                    <div class="market-source" id="ndxSource">--</div>
+                </div>
+                <div class="market-card">
+                    <h4><i class="material-icons">trending_up</i> SPX Trailing P/E</h4>
+                    <div class="market-value" id="spxPE">--</div>
+                    <div class="market-comparison" id="spxComparison">vs 5-yr avg: --</div>
+                </div>
+                <div class="market-card econ-calendar">
+                    <h4><i class="material-icons">event</i> Economic Calendar (Today)</h4>
+                    <div class="econ-events" id="econEvents">
+                        <div class="digest-placeholder small">
+                            <p>Loading events...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- ================================================================== -->
+    <!-- END WATCHLIST & DIGEST SECTION -->
+    <!-- ================================================================== -->
 </div>
 {% endblock %}
 
@@ -1524,6 +1660,618 @@
             justify-content: flex-end;
         }
     }
+    
+    /* ================================================================== */
+    /* WATCHLIST & DIGEST STYLES (Added Dec 18, 2025) */
+    /* ================================================================== */
+    
+    /* Watchlist Section */
+    .watchlist-section {
+        background: rgba(11, 18, 33, 0.92);
+        border-radius: 18px;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
+    
+    .watchlist-section header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    
+    .watchlist-section h2 {
+        margin: 0;
+        font-size: 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #10b981;
+    }
+    
+    .watchlist-section h2 i {
+        font-size: 1.3rem;
+    }
+    
+    .section-subtitle {
+        margin: 0.25rem 0 0;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    
+    .watchlist-add-form {
+        display: flex;
+        gap: 1rem;
+    }
+    
+    .add-ticker-wrapper {
+        display: flex;
+        gap: 0.75rem;
+        flex: 1;
+        max-width: 500px;
+    }
+    
+    .add-ticker-wrapper input {
+        flex: 1;
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 10px;
+        color: #e2e8f0;
+        padding: 0.7rem 1rem;
+        font-size: 0.95rem;
+        text-transform: uppercase;
+    }
+    
+    .add-ticker-wrapper input:focus {
+        outline: none;
+        border-color: #10b981;
+        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
+    }
+    
+    .watchlist-tickers {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        min-height: 50px;
+    }
+    
+    .watchlist-ticker-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        border-radius: 999px;
+        padding: 0.4rem 0.6rem 0.4rem 0.9rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #34d399;
+    }
+    
+    .watchlist-ticker-chip .company-name {
+        color: var(--text-muted);
+        font-weight: 400;
+        font-size: 0.75rem;
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .watchlist-ticker-chip .remove-btn {
+        width: 20px;
+        height: 20px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(248, 113, 113, 0.2);
+        color: #f87171;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        padding: 0;
+    }
+    
+    .watchlist-ticker-chip .remove-btn:hover {
+        background: rgba(248, 113, 113, 0.4);
+    }
+    
+    .watchlist-ticker-chip .remove-btn i {
+        font-size: 0.85rem;
+    }
+    
+    .watchlist-loading {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+    
+    .watchlist-empty {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        font-style: italic;
+    }
+    
+    .digest-schedule-info {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 10px;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    
+    .digest-schedule-info i {
+        color: #60a5fa;
+    }
+    
+    .digest-schedule-info strong {
+        color: #60a5fa;
+    }
+    
+    /* Digest Section */
+    .digest-section {
+        background: rgba(11, 18, 33, 0.92);
+        border-radius: 18px;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
+    
+    .digest-section header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    
+    .digest-section h2 {
+        margin: 0;
+        font-size: 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #fbbf24;
+    }
+    
+    .digest-section h2 i {
+        font-size: 1.3rem;
+    }
+    
+    .digest-tabs {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    
+    .digest-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.5rem 1rem;
+        background: rgba(148, 163, 184, 0.1);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .digest-tab:hover {
+        background: rgba(148, 163, 184, 0.2);
+    }
+    
+    .digest-tab.active {
+        background: rgba(245, 158, 11, 0.2);
+        border-color: rgba(245, 158, 11, 0.4);
+        color: #fbbf24;
+    }
+    
+    .digest-tab i {
+        font-size: 1rem;
+    }
+    
+    .digest-tab-content {
+        display: none;
+    }
+    
+    .digest-tab-content.active {
+        display: block;
+    }
+    
+    .digest-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        color: var(--text-muted);
+        text-align: center;
+    }
+    
+    .digest-placeholder i {
+        font-size: 2.5rem;
+        margin-bottom: 0.75rem;
+        opacity: 0.5;
+    }
+    
+    .digest-placeholder.small {
+        padding: 1rem;
+    }
+    
+    .digest-placeholder.small i {
+        font-size: 1.5rem;
+    }
+    
+    /* Movers Grid */
+    .movers-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+    
+    .mover-card {
+        background: rgba(15, 23, 42, 0.55);
+        border-radius: 12px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .mover-card.up {
+        border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    
+    .mover-card.down {
+        border: 1px solid rgba(248, 113, 113, 0.3);
+    }
+    
+    .mover-ticker {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--primary-color);
+    }
+    
+    .mover-price {
+        font-size: 1.25rem;
+        font-weight: 600;
+    }
+    
+    .mover-change {
+        font-size: 1rem;
+        font-weight: 700;
+    }
+    
+    .mover-change.positive {
+        color: #10b981;
+    }
+    
+    .mover-change.negative {
+        color: #f87171;
+    }
+    
+    /* News List */
+    .news-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    
+    .news-item {
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 12px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .news-item:hover {
+        border-color: rgba(59, 130, 246, 0.3);
+    }
+    
+    .news-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .news-ticker {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--primary-color);
+        background: rgba(25, 184, 255, 0.1);
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+    }
+    
+    .news-source {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+    }
+    
+    .news-headline {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #e2e8f0;
+        line-height: 1.4;
+    }
+    
+    .news-headline a {
+        color: inherit;
+        text-decoration: none;
+    }
+    
+    .news-headline a:hover {
+        color: var(--primary-color);
+    }
+    
+    .news-summary {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+    }
+    
+    .news-meta {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    
+    /* Ratings Changes */
+    .ratings-changes-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .rating-change-item {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+    }
+    
+    .rating-change-ticker {
+        font-weight: 700;
+        color: var(--primary-color);
+        min-width: 60px;
+    }
+    
+    .rating-change-arrow {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex: 1;
+    }
+    
+    .rating-change-arrow i {
+        font-size: 1.2rem;
+    }
+    
+    .rating-change-arrow.upgrade i {
+        color: #10b981;
+    }
+    
+    .rating-change-arrow.downgrade i {
+        color: #f87171;
+    }
+    
+    /* Politician Trades */
+    .politician-trades-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    
+    .politician-trade-item {
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 12px;
+        padding: 1rem;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.75rem;
+    }
+    
+    .politician-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .politician-name {
+        font-weight: 600;
+        color: #e2e8f0;
+    }
+    
+    .politician-chamber {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    
+    .politician-chamber.house {
+        color: #60a5fa;
+    }
+    
+    .politician-chamber.senate {
+        color: #a78bfa;
+    }
+    
+    .trade-details {
+        text-align: right;
+    }
+    
+    .trade-ticker {
+        font-weight: 700;
+        color: var(--primary-color);
+    }
+    
+    .trade-action {
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    
+    .trade-action.buy {
+        color: #10b981;
+    }
+    
+    .trade-action.sell {
+        color: #f87171;
+    }
+    
+    .trade-amount {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    
+    .trade-date {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    
+    /* Market Context Grid */
+    .market-context-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+    }
+    
+    .market-card {
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 14px;
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .market-card h4 {
+        margin: 0;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .market-card h4 i {
+        font-size: 1.1rem;
+        color: var(--primary-color);
+    }
+    
+    .market-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #e2e8f0;
+    }
+    
+    .market-source, .market-comparison {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    
+    .market-card.econ-calendar {
+        grid-column: span 1;
+    }
+    
+    .econ-events {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .econ-event {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem;
+        background: rgba(148, 163, 184, 0.05);
+        border-radius: 8px;
+    }
+    
+    .econ-time {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #60a5fa;
+        min-width: 55px;
+    }
+    
+    .econ-name {
+        font-size: 0.85rem;
+        color: #e2e8f0;
+        flex: 1;
+    }
+    
+    .econ-importance {
+        font-size: 0.65rem;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+    
+    .econ-importance.high {
+        background: rgba(248, 113, 113, 0.2);
+        color: #f87171;
+    }
+    
+    .econ-importance.medium {
+        background: rgba(245, 158, 11, 0.2);
+        color: #fbbf24;
+    }
+    
+    @media (max-width: 768px) {
+        .watchlist-section header,
+        .digest-section header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        .add-ticker-wrapper {
+            flex-direction: column;
+            max-width: 100%;
+        }
+        
+        .digest-tabs {
+            width: 100%;
+            justify-content: flex-start;
+        }
+        
+        .market-context-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    
+    /* ================================================================== */
+    /* END WATCHLIST & DIGEST STYLES */
+    /* ================================================================== */
 </style>
 {% endblock %}
 
@@ -2354,6 +3102,380 @@
             startLivePriceUpdates();
         }
     });
+    
+    // ============================================================================
+    // WATCHLIST & DIGEST FUNCTIONALITY (Added Dec 18, 2025)
+    // ============================================================================
+    
+    let watchlistItems = [];
+    let currentDigest = null;
+    
+    // Initialize watchlist on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        initWatchlistListeners();
+        loadWatchlist();
+    });
+    
+    function initWatchlistListeners() {
+        // Add ticker button
+        document.getElementById('addTickerBtn')?.addEventListener('click', addTickerToWatchlist);
+        
+        // Add ticker on Enter key
+        document.getElementById('addTickerInput')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addTickerToWatchlist();
+            }
+        });
+        
+        // Run digest button
+        document.getElementById('runDigestBtn')?.addEventListener('click', runDigest);
+        
+        // Digest tab switching
+        document.querySelectorAll('.digest-tab').forEach(tab => {
+            tab.addEventListener('click', () => switchDigestTab(tab.dataset.tab));
+        });
+    }
+    
+    // Load watchlist from server
+    async function loadWatchlist() {
+        const container = document.getElementById('watchlistTickers');
+        if (!container) return;
+        
+        try {
+            const response = await fetch('/api/watchlist');
+            const data = await response.json();
+            
+            if (data.success) {
+                watchlistItems = data.watchlist || [];
+                renderWatchlist();
+            } else {
+                container.innerHTML = '<span class="watchlist-empty">Could not load watchlist</span>';
+            }
+        } catch (error) {
+            console.error('Error loading watchlist:', error);
+            container.innerHTML = '<span class="watchlist-empty">Error loading watchlist</span>';
+        }
+    }
+    
+    // Render watchlist chips
+    function renderWatchlist() {
+        const container = document.getElementById('watchlistTickers');
+        if (!container) return;
+        
+        if (watchlistItems.length === 0) {
+            container.innerHTML = '<span class="watchlist-empty">No tickers in watchlist. Add some above!</span>';
+            return;
+        }
+        
+        container.innerHTML = watchlistItems.map(item => `
+            <div class="watchlist-ticker-chip" data-ticker="${item.ticker}">
+                <span class="ticker-symbol">${item.ticker}</span>
+                <span class="company-name">${item.company_name || ''}</span>
+                <button class="remove-btn" onclick="removeFromWatchlist('${item.ticker}')" title="Remove">
+                    <i class="material-icons">close</i>
+                </button>
+            </div>
+        `).join('');
+    }
+    
+    // Add ticker to watchlist
+    async function addTickerToWatchlist() {
+        const input = document.getElementById('addTickerInput');
+        const ticker = input?.value.trim().toUpperCase();
+        
+        if (!ticker) {
+            showToast('Please enter a ticker symbol', 'warning');
+            return;
+        }
+        
+        // Check if already in watchlist
+        if (watchlistItems.some(item => item.ticker === ticker)) {
+            showToast(`${ticker} is already in your watchlist`, 'warning');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/watchlist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticker })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                watchlistItems.push({ ticker: data.ticker, company_name: data.company_name });
+                renderWatchlist();
+                input.value = '';
+                showToast(`Added ${ticker} to watchlist`, 'success');
+            } else {
+                showToast(data.error || 'Failed to add ticker', 'error');
+            }
+        } catch (error) {
+            console.error('Error adding to watchlist:', error);
+            showToast('Error adding ticker', 'error');
+        }
+    }
+    
+    // Remove ticker from watchlist
+    async function removeFromWatchlist(ticker) {
+        try {
+            const response = await fetch(`/api/watchlist/${ticker}`, {
+                method: 'DELETE'
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                watchlistItems = watchlistItems.filter(item => item.ticker !== ticker);
+                renderWatchlist();
+                showToast(`Removed ${ticker} from watchlist`, 'success');
+            } else {
+                showToast(data.error || 'Failed to remove ticker', 'error');
+            }
+        } catch (error) {
+            console.error('Error removing from watchlist:', error);
+            showToast('Error removing ticker', 'error');
+        }
+    }
+    
+    // Run digest
+    async function runDigest() {
+        const btn = document.getElementById('runDigestBtn');
+        const originalContent = btn.innerHTML;
+        btn.innerHTML = '<span class="loading-spinner"></span> Generating...';
+        btn.disabled = true;
+        
+        try {
+            const response = await fetch('/api/digest?refresh=true');
+            const data = await response.json();
+            
+            if (data.success && data.digest) {
+                currentDigest = data.digest;
+                displayDigest(data.digest);
+                document.getElementById('digestSection').style.display = 'block';
+                showToast('Digest generated successfully', 'success');
+            } else {
+                showToast(data.error || 'Failed to generate digest', 'error');
+            }
+        } catch (error) {
+            console.error('Error running digest:', error);
+            showToast('Error generating digest', 'error');
+        } finally {
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
+        }
+    }
+    
+    // Display digest data
+    function displayDigest(digest) {
+        // Update timestamp
+        document.getElementById('digestTimestamp').textContent = 
+            `Last updated: ${digest.timestamp_cst || new Date().toLocaleString()}`;
+        
+        // Movers
+        displayMovers(digest.movers || []);
+        
+        // News
+        displayNews(digest.news || []);
+        
+        // Rating changes
+        displayRatingChanges(digest.rating_changes || []);
+        
+        // Politician trades
+        displayPoliticianTrades(digest.politician_trades || []);
+        
+        // Market context
+        displayMarketContext(digest.market_context || {});
+    }
+    
+    // Display movers
+    function displayMovers(movers) {
+        const container = document.getElementById('moversGrid');
+        if (!container) return;
+        
+        if (movers.length === 0) {
+            container.innerHTML = `
+                <div class="digest-placeholder">
+                    <i class="material-icons">trending_flat</i>
+                    <p>No significant movers (±2%) detected</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = movers.map(m => `
+            <div class="mover-card ${m.direction}">
+                <div class="mover-ticker">${m.ticker}</div>
+                <div class="mover-price">$${m.price?.toFixed(2) || '--'}</div>
+                <div class="mover-change ${m.change_pct >= 0 ? 'positive' : 'negative'}">
+                    ${m.change_pct >= 0 ? '+' : ''}${m.change_pct?.toFixed(2) || '--'}%
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    // Display news
+    function displayNews(news) {
+        const container = document.getElementById('newsList');
+        if (!container) return;
+        
+        if (news.length === 0) {
+            container.innerHTML = `
+                <div class="digest-placeholder">
+                    <i class="material-icons">article</i>
+                    <p>No news found for watchlist tickers</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = news.slice(0, 25).map(n => `
+            <div class="news-item">
+                <div class="news-header">
+                    <span class="news-ticker">${n.ticker}</span>
+                    <span class="news-source">${n.source}</span>
+                </div>
+                <div class="news-headline">
+                    <a href="${n.url}" target="_blank">${n.headline}</a>
+                </div>
+                ${n.summary ? `<div class="news-summary">${n.summary}</div>` : ''}
+                <div class="news-meta">${n.published_at || ''}</div>
+            </div>
+        `).join('');
+    }
+    
+    // Display rating changes
+    function displayRatingChanges(changes) {
+        const container = document.getElementById('ratingsChangesList');
+        if (!container) return;
+        
+        if (changes.length === 0) {
+            container.innerHTML = `
+                <div class="digest-placeholder">
+                    <i class="material-icons">stars</i>
+                    <p>No rating changes since last digest</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = changes.map(c => {
+            const isUpgrade = ['strong_buy', 'buy'].includes(c.current_rating) && 
+                              ['hold', 'sell', 'strong_sell'].includes(c.previous_rating);
+            return `
+                <div class="rating-change-item">
+                    <span class="rating-change-ticker">${c.ticker}</span>
+                    <div class="rating-change-arrow ${isUpgrade ? 'upgrade' : 'downgrade'}">
+                        <span class="rating-badge ${c.previous_rating?.replace('_', '-')}">${formatRating(c.previous_rating)}</span>
+                        <i class="material-icons">${isUpgrade ? 'arrow_forward' : 'arrow_forward'}</i>
+                        <span class="rating-badge ${c.current_rating?.replace('_', '-')}">${formatRating(c.current_rating)}</span>
+                    </div>
+                    <span class="news-source">${c.provider || ''}</span>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    function formatRating(rating) {
+        if (!rating) return '--';
+        return rating.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+    
+    // Display politician trades
+    function displayPoliticianTrades(trades) {
+        const container = document.getElementById('politicianTradesList');
+        if (!container) return;
+        
+        if (trades.length === 0) {
+            container.innerHTML = `
+                <div class="digest-placeholder">
+                    <i class="material-icons">account_balance</i>
+                    <p>No politician trades matching watchlist tickers</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = trades.slice(0, 20).map(t => `
+            <div class="politician-trade-item">
+                <div class="politician-info">
+                    <span class="politician-name">${t.politician}</span>
+                    <span class="politician-chamber ${t.chamber?.toLowerCase()}">${t.chamber}</span>
+                </div>
+                <div class="trade-details">
+                    <div class="trade-ticker">${t.ticker_guess || t.issuer || '--'}</div>
+                    <div class="trade-action ${t.action?.toLowerCase().includes('purchase') ? 'buy' : 'sell'}">
+                        ${t.action || '--'}
+                    </div>
+                    <div class="trade-amount">${t.amount_range || ''}</div>
+                    <div class="trade-date">${t.txn_date || t.filed_at || ''}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    // Display market context
+    function displayMarketContext(context) {
+        // NDX Expected Move
+        const ndx = context.ndx_expected_move || {};
+        document.getElementById('ndxExpectedMove').textContent = ndx.value || 'unavailable';
+        document.getElementById('ndxSource').textContent = ndx.source || '--';
+        
+        // SPX P/E
+        const spx = context.spx_pe || {};
+        document.getElementById('spxPE').textContent = spx.current_pe || 'unavailable';
+        document.getElementById('spxComparison').textContent = 
+            `vs 5-yr avg: ${spx.five_year_avg || '--'} (${spx.comparison || '--'})`;
+        
+        // Economic Calendar
+        const events = context.economic_calendar || [];
+        const econContainer = document.getElementById('econEvents');
+        if (econContainer) {
+            if (events.length === 0) {
+                econContainer.innerHTML = '<div class="digest-placeholder small"><p>No major events today</p></div>';
+            } else {
+                econContainer.innerHTML = events.map(e => `
+                    <div class="econ-event">
+                        <span class="econ-time">${e.time_cst}</span>
+                        <span class="econ-name">${e.event}</span>
+                        <span class="econ-importance ${e.importance}">${e.importance}</span>
+                    </div>
+                `).join('');
+            }
+        }
+    }
+    
+    // Switch digest tabs
+    function switchDigestTab(tabName) {
+        // Update tab buttons
+        document.querySelectorAll('.digest-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === tabName);
+        });
+        
+        // Update tab content
+        document.querySelectorAll('.digest-tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        
+        const tabMap = {
+            'movers': 'digestMovers',
+            'news': 'digestNews',
+            'ratings': 'digestRatings',
+            'politicians': 'digestPoliticians',
+            'market': 'digestMarket'
+        };
+        
+        const contentId = tabMap[tabName];
+        if (contentId) {
+            document.getElementById(contentId)?.classList.add('active');
+        }
+    }
+    
+    // ============================================================================
+    // END WATCHLIST & DIGEST FUNCTIONALITY
+    // ============================================================================
 </script>
 {% endblock %}
 
