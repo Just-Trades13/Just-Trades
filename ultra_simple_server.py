@@ -6758,6 +6758,13 @@ def process_webhook_directly(webhook_token):
         is_postgres = is_using_postgres()
         placeholder = '%s' if is_postgres else '?'
         
+        # PostgreSQL: rollback any stuck transactions from previous errors
+        if is_postgres:
+            try:
+                conn.rollback()
+            except:
+                pass
+        
         cursor.execute(f'SELECT * FROM recorders WHERE webhook_token = {placeholder}', (webhook_token,))
         recorder_row = cursor.fetchone()
         
@@ -7050,18 +7057,20 @@ def process_webhook_directly(webhook_token):
             if signal_number % add_delay != 0:
                 logger.warning(f"🚫 [{recorder_name}] Signal delay BLOCKED: Signal #{signal_number} (executing every {add_delay})")
                 # Still record the signal but don't execute
-                # For PostgreSQL: created_at has DEFAULT, no need to insert it
+                # For PostgreSQL: created_at has DEFAULT, store quantity in raw_signal as JSON
                 if is_postgres:
+                    import json as _json
+                    raw_signal = _json.dumps({'quantity': quantity})
                     cursor.execute(f'''
-                        INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, processed)
+                        INSERT INTO recorded_signals (recorder_id, action, ticker, price, raw_signal, processed)
                         VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, false)
-                    ''', (recorder_id, action, ticker, price, quantity))
+                    ''', (recorder_id, action, ticker, price, raw_signal))
                 else:
                     timestamp_fn = "datetime('now')"
                     cursor.execute(f'''
-                        INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, created_at, processed)
-                        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 0)
-                    ''', (recorder_id, action, ticker, price, quantity))
+                        INSERT INTO recorded_signals (recorder_id, action, ticker, price, created_at, processed)
+                        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 0)
+                    ''', (recorder_id, action, ticker, price))
                 conn.commit()
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Signal delay ({signal_number} mod {add_delay} != 0)'}), 200
@@ -7071,18 +7080,20 @@ def process_webhook_directly(webhook_token):
         # 📊 RECORD THE SIGNAL (after filters pass)
         # ============================================================
         try:
-            # For PostgreSQL: created_at has DEFAULT, no need to insert it
+            # For PostgreSQL: created_at has DEFAULT, store quantity in raw_signal as JSON
             if is_postgres:
+                import json as _json
+                raw_signal = _json.dumps({'quantity': quantity, 'executed': True})
                 cursor.execute(f'''
-                    INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, processed)
+                    INSERT INTO recorded_signals (recorder_id, action, ticker, price, raw_signal, processed)
                     VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, true)
-                ''', (recorder_id, action, ticker, price, quantity))
+                ''', (recorder_id, action, ticker, price, raw_signal))
             else:
                 timestamp_fn = "datetime('now')"
                 cursor.execute(f'''
-                    INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, created_at, processed)
-                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 1)
-                ''', (recorder_id, action, ticker, price, quantity))
+                    INSERT INTO recorded_signals (recorder_id, action, ticker, price, created_at, processed)
+                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 1)
+                ''', (recorder_id, action, ticker, price))
             conn.commit()
         except Exception as e:
             logger.warning(f"Could not record signal: {e}")
