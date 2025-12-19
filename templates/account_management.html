@@ -64,6 +64,31 @@
     </div>
 </div>
 
+<!-- Direct Login Modal -->
+<div id="direct-login-modal" class="acct-modal" style="display: none;">
+    <div class="acct-modal-content" style="max-width: 500px;">
+        <h2>🔐 Direct Login</h2>
+        <p style="font-size: 0.9rem; color: #888;">Enter your Tradovate credentials to connect directly (bypasses OAuth).</p>
+        <input type="text" id="direct-login-username" class="acct-modal-input" placeholder="Tradovate Username" style="margin-bottom: 10px;">
+        <input type="password" id="direct-login-password" class="acct-modal-input" placeholder="Password" style="margin-bottom: 10px;">
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="radio" name="account-type" value="demo" checked style="margin-right: 8px;">
+                <span style="color: #f59e0b;">Demo Account</span>
+            </label>
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="radio" name="account-type" value="live" style="margin-right: 8px;">
+                <span style="color: #10b981;">Live Account</span>
+            </label>
+        </div>
+        <p style="font-size: 0.8rem; color: #666;">Use your Tradovate login credentials.</p>
+        <div class="acct-modal-actions">
+            <button class="acct-btn acct-btn-outline" onclick="closeDirectLoginModal()">Cancel</button>
+            <button class="acct-btn acct-btn-primary" id="direct-login-btn" onclick="submitDirectLogin()">Connect</button>
+        </div>
+    </div>
+</div>
+
 <!-- Toast Notification -->
 <div id="acct-toast" class="acct-toast"></div>
 {% endblock %}
@@ -390,6 +415,7 @@
                             <button class="btn-inline btn-refresh-sub" data-account-id="${account.id}">Refresh</button>
                             <button class="btn-inline btn-reconnect" data-account-id="${account.id}">Reconnect</button>
                             <button class="btn-inline btn-apikey" data-account-id="${account.id}">API Key</button>
+                            <button class="btn-inline btn-direct-login" data-account-id="${account.id}" style="background: linear-gradient(90deg, #10b981, #059669); color: white; border: none;">Direct Login</button>
                         </div>
                         <div class="tradovate-logo">
                             <i class="material-icons" style="color: #5e72e4;">trending_up</i>
@@ -422,6 +448,20 @@
                     btn.addEventListener('click', function(e) {
                         e.stopPropagation();
                         window.location.href = `/api/accounts/${this.dataset.accountId}/connect`;
+                    });
+                });
+                
+                document.querySelectorAll('.btn-apikey').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        showApiKeyModal(this.dataset.accountId);
+                    });
+                });
+                
+                document.querySelectorAll('.btn-direct-login').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        showDirectLoginModal(this.dataset.accountId);
                     });
                 });
             } else {
@@ -628,11 +668,72 @@
         }
     }
     
+    // Direct Login Modal Functions
+    let pendingDirectLoginAcctId = null;
+    
+    function showDirectLoginModal(accountId) {
+        pendingDirectLoginAcctId = accountId;
+        document.getElementById('direct-login-username').value = '';
+        document.getElementById('direct-login-password').value = '';
+        document.getElementById('direct-login-modal').style.display = 'flex';
+        setTimeout(() => document.getElementById('direct-login-username').focus(), 100);
+    }
+    
+    function closeDirectLoginModal() {
+        document.getElementById('direct-login-modal').style.display = 'none';
+        pendingDirectLoginAcctId = null;
+    }
+    
+    async function submitDirectLogin() {
+        const username = document.getElementById('direct-login-username').value.trim();
+        const password = document.getElementById('direct-login-password').value;
+        const isDemo = document.querySelector('input[name="account-type"]:checked').value === 'demo';
+        
+        if (!username || !password) {
+            showAcctToast('Please enter username and password', 'error');
+            return;
+        }
+        
+        const btn = document.getElementById('direct-login-btn');
+        const originalText = btn.textContent;
+        btn.innerHTML = '<span class="spinner"></span>Connecting...';
+        btn.disabled = true;
+        
+        try {
+            const response = await fetch(`/api/accounts/${pendingDirectLoginAcctId}/direct-connect`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    username: username, 
+                    password: password,
+                    is_demo: isDemo
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showAcctToast('✅ Connected successfully! Refreshing...', 'success');
+                closeDirectLoginModal();
+                setTimeout(() => loadAccounts(), 1000);
+            } else {
+                showAcctToast('❌ ' + (data.error || 'Connection failed'), 'error');
+            }
+        } catch (e) {
+            showAcctToast('Error: ' + e.message, 'error');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+    
     // Close modals on escape key
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             closeNameModal();
             closeDeleteAcctModal();
+            closeApiKeyModal();
+            closeDirectLoginModal();
         }
         // Allow Enter to submit name modal
         if (e.key === 'Enter' && document.getElementById('name-modal').style.display === 'flex') {

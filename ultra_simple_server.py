@@ -4070,6 +4070,135 @@ def connect_account(account_id):
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/accounts/<int:account_id>/direct-connect', methods=['POST'])
+def direct_connect_account(account_id):
+    """
+    Direct authentication with Tradovate using username/password
+    This bypasses OAuth and authenticates directly with the Tradovate API
+    """
+    try:
+        import requests
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        username = data.get('username')
+        password = data.get('password')
+        is_demo = data.get('is_demo', True)  # Default to demo for safety
+        
+        if not username or not password:
+            return jsonify({'success': False, 'error': 'Username and password are required'}), 400
+        
+        # Use the correct API endpoint based on account type
+        if is_demo:
+            auth_url = 'https://demo.tradovateapi.com/v1/auth/accesstokenrequest'
+            base_url = 'https://demo.tradovateapi.com/v1'
+        else:
+            auth_url = 'https://live.tradovateapi.com/v1/auth/accesstokenrequest'
+            base_url = 'https://live.tradovateapi.com/v1'
+        
+        # Build authentication payload
+        auth_payload = {
+            'name': username,
+            'password': password,
+            'appId': 'JustTrades',
+            'appVersion': '1.0',
+            'cid': 8699,  # Our OAuth app client ID
+            'sec': '7c74576b-20b1-4ea5-a2a0-eaeb11326a95'  # Our OAuth app secret
+        }
+        
+        logger.info(f"Attempting direct auth for account {account_id} ({'demo' if is_demo else 'live'}) with user: {username}")
+        
+        # Make authentication request
+        response = requests.post(auth_url, json=auth_payload, headers={'Content-Type': 'application/json'})
+        
+        if response.status_code != 200:
+            error_text = response.text[:500]
+            logger.error(f"Direct auth failed: {response.status_code} - {error_text}")
+            return jsonify({'success': False, 'error': f'Authentication failed: {error_text}'}), 400
+        
+        token_data = response.json()
+        
+        # Check for error in response body (Tradovate returns 200 with error sometimes)
+        if 'errorText' in token_data:
+            logger.error(f"Direct auth error: {token_data['errorText']}")
+            return jsonify({'success': False, 'error': token_data['errorText']}), 400
+        
+        if 'accessToken' not in token_data:
+            logger.error(f"Direct auth missing accessToken: {token_data}")
+            return jsonify({'success': False, 'error': 'No access token received'}), 400
+        
+        access_token = token_data.get('accessToken')
+        expiration_time = token_data.get('expirationTime')
+        user_id = token_data.get('userId')
+        
+        logger.info(f"✅ Direct auth successful for account {account_id}, userId: {user_id}")
+        
+        # Store the tokens in database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        timestamp_fn = 'NOW()' if is_postgres else "datetime('now')"
+        
+        # Update account with tokens
+        cursor.execute(f'''
+            UPDATE accounts 
+            SET access_token = {placeholder},
+                token_expires_at = {placeholder},
+                is_demo = {placeholder},
+                enabled = true,
+                updated_at = {timestamp_fn}
+            WHERE id = {placeholder}
+        ''', (access_token, expiration_time, is_demo, account_id))
+        
+        conn.commit()
+        
+        # Now fetch subaccounts using the new token
+        try:
+            accounts_url = f"{base_url}/account/list"
+            headers = {'Authorization': f'Bearer {access_token}'}
+            acct_response = requests.get(accounts_url, headers=headers)
+            
+            if acct_response.status_code == 200:
+                tradovate_accounts = acct_response.json()
+                logger.info(f"Fetched {len(tradovate_accounts)} subaccounts")
+                
+                # Store subaccounts as JSON
+                import json
+                subaccounts_json = json.dumps([{
+                    'id': acc.get('id'),
+                    'name': acc.get('name'),
+                    'is_demo': is_demo
+                } for acc in tradovate_accounts])
+                
+                cursor.execute(f'''
+                    UPDATE accounts 
+                    SET tradovate_accounts = {placeholder}
+                    WHERE id = {placeholder}
+                ''', (subaccounts_json, account_id))
+                conn.commit()
+        except Exception as sub_err:
+            logger.warning(f"Failed to fetch subaccounts: {sub_err}")
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Connected successfully!',
+            'user_id': user_id,
+            'is_demo': is_demo
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in direct connect: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/oauth/callback')
 def oauth_callback():
     """Handle OAuth callback from Tradovate"""
