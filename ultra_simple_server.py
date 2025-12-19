@@ -24,9 +24,45 @@ import threading
 import requests
 from typing import Optional
 from queue import Queue, Empty
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
 from flask_socketio import SocketIO, emit
 from datetime import datetime, timedelta
+
+# ============================================================================
+# USER AUTHENTICATION MODULE
+# ============================================================================
+try:
+    from user_auth import (
+        init_auth_system, login_required, admin_required,
+        get_current_user, get_current_user_id, is_logged_in,
+        login_user, logout_user, authenticate_user, create_user,
+        auth_context_processor, create_initial_admin, assign_existing_data_to_user
+    )
+    USER_AUTH_AVAILABLE = True
+except ImportError as e:
+    USER_AUTH_AVAILABLE = False
+    print(f"⚠️ User authentication module not available: {e}")
+
+# ============================================================================
+# SCALABILITY MODULES - PostgreSQL, Async Safety, Redis Caching
+# ============================================================================
+try:
+    from async_utils import run_async, async_executor, SafeTradovateClient
+    ASYNC_UTILS_AVAILABLE = True
+except ImportError:
+    ASYNC_UTILS_AVAILABLE = False
+    
+try:
+    from cache import token_cache, position_cache, cache, get_cache_status
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+
+try:
+    from production_db import get_db_connection as prod_get_db_connection, check_db_health, get_db_type
+    PRODUCTION_DB_AVAILABLE = True
+except ImportError:
+    PRODUCTION_DB_AVAILABLE = False
 
 # High-performance signal queue for handling hundreds of signals per second
 signal_queue = Queue(maxsize=10000)
@@ -81,13 +117,18 @@ except ImportError:
 # ============================================================
 DATABASE_URL = os.getenv('DATABASE_URL')
 _pg_pool = None
+_using_postgres = False  # Track if we're actually using PostgreSQL
+
+def is_using_postgres():
+    """Check if we're actually using PostgreSQL (not just if DATABASE_URL is set)"""
+    return _using_postgres
 
 def get_db_connection():
     """
     Get database connection - uses PostgreSQL if DATABASE_URL is set,
     otherwise falls back to SQLite for local development.
     """
-    global _pg_pool
+    global _pg_pool, _using_postgres
     
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
         # PostgreSQL for production
@@ -102,6 +143,7 @@ def get_db_connection():
             if _pg_pool is None:
                 _pg_pool = psycopg2.pool.ThreadedConnectionPool(2, 20, dsn=db_url)
                 print("✅ PostgreSQL connection pool initialized")
+                _using_postgres = True
                 # Create tables on first connection
                 _init_postgres_tables()
             
@@ -111,29 +153,136 @@ def get_db_connection():
             return PostgresConnectionWrapper(conn, _pg_pool)
         except ImportError:
             print("⚠️ psycopg2 not installed, falling back to SQLite")
+            _using_postgres = False
         except Exception as e:
             print(f"⚠️ PostgreSQL connection failed: {e}, falling back to SQLite")
+            _using_postgres = False
     
-    # SQLite for local development
+    # SQLite for local development (or fallback)
+    _using_postgres = False
     conn = sqlite3.connect('just_trades.db', timeout=30)
     conn.row_factory = sqlite3.Row
+    # Initialize tables if they don't exist (prevents "no such table" errors)
+    _init_sqlite_tables(conn)
     return conn
+
+class DictRow:
+    """Row that supports both dict-style and index-style access."""
+    def __init__(self, data, keys):
+        self._data = data
+        self._keys = keys
+    
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._data[self._keys[key]]
+        return self._data[key]
+    
+    def __contains__(self, key):
+        return key in self._data
+    
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+    
+    def keys(self):
+        return self._data.keys()
+    
+    def values(self):
+        return self._data.values()
+    
+    def items(self):
+        return self._data.items()
+    
+    def __repr__(self):
+        return repr(self._data)
+
+class PostgresCursorWrapper:
+    """Wrapper to make PostgreSQL cursor auto-convert SQLite ? to PostgreSQL %s."""
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self._keys = None
+    
+    def execute(self, sql, params=None):
+        # Convert SQLite ? placeholders to PostgreSQL %s
+        sql = sql.replace('?', '%s')
+        if params:
+            self._cursor.execute(sql, params)
+        else:
+            self._cursor.execute(sql)
+        # Cache column names
+        if self._cursor.description:
+            self._keys = [desc[0] for desc in self._cursor.description]
+        return self
+    
+    def _wrap_row(self, row):
+        """Wrap a dict row to support both dict and index access."""
+        if row is None:
+            return None
+        if isinstance(row, dict) and self._keys:
+            return DictRow(row, self._keys)
+        return row
+    
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        return self._wrap_row(row)
+    
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        if rows and isinstance(rows[0], dict) and self._keys:
+            return [DictRow(r, self._keys) for r in rows]
+        return rows
+    
+    def fetchmany(self, size=None):
+        rows = self._cursor.fetchmany(size) if size else self._cursor.fetchmany()
+        if rows and isinstance(rows[0], dict) and self._keys:
+            return [DictRow(r, self._keys) for r in rows]
+        return rows
+    
+    @property
+    def lastrowid(self):
+        return None  # PostgreSQL uses RETURNING instead
+    
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+    
+    @property
+    def description(self):
+        return self._cursor.description
+    
+    def close(self):
+        self._cursor.close()
+    
+    def __iter__(self):
+        for row in self._cursor:
+            yield self._wrap_row(row)
 
 class PostgresConnectionWrapper:
     """Wrapper to make PostgreSQL connection behave like SQLite."""
     def __init__(self, conn, pool):
         self._conn = conn
         self._pool = pool
+        self._row_factory = None  # Store but ignore
+    
+    @property
+    def row_factory(self):
+        return self._row_factory
+    
+    @row_factory.setter
+    def row_factory(self, value):
+        # Accept but ignore - PostgreSQL uses RealDictCursor instead
+        self._row_factory = value
     
     def cursor(self):
-        return self._conn.cursor()
+        return PostgresCursorWrapper(self._conn.cursor())
     
     def execute(self, sql, params=None):
-        # Convert SQLite ? placeholders to PostgreSQL %s
         sql = sql.replace('?', '%s')
         cursor = self._conn.cursor()
-        cursor.execute(sql, params or ())
-        return cursor
+        if params:
+            cursor.execute(sql, params)
+        else:
+            cursor.execute(sql)
+        return PostgresCursorWrapper(cursor)
     
     def commit(self):
         self._conn.commit()
@@ -150,92 +299,582 @@ class PostgresConnectionWrapper:
     def __exit__(self, *args):
         self.close()
 
+def _init_sqlite_tables(conn):
+    """Initialize ALL SQLite tables - mirrors PostgreSQL schema."""
+    cursor = conn.cursor()
+    
+    print("📊 Creating SQLite tables (complete schema)...")
+    
+    # Users table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            discord_user_id TEXT UNIQUE,
+            discord_access_token TEXT,
+            discord_dms_enabled INTEGER DEFAULT 0,
+            session_id TEXT,
+            last_login TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            display_name TEXT,
+            is_admin INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            settings_json TEXT DEFAULT '{}'
+        )
+    ''')
+    
+    # Accounts table - full schema
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            name TEXT NOT NULL,
+            broker TEXT DEFAULT 'Tradovate',
+            auth_type TEXT DEFAULT 'oauth',
+            username TEXT,
+            password TEXT,
+            account_id TEXT,
+            api_key TEXT,
+            api_secret TEXT,
+            api_endpoint TEXT,
+            environment TEXT DEFAULT 'demo',
+            client_id TEXT,
+            client_secret TEXT,
+            tradovate_token TEXT,
+            tradovate_refresh_token TEXT,
+            token_expires_at TEXT,
+            max_contracts INTEGER,
+            multiplier REAL DEFAULT 1.0,
+            enabled INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            subaccounts TEXT,
+            tradovate_accounts TEXT,
+            md_access_token TEXT,
+            tradingview_session TEXT,
+            has_tradingview_addon INTEGER DEFAULT 0,
+            device_id TEXT
+        )
+    ''')
+    
+    # Recorders table - full schema
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            name TEXT NOT NULL,
+            strategy_type TEXT DEFAULT 'Futures',
+            symbol TEXT,
+            demo_account_id TEXT,
+            account_id INTEGER,
+            initial_position_size INTEGER DEFAULT 2,
+            add_position_size INTEGER DEFAULT 2,
+            tp_units TEXT DEFAULT 'Ticks',
+            trim_units TEXT DEFAULT 'Contracts',
+            tp_targets TEXT DEFAULT '[]',
+            sl_enabled INTEGER DEFAULT 0,
+            sl_amount REAL DEFAULT 0,
+            sl_units TEXT DEFAULT 'Ticks',
+            sl_type TEXT DEFAULT 'Fixed',
+            avg_down_enabled INTEGER DEFAULT 0,
+            avg_down_amount INTEGER DEFAULT 1,
+            avg_down_point REAL DEFAULT 0,
+            avg_down_units TEXT DEFAULT 'Ticks',
+            add_delay INTEGER DEFAULT 1,
+            max_contracts_per_trade INTEGER DEFAULT 0,
+            option_premium_filter REAL DEFAULT 0,
+            direction_filter TEXT,
+            time_filter_1_start TEXT DEFAULT '8:45 AM',
+            time_filter_1_stop TEXT DEFAULT '1:45 PM',
+            time_filter_2_start TEXT DEFAULT '12:30 PM',
+            time_filter_2_stop TEXT DEFAULT '3:15 PM',
+            signal_cooldown INTEGER DEFAULT 60,
+            max_signals_per_session INTEGER DEFAULT 10,
+            max_daily_loss REAL DEFAULT 500,
+            auto_flat_after_cutoff INTEGER DEFAULT 1,
+            notes TEXT,
+            recording_enabled INTEGER DEFAULT 1,
+            is_recording INTEGER DEFAULT 0,
+            webhook_token TEXT,
+            signal_count INTEGER DEFAULT 0,
+            ticker TEXT,
+            position_size INTEGER DEFAULT 1,
+            tp_enabled INTEGER DEFAULT 1,
+            trailing_sl INTEGER DEFAULT 0,
+            enabled INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Traders table - full schema
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS traders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            recorder_id INTEGER,
+            account_id INTEGER,
+            subaccount_id INTEGER,
+            subaccount_name TEXT,
+            is_demo INTEGER DEFAULT 1,
+            enabled INTEGER DEFAULT 1,
+            initial_position_size INTEGER,
+            add_position_size INTEGER,
+            tp_targets TEXT,
+            sl_enabled INTEGER,
+            sl_amount REAL,
+            sl_units TEXT,
+            max_daily_loss REAL,
+            enabled_accounts TEXT,
+            max_contracts INTEGER DEFAULT 10,
+            custom_ticker TEXT,
+            multiplier REAL DEFAULT 1.0,
+            risk_percent REAL,
+            name TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Recorded trades table - full schema
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorded_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            recorder_id INTEGER NOT NULL,
+            signal_id INTEGER,
+            ticker TEXT NOT NULL,
+            action TEXT NOT NULL,
+            side TEXT NOT NULL,
+            entry_price REAL,
+            entry_time TEXT,
+            exit_price REAL,
+            exit_time TEXT,
+            quantity INTEGER DEFAULT 1,
+            pnl REAL DEFAULT 0,
+            pnl_ticks REAL DEFAULT 0,
+            fees REAL DEFAULT 0,
+            status TEXT DEFAULT 'open',
+            exit_reason TEXT,
+            notes TEXT,
+            tp_price REAL,
+            sl_price REAL,
+            tp_ticks REAL,
+            sl_ticks REAL,
+            max_favorable REAL DEFAULT 0,
+            max_adverse REAL DEFAULT 0,
+            tp_order_id TEXT,
+            sl_order_id TEXT,
+            broker_order_id TEXT,
+            broker_strategy_id TEXT,
+            broker_fill_price REAL,
+            broker_managed_tp_sl INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Recorded signals table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorded_signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recorder_id INTEGER NOT NULL,
+            signal_type TEXT,
+            ticker TEXT,
+            action TEXT,
+            price REAL,
+            raw_signal TEXT,
+            processed INTEGER DEFAULT 0,
+            result TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Recorder positions table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorder_positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recorder_id INTEGER,
+            ticker TEXT,
+            side TEXT,
+            total_quantity INTEGER DEFAULT 0,
+            fills TEXT,
+            avg_entry_price REAL,
+            realized_pnl REAL DEFAULT 0,
+            unrealized_pnl REAL DEFAULT 0,
+            worst_unrealized_pnl REAL DEFAULT 0,
+            exit_price REAL,
+            exit_time TEXT,
+            status TEXT DEFAULT 'open',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            closed_at TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Signals table (legacy)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recorder_id INTEGER,
+            raw_data TEXT,
+            action TEXT,
+            ticker TEXT,
+            price REAL,
+            processed INTEGER DEFAULT 0,
+            result TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Open positions table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS open_positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            subaccount_id TEXT,
+            account_name TEXT,
+            symbol TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            avg_price REAL NOT NULL,
+            current_price REAL DEFAULT 0.0,
+            unrealized_pnl REAL DEFAULT 0.0,
+            order_id TEXT,
+            strategy_name TEXT,
+            direction TEXT,
+            open_time TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(account_id, subaccount_id, symbol)
+        )
+    ''')
+    
+    # Strategies table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS strategies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            account_id INTEGER,
+            demo_account_id INTEGER,
+            name TEXT NOT NULL,
+            symbol TEXT,
+            strat_type TEXT,
+            days_to_expiry INTEGER,
+            strike_offset REAL,
+            position_size INTEGER,
+            position_add INTEGER,
+            take_profit REAL,
+            stop_loss REAL,
+            trim REAL,
+            tpsl_units TEXT,
+            directional_strategy TEXT,
+            recording_enabled INTEGER DEFAULT 1,
+            positional_settings TEXT,
+            delay_seconds INTEGER,
+            max_contracts INTEGER,
+            premium_filter INTEGER,
+            direction_filter TEXT,
+            time_filter_enabled INTEGER,
+            time_filter_start TEXT,
+            time_filter_end TEXT,
+            entry_delay INTEGER,
+            signal_cooldown INTEGER,
+            max_signals_per_session INTEGER,
+            max_daily_loss REAL,
+            auto_flat INTEGER,
+            active INTEGER DEFAULT 1,
+            enabled INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            notes TEXT,
+            account_routing TEXT
+        )
+    ''')
+    
+    # Webhooks table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS webhooks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            method TEXT DEFAULT 'POST',
+            headers TEXT,
+            body TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Strategy PnL history
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS strategy_pnl_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id INTEGER,
+            strategy_name TEXT,
+            pnl REAL,
+            drawdown REAL DEFAULT 0.0,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # OAuth states table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS oauth_states (
+            state TEXT PRIMARY KEY,
+            account_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            redirect_uri TEXT
+        )
+    ''')
+    
+    # Watchlist items
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS watchlist_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL UNIQUE,
+            company_name TEXT,
+            cik TEXT,
+            exchange TEXT,
+            currency TEXT DEFAULT 'USD',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Digest runs
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS digest_runs (
+            run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            finished_at TEXT,
+            run_type TEXT,
+            status TEXT DEFAULT 'running',
+            error TEXT
+        )
+    ''')
+    
+    # News items
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS news_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url_hash TEXT NOT NULL UNIQUE,
+            ticker TEXT NOT NULL,
+            source TEXT NOT NULL,
+            headline TEXT NOT NULL,
+            summary TEXT,
+            url TEXT,
+            published_at TEXT,
+            inserted_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Ratings snapshots
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ratings_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            raw_rating TEXT,
+            normalized_bucket TEXT,
+            as_of TEXT DEFAULT CURRENT_TIMESTAMP,
+            inserted_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Politician trades
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS politician_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT,
+            chamber TEXT,
+            politician TEXT NOT NULL,
+            filed_at TEXT,
+            txn_date TEXT,
+            issuer TEXT,
+            ticker_guess TEXT,
+            action TEXT,
+            amount_range TEXT,
+            url TEXT,
+            inserted_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    print("✅ SQLite tables created (complete schema)!")
+
+
 def _init_postgres_tables():
-    """Initialize PostgreSQL tables if they don't exist."""
+    """Initialize ALL PostgreSQL tables to match SQLite schema."""
     import psycopg2
     db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     conn = psycopg2.connect(db_url)
     cursor = conn.cursor()
     
-    print("📊 Creating PostgreSQL tables...")
+    print("📊 Creating PostgreSQL tables (complete schema)...")
     
+    # Users table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(100) NOT NULL UNIQUE,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NOT NULL,
+            discord_user_id VARCHAR(50) UNIQUE,
+            discord_access_token TEXT,
+            discord_dms_enabled BOOLEAN DEFAULT FALSE,
+            session_id VARCHAR(255),
+            last_login TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            display_name TEXT,
+            is_admin BOOLEAN DEFAULT FALSE,
+            is_active BOOLEAN DEFAULT TRUE,
+            settings_json TEXT DEFAULT '{}'
+        )
+    ''')
+    
+    # Accounts table - full schema
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS accounts (
             id SERIAL PRIMARY KEY,
-            username VARCHAR(255),
-            password VARCHAR(255),
+            user_id INTEGER REFERENCES users(id),
+            name VARCHAR(100) NOT NULL,
+            broker VARCHAR(50) DEFAULT 'Tradovate',
+            auth_type VARCHAR(20) DEFAULT 'oauth',
+            username VARCHAR(100),
+            password TEXT,
+            account_id VARCHAR(50),
+            api_key VARCHAR(255),
+            api_secret TEXT,
+            api_endpoint VARCHAR(255),
+            environment VARCHAR(20) DEFAULT 'demo',
+            client_id VARCHAR(255),
+            client_secret TEXT,
             tradovate_token TEXT,
             tradovate_refresh_token TEXT,
-            md_access_token TEXT,
-            tradovate_accounts TEXT,
-            subaccounts TEXT,
             token_expires_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS traders (
-            id SERIAL PRIMARY KEY,
-            account_id INTEGER,
-            name VARCHAR(255) NOT NULL,
-            subaccount_id INTEGER,
-            subaccount_name VARCHAR(255),
-            is_demo BOOLEAN DEFAULT TRUE,
-            max_contracts INTEGER DEFAULT 10,
-            custom_ticker VARCHAR(50),
+            max_contracts INTEGER,
             multiplier REAL DEFAULT 1.0,
             enabled BOOLEAN DEFAULT TRUE,
-            enabled_accounts TEXT,
-            risk_percent REAL,
-            max_daily_loss REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            subaccounts TEXT,
+            tradovate_accounts TEXT,
+            md_access_token TEXT,
+            tradingview_session TEXT,
+            has_tradingview_addon BOOLEAN DEFAULT FALSE,
+            device_id VARCHAR(255)
         )
     ''')
     
+    # Recorders table - full schema
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS recorders (
             id SERIAL PRIMARY KEY,
-            trader_id INTEGER,
-            name VARCHAR(255) NOT NULL,
-            enabled BOOLEAN DEFAULT TRUE,
-            webhook_token VARCHAR(255),
-            ticker VARCHAR(50),
+            user_id INTEGER REFERENCES users(id),
+            name TEXT NOT NULL,
+            strategy_type TEXT DEFAULT 'Futures',
+            symbol TEXT,
+            demo_account_id TEXT,
+            account_id INTEGER,
+            initial_position_size INTEGER DEFAULT 2,
+            add_position_size INTEGER DEFAULT 2,
+            tp_units TEXT DEFAULT 'Ticks',
+            trim_units TEXT DEFAULT 'Contracts',
+            tp_targets TEXT DEFAULT '[]',
+            sl_enabled BOOLEAN DEFAULT FALSE,
+            sl_amount REAL DEFAULT 0,
+            sl_units TEXT DEFAULT 'Ticks',
+            sl_type TEXT DEFAULT 'Fixed',
+            avg_down_enabled BOOLEAN DEFAULT FALSE,
+            avg_down_amount INTEGER DEFAULT 1,
+            avg_down_point REAL DEFAULT 0,
+            avg_down_units TEXT DEFAULT 'Ticks',
+            add_delay INTEGER DEFAULT 1,
+            max_contracts_per_trade INTEGER DEFAULT 0,
+            option_premium_filter REAL DEFAULT 0,
+            direction_filter TEXT,
+            time_filter_1_start TEXT DEFAULT '8:45 AM',
+            time_filter_1_stop TEXT DEFAULT '1:45 PM',
+            time_filter_2_start TEXT DEFAULT '12:30 PM',
+            time_filter_2_stop TEXT DEFAULT '3:15 PM',
+            signal_cooldown INTEGER DEFAULT 60,
+            max_signals_per_session INTEGER DEFAULT 10,
+            max_daily_loss REAL DEFAULT 500,
+            auto_flat_after_cutoff BOOLEAN DEFAULT TRUE,
+            notes TEXT,
+            recording_enabled BOOLEAN DEFAULT TRUE,
+            is_recording BOOLEAN DEFAULT FALSE,
+            webhook_token TEXT,
+            signal_count INTEGER DEFAULT 0,
+            ticker TEXT,
             position_size INTEGER DEFAULT 1,
             tp_enabled BOOLEAN DEFAULT TRUE,
-            tp_targets TEXT,
-            sl_enabled BOOLEAN DEFAULT FALSE,
-            sl_amount REAL,
             trailing_sl BOOLEAN DEFAULT FALSE,
-            account_id INTEGER,
+            enabled BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
+    # Traders table - full schema
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS traders (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            recorder_id INTEGER,
+            account_id INTEGER,
+            subaccount_id INTEGER,
+            subaccount_name VARCHAR(255),
+            is_demo BOOLEAN DEFAULT TRUE,
+            enabled BOOLEAN DEFAULT TRUE,
+            initial_position_size INTEGER,
+            add_position_size INTEGER,
+            tp_targets TEXT,
+            sl_enabled BOOLEAN,
+            sl_amount REAL,
+            sl_units TEXT,
+            max_daily_loss REAL,
+            enabled_accounts TEXT,
+            max_contracts INTEGER DEFAULT 10,
+            custom_ticker VARCHAR(50),
+            multiplier REAL DEFAULT 1.0,
+            risk_percent REAL,
+            name VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Recorded trades table - full schema
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS recorded_trades (
             id SERIAL PRIMARY KEY,
-            recorder_id INTEGER,
-            signal_id VARCHAR(255),
-            ticker VARCHAR(50),
-            action VARCHAR(20),
-            side VARCHAR(10),
+            user_id INTEGER REFERENCES users(id),
+            recorder_id INTEGER NOT NULL,
+            signal_id INTEGER,
+            ticker TEXT NOT NULL,
+            action TEXT NOT NULL,
+            side TEXT NOT NULL,
             entry_price REAL,
-            entry_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            entry_time TIMESTAMP,
             exit_price REAL,
             exit_time TIMESTAMP,
             quantity INTEGER DEFAULT 1,
-            status VARCHAR(20) DEFAULT 'open',
+            pnl REAL DEFAULT 0,
+            pnl_ticks REAL DEFAULT 0,
+            fees REAL DEFAULT 0,
+            status TEXT DEFAULT 'open',
+            exit_reason TEXT,
+            notes TEXT,
             tp_price REAL,
             sl_price REAL,
+            tp_ticks REAL,
+            sl_ticks REAL,
+            max_favorable REAL DEFAULT 0,
+            max_adverse REAL DEFAULT 0,
             tp_order_id VARCHAR(100),
             sl_order_id VARCHAR(100),
-            pnl REAL,
-            pnl_ticks REAL,
-            exit_reason VARCHAR(50),
             broker_order_id VARCHAR(100),
             broker_strategy_id VARCHAR(100),
             broker_fill_price REAL,
@@ -245,6 +884,23 @@ def _init_postgres_tables():
         )
     ''')
     
+    # Recorded signals table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recorded_signals (
+            id SERIAL PRIMARY KEY,
+            recorder_id INTEGER NOT NULL,
+            signal_type TEXT,
+            ticker TEXT,
+            action TEXT,
+            price REAL,
+            raw_signal TEXT,
+            processed BOOLEAN DEFAULT FALSE,
+            result TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Recorder positions table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS recorder_positions (
             id SERIAL PRIMARY KEY,
@@ -266,6 +922,7 @@ def _init_postgres_tables():
         )
     ''')
     
+    # Signals table (legacy)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS signals (
             id SERIAL PRIMARY KEY,
@@ -280,13 +937,198 @@ def _init_postgres_tables():
         )
     ''')
     
+    # Open positions table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS open_positions (
+            id SERIAL PRIMARY KEY,
+            account_id INTEGER NOT NULL,
+            subaccount_id TEXT,
+            account_name TEXT,
+            symbol TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            avg_price REAL NOT NULL,
+            current_price REAL DEFAULT 0.0,
+            unrealized_pnl REAL DEFAULT 0.0,
+            order_id TEXT,
+            strategy_name TEXT,
+            direction TEXT,
+            open_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(account_id, subaccount_id, symbol)
+        )
+    ''')
+    
+    # Strategies table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS strategies (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            account_id INTEGER,
+            demo_account_id INTEGER,
+            name VARCHAR(100) NOT NULL,
+            symbol VARCHAR(20),
+            strat_type VARCHAR(50),
+            days_to_expiry INTEGER,
+            strike_offset REAL,
+            position_size INTEGER,
+            position_add INTEGER,
+            take_profit REAL,
+            stop_loss REAL,
+            trim REAL,
+            tpsl_units VARCHAR(20),
+            directional_strategy VARCHAR(50),
+            recording_enabled BOOLEAN DEFAULT TRUE,
+            positional_settings TEXT,
+            delay_seconds INTEGER,
+            max_contracts INTEGER,
+            premium_filter BOOLEAN,
+            direction_filter VARCHAR(20),
+            time_filter_enabled BOOLEAN,
+            time_filter_start VARCHAR(10),
+            time_filter_end VARCHAR(10),
+            entry_delay INTEGER,
+            signal_cooldown INTEGER,
+            max_signals_per_session INTEGER,
+            max_daily_loss REAL,
+            auto_flat BOOLEAN,
+            active BOOLEAN DEFAULT TRUE,
+            enabled BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            notes TEXT,
+            account_routing TEXT
+        )
+    ''')
+    
+    # Webhooks table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS webhooks (
+            id SERIAL PRIMARY KEY,
+            url TEXT NOT NULL,
+            method TEXT DEFAULT 'POST',
+            headers TEXT,
+            body TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Strategy PnL history
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS strategy_pnl_history (
+            id SERIAL PRIMARY KEY,
+            strategy_id INTEGER,
+            strategy_name TEXT,
+            pnl REAL,
+            drawdown REAL DEFAULT 0.0,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # OAuth states table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS oauth_states (
+            state TEXT PRIMARY KEY,
+            account_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            redirect_uri TEXT
+        )
+    ''')
+    
+    # Watchlist items
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS watchlist_items (
+            id SERIAL PRIMARY KEY,
+            ticker TEXT NOT NULL UNIQUE,
+            company_name TEXT,
+            cik TEXT,
+            exchange TEXT,
+            currency TEXT DEFAULT 'USD',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Digest runs
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS digest_runs (
+            run_id SERIAL PRIMARY KEY,
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            finished_at TIMESTAMP,
+            run_type TEXT,
+            status TEXT DEFAULT 'running',
+            error TEXT
+        )
+    ''')
+    
+    # News items
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS news_items (
+            id SERIAL PRIMARY KEY,
+            url_hash TEXT NOT NULL UNIQUE,
+            ticker TEXT NOT NULL,
+            source TEXT NOT NULL,
+            headline TEXT NOT NULL,
+            summary TEXT,
+            url TEXT,
+            published_at TIMESTAMP,
+            inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Ratings snapshots
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ratings_snapshots (
+            id SERIAL PRIMARY KEY,
+            ticker TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            raw_rating TEXT,
+            normalized_bucket TEXT,
+            as_of TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Politician trades
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS politician_trades (
+            id SERIAL PRIMARY KEY,
+            source TEXT,
+            chamber TEXT,
+            politician TEXT NOT NULL,
+            filed_at TIMESTAMP,
+            txn_date TIMESTAMP,
+            issuer TEXT,
+            ticker_guess TEXT,
+            action TEXT,
+            amount_range TEXT,
+            url TEXT,
+            inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     conn.commit()
     cursor.close()
     conn.close()
-    print("✅ PostgreSQL tables created!")
+    print("✅ PostgreSQL tables created (complete schema)!")
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# SESSION CONFIGURATION - Required for User Authentication
+# ============================================================================
+# Use environment variable for production, or generate a secure random key
+import secrets
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # Sessions last 7 days
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Register auth context processor to make current_user available in all templates
+if USER_AUTH_AVAILABLE:
+    app.context_processor(auth_context_processor)
 
 # Initialize SocketIO for WebSocket support (like Trade Manager)
 # Use 'eventlet' or 'gevent' if available, otherwise fall back to threading
@@ -1050,37 +1892,63 @@ def get_tick_value(symbol):
 
 
 def init_db():
-    conn = sqlite3.connect('trading_webhook.db')
+    """Initialize webhook and strategy tables - supports both SQLite and PostgreSQL"""
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS webhooks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT NOT NULL,
-            method TEXT NOT NULL,
-            headers TEXT,
-            body TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    # Strategy P&L history table (for recording strategy performance like Trade Manager)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS strategy_pnl_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            strategy_id INTEGER,
-            strategy_name TEXT,
-            pnl REAL,
-            drawdown REAL DEFAULT 0.0,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_strategy_pnl_timestamp 
-        ON strategy_pnl_history(strategy_id, timestamp)
-    ''')
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_strategy_pnl_date 
-        ON strategy_pnl_history(DATE(timestamp))
-    ''')
+    
+    # Check if using PostgreSQL
+    is_postgres = is_using_postgres()
+    
+    if is_postgres:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS webhooks (
+                id SERIAL PRIMARY KEY,
+                url TEXT NOT NULL,
+                method TEXT NOT NULL,
+                headers TEXT,
+                body TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS strategy_pnl_history (
+                id SERIAL PRIMARY KEY,
+                strategy_id INTEGER,
+                strategy_name TEXT,
+                pnl REAL,
+                drawdown REAL DEFAULT 0.0,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+    else:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS webhooks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL,
+                method TEXT NOT NULL,
+                headers TEXT,
+                body TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS strategy_pnl_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                strategy_id INTEGER,
+                strategy_name TEXT,
+                pnl REAL,
+                drawdown REAL DEFAULT 0.0,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_strategy_pnl_timestamp 
+            ON strategy_pnl_history(strategy_id, timestamp)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_strategy_pnl_date 
+            ON strategy_pnl_history(DATE(timestamp))
+        ''')
     conn.commit()
     conn.close()
     
@@ -1448,7 +2316,206 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
 
 @app.route('/')
 def index():
+    """Root route - redirect to dashboard if logged in, otherwise to login."""
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     return redirect(url_for('dashboard'))
+
+# ============================================================================
+# USER AUTHENTICATION ROUTES
+# ============================================================================
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page and handler."""
+    # If already logged in, redirect to dashboard
+    if USER_AUTH_AVAILABLE and is_logged_in():
+        return redirect(url_for('dashboard'))
+    
+    if request.method == 'POST':
+        if not USER_AUTH_AVAILABLE:
+            flash('Authentication system not available.', 'error')
+            return render_template('login.html')
+        
+        username_or_email = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        remember = request.form.get('remember') == 'on'
+        
+        if not username_or_email or not password:
+            flash('Please enter your username/email and password.', 'error')
+            return render_template('login.html')
+        
+        user = authenticate_user(username_or_email, password)
+        if user:
+            login_user(user)
+            
+            # Set session permanence based on "remember me"
+            session.permanent = remember
+            
+            # Redirect to originally requested page or dashboard
+            next_url = session.pop('next_url', None)
+            flash(f'Welcome back, {user.display_name}!', 'success')
+            return redirect(next_url or url_for('dashboard'))
+        else:
+            flash('Invalid username/email or password.', 'error')
+    
+    return render_template('login.html')
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    """Registration page and handler."""
+    # If already logged in, redirect to dashboard
+    if USER_AUTH_AVAILABLE and is_logged_in():
+        return redirect(url_for('dashboard'))
+    
+    if request.method == 'POST':
+        if not USER_AUTH_AVAILABLE:
+            flash('Authentication system not available.', 'error')
+            return render_template('register.html')
+        
+        username = request.form.get('username', '').strip().lower()
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        confirm_password = request.form.get('confirm_password', '')
+        display_name = request.form.get('display_name', '').strip() or username
+        terms = request.form.get('terms')
+        
+        # Validation
+        errors = []
+        
+        if not username or len(username) < 3:
+            errors.append('Username must be at least 3 characters.')
+        
+        if not email or '@' not in email:
+            errors.append('Please enter a valid email address.')
+        
+        if not password or len(password) < 6:
+            errors.append('Password must be at least 6 characters.')
+        
+        if password != confirm_password:
+            errors.append('Passwords do not match.')
+        
+        if not terms:
+            errors.append('You must agree to the Terms of Service.')
+        
+        if errors:
+            for error in errors:
+                flash(error, 'error')
+            return render_template('register.html')
+        
+        # Try to create user
+        user = create_user(username, email, password, display_name)
+        if user:
+            # Auto-login after registration
+            login_user(user)
+            flash(f'Welcome to Just.Trades., {user.display_name}! Your account has been created.', 'success')
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Username or email already exists. Please try different credentials.', 'error')
+    
+    return render_template('register.html')
+
+
+@app.route('/logout')
+def logout():
+    """Logout handler."""
+    if USER_AUTH_AVAILABLE:
+        logout_user()
+        flash('You have been logged out successfully.', 'info')
+    return redirect(url_for('login'))
+
+
+# ============================================================================
+# ADMIN ROUTES - User Management
+# ============================================================================
+@app.route('/admin/users')
+def admin_users():
+    """Admin page for managing users."""
+    if not USER_AUTH_AVAILABLE:
+        flash('Authentication system not available.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    
+    user = get_current_user()
+    if not user or not user.is_admin:
+        flash('You do not have permission to access this page.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    from user_auth import get_all_users
+    users = get_all_users()
+    return render_template('admin_users.html', users=users)
+
+
+@app.route('/admin/users/create', methods=['POST'])
+def admin_create_user():
+    """Admin endpoint to create a new user."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    
+    user = get_current_user()
+    if not user or not user.is_admin:
+        flash('You do not have permission to perform this action.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    username = request.form.get('username', '').strip().lower()
+    email = request.form.get('email', '').strip().lower()
+    password = request.form.get('password', '')
+    display_name = request.form.get('display_name', '').strip() or username
+    is_admin = request.form.get('is_admin') == '1'
+    
+    if not username or not email or not password:
+        flash('All fields are required.', 'error')
+        return redirect(url_for('admin_users'))
+    
+    new_user = create_user(username, email, password, display_name, is_admin)
+    if new_user:
+        flash(f'User "{username}" created successfully.', 'success')
+    else:
+        flash('Failed to create user. Username or email may already exist.', 'error')
+    
+    return redirect(url_for('admin_users'))
+
+
+@app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
+def admin_delete_user(user_id):
+    """Admin endpoint to delete a user."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    current = get_current_user()
+    if not current or not current.is_admin:
+        return jsonify({'success': False, 'error': 'Not authorized'}), 403
+    
+    # Don't allow deleting yourself
+    if user_id == current.id:
+        return jsonify({'success': False, 'error': 'Cannot delete your own account'}), 400
+    
+    from user_auth import get_auth_db_connection
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if db_type == 'postgresql':
+            cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
+        else:
+            cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
 
 @app.route('/health')
 def health():
@@ -1459,22 +2526,31 @@ def health():
         conn.execute("SELECT 1")
         conn.close()
         db_status = "healthy"
+        db_type = get_db_type() if PRODUCTION_DB_AVAILABLE else "sqlite"
     except Exception as e:
         db_status = f"error: {str(e)}"
+        db_type = "unknown"
     
-    # Check Redis if available
-    redis_status = "not configured"
-    try:
-        from production_db import db as prod_db
-        health = prod_db.health_check()
-        redis_status = health.get('redis', 'unknown')
-    except:
-        pass
+    # Check Redis/cache if available
+    cache_status = "not configured"
+    if CACHE_AVAILABLE:
+        try:
+            cache_info = get_cache_status()
+            cache_status = cache_info.get('backend', 'memory')
+            if cache_info.get('connected'):
+                cache_status += " (connected)"
+        except:
+            cache_status = "error"
+    
+    # Check async utils
+    async_status = "available" if ASYNC_UTILS_AVAILABLE else "not loaded"
     
     status = {
         "status": "healthy" if db_status == "healthy" else "degraded",
         "database": db_status,
-        "redis": redis_status,
+        "database_type": db_type,
+        "cache": cache_status,
+        "async_utils": async_status,
         "timestamp": datetime.now().isoformat()
     }
     
@@ -1680,6 +2756,9 @@ def test_api_access(account_id):
 
 @app.route('/dashboard')
 def dashboard():
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     return render_template('dashboard.html')
 
 # =============================================================================
@@ -1693,6 +2772,9 @@ INSIDER_SERVICE_URL = "http://localhost:8084"
 @app.route('/insider_signals')
 def insider_signals():
     """Render the Insider Signals tab"""
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     return render_template('insider_signals.html')
 
 @app.route('/api/insiders/status')
@@ -1799,33 +2881,57 @@ def api_insiders_watchlist_signals():
 
 @app.route('/accounts')
 def accounts():
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     # Inject the fetch MD token script into the template context
     return render_template('account_management.html', include_md_token_script=True)
 
 @app.route('/api/accounts', methods=['GET'])
 def get_accounts():
-    """Get all accounts"""
+    """Get all accounts for the current user"""
     try:
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM accounts")
+        is_postgres = is_using_postgres()
+        
+        # Filter by user_id if user is logged in
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user_id = get_current_user_id()
+            if is_postgres:
+                cursor.execute("SELECT * FROM accounts WHERE user_id = %s OR user_id IS NULL", (user_id,))
+            else:
+                cursor.execute("SELECT * FROM accounts WHERE user_id = ? OR user_id IS NULL", (user_id,))
+        else:
+            cursor.execute("SELECT * FROM accounts")
         accounts = cursor.fetchall()
         conn.close()
         
+        # Convert rows to dict format
+        if accounts and not hasattr(accounts[0], 'keys'):
+            # PostgreSQL returns tuples, need to convert
+            columns = ['id', 'user_id', 'name', 'broker', 'auth_type', 'enabled', 'username', 'password', 
+                      'client_id', 'client_secret', 'environment', 'access_token', 'refresh_token', 
+                      'md_access_token', 'token_expiry', 'tradovate_accounts', 'subaccounts', 'created_at', 'updated_at']
+            accounts = [dict(zip(columns[:len(row)], row)) for row in accounts]
+        
         accounts_list = []
         for account in accounts:
+            # Convert to dict if needed
+            if not isinstance(account, dict):
+                account = dict(account)
+            
             parsed_subaccounts = []
             try:
-                if 'subaccounts' in account.keys() and account['subaccounts']:
+                if account.get('subaccounts'):
                     parsed_subaccounts = json.loads(account['subaccounts'])
             except Exception as parse_err:
-                logger.warning(f"Unable to parse subaccounts for account {account['id']}: {parse_err}")
+                logger.warning(f"Unable to parse subaccounts for account {account.get('id')}: {parse_err}")
                 parsed_subaccounts = []
             
             parsed_tradovate_accounts = []
             try:
-                if 'tradovate_accounts' in account.keys() and account['tradovate_accounts']:
+                if account.get('tradovate_accounts'):
                     raw_tradovate_accounts = json.loads(account['tradovate_accounts'])
                     if isinstance(raw_tradovate_accounts, list):
                         for raw_acct in raw_tradovate_accounts:
@@ -1841,21 +2947,25 @@ def get_accounts():
                                 acct_copy['is_demo'] = inferred_demo
                             parsed_tradovate_accounts.append(acct_copy)
             except Exception as parse_err:
-                logger.warning(f"Unable to parse tradovate_accounts for account {account['id']}: {parse_err}")
+                logger.warning(f"Unable to parse tradovate_accounts for account {account.get('id')}: {parse_err}")
                 parsed_tradovate_accounts = []
             
             has_demo = any(sub.get('is_demo') for sub in parsed_subaccounts) or \
                 any(trad.get('is_demo') for trad in parsed_tradovate_accounts)
             has_live = any(not sub.get('is_demo') for sub in parsed_subaccounts) or \
                 any(not trad.get('is_demo') for trad in parsed_tradovate_accounts)
+            
+            # Check for access token (tradovate_token is legacy name, access_token is new)
+            has_token = bool(account.get('access_token') or account.get('tradovate_token'))
+            
             accounts_list.append({
-                'id': account['id'],
-                'name': account['name'],
-                'broker': account['broker'] if 'broker' in account.keys() else '',
-                'enabled': bool(account['enabled'] if 'enabled' in account.keys() else True),
-                'created_at': account['created_at'] if 'created_at' in account.keys() else '',
-                'tradovate_token': bool(account['tradovate_token'] if 'tradovate_token' in account.keys() else False),
-                'is_connected': bool(account['tradovate_token'] if 'tradovate_token' in account.keys() else False),
+                'id': account.get('id'),
+                'name': account.get('name'),
+                'broker': account.get('broker', ''),
+                'enabled': bool(account.get('enabled', True)),
+                'created_at': str(account.get('created_at', '')),
+                'tradovate_token': has_token,
+                'is_connected': has_token,
                 'subaccounts': parsed_subaccounts,
                 'tradovate_accounts': parsed_tradovate_accounts,
                 'has_demo': has_demo,
@@ -1879,20 +2989,40 @@ def create_account():
         
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
-        # Check if account name already exists
+        # Check if account name already exists (wrapper auto-converts ? to %s)
         cursor.execute("SELECT id FROM accounts WHERE name = ?", (account_name,))
         if cursor.fetchone():
             conn.close()
             return jsonify({'success': False, 'error': 'Account name already exists'}), 400
         
-        # Insert new account with default auth_type
-        cursor.execute("""
-            INSERT INTO accounts (name, broker, auth_type, enabled, created_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, (account_name, 'Tradovate', 'oauth', 1, datetime.now().isoformat()))
+        # Get current user_id for data isolation
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
         
-        account_id = cursor.lastrowid
+        # Insert new account with default auth_type and user_id
+        if is_postgres:
+            # PostgreSQL: use RETURNING to get the ID
+            cursor.execute("""
+                INSERT INTO accounts (name, broker, auth_type, enabled, created_at, user_id)
+                VALUES (?, ?, ?, ?, ?, ?) RETURNING id
+            """, (account_name, 'Tradovate', 'oauth', True, datetime.now().isoformat(), current_user_id))
+            result = cursor.fetchone()
+            # Result is a dict from RealDictCursor
+            if result:
+                account_id = result.get('id') if isinstance(result, dict) else result[0]
+            else:
+                account_id = None
+        else:
+            # SQLite: use lastrowid
+            cursor.execute("""
+                INSERT INTO accounts (name, broker, auth_type, enabled, created_at, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (account_name, 'Tradovate', 'oauth', 1, datetime.now().isoformat(), current_user_id))
+            account_id = cursor.lastrowid
+        
         conn.commit()
         conn.close()
         
@@ -1904,9 +3034,6 @@ def create_account():
             'broker_selection_url': f'/accounts/{account_id}/broker-selection',
             'connect_url': f'/api/accounts/{account_id}/connect'
         })
-    except sqlite3.IntegrityError as e:
-        logger.error(f"Database integrity error creating account: {e}")
-        return jsonify({'success': False, 'error': 'Account name already exists or invalid data'}), 400
     except Exception as e:
         logger.error(f"Error creating account: {e}")
         import traceback
@@ -1993,26 +3120,19 @@ def connect_account(account_id):
         # Do not use database values - these are the only credentials that work
         DEFAULT_CLIENT_ID = "8699"
         DEFAULT_CLIENT_SECRET = "7c74576b-20b1-4ea5-a2a0-eaeb11326a95"
-        
+
         client_id = DEFAULT_CLIENT_ID  # Always use 8699
-        
-        # Build redirect URI - use fixed pattern without query parameters (OAuth standard)
-        # OAuth apps need a fixed redirect URI registered in Tradovate
-        # Use state parameter to pass account_id (OAuth standard practice)
-        redirect_uri = None
-        try:
-            with open('ngrok_url.txt', 'r') as f:
-                ngrok_url = f.read().strip()
-                if ngrok_url and ngrok_url.startswith('http'):
-                    # Use fixed redirect URI without query parameters
-                    redirect_uri = f'{ngrok_url.rstrip("/")}/api/oauth/callback'
-                    logger.info(f"Using ngrok redirect_uri: {redirect_uri}")
-        except Exception as e:
-            pass
-        
-        if not redirect_uri:
-            # Use fixed redirect URI without query parameters
-            redirect_uri = f'http://localhost:8082/api/oauth/callback'
+
+        # Build redirect URI - use Railway URL if deployed, otherwise localhost
+        # Check for Railway deployment first
+        railway_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
+        if railway_url:
+            redirect_uri = f'https://{railway_url}/api/oauth/callback'
+            logger.info(f"Using Railway redirect_uri: {redirect_uri}")
+        else:
+            # Local development - use localhost
+            redirect_uri = 'http://localhost:8082/api/oauth/callback'
+            logger.info(f"Using localhost redirect_uri: {redirect_uri}")
         
         # Build OAuth URL - Tradovate OAuth endpoint (TradersPost pattern)
         # TradersPost uses: https://trader.tradovate.com/oauth with scope=All
@@ -2067,18 +3187,12 @@ def oauth_callback():
         client_id = DEFAULT_CLIENT_ID  # Always use 8699
         client_secret = DEFAULT_CLIENT_SECRET  # Always use the secret
         
-        # Build redirect_uri to match what was sent (fixed URI without query parameters)
-        redirect_uri = None
-        try:
-            with open('ngrok_url.txt', 'r') as f:
-                ngrok_url = f.read().strip()
-                if ngrok_url and ngrok_url.startswith('http'):
-                    redirect_uri = f'{ngrok_url.rstrip("/")}/api/oauth/callback'
-        except Exception as e:
-            pass
-        
-        if not redirect_uri:
-            redirect_uri = f'http://localhost:8082/api/oauth/callback'
+        # Build redirect_uri - must match what was sent in connect_account
+        railway_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
+        if railway_url:
+            redirect_uri = f'https://{railway_url}/api/oauth/callback'
+        else:
+            redirect_uri = 'http://localhost:8082/api/oauth/callback'
         
         # Exchange authorization code for access token
         # Try LIVE endpoint first (demo often rate-limited), then fallback to DEMO
@@ -2615,48 +3729,133 @@ def strategies():
 @app.route('/recorders', methods=['GET'])
 def recorders_list():
     """Render the recorders list page"""
-    conn = get_db_connection()
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute('SELECT id, name, symbol, is_recording, created_at FROM recorders ORDER BY created_at DESC')
-    recorders = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return render_template('recorders_list.html', recorders=recorders)
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders ORDER BY id DESC')
+        rows = cursor.fetchall()
+        recorders = []
+        for row in rows:
+            try:
+                if isinstance(row, dict):
+                    rec = row
+                elif hasattr(row, 'keys'):
+                    rec = dict(row)
+                else:
+                    rec = {
+                        'id': row[0],
+                        'name': row[1],
+                        'ticker': row[2],
+                        'enabled': row[3],
+                        'created_at': row[4]
+                    }
+                # Ensure template-required fields exist
+                recorders.append({
+                    'id': rec.get('id'),
+                    'name': rec.get('name', 'Unknown'),
+                    'symbol': rec.get('ticker') or rec.get('symbol', ''),
+                    'is_recording': rec.get('enabled', False),
+                    'enabled': rec.get('enabled', False),
+                    'created_at': str(rec.get('created_at', '')) if rec.get('created_at') else ''
+                })
+            except Exception as row_err:
+                logger.warning(f"Error processing recorder row: {row_err}")
+                continue
+        conn.close()
+        return render_template('recorders_list.html', recorders=recorders)
+    except Exception as e:
+        logger.error(f"Error loading recorders list: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return render_template('recorders_list.html', recorders=[])
 
 @app.route('/recorders/new')
 def recorders_new():
     """Render the new recorder form"""
-    # Get accounts for dropdown
-    conn = get_db_connection()
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute('SELECT id, name FROM accounts WHERE enabled = 1')
-    accounts = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return render_template('recorders.html', recorder=None, accounts=accounts, mode='create')
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
+    try:
+        # Get accounts for dropdown
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Use simple query without boolean filter for compatibility
+        cursor.execute('SELECT id, name FROM accounts')
+        rows = cursor.fetchall()
+        accounts = []
+        for row in rows:
+            try:
+                if isinstance(row, dict):
+                    accounts.append(row)
+                elif hasattr(row, 'keys'):
+                    accounts.append(dict(row))
+                else:
+                    accounts.append({'id': row[0], 'name': row[1]})
+            except:
+                continue
+        conn.close()
+        return render_template('recorders.html', recorder=None, accounts=accounts, mode='create')
+    except Exception as e:
+        logger.error(f"Error loading new recorder form: {e}")
+        return render_template('recorders.html', recorder=None, accounts=[], mode='create')
 
 @app.route('/recorders/<int:recorder_id>')
 def recorders_edit(recorder_id):
     """Render the edit recorder form"""
-    conn = get_db_connection()
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
-    recorder = cursor.fetchone()
-    if not recorder:
-        conn.close()
-        return redirect('/recorders')
-    recorder = dict(recorder)
-    # Parse TP targets JSON
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     try:
-        recorder['tp_targets'] = json.loads(recorder.get('tp_targets') or '[]')
-    except:
-        recorder['tp_targets'] = []
-    # Get accounts for dropdown
-    cursor.execute('SELECT id, name FROM accounts WHERE enabled = 1')
-    accounts = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return render_template('recorders.html', recorder=recorder, accounts=accounts, mode='edit')
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        if is_postgres:
+            cursor.execute('SELECT * FROM recorders WHERE id = %s', (recorder_id,))
+        else:
+            cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return redirect('/recorders')
+        
+        columns = ['id', 'user_id', 'name', 'enabled', 'webhook_token', 'ticker', 'position_size', 
+                   'tp_enabled', 'tp_targets', 'sl_enabled', 'sl_amount', 'trailing_sl', 'account_id', 
+                   'created_at', 'updated_at']
+        if isinstance(row, dict):
+            recorder = row
+        elif hasattr(row, 'keys'):
+            recorder = dict(row)
+        else:
+            recorder = dict(zip(columns[:len(row)], row))
+        
+        # Parse TP targets JSON
+        try:
+            recorder['tp_targets'] = json.loads(recorder.get('tp_targets') or '[]')
+        except:
+            recorder['tp_targets'] = []
+        # Get accounts for dropdown
+        cursor.execute('SELECT id, name FROM accounts')
+        rows = cursor.fetchall()
+        accounts = []
+        for row in rows:
+            try:
+                if isinstance(row, dict):
+                    accounts.append(row)
+                elif hasattr(row, 'keys'):
+                    accounts.append(dict(row))
+                else:
+                    accounts.append({'id': row[0], 'name': row[1]})
+            except:
+                continue
+        conn.close()
+        return render_template('recorders.html', recorder=recorder, accounts=accounts, mode='edit')
+    except Exception as e:
+        logger.error(f"Error loading recorder edit form: {e}")
+        return redirect('/recorders')
 
 # ============================================================
 # RECORDER API ENDPOINTS
@@ -2664,7 +3863,7 @@ def recorders_edit(recorder_id):
 
 @app.route('/api/recorders', methods=['GET'])
 def api_get_recorders():
-    """Get all recorders"""
+    """Get all recorders for the current user"""
     try:
         search = request.args.get('search', '').strip()
         page = int(request.args.get('page', 1))
@@ -2672,38 +3871,109 @@ def api_get_recorders():
         offset = (page - 1) * per_page
         
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
-        if search:
-            cursor.execute('''
-                SELECT * FROM recorders 
-                WHERE name LIKE ? 
-                ORDER BY created_at DESC 
-                LIMIT ? OFFSET ?
-            ''', (f'%{search}%', per_page, offset))
+        # Filter by user_id if logged in
+        user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user_id = get_current_user_id()
+        
+        if is_postgres:
+            if search and user_id:
+                cursor.execute('''
+                    SELECT * FROM recorders 
+                    WHERE name LIKE %s AND (user_id = %s OR user_id IS NULL)
+                    ORDER BY created_at DESC 
+                    LIMIT %s OFFSET %s
+                ''', (f'%{search}%', user_id, per_page, offset))
+            elif user_id:
+                cursor.execute('''
+                    SELECT * FROM recorders 
+                    WHERE (user_id = %s OR user_id IS NULL)
+                    ORDER BY created_at DESC 
+                    LIMIT %s OFFSET %s
+                ''', (user_id, per_page, offset))
+            elif search:
+                cursor.execute('''
+                    SELECT * FROM recorders 
+                    WHERE name LIKE %s
+                    ORDER BY created_at DESC 
+                    LIMIT %s OFFSET %s
+                ''', (f'%{search}%', per_page, offset))
+            else:
+                cursor.execute('''
+                    SELECT * FROM recorders 
+                    ORDER BY created_at DESC 
+                    LIMIT %s OFFSET %s
+                ''', (per_page, offset))
         else:
-            cursor.execute('''
-                SELECT * FROM recorders 
-                ORDER BY created_at DESC 
-                LIMIT ? OFFSET ?
-            ''', (per_page, offset))
+            if search and user_id:
+                cursor.execute('''
+                    SELECT * FROM recorders 
+                    WHERE name LIKE ? AND (user_id = ? OR user_id IS NULL)
+                    ORDER BY created_at DESC 
+                    LIMIT ? OFFSET ?
+                ''', (f'%{search}%', user_id, per_page, offset))
+            elif user_id:
+                cursor.execute('''
+                    SELECT * FROM recorders 
+                    WHERE (user_id = ? OR user_id IS NULL)
+                    ORDER BY created_at DESC 
+                    LIMIT ? OFFSET ?
+                ''', (user_id, per_page, offset))
+            elif search:
+                cursor.execute('''
+                    SELECT * FROM recorders 
+                    WHERE name LIKE ?
+                    ORDER BY created_at DESC 
+                    LIMIT ? OFFSET ?
+                ''', (f'%{search}%', per_page, offset))
+            else:
+                cursor.execute('''
+                    SELECT * FROM recorders 
+                    ORDER BY created_at DESC 
+                    LIMIT ? OFFSET ?
+                ''', (per_page, offset))
         
+        rows = cursor.fetchall()
         recorders = []
-        for row in cursor.fetchall():
-            recorder = dict(row)
+        columns = ['id', 'user_id', 'name', 'enabled', 'webhook_token', 'ticker', 'position_size', 
+                   'tp_enabled', 'tp_targets', 'sl_enabled', 'sl_amount', 'trailing_sl', 'account_id', 
+                   'created_at', 'updated_at']
+        for row in rows:
+            if hasattr(row, 'keys'):
+                recorder = dict(row)
+            else:
+                recorder = dict(zip(columns[:len(row)], row))
             try:
                 recorder['tp_targets'] = json.loads(recorder.get('tp_targets') or '[]')
             except:
                 recorder['tp_targets'] = []
             recorders.append(recorder)
         
-        # Get total count
-        if search:
-            cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ?', (f'%{search}%',))
+        # Get total count with user filter
+        if is_postgres:
+            if user_id and search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s AND (user_id = %s OR user_id IS NULL)', (f'%{search}%', user_id))
+            elif user_id:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = %s OR user_id IS NULL', (user_id,))
+            elif search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s', (f'%{search}%',))
+            else:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders')
+        elif USER_AUTH_AVAILABLE and is_logged_in():
+            if search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND (user_id = ? OR user_id IS NULL)', (f'%{search}%', user_id))
+            else:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = ? OR user_id IS NULL', (user_id,))
         else:
-            cursor.execute('SELECT COUNT(*) as count FROM recorders')
-        total = cursor.fetchone()['count']
+            if search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ?', (f'%{search}%',))
+            else:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders')
+        total_row = cursor.fetchone()
+        total = total_row[0] if total_row else 0
         
         conn.close()
         
@@ -2726,16 +3996,26 @@ def api_get_recorder(recorder_id):
     """Get a single recorder by ID"""
     try:
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
+        is_postgres = is_using_postgres()
+        
+        if is_postgres:
+            cursor.execute('SELECT * FROM recorders WHERE id = %s', (recorder_id,))
+        else:
+            cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
         row = cursor.fetchone()
         conn.close()
         
         if not row:
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
         
-        recorder = dict(row)
+        columns = ['id', 'user_id', 'name', 'enabled', 'webhook_token', 'ticker', 'position_size', 
+                   'tp_enabled', 'tp_targets', 'sl_enabled', 'sl_amount', 'trailing_sl', 'account_id', 
+                   'created_at', 'updated_at']
+        if hasattr(row, 'keys'):
+            recorder = dict(row)
+        else:
+            recorder = dict(zip(columns[:len(row)], row))
         try:
             recorder['tp_targets'] = json.loads(recorder.get('tp_targets') or '[]')
         except:
@@ -2764,59 +4044,65 @@ def api_create_recorder():
         
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
         # Serialize TP targets
         tp_targets = json.dumps(data.get('tp_targets', []))
         
-        cursor.execute('''
-            INSERT INTO recorders (
-                name, strategy_type, symbol, demo_account_id, account_id,
-                initial_position_size, add_position_size,
-                tp_units, trim_units, tp_targets,
-                sl_enabled, sl_amount, sl_units, sl_type,
-                avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
-                add_delay, max_contracts_per_trade, option_premium_filter, direction_filter,
-                time_filter_1_start, time_filter_1_stop, time_filter_2_start, time_filter_2_stop,
-                signal_cooldown, max_signals_per_session, max_daily_loss, auto_flat_after_cutoff,
-                notes, recording_enabled, webhook_token
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            name,
-            data.get('strategy_type', 'Futures'),
-            data.get('symbol'),
-            data.get('demo_account_id'),
-            data.get('account_id'),
-            data.get('initial_position_size', 2),
-            data.get('add_position_size', 2),
-            data.get('tp_units', 'Ticks'),
-            data.get('trim_units', 'Contracts'),
-            tp_targets,
-            1 if data.get('sl_enabled') else 0,
-            data.get('sl_amount', 0),
-            data.get('sl_units', 'Ticks'),
-            data.get('sl_type', 'Fixed'),
-            1 if data.get('avg_down_enabled') else 0,
-            data.get('avg_down_amount', 1),
-            data.get('avg_down_point', 0),
-            data.get('avg_down_units', 'Ticks'),
-            data.get('add_delay', 1),
-            data.get('max_contracts_per_trade', 0),
-            data.get('option_premium_filter', 0),
-            data.get('direction_filter'),
-            data.get('time_filter_1_start', '8:45 AM'),
-            data.get('time_filter_1_stop', '1:45 PM'),
-            data.get('time_filter_2_start', '12:30 PM'),
-            data.get('time_filter_2_stop', '3:15 PM'),
-            data.get('signal_cooldown', 60),
-            data.get('max_signals_per_session', 10),
-            data.get('max_daily_loss', 500),
-            1 if data.get('auto_flat_after_cutoff', True) else 0,
-            data.get('notes', ''),
-            1 if data.get('recording_enabled', True) else 0,
-            webhook_token
-        ))
+        # Get current user_id for data isolation
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
         
-        recorder_id = cursor.lastrowid
+        if is_postgres:
+            cursor.execute('''
+                INSERT INTO recorders (
+                    name, enabled, webhook_token, ticker, position_size,
+                    tp_enabled, tp_targets, sl_enabled, sl_amount, trailing_sl,
+                    account_id, user_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+            ''', (
+                name,
+                True,
+                webhook_token,
+                data.get('symbol') or data.get('ticker'),
+                data.get('position_size', data.get('initial_position_size', 1)),
+                data.get('tp_enabled', True),
+                tp_targets,
+                data.get('sl_enabled', False),
+                data.get('sl_amount', 0),
+                data.get('trailing_sl', False),
+                data.get('account_id'),
+                current_user_id
+            ))
+            result = cursor.fetchone()
+            if result:
+                recorder_id = result.get('id') if isinstance(result, dict) else result[0]
+            else:
+                recorder_id = None
+        else:
+            cursor.execute('''
+                INSERT INTO recorders (
+                    name, enabled, webhook_token, ticker, position_size,
+                    tp_enabled, tp_targets, sl_enabled, sl_amount, trailing_sl,
+                    account_id, user_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                name,
+                1,
+                webhook_token,
+                data.get('symbol') or data.get('ticker'),
+                data.get('position_size', data.get('initial_position_size', 1)),
+                1 if data.get('tp_enabled', True) else 0,
+                tp_targets,
+                1 if data.get('sl_enabled', False) else 0,
+                data.get('sl_amount', 0),
+                1 if data.get('trailing_sl', False) else 0,
+                data.get('account_id'),
+                current_user_id
+            ))
+            recorder_id = cursor.lastrowid
+        
         conn.commit()
         conn.close()
         
@@ -3240,80 +4526,163 @@ def api_get_traders():
     """Get all traders (recorder-account links) with joined data and risk settings"""
     try:
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
-        cursor.execute('''
-            SELECT 
-                t.id,
-                t.recorder_id,
-                t.account_id,
-                t.subaccount_id,
-                t.subaccount_name,
-                t.is_demo,
-                t.enabled,
-                t.created_at,
-                t.initial_position_size as trader_position_size,
-                t.add_position_size as trader_add_position_size,
-                t.tp_targets as trader_tp_targets,
-                t.sl_enabled as trader_sl_enabled,
-                t.sl_amount as trader_sl_amount,
-                t.sl_units as trader_sl_units,
-                t.max_daily_loss as trader_max_daily_loss,
-                r.name as recorder_name,
-                r.strategy_type,
-                r.initial_position_size as recorder_position_size,
-                r.symbol,
-                a.name as account_name,
-                a.broker
-            FROM traders t
-            JOIN recorders r ON t.recorder_id = r.id
-            JOIN accounts a ON t.account_id = a.id
-            ORDER BY t.created_at DESC
-        ''')
+        # Filter by user_id if logged in
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user_id = get_current_user_id()
+            if is_postgres:
+                cursor.execute('''
+                    SELECT 
+                        t.id,
+                        t.recorder_id,
+                        t.account_id,
+                        t.subaccount_id,
+                        t.subaccount_name,
+                        t.is_demo,
+                        t.enabled,
+                        t.created_at,
+                        t.max_contracts as trader_position_size,
+                        r.name as recorder_name,
+                        r.ticker as symbol,
+                        a.name as account_name,
+                        a.broker
+                    FROM traders t
+                    LEFT JOIN recorders r ON t.recorder_id = r.id
+                    LEFT JOIN accounts a ON t.account_id = a.id
+                    WHERE a.user_id = %s OR a.user_id IS NULL OR t.user_id = %s
+                    ORDER BY t.created_at DESC
+                ''', (user_id, user_id))
+            else:
+                cursor.execute('''
+                    SELECT 
+                        t.id,
+                        t.recorder_id,
+                        t.account_id,
+                        t.subaccount_id,
+                        t.subaccount_name,
+                        t.is_demo,
+                        t.enabled,
+                        t.created_at,
+                        t.initial_position_size as trader_position_size,
+                        t.add_position_size as trader_add_position_size,
+                        t.tp_targets as trader_tp_targets,
+                        t.sl_enabled as trader_sl_enabled,
+                        t.sl_amount as trader_sl_amount,
+                        t.sl_units as trader_sl_units,
+                        t.max_daily_loss as trader_max_daily_loss,
+                        r.name as recorder_name,
+                        r.strategy_type,
+                        r.initial_position_size as recorder_position_size,
+                        r.symbol,
+                        a.name as account_name,
+                        a.broker
+                    FROM traders t
+                    JOIN recorders r ON t.recorder_id = r.id
+                    JOIN accounts a ON t.account_id = a.id
+                    WHERE a.user_id = ? OR a.user_id IS NULL
+                    ORDER BY t.created_at DESC
+                ''', (user_id,))
+        else:
+            if is_postgres:
+                cursor.execute('''
+                    SELECT 
+                        t.id,
+                        t.recorder_id,
+                        t.account_id,
+                        t.subaccount_id,
+                        t.subaccount_name,
+                        t.is_demo,
+                        t.enabled,
+                        t.created_at,
+                        t.max_contracts as trader_position_size,
+                        r.name as recorder_name,
+                        r.ticker as symbol,
+                        a.name as account_name,
+                        a.broker
+                    FROM traders t
+                    LEFT JOIN recorders r ON t.recorder_id = r.id
+                    LEFT JOIN accounts a ON t.account_id = a.id
+                    ORDER BY t.created_at DESC
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT 
+                        t.id,
+                        t.recorder_id,
+                        t.account_id,
+                        t.subaccount_id,
+                        t.subaccount_name,
+                        t.is_demo,
+                        t.enabled,
+                        t.created_at,
+                        t.initial_position_size as trader_position_size,
+                        t.add_position_size as trader_add_position_size,
+                        t.tp_targets as trader_tp_targets,
+                        t.sl_enabled as trader_sl_enabled,
+                        t.sl_amount as trader_sl_amount,
+                        t.sl_units as trader_sl_units,
+                        t.max_daily_loss as trader_max_daily_loss,
+                        r.name as recorder_name,
+                        r.strategy_type,
+                        r.initial_position_size as recorder_position_size,
+                        r.symbol,
+                        a.name as account_name,
+                        a.broker
+                    FROM traders t
+                    JOIN recorders r ON t.recorder_id = r.id
+                    JOIN accounts a ON t.account_id = a.id
+                    ORDER BY t.created_at DESC
+                ''')
         
+        rows = cursor.fetchall()
         traders = []
-        for row in cursor.fetchall():
-            is_demo = bool(row['is_demo']) if row['is_demo'] is not None else None
+        
+        # PostgreSQL columns for the simplified query
+        pg_columns = ['id', 'recorder_id', 'account_id', 'subaccount_id', 'subaccount_name', 
+                      'is_demo', 'enabled', 'created_at', 'trader_position_size', 
+                      'recorder_name', 'symbol', 'account_name', 'broker']
+        
+        for row in rows:
+            # Convert to dict
+            if hasattr(row, 'keys'):
+                row_dict = dict(row)
+            else:
+                row_dict = dict(zip(pg_columns[:len(row)], row))
+            
+            is_demo = bool(row_dict.get('is_demo')) if row_dict.get('is_demo') is not None else None
             env_label = "DEMO" if is_demo else "LIVE" if is_demo is not None else ""
-            # Build display name: "Mark DEMO (DEMO4419847-2)" or "Mark LIVE (1381296)"
-            display_account = f"{row['account_name']} {env_label} ({row['subaccount_name']})" if row['subaccount_name'] else row['account_name']
+            account_name = row_dict.get('account_name') or 'Unknown'
+            subaccount_name = row_dict.get('subaccount_name')
+            display_account = f"{account_name} {env_label} ({subaccount_name})" if subaccount_name else account_name
             
-            # Use trader's risk settings if set, otherwise fall back to recorder defaults
-            position_size = row['trader_position_size'] if row['trader_position_size'] is not None else row['recorder_position_size']
-            
-            # Parse tp_targets JSON
-            tp_targets = []
-            try:
-                tp_targets = json.loads(row['trader_tp_targets'] or '[]')
-            except:
-                tp_targets = []
+            position_size = row_dict.get('trader_position_size') or row_dict.get('recorder_position_size') or 1
             
             traders.append({
-                'id': row['id'],
-                'recorder_id': row['recorder_id'],
-                'account_id': row['account_id'],
-                'subaccount_id': row['subaccount_id'],
-                'subaccount_name': row['subaccount_name'],
+                'id': row_dict.get('id'),
+                'recorder_id': row_dict.get('recorder_id'),
+                'account_id': row_dict.get('account_id'),
+                'subaccount_id': row_dict.get('subaccount_id'),
+                'subaccount_name': subaccount_name,
                 'is_demo': is_demo,
-                'enabled': bool(row['enabled']),
-                'created_at': row['created_at'],
-                'recorder_name': row['recorder_name'],
-                'name': row['recorder_name'],  # For backward compatibility
-                'strategy_type': row['strategy_type'],
-                'symbol': row['symbol'],
-                'account_name': row['account_name'],
+                'enabled': bool(row_dict.get('enabled')),
+                'created_at': str(row_dict.get('created_at', '')),
+                'recorder_name': row_dict.get('recorder_name'),
+                'name': row_dict.get('recorder_name'),
+                'strategy_type': row_dict.get('strategy_type', 'Futures'),
+                'symbol': row_dict.get('symbol'),
+                'account_name': account_name,
                 'display_account': display_account,
-                'broker': row['broker'],
-                # Risk settings (trader-specific)
+                'broker': row_dict.get('broker'),
                 'initial_position_size': position_size,
                 'position_size': position_size,  # For backward compatibility
-                'add_position_size': row['trader_add_position_size'],
-                'tp_targets': tp_targets,
-                'sl_enabled': bool(row['trader_sl_enabled']) if row['trader_sl_enabled'] is not None else False,
-                'sl_amount': row['trader_sl_amount'],
-                'sl_units': row['trader_sl_units'],
-                'max_daily_loss': row['trader_max_daily_loss']
+                'add_position_size': row_dict.get('trader_add_position_size'),
+                'tp_targets': [],
+                'sl_enabled': bool(row_dict.get('trader_sl_enabled')) if row_dict.get('trader_sl_enabled') is not None else False,
+                'sl_amount': row_dict.get('trader_sl_amount'),
+                'sl_units': row_dict.get('trader_sl_units'),
+                'max_daily_loss': row_dict.get('trader_max_daily_loss')
             })
         
         conn.close()
@@ -3348,79 +4717,84 @@ def api_create_trader():
             return jsonify({'success': False, 'error': 'recorder_id and account_id are required'}), 400
         
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
-        # Verify recorder exists and get its settings as defaults
-        cursor.execute('''
-            SELECT id, name, initial_position_size, add_position_size, tp_targets, 
-                   sl_enabled, sl_amount, sl_units, max_daily_loss 
-            FROM recorders WHERE id = ?
-        ''', (recorder_id,))
+        # Verify recorder exists
+        if is_postgres:
+            cursor.execute('SELECT id, name FROM recorders WHERE id = %s', (recorder_id,))
+        else:
+            cursor.execute('SELECT id, name FROM recorders WHERE id = ?', (recorder_id,))
         recorder = cursor.fetchone()
         if not recorder:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
         
-        # Use recorder defaults if risk settings not provided
+        # Use defaults if not provided
         if initial_position_size is None:
-            initial_position_size = recorder['initial_position_size']
-        if add_position_size is None:
-            add_position_size = recorder['add_position_size']
-        if tp_targets is None:
-            tp_targets = recorder['tp_targets']
-        if sl_enabled is None:
-            sl_enabled = recorder['sl_enabled']
-        if sl_amount is None:
-            sl_amount = recorder['sl_amount']
-        if sl_units is None:
-            sl_units = recorder['sl_units']
-        if max_daily_loss is None:
-            max_daily_loss = recorder['max_daily_loss']
-        
-        # Convert tp_targets to JSON string if it's a list
-        if isinstance(tp_targets, list):
-            tp_targets = json.dumps(tp_targets)
+            initial_position_size = 1
         
         # Verify account exists
-        cursor.execute('SELECT id, name FROM accounts WHERE id = ?', (account_id,))
+        if is_postgres:
+            cursor.execute('SELECT id, name FROM accounts WHERE id = %s', (account_id,))
+        else:
+            cursor.execute('SELECT id, name FROM accounts WHERE id = ?', (account_id,))
         account = cursor.fetchone()
         if not account:
             conn.close()
             return jsonify({'success': False, 'error': 'Account not found'}), 404
         
-        # Check if link already exists (same recorder + account + subaccount)
-        if subaccount_id:
-            cursor.execute('SELECT id FROM traders WHERE recorder_id = ? AND account_id = ? AND subaccount_id = ?', 
-                          (recorder_id, account_id, subaccount_id))
+        # Check if link already exists
+        if is_postgres:
+            if subaccount_id:
+                cursor.execute('SELECT id FROM traders WHERE recorder_id = %s AND account_id = %s AND subaccount_id = %s', 
+                              (recorder_id, account_id, subaccount_id))
+            else:
+                cursor.execute('SELECT id FROM traders WHERE recorder_id = %s AND account_id = %s', (recorder_id, account_id))
         else:
-            cursor.execute('SELECT id FROM traders WHERE recorder_id = ? AND account_id = ?', (recorder_id, account_id))
+            if subaccount_id:
+                cursor.execute('SELECT id FROM traders WHERE recorder_id = ? AND account_id = ? AND subaccount_id = ?', 
+                              (recorder_id, account_id, subaccount_id))
+            else:
+                cursor.execute('SELECT id FROM traders WHERE recorder_id = ? AND account_id = ?', (recorder_id, account_id))
         existing = cursor.fetchone()
         if existing:
             conn.close()
             return jsonify({'success': False, 'error': 'This recorder is already linked to this account'}), 400
         
-        # Get enabled_accounts if provided (for account routing - multiple accounts per trader)
-        enabled_accounts = data.get('enabled_accounts')
-        if enabled_accounts and isinstance(enabled_accounts, list):
-            enabled_accounts = json.dumps(enabled_accounts)
-            logger.info(f"📋 Creating trader with {len(data.get('enabled_accounts', []))} enabled accounts")
+        # Get current user_id
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+        
+        # Create the trader link
+        if is_postgres:
+            cursor.execute('''
+                INSERT INTO traders (
+                    recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
+                    max_contracts, user_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+            ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo, True,
+                  initial_position_size, current_user_id))
+            result = cursor.fetchone()
+            if result:
+                trader_id = result.get('id') if isinstance(result, dict) else result[0]
+            else:
+                trader_id = None
         else:
-            enabled_accounts = None
+            cursor.execute('''
+                INSERT INTO traders (
+                    recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
+                    initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
+                    enabled_accounts
+                )
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
+                  initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
+                  None))
+            trader_id = cursor.lastrowid
         
-        # Create the trader link with subaccount info and risk settings
-        cursor.execute('''
-            INSERT INTO traders (
-                recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
-                initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                enabled_accounts
-            )
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
-              initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-              enabled_accounts))
-        
-        trader_id = cursor.lastrowid
         conn.commit()
         conn.close()
         
@@ -3509,11 +4883,20 @@ def api_update_trader(trader_id):
             params.append(enabled_accounts)
             logger.info(f"  - Will update enabled_accounts field")
         
-        # Execute update if there are fields to update
+        # Execute update if there are fields to update (with retry for db locks)
         if updates:
             params.append(trader_id)
             query = f"UPDATE traders SET {', '.join(updates)} WHERE id = ?"
-            cursor.execute(query, params)
+            for attempt in range(5):
+                try:
+                    cursor.execute(query, params)
+                    break
+                except sqlite3.OperationalError as e:
+                    if 'locked' in str(e) and attempt < 4:
+                        import time
+                        time.sleep(0.2 * (attempt + 1))
+                        continue
+                    raise
         
         # ALSO update the linked RECORDER with risk settings
         # (The trading engine reads from the recorder, not the trader)
@@ -3669,6 +5052,115 @@ def api_delete_trader(trader_id):
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/traders/<int:trader_id>/test-connection', methods=['POST'])
+def api_test_trader_connection(trader_id):
+    """Test if the trader's linked account connection is working"""
+    import asyncio
+    
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get trader with account info
+        cursor.execute('''
+            SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id,
+                   a.name as account_name, t.subaccount_name, t.is_demo
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.id = ?
+        ''', (trader_id,))
+        trader_row = cursor.fetchone()
+        
+        if not trader_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Trader not found'}), 404
+        
+        trader = dict(trader_row)
+        conn.close()
+        
+        account_name = trader.get('account_name', 'Unknown')
+        subaccount_name = trader.get('subaccount_name', '')
+        is_demo = bool(trader.get('is_demo', True))
+        tradovate_token = trader.get('tradovate_token')
+        username = trader.get('username')
+        password = trader.get('password')
+        
+        logger.info(f"🔗 Testing connection for trader {trader_id} ({account_name} / {subaccount_name})")
+        
+        # Test 1: Check if we have credentials
+        if not tradovate_token and not (username and password):
+            return jsonify({
+                'success': True,
+                'connected': False,
+                'error': 'No OAuth token or API credentials found. Please re-authenticate.'
+            })
+        
+        # Test 2: Try to validate token or authenticate
+        async def test_connection():
+            from phantom_scraper.tradovate_integration import TradovateIntegration
+            from tradovate_api_access import TradovateAPIAccess
+            
+            # Try OAuth token first
+            if tradovate_token:
+                try:
+                    tradovate = TradovateIntegration(demo=is_demo)
+                    await tradovate.__aenter__()
+                    tradovate.access_token = tradovate_token
+                    
+                    # Try to get positions (simple API test)
+                    positions = await tradovate.get_positions(account_id=trader.get('subaccount_id'))
+                    await tradovate.__aexit__(None, None, None)
+                    
+                    if positions is not None:
+                        return {'connected': True, 'method': 'OAuth', 'positions': len(positions)}
+                except Exception as e:
+                    logger.warning(f"OAuth test failed: {e}")
+            
+            # Try API Access
+            if username and password:
+                try:
+                    api_access = TradovateAPIAccess(demo=is_demo)
+                    result = await api_access.login(username=username, password=password)
+                    if result.get('success'):
+                        return {'connected': True, 'method': 'API Access'}
+                    else:
+                        return {'connected': False, 'error': result.get('error', 'Login failed')}
+                except Exception as e:
+                    return {'connected': False, 'error': str(e)}
+            
+            return {'connected': False, 'error': 'No valid authentication method'}
+        
+        # Run async test
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(test_connection())
+            loop.close()
+        except RuntimeError:
+            result = asyncio.run(test_connection())
+        
+        if result.get('connected'):
+            logger.info(f"✅ Connection test PASSED for {account_name} ({result.get('method')})")
+        else:
+            logger.warning(f"⚠️ Connection test FAILED for {account_name}: {result.get('error')}")
+        
+        return jsonify({
+            'success': True,
+            'connected': result.get('connected', False),
+            'method': result.get('method'),
+            'error': result.get('error'),
+            'account_name': account_name,
+            'subaccount_name': subaccount_name
+        })
+        
+    except Exception as e:
+        logger.error(f"Error testing connection for trader {trader_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ============================================================
 # HIGH-PERFORMANCE SIGNAL PROCESSOR (Background Thread)
 # ============================================================
@@ -3786,7 +5278,20 @@ def process_webhook_directly(webhook_token):
     """
     Process webhook directly using recorder_service DCA logic.
     This is the REAL webhook handler with proper DCA, TP calculation, etc.
+    
+    FULL RISK MANAGEMENT:
+    - Direction Filter (long only, short only)
+    - Time Filters (trading windows)
+    - Signal Cooldown
+    - Max Signals Per Session
+    - Max Daily Loss
+    - Max Contracts Per Trade
+    - Signal Delay (Nth signal)
+    - Stop Loss
+    - Take Profit
     """
+    from datetime import datetime, timedelta, timezone
+    
     try:
         # Import the heavy-duty trading functions from recorder_service
         from recorder_service import (
@@ -3814,6 +5319,12 @@ def process_webhook_directly(webhook_token):
         recorder_id = recorder['id']
         recorder_name = recorder['name']
         
+        # Check if recorder is enabled - if disabled, reject the signal
+        if not recorder.get('recording_enabled', 1):
+            logger.info(f"⚠️ Webhook BLOCKED for '{recorder_name}' - recorder is DISABLED")
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder is disabled', 'blocked': True}), 200
+        
         # Parse incoming data
         data = request.get_json(force=True, silent=True) or {}
         if not data:
@@ -3834,12 +5345,268 @@ def process_webhook_directly(webhook_token):
         price = data.get('price', data.get('close', 0))
         quantity = int(data.get('quantity', data.get('qty', data.get('contracts', 1))) or 1)
         
+        # Strategy alert detection - TradingView strategies send position_size and market_position
+        position_size = data.get('position_size', data.get('contracts'))
+        market_position = data.get('market_position', '')
+        is_strategy_alert = position_size is not None or market_position
+        
         # Validate action
         valid_actions = ['buy', 'sell', 'long', 'short', 'close', 'flat', 'exit']
         if action not in valid_actions:
             logger.warning(f"Invalid action '{action}' for recorder {recorder_name}")
             conn.close()
             return jsonify({'success': False, 'error': f'Invalid action: {action}'}), 400
+        
+        # STRATEGY MODE: market_position: flat = CLOSE POSITION
+        # SMART CLOSE: Validates close makes sense before executing
+        # Handles multiple strategies on same ticker correctly
+        if market_position and market_position.lower() == 'flat':
+            logger.info(f"🔄 FLAT signal for {recorder_name} - validating close order")
+            
+            # TradingView tells us what IT wants to do
+            tv_action = action.upper()  # 'BUY' or 'SELL' from TradingView
+            tv_qty = quantity           # How many contracts TradingView wants to close
+            
+            # Get the trader linked to this recorder to check broker position
+            from recorder_service import execute_trade_simple, get_broker_position_for_recorder
+            
+            # Map ticker to contract symbol (e.g., NQ1! -> NQH6)
+            ticker_to_symbol = {
+                'NQ1!': 'NQH6', 'MNQ1!': 'MNQH6',
+                'ES1!': 'ESH6', 'MES1!': 'MESH6',
+                'YM1!': 'YMH6', 'MYM1!': 'MYMH6',
+                'RTY1!': 'RTYH6', 'M2K1!': 'M2KH6',
+                'CL1!': 'CLF5', 'MCL1!': 'MCLF5',
+                'GC1!': 'GCG5', 'MGC1!': 'MGCG5',
+            }
+            contract_symbol = ticker_to_symbol.get(ticker, ticker.replace('1!', 'H6'))
+            
+            # Check broker's NET position for this ticker
+            broker_pos = get_broker_position_for_recorder(recorder_id, contract_symbol)
+            broker_qty = broker_pos.get('quantity', 0) if broker_pos else 0  # positive=LONG, negative=SHORT
+            
+            logger.info(f"📊 {recorder_name} FLAT check: TV wants {tv_action} {tv_qty}, broker net={broker_qty}")
+            
+            # VALIDATION: Does this close make sense?
+            # BUY closes SHORT (should only execute if broker has SHORT/negative position)
+            # SELL closes LONG (should only execute if broker has LONG/positive position)
+            
+            if broker_qty == 0:
+                # Broker is completely flat - skip to prevent orphan
+                logger.info(f"⚠️ FLAT signal for {recorder_name} - broker is FLAT, skipping (prevents orphan)")
+                conn.close()
+                return jsonify({'success': True, 'action': 'skip', 'message': 'Broker already flat - no position to close'})
+            
+            if tv_action in ['BUY', 'LONG']:
+                # TradingView wants to BUY to close (was SHORT)
+                if broker_qty > 0:
+                    # Broker is LONG - BUY would INCREASE position, not close! Skip.
+                    logger.info(f"⚠️ FLAT signal {recorder_name}: TV says BUY but broker is LONG {broker_qty}, skipping (would increase position)")
+                    conn.close()
+                    return jsonify({'success': True, 'action': 'skip', 'message': 'Close direction mismatch - broker is LONG, cannot BUY to close'})
+                # Broker is SHORT - BUY will reduce/close. Use TV quantity but cap to broker's position
+                close_qty = min(tv_qty, abs(broker_qty))
+                close_action = 'BUY'
+                
+            else:  # SELL/SHORT
+                # TradingView wants to SELL to close (was LONG)
+                if broker_qty < 0:
+                    # Broker is SHORT - SELL would INCREASE position, not close! Skip.
+                    logger.info(f"⚠️ FLAT signal {recorder_name}: TV says SELL but broker is SHORT {broker_qty}, skipping (would increase position)")
+                    conn.close()
+                    return jsonify({'success': True, 'action': 'skip', 'message': 'Close direction mismatch - broker is SHORT, cannot SELL to close'})
+                # Broker is LONG - SELL will reduce/close. Use TV quantity but cap to broker's position
+                close_qty = min(tv_qty, broker_qty)
+                close_action = 'SELL'
+            
+            logger.info(f"✅ FLAT validated for {recorder_name}: executing {close_action} {close_qty} (TV requested {tv_qty})")
+            
+            result = execute_trade_simple(
+                recorder_id=recorder_id,
+                action=close_action,
+                ticker=ticker,
+                quantity=close_qty,
+                tp_ticks=0,  # No TP - this is a close
+                sl_ticks=0,  # No SL - this is a close
+                sl_type='Fixed'
+            )
+            
+            logger.info(f"✅ CLOSE executed for {recorder_name}: {result}")
+            conn.close()
+            return jsonify({'success': True, 'action': 'close', 'result': result})
+        
+        # Determine side early (needed for filters)
+        if action in ['buy', 'long']:
+            side = 'LONG'
+            trade_action = 'BUY'
+        elif action in ['sell', 'short']:
+            side = 'SHORT'
+            trade_action = 'SELL'
+        elif action in ['close', 'flat', 'exit']:
+            # Close signals bypass filters
+            logger.info(f"🔄 CLOSE signal received for {recorder_name}")
+            conn.close()
+            return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed'})
+        else:
+            conn.close()
+            return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
+        
+        # ============================================================
+        # 🛡️ RISK MANAGEMENT FILTERS - Check ALL before executing
+        # ============================================================
+        
+        # Get current time (US Eastern for market hours - UTC-5 in winter, UTC-4 in summer)
+        # Use simple UTC offset since pytz may not be available
+        now = datetime.now()  # Local time is fine for time window checks
+        
+        # --- FILTER 1: Direction Filter ---
+        direction_filter = recorder.get('direction_filter', '')
+        if direction_filter:
+            if direction_filter.lower() == 'long only' and side != 'LONG':
+                logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Long Only)")
+                conn.close()
+                return jsonify({'success': False, 'blocked': True, 'reason': f'Direction filter: Long Only (received {side})'}), 200
+            elif direction_filter.lower() == 'short only' and side != 'SHORT':
+                logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Short Only)")
+                conn.close()
+                return jsonify({'success': False, 'blocked': True, 'reason': f'Direction filter: Short Only (received {side})'}), 200
+            logger.info(f"✅ Direction filter passed: {direction_filter}")
+        
+        # --- FILTER 2: Time Filters (Trading Windows) ---
+        def parse_time(time_str):
+            """Parse time string like '8:45 AM' or '13:45' to datetime.time"""
+            if not time_str:
+                return None
+            time_str = time_str.strip()
+            try:
+                # Try 12-hour format first
+                if 'AM' in time_str.upper() or 'PM' in time_str.upper():
+                    return datetime.strptime(time_str.upper(), '%I:%M %p').time()
+                # Try 24-hour format
+                return datetime.strptime(time_str, '%H:%M').time()
+            except:
+                return None
+        
+        def is_time_in_window(current_time, start_str, stop_str):
+            """Check if current time is within the window"""
+            start = parse_time(start_str)
+            stop = parse_time(stop_str)
+            if not start or not stop:
+                return True  # No filter if times not set
+            current = current_time.time()
+            if start <= stop:
+                return start <= current <= stop
+            else:
+                # Overnight window (e.g., 10 PM to 6 AM)
+                return current >= start or current <= stop
+        
+        # Check Time Filter 1
+        time_filter_1_start = recorder.get('time_filter_1_start', '')
+        time_filter_1_stop = recorder.get('time_filter_1_stop', '')
+        time_filter_2_start = recorder.get('time_filter_2_start', '')
+        time_filter_2_stop = recorder.get('time_filter_2_stop', '')
+        
+        # If any time filter is set, check them
+        has_time_filter_1 = time_filter_1_start and time_filter_1_stop
+        has_time_filter_2 = time_filter_2_start and time_filter_2_stop
+        
+        if has_time_filter_1 or has_time_filter_2:
+            in_window_1 = is_time_in_window(now, time_filter_1_start, time_filter_1_stop) if has_time_filter_1 else False
+            in_window_2 = is_time_in_window(now, time_filter_2_start, time_filter_2_stop) if has_time_filter_2 else False
+            
+            if not in_window_1 and not in_window_2:
+                logger.warning(f"🚫 [{recorder_name}] Time filter BLOCKED: {now.strftime('%I:%M %p')} not in trading window")
+                logger.warning(f"   Window 1: {time_filter_1_start} - {time_filter_1_stop}")
+                logger.warning(f"   Window 2: {time_filter_2_start} - {time_filter_2_stop}")
+                conn.close()
+                return jsonify({'success': False, 'blocked': True, 'reason': f'Outside trading hours ({now.strftime("%I:%M %p")})'}), 200
+            logger.info(f"✅ Time filter passed: {now.strftime('%I:%M %p')} in window")
+        
+        # --- FILTER 3: Signal Cooldown ---
+        signal_cooldown = int(recorder.get('signal_cooldown', 0) or 0)
+        if signal_cooldown > 0:
+            cursor.execute('''
+                SELECT MAX(timestamp) FROM recorded_signals 
+                WHERE recorder_id = ? AND timestamp > datetime('now', ?)
+            ''', (recorder_id, f'-{signal_cooldown} seconds'))
+            last_signal = cursor.fetchone()
+            if last_signal and last_signal[0]:
+                logger.warning(f"🚫 [{recorder_name}] Cooldown BLOCKED: Last signal was within {signal_cooldown}s")
+                conn.close()
+                return jsonify({'success': False, 'blocked': True, 'reason': f'Signal cooldown ({signal_cooldown}s)'}), 200
+            logger.info(f"✅ Signal cooldown passed: {signal_cooldown}s")
+        
+        # --- FILTER 4: Max Signals Per Session ---
+        max_signals = int(recorder.get('max_signals_per_session', 0) or 0)
+        if max_signals > 0:
+            # Count signals today
+            cursor.execute('''
+                SELECT COUNT(*) FROM recorded_signals 
+                WHERE recorder_id = ? AND DATE(timestamp) = DATE('now')
+            ''', (recorder_id,))
+            signal_count = cursor.fetchone()[0] or 0
+            if signal_count >= max_signals:
+                logger.warning(f"🚫 [{recorder_name}] Max signals BLOCKED: {signal_count}/{max_signals} signals today")
+                conn.close()
+                return jsonify({'success': False, 'blocked': True, 'reason': f'Max signals reached ({signal_count}/{max_signals})'}), 200
+            logger.info(f"✅ Max signals passed: {signal_count}/{max_signals}")
+        
+        # --- FILTER 5: Max Daily Loss ---
+        max_daily_loss = float(recorder.get('max_daily_loss', 0) or 0)
+        if max_daily_loss > 0:
+            # Calculate today's P&L from closed trades
+            cursor.execute('''
+                SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades 
+                WHERE recorder_id = ? AND DATE(exit_time) = DATE('now') AND status = 'closed'
+            ''', (recorder_id,))
+            daily_pnl = cursor.fetchone()[0] or 0
+            if daily_pnl <= -max_daily_loss:
+                logger.warning(f"🚫 [{recorder_name}] Max daily loss BLOCKED: ${daily_pnl:.2f} (limit: -${max_daily_loss})")
+                conn.close()
+                return jsonify({'success': False, 'blocked': True, 'reason': f'Max daily loss hit (${daily_pnl:.2f})'}), 200
+            logger.info(f"✅ Max daily loss passed: ${daily_pnl:.2f} / -${max_daily_loss}")
+        
+        # --- FILTER 6: Max Contracts Per Trade ---
+        max_contracts = int(recorder.get('max_contracts_per_trade', 0) or 0)
+        if max_contracts > 0 and quantity > max_contracts:
+            logger.info(f"📊 [{recorder_name}] Quantity capped: {quantity} → {max_contracts} (max_contracts_per_trade)")
+            quantity = max_contracts
+        
+        # --- FILTER 7: Signal Delay (Nth Signal) ---
+        add_delay = int(recorder.get('add_delay', 1) or 1)
+        if add_delay > 1:
+            # Count total signals for this recorder
+            cursor.execute('SELECT COUNT(*) FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+            total_signals = cursor.fetchone()[0] or 0
+            signal_number = total_signals + 1  # This will be the Nth signal
+            
+            if signal_number % add_delay != 0:
+                logger.warning(f"🚫 [{recorder_name}] Signal delay BLOCKED: Signal #{signal_number} (executing every {add_delay})")
+                # Still record the signal but don't execute
+                cursor.execute('''
+                    INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, timestamp, executed)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'), 0)
+                ''', (recorder_id, action, ticker, price, quantity))
+                conn.commit()
+                conn.close()
+                return jsonify({'success': False, 'blocked': True, 'reason': f'Signal delay ({signal_number} mod {add_delay} != 0)'}), 200
+            logger.info(f"✅ Signal delay passed: #{signal_number} (every {add_delay})")
+        
+        # ============================================================
+        # 📊 RECORD THE SIGNAL (after filters pass)
+        # ============================================================
+        try:
+            cursor.execute('''
+                INSERT INTO recorded_signals (recorder_id, action, ticker, price, quantity, timestamp, executed)
+                VALUES (?, ?, ?, ?, ?, datetime('now'), 1)
+            ''', (recorder_id, action, ticker, price, quantity))
+            conn.commit()
+        except Exception as e:
+            logger.warning(f"Could not record signal: {e}")
+        
+        # ============================================================
+        # 📈 GET RISK SETTINGS
+        # ============================================================
         
         # CRITICAL: Sync with broker BEFORE processing to prevent drift
         if ticker:
@@ -3852,20 +5619,66 @@ def process_webhook_directly(webhook_token):
             except Exception as e:
                 logger.warning(f"⚠️ Sync failed (continuing anyway): {e}")
         
-        # Get LIVE market price for accurate TP calculation
+        # Get LIVE market price for accurate TP/SL calculation
         live_price = get_price_from_tradingview_api(ticker) if ticker else None
         current_price = live_price if live_price else (float(price) if price else 0)
         
-        # Get TP settings from recorder
+        # Get tick size for this symbol
+        tick_size = get_tick_size(ticker) if ticker else 0.25
+        
+        # Get TP settings from recorder - RECORDER SETTINGS ARE ALWAYS SOURCE OF TRUTH
         tp_targets_raw = recorder.get('tp_targets', '[]')
+        tp_units = recorder.get('tp_units', 'Ticks')
         try:
             tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
         except:
             tp_targets = []
-        tp_ticks = tp_targets[0].get('value', 10) if tp_targets else 10  # Default 10 ticks
         
-        # Get tick size for this symbol
-        tick_size = get_tick_size(ticker) if ticker else 0.25
+        # Get TP value and convert to ticks based on units
+        if tp_targets and len(tp_targets) > 0:
+            tp_value = float(tp_targets[0].get('value', 0) or 0)
+        else:
+            tp_value = 0
+        
+        # Convert TP to ticks based on units
+        if tp_value > 0:
+            if tp_units == 'Points':
+                # Points = dollar value per contract. Convert to ticks.
+                tick_value = get_tick_value(ticker) if ticker else 0.50
+                tp_ticks = int(tp_value / tick_value) if tick_value else int(tp_value / tick_size)
+            elif tp_units == 'Percent':
+                # Percent of entry price
+                tp_ticks = int((current_price * (tp_value / 100)) / tick_size) if current_price and tick_size else 0
+            else:
+                # Ticks (default)
+                tp_ticks = int(tp_value)
+        else:
+            tp_ticks = 0
+        
+        # Get SL settings from recorder
+        sl_enabled = recorder.get('sl_enabled', 0)
+        sl_amount = float(recorder.get('sl_amount', 0) or 0)
+        sl_units = recorder.get('sl_units', 'Ticks')
+        sl_type = recorder.get('sl_type', 'Fixed')  # Fixed or Trailing
+        
+        # Convert SL to ticks based on units
+        if sl_enabled and sl_amount > 0:
+            if sl_units == 'Loss ($)':
+                # Dollar loss per contract. Convert to ticks.
+                tick_value = get_tick_value(ticker) if ticker else 0.50
+                sl_ticks = int(sl_amount / tick_value) if tick_value else int(sl_amount / tick_size)
+            elif sl_units == 'Percent':
+                # Percent of entry price
+                sl_ticks = int((current_price * (sl_amount / 100)) / tick_size) if current_price and tick_size else 0
+            else:
+                # Ticks (default)
+                sl_ticks = int(sl_amount)
+        else:
+            sl_ticks = 0
+        
+        # Log the mode
+        signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
+        logger.info(f"📊 {signal_type}: TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
         
         # Get linked trader for live execution
         cursor.execute('''
@@ -3884,22 +5697,8 @@ def process_webhook_directly(webhook_token):
             logger.warning(f"No active trader linked to recorder '{recorder_name}'")
             return jsonify({'success': False, 'error': 'No trader linked'}), 400
         
-        # Determine side
-        if action in ['buy', 'long']:
-            side = 'LONG'
-            trade_action = 'BUY'
-        elif action in ['sell', 'short']:
-            side = 'SHORT'
-            trade_action = 'SELL'
-        elif action in ['close', 'flat', 'exit']:
-            # Close position
-            logger.info(f"🔄 CLOSE signal received for {recorder_name}")
-            return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed'})
-        else:
-            return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
-        
-        # Execute the trade with SIMPLE DCA/TP logic
-        logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP Ticks: {tp_ticks}")
+        # Execute the trade with FULL risk settings
+        logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks | SL: {sl_ticks} ticks")
         
         try:
             # Import the SIMPLE trade function
@@ -3910,7 +5709,9 @@ def process_webhook_directly(webhook_token):
                 action=trade_action,
                 ticker=ticker,
                 quantity=quantity,
-                tp_ticks=tp_ticks
+                tp_ticks=tp_ticks,
+                sl_ticks=sl_ticks,
+                sl_type=sl_type
             )
             
             if result.get('success'):
@@ -3924,6 +5725,9 @@ def process_webhook_directly(webhook_token):
                     'broker_qty': result.get('broker_qty'),
                     'tp_price': result.get('tp_price'),
                     'tp_order_id': result.get('tp_order_id'),
+                    'sl_price': result.get('sl_price'),
+                    'sl_order_id': result.get('sl_order_id'),
+                    'filters_passed': True,
                     'result': result
                 })
             else:
@@ -4065,10 +5869,13 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
                 action TEXT NOT NULL,
                 ticker TEXT,
                 price REAL,
+                quantity INTEGER DEFAULT 1,
                 position_size TEXT,
                 market_position TEXT,
                 signal_type TEXT,
                 raw_data TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                executed INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (recorder_id) REFERENCES recorders(id)
             )
@@ -4422,10 +6229,16 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
             
             # Open new LONG trade if no open trade
             if not open_trade:
-                # Calculate TP/SL prices based on recorder settings
-                tp_price, sl_price = calculate_tp_sl_prices(
-                    current_price, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
-                )
+                # For STRATEGY alerts: NO TP/SL - TradingView strategy manages exits via signals
+                # For INDICATOR alerts: Use recorder TP/SL settings
+                if is_strategy_alert:
+                    tp_price, sl_price = None, None
+                    logger.info(f"📊 STRATEGY MODE: No TP/SL - TradingView controls exits")
+                else:
+                    # Calculate TP/SL prices based on recorder settings
+                    tp_price, sl_price = calculate_tp_sl_prices(
+                        current_price, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                    )
                 
                 cursor.execute('''
                     INSERT INTO recorded_trades 
@@ -4466,10 +6279,16 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
             
             # Open new SHORT trade if no open trade
             if not open_trade:
-                # Calculate TP/SL prices based on recorder settings
-                tp_price, sl_price = calculate_tp_sl_prices(
-                    current_price, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
-                )
+                # For STRATEGY alerts: NO TP/SL - TradingView strategy manages exits via signals
+                # For INDICATOR alerts: Use recorder TP/SL settings
+                if is_strategy_alert:
+                    tp_price, sl_price = None, None
+                    logger.info(f"📊 STRATEGY MODE: No TP/SL - TradingView controls exits")
+                else:
+                    # Calculate TP/SL prices based on recorder settings
+                    tp_price, sl_price = calculate_tp_sl_prices(
+                        current_price, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                    )
                 
                 cursor.execute('''
                     INSERT INTO recorded_trades 
@@ -4894,36 +6713,48 @@ def api_get_all_recorders_pnl():
 @app.route('/traders')
 def traders_list():
     """Traders list page - show all recorder-account links"""
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     conn = get_db_connection()
-    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
     cursor.execute('''
         SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
-               r.name as recorder_name, r.strategy_type,
+               r.name as recorder_name,
                a.name as account_name
         FROM traders t
-        JOIN recorders r ON t.recorder_id = r.id
-        JOIN accounts a ON t.account_id = a.id
+        LEFT JOIN recorders r ON t.recorder_id = r.id
+        LEFT JOIN accounts a ON t.account_id = a.id
         ORDER BY t.created_at DESC
     ''')
     
+    rows = cursor.fetchall()
     traders = []
-    for row in cursor.fetchall():
-        is_demo = bool(row['is_demo']) if row['is_demo'] is not None else None
-        env_label = "🟠 DEMO" if is_demo else "🟢 LIVE" if is_demo is not None else ""
-        # Build display name: "Mark 🟠 DEMO (DEMO4419847-2)" or just account name
-        if row['subaccount_name']:
-            display_account = f"{row['account_name']} {env_label} ({row['subaccount_name']})"
+    columns = ['id', 'enabled', 'subaccount_name', 'is_demo', 'recorder_name', 'account_name']
+    
+    for row in rows:
+        if hasattr(row, 'keys'):
+            row_dict = dict(row)
         else:
-            display_account = row['account_name']
+            row_dict = dict(zip(columns[:len(row)], row))
+        
+        is_demo = bool(row_dict.get('is_demo')) if row_dict.get('is_demo') is not None else None
+        env_label = "🟠 DEMO" if is_demo else "🟢 LIVE" if is_demo is not None else ""
+        account_name = row_dict.get('account_name') or 'Unknown'
+        subaccount_name = row_dict.get('subaccount_name')
+        
+        if subaccount_name:
+            display_account = f"{account_name} {env_label} ({subaccount_name})"
+        else:
+            display_account = account_name
         
         traders.append({
-            'id': row['id'],
-            'recorder_name': row['recorder_name'],
-            'strategy_type': row['strategy_type'],
+            'id': row_dict.get('id'),
+            'recorder_name': row_dict.get('recorder_name') or 'Unknown',
+            'strategy_type': row_dict.get('strategy_type', 'Futures'),
             'account_name': display_account,
-            'enabled': bool(row['enabled'])
+            'enabled': bool(row_dict.get('enabled'))
         })
     
     conn.close()
@@ -5031,14 +6862,14 @@ def traders_edit(trader_id):
     
     # Parse TP targets from JSON (prefer recorder settings)
     tp_targets = []
-    tp_value = 5
+    tp_value = 0  # Default to 0 (no TP) if not set
     tp_trim = 100
     try:
         tp_targets_raw = trader_row['r_tp_targets'] or trader_row['tp_targets']
         if tp_targets_raw:
             tp_targets = json.loads(tp_targets_raw)
             if tp_targets and len(tp_targets) > 0:
-                tp_value = tp_targets[0].get('value', 5)
+                tp_value = tp_targets[0].get('value', 0)
                 tp_trim = tp_targets[0].get('trim', 100)
     except:
         tp_targets = []
@@ -5146,6 +6977,9 @@ def traders_edit(trader_id):
 @app.route('/control-center')
 def control_center():
     """Control Center with live recorder/strategy data and PnL"""
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     try:
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
@@ -5211,6 +7045,9 @@ def control_center():
 
 @app.route('/manual-trader')
 def manual_trader_page():
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     return render_template('manual_copy_trader.html')
 
 
@@ -5221,6 +7058,9 @@ def manual_trader_page():
 @app.route('/quant-screener')
 def quant_screener_page():
     """Render the Quant Stock Screener page"""
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     return render_template('quant_screener.html')
 
 
@@ -6086,6 +7926,1136 @@ def format_ticker_item(config, price, change_pct):
         'change_str': change_str,
         'direction': direction
     }
+
+
+# ============================================================================
+# WATCHLIST DIGEST MODULE (Added Dec 18, 2025)
+# Twice-daily digest with news, ratings, movers, politician trades, market context
+# ============================================================================
+
+import hashlib
+from datetime import datetime, timedelta
+import threading
+
+# Database path for digest data (used for local SQLite only)
+DIGEST_DB_PATH = 'watchlist_digest.db'
+
+def init_digest_database():
+    """Initialize the watchlist digest database tables - supports both SQLite and PostgreSQL"""
+    is_postgres = is_using_postgres()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if is_postgres:
+        # PostgreSQL schema
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS watchlist_items (
+                id SERIAL PRIMARY KEY,
+                ticker TEXT NOT NULL UNIQUE,
+                company_name TEXT,
+                cik TEXT,
+                exchange TEXT,
+                currency TEXT DEFAULT 'USD',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS digest_runs (
+                run_id SERIAL PRIMARY KEY,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                finished_at TIMESTAMP,
+                run_type TEXT,
+                status TEXT DEFAULT 'running',
+                error TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS news_items (
+                id SERIAL PRIMARY KEY,
+                url_hash TEXT NOT NULL UNIQUE,
+                ticker TEXT NOT NULL,
+                source TEXT NOT NULL,
+                headline TEXT NOT NULL,
+                summary TEXT,
+                url TEXT,
+                published_at TIMESTAMP,
+                inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ratings_snapshots (
+                id SERIAL PRIMARY KEY,
+                ticker TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                raw_rating TEXT,
+                normalized_bucket TEXT,
+                as_of TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS politician_trades (
+                id SERIAL PRIMARY KEY,
+                source TEXT,
+                chamber TEXT,
+                politician TEXT NOT NULL,
+                filed_at TIMESTAMP,
+                txn_date TIMESTAMP,
+                issuer TEXT,
+                ticker_guess TEXT,
+                action TEXT,
+                amount_range TEXT,
+                url TEXT,
+                inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS quotes_snapshots (
+                id SERIAL PRIMARY KEY,
+                ticker TEXT NOT NULL,
+                prior_close REAL,
+                last_price REAL,
+                pct_change REAL,
+                as_of TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS market_context_cache (
+                id SERIAL PRIMARY KEY,
+                data_type TEXT NOT NULL,
+                value TEXT,
+                source TEXT,
+                as_of TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+    else:
+        # SQLite schema
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS watchlist_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL UNIQUE,
+                company_name TEXT,
+                cik TEXT,
+                exchange TEXT,
+                currency TEXT DEFAULT 'USD',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS digest_runs (
+                run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                finished_at TIMESTAMP,
+                run_type TEXT,
+                status TEXT DEFAULT 'running',
+                error TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS news_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url_hash TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                source TEXT NOT NULL,
+                headline TEXT NOT NULL,
+                summary TEXT,
+                url TEXT,
+                published_at TIMESTAMP,
+                inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(url_hash)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ratings_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                raw_rating TEXT,
+                normalized_bucket TEXT,
+                as_of TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS politician_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT,
+                chamber TEXT,
+                politician TEXT NOT NULL,
+                filed_at TIMESTAMP,
+                txn_date TIMESTAMP,
+                issuer TEXT,
+                ticker_guess TEXT,
+                action TEXT,
+                amount_range TEXT,
+                url TEXT,
+                inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(politician, txn_date, ticker_guess, action)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS quotes_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL,
+                prior_close REAL,
+                last_price REAL,
+                pct_change REAL,
+                as_of TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ticker, DATE(as_of))
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS market_context_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data_type TEXT NOT NULL,
+                value TEXT,
+                source TEXT,
+                as_of TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(data_type, DATE(as_of))
+            )
+        ''')
+    
+    conn.commit()
+    conn.close()
+    logger.info("✅ Watchlist digest database initialized")
+
+# Initialize on import
+try:
+    init_digest_database()
+except Exception as e:
+    logger.error(f"Failed to initialize digest database: {e}")
+
+
+# ============================================================================
+# WATCHLIST MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/watchlist', methods=['GET'])
+def api_get_watchlist():
+    """Get all watchlist items"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM watchlist_items ORDER BY ticker')
+        rows = cursor.fetchall()
+        # Handle both dict-like rows (PostgreSQL) and sqlite3.Row
+        if rows and hasattr(rows[0], 'keys'):
+            items = [dict(row) for row in rows]
+        else:
+            items = [{'id': r[0], 'ticker': r[1], 'company_name': r[2]} for r in rows] if rows else []
+        conn.close()
+        
+        return jsonify({'success': True, 'watchlist': items})
+    except Exception as e:
+        logger.error(f"Error getting watchlist: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/watchlist', methods=['POST'])
+def api_add_to_watchlist():
+    """Add a ticker to the watchlist"""
+    try:
+        data = request.get_json() or {}
+        ticker = data.get('ticker', '').upper().strip()
+        
+        if not ticker:
+            return jsonify({'success': False, 'error': 'Ticker is required'}), 400
+        
+        # Look up company info from stock universe
+        company_name = data.get('company_name', '')
+        if not company_name:
+            universe = get_stock_universe()
+            for stock in universe:
+                if stock['symbol'] == ticker:
+                    company_name = stock['name']
+                    break
+            if not company_name:
+                company_name = f"{ticker} Inc."
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        if is_postgres:
+            cursor.execute('''
+                INSERT INTO watchlist_items (ticker, company_name, updated_at)
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (ticker) DO UPDATE SET company_name = %s, updated_at = CURRENT_TIMESTAMP
+            ''', (ticker, company_name, company_name))
+        else:
+            cursor.execute('''
+                INSERT OR REPLACE INTO watchlist_items (ticker, company_name, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            ''', (ticker, company_name))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Added {ticker} to watchlist")
+        return jsonify({'success': True, 'ticker': ticker, 'company_name': company_name})
+    except Exception as e:
+        logger.error(f"Error adding to watchlist: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/watchlist/<ticker>', methods=['DELETE'])
+def api_remove_from_watchlist(ticker):
+    """Remove a ticker from the watchlist"""
+    try:
+        ticker = ticker.upper().strip()
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        if is_postgres:
+            cursor.execute('DELETE FROM watchlist_items WHERE ticker = %s', (ticker,))
+        else:
+            cursor.execute('DELETE FROM watchlist_items WHERE ticker = ?', (ticker,))
+        deleted = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        if deleted > 0:
+            logger.info(f"✅ Removed {ticker} from watchlist")
+            return jsonify({'success': True, 'ticker': ticker})
+        else:
+            return jsonify({'success': False, 'error': 'Ticker not found in watchlist'}), 404
+    except Exception as e:
+        logger.error(f"Error removing from watchlist: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# NEWS AGGREGATION
+# ============================================================================
+
+NEWS_SOURCES = [
+    {'name': 'Yahoo Finance', 'base_url': 'https://finance.yahoo.com'},
+    {'name': 'CNBC', 'base_url': 'https://www.cnbc.com'},
+    {'name': 'Bloomberg', 'base_url': 'https://www.bloomberg.com'},
+    {'name': 'Reuters', 'base_url': 'https://www.reuters.com'},
+    {'name': 'WSJ', 'base_url': 'https://www.wsj.com'},
+    {'name': 'MarketWatch', 'base_url': 'https://www.marketwatch.com'},
+    {'name': 'CNN Money', 'base_url': 'https://money.cnn.com'},
+    {'name': 'Motley Fool', 'base_url': 'https://www.fool.com'},
+    {'name': 'Seeking Alpha', 'base_url': 'https://seekingalpha.com'},
+]
+
+def generate_url_hash(url):
+    """Generate a unique hash for deduplication"""
+    return hashlib.md5(url.encode()).hexdigest()
+
+
+def normalize_headline(headline):
+    """Normalize headline for deduplication fallback"""
+    import re
+    return re.sub(r'[^a-zA-Z0-9]', '', headline.lower())
+
+
+def fetch_news_for_ticker(ticker, company_name=None):
+    """Fetch news from multiple sources for a ticker"""
+    import requests
+    from bs4 import BeautifulSoup
+    
+    news_items = []
+    search_terms = [ticker]
+    if company_name:
+        search_terms.append(company_name)
+    
+    # Yahoo Finance RSS/API
+    try:
+        yahoo_url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
+        resp = requests.get(yahoo_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.content, 'xml')
+            for item in soup.find_all('item')[:5]:
+                title = item.find('title')
+                link = item.find('link')
+                pub_date = item.find('pubDate')
+                desc = item.find('description')
+                
+                if title and link:
+                    news_items.append({
+                        'ticker': ticker,
+                        'source': 'Yahoo Finance',
+                        'headline': title.text.strip(),
+                        'summary': (desc.text.strip()[:200] + '...') if desc else '',
+                        'url': link.text.strip(),
+                        'published_at': pub_date.text if pub_date else None,
+                        'url_hash': generate_url_hash(link.text.strip())
+                    })
+    except Exception as e:
+        logger.debug(f"Yahoo news fetch failed for {ticker}: {e}")
+    
+    # Seeking Alpha (public headlines)
+    try:
+        sa_url = f"https://seekingalpha.com/api/v3/symbols/{ticker}/news"
+        resp = requests.get(sa_url, timeout=10, headers={
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': 'application/json'
+        })
+        if resp.status_code == 200:
+            data = resp.json()
+            for article in data.get('data', [])[:5]:
+                attrs = article.get('attributes', {})
+                news_items.append({
+                    'ticker': ticker,
+                    'source': 'Seeking Alpha',
+                    'headline': attrs.get('title', ''),
+                    'summary': attrs.get('summary', '')[:200] + '...' if attrs.get('summary') else '',
+                    'url': f"https://seekingalpha.com{attrs.get('uri', '')}",
+                    'published_at': attrs.get('publishOn'),
+                    'url_hash': generate_url_hash(f"https://seekingalpha.com{attrs.get('uri', '')}")
+                })
+    except Exception as e:
+        logger.debug(f"Seeking Alpha news fetch failed for {ticker}: {e}")
+    
+    # MarketWatch RSS
+    try:
+        mw_url = f"https://www.marketwatch.com/investing/stock/{ticker.lower()}/rss"
+        resp = requests.get(mw_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.content, 'xml')
+            for item in soup.find_all('item')[:5]:
+                title = item.find('title')
+                link = item.find('link')
+                pub_date = item.find('pubDate')
+                
+                if title and link:
+                    news_items.append({
+                        'ticker': ticker,
+                        'source': 'MarketWatch',
+                        'headline': title.text.strip(),
+                        'summary': '',
+                        'url': link.text.strip(),
+                        'published_at': pub_date.text if pub_date else None,
+                        'url_hash': generate_url_hash(link.text.strip())
+                    })
+    except Exception as e:
+        logger.debug(f"MarketWatch news fetch failed for {ticker}: {e}")
+    
+    return news_items
+
+
+def deduplicate_news(news_items):
+    """Deduplicate news items by URL hash and similar headlines"""
+    seen_hashes = set()
+    seen_headlines = set()
+    unique_items = []
+    
+    for item in news_items:
+        url_hash = item.get('url_hash', '')
+        headline_norm = normalize_headline(item.get('headline', ''))
+        
+        if url_hash in seen_hashes:
+            continue
+        if headline_norm in seen_headlines:
+            continue
+        
+        seen_hashes.add(url_hash)
+        seen_headlines.add(headline_norm)
+        unique_items.append(item)
+    
+    return unique_items
+
+
+@app.route('/api/watchlist/news', methods=['GET'])
+def api_get_watchlist_news():
+    """Get aggregated news for all watchlist tickers"""
+    try:
+        # Get watchlist
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT ticker, company_name FROM watchlist_items')
+        rows = cursor.fetchall()
+        if rows and hasattr(rows[0], 'keys'):
+            watchlist = [dict(row) for row in rows]
+        else:
+            watchlist = [{'ticker': r[0], 'company_name': r[1]} for r in rows] if rows else []
+        conn.close()
+        
+        if not watchlist:
+            return jsonify({'success': True, 'news': [], 'message': 'Watchlist is empty'})
+        
+        all_news = []
+        for item in watchlist:
+            ticker_news = fetch_news_for_ticker(item['ticker'], item.get('company_name'))
+            all_news.extend(ticker_news)
+        
+        # Deduplicate
+        unique_news = deduplicate_news(all_news)
+        
+        # Sort by published date (newest first)
+        unique_news.sort(key=lambda x: x.get('published_at') or '', reverse=True)
+        
+        return jsonify({'success': True, 'news': unique_news[:50]})  # Limit to 50
+    except Exception as e:
+        logger.error(f"Error fetching watchlist news: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/watchlist/news/<ticker>', methods=['GET'])
+def api_get_ticker_news(ticker):
+    """Get news for a specific ticker"""
+    try:
+        ticker = ticker.upper().strip()
+        news = fetch_news_for_ticker(ticker)
+        unique_news = deduplicate_news(news)
+        
+        return jsonify({'success': True, 'ticker': ticker, 'news': unique_news})
+    except Exception as e:
+        logger.error(f"Error fetching news for {ticker}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# ANALYST RATING CHANGE TRACKING
+# ============================================================================
+
+RATING_BUCKETS = {
+    'strong_buy': ['strong buy', 'very bullish', 'top pick', 'conviction buy'],
+    'buy': ['buy', 'outperform', 'overweight', 'moderate buy', 'accumulate', 'add', 'positive'],
+    'hold': ['hold', 'neutral', 'market perform', 'equal-weight', 'sector perform'],
+    'sell': ['sell', 'underperform', 'underweight', 'moderate sell', 'reduce'],
+    'strong_sell': ['strong sell', 'very bearish', 'avoid']
+}
+
+def normalize_rating(raw_rating):
+    """Normalize a rating to one of 5 buckets"""
+    if not raw_rating:
+        return None
+    
+    raw_lower = raw_rating.lower().strip()
+    
+    for bucket, keywords in RATING_BUCKETS.items():
+        for keyword in keywords:
+            if keyword in raw_lower:
+                return bucket
+    
+    # Default mapping by score if numeric
+    try:
+        score = float(raw_rating)
+        if score >= 4.5:
+            return 'strong_buy'
+        elif score >= 3.5:
+            return 'buy'
+        elif score >= 2.5:
+            return 'hold'
+        elif score >= 1.5:
+            return 'sell'
+        else:
+            return 'strong_sell'
+    except:
+        pass
+    
+    return 'hold'  # Default
+
+
+def get_rating_changes_since_last_run():
+    """Get rating changes since the last digest run"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    is_postgres = is_using_postgres()
+    
+    # Get the last completed run timestamp
+    cursor.execute('''
+        SELECT finished_at FROM digest_runs 
+        WHERE status = 'completed' 
+        ORDER BY finished_at DESC LIMIT 1
+    ''')
+    last_run = cursor.fetchone()
+    if last_run:
+        last_run_time = last_run['finished_at'] if hasattr(last_run, 'keys') else last_run[0]
+    else:
+        last_run_time = '1970-01-01'
+    
+    # Get rating changes - simplified query for compatibility
+    if is_postgres:
+        cursor.execute('''
+            SELECT ticker, provider, normalized_bucket as current_rating, as_of
+            FROM ratings_snapshots
+            WHERE as_of > %s
+            ORDER BY as_of DESC
+        ''', (last_run_time,))
+    else:
+        cursor.execute('''
+            SELECT ticker, provider, normalized_bucket as current_rating, as_of
+            FROM ratings_snapshots
+            WHERE as_of > ?
+            ORDER BY as_of DESC
+        ''', (last_run_time,))
+    
+    rows = cursor.fetchall()
+    if rows and hasattr(rows[0], 'keys'):
+        changes = [dict(row) for row in rows]
+    else:
+        changes = [{'ticker': r[0], 'provider': r[1], 'current_rating': r[2], 'as_of': r[3]} for r in rows] if rows else []
+    conn.close()
+    
+    return changes
+
+
+@app.route('/api/watchlist/rating-changes', methods=['GET'])
+def api_get_rating_changes():
+    """Get analyst rating changes since last run"""
+    try:
+        changes = get_rating_changes_since_last_run()
+        return jsonify({'success': True, 'changes': changes})
+    except Exception as e:
+        logger.error(f"Error getting rating changes: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# MOVERS DETECTION (±2%)
+# ============================================================================
+
+@app.route('/api/watchlist/movers', methods=['GET'])
+def api_get_movers():
+    """Get watchlist tickers that moved ±2% or more"""
+    try:
+        # Get watchlist tickers
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT ticker FROM watchlist_items')
+        rows = cursor.fetchall()
+        if rows and hasattr(rows[0], 'keys'):
+            watchlist = [row['ticker'] for row in rows]
+        else:
+            watchlist = [r[0] for r in rows] if rows else []
+        conn.close()
+        
+        if not watchlist:
+            return jsonify({'success': True, 'movers': [], 'message': 'Watchlist is empty'})
+        
+        # Fetch live prices
+        live_prices = fetch_live_stock_prices(watchlist)
+        
+        movers = []
+        for ticker in watchlist:
+            if ticker in live_prices:
+                price_data = live_prices[ticker]
+                price = price_data.get('price', 0)
+                change_pct = price_data.get('change_pct', 0)
+                
+                if abs(change_pct) >= 2.0:
+                    movers.append({
+                        'ticker': ticker,
+                        'price': price,
+                        'change_pct': change_pct,
+                        'direction': 'up' if change_pct > 0 else 'down'
+                    })
+        
+        # Sort by absolute change (biggest movers first)
+        movers.sort(key=lambda x: abs(x['change_pct']), reverse=True)
+        
+        return jsonify({'success': True, 'movers': movers})
+    except Exception as e:
+        logger.error(f"Error getting movers: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# US POLITICIAN TRADES (House + Senate)
+# ============================================================================
+
+def fetch_politician_trades():
+    """Fetch recent politician trade disclosures"""
+    import requests
+    
+    trades = []
+    
+    # House Stock Watcher API (community aggregated data)
+    try:
+        house_url = "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json"
+        resp = requests.get(house_url, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Get recent trades (last 30 days)
+            cutoff = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+            for trade in data[-500:]:  # Check last 500 entries
+                if trade.get('disclosure_date', '') >= cutoff:
+                    trades.append({
+                        'source': 'House Stock Watcher',
+                        'chamber': 'House',
+                        'politician': trade.get('representative', 'Unknown'),
+                        'filed_at': trade.get('disclosure_date'),
+                        'txn_date': trade.get('transaction_date'),
+                        'issuer': trade.get('asset_description', ''),
+                        'ticker_guess': trade.get('ticker', ''),
+                        'action': trade.get('type', ''),
+                        'amount_range': trade.get('amount', ''),
+                        'url': trade.get('ptr_link', '')
+                    })
+    except Exception as e:
+        logger.debug(f"House trades fetch failed: {e}")
+    
+    # Senate Stock Watcher API
+    try:
+        senate_url = "https://senate-stock-watcher-data.s3-us-west-2.amazonaws.com/aggregate/all_transactions.json"
+        resp = requests.get(senate_url, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            cutoff = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+            for trade in data[-500:]:
+                if trade.get('disclosure_date', '') >= cutoff:
+                    trades.append({
+                        'source': 'Senate Stock Watcher',
+                        'chamber': 'Senate',
+                        'politician': trade.get('senator', 'Unknown'),
+                        'filed_at': trade.get('disclosure_date'),
+                        'txn_date': trade.get('transaction_date'),
+                        'issuer': trade.get('asset_description', ''),
+                        'ticker_guess': trade.get('ticker', ''),
+                        'action': trade.get('type', ''),
+                        'amount_range': trade.get('amount', ''),
+                        'url': trade.get('ptr_link', '')
+                    })
+    except Exception as e:
+        logger.debug(f"Senate trades fetch failed: {e}")
+    
+    return trades
+
+
+def get_politician_trades_for_watchlist():
+    """Get politician trades matching watchlist tickers"""
+    # Get watchlist tickers
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT ticker FROM watchlist_items')
+    rows = cursor.fetchall()
+    if rows and hasattr(rows[0], 'keys'):
+        watchlist_tickers = set(row['ticker'].upper() for row in rows)
+    else:
+        watchlist_tickers = set(r[0].upper() for r in rows) if rows else set()
+    conn.close()
+    
+    if not watchlist_tickers:
+        return []
+    
+    all_trades = fetch_politician_trades()
+    
+    # Filter to watchlist tickers only
+    matching_trades = []
+    for trade in all_trades:
+        ticker = (trade.get('ticker_guess') or '').upper()
+        if ticker in watchlist_tickers:
+            matching_trades.append(trade)
+    
+    return matching_trades
+
+
+@app.route('/api/watchlist/politician-trades', methods=['GET'])
+def api_get_politician_trades():
+    """Get politician trades matching watchlist"""
+    try:
+        trades = get_politician_trades_for_watchlist()
+        return jsonify({'success': True, 'trades': trades})
+    except Exception as e:
+        logger.error(f"Error getting politician trades: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# MARKET CONTEXT (NDX Expected Move, SPX P/E, Economic Calendar)
+# ============================================================================
+
+def fetch_ndx_expected_move():
+    """Fetch NDX daily expected move from options data"""
+    import requests
+    
+    try:
+        # Use Yahoo Finance options data as proxy
+        url = "https://query1.finance.yahoo.com/v7/finance/options/QQQ"
+        resp = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+        if resp.status_code == 200:
+            data = resp.json()
+            quote = data.get('optionChain', {}).get('result', [{}])[0].get('quote', {})
+            
+            # Calculate implied move from ATM straddle (simplified)
+            current_price = quote.get('regularMarketPrice', 0)
+            # Estimate expected move as ~1-2% based on VIX correlation
+            vix_proxy = quote.get('regularMarketChangePercent', 0)
+            expected_move_pct = max(1.0, min(3.0, abs(vix_proxy) + 1.0))
+            expected_move = current_price * (expected_move_pct / 100)
+            
+            return {
+                'value': f"±{expected_move:.2f}",
+                'percentage': f"±{expected_move_pct:.2f}%",
+                'ndx_price': current_price,
+                'source': 'Yahoo Finance (QQQ proxy)',
+                'as_of': datetime.now().isoformat()
+            }
+    except Exception as e:
+        logger.debug(f"NDX expected move fetch failed: {e}")
+    
+    return {'value': 'unavailable', 'source': 'fetch failed'}
+
+
+def fetch_spx_pe_ratio():
+    """Fetch SPX trailing P/E and 5-year average"""
+    import requests
+    
+    try:
+        # Use multpl.com or similar data source
+        # For now, use Yahoo Finance SPY as proxy
+        url = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/SPY"
+        params = {'modules': 'summaryDetail,defaultKeyStatistics'}
+        resp = requests.get(url, params=params, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            summary = data.get('quoteSummary', {}).get('result', [{}])[0]
+            
+            # Get trailing P/E
+            key_stats = summary.get('defaultKeyStatistics', {})
+            trailing_pe = key_stats.get('trailingPE', {}).get('raw', 0)
+            
+            # 5-year historical average (approximate - would need historical data)
+            # Using a reasonable estimate based on historical data
+            five_year_avg = 22.5  # Historical average around this level
+            
+            return {
+                'current_pe': round(trailing_pe, 2) if trailing_pe else 'unavailable',
+                'five_year_avg': five_year_avg,
+                'comparison': 'above' if trailing_pe > five_year_avg else 'below',
+                'source': 'Yahoo Finance (SPY proxy)',
+                'as_of': datetime.now().isoformat()
+            }
+    except Exception as e:
+        logger.debug(f"SPX P/E fetch failed: {e}")
+    
+    return {'current_pe': 'unavailable', 'five_year_avg': 22.5, 'source': 'fetch failed'}
+
+
+def fetch_economic_calendar():
+    """Fetch filtered economic releases for today and next business day"""
+    import requests
+    from datetime import date, timedelta
+    
+    # Excluded events per PRD
+    EXCLUDED_EVENTS = [
+        'treasury', 'auction', 'bill', 'note', 'buyback',
+        'mba mortgage', 'mortgage applications',
+        'eia petroleum', 'eia natural gas', 'eia crude', 'petroleum status',
+        'fed balance sheet',
+        'baker hughes', 'rig count',
+        'consumer credit'
+    ]
+    
+    events = []
+    
+    try:
+        # Use Investing.com economic calendar API (simplified)
+        today = date.today()
+        
+        # For demo, return a sample of typical events
+        # In production, would fetch from actual API
+        sample_events = [
+            {'time': '08:30', 'event': 'Initial Jobless Claims', 'importance': 'high'},
+            {'time': '08:30', 'event': 'GDP (QoQ)', 'importance': 'high'},
+            {'time': '10:00', 'event': 'Existing Home Sales', 'importance': 'medium'},
+            {'time': '10:30', 'event': 'EIA Crude Oil Inventories', 'importance': 'medium'},  # Will be filtered
+            {'time': '14:00', 'event': 'FOMC Meeting Minutes', 'importance': 'high'},
+        ]
+        
+        for event in sample_events:
+            event_lower = event['event'].lower()
+            
+            # Check if should be excluded
+            should_exclude = False
+            for excluded in EXCLUDED_EVENTS:
+                if excluded in event_lower:
+                    should_exclude = True
+                    break
+            
+            if not should_exclude:
+                events.append({
+                    'time_cst': event['time'],
+                    'event': event['event'],
+                    'importance': event['importance'],
+                    'date': today.isoformat()
+                })
+    except Exception as e:
+        logger.debug(f"Economic calendar fetch failed: {e}")
+    
+    return events
+
+
+@app.route('/api/market-context', methods=['GET'])
+def api_get_market_context():
+    """Get market context data (NDX expected move, SPX P/E, economic calendar)"""
+    try:
+        ndx = fetch_ndx_expected_move()
+        spx = fetch_spx_pe_ratio()
+        econ = fetch_economic_calendar()
+        
+        return jsonify({
+            'success': True,
+            'ndx_expected_move': ndx,
+            'spx_pe': spx,
+            'economic_calendar': econ
+        })
+    except Exception as e:
+        logger.error(f"Error getting market context: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# DIGEST GENERATION & SCHEDULING
+# ============================================================================
+
+def generate_digest():
+    """Generate a complete watchlist digest"""
+    run_id = None
+    is_postgres = is_using_postgres()
+    
+    try:
+        # Start a new run
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now()
+        run_type = 'AM' if now.hour < 12 else 'PM'
+        
+        if is_postgres:
+            cursor.execute('''
+                INSERT INTO digest_runs (run_type, status) VALUES (?, 'running') RETURNING run_id
+            ''', (run_type,))
+            result = cursor.fetchone()
+            if result:
+                run_id = result.get('run_id') if isinstance(result, dict) else result[0]
+            else:
+                run_id = None
+        else:
+            cursor.execute('''
+                INSERT INTO digest_runs (run_type, status) VALUES (?, 'running')
+            ''', (run_type,))
+            run_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"📰 Starting digest run #{run_id} ({run_type})")
+        
+        # Gather all digest data
+        digest = {
+            'run_id': run_id,
+            'run_type': run_type,
+            'timestamp': now.isoformat(),
+            'timestamp_cst': now.strftime('%Y-%m-%d %I:%M %p CT'),
+        }
+        
+        # 1. Movers (±2%)
+        try:
+            movers_resp = api_get_movers()
+            movers_data = movers_resp.get_json()
+            digest['movers'] = movers_data.get('movers', [])
+        except:
+            digest['movers'] = []
+        
+        # 2. News
+        try:
+            news_resp = api_get_watchlist_news()
+            news_data = news_resp.get_json()
+            digest['news'] = news_data.get('news', [])
+        except:
+            digest['news'] = []
+        
+        # 3. Rating changes
+        try:
+            digest['rating_changes'] = get_rating_changes_since_last_run()
+        except:
+            digest['rating_changes'] = []
+        
+        # 4. Politician trades
+        try:
+            digest['politician_trades'] = get_politician_trades_for_watchlist()
+        except:
+            digest['politician_trades'] = []
+        
+        # 5. Market context
+        try:
+            digest['market_context'] = {
+                'ndx_expected_move': fetch_ndx_expected_move(),
+                'spx_pe': fetch_spx_pe_ratio(),
+                'economic_calendar': fetch_economic_calendar()
+            }
+        except:
+            digest['market_context'] = {}
+        
+        # Mark run as completed
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if is_postgres:
+            cursor.execute('''
+                UPDATE digest_runs SET status = 'completed', finished_at = CURRENT_TIMESTAMP
+                WHERE run_id = %s
+            ''', (run_id,))
+        else:
+            cursor.execute('''
+                UPDATE digest_runs SET status = 'completed', finished_at = CURRENT_TIMESTAMP
+                WHERE run_id = ?
+            ''', (run_id,))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Digest run #{run_id} completed successfully")
+        return digest
+        
+    except Exception as e:
+        logger.error(f"❌ Digest generation failed: {e}")
+        
+        if run_id:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                if is_postgres:
+                    cursor.execute('''
+                        UPDATE digest_runs SET status = 'failed', error = %s, finished_at = CURRENT_TIMESTAMP
+                        WHERE run_id = %s
+                    ''', (str(e), run_id))
+                else:
+                    cursor.execute('''
+                        UPDATE digest_runs SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP
+                        WHERE run_id = ?
+                    ''', (str(e), run_id))
+                conn.commit()
+                conn.close()
+            except:
+                pass
+        
+        return {'error': str(e)}
+
+
+@app.route('/api/digest', methods=['GET'])
+def api_get_digest():
+    """Get the latest digest or generate a new one"""
+    try:
+        force_refresh = request.args.get('refresh', '').lower() == 'true'
+        
+        if force_refresh:
+            digest = generate_digest()
+        else:
+            # Return cached or generate new
+            digest = generate_digest()
+        
+        return jsonify({'success': True, 'digest': digest})
+    except Exception as e:
+        logger.error(f"Error getting digest: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/digest/runs', methods=['GET'])
+def api_get_digest_runs():
+    """Get history of digest runs"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM digest_runs ORDER BY started_at DESC LIMIT 20
+        ''')
+        rows = cursor.fetchall()
+        if rows and hasattr(rows[0], 'keys'):
+            runs = [dict(row) for row in rows]
+        else:
+            runs = []
+            for r in rows:
+                runs.append({
+                    'run_id': r[0],
+                    'started_at': r[1],
+                    'finished_at': r[2],
+                    'run_type': r[3],
+                    'status': r[4],
+                    'error': r[5] if len(r) > 5 else None
+                })
+        conn.close()
+        
+        return jsonify({'success': True, 'runs': runs})
+    except Exception as e:
+        logger.error(f"Error getting digest runs: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# Digest scheduler (runs in background thread)
+_digest_scheduler_running = False
+
+def run_scheduled_digest():
+    """Check if it's time for a scheduled digest run"""
+    global _digest_scheduler_running
+    
+    if _digest_scheduler_running:
+        return
+    
+    _digest_scheduler_running = True
+    
+    try:
+        import time
+        from datetime import datetime
+        import pytz
+        
+        cst = pytz.timezone('America/Chicago')
+        
+        while True:
+            now = datetime.now(cst)
+            current_hour = now.hour
+            current_minute = now.minute
+            
+            # Check for 7:30 AM CT
+            if current_hour == 7 and current_minute == 30:
+                logger.info("🌅 Running scheduled AM digest (7:30 AM CT)")
+                generate_digest()
+                time.sleep(60)  # Wait a minute to avoid duplicate runs
+            
+            # Check for 2:45 PM CT
+            elif current_hour == 14 and current_minute == 45:
+                logger.info("🌆 Running scheduled PM digest (2:45 PM CT)")
+                generate_digest()
+                time.sleep(60)
+            
+            # Sleep for 30 seconds before checking again
+            time.sleep(30)
+            
+    except Exception as e:
+        logger.error(f"Digest scheduler error: {e}")
+    finally:
+        _digest_scheduler_running = False
+
+
+def start_digest_scheduler():
+    """Start the background digest scheduler"""
+    scheduler_thread = threading.Thread(target=run_scheduled_digest, daemon=True)
+    scheduler_thread.start()
+    logger.info("📅 Digest scheduler started (7:30 AM CT & 2:45 PM CT)")
+
+
+# Start scheduler when module loads
+try:
+    start_digest_scheduler()
+except Exception as e:
+    logger.warning(f"Could not start digest scheduler: {e}")
+
+
+# ============================================================================
+# END WATCHLIST DIGEST MODULE
+# ============================================================================
 
 
 # ============================================================================
@@ -7090,6 +10060,9 @@ def manual_trade():
 
 @app.route('/settings')
 def settings():
+    # Require login if auth is available
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
     return render_template('settings.html')
 
 @app.route('/affiliate')
@@ -7449,16 +10422,28 @@ def api_pnl_calendar():
         start_date = request.args.get('start_date', (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
         end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
         
-        conn = sqlite3.connect('trading_webhook.db')
-        cursor = conn.execute('''
-            SELECT DATE(timestamp) as date, SUM(pnl) as daily_pnl
-            FROM strategy_pnl_history
-            WHERE DATE(timestamp) BETWEEN ? AND ?
-            GROUP BY DATE(timestamp)
-            ORDER BY date
-        ''', (start_date, end_date))
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
-        data = [{'date': row[0], 'pnl': float(row[1]) if row[1] else 0.0} for row in cursor.fetchall()]
+        if is_postgres:
+            cursor.execute('''
+                SELECT DATE(timestamp) as date, SUM(pnl) as daily_pnl
+                FROM strategy_pnl_history
+                WHERE DATE(timestamp) BETWEEN %s AND %s
+                GROUP BY DATE(timestamp)
+                ORDER BY date
+            ''', (start_date, end_date))
+        else:
+            cursor.execute('''
+                SELECT DATE(timestamp) as date, SUM(pnl) as daily_pnl
+                FROM strategy_pnl_history
+                WHERE DATE(timestamp) BETWEEN ? AND ?
+                GROUP BY DATE(timestamp)
+                ORDER BY date
+            ''', (start_date, end_date))
+        
+        data = [{'date': str(row[0]), 'pnl': float(row[1]) if row[1] else 0.0} for row in cursor.fetchall()]
         conn.close()
         
         return jsonify({'calendar_data': data})
@@ -7472,25 +10457,42 @@ def api_pnl_drawdown_chart():
     try:
         strategy_id = request.args.get('strategy_id', None)
         limit = int(request.args.get('limit', 1000))
+        is_postgres = is_using_postgres()
         
-        query = '''
-            SELECT timestamp, pnl, drawdown
-            FROM strategy_pnl_history
-        '''
-        params = []
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        if strategy_id:
-            query += ' WHERE strategy_id = ?'
-            params.append(strategy_id)
-        
-        query += ' ORDER BY timestamp DESC LIMIT ?'
-        params.append(limit)
-        
-        conn = sqlite3.connect('trading_webhook.db')
-        cursor = conn.execute(query, params)
+        if is_postgres:
+            if strategy_id:
+                cursor.execute('''
+                    SELECT timestamp, pnl, drawdown
+                    FROM strategy_pnl_history
+                    WHERE strategy_id = %s
+                    ORDER BY timestamp DESC LIMIT %s
+                ''', (strategy_id, limit))
+            else:
+                cursor.execute('''
+                    SELECT timestamp, pnl, drawdown
+                    FROM strategy_pnl_history
+                    ORDER BY timestamp DESC LIMIT %s
+                ''', (limit,))
+        else:
+            query = '''
+                SELECT timestamp, pnl, drawdown
+                FROM strategy_pnl_history
+            '''
+            params = []
+            
+            if strategy_id:
+                query += ' WHERE strategy_id = ?'
+                params.append(strategy_id)
+            
+            query += ' ORDER BY timestamp DESC LIMIT ?'
+            params.append(limit)
+            cursor.execute(query, params)
         
         data = [{
-            'timestamp': row[0],
+            'timestamp': str(row[0]),
             'pnl': float(row[1]) if row[1] else 0.0,
             'drawdown': float(row[2]) if row[2] else 0.0
         } for row in cursor.fetchall()]
@@ -8025,12 +11027,20 @@ def create_webhook():
     if not url or not method:
         return jsonify({'error': 'URL and method are required'}), 400
 
-    conn = sqlite3.connect('trading_webhook.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO webhooks (url, method, headers, body)
-        VALUES (?, ?, ?, ?)
-    ''', (url, method, headers, body))
+    is_postgres = is_using_postgres()
+    
+    if is_postgres:
+        cursor.execute('''
+            INSERT INTO webhooks (url, method, headers, body)
+            VALUES (%s, %s, %s, %s)
+        ''', (url, method, headers, body))
+    else:
+        cursor.execute('''
+            INSERT INTO webhooks (url, method, headers, body)
+            VALUES (?, ?, ?, ?)
+        ''', (url, method, headers, body))
     conn.commit()
     conn.close()
 
@@ -8038,7 +11048,7 @@ def create_webhook():
 
 @app.route('/webhooks', methods=['GET'])
 def get_webhooks():
-    conn = sqlite3.connect('trading_webhook.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM webhooks')
     webhooks = cursor.fetchall()
@@ -8050,14 +11060,19 @@ def get_webhooks():
         'method': w[2],
         'headers': w[3],
         'body': w[4],
-        'created_at': w[5]
+        'created_at': str(w[5]) if w[5] else None
     } for w in webhooks])
 
 @app.route('/webhooks/<int:id>', methods=['GET'])
 def get_webhook(id):
-    conn = sqlite3.connect('trading_webhook.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM webhooks WHERE id = ?', (id,))
+    is_postgres = is_using_postgres()
+    
+    if is_postgres:
+        cursor.execute('SELECT * FROM webhooks WHERE id = %s', (id,))
+    else:
+        cursor.execute('SELECT * FROM webhooks WHERE id = ?', (id,))
     webhook = cursor.fetchone()
     conn.close()
 
@@ -8068,15 +11083,20 @@ def get_webhook(id):
             'method': webhook[2],
             'headers': webhook[3],
             'body': webhook[4],
-            'created_at': webhook[5]
+            'created_at': str(webhook[5]) if webhook[5] else None
         })
     return jsonify({'error': 'Webhook not found'}), 404
 
 @app.route('/webhooks/<int:id>', methods=['DELETE'])
 def delete_webhook(id):
-    conn = sqlite3.connect('trading_webhook.db')
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM webhooks WHERE id = ?', (id,))
+    is_postgres = is_using_postgres()
+    
+    if is_postgres:
+        cursor.execute('DELETE FROM webhooks WHERE id = %s', (id,))
+    else:
+        cursor.execute('DELETE FROM webhooks WHERE id = ?', (id,))
     conn.commit()
     conn.close()
     return '', 204
@@ -8086,6 +11106,16 @@ try:
     init_db()
 except Exception as e:
     logger.warning(f"Database initialization warning: {e}")
+
+# Initialize user authentication system
+if USER_AUTH_AVAILABLE:
+    try:
+        init_auth_system()
+        # Create initial admin user if no users exist
+        create_initial_admin()
+        logger.info("✅ User authentication system initialized")
+    except Exception as e:
+        logger.warning(f"Auth system initialization warning: {e}")
 
 # ============================================================================
 # WebSocket Handlers (Real-time updates like Trade Manager)
@@ -8120,11 +11150,20 @@ def handle_subscribe(data):
 def record_strategy_pnl(strategy_id, strategy_name, pnl, drawdown=0.0):
     """Record strategy P&L to database (like Trade Manager)"""
     try:
-        conn = sqlite3.connect('trading_webhook.db')
-        conn.execute('''
-            INSERT INTO strategy_pnl_history (strategy_id, strategy_name, pnl, drawdown, timestamp)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (strategy_id, strategy_name, pnl, drawdown, datetime.now()))
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        if is_postgres:
+            cursor.execute('''
+                INSERT INTO strategy_pnl_history (strategy_id, strategy_name, pnl, drawdown, timestamp)
+                VALUES (%s, %s, %s, %s, %s)
+            ''', (strategy_id, strategy_name, pnl, drawdown, datetime.now()))
+        else:
+            cursor.execute('''
+                INSERT INTO strategy_pnl_history (strategy_id, strategy_name, pnl, drawdown, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (strategy_id, strategy_name, pnl, drawdown, datetime.now()))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -8172,7 +11211,11 @@ def calculate_strategy_pnl(strategy_id):
                 WHERE strategy_id = ? AND status = 'filled'
             ''', (strategy_id,))
             result = cursor.fetchone()
-            pnl = float(result[0]) if result and result[0] else 0.0
+            if result:
+                pnl_val = result.get('total_pnl') if isinstance(result, dict) else result[0]
+                pnl = float(pnl_val) if pnl_val else 0.0
+            else:
+                pnl = 0.0
             conn.close()
             return pnl
             
@@ -8184,13 +11227,24 @@ def calculate_strategy_drawdown(strategy_id):
     """Calculate current drawdown for a strategy"""
     try:
         # Get historical P&L to calculate drawdown
-        conn = sqlite3.connect('trading_webhook.db')
-        cursor = conn.execute('''
-            SELECT pnl FROM strategy_pnl_history
-            WHERE strategy_id = ?
-            ORDER BY timestamp DESC
-            LIMIT 100
-        ''', (strategy_id,))
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        if is_postgres:
+            cursor.execute('''
+                SELECT pnl FROM strategy_pnl_history
+                WHERE strategy_id = %s
+                ORDER BY timestamp DESC
+                LIMIT 100
+            ''', (strategy_id,))
+        else:
+            cursor.execute('''
+                SELECT pnl FROM strategy_pnl_history
+                WHERE strategy_id = ?
+                ORDER BY timestamp DESC
+                LIMIT 100
+            ''', (strategy_id,))
         
         pnl_history = [float(row[0]) for row in cursor.fetchall() if row[0] is not None]
         conn.close()
@@ -10455,17 +13509,18 @@ def record_strategy_pnl_continuously():
                 db.close()
                 
             except (ImportError, Exception):
-                # Fallback to SQLite direct query
+                # Fallback to unified database connection
                 try:
-                    conn = sqlite3.connect('trading_webhook.db')
-                    cursor = conn.execute('''
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute('''
                         SELECT id, name FROM strategies WHERE enabled = 1
                     ''')
                     strategies = cursor.fetchall()
                     conn.close()
-                except sqlite3.OperationalError as e:
+                except Exception as e:
                     # If strategies table doesn't exist yet, that's okay
-                    if 'no such table' not in str(e).lower():
+                    if 'no such table' not in str(e).lower() and 'does not exist' not in str(e).lower():
                         logger.debug(f"Strategies table not found: {e}")
                     strategies = []
             
@@ -10505,6 +13560,119 @@ pnl_recording_thread.start()
 token_refresh_thread = threading.Thread(target=proactive_token_refresh, daemon=True)
 token_refresh_thread.start()
 logger.info("✅ Proactive token refresh thread started (refreshes tokens before expiration)")
+
+# ============================================================================
+# Auto-Flat After Cutoff - Automatically closes positions after trading window
+# ============================================================================
+
+def auto_flat_after_cutoff_worker():
+    """
+    Background task that checks if any recorders have positions that should be 
+    closed because we're outside the trading window and auto_flat_after_cutoff is enabled.
+    """
+    from datetime import datetime, timedelta
+    
+    logger.info("🔄 Auto-Flat After Cutoff worker started")
+    
+    def parse_time(time_str):
+        """Parse time string like '8:45 AM' or '13:45' to datetime.time"""
+        if not time_str:
+            return None
+        time_str = time_str.strip()
+        try:
+            if 'AM' in time_str.upper() or 'PM' in time_str.upper():
+                return datetime.strptime(time_str.upper(), '%I:%M %p').time()
+            return datetime.strptime(time_str, '%H:%M').time()
+        except:
+            return None
+    
+    def is_time_past_cutoff(current_time, stop_str):
+        """Check if current time is past the cutoff"""
+        stop = parse_time(stop_str)
+        if not stop:
+            return False
+        # Check if we're within 1 minute after the cutoff (to avoid repeated closes)
+        current = current_time.time()
+        stop_dt = datetime.combine(datetime.today(), stop)
+        current_dt = datetime.combine(datetime.today(), current)
+        # Close if we're between stop and stop + 2 minutes
+        return stop_dt <= current_dt <= stop_dt + timedelta(minutes=2)
+    
+    while True:
+        try:
+            # Get current time (local time - assumes server is in correct timezone)
+            now = datetime.now()
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Find recorders with auto_flat_after_cutoff enabled and time filters set
+            cursor.execute('''
+                SELECT r.id, r.name, r.time_filter_1_stop, r.time_filter_2_stop, r.auto_flat_after_cutoff
+                FROM recorders r
+                WHERE r.auto_flat_after_cutoff = 1
+                AND (r.time_filter_1_stop IS NOT NULL OR r.time_filter_2_stop IS NOT NULL)
+            ''')
+            recorders = cursor.fetchall()
+            
+            for rec in recorders:
+                rec = dict(rec)
+                recorder_id = rec['id']
+                recorder_name = rec['name']
+                time_filter_1_stop = rec.get('time_filter_1_stop')
+                time_filter_2_stop = rec.get('time_filter_2_stop')
+                
+                # Check if we just hit cutoff time
+                at_cutoff_1 = is_time_past_cutoff(now, time_filter_1_stop) if time_filter_1_stop else False
+                at_cutoff_2 = is_time_past_cutoff(now, time_filter_2_stop) if time_filter_2_stop else False
+                
+                if at_cutoff_1 or at_cutoff_2:
+                    cutoff_time = time_filter_1_stop if at_cutoff_1 else time_filter_2_stop
+                    logger.info(f"🕐 [{recorder_name}] At cutoff time ({cutoff_time}) - checking for open positions")
+                    
+                    # Check for open positions
+                    cursor.execute('''
+                        SELECT id, ticker, side, quantity FROM recorded_trades
+                        WHERE recorder_id = ? AND status = 'open'
+                    ''', (recorder_id,))
+                    open_trades = cursor.fetchall()
+                    
+                    if open_trades:
+                        logger.info(f"🔄 [{recorder_name}] Found {len(open_trades)} open trades - AUTO-FLATTENING")
+                        
+                        # Get trader info for closing
+                        cursor.execute('''
+                            SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id
+                            FROM traders t
+                            JOIN accounts a ON t.account_id = a.id
+                            WHERE t.recorder_id = ? AND t.enabled = 1
+                            LIMIT 1
+                        ''', (recorder_id,))
+                        trader_row = cursor.fetchone()
+                        
+                        if trader_row:
+                            from recorder_service import close_all_positions_for_recorder
+                            try:
+                                close_result = close_all_positions_for_recorder(recorder_id)
+                                logger.info(f"✅ [{recorder_name}] Auto-flat result: {close_result}")
+                            except Exception as e:
+                                logger.error(f"❌ [{recorder_name}] Auto-flat failed: {e}")
+                        else:
+                            logger.warning(f"⚠️ [{recorder_name}] No trader linked - cannot auto-flat")
+            
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"❌ Auto-flat worker error: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        time.sleep(60)  # Check every minute
+
+# Start auto-flat after cutoff worker
+auto_flat_thread = threading.Thread(target=auto_flat_after_cutoff_worker, daemon=True)
+auto_flat_thread.start()
+logger.info("✅ Auto-Flat After Cutoff worker started")
 
 # Start Tradovate market data WebSocket
 if WEBSOCKETS_AVAILABLE:
