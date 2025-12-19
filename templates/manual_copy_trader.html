@@ -1134,6 +1134,10 @@
 
     // Store account PnL data globally for display
     let accountPnlData = {};
+    
+    // Current user ID for filtering accounts (passed from server)
+    const CURRENT_USER_ID = {{ current_user_id|default('null') }};
+    console.log('Current user ID:', CURRENT_USER_ID);
 
     function updatePositionsFromWebSocket(positions, pnlData) {
         const container = document.getElementById('positionsContainer');
@@ -1182,7 +1186,14 @@
                 <tbody>
         `;
 
-        positions.forEach(pos => {
+        // Filter positions by user_id
+        const filteredPositions = positions.filter(pos => {
+            if (CURRENT_USER_ID === null) return true;
+            if (pos.user_id === null || pos.user_id === undefined) return true;
+            return pos.user_id === CURRENT_USER_ID;
+        });
+        
+        filteredPositions.forEach(pos => {
             const qty = pos.net_quantity || pos.quantity || 0;
             const qtyClass = qty >= 0 ? 'positive' : 'negative';
             const qtySign = qty >= 0 ? '+' : '';
@@ -1211,6 +1222,10 @@
         let html = '<div class="pnl-summary">';
         
         for (const [accId, acc] of Object.entries(pnlData)) {
+            // Filter by user_id if logged in
+            if (CURRENT_USER_ID !== null && acc.user_id !== null && acc.user_id !== CURRENT_USER_ID) {
+                continue; // Skip accounts not owned by current user
+            }
             const openPnl = acc.open_pnl || 0;
             const realizedPnl = acc.realized_pnl || 0;
             const netLiq = acc.net_liq || 0;

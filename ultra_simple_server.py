@@ -8698,7 +8698,9 @@ def manual_trader_page():
     # Require login if auth is available
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
-    return render_template('manual_copy_trader.html')
+    # Pass current user ID for filtering live positions
+    current_user_id = get_current_user_id() if USER_AUTH_AVAILABLE else None
+    return render_template('manual_copy_trader.html', current_user_id=current_user_id)
 
 
 # ============================================================================
@@ -14802,7 +14804,7 @@ def fetch_tradovate_pnl_sync():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id, name, tradovate_token, tradovate_accounts, environment
+            SELECT id, name, tradovate_token, tradovate_accounts, environment, user_id
             FROM accounts 
             WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
         ''')
@@ -14819,6 +14821,7 @@ def fetch_tradovate_pnl_sync():
         # Process each linked account (user may have multiple Tradovate logins)
         for account in all_linked_accounts:
             account_id = account['id']
+            account_user_id = account['user_id']  # Track which user owns this account
             # Get valid token (auto-refreshes if needed)
             token = get_valid_tradovate_token(account_id)
             if not token:
@@ -14868,6 +14871,7 @@ def fetch_tradovate_pnl_sync():
                             'account_id': acc_id,
                             'account_name': acc_name,
                             'is_demo': is_demo,
+                            'user_id': account_user_id,  # Track owner for user isolation
                             'total_cash_value': snap.get('totalCashValue', 0),
                             'net_liq': snap.get('netLiq', 0),
                             'open_pnl': snap.get('openPnL', 0),  # Unrealized PnL!
@@ -14916,6 +14920,7 @@ def fetch_tradovate_pnl_sync():
                                     'account_id': acc_id,
                                     'account_name': acc_name,
                                     'is_demo': is_demo,
+                                    'user_id': account_user_id,  # Track owner for user isolation
                                     'contract_id': contract_id,
                                     'symbol': contract_name,
                                     'net_quantity': pos.get('netPos', 0),
