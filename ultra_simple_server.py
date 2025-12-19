@@ -6901,14 +6901,23 @@ def traders_new():
         
         conn.close()
         
-        return render_template(
-            'traders.html',
-            mode='builder',
-            header_title='Create New Trader',
-            header_cta='Create Trader',
-            recorders=recorders,
-            accounts=accounts
-        )
+        # Debug: Log what we're passing to template
+        logger.info(f"traders_new: {len(recorders)} recorders, {len(accounts)} accounts")
+        
+        try:
+            return render_template(
+                'traders.html',
+                mode='builder',
+                header_title='Create New Trader',
+                header_cta='Create Trader',
+                recorders=recorders,
+                accounts=accounts
+            )
+        except Exception as template_err:
+            logger.error(f"Template rendering error in traders_new: {template_err}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return f"<h1>Template Error</h1><pre>{str(template_err)}</pre>", 500
     except Exception as e:
         logger.error(f"Error in traders_new: {e}")
         import traceback
