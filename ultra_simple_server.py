@@ -620,7 +620,9 @@ def _init_sqlite_tables(conn):
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             notes TEXT,
-            account_routing TEXT
+            account_routing TEXT,
+            is_public INTEGER DEFAULT 0,
+            created_by_username TEXT
         )
     ''')
     
@@ -1027,7 +1029,9 @@ def _init_postgres_tables():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             notes TEXT,
-            account_routing TEXT
+            account_routing TEXT,
+            is_public BOOLEAN DEFAULT FALSE,
+            created_by_username VARCHAR(100)
         )
     ''')
     
@@ -2231,6 +2235,17 @@ def init_db():
         cursor.execute('ALTER TABLE traders ADD COLUMN max_daily_loss REAL DEFAULT 500')
     except:
         pass
+    
+    # Add shared strategy columns to existing strategies table (for existing databases)
+    try:
+        cursor.execute('ALTER TABLE strategies ADD COLUMN is_public INTEGER DEFAULT 0')
+    except:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE strategies ADD COLUMN created_by_username TEXT')
+    except:
+        pass  # Column already exists
+    
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_traders_recorder 
         ON traders(recorder_id)
@@ -2972,24 +2987,26 @@ def _init_insider_tables():
         print(f"⚠️ Insider tables init failed: {e}")
         return False
 
-# Import insider service functions for polling
-INSIDER_SERVICE_AVAILABLE = False
-try:
-    import insider_service
-    # Initialize tables using our PostgreSQL-compatible function
-    if _init_insider_tables():
-        INSIDER_SERVICE_AVAILABLE = True
-        # Only start polling thread if NOT using PostgreSQL (insider_service uses SQLite)
-        if not is_using_postgres():
-            _insider_polling_thread = threading.Thread(target=insider_service.polling_loop, daemon=True)
-            _insider_polling_thread.start()
-            print("✅ Insider Signals polling started (SQLite mode)")
-        else:
-            print("✅ Insider Signals tables ready (PostgreSQL mode - polling disabled)")
-except ImportError as e:
-    print(f"⚠️ Insider service not available: {e}")
-except Exception as e:
-    print(f"⚠️ Insider service init failed: {e}")
+# Lazy initialization for insider tables
+_insider_tables_initialized = False
+
+def _ensure_insider_tables():
+    """Lazily initialize insider tables on first use"""
+    global _insider_tables_initialized
+    if _insider_tables_initialized:
+        return True
+    try:
+        result = _init_insider_tables()
+        if result:
+            _insider_tables_initialized = True
+        return result
+    except Exception as e:
+        print(f"⚠️ Insider tables init error: {e}")
+        return False
+
+# Always mark as available - tables will be created on demand
+INSIDER_SERVICE_AVAILABLE = True
+print("✅ Insider Signals module ready (tables will init on first use)")
 
 @app.route('/insider-signals')
 @app.route('/insider_signals')
@@ -3002,10 +3019,10 @@ def insider_signals():
 @app.route('/api/insiders/status')
 def api_insiders_status():
     """Get insider service status"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"status": "offline", "error": "Service not available"}), 503
-    
     try:
+        # Ensure tables exist (lazy init)
+        _ensure_insider_tables()
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
@@ -3057,10 +3074,8 @@ def api_insiders_status():
 @app.route('/api/insiders/today')
 def api_insiders_today():
     """Get today's insider signals"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
-    
     try:
+        _ensure_insider_tables()
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
@@ -3109,10 +3124,8 @@ def api_insiders_today():
 @app.route('/api/insiders/top')
 def api_insiders_top():
     """Get top signals with filters"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
-    
     try:
+        _ensure_insider_tables()
         limit = request.args.get('limit', 50, type=int)
         min_score = request.args.get('min_score', 0, type=int)
         days = request.args.get('days', 7, type=int)
@@ -3169,10 +3182,8 @@ def api_insiders_top():
 @app.route('/api/insiders/ticker/<symbol>')
 def api_insiders_ticker(symbol):
     """Get signals for specific ticker"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
-    
     try:
+        _ensure_insider_tables()
         symbol = symbol.upper()
         limit = request.args.get('limit', 20, type=int)
         
@@ -3224,10 +3235,8 @@ def api_insiders_ticker(symbol):
 @app.route('/api/insiders/conviction')
 def api_insiders_conviction():
     """Get high conviction signals"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
-    
     try:
+        _ensure_insider_tables()
         limit = request.args.get('limit', 20, type=int)
         days = request.args.get('days', 30, type=int)
         
@@ -3282,10 +3291,8 @@ def api_insiders_conviction():
 @app.route('/api/insiders/refresh', methods=['POST'])
 def api_insiders_refresh():
     """Trigger manual refresh - only works in SQLite mode"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"success": False, "error": "Service not available"}), 503
-    
     try:
+        _ensure_insider_tables()
         if is_using_postgres():
             return jsonify({
                 'success': True,
@@ -3343,10 +3350,8 @@ def api_insiders_price(ticker):
 @app.route('/api/insiders/watchlist', methods=['GET', 'POST'])
 def api_insiders_watchlist():
     """Watchlist operations"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"success": False, "error": "Service not available"}), 503
-    
     try:
+        _ensure_insider_tables()
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
@@ -3393,10 +3398,8 @@ def api_insiders_watchlist():
 @app.route('/api/insiders/watchlist/<int:item_id>', methods=['DELETE'])
 def api_insiders_watchlist_delete(item_id):
     """Delete watchlist item"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"success": False, "error": "Service not available"}), 503
-    
     try:
+        _ensure_insider_tables()
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
@@ -3419,10 +3422,8 @@ def api_insiders_watchlist_delete(item_id):
 @app.route('/api/insiders/watchlist/signals')
 def api_insiders_watchlist_signals():
     """Get signals matching watchlist"""
-    if not INSIDER_SERVICE_AVAILABLE:
-        return jsonify({"success": False, "error": "Service not available", "signals": []}), 503
-    
     try:
+        _ensure_insider_tables()
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
@@ -4321,6 +4322,239 @@ def get_live_strategies():
 @app.route('/strategies')
 def strategies():
     return render_template('strategies.html')
+
+
+@app.route('/strategies/manage')
+def strategies_manage():
+    """Strategy Templates Management Page - Create/Edit/Toggle public strategies"""
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
+    return render_template('strategy_templates.html')
+
+
+@app.route('/api/strategies/templates', methods=['GET'])
+def get_strategy_templates():
+    """
+    Get strategy templates for the Create Trader dropdown.
+    Returns: All PUBLIC strategies + current user's own strategies.
+    Each strategy includes all settings for auto-population.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        # Get current user ID if logged in
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+        
+        # Query: public strategies OR user's own strategies
+        if is_postgres:
+            if current_user_id:
+                cursor.execute('''
+                    SELECT s.*, u.username as owner_username
+                    FROM strategies s
+                    LEFT JOIN users u ON s.user_id = u.id
+                    WHERE s.is_public = true OR s.user_id = %s
+                    ORDER BY s.is_public DESC, s.name ASC
+                ''', (current_user_id,))
+            else:
+                cursor.execute('''
+                    SELECT s.*, u.username as owner_username
+                    FROM strategies s
+                    LEFT JOIN users u ON s.user_id = u.id
+                    WHERE s.is_public = true
+                    ORDER BY s.name ASC
+                ''')
+        else:
+            if current_user_id:
+                cursor.execute('''
+                    SELECT s.*, u.username as owner_username
+                    FROM strategies s
+                    LEFT JOIN users u ON s.user_id = u.id
+                    WHERE s.is_public = 1 OR s.user_id = ?
+                    ORDER BY s.is_public DESC, s.name ASC
+                ''', (current_user_id,))
+            else:
+                cursor.execute('''
+                    SELECT s.*, u.username as owner_username
+                    FROM strategies s
+                    LEFT JOIN users u ON s.user_id = u.id
+                    WHERE s.is_public = 1
+                    ORDER BY s.name ASC
+                ''')
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        templates = []
+        for row in rows:
+            # Convert row to dict
+            if hasattr(row, 'keys'):
+                row_dict = dict(row)
+            else:
+                # Handle tuple rows
+                columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                row_dict = dict(zip(columns, row)) if columns else {}
+            
+            is_own = row_dict.get('user_id') == current_user_id if current_user_id else False
+            is_public = bool(row_dict.get('is_public', 0))
+            
+            templates.append({
+                'id': row_dict.get('id'),
+                'name': row_dict.get('name'),
+                'symbol': row_dict.get('symbol'),
+                'strat_type': row_dict.get('strat_type', 'Futures'),
+                # Risk settings for auto-population
+                'position_size': row_dict.get('position_size', 1),
+                'position_add': row_dict.get('position_add', 1),
+                'take_profit': row_dict.get('take_profit', 0),
+                'stop_loss': row_dict.get('stop_loss', 0),
+                'trim': row_dict.get('trim', 100),
+                'tpsl_units': row_dict.get('tpsl_units', 'Ticks'),
+                'max_contracts': row_dict.get('max_contracts', 0),
+                'max_daily_loss': row_dict.get('max_daily_loss', 0),
+                'delay_seconds': row_dict.get('delay_seconds', 0),
+                'entry_delay': row_dict.get('entry_delay', 0),
+                'signal_cooldown': row_dict.get('signal_cooldown', 0),
+                'direction_filter': row_dict.get('direction_filter', 'ALL'),
+                'time_filter_enabled': bool(row_dict.get('time_filter_enabled', 0)),
+                'time_filter_start': row_dict.get('time_filter_start', ''),
+                'time_filter_end': row_dict.get('time_filter_end', ''),
+                'notes': row_dict.get('notes', ''),
+                # Metadata
+                'is_public': is_public,
+                'is_own': is_own,
+                'owner_username': row_dict.get('owner_username') or row_dict.get('created_by_username') or 'Unknown',
+                'created_at': row_dict.get('created_at')
+            })
+        
+        return jsonify({
+            'success': True,
+            'templates': templates,
+            'count': len(templates)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting strategy templates: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/strategies', methods=['POST'])
+def create_strategy():
+    """Create a new strategy template"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        name = data.get('name')
+        if not name:
+            return jsonify({'success': False, 'error': 'Strategy name is required'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        # Get current user
+        current_user_id = None
+        current_username = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+            user = get_current_user()
+            current_username = user.username if user else None
+        
+        # Insert strategy
+        if is_postgres:
+            cursor.execute('''
+                INSERT INTO strategies (
+                    user_id, name, symbol, strat_type, position_size, position_add,
+                    take_profit, stop_loss, trim, tpsl_units, max_contracts,
+                    max_daily_loss, delay_seconds, entry_delay, signal_cooldown,
+                    direction_filter, time_filter_enabled, time_filter_start,
+                    time_filter_end, notes, is_public, created_by_username
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (
+                current_user_id,
+                name,
+                data.get('symbol', ''),
+                data.get('strat_type', 'Futures'),
+                data.get('position_size', 1),
+                data.get('position_add', 1),
+                data.get('take_profit', 0),
+                data.get('stop_loss', 0),
+                data.get('trim', 100),
+                data.get('tpsl_units', 'Ticks'),
+                data.get('max_contracts', 0),
+                data.get('max_daily_loss', 0),
+                data.get('delay_seconds', 0),
+                data.get('entry_delay', 0),
+                data.get('signal_cooldown', 0),
+                data.get('direction_filter', 'ALL'),
+                data.get('time_filter_enabled', False),
+                data.get('time_filter_start', ''),
+                data.get('time_filter_end', ''),
+                data.get('notes', ''),
+                data.get('is_public', False),
+                current_username
+            ))
+            strategy_id = cursor.fetchone()[0]
+        else:
+            cursor.execute('''
+                INSERT INTO strategies (
+                    user_id, name, symbol, strat_type, position_size, position_add,
+                    take_profit, stop_loss, trim, tpsl_units, max_contracts,
+                    max_daily_loss, delay_seconds, entry_delay, signal_cooldown,
+                    direction_filter, time_filter_enabled, time_filter_start,
+                    time_filter_end, notes, is_public, created_by_username
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                current_user_id,
+                name,
+                data.get('symbol', ''),
+                data.get('strat_type', 'Futures'),
+                data.get('position_size', 1),
+                data.get('position_add', 1),
+                data.get('take_profit', 0),
+                data.get('stop_loss', 0),
+                data.get('trim', 100),
+                data.get('tpsl_units', 'Ticks'),
+                data.get('max_contracts', 0),
+                data.get('max_daily_loss', 0),
+                data.get('delay_seconds', 0),
+                data.get('entry_delay', 0),
+                data.get('signal_cooldown', 0),
+                data.get('direction_filter', 'ALL'),
+                1 if data.get('time_filter_enabled') else 0,
+                data.get('time_filter_start', ''),
+                data.get('time_filter_end', ''),
+                data.get('notes', ''),
+                1 if data.get('is_public') else 0,
+                current_username
+            ))
+            strategy_id = cursor.lastrowid
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Created strategy '{name}' (id={strategy_id}, public={data.get('is_public', False)})")
+        
+        return jsonify({
+            'success': True,
+            'strategy_id': strategy_id,
+            'message': f"Strategy '{name}' created successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating strategy: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/recorders', methods=['GET'])
 def recorders_list():
