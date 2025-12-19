@@ -8044,23 +8044,40 @@ def api_get_recorder_pnl(recorder_id):
         timeframe = request.args.get('timeframe', 'all')  # today, week, month, 3months, 6months, year, all
         
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
+        is_postgres = is_using_postgres()
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        placeholder = '%s' if is_postgres else '?'
         
-        # Build date filter
+        # Build date filter (PostgreSQL vs SQLite syntax)
         date_filter = ''
-        if timeframe == 'today':
-            date_filter = "AND DATE(exit_time) = DATE('now')"
-        elif timeframe == 'week':
-            date_filter = "AND exit_time >= DATE('now', '-7 days')"
-        elif timeframe == 'month':
-            date_filter = "AND exit_time >= DATE('now', '-30 days')"
-        elif timeframe == '3months':
-            date_filter = "AND exit_time >= DATE('now', '-90 days')"
-        elif timeframe == '6months':
-            date_filter = "AND exit_time >= DATE('now', '-180 days')"
-        elif timeframe == 'year':
-            date_filter = "AND exit_time >= DATE('now', '-365 days')"
+        if is_postgres:
+            if timeframe == 'today':
+                date_filter = "AND DATE(exit_time) = CURRENT_DATE"
+            elif timeframe == 'week':
+                date_filter = "AND exit_time >= NOW() - INTERVAL '7 days'"
+            elif timeframe == 'month':
+                date_filter = "AND exit_time >= NOW() - INTERVAL '30 days'"
+            elif timeframe == '3months':
+                date_filter = "AND exit_time >= NOW() - INTERVAL '90 days'"
+            elif timeframe == '6months':
+                date_filter = "AND exit_time >= NOW() - INTERVAL '180 days'"
+            elif timeframe == 'year':
+                date_filter = "AND exit_time >= NOW() - INTERVAL '365 days'"
+        else:
+            if timeframe == 'today':
+                date_filter = "AND DATE(exit_time) = DATE('now')"
+            elif timeframe == 'week':
+                date_filter = "AND exit_time >= DATE('now', '-7 days')"
+            elif timeframe == 'month':
+                date_filter = "AND exit_time >= DATE('now', '-30 days')"
+            elif timeframe == '3months':
+                date_filter = "AND exit_time >= DATE('now', '-90 days')"
+            elif timeframe == '6months':
+                date_filter = "AND exit_time >= DATE('now', '-180 days')"
+            elif timeframe == 'year':
+                date_filter = "AND exit_time >= DATE('now', '-365 days')"
         
         # Get summary stats for closed trades
         cursor.execute(f'''
@@ -8076,7 +8093,7 @@ def api_get_recorder_pnl(recorder_id):
                 AVG(CASE WHEN pnl > 0 THEN pnl END) as avg_win,
                 AVG(CASE WHEN pnl < 0 THEN pnl END) as avg_loss
             FROM recorded_trades 
-            WHERE recorder_id = ? AND status = 'closed' {date_filter}
+            WHERE recorder_id = {placeholder} AND status = 'closed' {date_filter}
         ''', (recorder_id,))
         
         stats = dict(cursor.fetchone())
@@ -8169,28 +8186,45 @@ def api_get_all_recorders_pnl():
         recorder_id = request.args.get('recorder_id')  # Optional filter
         
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
+        is_postgres = is_using_postgres()
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        placeholder = '%s' if is_postgres else '?'
         
-        # Build date filter
+        # Build date filter (PostgreSQL vs SQLite syntax)
         date_filter = ''
-        if timeframe == 'today':
-            date_filter = "AND DATE(rt.exit_time) = DATE('now')"
-        elif timeframe == 'week':
-            date_filter = "AND rt.exit_time >= DATE('now', '-7 days')"
-        elif timeframe == 'month':
-            date_filter = "AND rt.exit_time >= DATE('now', '-30 days')"
-        elif timeframe == '3months':
-            date_filter = "AND rt.exit_time >= DATE('now', '-90 days')"
-        elif timeframe == '6months':
-            date_filter = "AND rt.exit_time >= DATE('now', '-180 days')"
-        elif timeframe == 'year':
-            date_filter = "AND rt.exit_time >= DATE('now', '-365 days')"
+        if is_postgres:
+            if timeframe == 'today':
+                date_filter = "AND DATE(rt.exit_time) = CURRENT_DATE"
+            elif timeframe == 'week':
+                date_filter = "AND rt.exit_time >= NOW() - INTERVAL '7 days'"
+            elif timeframe == 'month':
+                date_filter = "AND rt.exit_time >= NOW() - INTERVAL '30 days'"
+            elif timeframe == '3months':
+                date_filter = "AND rt.exit_time >= NOW() - INTERVAL '90 days'"
+            elif timeframe == '6months':
+                date_filter = "AND rt.exit_time >= NOW() - INTERVAL '180 days'"
+            elif timeframe == 'year':
+                date_filter = "AND rt.exit_time >= NOW() - INTERVAL '365 days'"
+        else:
+            if timeframe == 'today':
+                date_filter = "AND DATE(rt.exit_time) = DATE('now')"
+            elif timeframe == 'week':
+                date_filter = "AND rt.exit_time >= DATE('now', '-7 days')"
+            elif timeframe == 'month':
+                date_filter = "AND rt.exit_time >= DATE('now', '-30 days')"
+            elif timeframe == '3months':
+                date_filter = "AND rt.exit_time >= DATE('now', '-90 days')"
+            elif timeframe == '6months':
+                date_filter = "AND rt.exit_time >= DATE('now', '-180 days')"
+            elif timeframe == 'year':
+                date_filter = "AND rt.exit_time >= DATE('now', '-365 days')"
         
         recorder_filter = ''
         params = []
         if recorder_id:
-            recorder_filter = 'AND rt.recorder_id = ?'
+            recorder_filter = f'AND rt.recorder_id = {placeholder}'
             params.append(int(recorder_id))
         
         # Get per-recorder summary
