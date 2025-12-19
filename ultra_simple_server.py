@@ -125,7 +125,7 @@ def is_using_postgres():
     return _using_postgres
 
 def _ensure_tables_exist(conn, is_postgres):
-    """Ensure all tables exist - called on EVERY connection to be safe"""
+    """Ensure all tables exist - called once on startup"""
     global _tables_initialized
     if _tables_initialized:
         return
@@ -138,7 +138,6 @@ def _ensure_tables_exist(conn, is_postgres):
         print("✅ Database tables initialized")
     except Exception as e:
         print(f"⚠️ Table initialization warning: {e}")
-        # Don't fail - tables might already exist
 
 def get_db_connection():
     """Get database connection - PostgreSQL for production, SQLite for dev/fallback."""
@@ -153,19 +152,31 @@ def get_db_connection():
             
             db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
             
+            # Create pool with MORE connections and proper settings
             if _pg_pool is None:
-                _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 20, dsn=db_url)
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=2,
+                    maxconn=50,  # Increased from 20 to 50
+                    dsn=db_url
+                )
                 _using_postgres = True
-                print("✅ PostgreSQL connected")
+                print("✅ PostgreSQL pool created (2-50 connections)")
+                _ensure_tables_exist(None, True)
             
-            conn = _pg_pool.getconn()
+            # Get connection with timeout handling
+            try:
+                conn = _pg_pool.getconn()
+            except psycopg2.pool.PoolError as e:
+                # Pool exhausted - create a direct connection as fallback
+                print(f"⚠️ Pool exhausted, creating direct connection")
+                conn = psycopg2.connect(db_url)
+            
             conn.cursor_factory = RealDictCursor
-            _ensure_tables_exist(None, True)
             return PostgresConnectionWrapper(conn, _pg_pool)
         except Exception as e:
             print(f"⚠️ PostgreSQL failed: {e}, using SQLite")
             _using_postgres = False
-            _pg_pool = None
+            # Don't reset pool - might just be temporary issue
     
     # SQLite fallback
     _using_postgres = False
@@ -269,20 +280,20 @@ class PostgresConnectionWrapper:
     def __init__(self, conn, pool):
         self._conn = conn
         self._pool = pool
-        self._row_factory = None  # Store but ignore
-    
+        self._row_factory = None
+        self._closed = False
+
     @property
     def row_factory(self):
         return self._row_factory
-    
+
     @row_factory.setter
     def row_factory(self, value):
-        # Accept but ignore - PostgreSQL uses RealDictCursor instead
         self._row_factory = value
-    
+
     def cursor(self):
         return PostgresCursorWrapper(self._conn.cursor())
-    
+
     def execute(self, sql, params=None):
         sql = sql.replace('?', '%s')
         cursor = self._conn.cursor()
@@ -291,21 +302,36 @@ class PostgresConnectionWrapper:
         else:
             cursor.execute(sql)
         return PostgresCursorWrapper(cursor)
-    
+
     def commit(self):
         self._conn.commit()
-    
+
     def rollback(self):
         self._conn.rollback()
-    
+
     def close(self):
-        self._pool.putconn(self._conn)
-    
+        """Return connection to pool (or close direct connection)."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            if self._pool:
+                self._pool.putconn(self._conn)
+            else:
+                self._conn.close()
+        except Exception as e:
+            print(f"⚠️ Error closing connection: {e}")
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, *args):
         self.close()
+    
+    def __del__(self):
+        """Ensure connection is returned even if close() wasn't called."""
+        if not self._closed:
+            self.close()
 
 def _init_sqlite_tables(conn):
     """Initialize ALL SQLite tables - mirrors PostgreSQL schema."""
