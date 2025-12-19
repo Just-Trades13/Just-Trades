@@ -3201,15 +3201,16 @@ def get_accounts():
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         
-        # Filter by user_id if user is logged in
+        # Filter by user_id if user is logged in - STRICT: only show user's own accounts
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
             if is_postgres:
-                cursor.execute("SELECT * FROM accounts WHERE user_id = %s OR user_id IS NULL", (user_id,))
+                cursor.execute("SELECT * FROM accounts WHERE user_id = %s", (user_id,))
             else:
-                cursor.execute("SELECT * FROM accounts WHERE user_id = ? OR user_id IS NULL", (user_id,))
+                cursor.execute("SELECT * FROM accounts WHERE user_id = ?", (user_id,))
         else:
-            cursor.execute("SELECT * FROM accounts")
+            # Not logged in - show nothing (require login)
+            cursor.execute("SELECT * FROM accounts WHERE 1=0")
         accounts = cursor.fetchall()
         conn.close()
         
@@ -4191,16 +4192,16 @@ def api_get_recorders():
         if is_postgres:
             if search and user_id:
                 cursor.execute('''
-                    SELECT * FROM recorders 
-                    WHERE name LIKE %s AND (user_id = %s OR user_id IS NULL)
-                    ORDER BY created_at DESC 
+                    SELECT * FROM recorders
+                    WHERE name LIKE %s AND user_id = %s
+                    ORDER BY created_at DESC
                     LIMIT %s OFFSET %s
                 ''', (f'%{search}%', user_id, per_page, offset))
             elif user_id:
                 cursor.execute('''
-                    SELECT * FROM recorders 
-                    WHERE (user_id = %s OR user_id IS NULL)
-                    ORDER BY created_at DESC 
+                    SELECT * FROM recorders
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
                     LIMIT %s OFFSET %s
                 ''', (user_id, per_page, offset))
             elif search:
@@ -4261,21 +4262,21 @@ def api_get_recorders():
                 recorder['tp_targets'] = []
             recorders.append(recorder)
         
-        # Get total count with user filter
+        # Get total count with user filter - STRICT: only user's own recorders
         if is_postgres:
             if user_id and search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s AND (user_id = %s OR user_id IS NULL)', (f'%{search}%', user_id))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s AND user_id = %s', (f'%{search}%', user_id))
             elif user_id:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = %s OR user_id IS NULL', (user_id,))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = %s', (user_id,))
             elif search:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s', (f'%{search}%',))
             else:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders')
         elif USER_AUTH_AVAILABLE and is_logged_in():
             if search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND (user_id = ? OR user_id IS NULL)', (f'%{search}%', user_id))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND user_id = ?', (f'%{search}%', user_id))
             else:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = ? OR user_id IS NULL', (user_id,))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = ?', (user_id,))
         else:
             if search:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ?', (f'%{search}%',))
@@ -7151,14 +7152,15 @@ def traders_new():
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
         
-        # Get recorders with their IDs for the dropdown (filtered by user_id)
+        # Get recorders with their IDs for the dropdown - STRICT: only user's own recorders
         if user_id:
             if is_postgres:
-                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE user_id = %s OR user_id IS NULL ORDER BY name', (user_id,))
+                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE user_id = %s ORDER BY name', (user_id,))
             else:
-                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE user_id = ? OR user_id IS NULL ORDER BY name', (user_id,))
+                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE user_id = ? ORDER BY name', (user_id,))
         else:
-            cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
+            # Not logged in - show nothing
+            cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE 1=0')
         recorders = []
         for row in cursor.fetchall():
             # Handle both dict-style and tuple-style rows
@@ -7169,12 +7171,12 @@ def traders_new():
             else:
                 recorders.append({'id': row[0], 'name': row[1], 'strategy_type': row[2] if len(row) > 2 else 'Futures'})
         
-        # Get accounts with their tradovate subaccounts for account routing table (filtered by user_id)
+        # Get accounts with their tradovate subaccounts - STRICT: only user's own accounts
         if user_id:
             if is_postgres:
-                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true AND (user_id = %s OR user_id IS NULL)', (user_id,))
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true AND user_id = %s', (user_id,))
             else:
-                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1 AND (user_id = ? OR user_id IS NULL)', (user_id,))
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1 AND user_id = ?', (user_id,))
         else:
             if is_postgres:
                 cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
