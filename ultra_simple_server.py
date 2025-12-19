@@ -6899,9 +6899,21 @@ def traders_new():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
         
-        # Get recorders with their IDs for the dropdown
-        cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
+        # Get current user for filtering
+        user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user_id = get_current_user_id()
+        
+        # Get recorders with their IDs for the dropdown (filtered by user_id)
+        if user_id:
+            if is_postgres:
+                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE user_id = %s OR user_id IS NULL ORDER BY name', (user_id,))
+            else:
+                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE user_id = ? OR user_id IS NULL ORDER BY name', (user_id,))
+        else:
+            cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
         recorders = []
         for row in cursor.fetchall():
             # Handle both dict-style and tuple-style rows
@@ -6912,12 +6924,17 @@ def traders_new():
             else:
                 recorders.append({'id': row[0], 'name': row[1], 'strategy_type': row[2] if len(row) > 2 else 'Futures'})
         
-        # Get accounts with their tradovate subaccounts for account routing table
-        is_postgres = is_using_postgres()
-        if is_postgres:
-            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
+        # Get accounts with their tradovate subaccounts for account routing table (filtered by user_id)
+        if user_id:
+            if is_postgres:
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true AND (user_id = %s OR user_id IS NULL)', (user_id,))
+            else:
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1 AND (user_id = ? OR user_id IS NULL)', (user_id,))
         else:
-            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+            if is_postgres:
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
+            else:
+                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
         accounts = []
         for row in cursor.fetchall():
             # Handle both dict-style and tuple-style rows
