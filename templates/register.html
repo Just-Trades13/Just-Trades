@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account - Just.Trades.</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #19b8ff;
+            --primary-color-dark: #0c6bbd;
+            --accent-teal: #2dd4bf;
+            --green: #2dce89;
+            --red: #f5365c;
+            --background-dark: #0b1221;
+            --background-light: #111a2f;
+            --border-color: rgba(148, 163, 184, 0.12);
+            --text-light: #f8fafc;
+            --text-muted: #7f8db2;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: radial-gradient(circle at 30% 20%, rgba(56, 189, 248, 0.08), transparent 50%),
+                        radial-gradient(circle at 70% 80%, rgba(45, 212, 191, 0.06), transparent 50%),
+                        var(--background-dark);
+            color: var(--text-light);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .register-container {
+            width: 100%;
+            max-width: 480px;
+        }
+        
+        .logo-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .logo-section img {
+            width: 80px;
+            height: 80px;
+            border-radius: 20px;
+            box-shadow: 0 12px 40px rgba(25, 184, 255, 0.3);
+            margin-bottom: 20px;
+        }
+        
+        .logo-section h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            background: linear-gradient(135deg, var(--text-light), var(--accent-teal));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .logo-section p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 8px;
+            letter-spacing: 0.05em;
+        }
+        
+        .register-card {
+            background: rgba(17, 26, 47, 0.8);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 40px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
+        }
+        
+        .register-card h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-align: center;
+            letter-spacing: 0.05em;
+        }
+        
+        .register-card .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 30px;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+        
+        .input-wrapper {
+            position: relative;
+        }
+        
+        .input-wrapper .material-icons {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 20px;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 16px 16px 16px 50px;
+            background: rgba(148, 163, 184, 0.08);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            color: var(--text-light);
+            font-family: inherit;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            background: rgba(148, 163, 184, 0.12);
+            box-shadow: 0 0 0 3px rgba(25, 184, 255, 0.15);
+        }
+        
+        .form-group input::placeholder {
+            color: var(--text-muted);
+        }
+        
+        .form-group input.error {
+            border-color: var(--red);
+        }
+        
+        .form-group input.valid {
+            border-color: var(--green);
+        }
+        
+        .input-hint {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .input-hint .material-icons {
+            font-size: 14px;
+        }
+        
+        .input-hint.error {
+            color: var(--red);
+        }
+        
+        .input-hint.success {
+            color: var(--green);
+        }
+        
+        .password-strength {
+            margin-top: 10px;
+        }
+        
+        .strength-bar {
+            height: 4px;
+            background: rgba(148, 163, 184, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 6px;
+        }
+        
+        .strength-fill {
+            height: 100%;
+            width: 0;
+            border-radius: 2px;
+            transition: all 0.3s ease;
+        }
+        
+        .strength-fill.weak { width: 33%; background: var(--red); }
+        .strength-fill.medium { width: 66%; background: #fbbf24; }
+        .strength-fill.strong { width: 100%; background: var(--green); }
+        
+        .strength-text {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .terms-checkbox {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin: 24px 0;
+        }
+        
+        .terms-checkbox input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin-top: 2px;
+            accent-color: var(--primary-color);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        .terms-checkbox label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            line-height: 1.5;
+        }
+        
+        .terms-checkbox a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        .terms-checkbox a:hover {
+            color: var(--accent-teal);
+        }
+        
+        .btn-register {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, var(--green), #1fa76d);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .btn-register:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(45, 206, 137, 0.4);
+        }
+        
+        .btn-register:active {
+            transform: translateY(0);
+        }
+        
+        .btn-register:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .btn-register .material-icons {
+            font-size: 20px;
+        }
+        
+        .divider {
+            display: flex;
+            align-items: center;
+            margin: 30px 0;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            letter-spacing: 0.1em;
+        }
+        
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-color);
+        }
+        
+        .divider span {
+            padding: 0 20px;
+        }
+        
+        .login-link {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        
+        .login-link a {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s ease;
+        }
+        
+        .login-link a:hover {
+            color: var(--accent-teal);
+        }
+        
+        /* Flash Messages */
+        .flash-messages {
+            margin-bottom: 24px;
+        }
+        
+        .flash-message {
+            padding: 14px 18px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .flash-message.success {
+            background: rgba(45, 206, 137, 0.15);
+            border: 1px solid rgba(45, 206, 137, 0.3);
+            color: var(--green);
+        }
+        
+        .flash-message.error,
+        .flash-message.danger {
+            background: rgba(245, 54, 92, 0.15);
+            border: 1px solid rgba(245, 54, 92, 0.3);
+            color: var(--red);
+        }
+        
+        .flash-message .material-icons {
+            font-size: 20px;
+        }
+        
+        /* Loading state */
+        .btn-register.loading {
+            pointer-events: none;
+        }
+        
+        .btn-register .spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        .btn-register.loading .btn-text,
+        .btn-register.loading .btn-icon {
+            display: none;
+        }
+        
+        .btn-register.loading .spinner {
+            display: block;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Responsive */
+        @media (max-width: 520px) {
+            .register-card {
+                padding: 30px 24px;
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .logo-section h1 {
+                font-size: 1.6rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <div class="logo-section">
+            <img src="{{ url_for('static', filename='img/just_trades_logo.png') }}" alt="Just.Trades. logo">
+            <h1>JUST.TRADES.</h1>
+            <p>Automated Trading Platform</p>
+        </div>
+        
+        <div class="register-card">
+            <h2>Create Account</h2>
+            <p class="subtitle">Start your automated trading journey</p>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="flash-messages">
+                        {% for category, message in messages %}
+                            <div class="flash-message {{ category }}">
+                                <span class="material-icons">
+                                    {% if category == 'success' %}check_circle
+                                    {% elif category == 'error' or category == 'danger' %}error
+                                    {% else %}info{% endif %}
+                                </span>
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+            
+            <form method="POST" action="{{ url_for('register') }}" id="registerForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <div class="input-wrapper">
+                            <span class="material-icons">person</span>
+                            <input type="text" id="username" name="username" placeholder="Choose a username" required minlength="3" maxlength="50" pattern="[a-zA-Z0-9_-]+">
+                        </div>
+                        <div class="input-hint" id="usernameHint">
+                            <span class="material-icons">info</span>
+                            3-50 characters, letters, numbers, _ or -
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="display_name">Display Name</label>
+                        <div class="input-wrapper">
+                            <span class="material-icons">badge</span>
+                            <input type="text" id="display_name" name="display_name" placeholder="Your display name">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <div class="input-wrapper">
+                        <span class="material-icons">email</span>
+                        <input type="email" id="email" name="email" placeholder="your@email.com" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <div class="input-wrapper">
+                            <span class="material-icons">lock</span>
+                            <input type="password" id="password" name="password" placeholder="Create password" required minlength="6">
+                        </div>
+                        <div class="password-strength" id="passwordStrength">
+                            <div class="strength-bar">
+                                <div class="strength-fill" id="strengthFill"></div>
+                            </div>
+                            <span class="strength-text" id="strengthText">Enter a password</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirm_password">Confirm Password</label>
+                        <div class="input-wrapper">
+                            <span class="material-icons">lock_outline</span>
+                            <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm password" required>
+                        </div>
+                        <div class="input-hint" id="confirmHint"></div>
+                    </div>
+                </div>
+                
+                <div class="terms-checkbox">
+                    <input type="checkbox" id="terms" name="terms" required>
+                    <label for="terms">
+                        I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>. 
+                        I understand that trading involves significant risk.
+                    </label>
+                </div>
+                
+                <button type="submit" class="btn-register" id="registerBtn">
+                    <span class="btn-text">Create Account</span>
+                    <span class="material-icons btn-icon">person_add</span>
+                    <div class="spinner"></div>
+                </button>
+            </form>
+            
+            <div class="divider">
+                <span>ALREADY HAVE AN ACCOUNT?</span>
+            </div>
+            
+            <p class="login-link">
+                <a href="{{ url_for('login') }}">Sign in to your account</a>
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // Password strength checker
+        const password = document.getElementById('password');
+        const strengthFill = document.getElementById('strengthFill');
+        const strengthText = document.getElementById('strengthText');
+        
+        password.addEventListener('input', function() {
+            const value = this.value;
+            let strength = 0;
+            let text = '';
+            
+            if (value.length >= 6) strength++;
+            if (value.length >= 10) strength++;
+            if (/[A-Z]/.test(value) && /[a-z]/.test(value)) strength++;
+            if (/[0-9]/.test(value)) strength++;
+            if (/[^A-Za-z0-9]/.test(value)) strength++;
+            
+            strengthFill.className = 'strength-fill';
+            
+            if (value.length === 0) {
+                text = 'Enter a password';
+            } else if (strength <= 2) {
+                strengthFill.classList.add('weak');
+                text = 'Weak password';
+            } else if (strength <= 3) {
+                strengthFill.classList.add('medium');
+                text = 'Medium strength';
+            } else {
+                strengthFill.classList.add('strong');
+                text = 'Strong password';
+            }
+            
+            strengthText.textContent = text;
+        });
+        
+        // Password match checker
+        const confirmPassword = document.getElementById('confirm_password');
+        const confirmHint = document.getElementById('confirmHint');
+        
+        function checkPasswordMatch() {
+            if (confirmPassword.value === '') {
+                confirmHint.innerHTML = '';
+                confirmPassword.classList.remove('valid', 'error');
+                return;
+            }
+            
+            if (password.value === confirmPassword.value) {
+                confirmHint.innerHTML = '<span class="material-icons">check_circle</span> Passwords match';
+                confirmHint.className = 'input-hint success';
+                confirmPassword.classList.add('valid');
+                confirmPassword.classList.remove('error');
+            } else {
+                confirmHint.innerHTML = '<span class="material-icons">error</span> Passwords do not match';
+                confirmHint.className = 'input-hint error';
+                confirmPassword.classList.add('error');
+                confirmPassword.classList.remove('valid');
+            }
+        }
+        
+        confirmPassword.addEventListener('input', checkPasswordMatch);
+        password.addEventListener('input', checkPasswordMatch);
+        
+        // Form validation
+        document.getElementById('registerForm').addEventListener('submit', function(e) {
+            if (password.value !== confirmPassword.value) {
+                e.preventDefault();
+                alert('Passwords do not match!');
+                return;
+            }
+            
+            const btn = document.getElementById('registerBtn');
+            btn.classList.add('loading');
+        });
+        
+        // Username validation
+        const username = document.getElementById('username');
+        const usernameHint = document.getElementById('usernameHint');
+        
+        username.addEventListener('input', function() {
+            const value = this.value;
+            const valid = /^[a-zA-Z0-9_-]+$/.test(value) && value.length >= 3;
+            
+            if (value.length === 0) {
+                usernameHint.innerHTML = '<span class="material-icons">info</span> 3-50 characters, letters, numbers, _ or -';
+                usernameHint.className = 'input-hint';
+                username.classList.remove('valid', 'error');
+            } else if (valid) {
+                usernameHint.innerHTML = '<span class="material-icons">check_circle</span> Username available';
+                usernameHint.className = 'input-hint success';
+                username.classList.add('valid');
+                username.classList.remove('error');
+            } else {
+                usernameHint.innerHTML = '<span class="material-icons">error</span> Invalid username format';
+                usernameHint.className = 'input-hint error';
+                username.classList.add('error');
+                username.classList.remove('valid');
+            }
+        });
+        
+        // Reset loading state on page show
+        window.addEventListener('pageshow', function() {
+            document.getElementById('registerBtn').classList.remove('loading');
+        });
+    </script>
+</body>
+</html>
+
