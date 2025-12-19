@@ -487,33 +487,85 @@ except ImportError:
 # Database Helpers - PostgreSQL + SQLite Support
 # ============================================================================
 
+class PostgresCursorWrapper:
+    """Wrapper to auto-convert SQLite ? to PostgreSQL %s."""
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self._keys = None
+    
+    def execute(self, sql, params=None):
+        # Convert SQLite ? placeholders to PostgreSQL %s
+        # Also convert SQLite boolean 1/0 to PostgreSQL true/false
+        sql = sql.replace('?', '%s')
+        sql = sql.replace('enabled = 1', 'enabled = true')
+        sql = sql.replace('enabled = 0', 'enabled = false')
+        sql = sql.replace('recording_enabled = 1', 'recording_enabled = true')
+        sql = sql.replace('recording_enabled = 0', 'recording_enabled = false')
+        if params:
+            self._cursor.execute(sql, params)
+        else:
+            self._cursor.execute(sql)
+        if self._cursor.description:
+            self._keys = [desc[0] for desc in self._cursor.description]
+        return self
+    
+    def fetchone(self):
+        return self._cursor.fetchone()
+    
+    def fetchall(self):
+        return self._cursor.fetchall()
+    
+    def fetchmany(self, size=None):
+        return self._cursor.fetchmany(size) if size else self._cursor.fetchmany()
+    
+    @property
+    def lastrowid(self):
+        return None
+    
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+    
+    @property
+    def description(self):
+        return self._cursor.description
+    
+    def close(self):
+        self._cursor.close()
+
+
 class PostgresConnectionWrapper:
     """Wrapper to make PostgreSQL connection behave like SQLite."""
     def __init__(self, conn, pool):
         self._conn = conn
         self._pool = pool
-    
+
     def cursor(self):
-        return self._conn.cursor()
-    
+        # Return wrapped cursor that auto-converts ? to %s
+        return PostgresCursorWrapper(self._conn.cursor())
+
     def execute(self, sql, params=None):
         sql = sql.replace('?', '%s')
         cursor = self._conn.cursor()
         cursor.execute(sql, params or ())
-        return cursor
-    
+        return PostgresCursorWrapper(cursor)
+
     def commit(self):
         self._conn.commit()
-    
+
     def rollback(self):
         self._conn.rollback()
-    
+
     def close(self):
+        try:
+            self._conn.rollback()  # Clear any pending transaction
+        except:
+            pass
         self._pool.putconn(self._conn)
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, *args):
         self.close()
 
