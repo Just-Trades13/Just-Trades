@@ -15145,23 +15145,38 @@ def proactive_token_refresh():
     while True:
         try:
             conn = get_db_connection()
-            conn.row_factory = sqlite3.Row
+            is_postgres = is_using_postgres()
+            if not is_postgres:
+                conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
             # Find accounts with tokens that expire within 30 minutes
             # Also refresh tokens where we don't know the expiration (NULL)
             # More aggressive refresh keeps connections alive INDEFINITELY
-            cursor.execute('''
-                SELECT id, name, tradovate_token, tradovate_refresh_token, 
-                       token_expires_at, environment
-                FROM accounts 
-                WHERE tradovate_token IS NOT NULL 
-                  AND tradovate_refresh_token IS NOT NULL
-                  AND (
-                      token_expires_at IS NULL 
-                      OR token_expires_at < datetime('now', '+30 minutes')
-                  )
-            ''')
+            if is_postgres:
+                cursor.execute('''
+                    SELECT id, name, tradovate_token, tradovate_refresh_token, 
+                           token_expires_at, environment
+                    FROM accounts 
+                    WHERE tradovate_token IS NOT NULL 
+                      AND tradovate_refresh_token IS NOT NULL
+                      AND (
+                          token_expires_at IS NULL 
+                          OR token_expires_at < NOW() + INTERVAL '30 minutes'
+                      )
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT id, name, tradovate_token, tradovate_refresh_token, 
+                           token_expires_at, environment
+                    FROM accounts 
+                    WHERE tradovate_token IS NOT NULL 
+                      AND tradovate_refresh_token IS NOT NULL
+                      AND (
+                          token_expires_at IS NULL 
+                          OR token_expires_at < datetime('now', '+30 minutes')
+                      )
+                ''')
             accounts_to_refresh = cursor.fetchall()
             conn.close()
             
