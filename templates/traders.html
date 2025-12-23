@@ -315,46 +315,48 @@
                     </div>
                 </label>
                 <div class="time-filters">
-                    <div class="time-block" style="{{ 'opacity: 0.5;' if not trader.time_filter_1_enabled else '' }}">
+                    <div class="time-block" id="time_filter_1_block">
                         <div class="toggle-row" style="margin-bottom: 0.75rem;">
                             <h4 style="margin: 0;">Time Filter #1</h4>
-                            <span class="status-badge {{ 'status-live' if trader.time_filter_1_enabled else 'status-paused' }}" style="font-size: 0.65rem;">
-                                {{ 'ENABLED' if trader.time_filter_1_enabled else 'DISABLED' }}
-                            </span>
+                            <label class="switch">
+                                <input type="checkbox" id="time_filter_1_enabled" {{ 'checked' if trader.time_filter_1_enabled else '' }}>
+                                <span class="slider"></span>
+                            </label>
                         </div>
-                        <div class="time-grid">
+                        <div class="time-grid" id="time_filter_1_fields">
                             <label class="form-field">
                                 <span>Start #1</span>
-                                <input type="text" id="timeFilter1Start" value="{{ trader.time_filter_1_start or 'Not set' }}" placeholder="Not set" readonly style="opacity: 0.7;">
+                                <input type="text" id="timeFilter1Start" value="{{ trader.time_filter_1_start or '' }}" placeholder="e.g. 8:45 AM">
                             </label>
                             <label class="form-field">
                                 <span>Stop #1</span>
-                                <input type="text" id="timeFilter1Stop" value="{{ trader.time_filter_1_stop or 'Not set' }}" placeholder="Not set" readonly style="opacity: 0.7;">
+                                <input type="text" id="timeFilter1Stop" value="{{ trader.time_filter_1_stop or '' }}" placeholder="e.g. 3:00 PM">
                             </label>
                         </div>
                     </div>
-                    <div class="time-block" style="{{ 'opacity: 0.5;' if not trader.time_filter_2_enabled else '' }}">
+                    <div class="time-block" id="time_filter_2_block">
                         <div class="toggle-row" style="margin-bottom: 0.75rem;">
                             <h4 style="margin: 0;">Time Filter #2</h4>
-                            <span class="status-badge {{ 'status-live' if trader.time_filter_2_enabled else 'status-paused' }}" style="font-size: 0.65rem;">
-                                {{ 'ENABLED' if trader.time_filter_2_enabled else 'DISABLED' }}
-                            </span>
+                            <label class="switch">
+                                <input type="checkbox" id="time_filter_2_enabled" {{ 'checked' if trader.time_filter_2_enabled else '' }}>
+                                <span class="slider"></span>
+                            </label>
                         </div>
-                        <div class="time-grid">
+                        <div class="time-grid" id="time_filter_2_fields">
                             <label class="form-field">
                                 <span>Start #2</span>
-                                <input type="text" id="timeFilter2Start" value="{{ trader.time_filter_2_start or 'Not set' }}" placeholder="Not set" readonly style="opacity: 0.7;">
+                                <input type="text" id="timeFilter2Start" value="{{ trader.time_filter_2_start or '' }}" placeholder="e.g. 6:00 PM">
                             </label>
                             <label class="form-field">
                                 <span>Stop #2</span>
-                                <input type="text" id="timeFilter2Stop" value="{{ trader.time_filter_2_stop or 'Not set' }}" placeholder="Not set" readonly style="opacity: 0.7;">
+                                <input type="text" id="timeFilter2Stop" value="{{ trader.time_filter_2_stop or '' }}" placeholder="e.g. 11:00 PM">
                             </label>
                         </div>
                     </div>
                 </div>
                 <small style="color: #64748b; margin-top: 0.5rem; display: block;">
                     <span class="material-icons" style="font-size: 0.9rem; vertical-align: middle;">info</span>
-                    Time filters are inherited from the recorder. <a href="/recorders/{{ trader.recorder_id }}" style="color: #60a5fa;">Edit recorder</a> to change.
+                    Set custom time filters for this trader. Leave empty to use no time filter.
                 </small>
             </div>
         </section>
@@ -1477,6 +1479,14 @@
                         const avgDownPoint = parseFloat(document.getElementById('avgDownPoint')?.value) || 10;
                         const avgDownUnits = document.getElementById('avgDownUnits')?.value || 'Ticks';
                         
+                        // Get time filter settings
+                        const timeFilter1Enabled = document.getElementById('time_filter_1_enabled')?.checked ? true : false;
+                        const timeFilter1Start = document.getElementById('timeFilter1Start')?.value || '';
+                        const timeFilter1Stop = document.getElementById('timeFilter1Stop')?.value || '';
+                        const timeFilter2Enabled = document.getElementById('time_filter_2_enabled')?.checked ? true : false;
+                        const timeFilter2Start = document.getElementById('timeFilter2Start')?.value || '';
+                        const timeFilter2Stop = document.getElementById('timeFilter2Stop')?.value || '';
+                        
                         // Build TP targets array
                         const tpTargets = JSON.stringify([{ value: tpValue, trim: tpTrim }]);
                         
@@ -1487,7 +1497,9 @@
                             tp_targets: tpTargets,
                             sl_enabled: slEnabled,
                             sl_amount: slAmount,
-                            avg_down_enabled: avgDownEnabled
+                            avg_down_enabled: avgDownEnabled,
+                            time_filter_1_enabled: timeFilter1Enabled,
+                            time_filter_2_enabled: timeFilter2Enabled
                         });
                         
                         const response = await fetch(`/api/traders/${traderId}`, {
@@ -1509,7 +1521,14 @@
                                 avg_down_enabled: avgDownEnabled,
                                 avg_down_amount: avgDownAmount,
                                 avg_down_point: avgDownPoint,
-                                avg_down_units: avgDownUnits
+                                avg_down_units: avgDownUnits,
+                                // Time filter settings
+                                time_filter_1_enabled: timeFilter1Enabled,
+                                time_filter_1_start: timeFilter1Start,
+                                time_filter_1_stop: timeFilter1Stop,
+                                time_filter_2_enabled: timeFilter2Enabled,
+                                time_filter_2_start: timeFilter2Start,
+                                time_filter_2_stop: timeFilter2Stop
                             })
                         });
                         

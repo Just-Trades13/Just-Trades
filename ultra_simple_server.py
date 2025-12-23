@@ -478,6 +478,12 @@ def _init_sqlite_tables(conn):
             multiplier REAL DEFAULT 1.0,
             risk_percent REAL,
             name TEXT,
+            time_filter_1_enabled INTEGER DEFAULT 0,
+            time_filter_1_start TEXT DEFAULT '',
+            time_filter_1_stop TEXT DEFAULT '',
+            time_filter_2_enabled INTEGER DEFAULT 0,
+            time_filter_2_start TEXT DEFAULT '',
+            time_filter_2_stop TEXT DEFAULT '',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -889,6 +895,12 @@ def _init_postgres_tables():
             multiplier REAL DEFAULT 1.0,
             risk_percent REAL,
             name VARCHAR(255),
+            time_filter_1_enabled BOOLEAN DEFAULT FALSE,
+            time_filter_1_start TEXT DEFAULT '',
+            time_filter_1_stop TEXT DEFAULT '',
+            time_filter_2_enabled BOOLEAN DEFAULT FALSE,
+            time_filter_2_start TEXT DEFAULT '',
+            time_filter_2_stop TEXT DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -2250,6 +2262,58 @@ def init_db():
         cursor.execute('ALTER TABLE traders ADD COLUMN max_daily_loss REAL DEFAULT 500')
     except:
         pass
+    
+    # Add time filter columns to traders table (Dec 2025)
+    if is_postgres:
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_enabled BOOLEAN DEFAULT FALSE")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_start TEXT DEFAULT ''")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_stop TEXT DEFAULT ''")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_enabled BOOLEAN DEFAULT FALSE")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_start TEXT DEFAULT ''")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_stop TEXT DEFAULT ''")
+        except:
+            pass
+    else:
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_enabled INTEGER DEFAULT 0")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_start TEXT DEFAULT ''")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_stop TEXT DEFAULT ''")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_enabled INTEGER DEFAULT 0")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_start TEXT DEFAULT ''")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_stop TEXT DEFAULT ''")
+        except:
+            pass
     
     # Add shared strategy columns to existing strategies table (for existing databases)
     try:
@@ -6405,6 +6469,31 @@ def api_update_trader(trader_id):
             updates.append(f'enabled_accounts = {placeholder}')
             params.append(enabled_accounts)
             logger.info(f"  - Will update enabled_accounts field")
+        
+        # Update time filter settings if provided
+        if 'time_filter_1_enabled' in data:
+            updates.append(f'time_filter_1_enabled = {placeholder}')
+            params.append(bool(data['time_filter_1_enabled']) if is_postgres else (1 if data['time_filter_1_enabled'] else 0))
+        
+        if 'time_filter_1_start' in data:
+            updates.append(f'time_filter_1_start = {placeholder}')
+            params.append(data['time_filter_1_start'] or '')
+        
+        if 'time_filter_1_stop' in data:
+            updates.append(f'time_filter_1_stop = {placeholder}')
+            params.append(data['time_filter_1_stop'] or '')
+        
+        if 'time_filter_2_enabled' in data:
+            updates.append(f'time_filter_2_enabled = {placeholder}')
+            params.append(bool(data['time_filter_2_enabled']) if is_postgres else (1 if data['time_filter_2_enabled'] else 0))
+        
+        if 'time_filter_2_start' in data:
+            updates.append(f'time_filter_2_start = {placeholder}')
+            params.append(data['time_filter_2_start'] or '')
+        
+        if 'time_filter_2_stop' in data:
+            updates.append(f'time_filter_2_stop = {placeholder}')
+            params.append(data['time_filter_2_stop'] or '')
         
         # Execute update if there are fields to update (with retry for db locks)
         if updates:
