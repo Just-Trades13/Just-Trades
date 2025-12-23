@@ -2262,14 +2262,25 @@ def init_db():
         pass  # Column already exists
     
     # Add time filter enabled columns to recorders table (Dec 2025)
-    try:
-        cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_1_enabled INTEGER DEFAULT 0')
-    except:
-        pass  # Column already exists
-    try:
-        cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_2_enabled INTEGER DEFAULT 0')
-    except:
-        pass  # Column already exists
+    # Use BOOLEAN for PostgreSQL, INTEGER for SQLite
+    if is_postgres:
+        try:
+            cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_1_enabled BOOLEAN DEFAULT FALSE')
+        except:
+            pass  # Column already exists
+        try:
+            cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_2_enabled BOOLEAN DEFAULT FALSE')
+        except:
+            pass  # Column already exists
+    else:
+        try:
+            cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_1_enabled INTEGER DEFAULT 0')
+        except:
+            pass  # Column already exists
+        try:
+            cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_2_enabled INTEGER DEFAULT 0')
+        except:
+            pass  # Column already exists
     
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_traders_recorder 
