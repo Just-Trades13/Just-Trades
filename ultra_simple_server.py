@@ -6451,7 +6451,7 @@ def api_update_trader(trader_id):
             
             if 'sl_enabled' in data:
                 recorder_updates.append(f'sl_enabled = {placeholder}')
-                recorder_params.append(data['sl_enabled'] if is_postgres else (1 if data['sl_enabled'] else 0))
+                recorder_params.append(bool(data['sl_enabled']) if is_postgres else (1 if data['sl_enabled'] else 0))
             
             if 'sl_amount' in data:
                 recorder_updates.append(f'sl_amount = {placeholder}')
@@ -6467,7 +6467,7 @@ def api_update_trader(trader_id):
             
             if 'avg_down_enabled' in data:
                 recorder_updates.append(f'avg_down_enabled = {placeholder}')
-                recorder_params.append(data['avg_down_enabled'] if is_postgres else (1 if data['avg_down_enabled'] else 0))
+                recorder_params.append(bool(data['avg_down_enabled']) if is_postgres else (1 if data['avg_down_enabled'] else 0))
             
             if 'avg_down_amount' in data:
                 recorder_updates.append(f'avg_down_amount = {placeholder}')
