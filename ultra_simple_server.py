@@ -11334,8 +11334,12 @@ def api_control_center_toggle_all():
         
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
         
-        cursor.execute('UPDATE recorders SET recording_enabled = ?', (1 if enabled else 0,))
+        # PostgreSQL needs boolean True/False, SQLite needs 1/0
+        enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
+        cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder}', (enabled_value,))
         updated_count = cursor.rowcount
         
         conn.commit()
