@@ -7130,7 +7130,53 @@ def process_webhook_directly(webhook_token):
             logger.info(f"📊 [{recorder_name}] Quantity capped: {quantity} → {max_contracts} (max_contracts_per_trade)")
             quantity = max_contracts
         
-        # --- FILTER 7: Signal Delay (Nth Signal) ---
+        # --- FILTER 7: Option Premium Filter (for options strategies) ---
+        option_premium_filter = float(recorder.get('option_premium_filter', 0) or 0)
+        if option_premium_filter > 0:
+            # Check if signal includes premium data
+            signal_premium = data.get('premium', 0) or data.get('option_premium', 0) or 0
+            try:
+                signal_premium = float(signal_premium)
+            except:
+                signal_premium = 0
+            
+            if signal_premium > 0 and signal_premium < option_premium_filter:
+                logger.warning(f"🚫 [{recorder_name}] Option premium filter BLOCKED: ${signal_premium} < ${option_premium_filter}")
+                conn.close()
+                return jsonify({'success': False, 'blocked': True, 'reason': f'Premium ${signal_premium} below minimum ${option_premium_filter}'}), 200
+            elif signal_premium >= option_premium_filter:
+                logger.info(f"✅ Option premium filter passed: ${signal_premium} >= ${option_premium_filter}")
+        
+        # --- FILTER 8: Auto Flat After Cutoff ---
+        auto_flat_after_cutoff = recorder.get('auto_flat_after_cutoff', False)
+        if auto_flat_after_cutoff:
+            # Check if we're past the last time filter stop time and should flatten
+            cutoff_time = None
+            if has_time_filter_2 and time_filter_2_stop:
+                cutoff_time = parse_time(time_filter_2_stop)
+            elif has_time_filter_1 and time_filter_1_stop:
+                cutoff_time = parse_time(time_filter_1_stop)
+            
+            if cutoff_time:
+                current_time_obj = now.time()
+                # If current time is past cutoff, check for open positions
+                if current_time_obj > cutoff_time:
+                    # Check for any open positions for this recorder
+                    cursor.execute(f'''
+                        SELECT id, side, quantity, ticker FROM recorded_trades 
+                        WHERE recorder_id = {placeholder} AND status = 'open'
+                    ''', (recorder_id,))
+                    open_positions = cursor.fetchall()
+                    
+                    if open_positions:
+                        logger.info(f"⏰ [{recorder_name}] Auto-flat triggered: Past cutoff time {time_filter_1_stop or time_filter_2_stop}")
+                        # Don't block the signal if it's a close/flatten - allow it through
+                        if action.upper() not in ['CLOSE', 'FLATTEN', 'EXIT', 'TP_HIT', 'SL_HIT']:
+                            logger.warning(f"🚫 [{recorder_name}] Auto-flat BLOCKING new entries after cutoff - only exits allowed")
+                            conn.close()
+                            return jsonify({'success': False, 'blocked': True, 'reason': f'Past cutoff time - only exits allowed'}), 200
+        
+        # --- FILTER 9: Signal Delay (Nth Signal) ---
         add_delay = int(recorder.get('add_delay', 1) or 1)
         if add_delay > 1:
             # Count total signals for this recorder
@@ -7491,7 +7537,27 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         current_price = float(price) if price else 0
         
         # Get position size from recorder settings
-        quantity = int(position_size) if position_size else recorder.get('initial_position_size', 1)
+        # Use add_position_size when adding to existing position (DCA), otherwise use initial_position_size
+        initial_position_size = int(recorder.get('initial_position_size', 1) or 1)
+        add_position_size = int(recorder.get('add_position_size', 0) or 0)
+        
+        # Check if there's an existing open position to determine if this is DCA
+        is_dca_add = False
+        if open_trade:
+            # If same direction as existing position, this is a DCA add
+            existing_side = open_trade.get('side', '')
+            if (existing_side == 'LONG' and side == 'LONG') or (existing_side == 'SHORT' and side == 'SHORT'):
+                is_dca_add = True
+                logger.info(f"📈 [{recorder_name}] DCA detected: Adding to existing {existing_side} position")
+        
+        # Determine quantity
+        if position_size:
+            quantity = int(position_size)
+        elif is_dca_add and add_position_size > 0:
+            quantity = add_position_size
+            logger.info(f"📈 [{recorder_name}] Using add_position_size: {quantity} contracts")
+        else:
+            quantity = initial_position_size
         
         # Get TP/SL settings from recorder
         sl_enabled = recorder.get('sl_enabled', 0)
@@ -7525,6 +7591,58 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
             # Convert to dict properly
             columns = [desc[0] for desc in cursor.description]
             open_trade = dict(zip(columns, open_trade_row))
+        
+        # ============================================================
+        # 📉 AVERAGING DOWN CHECK
+        # ============================================================
+        # If enabled, check if price has moved against position and we should add
+        avg_down_enabled = recorder.get('avg_down_enabled', False)
+        avg_down_amount = int(recorder.get('avg_down_amount', 0) or 0)
+        avg_down_point = float(recorder.get('avg_down_point', 0) or 0)
+        avg_down_units = recorder.get('avg_down_units', 'Ticks')
+        
+        avg_down_triggered = False
+        if avg_down_enabled and avg_down_amount > 0 and avg_down_point > 0 and open_trade:
+            entry_price = float(open_trade.get('entry_price', 0) or 0)
+            trade_side = open_trade.get('side', '')
+            
+            if entry_price > 0 and current_price > 0:
+                # Convert avg_down_point to price difference based on units
+                if avg_down_units == 'Points':
+                    # Points = dollar value, convert using tick value
+                    price_threshold = avg_down_point / tick_value * tick_size if tick_value else avg_down_point
+                elif avg_down_units == 'Percent':
+                    # Percent of entry price
+                    price_threshold = entry_price * (avg_down_point / 100)
+                else:
+                    # Ticks (default)
+                    price_threshold = avg_down_point * tick_size
+                
+                # Check if price moved against position by threshold
+                if trade_side == 'LONG':
+                    # For LONG: price dropped below entry by threshold
+                    price_diff = entry_price - current_price
+                    if price_diff >= price_threshold:
+                        avg_down_triggered = True
+                        logger.info(f"📉 [{recorder_name}] AVG DOWN triggered: LONG entry ${entry_price:.2f}, current ${current_price:.2f}, diff {price_diff:.2f} >= threshold {price_threshold:.2f}")
+                elif trade_side == 'SHORT':
+                    # For SHORT: price rose above entry by threshold
+                    price_diff = current_price - entry_price
+                    if price_diff >= price_threshold:
+                        avg_down_triggered = True
+                        logger.info(f"📉 [{recorder_name}] AVG DOWN triggered: SHORT entry ${entry_price:.2f}, current ${current_price:.2f}, diff {price_diff:.2f} >= threshold {price_threshold:.2f}")
+                
+                if avg_down_triggered:
+                    # Use avg_down_amount as the quantity for this trade
+                    quantity = avg_down_amount
+                    # Force the signal to be in the same direction as existing position
+                    if trade_side == 'LONG':
+                        side = 'LONG'
+                        action = 'BUY'
+                    else:
+                        side = 'SHORT'
+                        action = 'SELL'
+                    logger.info(f"📉 [{recorder_name}] AVG DOWN: Adding {quantity} contracts to {trade_side} position")
         
         def calculate_tp_sl_prices(entry_price, side, tp_ticks, sl_ticks, tick_size):
             """Calculate TP and SL price levels based on entry and tick settings"""
