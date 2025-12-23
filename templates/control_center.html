@@ -8,40 +8,37 @@
             <header>
                 <h2>Live Trading Panel</h2>
                 <div class="panel-actions">
-                    <button class="btn btn-danger" onclick="closeAllPositions()">Close All</button>
-                    <button class="btn btn-warning" onclick="clearAllTrades()">Clear All</button>
-                    <button class="btn btn-outline" onclick="toggleAllStrategies()">Disable All Strats</button>
+                    <button class="btn btn-danger" onclick="closeAllPositions()">
+                        <span class="material-icons">close</span> Close All
+                    </button>
+                    <button class="btn btn-warning" onclick="clearAllTrades()">
+                        <span class="material-icons">delete_sweep</span> Clear All
+                    </button>
+                    <button class="btn btn-outline" id="toggleAllBtn" onclick="toggleAllStrategies()">
+                        <span class="material-icons">pause_circle</span> Disable All
+                    </button>
                 </div>
             </header>
-            <table>
-                <thead>
-                    <tr>
-                        <th>STRATEGY</th>
-                        <th>ENABLES</th>
-                        <th>PROFIT / LOSS</th>
-                        <th>ACTIONS</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in live_rows %}
-                    <tr>
-                        <td><a href="/recorders/{{ row.id }}">{{ row.name }}</a></td>
-                        <td class="toggle-cell">
-                            <span>ALL / ALL</span>
-                            <label class="switch">
-                                <input type="checkbox" {% if row.enabled %}checked{% endif %}>
-                                <span class="slider"></span>
-                            </label>
-                        </td>
-                        <td class="pl-cell {% if row.pnl >= 0 %}positive{% else %}negative{% endif %}"> {{ row.pnl | round(2) }} </td>
-                        <td class="action-cell">
-                            <button class="btn btn-outline btn-small">Close</button>
-                            <button class="btn btn-outline btn-small">Clear</button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>STRATEGY</th>
+                            <th>STATUS</th>
+                            <th>PROFIT / LOSS</th>
+                            <th>ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tradersTableBody">
+                        <!-- Will be populated by JavaScript with traders only -->
+                        <tr>
+                            <td colspan="4" class="loading-state">
+                                <span class="material-icons spin">sync</span> Loading traders...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </article>
 
         <article class="autotrader-logs">
@@ -70,46 +67,147 @@
     .control-center { display: grid; gap: 1.5rem; }
 
     .live-panels { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; }
-    .live-trading { background: rgba(7,12,23,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); overflow: hidden; display: grid; }
-    .live-trading header { background: rgba(15,23,42,0.75); padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .live-trading { background: rgba(7,12,23,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); overflow: hidden; display: flex; flex-direction: column; }
+    .live-trading header { background: rgba(15,23,42,0.75); padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
     .live-trading h2 { margin: 0; font-size: 1.2rem; }
-    .panel-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
-    .btn-danger { background: rgba(239,68,68,0.85); color: #0b1120; }
-    .btn-warning { background: rgba(234,179,8,0.85); color: #0b1120; }
-    .btn-outline { background: rgba(15,23,42,0.6); color: #e2e8f0; border: 1px solid rgba(148,163,184,0.2); }
-    table { width: 100%; border-collapse: collapse; }
-    thead th { text-align: left; padding: 0.85rem 1.25rem; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: #94a3b8; border-bottom: 1px solid rgba(148,163,184,0.12); }
-    tbody td { padding: 1rem 1.25rem; border-bottom: 1px solid rgba(148,163,184,0.08); color: #e2e8f0; }
+    
+    /* Improved Panel Action Buttons */
+    .panel-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .panel-actions .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.5rem 1rem;
+        border-radius: 10px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s ease;
+    }
+    .panel-actions .btn .material-icons { font-size: 1rem; }
+    .btn-danger { 
+        background: linear-gradient(135deg, rgba(239,68,68,0.9), rgba(220,38,38,0.9)); 
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(239,68,68,0.3);
+    }
+    .btn-danger:hover { 
+        background: linear-gradient(135deg, rgba(248,113,113,1), rgba(239,68,68,1));
+        transform: translateY(-1px);
+    }
+    .btn-warning { 
+        background: linear-gradient(135deg, rgba(234,179,8,0.9), rgba(202,138,4,0.9)); 
+        color: #0b1120;
+        box-shadow: 0 2px 8px rgba(234,179,8,0.3);
+    }
+    .btn-warning:hover { 
+        background: linear-gradient(135deg, rgba(250,204,21,1), rgba(234,179,8,1));
+        transform: translateY(-1px);
+    }
+    .btn-outline { 
+        background: rgba(15,23,42,0.6); 
+        color: #e2e8f0; 
+        border: 1px solid rgba(148,163,184,0.3);
+    }
+    .btn-outline:hover {
+        background: rgba(59,130,246,0.15);
+        border-color: rgba(59,130,246,0.5);
+        color: #93c5fd;
+    }
+    
+    /* Table Container */
+    .table-container { flex: 1; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 500px; }
+    thead th { text-align: left; padding: 0.85rem 1.25rem; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: #94a3b8; border-bottom: 1px solid rgba(148,163,184,0.12); background: rgba(15,23,42,0.4); }
+    tbody td { padding: 1rem 1.25rem; border-bottom: 1px solid rgba(148,163,184,0.08); color: #e2e8f0; vertical-align: middle; }
     tbody tr:last-child td { border-bottom: none; }
-    .toggle-cell { display: flex; align-items: center; gap: 0.75rem; }
-    .switch { position: relative; display: inline-block; width: 48px; height: 24px; }
+    tbody tr:hover { background: rgba(59,130,246,0.05); }
+    
+    .loading-state, .empty-state {
+        text-align: center;
+        padding: 2rem !important;
+        color: #64748b;
+    }
+    .loading-state .material-icons { margin-right: 0.5rem; vertical-align: middle; }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    
+    /* Strategy cell */
+    .strategy-cell { display: flex; flex-direction: column; gap: 0.25rem; }
+    .strategy-name { color: #60a5fa; font-weight: 600; text-decoration: none; }
+    .strategy-name:hover { text-decoration: underline; }
+    .strategy-accounts { font-size: 0.75rem; color: #64748b; }
+    
+    /* Status cell */
+    .status-cell { display: flex; align-items: center; gap: 0.75rem; }
+    .status-badge { 
+        padding: 0.25rem 0.6rem; 
+        border-radius: 999px; 
+        font-size: 0.7rem; 
+        font-weight: 600; 
+        letter-spacing: 0.05em; 
+        text-transform: uppercase;
+    }
+    .status-badge.live { background: rgba(16,185,129,0.2); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+    .status-badge.paused { background: rgba(234,179,8,0.15); color: #facc15; border: 1px solid rgba(234,179,8,0.3); }
+    
+    .switch { position: relative; display: inline-block; width: 44px; height: 22px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 0; height: 0; }
-    .slider { position: absolute; inset: 0; background: rgba(148,163,184,0.3); border-radius: 24px; transition: 0.2s; }
-    .slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 4px; bottom: 3px; background: #0b1120; border-radius: 50%; transition: 0.2s; }
+    .slider { position: absolute; inset: 0; background: rgba(148,163,184,0.3); border-radius: 24px; transition: 0.2s; cursor: pointer; }
+    .slider:before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; bottom: 3px; background: #0b1120; border-radius: 50%; transition: 0.2s; }
     .switch input:checked + .slider { background: rgba(16,185,129,0.7); }
     .switch input:checked + .slider:before { transform: translateX(22px); }
-    .pl-cell { font-weight: 600; }
+    
+    .pl-cell { font-weight: 600; font-family: 'SF Mono', Monaco, monospace; }
     .pl-cell.positive { color: #34d399; }
     .pl-cell.negative { color: #f87171; }
-    .action-cell { display: flex; gap: 0.5rem; }
-    .btn-small { padding: 0.45rem 0.85rem; font-size: 0.75rem; }
+    
+    .action-cell { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .btn-small { 
+        padding: 0.4rem 0.75rem; 
+        font-size: 0.7rem; 
+        border-radius: 8px;
+        background: rgba(15,23,42,0.6);
+        border: 1px solid rgba(148,163,184,0.2);
+        color: #94a3b8;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .btn-small:hover {
+        background: rgba(59,130,246,0.15);
+        border-color: rgba(59,130,246,0.4);
+        color: #93c5fd;
+    }
+    .btn-small.btn-close:hover {
+        background: rgba(239,68,68,0.15);
+        border-color: rgba(239,68,68,0.4);
+        color: #fca5a5;
+    }
 
-    .autotrader-logs { background: rgba(11,18,33,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); display: grid; grid-template-rows: auto 1fr; }
-    .autotrader-logs header { padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; }
+    .autotrader-logs { background: rgba(11,18,33,0.92); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); display: flex; flex-direction: column; max-height: 600px; }
+    .autotrader-logs header { padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(148,163,184,0.1); }
     .autotrader-logs h2 { margin: 0; font-size: 1.2rem; }
-    .autotrader-logs p { margin: 0; color: var(--text-muted); }
-    .status-dot { font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.3rem 0.75rem; border-radius: 999px; }
+    .autotrader-logs p { margin: 0; color: var(--text-muted); font-size: 0.85rem; }
+    .status-dot { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.3rem 0.75rem; border-radius: 999px; }
     .status-dot.connected { background: rgba(52,211,153,0.25); color: #bbf7d0; }
-    .log-feed { padding: 0 1.25rem 1.25rem; overflow-y: auto; max-height: 480px; display: grid; gap: 0.75rem; }
-    .log-entry { background: rgba(15,23,42,0.6); border: 1px solid rgba(59,130,246,0.2); border-radius: 12px; padding: 0.75rem; display: grid; gap: 0.35rem; font-size: 0.85rem; }
-    .log-type { font-weight: 600; }
-    .log-type.open { color: #34d399; }
-    .log-type.close { color: #fb923c; }
-    .log-content { color: #e2e8f0; }
-    .log-time { color: var(--text-muted); font-size: 0.75rem; }
+    .status-dot.disconnected { background: rgba(239,68,68,0.2); color: #fca5a5; }
+    .log-feed { padding: 1rem 1.25rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 0.6rem; }
+    .log-entry { background: rgba(15,23,42,0.6); border: 1px solid rgba(59,130,246,0.15); border-radius: 10px; padding: 0.65rem 0.85rem; display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: center; font-size: 0.8rem; }
+    .log-type { font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; text-transform: uppercase; }
+    .log-type.open { background: rgba(16,185,129,0.2); color: #34d399; }
+    .log-type.close { background: rgba(251,146,60,0.2); color: #fb923c; }
+    .log-type.trade { background: rgba(59,130,246,0.2); color: #60a5fa; }
+    .log-content { color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-time { color: #64748b; font-size: 0.7rem; white-space: nowrap; }
 
     @media (max-width: 1100px) {
         .live-panels { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+        .panel-actions { width: 100%; justify-content: center; }
+        .panel-actions .btn { flex: 1; justify-content: center; }
     }
 </style>
 {% endblock %}
@@ -179,46 +277,98 @@
         
         async function loadControlCenterStats() {
             try {
-                const response = await fetch('/api/control-center/stats');
+                // Load traders (strategies linked to accounts) instead of all recorders
+                const response = await fetch('/api/traders');
                 const data = await response.json();
                 
-                if (data.success && data.recorders) {
-                    updateLiveTradingTable(data.recorders);
+                if (data.success && data.traders) {
+                    // Group traders by strategy (recorder)
+                    const strategyMap = new Map();
+                    data.traders.forEach(trader => {
+                        const key = trader.recorder_id;
+                        if (!strategyMap.has(key)) {
+                            strategyMap.set(key, {
+                                id: trader.recorder_id,
+                                name: trader.recorder_name,
+                                traders: [],
+                                enabled: false,
+                                pnl: 0
+                            });
+                        }
+                        const strategy = strategyMap.get(key);
+                        strategy.traders.push(trader);
+                        if (trader.enabled) strategy.enabled = true;
+                    });
+                    
+                    // Also fetch PnL data
+                    try {
+                        const pnlResponse = await fetch('/api/control-center/stats');
+                        const pnlData = await pnlResponse.json();
+                        if (pnlData.success && pnlData.recorders) {
+                            pnlData.recorders.forEach(rec => {
+                                if (strategyMap.has(rec.id)) {
+                                    strategyMap.get(rec.id).pnl = rec.pnl || 0;
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('Could not fetch PnL data:', e);
+                    }
+                    
+                    updateLiveTradingTable(Array.from(strategyMap.values()));
+                } else {
+                    updateLiveTradingTable([]);
                 }
             } catch (error) {
                 console.error('Error loading control center stats:', error);
+                updateLiveTradingTable([]);
             }
         }
         
-        function updateLiveTradingTable(recorders) {
-            const tbody = document.querySelector('.live-trading tbody');
+        function updateLiveTradingTable(strategies) {
+            const tbody = document.getElementById('tradersTableBody');
             if (!tbody) return;
             
-            // Build new rows
+            if (strategies.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No active traders. <a href="/traders/new" style="color: #60a5fa;">Create a trader</a> to link a strategy to your accounts.</td></tr>';
+                return;
+            }
+            
+            // Build new rows grouped by strategy
             let html = '';
-            recorders.forEach(recorder => {
-                const pnlClass = recorder.pnl >= 0 ? 'positive' : 'negative';
-                const pnlFormatted = recorder.pnl >= 0 ? `$${recorder.pnl.toFixed(2)}` : `-$${Math.abs(recorder.pnl).toFixed(2)}`;
+            strategies.forEach(strategy => {
+                const pnlClass = strategy.pnl >= 0 ? 'positive' : 'negative';
+                const pnlFormatted = strategy.pnl >= 0 ? `+$${strategy.pnl.toFixed(2)}` : `-$${Math.abs(strategy.pnl).toFixed(2)}`;
+                const statusClass = strategy.enabled ? 'live' : 'paused';
+                const statusText = strategy.enabled ? 'LIVE' : 'PAUSED';
+                
+                // List account names
+                const accountNames = strategy.traders.map(t => t.account_name || t.subaccount_name).join(', ');
+                const accountCount = strategy.traders.length;
+                
                 html += `
-                    <tr data-recorder-id="${recorder.id}">
-                        <td><a href="/recorders/${recorder.id}">${recorder.name}</a> <span style="color: #64748b; font-size: 0.8em;">${recorder.symbol}</span></td>
-                        <td class="toggle-cell">
-                            <span>${recorder.open_trades} open / ${recorder.closed_trades} closed</span>
+                    <tr data-strategy-id="${strategy.id}">
+                        <td class="strategy-cell">
+                            <a href="/recorders/${strategy.id}" class="strategy-name">${strategy.name}</a>
+                            <span class="strategy-accounts">${accountCount} account${accountCount !== 1 ? 's' : ''}: ${accountNames}</span>
+                        </td>
+                        <td class="status-cell">
+                            <span class="status-badge ${statusClass}">${statusText}</span>
                             <label class="switch">
-                                <input type="checkbox" ${recorder.enabled ? 'checked' : ''} onchange="toggleRecorder(${recorder.id}, this.checked)">
+                                <input type="checkbox" ${strategy.enabled ? 'checked' : ''} onchange="toggleStrategy(${strategy.id}, this.checked)">
                                 <span class="slider"></span>
                             </label>
                         </td>
                         <td class="pl-cell ${pnlClass}">${pnlFormatted}</td>
                         <td class="action-cell">
-                            <button class="btn btn-outline btn-small" onclick="closeRecorderPositions(${recorder.id})">Close</button>
-                            <button class="btn btn-outline btn-small" onclick="viewRecorderDetails(${recorder.id})">View</button>
+                            <button class="btn-small btn-close" onclick="closeStrategyPositions(${strategy.id}, '${strategy.name}')">Close</button>
+                            <button class="btn-small" onclick="viewStrategyDetails(${strategy.id})">View</button>
                         </td>
                     </tr>
                 `;
             });
             
-            tbody.innerHTML = html || '<tr><td colspan="4" style="text-align: center; padding: 2rem; color: #64748b;">No recorders found. <a href="/recorders/new">Create one</a></td></tr>';
+            tbody.innerHTML = html;
         }
         
         function updateStrategyPnL(strategyId, strategyName, pnl) {
@@ -266,19 +416,33 @@
     });
     
     // Global functions for button handlers
-    async function toggleRecorder(recorderId, enabled) {
+    async function toggleStrategy(strategyId, enabled) {
         try {
-            const response = await fetch(`/api/recorders/${recorderId}`, {
+            const response = await fetch(`/api/recorders/${strategyId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ recording_enabled: enabled ? 1 : 0 })
+                body: JSON.stringify({ recording_enabled: enabled })
             });
             const data = await response.json();
-            if (!data.success) {
-                console.error('Failed to toggle recorder:', data.error);
+            if (data.success) {
+                // Update UI immediately
+                const row = document.querySelector(`tr[data-strategy-id="${strategyId}"]`);
+                if (row) {
+                    const badge = row.querySelector('.status-badge');
+                    if (badge) {
+                        badge.className = `status-badge ${enabled ? 'live' : 'paused'}`;
+                        badge.textContent = enabled ? 'LIVE' : 'PAUSED';
+                    }
+                }
+            } else {
+                console.error('Failed to toggle strategy:', data.error);
+                alert(`❌ Error: ${data.error || 'Failed to toggle'}`);
+                // Revert checkbox
+                loadControlCenterStats();
             }
         } catch (error) {
-            console.error('Error toggling recorder:', error);
+            console.error('Error toggling strategy:', error);
+            loadControlCenterStats();
         }
     }
     
@@ -287,9 +451,10 @@
             return;
         }
         
-        const btn = event.target;
+        const btn = event.target.closest('.btn');
+        const originalHTML = btn.innerHTML;
         btn.disabled = true;
-        btn.textContent = 'Closing...';
+        btn.innerHTML = '<span class="material-icons spin">sync</span> Closing...';
         
         try {
             const response = await fetch('/api/control-center/close-all', {
@@ -300,17 +465,16 @@
             const data = await response.json();
             if (data.success) {
                 alert(`✅ ${data.message}`);
-                location.reload();
+                loadControlCenterStats();
             } else {
                 alert(`❌ Error: ${data.error || 'Unknown error'}`);
-                btn.disabled = false;
-                btn.textContent = 'Close All';
             }
         } catch (error) {
             console.error('Error closing positions:', error);
             alert('❌ Network error. Please try again.');
+        } finally {
             btn.disabled = false;
-            btn.textContent = 'Close All';
+            btn.innerHTML = originalHTML;
         }
     }
     
@@ -319,9 +483,10 @@
             return;
         }
         
-        const btn = event.target;
+        const btn = event.target.closest('.btn');
+        const originalHTML = btn.innerHTML;
         btn.disabled = true;
-        btn.textContent = 'Clearing...';
+        btn.innerHTML = '<span class="material-icons spin">sync</span> Clearing...';
         
         try {
             const response = await fetch('/api/control-center/clear-all', {
@@ -332,25 +497,29 @@
             const data = await response.json();
             if (data.success) {
                 alert(`✅ ${data.message}`);
-                location.reload();
+                loadControlCenterStats();
             } else {
                 alert(`❌ Error: ${data.error || 'Unknown error'}`);
-                btn.disabled = false;
-                btn.textContent = 'Clear All';
             }
         } catch (error) {
             console.error('Error clearing trades:', error);
             alert('❌ Network error. Please try again.');
+        } finally {
             btn.disabled = false;
-            btn.textContent = 'Clear All';
+            btn.innerHTML = originalHTML;
         }
     }
     
     async function toggleAllStrategies() {
         // Get current state from first checkbox
-        const firstCheckbox = document.querySelector('input[type="checkbox"]');
+        const firstCheckbox = document.querySelector('#tradersTableBody input[type="checkbox"]');
         const currentState = firstCheckbox ? firstCheckbox.checked : false;
         const newState = !currentState;
+        
+        const btn = document.getElementById('toggleAllBtn');
+        const originalHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-icons spin">sync</span> ${newState ? 'Enabling...' : 'Disabling...'}`;
         
         try {
             const response = await fetch('/api/control-center/toggle-all', {
@@ -361,24 +530,50 @@
             
             const data = await response.json();
             if (data.success) {
-                location.reload();
+                // Update button text
+                btn.innerHTML = newState 
+                    ? '<span class="material-icons">pause_circle</span> Disable All'
+                    : '<span class="material-icons">play_circle</span> Enable All';
+                loadControlCenterStats();
             } else {
                 alert(`❌ Error: ${data.error || 'Unknown error'}`);
+                btn.innerHTML = originalHTML;
             }
         } catch (error) {
             console.error('Error toggling strategies:', error);
             alert('❌ Network error. Please try again.');
+            btn.innerHTML = originalHTML;
+        } finally {
+            btn.disabled = false;
         }
     }
     
-    function closeRecorderPositions(recorderId) {
-        // TODO: Implement close all positions for recorder
-        console.log('Close positions for recorder:', recorderId);
-        alert('Close positions feature coming soon');
+    async function closeStrategyPositions(strategyId, strategyName) {
+        if (!confirm(`⚠️ Close all positions for "${strategyName}"?\n\nThis will execute close orders on all accounts linked to this strategy.`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/recorders/${strategyId}/close-positions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ ${data.message || 'Positions closed'}`);
+                loadControlCenterStats();
+            } else {
+                alert(`❌ Error: ${data.error || 'Failed to close positions'}`);
+            }
+        } catch (error) {
+            console.error('Error closing positions:', error);
+            alert('❌ Network error. Please try again.');
+        }
     }
     
-    function viewRecorderDetails(recorderId) {
-        window.location.href = `/recorders/${recorderId}`;
+    function viewStrategyDetails(strategyId) {
+        window.location.href = `/recorders/${strategyId}`;
     }
 </script>
 {% endblock %}

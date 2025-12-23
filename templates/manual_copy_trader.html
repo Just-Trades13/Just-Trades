@@ -776,6 +776,75 @@
         // Strategy list removed; placeholder for future use
     }
 
+    // Convert TradingView ticker (MNQ1!) to Tradovate front-month symbol (MNQH6)
+    function convertToTradovateSymbol(ticker) {
+        if (!ticker) return ticker;
+        const clean = ticker.trim().toUpperCase();
+        
+        // Already Tradovate format (no ! suffix)
+        if (!clean.includes('!')) return clean;
+        
+        // Extract base symbol (e.g., MNQ from MNQ1!)
+        const match = clean.match(/^([A-Z]+)\d*!$/);
+        if (!match) return clean.replace('!', '');
+        
+        const root = match[1];
+        
+        // Calculate front month contract based on current date
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1; // 1-12
+        const currentYear = now.getFullYear() % 10; // Last digit (e.g., 2025 -> 5)
+        
+        // Quarterly contracts: H(Mar=3), M(Jun=6), U(Sep=9), Z(Dec=12)
+        const quarterlyContracts = ['MNQ', 'MES', 'ES', 'NQ', 'YM', 'RTY', 'M2K', 'CL', 'MCL', 'GC', 'MGC', 'MYM'];
+        const quarterlyMonths = [3, 6, 9, 12];
+        const quarterlyMonthCodes = { 3: 'H', 6: 'M', 9: 'U', 12: 'Z' };
+        
+        let monthCode, year;
+        
+        if (quarterlyContracts.includes(root)) {
+            // Find next quarterly month
+            let foundMonth = null;
+            let yearOffset = 0;
+            
+            for (const qMonth of quarterlyMonths) {
+                if (currentMonth < qMonth || (currentMonth === qMonth && now.getDate() <= 15)) {
+                    foundMonth = qMonth;
+                    break;
+                }
+            }
+            
+            if (!foundMonth) {
+                // Roll to next year's first quarterly (March)
+                foundMonth = 3;
+                yearOffset = 1;
+            }
+            
+            monthCode = quarterlyMonthCodes[foundMonth];
+            year = (currentYear + yearOffset) % 10;
+        } else {
+            // Monthly contracts - use next month
+            const monthCodes = ['F', 'G', 'H', 'J', 'K', 'M', 'N', 'Q', 'U', 'V', 'X', 'Z'];
+            let nextMonth = currentMonth;
+            let yearOffset = 0;
+            
+            if (now.getDate() > 15) {
+                nextMonth = currentMonth + 1;
+                if (nextMonth > 12) {
+                    nextMonth = 1;
+                    yearOffset = 1;
+                }
+            }
+            
+            monthCode = monthCodes[nextMonth - 1];
+            year = (currentYear + yearOffset) % 10;
+        }
+        
+        const converted = `${root}${monthCode}${year}`;
+        console.log(`📅 Converted ${ticker} → ${converted}`);
+        return converted;
+    }
+
     async function placeManualTrade(side) {
         try {
             const accountSelect = document.getElementById('manualAccountSelect');
@@ -798,6 +867,9 @@
             }
 
             const riskPayload = collectRiskSettings();
+            
+            // Convert TradingView ticker to Tradovate front-month symbol
+            const tradovateSymbol = convertToTradovateSymbol(tickerSelect.value);
 
             // Place the primary manual trade
             const response = await fetch('/api/manual-trade', {
@@ -805,7 +877,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     account_subaccount: accountSelect.value,
-                    symbol: tickerSelect.value,
+                    symbol: tradovateSymbol,
                     side: side,
                     quantity: quantity,
                     risk: riskPayload
@@ -1046,7 +1118,8 @@
         const useRiskSettings = document.getElementById('copyUseRiskSettings')?.checked;
         
         const sourceAccount = document.getElementById('manualAccountSelect')?.value;
-        const symbol = tickerSelect?.value;
+        const rawSymbol = tickerSelect?.value;
+        const symbol = convertToTradovateSymbol(rawSymbol); // Convert to Tradovate format
         const quantity = parseInt(positionSizeInput?.value || '1');
         const riskPayload = useRiskSettings ? collectRiskSettings() : {};
         

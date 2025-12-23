@@ -65,11 +65,13 @@
                 <div class="form-two">
                     <label class="form-field">
                         <span>Initial Position Size</span>
-                        <input type="number" id="initial_position_size" value="{{ recorder.initial_position_size if recorder else 1 }}" min="1">
+                        <input type="number" id="initial_position_size" value="{{ recorder.initial_position_size if recorder and recorder.initial_position_size else 0 }}" min="0">
+                        <small>0 = use default (1 contract)</small>
                     </label>
                     <label class="form-field">
                         <span>Add Position Size</span>
-                        <input type="number" id="add_position_size" value="{{ recorder.add_position_size if recorder else 0 }}" min="0">
+                        <input type="number" id="add_position_size" value="{{ recorder.add_position_size if recorder and recorder.add_position_size else 0 }}" min="0">
+                        <small>0 = no additional contracts</small>
                     </label>
                 </div>
             </div>
@@ -124,7 +126,8 @@
                         <div class="form-two">
                             <label class="form-field">
                                 <span>Stop Loss Amount</span>
-                                <input type="number" id="sl_amount" value="{{ recorder.sl_amount if recorder else 0 }}" step="0.01">
+                                <input type="number" id="sl_amount" value="{{ recorder.sl_amount if recorder and recorder.sl_amount else 0 }}" step="0.01" min="0">
+                                <small>0 = no stop loss</small>
                             </label>
                             <label class="form-field">
                                 <span>SL Units</span>
@@ -159,11 +162,13 @@
                         <div class="form-two">
                             <label class="form-field">
                                 <span>Average Down Amount</span>
-                                <input type="number" id="avg_down_amount" value="{{ recorder.avg_down_amount if recorder else 0 }}" min="0">
+                                <input type="number" id="avg_down_amount" value="{{ recorder.avg_down_amount if recorder and recorder.avg_down_amount else 0 }}" min="0">
+                                <small>0 = no averaging down</small>
                             </label>
                             <label class="form-field">
                                 <span>Average Down Point</span>
-                                <input type="number" id="avg_down_point" value="{{ recorder.avg_down_point if recorder else 0 }}" step="0.01">
+                                <input type="number" id="avg_down_point" value="{{ recorder.avg_down_point if recorder and recorder.avg_down_point else 0 }}" step="0.01" min="0">
+                                <small>0 = disabled</small>
                             </label>
                         </div>
                         <label class="form-field">
@@ -191,8 +196,8 @@
                 <div class="form-two">
                     <label class="form-field">
                         <span>Signal Delay</span>
-                        <input type="number" id="add_delay" value="{{ recorder.add_delay if recorder else 1 }}" min="1">
-                        <small>Execute every Nth signal (1 = all, 2 = every other, etc.)</small>
+                        <input type="number" id="add_delay" value="{{ recorder.add_delay if recorder else 0 }}" min="0">
+                        <small>Execute every Nth signal (0 or 1 = all, 2 = every other, etc.)</small>
                     </label>
                     <label class="form-field">
                         <span>Max Contracts Per Trade</span>
@@ -218,28 +223,44 @@
                 </label>
                 <div class="time-filters">
                     <div class="time-block">
-                        <h4>Time Filter #1</h4>
-                        <div class="time-grid">
+                        <div class="toggle-row" style="margin-bottom: 0.75rem;">
+                            <h4 style="margin: 0;">Time Filter #1</h4>
+                            <label class="switch">
+                                <input type="checkbox" id="time_filter_1_enabled" {{ 'checked' if recorder and recorder.time_filter_1_enabled else '' }}>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="time-grid" id="time_filter_1_fields">
                             <label class="form-field">
                                 <span>Start #1</span>
                                 <input type="text" id="time_filter_1_start" value="{{ recorder.time_filter_1_start if recorder else '' }}" placeholder="e.g. 8:45 AM">
+                                <small>Leave empty = no filter</small>
                             </label>
                             <label class="form-field">
                                 <span>Stop #1</span>
                                 <input type="text" id="time_filter_1_stop" value="{{ recorder.time_filter_1_stop if recorder else '' }}" placeholder="e.g. 1:45 PM">
+                                <small>Leave empty = no filter</small>
                             </label>
                         </div>
                     </div>
                     <div class="time-block">
-                        <h4>Time Filter #2</h4>
-                        <div class="time-grid">
+                        <div class="toggle-row" style="margin-bottom: 0.75rem;">
+                            <h4 style="margin: 0;">Time Filter #2</h4>
+                            <label class="switch">
+                                <input type="checkbox" id="time_filter_2_enabled" {{ 'checked' if recorder and recorder.time_filter_2_enabled else '' }}>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="time-grid" id="time_filter_2_fields">
                             <label class="form-field">
                                 <span>Start #2</span>
                                 <input type="text" id="time_filter_2_start" value="{{ recorder.time_filter_2_start if recorder else '' }}" placeholder="e.g. 12:30 PM">
+                                <small>Leave empty = no filter</small>
                             </label>
                             <label class="form-field">
                                 <span>Stop #2</span>
                                 <input type="text" id="time_filter_2_stop" value="{{ recorder.time_filter_2_stop if recorder else '' }}" placeholder="e.g. 3:15 PM">
+                                <small>Leave empty = no filter</small>
                             </label>
                         </div>
                     </div>
@@ -257,18 +278,18 @@
                 <div class="form-two">
                     <label class="form-field">
                         <span>Signal Cooldown (seconds)</span>
-                        <input type="number" id="signal_cooldown" value="{{ recorder.signal_cooldown if recorder else 0 }}" min="0">
-                        <small>0 = no cooldown</small>
+                        <input type="number" id="signal_cooldown" value="{{ recorder.signal_cooldown if recorder and recorder.signal_cooldown else 0 }}" min="0">
+                        <small>0 = no cooldown (process all signals)</small>
                     </label>
                     <label class="form-field">
                         <span>Max Signals Per Session</span>
-                        <input type="number" id="max_signals_per_session" value="{{ recorder.max_signals_per_session if recorder else 0 }}" min="0">
-                        <small>0 = unlimited</small>
+                        <input type="number" id="max_signals_per_session" value="{{ recorder.max_signals_per_session if recorder and recorder.max_signals_per_session else 0 }}" min="0">
+                        <small>0 = unlimited signals</small>
                     </label>
                 </div>
                 <label class="form-field">
                     <span>Max Daily Loss ($)</span>
-                    <input type="number" id="max_daily_loss" value="{{ recorder.max_daily_loss if recorder else 0 }}" step="0.01" min="0">
+                    <input type="number" id="max_daily_loss" value="{{ recorder.max_daily_loss if recorder and recorder.max_daily_loss else 0 }}" step="0.01" min="0">
                     <small>0 = no limit</small>
                 </label>
                 <div class="switch-row">
@@ -860,7 +881,36 @@
         if (isEditMode) {
             loadWebhookInfo();
         }
+        
+        // Time filter toggle functionality
+        setupTimeFilterToggles();
     });
+    
+    function setupTimeFilterToggles() {
+        // Time Filter 1
+        const tf1Enabled = document.getElementById('time_filter_1_enabled');
+        const tf1Fields = document.getElementById('time_filter_1_fields');
+        if (tf1Enabled && tf1Fields) {
+            const updateTf1 = () => {
+                tf1Fields.style.opacity = tf1Enabled.checked ? '1' : '0.4';
+                tf1Fields.style.pointerEvents = tf1Enabled.checked ? 'auto' : 'none';
+            };
+            tf1Enabled.addEventListener('change', updateTf1);
+            updateTf1(); // Set initial state
+        }
+        
+        // Time Filter 2
+        const tf2Enabled = document.getElementById('time_filter_2_enabled');
+        const tf2Fields = document.getElementById('time_filter_2_fields');
+        if (tf2Enabled && tf2Fields) {
+            const updateTf2 = () => {
+                tf2Fields.style.opacity = tf2Enabled.checked ? '1' : '0.4';
+                tf2Fields.style.pointerEvents = tf2Enabled.checked ? 'auto' : 'none';
+            };
+            tf2Enabled.addEventListener('change', updateTf2);
+            updateTf2(); // Set initial state
+        }
+    }
 
     function renderTpTargets() {
         const container = document.getElementById('tp-targets-container');
@@ -906,7 +956,7 @@
         return {
             name: document.getElementById('name').value.trim(),
             strategy_type: document.getElementById('strategy_type').value,
-            initial_position_size: parseInt(document.getElementById('initial_position_size').value) || 1,
+            initial_position_size: parseInt(document.getElementById('initial_position_size').value) || 0,
             add_position_size: parseInt(document.getElementById('add_position_size').value) || 0,
             tp_units: document.getElementById('tp_units').value,
             trim_units: document.getElementById('trim_units').value,
@@ -919,14 +969,16 @@
             avg_down_amount: parseInt(document.getElementById('avg_down_amount').value) || 0,
             avg_down_point: parseFloat(document.getElementById('avg_down_point').value) || 0,
             avg_down_units: document.getElementById('avg_down_units').value,
-            add_delay: parseInt(document.getElementById('add_delay').value) || 1,
+            add_delay: parseInt(document.getElementById('add_delay').value) || 0,
             max_contracts_per_trade: parseInt(document.getElementById('max_contracts_per_trade').value) || 0,
             option_premium_filter: parseFloat(document.getElementById('option_premium_filter').value) || 0,
             direction_filter: document.getElementById('direction_filter').value || null,
-            time_filter_1_start: document.getElementById('time_filter_1_start').value || null,
-            time_filter_1_stop: document.getElementById('time_filter_1_stop').value || null,
-            time_filter_2_start: document.getElementById('time_filter_2_start').value || null,
-            time_filter_2_stop: document.getElementById('time_filter_2_stop').value || null,
+            time_filter_1_enabled: document.getElementById('time_filter_1_enabled').checked,
+            time_filter_1_start: document.getElementById('time_filter_1_start').value || '',
+            time_filter_1_stop: document.getElementById('time_filter_1_stop').value || '',
+            time_filter_2_enabled: document.getElementById('time_filter_2_enabled').checked,
+            time_filter_2_start: document.getElementById('time_filter_2_start').value || '',
+            time_filter_2_stop: document.getElementById('time_filter_2_stop').value || '',
             signal_cooldown: parseInt(document.getElementById('signal_cooldown').value) || 0,
             max_signals_per_session: parseInt(document.getElementById('max_signals_per_session').value) || 0,
             max_daily_loss: parseFloat(document.getElementById('max_daily_loss').value) || 0,

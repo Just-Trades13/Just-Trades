@@ -315,65 +315,47 @@
                     </div>
                 </label>
                 <div class="time-filters">
-                    <div class="time-block">
-                        <h4>Time Filter #1</h4>
+                    <div class="time-block" style="{{ 'opacity: 0.5;' if not trader.time_filter_1_enabled else '' }}">
+                        <div class="toggle-row" style="margin-bottom: 0.75rem;">
+                            <h4 style="margin: 0;">Time Filter #1</h4>
+                            <span class="status-badge {{ 'status-live' if trader.time_filter_1_enabled else 'status-paused' }}" style="font-size: 0.65rem;">
+                                {{ 'ENABLED' if trader.time_filter_1_enabled else 'DISABLED' }}
+                            </span>
+                        </div>
                         <div class="time-grid">
                             <label class="form-field">
                                 <span>Start #1</span>
-                                <div class="time-shell">
-                                    <input type="number" value="8">
-                                    <span>:</span>
-                                    <input type="number" value="45">
-                                    <select>
-                                        <option>AM</option>
-                                        <option>PM</option>
-                                    </select>
-                                </div>
+                                <input type="text" id="timeFilter1Start" value="{{ trader.time_filter_1_start or 'Not set' }}" placeholder="Not set" readonly style="opacity: 0.7;">
                             </label>
                             <label class="form-field">
                                 <span>Stop #1</span>
-                                <div class="time-shell">
-                                    <input type="number" value="1">
-                                    <span>:</span>
-                                    <input type="number" value="45">
-                                    <select>
-                                        <option>PM</option>
-                                        <option>AM</option>
-                                    </select>
-                                </div>
+                                <input type="text" id="timeFilter1Stop" value="{{ trader.time_filter_1_stop or 'Not set' }}" placeholder="Not set" readonly style="opacity: 0.7;">
                             </label>
                         </div>
                     </div>
-                    <div class="time-block">
-                        <h4>Time Filter #2</h4>
+                    <div class="time-block" style="{{ 'opacity: 0.5;' if not trader.time_filter_2_enabled else '' }}">
+                        <div class="toggle-row" style="margin-bottom: 0.75rem;">
+                            <h4 style="margin: 0;">Time Filter #2</h4>
+                            <span class="status-badge {{ 'status-live' if trader.time_filter_2_enabled else 'status-paused' }}" style="font-size: 0.65rem;">
+                                {{ 'ENABLED' if trader.time_filter_2_enabled else 'DISABLED' }}
+                            </span>
+                        </div>
                         <div class="time-grid">
                             <label class="form-field">
                                 <span>Start #2</span>
-                                <div class="time-shell">
-                                    <input type="number" value="12">
-                                    <span>:</span>
-                                    <input type="number" value="30">
-                                    <select>
-                                        <option>PM</option>
-                                        <option>AM</option>
-                                    </select>
-                                </div>
+                                <input type="text" id="timeFilter2Start" value="{{ trader.time_filter_2_start or 'Not set' }}" placeholder="Not set" readonly style="opacity: 0.7;">
                             </label>
                             <label class="form-field">
                                 <span>Stop #2</span>
-                                <div class="time-shell">
-                                    <input type="number" value="3">
-                                    <span>:</span>
-                                    <input type="number" value="15">
-                                    <select>
-                                        <option>PM</option>
-                                        <option>AM</option>
-                                    </select>
-                                </div>
+                                <input type="text" id="timeFilter2Stop" value="{{ trader.time_filter_2_stop or 'Not set' }}" placeholder="Not set" readonly style="opacity: 0.7;">
                             </label>
                         </div>
                     </div>
                 </div>
+                <small style="color: #64748b; margin-top: 0.5rem; display: block;">
+                    <span class="material-icons" style="font-size: 0.9rem; vertical-align: middle;">info</span>
+                    Time filters are inherited from the recorder. <a href="/recorders/{{ trader.recorder_id }}" style="color: #60a5fa;">Edit recorder</a> to change.
+                </small>
             </div>
         </section>
 
@@ -438,12 +420,17 @@
         <div>
             <h1>{{ header_title }}</h1>
             <span class="chip">TRADER</span>
-            <p>Use this interface to configure your trading trader, including position sizing, SLTP rules, and account routing.</p>
+            <p>Select a strategy template to auto-fill settings, then customize and route to your accounts.</p>
         </div>
         <div class="header-actions">
             <button type="submit" class="btn btn-primary" id="createTraderBtn">{{ header_cta }}</button>
-            <a class="link-button" href="#">Help</a>
+            <a class="link-button" href="/strategies/manage">Manage Strategies</a>
         </div>
+    </section>
+
+    <section class="builder-alert builder-alert--info" id="templateAlert" style="display: none;">
+        <strong>✓ TEMPLATE LOADED:</strong>
+        <span id="templateAlertMessage">Settings auto-populated from template. Customize as needed.</span>
     </section>
 
     <section class="builder-alert builder-alert--error" id="validationAlert" style="display: none;">
@@ -453,8 +440,22 @@
     </section>
 
     <section class="builder-form">
+        <!-- Strategy Template Dropdown (SHARED) -->
         <label class="form-field">
-            <span>Strategy Name (Select a Recorder)</span>
+            <span>📋 Strategy Template (Auto-fills settings)</span>
+            <div class="select-shell">
+                <select id="strategyTemplateSelect" name="strategy_template_id">
+                    <option value="">-- Select a strategy template --</option>
+                    <!-- Options populated via JavaScript -->
+                </select>
+                <span class="material-icons">expand_more</span>
+            </div>
+            <small id="templateInfo" style="color: #64748b; margin-top: 4px;">Loading templates...</small>
+        </label>
+
+        <!-- Recorder Selection (for webhook signal source) -->
+        <label class="form-field">
+            <span>📡 Signal Source (Recorder)</span>
             <div class="select-shell">
                 <select id="recorderSelect" name="recorder_id" required>
                     <option value="">Select recorder...</option>
@@ -464,7 +465,9 @@
                 </select>
                 <span class="material-icons">expand_more</span>
             </div>
+            <small style="color: #64748b;">The recorder that receives webhook signals for this trader</small>
         </label>
+
         <label class="form-field">
             <span>Strategy Type</span>
             <div class="select-shell">
@@ -503,7 +506,7 @@
                                     <span class="slider"></span>
                                 </label>
                             </td>
-                            <td><input type="number" value="0" name="account_{{ account.id }}_max_cons" class="account-max-cons"></td>
+                            <td><input type="number" value="0" name="account_{{ account.id }}_max_cons" class="account-max-cons" id="maxCons_{{ account.id }}"></td>
                             <td><input type="text" placeholder="DISABLED" name="account_{{ account.id }}_ticker" class="account-ticker"></td>
                             <td><input type="number" value="1" name="account_{{ account.id }}_multiplier" class="account-multiplier"></td>
                         </tr>
@@ -522,11 +525,11 @@
                 <div class="form-two">
                     <label class="form-field">
                         <span>Initial Position Size</span>
-                        <input type="number" value="1">
+                        <input type="number" id="createInitialPositionSize" name="initial_position_size" value="1" min="1">
                     </label>
                     <label class="form-field">
                         <span>Add Position Size</span>
-                        <input type="number" value="1">
+                        <input type="number" id="createAddPositionSize" name="add_position_size" value="1" min="1">
                     </label>
                 </div>
             </div>
@@ -542,9 +545,9 @@
                     <label class="form-field">
                         <span>TP Units</span>
                         <div class="select-shell">
-                            <select>
-                                <option>Ticks</option>
-                                <option>Points</option>
+                            <select id="createTpUnits" name="tp_units">
+                                <option value="Ticks">Ticks</option>
+                                <option value="Points">Points</option>
                             </select>
                             <span class="material-icons">expand_more</span>
                         </div>
@@ -552,15 +555,82 @@
                     <label class="form-field">
                         <span>Trim Units</span>
                         <div class="select-shell">
-                            <select>
-                                <option>Contracts</option>
-                                <option>Percent</option>
+                            <select id="createTrimUnits" name="trim_units">
+                                <option value="Contracts">Contracts</option>
+                                <option value="Percent">Percent</option>
                             </select>
                             <span class="material-icons">expand_more</span>
                         </div>
                     </label>
                 </div>
-                <button class="btn btn-outline btn-small">+ Add TP</button>
+                <div class="tp-row">
+                    <span class="tp-pill">TP #1</span>
+                    <label class="form-field">
+                        <span>TP Value</span>
+                        <input type="number" id="createTpValue" name="tp_value" value="0" min="0">
+                    </label>
+                    <label class="form-field">
+                        <span>Trim %</span>
+                        <input type="number" id="createTpTrim" name="tp_trim" value="100" min="0" max="100">
+                    </label>
+                </div>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Stop Loss</span>
+                    <label class="switch">
+                        <input type="checkbox" id="createSlEnabled" name="sl_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Stop Loss Amount</span>
+                        <input type="number" id="createSlAmount" name="sl_amount" value="0" min="0" step="0.25">
+                    </label>
+                    <label class="form-field">
+                        <span>SL Units</span>
+                        <div class="select-shell">
+                            <select id="createSlUnits" name="sl_units">
+                                <option value="Ticks">Ticks</option>
+                                <option value="Points">Points</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>SL Type</span>
+                    <div class="select-shell">
+                        <select id="createSlType" name="sl_type">
+                            <option value="Fixed">Fixed</option>
+                            <option value="Trail">Trail</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Averaging Down (DCA)</span>
+                    <label class="switch">
+                        <input type="checkbox" id="createAvgDownEnabled" name="avg_down_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Average Down Amount (contracts)</span>
+                        <input type="number" id="createAvgDownAmount" name="avg_down_amount" value="1" min="1">
+                    </label>
+                    <label class="form-field">
+                        <span>Average Down Point (ticks against)</span>
+                        <input type="number" id="createAvgDownPoint" name="avg_down_point" value="10" min="0" step="0.25">
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Max Contracts</span>
+                    <input type="number" id="createMaxContracts" name="max_contracts" value="0" min="0">
+                    <small style="color: #64748b;">0 = unlimited</small>
+                </label>
                 <div class="tp-row">
                     <span class="tp-pill">TP #1</span>
                     <label class="form-field">
@@ -859,6 +929,7 @@
     .header-actions { display: flex; gap: 0.75rem; align-items: center; }
     .link-button { color: #60a5fa; text-decoration: none; font-weight: 600; }
     .builder-alert { border-radius: 14px; padding: 1rem 1.2rem; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); color: #fca5a5; }
+    .builder-alert--info { background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); color: #6ee7b7; }
     .builder-alert ul { margin: 0; padding-left: 1.25rem; }
     .builder-form { display: grid; gap: 1.5rem; }
     .form-field { display: grid; gap: 0.35rem; color: var(--text-muted); font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -1157,6 +1228,151 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+        // =============================================
+        // Strategy Template Loading & Auto-Population
+        // =============================================
+        
+        let strategyTemplates = []; // Store loaded templates
+        
+        async function loadStrategyTemplates() {
+            const select = document.getElementById('strategyTemplateSelect');
+            const templateInfo = document.getElementById('templateInfo');
+            
+            if (!select) return; // Not on create page
+            
+            try {
+                const response = await fetch('/api/strategies/templates');
+                const data = await response.json();
+                
+                if (data.success && data.templates) {
+                    strategyTemplates = data.templates;
+                    
+                    // Clear and rebuild options
+                    select.innerHTML = '<option value="">-- Select a strategy template --</option>';
+                    
+                    // Group by public vs private
+                    const publicTemplates = data.templates.filter(t => t.is_public && !t.is_own);
+                    const myTemplates = data.templates.filter(t => t.is_own);
+                    
+                    if (publicTemplates.length > 0) {
+                        const publicGroup = document.createElement('optgroup');
+                        publicGroup.label = '📢 Public Strategies';
+                        publicTemplates.forEach(t => {
+                            const opt = document.createElement('option');
+                            opt.value = t.id;
+                            opt.textContent = `${t.name} (by ${t.owner_username})`;
+                            publicGroup.appendChild(opt);
+                        });
+                        select.appendChild(publicGroup);
+                    }
+                    
+                    if (myTemplates.length > 0) {
+                        const myGroup = document.createElement('optgroup');
+                        myGroup.label = '🔒 My Strategies';
+                        myTemplates.forEach(t => {
+                            const opt = document.createElement('option');
+                            opt.value = t.id;
+                            opt.textContent = t.name;
+                            myGroup.appendChild(opt);
+                        });
+                        select.appendChild(myGroup);
+                    }
+                    
+                    templateInfo.textContent = `${data.count} template(s) available`;
+                    templateInfo.style.color = '#10b981';
+                } else {
+                    templateInfo.textContent = 'No templates available. Create one in Manage Strategies.';
+                    templateInfo.style.color = '#f59e0b';
+                }
+            } catch (error) {
+                console.error('Error loading templates:', error);
+                templateInfo.textContent = 'Error loading templates';
+                templateInfo.style.color = '#ef4444';
+            }
+        }
+        
+        function populateFormFromTemplate(templateId) {
+            const template = strategyTemplates.find(t => t.id == templateId);
+            if (!template) return;
+            
+            console.log('Populating form with template:', template);
+            
+            // Show the template loaded alert
+            const templateAlert = document.getElementById('templateAlert');
+            const templateAlertMessage = document.getElementById('templateAlertMessage');
+            if (templateAlert && templateAlertMessage) {
+                templateAlertMessage.textContent = `Settings loaded from "${template.name}" by ${template.owner_username}. Customize as needed.`;
+                templateAlert.style.display = 'block';
+            }
+            
+            // Populate Strategy Type
+            const strategyType = document.getElementById('strategyType');
+            if (strategyType && template.strat_type) {
+                strategyType.value = template.strat_type;
+            }
+            
+            // Populate Position Settings
+            const initialPositionSize = document.getElementById('createInitialPositionSize');
+            if (initialPositionSize) initialPositionSize.value = template.position_size || 1;
+            
+            const addPositionSize = document.getElementById('createAddPositionSize');
+            if (addPositionSize) addPositionSize.value = template.position_add || 1;
+            
+            // Populate TP Settings
+            const tpUnits = document.getElementById('createTpUnits');
+            if (tpUnits && template.tpsl_units) tpUnits.value = template.tpsl_units;
+            
+            const tpValue = document.getElementById('createTpValue');
+            if (tpValue) tpValue.value = template.take_profit || 0;
+            
+            const tpTrim = document.getElementById('createTpTrim');
+            if (tpTrim) tpTrim.value = template.trim || 100;
+            
+            // Populate SL Settings
+            const slEnabled = document.getElementById('createSlEnabled');
+            if (slEnabled) slEnabled.checked = (template.stop_loss && template.stop_loss > 0);
+            
+            const slAmount = document.getElementById('createSlAmount');
+            if (slAmount) slAmount.value = template.stop_loss || 0;
+            
+            const slUnits = document.getElementById('createSlUnits');
+            if (slUnits && template.tpsl_units) slUnits.value = template.tpsl_units;
+            
+            // Populate Max Contracts
+            const maxContracts = document.getElementById('createMaxContracts');
+            if (maxContracts) maxContracts.value = template.max_contracts || 0;
+            
+            // Flash highlight on populated fields
+            document.querySelectorAll('#createInitialPositionSize, #createAddPositionSize, #createTpValue, #createSlAmount, #createMaxContracts').forEach(el => {
+                if (el) {
+                    el.style.transition = 'background-color 0.3s ease';
+                    el.style.backgroundColor = 'rgba(16, 185, 129, 0.3)';
+                    setTimeout(() => {
+                        el.style.backgroundColor = '';
+                    }, 1500);
+                }
+            });
+            
+            showToast(`Template "${template.name}" loaded! Customize settings as needed.`, 'success', 3000);
+        }
+        
+        // Load templates on page load
+        loadStrategyTemplates();
+        
+        // Handle template selection
+        const templateSelect = document.getElementById('strategyTemplateSelect');
+        if (templateSelect) {
+            templateSelect.addEventListener('change', function() {
+                if (this.value) {
+                    populateFormFromTemplate(this.value);
+                } else {
+                    // Hide the alert if no template selected
+                    const templateAlert = document.getElementById('templateAlert');
+                    if (templateAlert) templateAlert.style.display = 'none';
+                }
+            });
+        }
+        
         // Panel toggle functionality
         document.querySelectorAll('[data-panel]').forEach(function(panel) {
             const toggle = panel.querySelector('.panel-toggle');

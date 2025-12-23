@@ -429,14 +429,16 @@ def _init_sqlite_tables(conn):
             max_contracts_per_trade INTEGER DEFAULT 0,
             option_premium_filter REAL DEFAULT 0,
             direction_filter TEXT,
-            time_filter_1_start TEXT DEFAULT '12:00 AM',
-            time_filter_1_stop TEXT DEFAULT '11:59 PM',
-            time_filter_2_start TEXT DEFAULT '12:00 AM',
-            time_filter_2_stop TEXT DEFAULT '11:59 PM',
-            signal_cooldown INTEGER DEFAULT 60,
-            max_signals_per_session INTEGER DEFAULT 10,
-            max_daily_loss REAL DEFAULT 500,
-            auto_flat_after_cutoff INTEGER DEFAULT 1,
+            time_filter_1_enabled INTEGER DEFAULT 0,
+            time_filter_1_start TEXT DEFAULT '',
+            time_filter_1_stop TEXT DEFAULT '',
+            time_filter_2_enabled INTEGER DEFAULT 0,
+            time_filter_2_start TEXT DEFAULT '',
+            time_filter_2_stop TEXT DEFAULT '',
+            signal_cooldown INTEGER DEFAULT 0,
+            max_signals_per_session INTEGER DEFAULT 0,
+            max_daily_loss REAL DEFAULT 0,
+            auto_flat_after_cutoff INTEGER DEFAULT 0,
             notes TEXT,
             recording_enabled INTEGER DEFAULT 1,
             is_recording INTEGER DEFAULT 0,
@@ -838,14 +840,16 @@ def _init_postgres_tables():
             max_contracts_per_trade INTEGER DEFAULT 0,
             option_premium_filter REAL DEFAULT 0,
             direction_filter TEXT,
-            time_filter_1_start TEXT DEFAULT '12:00 AM',
-            time_filter_1_stop TEXT DEFAULT '11:59 PM',
-            time_filter_2_start TEXT DEFAULT '12:00 AM',
-            time_filter_2_stop TEXT DEFAULT '11:59 PM',
-            signal_cooldown INTEGER DEFAULT 60,
-            max_signals_per_session INTEGER DEFAULT 10,
-            max_daily_loss REAL DEFAULT 500,
-            auto_flat_after_cutoff BOOLEAN DEFAULT TRUE,
+            time_filter_1_enabled BOOLEAN DEFAULT FALSE,
+            time_filter_1_start TEXT DEFAULT '',
+            time_filter_1_stop TEXT DEFAULT '',
+            time_filter_2_enabled BOOLEAN DEFAULT FALSE,
+            time_filter_2_start TEXT DEFAULT '',
+            time_filter_2_stop TEXT DEFAULT '',
+            signal_cooldown INTEGER DEFAULT 0,
+            max_signals_per_session INTEGER DEFAULT 0,
+            max_daily_loss REAL DEFAULT 0,
+            auto_flat_after_cutoff BOOLEAN DEFAULT FALSE,
             notes TEXT,
             recording_enabled BOOLEAN DEFAULT TRUE,
             is_recording BOOLEAN DEFAULT FALSE,
@@ -2086,15 +2090,15 @@ def init_db():
             option_premium_filter REAL DEFAULT 0,
             direction_filter TEXT,
             -- Time Filters
-            time_filter_1_start TEXT DEFAULT '12:00 AM',
-            time_filter_1_stop TEXT DEFAULT '11:59 PM',
-            time_filter_2_start TEXT DEFAULT '12:00 AM',
-            time_filter_2_stop TEXT DEFAULT '11:59 PM',
+            time_filter_1_start TEXT DEFAULT '',
+            time_filter_1_stop TEXT DEFAULT '',
+            time_filter_2_start TEXT DEFAULT '',
+            time_filter_2_stop TEXT DEFAULT '',
             -- Execution Controls
-            signal_cooldown INTEGER DEFAULT 60,
-            max_signals_per_session INTEGER DEFAULT 10,
-            max_daily_loss REAL DEFAULT 500,
-            auto_flat_after_cutoff INTEGER DEFAULT 1,
+            signal_cooldown INTEGER DEFAULT 0,
+            max_signals_per_session INTEGER DEFAULT 0,
+            max_daily_loss REAL DEFAULT 0,
+            auto_flat_after_cutoff INTEGER DEFAULT 0,
             -- Miscellaneous
             notes TEXT,
             -- Recording Status
@@ -2254,6 +2258,16 @@ def init_db():
         pass  # Column already exists
     try:
         cursor.execute('ALTER TABLE strategies ADD COLUMN created_by_username TEXT')
+    except:
+        pass  # Column already exists
+    
+    # Add time filter enabled columns to recorders table (Dec 2025)
+    try:
+        cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_1_enabled INTEGER DEFAULT 0')
+    except:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_2_enabled INTEGER DEFAULT 0')
     except:
         pass  # Column already exists
     
@@ -5613,8 +5627,10 @@ def api_update_recorder(recorder_id):
             'max_contracts_per_trade': 'max_contracts_per_trade',
             'option_premium_filter': 'option_premium_filter',
             'direction_filter': 'direction_filter',
+            'time_filter_1_enabled': 'time_filter_1_enabled',
             'time_filter_1_start': 'time_filter_1_start',
             'time_filter_1_stop': 'time_filter_1_stop',
+            'time_filter_2_enabled': 'time_filter_2_enabled',
             'time_filter_2_start': 'time_filter_2_start',
             'time_filter_2_stop': 'time_filter_2_stop',
             'signal_cooldown': 'signal_cooldown',
@@ -7009,24 +7025,28 @@ def process_webhook_directly(webhook_token):
                 # Overnight window (e.g., 10 PM to 6 AM)
                 return current >= start or current <= stop
         
-        # Check Time Filter 1
+        # Check Time Filter 1 and 2 (only if enabled)
+        time_filter_1_enabled = recorder.get('time_filter_1_enabled', False)
         time_filter_1_start = recorder.get('time_filter_1_start', '')
         time_filter_1_stop = recorder.get('time_filter_1_stop', '')
+        time_filter_2_enabled = recorder.get('time_filter_2_enabled', False)
         time_filter_2_start = recorder.get('time_filter_2_start', '')
         time_filter_2_stop = recorder.get('time_filter_2_stop', '')
-        
-        # If any time filter is set, check them
-        has_time_filter_1 = time_filter_1_start and time_filter_1_stop
-        has_time_filter_2 = time_filter_2_start and time_filter_2_stop
-        
+
+        # Time filter is active only if ENABLED and has valid times
+        has_time_filter_1 = time_filter_1_enabled and time_filter_1_start and time_filter_1_stop
+        has_time_filter_2 = time_filter_2_enabled and time_filter_2_start and time_filter_2_stop
+
         if has_time_filter_1 or has_time_filter_2:
             in_window_1 = is_time_in_window(now, time_filter_1_start, time_filter_1_stop) if has_time_filter_1 else False
             in_window_2 = is_time_in_window(now, time_filter_2_start, time_filter_2_stop) if has_time_filter_2 else False
-            
+
             if not in_window_1 and not in_window_2:
                 logger.warning(f"🚫 [{recorder_name}] Time filter BLOCKED: {now.strftime('%I:%M %p')} not in trading window")
-                logger.warning(f"   Window 1: {time_filter_1_start} - {time_filter_1_stop}")
-                logger.warning(f"   Window 2: {time_filter_2_start} - {time_filter_2_stop}")
+                if has_time_filter_1:
+                    logger.warning(f"   Window 1 (enabled): {time_filter_1_start} - {time_filter_1_stop}")
+                if has_time_filter_2:
+                    logger.warning(f"   Window 2 (enabled): {time_filter_2_start} - {time_filter_2_stop}")
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Outside trading hours ({now.strftime("%I:%M %p")})'}), 200
             logger.info(f"✅ Time filter passed: {now.strftime('%I:%M %p')} in window")
@@ -8576,6 +8596,12 @@ def traders_edit(trader_id):
                    r.avg_down_amount as r_avg_down_amount,
                    r.avg_down_point as r_avg_down_point,
                    r.avg_down_units as r_avg_down_units,
+                   r.time_filter_1_enabled as r_time_filter_1_enabled,
+                   r.time_filter_1_start as r_time_filter_1_start,
+                   r.time_filter_1_stop as r_time_filter_1_stop,
+                   r.time_filter_2_enabled as r_time_filter_2_enabled,
+                   r.time_filter_2_start as r_time_filter_2_start,
+                   r.time_filter_2_stop as r_time_filter_2_stop,
                    a.name as account_name, a.id as parent_account_id
             FROM traders t
             JOIN recorders r ON t.recorder_id = r.id
@@ -8641,7 +8667,14 @@ def traders_edit(trader_id):
         'avg_down_amount': trader_row['r_avg_down_amount'] or 1,
         'avg_down_point': trader_row['r_avg_down_point'] or 10,
             'avg_down_units': trader_row['r_avg_down_units'] or 'Ticks',
-            'max_daily_loss': trader_row['max_daily_loss'] or 500
+            'max_daily_loss': trader_row['max_daily_loss'] or 500,
+        # Time filters from recorder
+        'time_filter_1_enabled': bool(trader_row.get('r_time_filter_1_enabled') or trader_row.get('time_filter_1_enabled')),
+        'time_filter_1_start': trader_row.get('r_time_filter_1_start') or trader_row.get('time_filter_1_start') or '',
+        'time_filter_1_stop': trader_row.get('r_time_filter_1_stop') or trader_row.get('time_filter_1_stop') or '',
+        'time_filter_2_enabled': bool(trader_row.get('r_time_filter_2_enabled') or trader_row.get('time_filter_2_enabled')),
+        'time_filter_2_start': trader_row.get('r_time_filter_2_start') or trader_row.get('time_filter_2_start') or '',
+        'time_filter_2_stop': trader_row.get('r_time_filter_2_stop') or trader_row.get('time_filter_2_stop') or ''
         }
         
         # Get enabled accounts from routing (if stored)
