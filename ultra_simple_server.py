@@ -12297,35 +12297,50 @@ def api_dashboard_chart_data():
         timeframe = request.args.get('timeframe', 'month')
         
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
         
-        # Build date filter
+        # Build date filter - PostgreSQL vs SQLite syntax
         date_filter = ''
-        if timeframe == 'today':
-            date_filter = "AND DATE(rt.exit_time) = DATE('now')"
-        elif timeframe == 'week':
-            date_filter = "AND rt.exit_time >= DATE('now', '-7 days')"
-        elif timeframe == 'month':
-            date_filter = "AND rt.exit_time >= DATE('now', '-30 days')"
-        elif timeframe == '3months':
-            date_filter = "AND rt.exit_time >= DATE('now', '-90 days')"
-        elif timeframe == '6months':
-            date_filter = "AND rt.exit_time >= DATE('now', '-180 days')"
-        elif timeframe == 'year':
-            date_filter = "AND rt.exit_time >= DATE('now', '-365 days')"
+        if is_postgres:
+            if timeframe == 'today':
+                date_filter = "AND DATE(rt.exit_time) = CURRENT_DATE"
+            elif timeframe == 'week':
+                date_filter = "AND rt.exit_time >= CURRENT_DATE - INTERVAL '7 days'"
+            elif timeframe == 'month':
+                date_filter = "AND rt.exit_time >= CURRENT_DATE - INTERVAL '30 days'"
+            elif timeframe == '3months':
+                date_filter = "AND rt.exit_time >= CURRENT_DATE - INTERVAL '90 days'"
+            elif timeframe == '6months':
+                date_filter = "AND rt.exit_time >= CURRENT_DATE - INTERVAL '180 days'"
+            elif timeframe == 'year':
+                date_filter = "AND rt.exit_time >= CURRENT_DATE - INTERVAL '365 days'"
+        else:
+            if timeframe == 'today':
+                date_filter = "AND DATE(rt.exit_time) = DATE('now')"
+            elif timeframe == 'week':
+                date_filter = "AND rt.exit_time >= DATE('now', '-7 days')"
+            elif timeframe == 'month':
+                date_filter = "AND rt.exit_time >= DATE('now', '-30 days')"
+            elif timeframe == '3months':
+                date_filter = "AND rt.exit_time >= DATE('now', '-90 days')"
+            elif timeframe == '6months':
+                date_filter = "AND rt.exit_time >= DATE('now', '-180 days')"
+            elif timeframe == 'year':
+                date_filter = "AND rt.exit_time >= DATE('now', '-365 days')"
         
         # Build recorder filter
         recorder_filter = ''
         params = []
         if strategy_id:
-            recorder_filter = 'AND rt.recorder_id = ?'
+            recorder_filter = f'AND rt.recorder_id = {ph}'
             params.append(int(strategy_id))
         
         # Build symbol filter
         symbol_filter = ''
         if symbol:
-            symbol_filter = 'AND rt.ticker = ?'
+            symbol_filter = f'AND rt.ticker = {ph}'
             params.append(symbol)
         
         # Get daily aggregate PnL
@@ -12339,9 +12354,11 @@ def api_dashboard_chart_data():
             WHERE rt.status = 'closed' {date_filter} {recorder_filter} {symbol_filter}
             GROUP BY DATE(rt.exit_time)
             ORDER BY DATE(rt.exit_time) ASC
-        ''', params)
+        ''', params if params else None)
         
-        daily_data = [dict(row) for row in cursor.fetchall()]
+        # Convert rows to dicts
+        columns = [desc[0] for desc in cursor.description]
+        daily_data = [dict(zip(columns, row)) for row in cursor.fetchall()]
         conn.close()
         
         # Calculate cumulative profit and drawdown
