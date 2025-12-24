@@ -7459,6 +7459,100 @@ def process_webhook_directly(webhook_token):
         # Execute the trade with FULL risk settings
         logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks | SL: {sl_ticks} ticks")
         
+        # ============================================================
+        # STRATEGY MODE: Check for open position BEFORE broker execution
+        # For TradingView Strategy: SELL closes LONG, BUY closes SHORT
+        # ============================================================
+        cursor.execute(f'''
+            SELECT * FROM recorded_trades 
+            WHERE recorder_id = {placeholder} AND status = 'open' 
+            ORDER BY entry_time DESC LIMIT 1
+        ''', (recorder_id,))
+        strategy_open_trade_row = cursor.fetchone()
+        
+        if strategy_open_trade_row:
+            columns = [desc[0] for desc in cursor.description]
+            strategy_open_trade = dict(zip(columns, strategy_open_trade_row))
+            open_side = strategy_open_trade.get('side', '')
+            
+            logger.info(f"🔍 STRATEGY CHECK: Found open {open_side} trade #{strategy_open_trade['id']}, trade_action={trade_action}")
+            
+            # SELL signal when in LONG = just exit (don't open SHORT)
+            if trade_action.upper() == 'SELL' and open_side == 'LONG':
+                logger.info(f"📊 SELL closes LONG - exiting position only")
+                try:
+                    tick_size_close = get_tick_size(ticker) if ticker else 0.25
+                    tick_value_close = get_tick_value(ticker) if ticker else 0.50
+                    entry_price_close = float(strategy_open_trade.get('entry_price', 0) or 0)
+                    
+                    pnl_ticks_close = (current_price - entry_price_close) / tick_size_close
+                    pnl_dollars = pnl_ticks_close * tick_value_close * quantity
+                    
+                    # Close the trade in DB
+                    cursor.execute(f'''
+                        UPDATE recorded_trades 
+                        SET status = 'closed', exit_price = {placeholder}, pnl = {placeholder}, 
+                            pnl_ticks = {placeholder}, exit_reason = 'signal', 
+                            exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = {placeholder}
+                    ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
+                    conn.commit()
+                    
+                    logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
+                    
+                    conn.close()
+                    return jsonify({
+                        'success': True,
+                        'action': 'closed',
+                        'trade_id': strategy_open_trade['id'],
+                        'side': 'LONG',
+                        'entry_price': entry_price_close,
+                        'exit_price': current_price,
+                        'pnl': pnl_dollars,
+                        'pnl_ticks': pnl_ticks_close,
+                        'exit_reason': 'signal'
+                    })
+                except Exception as close_err:
+                    logger.warning(f"⚠️ Could not close LONG: {close_err}")
+            
+            # BUY signal when in SHORT = just exit (don't open LONG)
+            elif trade_action.upper() == 'BUY' and open_side == 'SHORT':
+                logger.info(f"📊 BUY closes SHORT - exiting position only")
+                try:
+                    tick_size_close = get_tick_size(ticker) if ticker else 0.25
+                    tick_value_close = get_tick_value(ticker) if ticker else 0.50
+                    entry_price_close = float(strategy_open_trade.get('entry_price', 0) or 0)
+                    
+                    pnl_ticks_close = (entry_price_close - current_price) / tick_size_close
+                    pnl_dollars = pnl_ticks_close * tick_value_close * quantity
+                    
+                    # Close the trade in DB
+                    cursor.execute(f'''
+                        UPDATE recorded_trades 
+                        SET status = 'closed', exit_price = {placeholder}, pnl = {placeholder}, 
+                            pnl_ticks = {placeholder}, exit_reason = 'signal', 
+                            exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = {placeholder}
+                    ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
+                    conn.commit()
+                    
+                    logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
+                    
+                    conn.close()
+                    return jsonify({
+                        'success': True,
+                        'action': 'closed',
+                        'trade_id': strategy_open_trade['id'],
+                        'side': 'SHORT',
+                        'entry_price': entry_price_close,
+                        'exit_price': current_price,
+                        'pnl': pnl_dollars,
+                        'pnl_ticks': pnl_ticks_close,
+                        'exit_reason': 'signal'
+                    })
+                except Exception as close_err:
+                    logger.warning(f"⚠️ Could not close SHORT: {close_err}")
+        
         try:
             # Import the SIMPLE trade function
             from recorder_service import execute_trade_simple
@@ -7756,80 +7850,6 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
             # Convert to dict properly
             columns = [desc[0] for desc in cursor.description]
             open_trade = dict(zip(columns, open_trade_row))
-        
-        # ============================================================
-        # STRATEGY MODE: Handle position exits
-        # For TradingView Strategy: SELL closes LONG, BUY closes SHORT
-        # ============================================================
-        logger.info(f"🔍 STRATEGY CHECK: open_trade={open_trade is not None}, trade_action={trade_action}")
-        if open_trade:
-            open_side = open_trade.get('side', '')
-            logger.info(f"🔍 STRATEGY CHECK: open_side={open_side}, checking conditions...")
-            should_close = False
-            is_exit_only = False  # True if this is just an exit (not a flip/reversal)
-            
-            # SELL signal when in LONG = exit the LONG
-            if trade_action.upper() == 'SELL' and open_side == 'LONG':
-                should_close = True
-                is_exit_only = True  # SELL just means exit, don't open SHORT
-            # SHORT signal when in LONG = close LONG then open SHORT (reversal)
-            elif trade_action.upper() == 'SHORT' and open_side == 'LONG':
-                should_close = True
-                is_exit_only = False
-            # BUY signal when in SHORT = exit the SHORT
-            elif trade_action.upper() == 'BUY' and open_side == 'SHORT':
-                should_close = True
-                is_exit_only = True  # BUY just means exit, don't open LONG
-            # LONG signal when in SHORT = close SHORT then open LONG (reversal)
-            elif trade_action.upper() == 'LONG' and open_side == 'SHORT':
-                should_close = True
-                is_exit_only = False
-            
-            if should_close:
-                try:
-                    tick_size_close = get_tick_size(ticker) if ticker else 0.25
-                    tick_value_close = get_tick_value(ticker) if ticker else 0.50
-                    entry_price_close = float(open_trade.get('entry_price', 0) or 0)
-                    
-                    if open_side == 'LONG':
-                        pnl_ticks_close = (current_price - entry_price_close) / tick_size_close
-                    else:
-                        pnl_ticks_close = (entry_price_close - current_price) / tick_size_close
-                    
-                    pnl_dollars = pnl_ticks_close * tick_value_close * quantity
-                    
-                    # Close the trade in DB
-                    cursor.execute(f'''
-                        UPDATE recorded_trades 
-                        SET status = 'closed', exit_price = {placeholder}, pnl = {placeholder}, 
-                            pnl_ticks = {placeholder}, exit_reason = 'signal', 
-                            exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = {placeholder}
-                    ''', (current_price, pnl_dollars, pnl_ticks_close, open_trade['id']))
-                    conn.commit()
-                    
-                    logger.info(f"📊 {open_side} closed by {trade_action} signal: #{open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
-                    
-                    # For exit-only signals (SELL to exit LONG, BUY to exit SHORT)
-                    # Return success after closing - don't open new position
-                    if is_exit_only:
-                        conn.close()
-                        return jsonify({
-                            'success': True,
-                            'action': 'closed',
-                            'trade_id': open_trade['id'],
-                            'side': open_side,
-                            'entry_price': entry_price_close,
-                            'exit_price': current_price,
-                            'pnl': pnl_dollars,
-                            'pnl_ticks': pnl_ticks_close,
-                            'exit_reason': 'signal'
-                        })
-                    else:
-                        # For reversals, clear open_trade so new position opens
-                        open_trade = None
-                except Exception as close_err:
-                    logger.warning(f"⚠️ Could not close opposite trade in DB: {close_err}")
         
         # ============================================================
         # 📉 AVERAGING DOWN CHECK
