@@ -7431,6 +7431,46 @@ def process_webhook_directly(webhook_token):
             
             if result.get('success'):
                 logger.info(f"✅ Trade executed: {result}")
+                
+                # Record the trade in recorded_trades table for dashboard analytics
+                try:
+                    trade_conn = get_db_connection()
+                    trade_cursor = trade_conn.cursor()
+                    is_pg = is_using_postgres()
+                    ph = '%s' if is_pg else '?'
+                    
+                    # Get entry price from result or use current price
+                    entry_price = result.get('broker_avg') or result.get('fill_price') or current_price
+                    trade_qty = result.get('broker_qty') or quantity
+                    tp_price = result.get('tp_price')
+                    sl_price = result.get('sl_price')
+                    
+                    # Determine trade side
+                    trade_side = 'LONG' if trade_action.upper() in ['BUY', 'LONG'] else 'SHORT'
+                    
+                    # Check for existing open trade
+                    trade_cursor.execute(f'''
+                        SELECT id FROM recorded_trades 
+                        WHERE recorder_id = {ph} AND status = 'open'
+                        ORDER BY id DESC LIMIT 1
+                    ''', (recorder_id,))
+                    existing = trade_cursor.fetchone()
+                    
+                    if not existing:
+                        # Insert new trade record
+                        trade_cursor.execute(f'''
+                            INSERT INTO recorded_trades 
+                            (recorder_id, ticker, action, side, entry_price, quantity, status, tp_price, sl_price)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open', {ph}, {ph})
+                        ''', (recorder_id, ticker, trade_action, trade_side, entry_price, trade_qty, tp_price, sl_price))
+                        
+                        trade_conn.commit()
+                        logger.info(f"📊 Trade recorded: {trade_side} {ticker} @ {entry_price} x{trade_qty}")
+                    
+                    trade_conn.close()
+                except Exception as rec_err:
+                    logger.warning(f"⚠️ Could not record trade (non-fatal): {rec_err}")
+                
                 return jsonify({
                     'success': True,
                     'action': trade_action,
