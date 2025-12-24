@@ -367,8 +367,13 @@ threading.Timer(2.0, _auto_start_daemon).start()
 # DATABASE CONNECTION - Supports both SQLite and PostgreSQL
 # ============================================================================
 DATABASE_URL = os.getenv('DATABASE_URL')
-is_postgres = bool(DATABASE_URL and DATABASE_URL.startswith('postgres'))
+# CRITICAL FIX: Don't assume PostgreSQL just because DATABASE_URL is set
+# We must verify the connection actually works before using %s placeholders
+# Previously: is_postgres = bool(DATABASE_URL and ...) caused SQL errors when
+# PostgreSQL was configured but not working, sending %s to SQLite
 _pg_pool = None
+_is_postgres_verified = False  # Only True after successful PostgreSQL connection
+is_postgres = False  # Will be set True only after verified connection
 
 # ============================================================================
 # Contract Specifications (matching main server exactly)
@@ -577,7 +582,7 @@ class PostgresConnectionWrapper:
 
 def get_db_connection():
     """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite"""
-    global _pg_pool
+    global _pg_pool, is_postgres, _is_postgres_verified
     
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
         try:
@@ -593,13 +598,26 @@ def get_db_connection():
             
             conn = _pg_pool.getconn()
             conn.cursor_factory = RealDictCursor
+            
+            # CRITICAL: Only set is_postgres=True AFTER successful connection
+            # This ensures we use correct placeholder (? vs %s)
+            if not _is_postgres_verified:
+                is_postgres = True
+                _is_postgres_verified = True
+                logger.info("✅ recorder_service: PostgreSQL verified, using %s placeholders")
+            
             return PostgresConnectionWrapper(conn, _pg_pool)
         except ImportError:
             logger.warning("⚠️ psycopg2 not installed, using SQLite")
         except Exception as e:
             logger.warning(f"⚠️ PostgreSQL failed: {e}, using SQLite")
     
-    # SQLite fallback
+    # SQLite fallback - ensure is_postgres is False
+    if not _is_postgres_verified:
+        is_postgres = False
+        _is_postgres_verified = True
+        logger.info("✅ recorder_service: Using SQLite, using ? placeholders")
+    
     conn = sqlite3.connect(DATABASE_PATH, timeout=30)
     conn.execute('PRAGMA journal_mode=WAL')
     conn.execute('PRAGMA busy_timeout=30000')
