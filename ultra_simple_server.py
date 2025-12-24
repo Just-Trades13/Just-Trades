@@ -9074,7 +9074,7 @@ def traders_edit(trader_id):
         placeholder = '%s' if is_postgres else '?'
         cursor.execute(f'''
             SELECT t.*, 
-                   r.name as recorder_name, r.strategy_type, r.symbol,
+                   r.name as recorder_name, r.strategy_type, r.symbol, r.webhook_token,
                    r.initial_position_size as r_initial_position_size,
                    r.add_position_size as r_add_position_size,
                    r.tp_targets as r_tp_targets,
@@ -9235,13 +9235,20 @@ def traders_edit(trader_id):
         
         conn.close()
         
+        # Build recorder object for webhook templates
+        recorder = {
+            'name': trader['recorder_name'],
+            'webhook_token': trader_row['webhook_token'] if 'webhook_token' in trader_row.keys() else None
+        }
+        
         return render_template(
             'traders.html',
             mode='edit',
             header_title='Edit Trader',
             header_cta='Update Trader',
             trader=trader,
-            accounts=accounts
+            accounts=accounts,
+            recorder=recorder
         )
     except Exception as e:
         logger.error(f"Error in traders_edit for trader {trader_id}: {e}")

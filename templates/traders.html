@@ -405,6 +405,104 @@
     </section>
     </form>
 
+    <!-- Webhook Message Templates Section -->
+    <section class="webhook-templates-card">
+        <h3>📡 Webhook Message Templates</h3>
+        <p class="templates-intro">Copy these JSON templates into your TradingView alert message. Replace <code>{{ticker}}</code> and other placeholders with TradingView variables.</p>
+        
+        <div class="webhook-url-box">
+            <label>Your Webhook URL:</label>
+            <div class="url-display">
+                <code id="webhookUrl">https://justtrades-production.up.railway.app/webhook/{{ recorder.webhook_token if recorder else 'YOUR_TOKEN' }}</code>
+                <button type="button" class="copy-btn" onclick="copyToClipboard('webhookUrl', this)">
+                    <span class="material-icons">content_copy</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="templates-grid">
+            <!-- Simple Indicator: BUY -->
+            <div class="template-box">
+                <div class="template-header">
+                    <span class="template-badge badge-indicator">INDICATOR</span>
+                    <span class="template-title">Simple BUY Signal</span>
+                </div>
+                <pre class="template-code" id="templateBuy">{
+  "recorder": "{{ trader.recorder_name }}",
+  "action": "buy",
+  "ticker": "{{ticker}}",
+  "price": "{{close}}"
+}</pre>
+                <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateBuy', this)">
+                    <span class="material-icons">content_copy</span> Copy
+                </button>
+            </div>
+
+            <!-- Simple Indicator: SELL -->
+            <div class="template-box">
+                <div class="template-header">
+                    <span class="template-badge badge-indicator">INDICATOR</span>
+                    <span class="template-title">Simple SELL Signal</span>
+                </div>
+                <pre class="template-code" id="templateSell">{
+  "recorder": "{{ trader.recorder_name }}",
+  "action": "sell",
+  "ticker": "{{ticker}}",
+  "price": "{{close}}"
+}</pre>
+                <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateSell', this)">
+                    <span class="material-icons">content_copy</span> Copy
+                </button>
+            </div>
+
+            <!-- Full Strategy Signal -->
+            <div class="template-box template-box-wide">
+                <div class="template-header">
+                    <span class="template-badge badge-strategy">STRATEGY</span>
+                    <span class="template-title">Full Strategy Signal (TradingView Strategy)</span>
+                </div>
+                <pre class="template-code" id="templateStrategy">{
+  "recorder": "{{ trader.recorder_name }}",
+  "action": "{{strategy.order.action}}",
+  "ticker": "{{ticker}}",
+  "price": "{{close}}",
+  "contracts": "{{strategy.order.contracts}}",
+  "position_size": "{{strategy.position_size}}",
+  "market_position": "{{strategy.market_position}}"
+}</pre>
+                <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateStrategy', this)">
+                    <span class="material-icons">content_copy</span> Copy
+                </button>
+            </div>
+
+            <!-- Close/Flat Signal -->
+            <div class="template-box">
+                <div class="template-header">
+                    <span class="template-badge badge-close">CLOSE</span>
+                    <span class="template-title">Close Position (Flat)</span>
+                </div>
+                <pre class="template-code" id="templateClose">{
+  "recorder": "{{ trader.recorder_name }}",
+  "action": "close",
+  "ticker": "{{ticker}}",
+  "price": "{{close}}",
+  "market_position": "flat"
+}</pre>
+                <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateClose', this)">
+                    <span class="material-icons">content_copy</span> Copy
+                </button>
+            </div>
+        </div>
+
+        <div class="templates-help">
+            <span class="material-icons">info</span>
+            <div>
+                <strong>TradingView Variables:</strong> Use <code>{{ticker}}</code>, <code>{{close}}</code>, <code>{{strategy.order.action}}</code>, <code>{{strategy.position_size}}</code>, <code>{{strategy.market_position}}</code> in your alerts.
+                <br><small>These are automatically replaced by TradingView when the alert fires.</small>
+            </div>
+        </div>
+    </section>
+
     <section class="danger-zone">
         <h3>Danger Zone</h3>
         <div class="danger-action">
@@ -1031,6 +1129,190 @@
         flex: 1;
         line-height: 1.4;
     }
+
+    /* Webhook Templates Section */
+    .webhook-templates-card {
+        background: rgba(11,18,33,0.92);
+        border: 1px solid rgba(16, 185, 129, 0.25);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-top: 1.5rem;
+    }
+    .webhook-templates-card h3 {
+        margin: 0 0 0.5rem 0;
+        color: #10b981;
+        font-size: 1.1rem;
+    }
+    .templates-intro {
+        color: #94a3b8;
+        font-size: 0.9rem;
+        margin: 0 0 1.25rem 0;
+    }
+    .templates-intro code {
+        background: rgba(59, 130, 246, 0.2);
+        color: #93c5fd;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
+    .webhook-url-box {
+        background: rgba(5, 10, 20, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1.25rem;
+    }
+    .webhook-url-box label {
+        display: block;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+        margin-bottom: 0.5rem;
+    }
+    .url-display {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 8px;
+        padding: 0.6rem 0.75rem;
+    }
+    .url-display code {
+        flex: 1;
+        color: #60a5fa;
+        font-size: 0.85rem;
+        word-break: break-all;
+    }
+    .copy-btn {
+        background: rgba(59, 130, 246, 0.2);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 6px;
+        color: #60a5fa;
+        padding: 0.4rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .copy-btn:hover {
+        background: rgba(59, 130, 246, 0.35);
+        border-color: rgba(59, 130, 246, 0.5);
+    }
+    .copy-btn .material-icons {
+        font-size: 1rem;
+    }
+    .templates-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+    .template-box {
+        background: rgba(5, 10, 20, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .template-box-wide {
+        grid-column: 1 / -1;
+    }
+    .template-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        background: rgba(30, 41, 59, 0.6);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .template-badge {
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+    .badge-indicator {
+        background: rgba(59, 130, 246, 0.25);
+        color: #93c5fd;
+    }
+    .badge-strategy {
+        background: rgba(168, 85, 247, 0.25);
+        color: #d8b4fe;
+    }
+    .badge-close {
+        background: rgba(239, 68, 68, 0.25);
+        color: #fca5a5;
+    }
+    .template-title {
+        font-size: 0.85rem;
+        color: #e2e8f0;
+        font-weight: 500;
+    }
+    .template-code {
+        margin: 0;
+        padding: 1rem;
+        background: rgba(15, 23, 42, 0.5);
+        color: #10b981;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        overflow-x: auto;
+        white-space: pre;
+    }
+    .copy-btn-full {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        width: 100%;
+        padding: 0.6rem;
+        background: rgba(16, 185, 129, 0.15);
+        border: none;
+        border-top: 1px solid rgba(148, 163, 184, 0.1);
+        color: #10b981;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .copy-btn-full:hover {
+        background: rgba(16, 185, 129, 0.25);
+    }
+    .copy-btn-full .material-icons {
+        font-size: 0.95rem;
+    }
+    .templates-help {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-top: 1.25rem;
+        padding: 1rem;
+        background: rgba(59, 130, 246, 0.1);
+        border-radius: 10px;
+        color: #94a3b8;
+        font-size: 0.85rem;
+    }
+    .templates-help .material-icons {
+        color: #60a5fa;
+        font-size: 1.1rem;
+        margin-top: 0.1rem;
+    }
+    .templates-help code {
+        background: rgba(59, 130, 246, 0.2);
+        color: #93c5fd;
+        padding: 0.1rem 0.35rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+    }
+    .templates-help small {
+        display: block;
+        margin-top: 0.35rem;
+        color: #64748b;
+    }
 }
 </style>
 {% endblock %}
@@ -1196,6 +1478,34 @@
             console.error('Error deleting trader:', error);
             showToast('Network error. Please try again.', 'error');
         }
+    }
+
+    // =============================================
+    // Copy to Clipboard
+    // =============================================
+    
+    function copyToClipboard(elementId, button) {
+        const element = document.getElementById(elementId);
+        const text = element.textContent || element.innerText;
+        
+        navigator.clipboard.writeText(text).then(() => {
+            // Show success feedback
+            const originalHTML = button.innerHTML;
+            button.innerHTML = '<span class="material-icons">check</span> Copied!';
+            button.style.background = 'rgba(16, 185, 129, 0.3)';
+            button.style.color = '#10b981';
+            
+            setTimeout(() => {
+                button.innerHTML = originalHTML;
+                button.style.background = '';
+                button.style.color = '';
+            }, 2000);
+            
+            showToast('Copied to clipboard!', 'success', 2000);
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            showToast('Failed to copy to clipboard', 'error');
+        });
     }
 
     // =============================================
