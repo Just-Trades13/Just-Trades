@@ -7761,8 +7761,10 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         # STRATEGY MODE: Handle position exits
         # For TradingView Strategy: SELL closes LONG, BUY closes SHORT
         # ============================================================
+        logger.info(f"🔍 STRATEGY CHECK: open_trade={open_trade is not None}, trade_action={trade_action}")
         if open_trade:
             open_side = open_trade.get('side', '')
+            logger.info(f"🔍 STRATEGY CHECK: open_side={open_side}, checking conditions...")
             should_close = False
             is_exit_only = False  # True if this is just an exit (not a flip/reversal)
             
