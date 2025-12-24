@@ -6072,7 +6072,7 @@ def api_get_traders():
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         
-        # Filter by user_id if logged in
+        # Filter by user_id if logged in - ONLY show current user's traders
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
             if is_postgres:
@@ -6086,6 +6086,7 @@ def api_get_traders():
                         t.is_demo,
                         t.enabled,
                         t.created_at,
+                        t.user_id,
                         t.max_contracts as trader_position_size,
                         r.name as recorder_name,
                         r.ticker as symbol,
@@ -6094,7 +6095,7 @@ def api_get_traders():
                     FROM traders t
                     LEFT JOIN recorders r ON t.recorder_id = r.id
                     LEFT JOIN accounts a ON t.account_id = a.id
-                    WHERE a.user_id = %s OR a.user_id IS NULL OR t.user_id = %s
+                    WHERE t.user_id = %s OR a.user_id = %s
                     ORDER BY t.created_at DESC
                 ''', (user_id, user_id))
             else:
@@ -6108,6 +6109,7 @@ def api_get_traders():
                         t.is_demo,
                         t.enabled,
                         t.created_at,
+                        t.user_id,
                         t.initial_position_size as trader_position_size,
                         t.add_position_size as trader_add_position_size,
                         t.tp_targets as trader_tp_targets,
@@ -6124,9 +6126,9 @@ def api_get_traders():
                     FROM traders t
                     JOIN recorders r ON t.recorder_id = r.id
                     JOIN accounts a ON t.account_id = a.id
-                    WHERE a.user_id = ? OR a.user_id IS NULL
+                    WHERE t.user_id = ? OR a.user_id = ?
                     ORDER BY t.created_at DESC
-                ''', (user_id,))
+                ''', (user_id, user_id))
         else:
             if is_postgres:
                 cursor.execute('''
