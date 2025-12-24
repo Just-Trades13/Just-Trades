@@ -7459,6 +7459,75 @@ def process_webhook_directly(webhook_token):
         # Execute the trade with FULL risk settings
         logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks | SL: {sl_ticks} ticks")
         
+        # ============================================================
+        # STRATEGY MODE: Handle position exits
+        # For TradingView Strategy: SELL closes LONG, BUY closes SHORT
+        # ============================================================
+        if open_trade:
+            open_side = open_trade.get('side', '')
+            should_close = False
+            is_exit_only = False  # True if this is just an exit (not a flip/reversal)
+            
+            # SELL signal when in LONG = exit the LONG
+            if trade_action.upper() == 'SELL' and open_side == 'LONG':
+                should_close = True
+                is_exit_only = True  # SELL just means exit, don't open SHORT
+            # SHORT signal when in LONG = close LONG then open SHORT (reversal)
+            elif trade_action.upper() == 'SHORT' and open_side == 'LONG':
+                should_close = True
+                is_exit_only = False
+            # BUY signal when in SHORT = exit the SHORT
+            elif trade_action.upper() == 'BUY' and open_side == 'SHORT':
+                should_close = True
+                is_exit_only = True  # BUY just means exit, don't open LONG
+            # LONG signal when in SHORT = close SHORT then open LONG (reversal)
+            elif trade_action.upper() == 'LONG' and open_side == 'SHORT':
+                should_close = True
+                is_exit_only = False
+            
+            if should_close:
+                try:
+                    tick_size_close = get_tick_size(ticker) if ticker else 0.25
+                    tick_value_close = get_tick_value(ticker) if ticker else 0.50
+                    entry_price = float(open_trade.get('entry_price', 0) or 0)
+                    
+                    if open_side == 'LONG':
+                        pnl_ticks = (current_price - entry_price) / tick_size_close
+                    else:
+                        pnl_ticks = (entry_price - current_price) / tick_size_close
+                    
+                    pnl_dollars = pnl_ticks * tick_value_close * quantity
+                    
+                    # Close the trade in DB
+                    cursor.execute(f'''
+                        UPDATE recorded_trades 
+                        SET status = 'closed', exit_price = {placeholder}, pnl = {placeholder}, 
+                            pnl_ticks = {placeholder}, exit_reason = 'signal', 
+                            exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = {placeholder}
+                    ''', (current_price, pnl_dollars, pnl_ticks, open_trade['id']))
+                    conn.commit()
+                    
+                    logger.info(f"📊 {open_side} closed by {trade_action} signal: #{open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
+                    
+                    # For exit-only signals (SELL to exit LONG, BUY to exit SHORT)
+                    # Return success after closing - don't open new position
+                    if is_exit_only:
+                        conn.close()
+                        return jsonify({
+                            'success': True,
+                            'action': 'closed',
+                            'trade_id': open_trade['id'],
+                            'side': open_side,
+                            'entry_price': entry_price,
+                            'exit_price': current_price,
+                            'pnl': pnl_dollars,
+                            'pnl_ticks': pnl_ticks,
+                            'exit_reason': 'signal'
+                        })
+                except Exception as close_err:
+                    logger.warning(f"⚠️ Could not close opposite trade in DB: {close_err}")
+        
         try:
             # Import the SIMPLE trade function
             from recorder_service import execute_trade_simple
