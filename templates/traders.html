@@ -430,8 +430,8 @@
                 <pre class="template-code" id="templateBuy">{
   "recorder": "{{ trader.recorder_name }}",
   "action": "buy",
-  "ticker": "{{ticker}}",
-  "price": "{{close}}"
+  "ticker": "{% raw %}{{ticker}}{% endraw %}",
+  "price": "{% raw %}{{close}}{% endraw %}"
 }</pre>
                 <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateBuy', this)">
                     <span class="material-icons">content_copy</span> Copy
@@ -447,8 +447,8 @@
                 <pre class="template-code" id="templateSell">{
   "recorder": "{{ trader.recorder_name }}",
   "action": "sell",
-  "ticker": "{{ticker}}",
-  "price": "{{close}}"
+  "ticker": "{% raw %}{{ticker}}{% endraw %}",
+  "price": "{% raw %}{{close}}{% endraw %}"
 }</pre>
                 <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateSell', this)">
                     <span class="material-icons">content_copy</span> Copy
@@ -463,12 +463,12 @@
                 </div>
                 <pre class="template-code" id="templateStrategy">{
   "recorder": "{{ trader.recorder_name }}",
-  "action": "{{strategy.order.action}}",
-  "ticker": "{{ticker}}",
-  "price": "{{close}}",
-  "contracts": "{{strategy.order.contracts}}",
-  "position_size": "{{strategy.position_size}}",
-  "market_position": "{{strategy.market_position}}"
+  "action": "{% raw %}{{strategy.order.action}}{% endraw %}",
+  "ticker": "{% raw %}{{ticker}}{% endraw %}",
+  "price": "{% raw %}{{close}}{% endraw %}",
+  "contracts": "{% raw %}{{strategy.order.contracts}}{% endraw %}",
+  "position_size": "{% raw %}{{strategy.position_size}}{% endraw %}",
+  "market_position": "{% raw %}{{strategy.market_position}}{% endraw %}"
 }</pre>
                 <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateStrategy', this)">
                     <span class="material-icons">content_copy</span> Copy
@@ -484,8 +484,8 @@
                 <pre class="template-code" id="templateClose">{
   "recorder": "{{ trader.recorder_name }}",
   "action": "close",
-  "ticker": "{{ticker}}",
-  "price": "{{close}}",
+  "ticker": "{% raw %}{{ticker}}{% endraw %}",
+  "price": "{% raw %}{{close}}{% endraw %}",
   "market_position": "flat"
 }</pre>
                 <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateClose', this)">
@@ -497,7 +497,7 @@
         <div class="templates-help">
             <span class="material-icons">info</span>
             <div>
-                <strong>TradingView Variables:</strong> Use <code>{{ticker}}</code>, <code>{{close}}</code>, <code>{{strategy.order.action}}</code>, <code>{{strategy.position_size}}</code>, <code>{{strategy.market_position}}</code> in your alerts.
+                <strong>TradingView Variables:</strong> Use <code>{% raw %}{{ticker}}{% endraw %}</code>, <code>{% raw %}{{close}}{% endraw %}</code>, <code>{% raw %}{{strategy.order.action}}{% endraw %}</code>, <code>{% raw %}{{strategy.position_size}}{% endraw %}</code>, <code>{% raw %}{{strategy.market_position}}{% endraw %}</code> in your alerts.
                 <br><small>These are automatically replaced by TradingView when the alert fires.</small>
             </div>
         </div>
