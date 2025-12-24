@@ -7771,20 +7771,22 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         def close_trade(cursor, trade, exit_price, pnl_ticks, tick_value, exit_reason):
             """Close a trade and calculate PnL"""
             pnl = pnl_ticks * tick_value * trade['quantity']
+            ph = '%s' if is_postgres else '?'
             
-            cursor.execute('''
+            cursor.execute(f'''
                 UPDATE recorded_trades 
-                SET exit_price = ?, exit_time = CURRENT_TIMESTAMP, 
-                    pnl = ?, pnl_ticks = ?, status = 'closed', 
-                    exit_reason = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET exit_price = {ph}, exit_time = CURRENT_TIMESTAMP, 
+                    pnl = {ph}, pnl_ticks = {ph}, status = 'closed', 
+                    exit_reason = {ph}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = {ph}
             ''', (exit_price, pnl, pnl_ticks, exit_reason, trade['id']))
             
             return pnl, pnl_ticks
         
         def close_recorder_position(cursor, position_id, exit_price, ticker):
             """Close a recorder position and calculate final PnL"""
-            cursor.execute('SELECT * FROM recorder_positions WHERE id = ?', (position_id,))
+            ph = '%s' if is_postgres else '?'
+            cursor.execute(f'SELECT * FROM recorder_positions WHERE id = {ph}', (position_id,))
             row = cursor.fetchone()
             
             if not row:
@@ -7808,14 +7810,14 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
             
             realized_pnl = pnl_ticks * pos_tick_value * total_qty
             
-            cursor.execute('''
+            cursor.execute(f'''
                 UPDATE recorder_positions
                 SET status = 'closed',
-                    exit_price = ?,
-                    realized_pnl = ?,
+                    exit_price = {ph},
+                    realized_pnl = {ph},
                     closed_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                WHERE id = {ph}
             ''', (exit_price, realized_pnl, position_id))
             
             logger.info(f"📊 Position closed: {side} {ticker} x{total_qty} @ avg {avg_entry} -> {exit_price} | PnL: ${realized_pnl:.2f}")
@@ -7829,31 +7831,30 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
             """
             import json as json_module
             from datetime import datetime as dt
+            ph = '%s' if is_postgres else '?'
             
             # Check for existing open position for this recorder+ticker
-            cursor.execute('''
-                SELECT id, total_quantity, avg_entry_price, entries, side
+            cursor.execute(f'''
+                SELECT id, total_quantity, avg_entry_price, side
                 FROM recorder_positions
-                WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
             ''', (recorder_id, ticker))
             
             existing = cursor.fetchone()
             
             if existing:
-                pos_id, total_qty, avg_entry, entries_json, pos_side = existing
-                entries = json_module.loads(entries_json) if entries_json else []
+                pos_id, total_qty, avg_entry, pos_side = existing
                 
                 if pos_side == side:
                     # SAME SIDE: Add to position (DCA)
                     new_qty = total_qty + quantity
                     new_avg = ((avg_entry * total_qty) + (price * quantity)) / new_qty
-                    entries.append({'price': price, 'qty': quantity, 'time': dt.now().isoformat()})
                     
-                    cursor.execute('''
+                    cursor.execute(f'''
                         UPDATE recorder_positions
-                        SET total_quantity = ?, avg_entry_price = ?, entries = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                    ''', (new_qty, new_avg, json_module.dumps(entries), pos_id))
+                        SET total_quantity = {ph}, avg_entry_price = {ph}, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = {ph}
+                    ''', (new_qty, new_avg, pos_id))
                     
                     logger.info(f"📈 Position DCA: {side} {ticker} +{quantity} @ {price} | Total: {new_qty} @ avg {new_avg:.2f}")
                     return pos_id, False, new_qty
@@ -7863,14 +7864,19 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
                     # Fall through to create new position below
             
             # NO POSITION or just closed opposite: Create new position
-            entries = [{'price': price, 'qty': quantity, 'time': dt.now().isoformat()}]
-            cursor.execute('''
-                INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, entries)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (recorder_id, ticker, side, quantity, price, json_module.dumps(entries)))
+            cursor.execute(f'''
+                INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
+            ''', (recorder_id, ticker, side, quantity, price))
+            
+            if is_postgres:
+                cursor.execute('SELECT lastval()')
+                new_id = cursor.fetchone()[0]
+            else:
+                new_id = cursor.lastrowid
             
             logger.info(f"📊 New position: {side} {ticker} x{quantity} @ {price}")
-            return cursor.lastrowid, True, quantity
+            return new_id, True, quantity
         
         # First, check if any open trade hit TP/SL based on current price
         if open_trade:
@@ -8032,15 +8038,21 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
                         current_price, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
                     )
                 
-                cursor.execute('''
+                # Use correct placeholder for database type
+                ph = '%s' if is_postgres else '?'
+                cursor.execute(f'''
                     INSERT INTO recorded_trades 
                     (recorder_id, signal_id, ticker, action, side, entry_price, entry_time, 
                      quantity, status, tp_price, sl_price, tp_ticks, sl_ticks)
-                    VALUES (?, ?, ?, ?, 'LONG', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, ?, ?)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, 'LONG', {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, {ph})
                 ''', (recorder_id, signal_id, ticker, 'BUY', current_price, quantity,
                       tp_price, sl_price, tp_ticks, sl_amount if sl_enabled else None))
                 
-                new_trade_id = cursor.lastrowid
+                if is_postgres:
+                    cursor.execute('SELECT lastval()')
+                    new_trade_id = cursor.fetchone()[0]
+                else:
+                    new_trade_id = cursor.lastrowid
                 
                 # Also update position tracking for combined drawdown
                 pos_id, is_new_pos, total_qty = update_recorder_position(
@@ -8082,15 +8094,21 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
                         current_price, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
                     )
                 
-                cursor.execute('''
+                # Use correct placeholder for database type
+                ph = '%s' if is_postgres else '?'
+                cursor.execute(f'''
                     INSERT INTO recorded_trades 
                     (recorder_id, signal_id, ticker, action, side, entry_price, entry_time, 
                      quantity, status, tp_price, sl_price, tp_ticks, sl_ticks)
-                    VALUES (?, ?, ?, ?, 'SHORT', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, ?, ?)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, 'SHORT', {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, {ph})
                 ''', (recorder_id, signal_id, ticker, 'SELL', current_price, quantity,
                       tp_price, sl_price, tp_ticks, sl_amount if sl_enabled else None))
                 
-                new_trade_id = cursor.lastrowid
+                if is_postgres:
+                    cursor.execute('SELECT lastval()')
+                    new_trade_id = cursor.fetchone()[0]
+                else:
+                    new_trade_id = cursor.lastrowid
                 
                 # Also update position tracking for combined drawdown
                 pos_id, is_new_pos, total_qty = update_recorder_position(
