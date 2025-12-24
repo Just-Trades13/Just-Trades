@@ -277,45 +277,13 @@
         
         async function loadControlCenterStats() {
             try {
-                // Load traders (strategies linked to accounts) instead of all recorders
+                // Load traders (each trader = strategy + account combo)
                 const response = await fetch('/api/traders');
                 const data = await response.json();
                 
                 if (data.success && data.traders) {
-                    // Group traders by strategy (recorder)
-                    const strategyMap = new Map();
-                    data.traders.forEach(trader => {
-                        const key = trader.recorder_id;
-                        if (!strategyMap.has(key)) {
-                            strategyMap.set(key, {
-                                id: trader.recorder_id,
-                                name: trader.recorder_name,
-                                traders: [],
-                                enabled: false,
-                                pnl: 0
-                            });
-                        }
-                        const strategy = strategyMap.get(key);
-                        strategy.traders.push(trader);
-                        if (trader.enabled) strategy.enabled = true;
-                    });
-                    
-                    // Also fetch PnL data
-                    try {
-                        const pnlResponse = await fetch('/api/control-center/stats');
-                        const pnlData = await pnlResponse.json();
-                        if (pnlData.success && pnlData.recorders) {
-                            pnlData.recorders.forEach(rec => {
-                                if (strategyMap.has(rec.id)) {
-                                    strategyMap.get(rec.id).pnl = rec.pnl || 0;
-                                }
-                            });
-                        }
-                    } catch (e) {
-                        console.warn('Could not fetch PnL data:', e);
-                    }
-                    
-                    updateLiveTradingTable(Array.from(strategyMap.values()));
+                    // Show individual traders (not grouped) - each account gets its own row
+                    updateLiveTradingTable(data.traders);
                 } else {
                     updateLiveTradingTable([]);
                 }
@@ -325,44 +293,45 @@
             }
         }
         
-        function updateLiveTradingTable(strategies) {
+        function updateLiveTradingTable(traders) {
             const tbody = document.getElementById('tradersTableBody');
             if (!tbody) return;
             
-            if (strategies.length === 0) {
+            if (traders.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No active traders. <a href="/traders/new" style="color: #60a5fa;">Create a trader</a> to link a strategy to your accounts.</td></tr>';
                 return;
             }
             
-            // Build new rows grouped by strategy
+            // Build rows - ONE ROW PER TRADER (each account separately)
             let html = '';
-            strategies.forEach(strategy => {
-                const pnlClass = strategy.pnl >= 0 ? 'positive' : 'negative';
-                const pnlFormatted = strategy.pnl >= 0 ? `+$${strategy.pnl.toFixed(2)}` : `-$${Math.abs(strategy.pnl).toFixed(2)}`;
-                const statusClass = strategy.enabled ? 'live' : 'paused';
-                const statusText = strategy.enabled ? 'LIVE' : 'PAUSED';
+            traders.forEach(trader => {
+                const pnl = trader.pnl || 0;
+                const pnlClass = pnl >= 0 ? 'positive' : 'negative';
+                const pnlFormatted = pnl >= 0 ? `+$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`;
+                const statusClass = trader.enabled ? 'live' : 'paused';
+                const statusText = trader.enabled ? 'LIVE' : 'PAUSED';
                 
-                // List account names
-                const accountNames = strategy.traders.map(t => t.account_name || t.subaccount_name).join(', ');
-                const accountCount = strategy.traders.length;
+                // Get account display name
+                const accountName = trader.subaccount_name || trader.account_name || `Account #${trader.account_id}`;
+                const strategyName = trader.recorder_name || `Strategy #${trader.recorder_id}`;
                 
                 html += `
-                    <tr data-strategy-id="${strategy.id}">
+                    <tr data-trader-id="${trader.id}" data-strategy-id="${trader.recorder_id}">
                         <td class="strategy-cell">
-                            <a href="/recorders/${strategy.id}" class="strategy-name">${strategy.name}</a>
-                            <span class="strategy-accounts">${accountCount} account${accountCount !== 1 ? 's' : ''}: ${accountNames}</span>
+                            <a href="/recorders/${trader.recorder_id}" class="strategy-name">${strategyName}</a>
+                            <span class="strategy-accounts">→ ${accountName}</span>
                         </td>
                         <td class="status-cell">
                             <span class="status-badge ${statusClass}">${statusText}</span>
                             <label class="switch">
-                                <input type="checkbox" ${strategy.enabled ? 'checked' : ''} onchange="toggleStrategy(${strategy.id}, this.checked)">
+                                <input type="checkbox" ${trader.enabled ? 'checked' : ''} onchange="toggleTrader(${trader.id}, this.checked)">
                                 <span class="slider"></span>
                             </label>
                         </td>
                         <td class="pl-cell ${pnlClass}">${pnlFormatted}</td>
                         <td class="action-cell">
-                            <button class="btn-small btn-close" onclick="closeStrategyPositions(${strategy.id}, '${strategy.name}')">Close</button>
-                            <button class="btn-small" onclick="viewStrategyDetails(${strategy.id})">View</button>
+                            <button class="btn-small btn-close" onclick="closeTraderPosition(${trader.id}, '${strategyName}', '${accountName}')">Close</button>
+                            <button class="btn-small" onclick="viewStrategyDetails(${trader.recorder_id})">View</button>
                         </td>
                     </tr>
                 `;
@@ -416,10 +385,10 @@
     });
     
     // Global functions for button handlers
-    async function toggleStrategy(strategyId, enabled) {
+    async function toggleTrader(traderId, enabled) {
         try {
-            // Use the new endpoint that toggles TRADERS (which blocks webhook signals)
-            const response = await fetch(`/api/recorders/${strategyId}/toggle-traders`, {
+            // Toggle individual trader (per-account control)
+            const response = await fetch(`/api/traders/${traderId}/toggle`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ enabled: enabled })
@@ -427,7 +396,7 @@
             const data = await response.json();
             if (data.success) {
                 // Update UI immediately
-                const row = document.querySelector(`tr[data-strategy-id="${strategyId}"]`);
+                const row = document.querySelector(`tr[data-trader-id="${traderId}"]`);
                 if (row) {
                     const badge = row.querySelector('.status-badge');
                     if (badge) {
@@ -437,14 +406,39 @@
                 }
                 console.log(`✅ ${data.message}`);
             } else {
-                console.error('Failed to toggle strategy:', data.error);
+                console.error('Failed to toggle trader:', data.error);
                 alert(`❌ Error: ${data.error || 'Failed to toggle'}`);
                 // Revert checkbox
                 loadControlCenterStats();
             }
         } catch (error) {
-            console.error('Error toggling strategy:', error);
+            console.error('Error toggling trader:', error);
             loadControlCenterStats();
+        }
+    }
+    
+    // Close position for individual trader
+    async function closeTraderPosition(traderId, strategyName, accountName) {
+        if (!confirm(`⚠️ Close position for "${strategyName}" on "${accountName}"?\n\nThis will execute a close order on this account only.`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/traders/${traderId}/close-position`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ ${data.message || 'Position closed'}`);
+                loadControlCenterStats();
+            } else {
+                alert(`❌ Error: ${data.error || 'Failed to close position'}`);
+            }
+        } catch (error) {
+            console.error('Error closing position:', error);
+            alert('❌ Network error. Please try again.');
         }
     }
     

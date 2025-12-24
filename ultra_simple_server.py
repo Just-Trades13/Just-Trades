@@ -6668,6 +6668,124 @@ def api_delete_trader(trader_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/traders/<int:trader_id>/toggle', methods=['POST'])
+def api_toggle_trader(trader_id):
+    """Toggle a single trader's enabled status (per-account control)."""
+    try:
+        data = request.get_json() or {}
+        enabled = data.get('enabled', False)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Get trader info
+        cursor.execute(f'''
+            SELECT t.id, r.name as recorder_name, a.name as account_name
+            FROM traders t
+            JOIN recorders r ON t.recorder_id = r.id
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.id = {placeholder}
+        ''', (trader_id,))
+        
+        trader = cursor.fetchone()
+        if not trader:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Trader not found'}), 404
+        
+        # Get names for logging
+        if hasattr(trader, 'keys'):
+            recorder_name = trader['recorder_name']
+            account_name = trader['account_name']
+        else:
+            recorder_name = trader[1]
+            account_name = trader[2]
+        
+        # Update trader enabled status
+        enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
+        cursor.execute(f'''
+            UPDATE traders SET enabled = {placeholder} WHERE id = {placeholder}
+        ''', (enabled_value, trader_id))
+        
+        conn.commit()
+        conn.close()
+        
+        action = 'enabled' if enabled else 'disabled'
+        logger.info(f"📊 {action.upper()} trader #{trader_id}: {recorder_name} → {account_name}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'{recorder_name} on {account_name} {action}',
+            'trader_id': trader_id,
+            'enabled': enabled
+        })
+        
+    except Exception as e:
+        logger.error(f"Error toggling trader {trader_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/traders/<int:trader_id>/close-position', methods=['POST'])
+def api_close_trader_position(trader_id):
+    """Close position for a single trader (one account only)."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Get trader info
+        cursor.execute(f'''
+            SELECT t.id, t.recorder_id, r.name as recorder_name, a.name as account_name
+            FROM traders t
+            JOIN recorders r ON t.recorder_id = r.id
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.id = {placeholder}
+        ''', (trader_id,))
+        
+        trader = cursor.fetchone()
+        if not trader:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Trader not found'}), 404
+        
+        if hasattr(trader, 'keys'):
+            recorder_id = trader['recorder_id']
+            recorder_name = trader['recorder_name']
+            account_name = trader['account_name']
+        else:
+            recorder_id = trader[1]
+            recorder_name = trader[2]
+            account_name = trader[3]
+        
+        # Close any open trades for this recorder
+        cursor.execute(f'''
+            UPDATE recorded_trades 
+            SET status = 'closed', exit_reason = 'manual_close', exit_time = CURRENT_TIMESTAMP
+            WHERE recorder_id = {placeholder} AND status = 'open'
+        ''', (recorder_id,))
+        closed_count = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"📊 Closed {closed_count} position(s) for {recorder_name} on {account_name}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Closed {closed_count} position(s) for {recorder_name} on {account_name}',
+            'closed_count': closed_count
+        })
+        
+    except Exception as e:
+        logger.error(f"Error closing position for trader {trader_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/traders/<int:trader_id>/test-connection', methods=['POST'])
 def api_test_trader_connection(trader_id):
     """Test if the trader's linked account connection is working"""
