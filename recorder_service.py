@@ -1764,6 +1764,87 @@ def check_broker_position_exists(recorder_id: int, ticker: str) -> bool:
         return True  # Assume position exists on error (safer)
 
 
+def get_broker_position_for_recorder(recorder_id: int, ticker: str) -> Dict[str, Any]:
+    """
+    Get the broker's current position for this recorder/ticker.
+    Returns {'quantity': int} where positive=LONG, negative=SHORT, 0=flat.
+    """
+    result = {'quantity': 0}
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT t.subaccount_id, t.is_demo, a.tradovate_token,
+                   a.username, a.password, a.id as account_id
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.recorder_id = ? AND t.enabled = 1
+            LIMIT 1
+        ''', (recorder_id,))
+        
+        trader = cursor.fetchone()
+        conn.close()
+        
+        if not trader:
+            return result
+        
+        trader = dict(trader)
+        tradovate_account_id = trader.get('subaccount_id')
+        is_demo = bool(trader.get('is_demo'))
+        access_token = trader.get('tradovate_token')
+        username = trader.get('username')
+        password = trader.get('password')
+        account_id = trader.get('account_id')
+        
+        if not tradovate_account_id:
+            return result
+        
+        tradovate_symbol = convert_ticker_to_tradovate(ticker)
+        
+        from phantom_scraper.tradovate_integration import TradovateIntegration
+        from tradovate_api_access import TradovateAPIAccess
+        import asyncio
+        
+        async def get_position():
+            api_access = TradovateAPIAccess(demo=is_demo)
+            current_token = access_token
+            
+            if not current_token and username and password:
+                login_result = await api_access.login(
+                    username=username,
+                    password=password,
+                    db_path=DATABASE_PATH,
+                    account_id=account_id
+                )
+                if login_result.get('success'):
+                    current_token = login_result.get('accessToken')
+            
+            if not current_token:
+                return {'quantity': 0}
+            
+            async with TradovateIntegration(demo=is_demo) as tradovate:
+                tradovate.access_token = current_token
+                positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                
+                for pos in positions:
+                    pos_symbol = pos.get('symbol', '') or ''
+                    net_pos = pos.get('netPos', 0)
+                    if tradovate_symbol[:3] in pos_symbol:
+                        logger.info(f"📊 Broker position for {ticker}: {net_pos}")
+                        return {'quantity': net_pos}
+                
+                logger.info(f"📊 Broker has NO position for {tradovate_symbol}")
+                return {'quantity': 0}
+        
+        return asyncio.run(get_position())
+        
+    except Exception as e:
+        logger.warning(f"Error getting broker position: {e}")
+        return {'quantity': 0}
+
+
 def get_front_month_contract(root_symbol: str) -> str:
     """
     Dynamically calculate the current front month contract for futures.
