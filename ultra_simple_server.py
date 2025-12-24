@@ -7492,24 +7492,16 @@ def process_webhook_directly(webhook_token):
                     # Determine trade side
                     trade_side = 'LONG' if trade_action.upper() in ['BUY', 'LONG'] else 'SHORT'
                     
-                    # Check for existing open trade
+                    # ALWAYS record trade - each signal that executes gets logged
+                    # This allows multiple strategies, DCA, pyramiding, etc.
                     trade_cursor.execute(f'''
-                        SELECT id FROM recorded_trades 
-                        WHERE recorder_id = {ph} AND status = 'open'
-                        ORDER BY id DESC LIMIT 1
-                    ''', (recorder_id,))
-                    existing = trade_cursor.fetchone()
+                        INSERT INTO recorded_trades 
+                        (recorder_id, ticker, action, side, entry_price, quantity, status, tp_price, sl_price)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open', {ph}, {ph})
+                    ''', (recorder_id, ticker, trade_action, trade_side, entry_price, trade_qty, tp_price, sl_price))
                     
-                    if not existing:
-                        # Insert new trade record
-                        trade_cursor.execute(f'''
-                            INSERT INTO recorded_trades 
-                            (recorder_id, ticker, action, side, entry_price, quantity, status, tp_price, sl_price)
-                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open', {ph}, {ph})
-                        ''', (recorder_id, ticker, trade_action, trade_side, entry_price, trade_qty, tp_price, sl_price))
-                        
-                        trade_conn.commit()
-                        logger.info(f"📊 Trade recorded: {trade_side} {ticker} @ {entry_price} x{trade_qty}")
+                    trade_conn.commit()
+                    logger.info(f"📊 Trade recorded: {trade_side} {ticker} @ {entry_price} x{trade_qty}")
                     
                     trade_conn.close()
                 except Exception as rec_err:
