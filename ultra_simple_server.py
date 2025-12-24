@@ -11697,7 +11697,7 @@ def api_control_center_clear_all():
 
 @app.route('/api/control-center/toggle-all', methods=['POST'])
 def api_control_center_toggle_all():
-    """Enable or disable all recorders"""
+    """Enable or disable all recorders AND their traders"""
     try:
         data = request.get_json() or {}
         enabled = data.get('enabled', False)
@@ -11709,23 +11709,86 @@ def api_control_center_toggle_all():
         
         # PostgreSQL needs boolean True/False, SQLite needs 1/0
         enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
+        
+        # Update all recorders
         cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder}', (enabled_value,))
-        updated_count = cursor.rowcount
+        recorder_count = cursor.rowcount
+        
+        # ALSO update all traders - this is what actually blocks webhook signals
+        cursor.execute(f'UPDATE traders SET enabled = {placeholder}', (enabled_value,))
+        trader_count = cursor.rowcount
         
         conn.commit()
         conn.close()
         
         action = 'enabled' if enabled else 'disabled'
-        logger.info(f"📊 {action.upper()} all {updated_count} recorders")
+        logger.info(f"📊 {action.upper()} all {recorder_count} recorders and {trader_count} traders")
         
         return jsonify({
             'success': True,
-            'message': f'{updated_count} recorder(s) {action}',
-            'updated_count': updated_count
+            'message': f'{recorder_count} recorder(s) and {trader_count} trader(s) {action}',
+            'updated_count': trader_count
         })
         
     except Exception as e:
-        logger.error(f"Error toggling all recorders: {e}")
+        logger.error(f"Error toggling all: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/recorders/<int:recorder_id>/toggle-traders', methods=['POST'])
+def api_toggle_recorder_traders(recorder_id):
+    """Enable or disable all traders linked to a specific recorder.
+    This is what the Control Center slider should call to block webhook signals.
+    """
+    try:
+        data = request.get_json() or {}
+        enabled = data.get('enabled', False)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Check recorder exists
+        cursor.execute(f'SELECT id, name FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        recorder = cursor.fetchone()
+        if not recorder:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        recorder_name = recorder[1] if isinstance(recorder, tuple) else recorder['name']
+        
+        # PostgreSQL needs boolean True/False, SQLite needs 1/0
+        enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
+        
+        # Update all traders for this recorder
+        cursor.execute(f'''
+            UPDATE traders SET enabled = {placeholder} WHERE recorder_id = {placeholder}
+        ''', (enabled_value, recorder_id))
+        updated_count = cursor.rowcount
+        
+        # Also update recorder's recording_enabled for consistency
+        cursor.execute(f'''
+            UPDATE recorders SET recording_enabled = {placeholder} WHERE id = {placeholder}
+        ''', (enabled_value, recorder_id))
+        
+        conn.commit()
+        conn.close()
+        
+        action = 'enabled' if enabled else 'disabled'
+        logger.info(f"📊 {action.upper()} {updated_count} trader(s) for recorder '{recorder_name}'")
+        
+        return jsonify({
+            'success': True,
+            'message': f'{updated_count} trader(s) {action} for {recorder_name}',
+            'updated_count': updated_count,
+            'recorder_name': recorder_name
+        })
+        
+    except Exception as e:
+        logger.error(f"Error toggling traders for recorder {recorder_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

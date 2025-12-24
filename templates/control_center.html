@@ -20,24 +20,24 @@
                 </div>
             </header>
             <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>STRATEGY</th>
+            <table>
+                <thead>
+                    <tr>
+                        <th>STRATEGY</th>
                             <th>STATUS</th>
-                            <th>PROFIT / LOSS</th>
-                            <th>ACTIONS</th>
-                        </tr>
-                    </thead>
+                        <th>PROFIT / LOSS</th>
+                        <th>ACTIONS</th>
+                    </tr>
+                </thead>
                     <tbody id="tradersTableBody">
                         <!-- Will be populated by JavaScript with traders only -->
                         <tr>
                             <td colspan="4" class="loading-state">
                                 <span class="material-icons spin">sync</span> Loading traders...
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
             </div>
         </article>
 
@@ -418,10 +418,11 @@
     // Global functions for button handlers
     async function toggleStrategy(strategyId, enabled) {
         try {
-            const response = await fetch(`/api/recorders/${strategyId}`, {
-                method: 'PUT',
+            // Use the new endpoint that toggles TRADERS (which blocks webhook signals)
+            const response = await fetch(`/api/recorders/${strategyId}/toggle-traders`, {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ recording_enabled: enabled })
+                body: JSON.stringify({ enabled: enabled })
             });
             const data = await response.json();
             if (data.success) {
@@ -434,6 +435,7 @@
                         badge.textContent = enabled ? 'LIVE' : 'PAUSED';
                     }
                 }
+                console.log(`✅ ${data.message}`);
             } else {
                 console.error('Failed to toggle strategy:', data.error);
                 alert(`❌ Error: ${data.error || 'Failed to toggle'}`);
