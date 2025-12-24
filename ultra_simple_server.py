@@ -7496,8 +7496,8 @@ def process_webhook_directly(webhook_token):
                     # This allows multiple strategies, DCA, pyramiding, etc.
                     trade_cursor.execute(f'''
                         INSERT INTO recorded_trades 
-                        (recorder_id, ticker, action, side, entry_price, quantity, status, tp_price, sl_price)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open', {ph}, {ph})
+                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, created_at, updated_at)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     ''', (recorder_id, ticker, trade_action, trade_side, entry_price, trade_qty, tp_price, sl_price))
                     
                     trade_conn.commit()
@@ -12400,150 +12400,135 @@ def api_dashboard_chart_data():
 
 @app.route('/api/dashboard/trade-history', methods=['GET'])
 def api_dashboard_trade_history():
-    """Get trade history from recorder_positions (combined positions) with fallback to recorded_trades"""
+    """Get trade history from recorded_trades - shows ALL trades (open and closed)"""
     try:
         # Get filter parameters
         strategy_id = request.args.get('strategy_id')  # This is recorder_id
         symbol = request.args.get('symbol')
         timeframe = request.args.get('timeframe', 'all')
+        status_filter = request.args.get('status', 'all')  # 'all', 'open', 'closed'
         page = int(request.args.get('page', 1))
         per_page = 20
-        
+
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        
-        # Check if recorder_positions table has data
-        cursor.execute("SELECT COUNT(*) FROM recorder_positions WHERE status = 'closed'")
-        positions_count = cursor.fetchone()[0]
-        
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
         trades = []
-        total_count = 0
-        
-        if positions_count > 0:
-            # Use recorder_positions table (Trade Manager style - combined positions)
-            where_clauses = ["rp.status = 'closed'"]
-            params = []
-            
-            if strategy_id:
-                where_clauses.append('rp.recorder_id = ?')
-                params.append(int(strategy_id))
-            
-            if symbol:
-                where_clauses.append('rp.ticker = ?')
-                params.append(symbol)
-            
-            # Timeframe filter
+        params = []
+        where_clauses = ['1=1']  # Always true base
+
+        # Status filter
+        if status_filter == 'open':
+            where_clauses.append("rt.status = 'open'")
+        elif status_filter == 'closed':
+            where_clauses.append("rt.status = 'closed'")
+        # 'all' shows everything
+
+        if strategy_id:
+            where_clauses.append(f'rt.recorder_id = {ph}')
+            params.append(int(strategy_id))
+
+        if symbol:
+            where_clauses.append(f'rt.ticker = {ph}')
+            params.append(symbol)
+
+        # Timeframe filter - PostgreSQL vs SQLite syntax
+        if is_postgres:
             if timeframe == 'today':
-                where_clauses.append("DATE(rp.closed_at) = DATE('now')")
+                where_clauses.append("DATE(COALESCE(rt.exit_time, rt.created_at)) = CURRENT_DATE")
             elif timeframe == 'week':
-                where_clauses.append("rp.closed_at >= DATE('now', '-7 days')")
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= CURRENT_DATE - INTERVAL '7 days'")
             elif timeframe == 'month':
-                where_clauses.append("rp.closed_at >= DATE('now', '-30 days')")
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= CURRENT_DATE - INTERVAL '30 days'")
             elif timeframe == '3months':
-                where_clauses.append("rp.closed_at >= DATE('now', '-90 days')")
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= CURRENT_DATE - INTERVAL '90 days'")
             elif timeframe == '6months':
-                where_clauses.append("rp.closed_at >= DATE('now', '-180 days')")
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= CURRENT_DATE - INTERVAL '180 days'")
             elif timeframe == 'year':
-                where_clauses.append("rp.closed_at >= DATE('now', '-365 days')")
-            
-            where_sql = ' AND '.join(where_clauses)
-            
-            # Get total count
-            cursor.execute(f'''
-                SELECT COUNT(*) FROM recorder_positions rp WHERE {where_sql}
-            ''', params)
-            total_count = cursor.fetchone()[0]
-            
-            # Get paginated positions with recorder name
-            offset = (page - 1) * per_page
-            cursor.execute(f'''
-                SELECT 
-                    rp.*,
-                    r.name as strategy_name
-                FROM recorder_positions rp
-                LEFT JOIN recorders r ON rp.recorder_id = r.id
-                WHERE {where_sql}
-                ORDER BY rp.closed_at DESC
-                LIMIT ? OFFSET ?
-            ''', params + [per_page, offset])
-            
-            for row in cursor.fetchall():
-                pos = dict(row)
-                trades.append({
-                    'open_time': pos.get('opened_at'),
-                    'closed_time': pos.get('closed_at'),
-                    'strategy': pos.get('strategy_name') or 'N/A',
-                    'symbol': pos.get('ticker'),
-                    'side': pos.get('side'),
-                    'size': pos.get('total_quantity', 1),
-                    'entry_price': pos.get('avg_entry_price'),
-                    'exit_price': pos.get('exit_price'),
-                    'profit': pos.get('realized_pnl') or 0,
-                    'drawdown': abs(pos.get('worst_unrealized_pnl') or 0)
-                })
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= CURRENT_DATE - INTERVAL '365 days'")
         else:
-            # Fallback to recorded_trades table (old behavior)
-            where_clauses = ["rt.status = 'closed'"]
-            params = []
-            
-            if strategy_id:
-                where_clauses.append('rt.recorder_id = ?')
-                params.append(int(strategy_id))
-            
-            if symbol:
-                where_clauses.append('rt.ticker = ?')
-                params.append(symbol)
-            
-            # Timeframe filter
             if timeframe == 'today':
-                where_clauses.append("DATE(rt.exit_time) = DATE('now')")
+                where_clauses.append("DATE(COALESCE(rt.exit_time, rt.created_at)) = DATE('now')")
             elif timeframe == 'week':
-                where_clauses.append("rt.exit_time >= DATE('now', '-7 days')")
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= DATE('now', '-7 days')")
             elif timeframe == 'month':
-                where_clauses.append("rt.exit_time >= DATE('now', '-30 days')")
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= DATE('now', '-30 days')")
             elif timeframe == '3months':
-                where_clauses.append("rt.exit_time >= DATE('now', '-90 days')")
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= DATE('now', '-90 days')")
             elif timeframe == '6months':
-                where_clauses.append("rt.exit_time >= DATE('now', '-180 days')")
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= DATE('now', '-180 days')")
             elif timeframe == 'year':
-                where_clauses.append("rt.exit_time >= DATE('now', '-365 days')")
+                where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= DATE('now', '-365 days')")
+        
+        where_sql = ' AND '.join(where_clauses)
+        
+        # Get total count
+        cursor.execute(f'''
+            SELECT COUNT(*) FROM recorded_trades rt WHERE {where_sql}
+        ''', params if params else None)
+        total_count = cursor.fetchone()[0]
+        
+        # Get paginated trades with recorder name
+        offset = (page - 1) * per_page
+        limit_clause = f'LIMIT {ph} OFFSET {ph}'
+        
+        cursor.execute(f'''
+            SELECT 
+                rt.id,
+                rt.ticker,
+                rt.side,
+                rt.action,
+                rt.entry_price,
+                rt.exit_price,
+                rt.quantity,
+                rt.pnl,
+                rt.status,
+                rt.tp_price,
+                rt.sl_price,
+                rt.max_adverse,
+                rt.max_favorable,
+                rt.created_at,
+                rt.exit_time,
+                rt.exit_reason,
+                r.name as strategy_name
+            FROM recorded_trades rt
+            LEFT JOIN recorders r ON rt.recorder_id = r.id
+            WHERE {where_sql}
+            ORDER BY rt.created_at DESC
+            {limit_clause}
+        ''', (params + [per_page, offset]) if params else [per_page, offset])
+        
+        columns = [desc[0] for desc in cursor.description]
+        for row in cursor.fetchall():
+            trade = dict(zip(columns, row))
             
-            where_sql = ' AND '.join(where_clauses)
+            # Determine win/loss status
+            if trade['status'] == 'closed':
+                pnl = trade.get('pnl') or 0
+                trade_status = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'FLAT')
+            else:
+                trade_status = 'OPEN'
             
-            # Get total count
-            cursor.execute(f'''
-                SELECT COUNT(*) FROM recorded_trades rt WHERE {where_sql}
-            ''', params)
-            total_count = cursor.fetchone()[0]
-            
-            # Get paginated trades with recorder name
-            offset = (page - 1) * per_page
-            cursor.execute(f'''
-                SELECT 
-                    rt.*,
-                    r.name as strategy_name
-                FROM recorded_trades rt
-                LEFT JOIN recorders r ON rt.recorder_id = r.id
-                WHERE {where_sql}
-                ORDER BY rt.exit_time DESC
-                LIMIT ? OFFSET ?
-            ''', params + [per_page, offset])
-            
-            for row in cursor.fetchall():
-                trade = dict(row)
-                trades.append({
-                    'open_time': trade.get('entry_time'),
-                    'closed_time': trade.get('exit_time'),
-                    'strategy': trade.get('strategy_name') or 'N/A',
-                    'symbol': trade.get('ticker'),
-                    'side': trade.get('side'),
-                    'size': trade.get('quantity', 1),
-                    'entry_price': trade.get('entry_price'),
-                    'exit_price': trade.get('exit_price'),
-                    'profit': trade.get('pnl') or 0,
-                    'drawdown': abs(trade.get('max_adverse') or 0)
-                })
+            trades.append({
+                'id': trade.get('id'),
+                'open_time': trade.get('created_at'),
+                'closed_time': trade.get('exit_time'),
+                'strategy': trade.get('strategy_name') or 'N/A',
+                'symbol': trade.get('ticker'),
+                'side': trade.get('side'),
+                'size': trade.get('quantity', 1),
+                'entry_price': trade.get('entry_price'),
+                'exit_price': trade.get('exit_price'),
+                'profit': trade.get('pnl') or 0,
+                'tp_price': trade.get('tp_price'),
+                'sl_price': trade.get('sl_price'),
+                'drawdown': abs(trade.get('max_adverse') or 0),
+                'max_favorable': trade.get('max_favorable') or 0,
+                'status': trade_status,
+                'exit_reason': trade.get('exit_reason')
+            })
         
         conn.close()
         
