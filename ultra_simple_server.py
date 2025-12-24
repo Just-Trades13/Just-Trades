@@ -7068,8 +7068,52 @@ def process_webhook_directly(webhook_token):
             side = 'SHORT'
             trade_action = 'SELL'
         elif action in ['close', 'flat', 'exit']:
-            # Close signals bypass filters
+            # Close signals bypass filters - update open trades to closed
             logger.info(f"🔄 CLOSE signal received for {recorder_name}")
+            
+            # Get current price
+            close_price = float(price) if price else 0
+            if not close_price:
+                close_price = get_price_from_tradingview_api(ticker) or 0
+            
+            # Close any open trade records in recorded_trades
+            is_pg = is_using_postgres()
+            ph = '%s' if is_pg else '?'
+            
+            try:
+                cursor.execute(f'''
+                    SELECT id, side, entry_price, quantity FROM recorded_trades 
+                    WHERE recorder_id = {ph} AND status = 'open'
+                ''', (recorder_id,))
+                open_trade = cursor.fetchone()
+                
+                if open_trade:
+                    trade_id, trade_side, entry_price, qty = open_trade
+                    
+                    # Calculate PnL
+                    tick_size = get_tick_size(ticker) if ticker else 0.25
+                    tick_value = get_tick_value(ticker) if ticker else 0.50
+                    
+                    if trade_side == 'LONG':
+                        pnl_ticks = (close_price - entry_price) / tick_size if tick_size else 0
+                    else:
+                        pnl_ticks = (entry_price - close_price) / tick_size if tick_size else 0
+                    
+                    pnl = pnl_ticks * tick_value * qty
+                    
+                    # Update trade record
+                    cursor.execute(f'''
+                        UPDATE recorded_trades 
+                        SET status = 'closed', exit_price = {ph}, pnl = {ph}, pnl_ticks = {ph},
+                            exit_reason = 'signal', exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = {ph}
+                    ''', (close_price, pnl, pnl_ticks, trade_id))
+                    
+                    conn.commit()
+                    logger.info(f"📊 Trade #{trade_id} closed: {trade_side} {ticker} @ {entry_price} → {close_price} | PnL: ${pnl:.2f}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not update trade record: {e}")
+            
             conn.close()
             return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed'})
         else:
