@@ -170,7 +170,7 @@ def get_db_connection():
         try:
             import psycopg2
             from psycopg2.extras import RealDictCursor
-
+            
             conn = psycopg2.connect(_db_url)
             conn.cursor_factory = RealDictCursor
             # Ensure clean state - rollback any previous transaction
@@ -6974,11 +6974,82 @@ def process_webhook_directly(webhook_token):
         
         # Strategy alert detection - TradingView strategies send position_size and market_position
         position_size = data.get('position_size', data.get('contracts'))
-        market_position = data.get('market_position', '')
+        market_position = str(data.get('market_position', '')).lower().strip()
+        prev_position_size = data.get('prev_position_size', data.get('prev_market_position_size'))
         is_strategy_alert = position_size is not None or market_position
         
-        # Validate action
+        # ============================================================
+        # SMART MESSAGE PARSING - Handle any TradingView format
+        # Determines intent from market_position, position_size, action
+        # ============================================================
+        original_action = action
+        
+        # Convert position_size to float for comparison
+        try:
+            pos_size = float(position_size) if position_size is not None else None
+        except (ValueError, TypeError):
+            pos_size = None
+        
+        try:
+            prev_pos_size = float(prev_position_size) if prev_position_size is not None else None
+        except (ValueError, TypeError):
+            prev_pos_size = None
+        
+        # Priority 1: market_position tells us the FINAL state
+        if market_position == 'flat':
+            # Position is now flat - this is a CLOSE
+            action = 'close'
+            logger.info(f"🧠 SMART PARSE: market_position=flat → action=close")
+        elif market_position == 'long':
+            # Position is now long
+            if pos_size is not None and pos_size > 0:
+                action = 'buy'
+                logger.info(f"🧠 SMART PARSE: market_position=long, size={pos_size} → action=buy")
+        elif market_position == 'short':
+            # Position is now short
+            if pos_size is not None and pos_size < 0:
+                action = 'short'
+                logger.info(f"🧠 SMART PARSE: market_position=short, size={pos_size} → action=short")
+        
+        # Priority 2: position_size change detection (if no market_position)
+        elif pos_size is not None and prev_pos_size is not None:
+            if pos_size == 0 and prev_pos_size != 0:
+                # Went to flat - CLOSE
+                action = 'close'
+                logger.info(f"🧠 SMART PARSE: position {prev_pos_size}→0 → action=close")
+            elif pos_size > 0 and prev_pos_size <= 0:
+                # Went long - BUY
+                action = 'buy'
+                logger.info(f"🧠 SMART PARSE: position {prev_pos_size}→{pos_size} → action=buy")
+            elif pos_size < 0 and prev_pos_size >= 0:
+                # Went short - SHORT
+                action = 'short'
+                logger.info(f"🧠 SMART PARSE: position {prev_pos_size}→{pos_size} → action=short")
+        
+        # Priority 3: position_size alone (if we can detect from context)
+        elif pos_size is not None and not action:
+            if pos_size == 0:
+                action = 'close'
+                logger.info(f"🧠 SMART PARSE: position_size=0 → action=close")
+            elif pos_size > 0:
+                action = 'buy'
+                logger.info(f"🧠 SMART PARSE: position_size={pos_size} (positive) → action=buy")
+            elif pos_size < 0:
+                action = 'short'
+                logger.info(f"🧠 SMART PARSE: position_size={pos_size} (negative) → action=short")
+        
+        if original_action != action:
+            logger.info(f"🧠 SMART PARSE: Converted '{original_action}' → '{action}' based on context")
+        
+        # Validate action - allow empty if we couldn't determine from context
         valid_actions = ['buy', 'sell', 'long', 'short', 'close', 'flat', 'exit']
+        if not action:
+            # If we still have no action, try to use the raw action from TradingView
+            # TradingView {{strategy.order.action}} returns "buy" or "sell"
+            logger.warning(f"⚠️ No action determined for {recorder_name}, data: {data}")
+            conn.close()
+            return jsonify({'success': False, 'error': 'Could not determine action from message'}), 400
+        
         if action not in valid_actions:
             logger.warning(f"Invalid action '{action}' for recorder {recorder_name}")
             conn.close()
@@ -7176,15 +7247,15 @@ def process_webhook_directly(webhook_token):
         time_filter_2_enabled = recorder.get('time_filter_2_enabled', False)
         time_filter_2_start = recorder.get('time_filter_2_start', '')
         time_filter_2_stop = recorder.get('time_filter_2_stop', '')
-
+        
         # Time filter is active only if ENABLED and has valid times
         has_time_filter_1 = time_filter_1_enabled and time_filter_1_start and time_filter_1_stop
         has_time_filter_2 = time_filter_2_enabled and time_filter_2_start and time_filter_2_stop
-
+        
         if has_time_filter_1 or has_time_filter_2:
             in_window_1 = is_time_in_window(now, time_filter_1_start, time_filter_1_stop) if has_time_filter_1 else False
             in_window_2 = is_time_in_window(now, time_filter_2_start, time_filter_2_stop) if has_time_filter_2 else False
-
+            
             if not in_window_1 and not in_window_2:
                 logger.warning(f"🚫 [{recorder_name}] Time filter BLOCKED: {now.strftime('%I:%M %p')} not in trading window")
                 if has_time_filter_1:
@@ -7433,20 +7504,28 @@ def process_webhook_directly(webhook_token):
         else:
             sl_ticks = 0
         
-        # Log the mode
+        # Log the mode and determine TP behavior
         signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
-        logger.info(f"📊 {signal_type}: TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
+        
+        # CRITICAL: Strategy signals should NOT place TP - TradingView handles exits
+        # Only indicator signals use recorder's TP settings
+        if is_strategy_alert:
+            logger.info(f"📊 {signal_type} MODE: TradingView handles exits - NOT placing system TP/SL")
+            tp_ticks = 0  # Don't place TP for strategy signals
+            sl_ticks = 0  # Don't place SL for strategy signals
+        else:
+            logger.info(f"📊 {signal_type} MODE: System manages risk - TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
         
         # Get linked trader for live execution
         # Use is_postgres variable set earlier, and use cursor wrapper which auto-converts ? to %s
         enabled_val = 'true' if is_postgres else '1'
         cursor.execute(f'''
-            SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
-            FROM traders t
-            JOIN accounts a ON t.account_id = a.id
+                SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
+                FROM traders t
+                JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
-            LIMIT 1
-        ''', (recorder_id,))
+                LIMIT 1
+            ''', (recorder_id,))
         trader_row = cursor.fetchone()
         trader = dict(trader_row) if trader_row else None
         
@@ -12502,12 +12581,12 @@ def api_dashboard_trade_history():
         status_filter = request.args.get('status', 'all')  # 'all', 'open', 'closed'
         page = int(request.args.get('page', 1))
         per_page = 20
-
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         ph = '%s' if is_postgres else '?'
-
+        
         trades = []
         params = []
         where_clauses = ['1=1']  # Always true base
@@ -12518,15 +12597,15 @@ def api_dashboard_trade_history():
         elif status_filter == 'closed':
             where_clauses.append("rt.status = 'closed'")
         # 'all' shows everything
-
+            
         if strategy_id:
             where_clauses.append(f'rt.recorder_id = {ph}')
             params.append(int(strategy_id))
-
+            
         if symbol:
             where_clauses.append(f'rt.ticker = {ph}')
             params.append(symbol)
-
+            
         # Timeframe filter - PostgreSQL vs SQLite syntax
         if is_postgres:
             if timeframe == 'today':
@@ -12554,74 +12633,74 @@ def api_dashboard_trade_history():
                 where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= DATE('now', '-180 days')")
             elif timeframe == 'year':
                 where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= DATE('now', '-365 days')")
-        
-        where_sql = ' AND '.join(where_clauses)
-        
-        # Get total count
-        cursor.execute(f'''
-            SELECT COUNT(*) FROM recorded_trades rt WHERE {where_sql}
+            
+            where_sql = ' AND '.join(where_clauses)
+            
+            # Get total count
+            cursor.execute(f'''
+                SELECT COUNT(*) FROM recorded_trades rt WHERE {where_sql}
         ''', params if params else None)
-        total_count = cursor.fetchone()[0]
-        
-        # Get paginated trades with recorder name
-        offset = (page - 1) * per_page
-        limit_clause = f'LIMIT {ph} OFFSET {ph}'
-        
-        cursor.execute(f'''
-            SELECT 
-                rt.id,
-                rt.ticker,
-                rt.side,
-                rt.action,
-                rt.entry_price,
-                rt.exit_price,
-                rt.quantity,
-                rt.pnl,
-                rt.status,
-                rt.tp_price,
-                rt.sl_price,
-                rt.max_adverse,
-                rt.max_favorable,
-                rt.created_at,
-                rt.exit_time,
-                rt.exit_reason,
-                r.name as strategy_name
-            FROM recorded_trades rt
-            LEFT JOIN recorders r ON rt.recorder_id = r.id
-            WHERE {where_sql}
-            ORDER BY rt.created_at DESC
-            {limit_clause}
-        ''', (params + [per_page, offset]) if params else [per_page, offset])
-        
-        columns = [desc[0] for desc in cursor.description]
-        for row in cursor.fetchall():
-            trade = dict(zip(columns, row))
+            total_count = cursor.fetchone()[0]
             
-            # Determine win/loss status
-            if trade['status'] == 'closed':
-                pnl = trade.get('pnl') or 0
-                trade_status = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'FLAT')
-            else:
-                trade_status = 'OPEN'
+            # Get paginated trades with recorder name
+            offset = (page - 1) * per_page
+            limit_clause = f'LIMIT {ph} OFFSET {ph}'
+        
+            cursor.execute(f'''
+                SELECT 
+                    rt.id,
+                    rt.ticker,
+                    rt.side,
+                    rt.action,
+                    rt.entry_price,
+                    rt.exit_price,
+                    rt.quantity,
+                    rt.pnl,
+                    rt.status,
+                    rt.tp_price,
+                    rt.sl_price,
+                    rt.max_adverse,
+                    rt.max_favorable,
+                    rt.created_at,
+                    rt.exit_time,
+                    rt.exit_reason,
+                    r.name as strategy_name
+                FROM recorded_trades rt
+                LEFT JOIN recorders r ON rt.recorder_id = r.id
+                WHERE {where_sql}
+                ORDER BY rt.created_at DESC
+                {limit_clause}
+            ''', (params + [per_page, offset]) if params else [per_page, offset])
             
-            trades.append({
-                'id': trade.get('id'),
+            columns = [desc[0] for desc in cursor.description]
+            for row in cursor.fetchall():
+                trade = dict(zip(columns, row))
+            
+                # Determine win/loss status
+                if trade['status'] == 'closed':
+                    pnl = trade.get('pnl') or 0
+                    trade_status = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'FLAT')
+                else:
+                    trade_status = 'OPEN'
+            
+                trades.append({
+                    'id': trade.get('id'),
                 'open_time': trade.get('created_at'),
-                'closed_time': trade.get('exit_time'),
-                'strategy': trade.get('strategy_name') or 'N/A',
-                'symbol': trade.get('ticker'),
-                'side': trade.get('side'),
-                'size': trade.get('quantity', 1),
-                'entry_price': trade.get('entry_price'),
-                'exit_price': trade.get('exit_price'),
-                'profit': trade.get('pnl') or 0,
+                    'closed_time': trade.get('exit_time'),
+                    'strategy': trade.get('strategy_name') or 'N/A',
+                    'symbol': trade.get('ticker'),
+                    'side': trade.get('side'),
+                    'size': trade.get('quantity', 1),
+                    'entry_price': trade.get('entry_price'),
+                    'exit_price': trade.get('exit_price'),
+                    'profit': trade.get('pnl') or 0,
                 'tp_price': trade.get('tp_price'),
                 'sl_price': trade.get('sl_price'),
                 'drawdown': abs(trade.get('max_adverse') or 0),
                 'max_favorable': trade.get('max_favorable') or 0,
                 'status': trade_status,
                 'exit_reason': trade.get('exit_reason')
-            })
+                })
         
         conn.close()
         
@@ -15616,11 +15695,11 @@ def proactive_token_refresh():
                     FROM accounts 
                     WHERE tradovate_token IS NOT NULL 
                       AND tradovate_refresh_token IS NOT NULL
-                      AND (
-                          token_expires_at IS NULL 
-                          OR token_expires_at < datetime('now', '+30 minutes')
-                      )
-                ''')
+                  AND (
+                      token_expires_at IS NULL 
+                      OR token_expires_at < datetime('now', '+30 minutes')
+                  )
+            ''')
             accounts_to_refresh = cursor.fetchall()
             conn.close()
             
@@ -15905,12 +15984,12 @@ def auto_flat_after_cutoff_worker():
                         # Get trader info for closing
                         enabled_val = 'true' if is_using_postgres() else '1'
                         cursor.execute(f'''
-                            SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id
-                            FROM traders t
-                            JOIN accounts a ON t.account_id = a.id
+                                SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id
+                                FROM traders t
+                                JOIN accounts a ON t.account_id = a.id
                             WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
-                            LIMIT 1
-                        ''', (recorder_id,))
+                                LIMIT 1
+                            ''', (recorder_id,))
                         trader_row = cursor.fetchone()
                         
                         if trader_row:
