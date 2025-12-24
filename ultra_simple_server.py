@@ -7504,17 +7504,11 @@ def process_webhook_directly(webhook_token):
         else:
             sl_ticks = 0
         
-        # Log the mode and determine TP behavior
+        # Log the mode - TP/SL from recorder settings ALWAYS apply
+        # User has full control via recorder settings regardless of signal type
+        # Strategy "flat" signals are handled separately as close orders
         signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
-        
-        # CRITICAL: Strategy signals should NOT place TP - TradingView handles exits
-        # Only indicator signals use recorder's TP settings
-        if is_strategy_alert:
-            logger.info(f"📊 {signal_type} MODE: TradingView handles exits - NOT placing system TP/SL")
-            tp_ticks = 0  # Don't place TP for strategy signals
-            sl_ticks = 0  # Don't place SL for strategy signals
-        else:
-            logger.info(f"📊 {signal_type} MODE: System manages risk - TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
+        logger.info(f"📊 {signal_type} SIGNAL: Applying recorder settings - TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
         
         # Get linked trader for live execution
         # Use is_postgres variable set earlier, and use cursor wrapper which auto-converts ? to %s
