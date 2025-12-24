@@ -11910,6 +11910,71 @@ def api_toggle_recorder_traders(recorder_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/recorders/<int:recorder_id>/toggle-my-traders', methods=['POST'])
+def api_toggle_my_traders(recorder_id):
+    """Toggle traders for a specific recorder belonging to CURRENT USER ONLY.
+    This is per-user, per-strategy control - doesn't affect other users' traders.
+    """
+    try:
+        data = request.get_json() or {}
+        enabled = data.get('enabled', False)
+        
+        # Get current user
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Check recorder exists
+        cursor.execute(f'SELECT id, name FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        recorder = cursor.fetchone()
+        if not recorder:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        recorder_name = recorder[1] if isinstance(recorder, tuple) else recorder['name']
+        
+        # PostgreSQL needs boolean True/False, SQLite needs 1/0
+        enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
+        
+        # Update traders for this recorder belonging to CURRENT USER ONLY
+        if current_user_id:
+            cursor.execute(f'''
+                UPDATE traders SET enabled = {placeholder} 
+                WHERE recorder_id = {placeholder} AND user_id = {placeholder}
+            ''', (enabled_value, recorder_id, current_user_id))
+        else:
+            # No user auth, update all traders for this recorder
+            cursor.execute(f'''
+                UPDATE traders SET enabled = {placeholder} WHERE recorder_id = {placeholder}
+            ''', (enabled_value, recorder_id))
+        
+        updated_count = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        action = 'enabled' if enabled else 'disabled'
+        logger.info(f"📊 {action.upper()} {updated_count} trader(s) for '{recorder_name}' (user: {current_user_id})")
+        
+        return jsonify({
+            'success': True,
+            'message': f'{updated_count} trader(s) {action} for {recorder_name}',
+            'updated_count': updated_count,
+            'recorder_name': recorder_name
+        })
+        
+    except Exception as e:
+        logger.error(f"Error toggling my traders for recorder {recorder_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/recorders/<int:recorder_id>/close-positions', methods=['POST'])
 def api_close_recorder_positions(recorder_id):
     """Close all open positions for a specific recorder"""
