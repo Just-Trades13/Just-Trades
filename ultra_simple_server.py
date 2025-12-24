@@ -7450,9 +7450,8 @@ def process_webhook_directly(webhook_token):
         trader_row = cursor.fetchone()
         trader = dict(trader_row) if trader_row else None
         
-        conn.close()
-        
         if not trader:
+            conn.close()
             logger.warning(f"No active trader linked to recorder '{recorder_name}'")
             return jsonify({'success': False, 'error': 'No trader linked'}), 400
         
