@@ -405,63 +405,62 @@
     </section>
     </form>
 
-    <!-- Webhook Message Templates Section -->
-    <section class="webhook-templates-card">
-        <h3>📡 Webhook Message Templates</h3>
-        <p class="templates-intro">Copy these JSON templates into your TradingView alert message. Replace <code>{{ticker}}</code> and other placeholders with TradingView variables.</p>
-        
-        <div class="webhook-url-box">
-            <label>Your Webhook URL:</label>
-            <div class="url-display">
-                <code id="webhookUrl">https://justtrades-production.up.railway.app/webhook/{{ recorder.webhook_token if recorder else 'YOUR_TOKEN' }}</code>
-                <button type="button" class="copy-btn" onclick="copyToClipboard('webhookUrl', this)">
-                    <span class="material-icons">content_copy</span>
-                </button>
+    <!-- Webhook Section (matching recorders page style) -->
+    {% if recorder and recorder.webhook_token %}
+    <section class="webhook-card">
+        <header>
+            <div>
+                <h2>Strategy Webhook Details</h2>
+                <p>Share the auto-generated webhook and alert templates with your signal source.</p>
             </div>
-        </div>
-
-        <div class="templates-grid">
-            <!-- Simple Indicator: BUY -->
-            <div class="template-box">
-                <div class="template-header">
-                    <span class="template-badge badge-indicator">INDICATOR</span>
-                    <span class="template-title">Simple BUY Signal</span>
+            <button class="btn btn-outline" type="button" onclick="toggleWebhookCard()">
+                <span class="material-icons" id="webhook-toggle-icon">expand_more</span>
+            </button>
+        </header>
+        <div class="webhook-body" id="webhook-body">
+            <label class="form-field">
+                <span>Webhook URL</span>
+                <div class="copy-row">
+                    <input type="text" id="webhookUrl" readonly value="https://justtrades-production.up.railway.app/webhook/{{ recorder.webhook_token }}">
+                    <button type="button" class="btn btn-primary btn-small" onclick="copyToClipboard('webhookUrl', this)">Copy</button>
                 </div>
-                <pre class="template-code" id="templateBuy">{
+                <small>Paste this URL in TradingView Alert → Webhook URL (check the webhook checkbox!)</small>
+            </label>
+            
+            <div class="alert-section">
+                <h3 class="section-title">📈 For Indicator Alerts</h3>
+                <p class="section-desc">Create separate alerts for BUY and SELL signals</p>
+                
+                <div class="alert-block buy-alert">
+                    <h4>🟢 BUY Alert Message</h4>
+                    <pre id="templateBuy">{
   "recorder": "{{ trader.recorder_name }}",
   "action": "buy",
   "ticker": "{% raw %}{{ticker}}{% endraw %}",
   "price": "{% raw %}{{close}}{% endraw %}"
 }</pre>
-                <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateBuy', this)">
-                    <span class="material-icons">content_copy</span> Copy
-                </button>
-            </div>
-
-            <!-- Simple Indicator: SELL -->
-            <div class="template-box">
-                <div class="template-header">
-                    <span class="template-badge badge-indicator">INDICATOR</span>
-                    <span class="template-title">Simple SELL Signal</span>
+                    <button type="button" class="btn btn-primary btn-small" onclick="copyToClipboard('templateBuy', this)">Copy BUY Message</button>
                 </div>
-                <pre class="template-code" id="templateSell">{
+                
+                <div class="alert-block sell-alert">
+                    <h4>🔴 SELL Alert Message</h4>
+                    <pre id="templateSell">{
   "recorder": "{{ trader.recorder_name }}",
   "action": "sell",
   "ticker": "{% raw %}{{ticker}}{% endraw %}",
   "price": "{% raw %}{{close}}{% endraw %}"
 }</pre>
-                <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateSell', this)">
-                    <span class="material-icons">content_copy</span> Copy
-                </button>
-            </div>
-
-            <!-- Full Strategy Signal -->
-            <div class="template-box template-box-wide">
-                <div class="template-header">
-                    <span class="template-badge badge-strategy">STRATEGY</span>
-                    <span class="template-title">Full Strategy Signal (TradingView Strategy)</span>
+                    <button type="button" class="btn btn-primary btn-small" onclick="copyToClipboard('templateSell', this)">Copy SELL Message</button>
                 </div>
-                <pre class="template-code" id="templateStrategy">{
+            </div>
+            
+            <div class="alert-section">
+                <h3 class="section-title">📊 For Pine Script Strategies</h3>
+                <p class="section-desc">One alert handles both BUY and SELL automatically</p>
+                
+                <div class="alert-block strategy-alert">
+                    <h4>Strategy Alert Message</h4>
+                    <pre id="templateStrategy">{
   "recorder": "{{ trader.recorder_name }}",
   "action": "{% raw %}{{strategy.order.action}}{% endraw %}",
   "ticker": "{% raw %}{{ticker}}{% endraw %}",
@@ -470,38 +469,13 @@
   "position_size": "{% raw %}{{strategy.position_size}}{% endraw %}",
   "market_position": "{% raw %}{{strategy.market_position}}{% endraw %}"
 }</pre>
-                <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateStrategy', this)">
-                    <span class="material-icons">content_copy</span> Copy
-                </button>
-            </div>
-
-            <!-- Close/Flat Signal -->
-            <div class="template-box">
-                <div class="template-header">
-                    <span class="template-badge badge-close">CLOSE</span>
-                    <span class="template-title">Close Position (Flat)</span>
+                    <button type="button" class="btn btn-outline btn-small" onclick="copyToClipboard('templateStrategy', this)">Copy Strategy Message</button>
+                    <small>TradingView auto-fills {% raw %}{{strategy.order.action}}{% endraw %} with "buy" or "sell"</small>
                 </div>
-                <pre class="template-code" id="templateClose">{
-  "recorder": "{{ trader.recorder_name }}",
-  "action": "close",
-  "ticker": "{% raw %}{{ticker}}{% endraw %}",
-  "price": "{% raw %}{{close}}{% endraw %}",
-  "market_position": "flat"
-}</pre>
-                <button type="button" class="copy-btn-full" onclick="copyToClipboard('templateClose', this)">
-                    <span class="material-icons">content_copy</span> Copy
-                </button>
-            </div>
-        </div>
-
-        <div class="templates-help">
-            <span class="material-icons">info</span>
-            <div>
-                <strong>TradingView Variables:</strong> Use <code>{% raw %}{{ticker}}{% endraw %}</code>, <code>{% raw %}{{close}}{% endraw %}</code>, <code>{% raw %}{{strategy.order.action}}{% endraw %}</code>, <code>{% raw %}{{strategy.position_size}}{% endraw %}</code>, <code>{% raw %}{{strategy.market_position}}{% endraw %}</code> in your alerts.
-                <br><small>These are automatically replaced by TradingView when the alert fires.</small>
             </div>
         </div>
     </section>
+    {% endif %}
 
     <section class="danger-zone">
         <h3>Danger Zone</h3>
@@ -1130,189 +1104,75 @@
         line-height: 1.4;
     }
 
-    /* Webhook Templates Section */
-    .webhook-templates-card {
-        background: rgba(11,18,33,0.92);
-        border: 1px solid rgba(16, 185, 129, 0.25);
-        border-radius: 16px;
-        padding: 1.5rem;
+    /* Webhook Card Section (matching recorders page) */
+    .webhook-card { 
+        background: rgba(11,18,33,0.92); 
+        border-radius: 18px; 
+        border: 1px solid rgba(148,163,184,0.12); 
+        padding: 1.5rem; 
+        display: grid; 
+        gap: 1.25rem;
         margin-top: 1.5rem;
     }
-    .webhook-templates-card h3 {
-        margin: 0 0 0.5rem 0;
-        color: #10b981;
-        font-size: 1.1rem;
+    .webhook-card header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .webhook-card header h2 { margin: 0 0 0.25rem; font-size: 1.25rem; }
+    .webhook-card header p { margin: 0; color: #94a3b8; font-size: 0.9rem; }
+    .webhook-body { display: grid; gap: 1.25rem; }
+    .copy-row { display: flex; gap: 0.75rem; }
+    .copy-row input { flex: 1; }
+    .alert-block { 
+        background: rgba(5,10,20,0.8); 
+        border: 1px solid rgba(59,130,246,0.2); 
+        border-radius: 12px; 
+        padding: 1rem; 
+        display: grid; 
+        gap: 0.75rem; 
     }
-    .templates-intro {
-        color: #94a3b8;
-        font-size: 0.9rem;
-        margin: 0 0 1.25rem 0;
-    }
-    .templates-intro code {
-        background: rgba(59, 130, 246, 0.2);
-        color: #93c5fd;
-        padding: 0.15rem 0.4rem;
-        border-radius: 4px;
-        font-size: 0.85rem;
-    }
-    .webhook-url-box {
-        background: rgba(5, 10, 20, 0.8);
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 12px;
-        padding: 1rem;
-        margin-bottom: 1.25rem;
-    }
-    .webhook-url-box label {
-        display: block;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #64748b;
-        margin-bottom: 0.5rem;
-    }
-    .url-display {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        background: rgba(15, 23, 42, 0.6);
-        border: 1px solid rgba(148, 163, 184, 0.15);
-        border-radius: 8px;
-        padding: 0.6rem 0.75rem;
-    }
-    .url-display code {
-        flex: 1;
-        color: #60a5fa;
-        font-size: 0.85rem;
-        word-break: break-all;
-    }
-    .copy-btn {
-        background: rgba(59, 130, 246, 0.2);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        border-radius: 6px;
-        color: #60a5fa;
-        padding: 0.4rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .copy-btn:hover {
-        background: rgba(59, 130, 246, 0.35);
-        border-color: rgba(59, 130, 246, 0.5);
-    }
-    .copy-btn .material-icons {
-        font-size: 1rem;
-    }
-    .templates-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 1rem;
-    }
-    .template-box {
-        background: rgba(5, 10, 20, 0.8);
-        border: 1px solid rgba(148, 163, 184, 0.15);
-        border-radius: 12px;
-        overflow: hidden;
-    }
-    .template-box-wide {
-        grid-column: 1 / -1;
-    }
-    .template-header {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 0.75rem 1rem;
-        background: rgba(30, 41, 59, 0.6);
-        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-    }
-    .template-badge {
-        padding: 0.2rem 0.6rem;
-        border-radius: 999px;
-        font-size: 0.65rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-    }
-    .badge-indicator {
-        background: rgba(59, 130, 246, 0.25);
-        color: #93c5fd;
-    }
-    .badge-strategy {
-        background: rgba(168, 85, 247, 0.25);
-        color: #d8b4fe;
-    }
-    .badge-close {
-        background: rgba(239, 68, 68, 0.25);
-        color: #fca5a5;
-    }
-    .template-title {
-        font-size: 0.85rem;
-        color: #e2e8f0;
-        font-weight: 500;
-    }
-    .template-code {
-        margin: 0;
-        padding: 1rem;
-        background: rgba(15, 23, 42, 0.5);
-        color: #10b981;
-        font-size: 0.8rem;
-        line-height: 1.5;
+    .alert-block h3 { margin: 0; font-size: 0.9rem; color: #bfdbfe; }
+    .alert-block h4 { margin: 0 0 0.5rem; font-size: 0.9rem; color: #94a3b8; }
+    .alert-block pre { 
+        margin: 0; 
+        background: rgba(15,23,42,0.55); 
+        border: 1px solid rgba(59,130,246,0.25); 
+        border-radius: 8px; 
+        padding: 0.85rem; 
+        color: #10b981; 
+        font-size: 0.8rem; 
+        line-height: 1.5; 
         overflow-x: auto;
         white-space: pre;
     }
-    .copy-btn-full {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-        width: 100%;
-        padding: 0.6rem;
-        background: rgba(16, 185, 129, 0.15);
-        border: none;
-        border-top: 1px solid rgba(148, 163, 184, 0.1);
-        color: #10b981;
-        font-size: 0.8rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        cursor: pointer;
-        transition: all 0.2s ease;
+    .alert-block.buy-alert {
+        border-color: rgba(34,197,94,0.3);
+        background: rgba(34,197,94,0.08);
     }
-    .copy-btn-full:hover {
-        background: rgba(16, 185, 129, 0.25);
+    .alert-block.buy-alert h4 { color: #86efac; }
+    .alert-block.sell-alert {
+        border-color: rgba(239,68,68,0.3);
+        background: rgba(239,68,68,0.08);
     }
-    .copy-btn-full .material-icons {
-        font-size: 0.95rem;
+    .alert-block.sell-alert h4 { color: #fca5a5; }
+    .alert-block.strategy-alert {
+        border-color: rgba(59,130,246,0.3);
+        background: rgba(59,130,246,0.08);
     }
-    .templates-help {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.75rem;
-        margin-top: 1.25rem;
-        padding: 1rem;
-        background: rgba(59, 130, 246, 0.1);
-        border-radius: 10px;
-        color: #94a3b8;
-        font-size: 0.85rem;
+    .alert-block.strategy-alert h4 { color: #93c5fd; }
+    .alert-block + .alert-block { margin-top: 0.75rem; }
+    .alert-section { display: grid; gap: 0.75rem; }
+    .alert-section + .alert-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(148,163,184,0.12); }
+    .section-title { margin: 0; font-size: 1rem; color: #e2e8f0; }
+    .section-desc { margin: 0; color: #64748b; font-size: 0.85rem; }
+    .alert-block small { color: #64748b; font-size: 0.8rem; margin-top: 0.25rem; }
+    .btn-outline { 
+        background: transparent; 
+        border: 1px solid rgba(148,163,184,0.3); 
+        color: #94a3b8; 
     }
-    .templates-help .material-icons {
-        color: #60a5fa;
-        font-size: 1.1rem;
-        margin-top: 0.1rem;
+    .btn-outline:hover { 
+        background: rgba(148,163,184,0.1); 
+        border-color: rgba(148,163,184,0.5); 
     }
-    .templates-help code {
-        background: rgba(59, 130, 246, 0.2);
-        color: #93c5fd;
-        padding: 0.1rem 0.35rem;
-        border-radius: 4px;
-        font-size: 0.8rem;
-    }
-    .templates-help small {
-        display: block;
-        margin-top: 0.35rem;
-        color: #64748b;
-    }
+    .btn-small { padding: 0.5rem 1rem; font-size: 0.75rem; }
 }
 </style>
 {% endblock %}
@@ -1481,12 +1341,35 @@
     }
 
     // =============================================
+    // Webhook Card Toggle
+    // =============================================
+    
+    function toggleWebhookCard() {
+        const body = document.getElementById('webhook-body');
+        const icon = document.getElementById('webhook-toggle-icon');
+        if (body.style.display === 'none') {
+            body.style.display = 'grid';
+            icon.textContent = 'expand_more';
+        } else {
+            body.style.display = 'none';
+            icon.textContent = 'expand_less';
+        }
+    }
+
+    // =============================================
     // Copy to Clipboard
     // =============================================
     
     function copyToClipboard(elementId, button) {
         const element = document.getElementById(elementId);
-        const text = element.textContent || element.innerText;
+        let text;
+        
+        // Handle both input elements and pre/code elements
+        if (element.tagName === 'INPUT') {
+            text = element.value;
+        } else {
+            text = element.textContent || element.innerText;
+        }
         
         navigator.clipboard.writeText(text).then(() => {
             // Show success feedback
