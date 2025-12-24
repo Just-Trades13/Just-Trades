@@ -7744,9 +7744,9 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         tick_value = get_tick_value(ticker) if ticker else 0.50
         
         # Check for existing open trade for this recorder
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT * FROM recorded_trades 
-            WHERE recorder_id = ? AND status = 'open' 
+            WHERE recorder_id = {placeholder} AND status = 'open' 
             ORDER BY entry_time DESC LIMIT 1
         ''', (recorder_id,))
         open_trade_row = cursor.fetchone()
@@ -7990,9 +7990,9 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
                 pnl, _ = close_trade(cursor, open_trade, tp_price, pnl_ticks, tick_value, 'tp')
                 
                 # Also close any open position in recorder_positions
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id FROM recorder_positions 
-                    WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                    WHERE recorder_id = {placeholder} AND ticker = {placeholder} AND status = 'open'
                 ''', (recorder_id, ticker))
                 open_pos = cursor.fetchone()
                 if open_pos:
@@ -8022,9 +8022,9 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
                 pnl, _ = close_trade(cursor, open_trade, sl_price, pnl_ticks, tick_value, 'sl')
                 
                 # Also close any open position in recorder_positions
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id FROM recorder_positions 
-                    WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                    WHERE recorder_id = {placeholder} AND ticker = {placeholder} AND status = 'open'
                 ''', (recorder_id, ticker))
                 open_pos = cursor.fetchone()
                 if open_pos:
@@ -8084,9 +8084,9 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
                 logger.info(f"📊 Trade CLOSED by signal for '{recorder_name}': {open_trade['side']} {ticker} | PnL: ${pnl:.2f} ({pnl_ticks:.1f} ticks)")
             
             # Always close any open position in recorder_positions (even if no open trade)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id FROM recorder_positions 
-                WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                WHERE recorder_id = {placeholder} AND ticker = {placeholder} AND status = 'open'
             ''', (recorder_id, ticker))
             open_pos = cursor.fetchone()
             if open_pos:
