@@ -6966,80 +6966,94 @@ def process_webhook_directly(webhook_token):
         
         logger.info(f"📨 Webhook received for recorder '{recorder_name}': {data}")
         
-        # Extract signal data
-        action = str(data.get('action', '')).lower().strip()
-        ticker = data.get('ticker', data.get('symbol', ''))
-        price = data.get('price', data.get('close', 0))
-        quantity = int(data.get('quantity', data.get('qty', data.get('contracts', 1))) or 1)
+        # ============================================================
+        # UNIVERSAL MESSAGE PARSING - Handle ANY webhook format
+        # Supports: TradingView indicators, strategies, custom formats
+        # ============================================================
         
-        # Strategy alert detection - TradingView strategies send position_size and market_position
+        # Extract ticker (multiple field names supported)
+        ticker = data.get('ticker', data.get('symbol', data.get('instrument', '')))
+        
+        # Extract price (multiple field names supported)
+        price = data.get('price', data.get('close', data.get('last', 0)))
+        
+        # Extract quantity (multiple field names supported)
+        raw_qty = data.get('quantity', data.get('qty', data.get('contracts', data.get('size', 1))))
+        quantity = int(raw_qty) if raw_qty else 1
+        
+        # Extract action from ANY of these fields (priority order)
+        action = ''
+        for field in ['action', 'order_action', 'side', 'signal', 'direction', 'order_type', 'type']:
+            val = data.get(field)
+            if val:
+                action = str(val).lower().strip()
+                break
+        
+        # Strategy alert fields
         position_size = data.get('position_size', data.get('contracts'))
-        market_position = str(data.get('market_position', '')).lower().strip()
+        market_position = str(data.get('market_position', data.get('position', ''))).lower().strip()
         prev_position_size = data.get('prev_position_size', data.get('prev_market_position_size'))
         is_strategy_alert = position_size is not None or market_position
         
-        # ============================================================
-        # SMART MESSAGE PARSING - Handle any TradingView format
-        # Determines intent from market_position, position_size, action
-        # ============================================================
-        original_action = action
-        
         # Convert position_size to float for comparison
         try:
-            pos_size = float(position_size) if position_size is not None else None
+            pos_size = abs(float(position_size)) if position_size is not None else None
         except (ValueError, TypeError):
             pos_size = None
         
         try:
-            prev_pos_size = float(prev_position_size) if prev_position_size is not None else None
+            prev_pos_size = abs(float(prev_position_size)) if prev_position_size is not None else None
         except (ValueError, TypeError):
             prev_pos_size = None
         
-        # Priority 1: market_position tells us the FINAL state
+        original_action = action
+        
+        # ============================================================
+        # SMART ACTION DETECTION - Priority order
+        # ============================================================
+        
+        # Priority 1: market_position tells us the FINAL state (MOST RELIABLE)
         if market_position == 'flat':
-            # Position is now flat - this is a CLOSE
             action = 'close'
-            logger.info(f"🧠 SMART PARSE: market_position=flat → action=close")
+            logger.info(f"🧠 PARSE: market_position=flat → CLOSE")
         elif market_position == 'long':
-            # Position is now long
-            if pos_size is not None and pos_size > 0:
-                action = 'buy'
-                logger.info(f"🧠 SMART PARSE: market_position=long, size={pos_size} → action=buy")
+            action = 'buy'
+            logger.info(f"🧠 PARSE: market_position=long → BUY")
         elif market_position == 'short':
-            # Position is now short
-            if pos_size is not None and pos_size < 0:
-                action = 'short'
-                logger.info(f"🧠 SMART PARSE: market_position=short, size={pos_size} → action=short")
+            action = 'short'
+            logger.info(f"🧠 PARSE: market_position=short → SHORT")
         
-        # Priority 2: position_size change detection (if no market_position)
+        # Priority 2: position_size change detection (strategy mode)
         elif pos_size is not None and prev_pos_size is not None:
-            if pos_size == 0 and prev_pos_size != 0:
-                # Went to flat - CLOSE
+            if pos_size == 0 and prev_pos_size > 0:
                 action = 'close'
-                logger.info(f"🧠 SMART PARSE: position {prev_pos_size}→0 → action=close")
-            elif pos_size > 0 and prev_pos_size <= 0:
-                # Went long - BUY
-                action = 'buy'
-                logger.info(f"🧠 SMART PARSE: position {prev_pos_size}→{pos_size} → action=buy")
-            elif pos_size < 0 and prev_pos_size >= 0:
-                # Went short - SHORT
-                action = 'short'
-                logger.info(f"🧠 SMART PARSE: position {prev_pos_size}→{pos_size} → action=short")
-        
-        # Priority 3: position_size alone (if we can detect from context)
-        elif pos_size is not None and not action:
-            if pos_size == 0:
+                logger.info(f"🧠 PARSE: position {prev_pos_size}→0 → CLOSE")
+            elif pos_size > prev_pos_size:
+                # Position increased - use action field or default to buy
+                if not action or action not in ['buy', 'sell', 'long', 'short']:
+                    action = 'buy'
+                logger.info(f"🧠 PARSE: position {prev_pos_size}→{pos_size} → {action.upper()}")
+            elif pos_size < prev_pos_size and pos_size > 0:
+                # Position decreased but not flat - partial close
                 action = 'close'
-                logger.info(f"🧠 SMART PARSE: position_size=0 → action=close")
-            elif pos_size > 0:
-                action = 'buy'
-                logger.info(f"🧠 SMART PARSE: position_size={pos_size} (positive) → action=buy")
-            elif pos_size < 0:
-                action = 'short'
-                logger.info(f"🧠 SMART PARSE: position_size={pos_size} (negative) → action=short")
+                logger.info(f"🧠 PARSE: position {prev_pos_size}→{pos_size} (partial) → CLOSE")
         
-        if original_action != action:
-            logger.info(f"🧠 SMART PARSE: Converted '{original_action}' → '{action}' based on context")
+        # Priority 3: position_size alone with no action
+        elif pos_size is not None and pos_size == 0 and not action:
+            action = 'close'
+            logger.info(f"🧠 PARSE: position_size=0 → CLOSE")
+        
+        # Priority 4: Normalize action synonyms
+        if action in ['long']:
+            action = 'buy'
+        elif action in ['sell']:
+            # Keep as 'sell' - will be converted based on context later
+            pass
+        elif action in ['flat', 'exit', 'flatten']:
+            action = 'close'
+        
+        if original_action and original_action != action:
+            logger.info(f"🧠 PARSE: Normalized '{original_action}' → '{action}'")
         
         # Validate action - allow empty if we couldn't determine from context
         valid_actions = ['buy', 'sell', 'long', 'short', 'close', 'flat', 'exit']
