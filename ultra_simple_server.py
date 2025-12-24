@@ -7645,13 +7645,21 @@ def process_webhook_directly(webhook_token):
         logger.info(f"📊 {signal_type} SIGNAL: Applying recorder settings - TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
         
         # Get linked trader for live execution
-        # Use is_postgres variable set earlier, and use cursor wrapper which auto-converts ? to %s
-        enabled_val = 'true' if is_postgres else '1'
-        cursor.execute(f'''
+        # PostgreSQL uses TRUE (boolean), SQLite uses 1 (integer)
+        if is_postgres:
+            cursor.execute(f'''
                 SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
+                WHERE t.recorder_id = {placeholder} AND t.enabled = TRUE
+                LIMIT 1
+            ''', (recorder_id,))
+        else:
+            cursor.execute(f'''
+                SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
+                FROM traders t
+                JOIN accounts a ON t.account_id = a.id
+                WHERE t.recorder_id = {placeholder} AND t.enabled = 1
                 LIMIT 1
             ''', (recorder_id,))
         trader_row = cursor.fetchone()
