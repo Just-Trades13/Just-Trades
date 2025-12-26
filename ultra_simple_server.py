@@ -9891,19 +9891,19 @@ QUANT_CACHE_DURATION = 3600  # 1 hour in seconds
 
 # Sector median benchmarks (approximate industry averages)
 # ============================================================================
-# SECTOR MEDIANS - Based on Seeking Alpha's actual sector data (Dec 2025)
-# These are used to calculate relative grades vs sector peers
+# SECTOR MEDIANS - Based on Seeking Alpha's ACTUAL sector data (Dec 2025)
+# These are the REAL sector medians from Seeking Alpha's profitability page
 # ============================================================================
 SECTOR_MEDIANS = {
     'Technology': {
         # Valuation medians from Seeking Alpha (Information Technology sector)
         'pe_ratio': 24.5, 'forward_pe': 24.5, 'peg_ratio': 1.0,
         'price_to_book': 3.6, 'price_to_sales': 3.3, 'ev_to_ebitda': 15.0,
-        # Profitability medians
-        'profit_margin': 0.18, 'operating_margin': 0.22, 'gross_margin': 0.50,
-        'roe': 0.25, 'roa': 0.12,
-        # Growth medians
-        'revenue_growth': 0.08, 'earnings_growth': 0.10
+        # Profitability medians - ACTUAL from Seeking Alpha (Dec 2025)
+        'profit_margin': 0.0481, 'operating_margin': 0.061, 'gross_margin': 0.4887,
+        'roe': 0.0633, 'roa': 0.0291,
+        # Growth medians - ACTUAL from Seeking Alpha (Dec 2025)
+        'revenue_growth': 0.0906, 'earnings_growth': 0.1378  # 9.06%, 13.78%
     },
     'Healthcare': {
         'pe_ratio': 22.0, 'forward_pe': 20.0, 'peg_ratio': 1.5,
@@ -10354,28 +10354,32 @@ def calculate_growth_grade(stock_data, sector_medians):
     
     def growth_metric_to_score(value_pct, sector_pct):
         """
-        Convert a growth metric to score. HIGHER is BETTER.
-        Score based on difference from sector median:
-        - 20%+ above sector = A+ (0.95)
-        - 10% above = A (0.85)
-        - At sector = C (0.50)
-        - 10% below = D (0.25)
-        - 20%+ below = F (0.05)
+        Convert a growth metric to score using Seeking Alpha's methodology.
+        They use RELATIVE % difference from sector median.
+        Examples from SA: NVDA 65% revenue vs 9% sector = +620% = A+
+                         AAPL 6% revenue vs 9% sector = -29% = C
         """
-        diff = value_pct - sector_pct
+        if sector_pct <= 0:
+            sector_pct = 1  # Avoid division by zero
         
-        if diff >= 20:
+        # Calculate relative difference (not absolute)
+        rel_diff_pct = ((value_pct - sector_pct) / abs(sector_pct)) * 100
+        
+        # Seeking Alpha grading based on relative % difference
+        if rel_diff_pct >= 300:  # 300%+ above sector = A+
             return 0.95
-        elif diff >= 10:
-            return 0.75 + ((diff - 10) / 10) * 0.20
-        elif diff >= 0:
-            return 0.50 + (diff / 10) * 0.25
-        elif diff >= -10:
-            return 0.25 + ((diff + 10) / 10) * 0.25
-        elif diff >= -20:
-            return 0.10 + ((diff + 20) / 10) * 0.15
-        else:
-            return max(0.05, 0.10 + (diff + 20) / 40)
+        elif rel_diff_pct >= 150:  # 150-300% = A
+            return 0.85 + ((rel_diff_pct - 150) / 150) * 0.10
+        elif rel_diff_pct >= 50:  # 50-150% = B range
+            return 0.65 + ((rel_diff_pct - 50) / 100) * 0.20
+        elif rel_diff_pct >= 0:  # 0-50% above = C+ to B-
+            return 0.50 + (rel_diff_pct / 50) * 0.15
+        elif rel_diff_pct >= -30:  # 0 to -30% = C range
+            return 0.35 + ((rel_diff_pct + 30) / 30) * 0.15
+        elif rel_diff_pct >= -50:  # -30 to -50% = D range
+            return 0.20 + ((rel_diff_pct + 50) / 20) * 0.15
+        else:  # Below -50% = F
+            return max(0.05, 0.20 + (rel_diff_pct + 50) / 100)
     
     # Revenue Growth (higher is better) - HEAVILY WEIGHTED
     rev_growth = stock_data.get('revenue_growth')
@@ -10444,32 +10448,32 @@ def calculate_profitability_grade(stock_data, sector_medians):
     
     def profit_metric_to_score(value_pct, sector_pct):
         """
-        Convert a profitability metric to score. HIGHER is BETTER.
-        Score based on difference from sector median:
-        - 50%+ above sector (relative) = A+ (0.95)
-        - 25% above = A (0.80)
-        - At sector median = C (0.50)
-        - 25% below = D (0.25)
-        - 50%+ below = F (0.10)
+        Convert a profitability metric to score using Seeking Alpha's methodology.
+        They use RELATIVE % difference from sector median.
+        Examples from SA: AAPL ROE 171% vs 6.33% sector = +2606% = A+
+                         AAPL Net Margin 27% vs 4.81% = +459% = A
         """
         if sector_pct <= 0:
-            sector_pct = 1  # Avoid division by zero
+            sector_pct = 0.01  # Avoid division by zero, use small positive
         
         # Calculate relative difference (not absolute)
-        rel_diff = ((value_pct - sector_pct) / abs(sector_pct)) * 100
+        rel_diff_pct = ((value_pct - sector_pct) / abs(sector_pct)) * 100
         
-        if rel_diff >= 100:
-            return 0.95  # 100%+ better than sector = A+
-        elif rel_diff >= 50:
-            return 0.80 + ((rel_diff - 50) / 50) * 0.15  # A range
-        elif rel_diff >= 0:
-            return 0.50 + (rel_diff / 50) * 0.30  # B to C range
-        elif rel_diff >= -25:
-            return 0.35 + ((rel_diff + 25) / 25) * 0.15  # C- to C range
-        elif rel_diff >= -50:
-            return 0.20 + ((rel_diff + 50) / 25) * 0.15  # D to C- range
-        else:
-            return max(0.05, 0.20 + (rel_diff + 50) / 100)  # F range
+        # Seeking Alpha grading based on relative % difference
+        if rel_diff_pct >= 500:  # 500%+ above sector = A+
+            return 0.95
+        elif rel_diff_pct >= 200:  # 200-500% = A
+            return 0.85 + ((rel_diff_pct - 200) / 300) * 0.10
+        elif rel_diff_pct >= 50:  # 50-200% = B range
+            return 0.65 + ((rel_diff_pct - 50) / 150) * 0.20
+        elif rel_diff_pct >= 0:  # 0-50% above = C+ to B-
+            return 0.50 + (rel_diff_pct / 50) * 0.15
+        elif rel_diff_pct >= -25:  # 0 to -25% = C range  
+            return 0.35 + ((rel_diff_pct + 25) / 25) * 0.15
+        elif rel_diff_pct >= -50:  # -25 to -50% = D range
+            return 0.20 + ((rel_diff_pct + 50) / 25) * 0.15
+        else:  # Below -50% = F
+            return max(0.05, 0.20 + (rel_diff_pct + 50) / 100)
     
     # Gross Margin (higher is better) - MOST IMPORTANT
     gross_margin = stock_data.get('gross_margin')
