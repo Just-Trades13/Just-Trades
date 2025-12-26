@@ -14887,11 +14887,22 @@ async def connect_tradovate_market_data_websocket():
     # WebSocket URL (demo or live)
     ws_url = "wss://demo.tradovateapi.com/v1/websocket" if demo else "wss://live.tradovateapi.com/v1/websocket"
     
+    # Exponential backoff for reconnection (more reliable than fixed delays)
+    reconnect_attempts = 0
+    max_backoff = 120  # Max 2 minutes between retries
+    base_delay = 2  # Start with 2 seconds
+    
     while True:
         try:
-            logger.info(f"Connecting to Tradovate market data WebSocket: {ws_url}")
-            async with websockets.connect(ws_url) as ws:
+            logger.info(f"Connecting to Tradovate market data WebSocket: {ws_url} (attempt {reconnect_attempts + 1})")
+            async with websockets.connect(
+                ws_url,
+                ping_interval=20,  # Send ping every 20 seconds to keep connection alive
+                ping_timeout=10,   # Wait 10 seconds for pong before considering dead
+                close_timeout=5    # Wait 5 seconds for close handshake
+            ) as ws:
                 _market_data_ws = ws
+                reconnect_attempts = 0  # Reset on successful connect
                 logger.info("✅ Market data WebSocket connected")
                 
                 # Authorize with md_access_token
@@ -14924,24 +14935,30 @@ async def connect_tradovate_market_data_websocket():
                     except Exception as e:
                         logger.warning(f"Error processing market data message: {e}")
                         
-        except websockets.exceptions.ConnectionClosed:
-            logger.warning("Market data WebSocket connection closed. Reconnecting in 5 seconds...")
+        except websockets.exceptions.ConnectionClosed as e:
+            reconnect_attempts += 1
+            # Exponential backoff: 2s, 4s, 8s, 16s, 32s, 64s, 120s (capped)
+            delay = min(max_backoff, base_delay * (2 ** min(reconnect_attempts - 1, 6)))
+            logger.warning(f"Market data WebSocket closed (code={e.code}). Reconnecting in {delay}s (attempt {reconnect_attempts})...")
             # Validate tokens before reconnecting
             if account_id:
                 get_valid_tradovate_token(account_id)  # Auto-refresh if needed
-            await asyncio.sleep(5)
+            await asyncio.sleep(delay)
         except Exception as e:
+            reconnect_attempts += 1
             error_str = str(e)
             # Check for rate limiting (429)
             if '429' in error_str:
-                logger.error(f"Market data WebSocket rate limited (429). Backing off for 120 seconds...")
-                await asyncio.sleep(120)  # Long backoff for rate limiting
+                delay = 180  # 3 minutes for rate limiting (longer than before)
+                logger.error(f"Market data WebSocket rate limited (429). Backing off for {delay} seconds...")
             else:
-                logger.error(f"Market data WebSocket error: {e}. Reconnecting in 30 seconds...")
-                # Validate tokens before reconnecting
-                if account_id:
-                    get_valid_tradovate_token(account_id)  # Auto-refresh if needed
-                await asyncio.sleep(30)  # Increased from 10 to 30 seconds
+                # Exponential backoff for other errors
+                delay = min(max_backoff, base_delay * (2 ** min(reconnect_attempts - 1, 6)))
+                logger.error(f"Market data WebSocket error: {e}. Reconnecting in {delay}s (attempt {reconnect_attempts})...")
+            # Validate tokens before reconnecting
+            if account_id:
+                get_valid_tradovate_token(account_id)  # Auto-refresh if needed
+            await asyncio.sleep(delay)
 
 async def subscribe_to_market_data_symbols(ws):
     """Subscribe to market data quotes for symbols we have positions in AND open recorder trades"""
@@ -15518,19 +15535,28 @@ async def connect_tradingview_websocket():
     # TradingView WebSocket URL
     ws_url = "wss://data.tradingview.com/socket.io/websocket"
     
+    # Exponential backoff for reconnection
+    reconnect_attempts = 0
+    max_backoff = 60  # Max 1 minute between retries for TradingView
+    base_delay = 2  # Start with 2 seconds
+    
     while True:
         try:
-            logger.info(f"Connecting to TradingView WebSocket...")
+            logger.info(f"Connecting to TradingView WebSocket... (attempt {reconnect_attempts + 1})")
             
-            # Create connection with headers
+            # Create connection with headers and keep-alive settings
             async with websockets.connect(
                 ws_url,
                 additional_headers={
                     'Origin': 'https://www.tradingview.com',
                     'Cookie': f'sessionid={sessionid}; sessionid_sign={sessionid_sign}'
-                }
+                },
+                ping_interval=25,  # TradingView expects heartbeats
+                ping_timeout=10,
+                close_timeout=5
             ) as ws:
                 _tradingview_ws = ws
+                reconnect_attempts = 0  # Reset on successful connect
                 logger.info("✅ TradingView WebSocket connected!")
                 
                 # TradingView uses a custom protocol
@@ -15559,9 +15585,9 @@ async def connect_tradingview_websocket():
                 async for message in ws:
                     msg_count += 1
                     try:
-                        # Handle ping/pong
+                        # Handle ping/pong (TradingView custom heartbeat)
                         if message.startswith('~h~'):
-                            # Respond to heartbeat
+                            # Respond to heartbeat immediately
                             await ws.send(message)
                             continue
                         
@@ -15575,13 +15601,17 @@ async def connect_tradingview_websocket():
                         logger.warning(f"Error processing TradingView message: {e}")
                         
         except websockets.exceptions.ConnectionClosed as e:
-            logger.warning(f"TradingView WebSocket closed: {e}. Reconnecting in 5 seconds...")
-            await asyncio.sleep(5)
+            reconnect_attempts += 1
+            delay = min(max_backoff, base_delay * (2 ** min(reconnect_attempts - 1, 5)))
+            logger.warning(f"TradingView WebSocket closed (code={e.code}). Reconnecting in {delay}s (attempt {reconnect_attempts})...")
+            await asyncio.sleep(delay)
         except Exception as e:
-            logger.error(f"TradingView WebSocket error: {e}. Reconnecting in 10 seconds...")
+            reconnect_attempts += 1
+            delay = min(max_backoff, base_delay * (2 ** min(reconnect_attempts - 1, 5)))
+            logger.error(f"TradingView WebSocket error: {e}. Reconnecting in {delay}s (attempt {reconnect_attempts})...")
             import traceback
             logger.debug(traceback.format_exc())
-            await asyncio.sleep(10)
+            await asyncio.sleep(delay)
 
 
 async def subscribe_tradingview_symbols(ws, quote_session):
@@ -17267,6 +17297,200 @@ def auto_flat_after_cutoff_worker():
 auto_flat_thread = threading.Thread(target=auto_flat_after_cutoff_worker, daemon=True)
 auto_flat_thread.start()
 logger.info("✅ Auto-Flat After Cutoff worker started")
+
+# ============================================================================
+# 🛡️ THREAD WATCHDOG - Monitors and auto-restarts critical background threads
+# ============================================================================
+# This ensures 24/7 reliability - if any thread dies, it gets restarted automatically
+# ============================================================================
+
+class ThreadWatchdog:
+    """
+    Monitors critical background threads and auto-restarts them if they die.
+    This is essential for 24/7 reliability - threads can die from unhandled exceptions.
+    """
+    
+    def __init__(self):
+        self._monitored = {}  # name -> {'thread': Thread, 'restart_func': callable, 'restart_count': int}
+        self._lock = threading.Lock()
+        self._running = False
+        self._check_interval = 30  # Check every 30 seconds
+        
+    def register(self, name: str, thread: threading.Thread, restart_func):
+        """Register a thread for monitoring"""
+        with self._lock:
+            self._monitored[name] = {
+                'thread': thread,
+                'restart_func': restart_func,
+                'restart_count': 0,
+                'last_restart': None
+            }
+        logger.info(f"🔍 Watchdog: Registered thread '{name}' for monitoring")
+    
+    def get_status(self) -> dict:
+        """Get status of all monitored threads"""
+        with self._lock:
+            status = {}
+            for name, info in self._monitored.items():
+                status[name] = {
+                    'alive': info['thread'].is_alive() if info['thread'] else False,
+                    'restart_count': info['restart_count'],
+                    'last_restart': info['last_restart']
+                }
+            return status
+    
+    def _check_and_restart(self):
+        """Check all threads and restart any that have died"""
+        with self._lock:
+            for name, info in list(self._monitored.items()):
+                thread = info['thread']
+                if thread and not thread.is_alive():
+                    logger.error(f"🔴 WATCHDOG: Thread '{name}' has DIED! Attempting restart...")
+                    try:
+                        new_thread = info['restart_func']()
+                        if new_thread:
+                            info['thread'] = new_thread
+                            info['restart_count'] += 1
+                            info['last_restart'] = datetime.now().isoformat()
+                            logger.info(f"🟢 WATCHDOG: Thread '{name}' RESTARTED successfully (restart #{info['restart_count']})")
+                        else:
+                            logger.error(f"🔴 WATCHDOG: Failed to restart '{name}' - restart_func returned None")
+                    except Exception as e:
+                        logger.error(f"🔴 WATCHDOG: Error restarting '{name}': {e}")
+    
+    def start(self):
+        """Start the watchdog monitoring loop"""
+        if self._running:
+            return
+        self._running = True
+        
+        def watchdog_loop():
+            logger.info("🐕 Watchdog started - monitoring critical threads every 30 seconds")
+            while self._running:
+                try:
+                    time.sleep(self._check_interval)
+                    self._check_and_restart()
+                except Exception as e:
+                    logger.error(f"Watchdog error: {e}")
+        
+        self._thread = threading.Thread(target=watchdog_loop, daemon=True, name="ThreadWatchdog")
+        self._thread.start()
+    
+    def stop(self):
+        """Stop the watchdog"""
+        self._running = False
+
+# Global watchdog instance
+_thread_watchdog = ThreadWatchdog()
+
+# Helper functions to create restartable threads
+def _restart_token_refresh():
+    """Restart the token refresh thread"""
+    t = threading.Thread(target=proactive_token_refresh, daemon=True, name="TokenRefresh")
+    t.start()
+    return t
+
+def _restart_realtime_updates():
+    """Restart the realtime updates thread"""
+    t = threading.Thread(target=emit_realtime_updates, daemon=True, name="RealtimeUpdates")
+    t.start()
+    return t
+
+def _restart_pnl_recording():
+    """Restart the PnL recording thread"""
+    t = threading.Thread(target=record_strategy_pnl_continuously, daemon=True, name="PnLRecording")
+    t.start()
+    return t
+
+def _restart_signal_processor():
+    """Restart the signal processor thread"""
+    t = threading.Thread(target=signal_processor_worker, daemon=True, name="SignalProcessor")
+    t.start()
+    return t
+
+def _restart_auto_flat():
+    """Restart the auto-flat worker thread"""
+    t = threading.Thread(target=auto_flat_after_cutoff_worker, daemon=True, name="AutoFlat")
+    t.start()
+    return t
+
+# Register all critical threads with the watchdog
+_thread_watchdog.register("token_refresh", token_refresh_thread, _restart_token_refresh)
+_thread_watchdog.register("realtime_updates", update_thread, _restart_realtime_updates)
+_thread_watchdog.register("pnl_recording", pnl_recording_thread, _restart_pnl_recording)
+_thread_watchdog.register("signal_processor", signal_processor_thread, _restart_signal_processor)
+_thread_watchdog.register("auto_flat", auto_flat_thread, _restart_auto_flat)
+
+# Start the watchdog
+_thread_watchdog.start()
+logger.info("🐕 Thread Watchdog started - will auto-restart any crashed threads")
+
+# ============================================================================
+# 🏥 HEALTH CHECK ENDPOINT - Monitor system health for Railway/external monitoring
+# ============================================================================
+
+@app.route('/health')
+def health_check():
+    """
+    Comprehensive health check endpoint.
+    Returns 200 if healthy, 503 if critical issues detected.
+    
+    Use this for:
+    - Railway health checks (auto-restart on failure)
+    - External monitoring (Uptime Robot, etc.)
+    - Manual debugging
+    """
+    try:
+        # Get thread status from watchdog
+        thread_status = _thread_watchdog.get_status()
+        
+        # Check database connectivity
+        db_healthy = False
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            conn.close()
+            db_healthy = True
+        except Exception as e:
+            logger.error(f"Health check - DB error: {e}")
+        
+        # Check if critical threads are alive
+        critical_threads_alive = all(
+            status['alive'] for name, status in thread_status.items()
+            if name in ['token_refresh', 'signal_processor']
+        )
+        
+        # Count total restarts (indicator of stability issues)
+        total_restarts = sum(status['restart_count'] for status in thread_status.values())
+        
+        # Build health response
+        health_data = {
+            'status': 'healthy' if (db_healthy and critical_threads_alive) else 'degraded',
+            'timestamp': datetime.now().isoformat(),
+            'uptime_seconds': time.time() - _server_start_time if '_server_start_time' in globals() else 0,
+            'database': 'connected' if db_healthy else 'disconnected',
+            'threads': thread_status,
+            'total_thread_restarts': total_restarts,
+            'accounts_needing_reauth': len(get_accounts_needing_reauth()),
+        }
+        
+        # Return appropriate status code
+        if db_healthy and critical_threads_alive:
+            return jsonify(health_data), 200
+        else:
+            return jsonify(health_data), 503
+            
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 503
+
+# Track server start time for uptime calculation
+_server_start_time = time.time()
 
 # Start Tradovate market data WebSocket
 if WEBSOCKETS_AVAILABLE:
