@@ -307,38 +307,93 @@
         </div>
     </section>
     
-    <!-- Stock Detail Modal -->
+    <!-- Stock Detail Modal - Seeking Alpha Style -->
     <div class="stock-modal-overlay" id="stockModalOverlay">
-        <div class="stock-modal" id="stockModal">
+        <div class="stock-modal stock-modal-expanded" id="stockModal">
             <header class="modal-header">
                 <div class="modal-title">
                     <h2 id="modalSymbol">AAPL</h2>
                     <span class="modal-company" id="modalCompany">Apple Inc.</span>
+                    <span class="modal-sector" id="modalSector">Technology</span>
                 </div>
                 <button class="modal-close" id="modalCloseBtn">
                     <i class="material-icons">close</i>
                 </button>
             </header>
             <div class="modal-body">
-                <div class="modal-price-section">
-                    <div class="modal-price" id="modalPrice">$0.00</div>
-                    <div class="modal-change" id="modalChange">+0.00 (+0.00%)</div>
-                </div>
-                
-                <div class="modal-rating-section">
-                    <div class="quant-rating-display">
-                        <div class="rating-badge" id="modalRatingBadge">Strong Buy</div>
-                        <div class="quant-score-display">
-                            <span class="score-label">Quant Score</span>
-                            <span class="score-value" id="modalQuantScore">0.85</span>
+                <div class="modal-top-row">
+                    <div class="modal-price-section">
+                        <div class="modal-price" id="modalPrice">$0.00</div>
+                        <div class="modal-change" id="modalChange">+0.00 (+0.00%)</div>
+                    </div>
+                    
+                    <div class="modal-rating-section">
+                        <div class="quant-rating-display">
+                            <div class="rating-badge" id="modalRatingBadge">Strong Buy</div>
+                            <div class="quant-score-display">
+                                <span class="score-label">Quant Score</span>
+                                <span class="score-value" id="modalQuantScore">3.50</span>
+                            </div>
                         </div>
+                    </div>
+                    
+                    <div class="modal-data-source">
+                        <span class="data-source-badge" id="modalDataSource">Real Data</span>
                     </div>
                 </div>
                 
-                <div class="factor-grades-section">
+                <!-- Factor Grades Summary (like Seeking Alpha) -->
+                <div class="factor-summary-section">
                     <h3>Factor Grades</h3>
-                    <div class="factor-grades-grid" id="modalFactorGrades">
-                        <!-- Filled by JS -->
+                    <div class="factor-summary-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Factor</th>
+                                    <th>Grade</th>
+                                    <th>Score</th>
+                                </tr>
+                            </thead>
+                            <tbody id="factorSummaryBody">
+                                <!-- Filled by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Detailed Factor Tabs (like Seeking Alpha) -->
+                <div class="factor-detail-section">
+                    <div class="factor-tabs">
+                        <button class="factor-tab active" data-factor="value">Valuation</button>
+                        <button class="factor-tab" data-factor="growth">Growth</button>
+                        <button class="factor-tab" data-factor="profitability">Profitability</button>
+                        <button class="factor-tab" data-factor="momentum">Momentum</button>
+                        <button class="factor-tab" data-factor="eps_revisions">EPS Revisions</button>
+                    </div>
+                    
+                    <div class="factor-detail-content" id="factorDetailContent">
+                        <div class="factor-detail-header">
+                            <h4 id="factorDetailTitle">Valuation Grade</h4>
+                            <span class="factor-detail-grade" id="factorDetailGrade">C</span>
+                        </div>
+                        <p class="factor-detail-subtitle">*Grades are relative to the <span id="factorSectorName">Technology</span> sector</p>
+                        
+                        <div class="metrics-table-wrapper">
+                            <table class="metrics-table">
+                                <thead>
+                                    <tr>
+                                        <th>Metric</th>
+                                        <th>Sector Relative Grade</th>
+                                        <th>Stock Value</th>
+                                        <th>Sector Median</th>
+                                        <th>% Diff to Sector</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="factorMetricsBody">
+                                    <!-- Filled by JS -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 
@@ -348,6 +403,9 @@
                     </a>
                     <a href="#" class="btn btn-secondary" id="modalTradingViewLink" target="_blank">
                         <i class="material-icons">show_chart</i> TradingView
+                    </a>
+                    <a href="#" class="btn btn-secondary" id="modalSeekingAlphaLink" target="_blank">
+                        <i class="material-icons">analytics</i> Seeking Alpha
                     </a>
                 </div>
             </div>
@@ -1580,6 +1638,264 @@
         display: flex;
         gap: 0.75rem;
         justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    /* ================================================================== */
+    /* EXPANDED MODAL - SEEKING ALPHA STYLE                               */
+    /* ================================================================== */
+    
+    .stock-modal-expanded {
+        max-width: 900px;
+        width: 95%;
+    }
+    
+    .modal-sector {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--primary-color);
+        background: rgba(59, 130, 246, 0.15);
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        margin-top: 0.25rem;
+    }
+    
+    .modal-top-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    
+    .modal-data-source {
+        display: flex;
+        align-items: center;
+    }
+    
+    .data-source-badge {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.6rem;
+        border-radius: 20px;
+        background: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .data-source-badge.fallback {
+        background: rgba(251, 191, 36, 0.2);
+        color: #fbbf24;
+    }
+    
+    /* Factor Summary Section */
+    .factor-summary-section {
+        background: rgba(15, 23, 42, 0.5);
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+    }
+    
+    .factor-summary-section h3 {
+        margin: 0 0 0.75rem;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+    }
+    
+    .factor-summary-table table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .factor-summary-table th,
+    .factor-summary-table td {
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    
+    .factor-summary-table th {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+    
+    .factor-summary-table td {
+        font-size: 0.9rem;
+    }
+    
+    .factor-summary-table tr:last-child td {
+        border-bottom: none;
+    }
+    
+    /* Factor Detail Section */
+    .factor-detail-section {
+        background: rgba(15, 23, 42, 0.4);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    
+    .factor-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        overflow-x: auto;
+    }
+    
+    .factor-tab {
+        padding: 0.75rem 1rem;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+    }
+    
+    .factor-tab:hover {
+        color: #e2e8f0;
+        background: rgba(148, 163, 184, 0.05);
+    }
+    
+    .factor-tab.active {
+        color: var(--primary-color);
+        border-bottom-color: var(--primary-color);
+        background: rgba(59, 130, 246, 0.05);
+    }
+    
+    .factor-detail-content {
+        padding: 1.25rem;
+    }
+    
+    .factor-detail-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .factor-detail-header h4 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    
+    .factor-detail-grade {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.85rem;
+    }
+    
+    .factor-detail-grade.grade-a { background: rgba(16, 185, 129, 0.3); color: #10b981; }
+    .factor-detail-grade.grade-b { background: rgba(132, 204, 22, 0.3); color: #84cc16; }
+    .factor-detail-grade.grade-c { background: rgba(251, 191, 36, 0.3); color: #fbbf24; }
+    .factor-detail-grade.grade-d { background: rgba(251, 146, 60, 0.3); color: #fb923c; }
+    .factor-detail-grade.grade-f { background: rgba(248, 113, 113, 0.3); color: #f87171; }
+    
+    .factor-detail-subtitle {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin: 0 0 1rem;
+    }
+    
+    .factor-detail-subtitle span {
+        color: var(--primary-color);
+    }
+    
+    /* Metrics Table (Seeking Alpha style) */
+    .metrics-table-wrapper {
+        overflow-x: auto;
+    }
+    
+    .metrics-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+    
+    .metrics-table th {
+        text-align: left;
+        padding: 0.6rem 0.75rem;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        font-weight: 500;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        white-space: nowrap;
+    }
+    
+    .metrics-table td {
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+    }
+    
+    .metrics-table tr:last-child td {
+        border-bottom: none;
+    }
+    
+    .metrics-table tr:hover td {
+        background: rgba(59, 130, 246, 0.05);
+    }
+    
+    .metric-name {
+        color: #e2e8f0;
+    }
+    
+    .metric-grade {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.75rem;
+    }
+    
+    .metric-grade.grade-a { background: rgba(16, 185, 129, 0.25); color: #10b981; }
+    .metric-grade.grade-b { background: rgba(132, 204, 22, 0.25); color: #84cc16; }
+    .metric-grade.grade-c { background: rgba(251, 191, 36, 0.25); color: #fbbf24; }
+    .metric-grade.grade-d { background: rgba(251, 146, 60, 0.25); color: #fb923c; }
+    .metric-grade.grade-f { background: rgba(248, 113, 113, 0.25); color: #f87171; }
+    
+    .metric-value {
+        font-weight: 500;
+        color: #e2e8f0;
+    }
+    
+    .metric-sector {
+        color: var(--text-muted);
+    }
+    
+    .metric-diff {
+        font-weight: 500;
+    }
+    
+    .metric-diff.positive {
+        color: #10b981;
+    }
+    
+    .metric-diff.negative {
+        color: #f87171;
+    }
+    
+    .no-metrics-msg {
+        color: var(--text-muted);
+        font-style: italic;
+        padding: 1rem;
+        text-align: center;
     }
     
     /* Loading State */
@@ -2451,8 +2767,12 @@
         document.getElementById('cardView').style.display = view === 'cards' ? 'block' : 'none';
     }
     
+    // Current stock data for modal
+    let currentModalStock = null;
+    let currentFactorTab = 'value';
+    
     // Modal - accepts either a symbol string or a stock object
-    function openStockModal(symbolOrStock) {
+    async function openStockModal(symbolOrStock) {
         let stock;
         
         // Check if we received a stock object directly or a symbol string
@@ -2461,15 +2781,32 @@
         } else {
             // Look up by symbol in current results
             stock = currentResults.find(s => s.symbol === symbolOrStock);
-            if (!stock) {
-                console.error('Stock not found in results:', symbolOrStock);
-                showToast(`Stock ${symbolOrStock} not found in current results. Try searching for it above.`, 'warning');
+        }
+        
+        // If not in results, fetch from API (for searched tickers)
+        if (!stock) {
+            try {
+                const response = await fetch(`/api/quant-screener/ticker/${symbolOrStock}`);
+                const data = await response.json();
+                if (data.success && data.stock) {
+                    stock = data.stock;
+                } else {
+                    showToast(`Could not load data for ${symbolOrStock}`, 'error');
+                    return;
+                }
+            } catch (error) {
+                console.error('Error fetching stock data:', error);
+                showToast(`Error loading data for ${symbolOrStock}`, 'error');
                 return;
             }
         }
         
+        currentModalStock = stock;
+        
+        // Basic info
         document.getElementById('modalSymbol').textContent = stock.symbol;
         document.getElementById('modalCompany').textContent = stock.name;
+        document.getElementById('modalSector').textContent = stock.sector || 'Unknown';
         
         // Handle price display
         if (stock.price !== null && stock.price !== undefined) {
@@ -2489,24 +2826,187 @@
         
         document.getElementById('modalQuantScore').textContent = stock.quant_score.toFixed(2);
         
-        // Factor grades
-        const factorsHtml = Object.entries(stock.factors).map(([key, factor]) => `
-            <div class="factor-grade-item">
-                <span class="grade-badge ${getGradeClass(factor.grade)}">${factor.grade}</span>
-                <span class="factor-grade-label">${formatFactorName(key)}</span>
-            </div>
-        `).join('');
-        document.getElementById('modalFactorGrades').innerHTML = factorsHtml;
+        // Data source badge
+        const dataSourceEl = document.getElementById('modalDataSource');
+        const isRealData = stock.data_source === 'yfinance';
+        dataSourceEl.textContent = isRealData ? 'Real Data' : 'Estimated';
+        dataSourceEl.className = `data-source-badge ${isRealData ? '' : 'fallback'}`;
+        
+        // Factor Summary Table
+        const factorKeys = ['value', 'growth', 'profitability', 'momentum', 'eps_revisions'];
+        const factorSummaryHtml = factorKeys.map(key => {
+            const factor = stock.factors[key] || { grade: 'C', score: 0.5 };
+            return `
+                <tr>
+                    <td class="metric-name">${formatFactorName(key)}</td>
+                    <td><span class="metric-grade ${getGradeClass(factor.grade)}">${factor.grade}</span></td>
+                    <td>${(factor.score * 100).toFixed(0)}%</td>
+                </tr>
+            `;
+        }).join('');
+        document.getElementById('factorSummaryBody').innerHTML = factorSummaryHtml;
+        
+        // Set up factor tabs
+        document.querySelectorAll('.factor-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.factor === 'value');
+        });
+        currentFactorTab = 'value';
+        updateFactorDetailContent('value');
         
         // Links
         document.getElementById('modalYahooLink').href = `https://finance.yahoo.com/quote/${stock.symbol}`;
         document.getElementById('modalTradingViewLink').href = `https://www.tradingview.com/symbols/${stock.symbol}`;
+        document.getElementById('modalSeekingAlphaLink').href = `https://seekingalpha.com/symbol/${stock.symbol}`;
         
         document.getElementById('stockModalOverlay').classList.add('active');
     }
     
+    // Update factor detail content when tab changes
+    function updateFactorDetailContent(factorKey) {
+        if (!currentModalStock) return;
+        
+        const factor = currentModalStock.factors[factorKey] || { grade: 'C', score: 0.5, metrics: {} };
+        const factorNames = {
+            'value': 'Valuation',
+            'growth': 'Growth',
+            'profitability': 'Profitability',
+            'momentum': 'Momentum',
+            'eps_revisions': 'EPS Revisions'
+        };
+        
+        document.getElementById('factorDetailTitle').textContent = `${factorNames[factorKey]} Grade`;
+        
+        const gradeEl = document.getElementById('factorDetailGrade');
+        gradeEl.textContent = factor.grade;
+        gradeEl.className = `factor-detail-grade ${getGradeClass(factor.grade)}`;
+        
+        document.getElementById('factorSectorName').textContent = currentModalStock.sector || 'Unknown';
+        
+        // Build metrics table
+        const metrics = factor.metrics || {};
+        const metricKeys = Object.keys(metrics);
+        
+        if (metricKeys.length === 0) {
+            document.getElementById('factorMetricsBody').innerHTML = `
+                <tr>
+                    <td colspan="5" class="no-metrics-msg">
+                        No detailed metrics available for this factor. 
+                        ${currentModalStock.data_source !== 'yfinance' ? 'Real-time data requires yfinance.' : ''}
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        const metricsHtml = metricKeys.map(key => {
+            const metric = metrics[key];
+            const value = metric.value;
+            const sector = metric.sector;
+            const diffPct = metric.diff_pct;
+            
+            // Determine grade based on diff (simplified - valuation is inverted)
+            let metricGrade = 'C';
+            const isValuation = factorKey === 'value';
+            if (typeof diffPct === 'number') {
+                if (isValuation) {
+                    // For valuation: negative diff is good (cheaper than sector)
+                    if (diffPct < -30) metricGrade = 'A';
+                    else if (diffPct < -10) metricGrade = 'B';
+                    else if (diffPct < 15) metricGrade = 'C';
+                    else if (diffPct < 40) metricGrade = 'D';
+                    else metricGrade = 'F';
+                } else {
+                    // For growth/profit: positive diff is good (better than sector)
+                    if (diffPct > 30) metricGrade = 'A';
+                    else if (diffPct > 10) metricGrade = 'B';
+                    else if (diffPct > -15) metricGrade = 'C';
+                    else if (diffPct > -40) metricGrade = 'D';
+                    else metricGrade = 'F';
+                }
+            }
+            
+            // Format values
+            const formatValue = (v) => {
+                if (v === 'N/A' || v === null || v === undefined) return 'N/A';
+                if (typeof v === 'number') {
+                    if (key.includes('margin') || key.includes('growth') || key.includes('roe') || key.includes('roa')) {
+                        return v.toFixed(2) + '%';
+                    }
+                    return v.toFixed(2);
+                }
+                return v;
+            };
+            
+            const formatDiff = (d) => {
+                if (d === 'N/A' || d === null || d === undefined) return 'N/A';
+                const sign = d >= 0 ? '+' : '';
+                return `${sign}${d.toFixed(1)}%`;
+            };
+            
+            const diffClass = typeof diffPct === 'number' ? (
+                (isValuation ? diffPct < 0 : diffPct > 0) ? 'positive' : 'negative'
+            ) : '';
+            
+            return `
+                <tr>
+                    <td class="metric-name">${formatMetricName(key)}</td>
+                    <td><span class="metric-grade ${getGradeClass(metricGrade)}">${metricGrade}</span></td>
+                    <td class="metric-value">${formatValue(value)}</td>
+                    <td class="metric-sector">${formatValue(sector)}</td>
+                    <td class="metric-diff ${diffClass}">${formatDiff(diffPct)}</td>
+                </tr>
+            `;
+        }).join('');
+        
+        document.getElementById('factorMetricsBody').innerHTML = metricsHtml;
+    }
+    
+    // Format metric names for display
+    function formatMetricName(key) {
+        const nameMap = {
+            'pe_ratio': 'P/E Ratio (TTM)',
+            'forward_pe': 'P/E Ratio (FWD)',
+            'peg_ratio': 'PEG Ratio',
+            'price_to_book': 'Price / Book',
+            'price_to_sales': 'Price / Sales',
+            'ev_to_ebitda': 'EV / EBITDA',
+            'profit_margin': 'Net Income Margin',
+            'operating_margin': 'Operating Margin',
+            'gross_margin': 'Gross Margin',
+            'roe': 'Return on Equity',
+            'roa': 'Return on Assets',
+            'revenue_growth': 'Revenue Growth (YoY)',
+            'earnings_growth': 'Earnings Growth (YoY)',
+            'earnings_quarterly_growth': 'Earnings Growth (QoQ)',
+            'eps_growth_fwd': 'EPS Growth (FWD)',
+            '52w_position': '52-Week Range Position',
+            'vs_50d_ma': 'Price vs 50D MA',
+            'vs_200d_ma': 'Price vs 200D MA',
+            'daily_change': 'Daily Change',
+            'analyst_rating': 'Analyst Rating (1-5)',
+            'price_target_upside': 'Price Target Upside',
+            'analyst_coverage': 'Analyst Coverage',
+            'eps_revision': 'EPS Revision %'
+        };
+        return nameMap[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+    
+    // Initialize factor tab listeners
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.factor-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                const factorKey = this.dataset.factor;
+                document.querySelectorAll('.factor-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                currentFactorTab = factorKey;
+                updateFactorDetailContent(factorKey);
+            });
+        });
+    });
+    
     function closeModal() {
         document.getElementById('stockModalOverlay').classList.remove('active');
+        currentModalStock = null;
     }
     
     // Helper functions

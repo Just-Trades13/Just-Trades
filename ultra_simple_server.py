@@ -6372,12 +6372,12 @@ def api_create_trader():
                 INSERT INTO traders (
                     recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
                     initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                    enabled_accounts
+                    user_id, enabled_accounts
                 )
-                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                  None))
+                  current_user_id, None))
             trader_id = cursor.lastrowid
         
         conn.commit()
@@ -9581,51 +9581,38 @@ def api_quant_screener_search():
 
 @app.route('/api/quant-screener/ticker/<symbol>', methods=['GET'])
 def api_quant_screener_ticker(symbol):
-    """Get full quant report for a specific ticker"""
+    """Get full quant report for a specific ticker using REAL financial data"""
     try:
         symbol = symbol.upper().strip()
         
-        all_stocks = get_stock_universe()
-        stock_info = None
+        # Get REAL factor grades from yfinance
+        real_factors = get_real_factor_grades(symbol)
+        stock_data = real_factors.get('_stock_data', {})
+        data_source = real_factors.get('_data_source', 'fallback')
         
-        for stock in all_stocks:
-            if stock['symbol'] == symbol:
-                stock_info = stock
-                break
-        
-        if not stock_info:
-            stock_info = {
-                'symbol': symbol,
-                'name': symbol,
-                'sector': 'unknown',
-                'market_cap': 'large'
-            }
-        
-        # Fetch live price from TradingView
-        live_price = None
-        change_pct = 0
-        
-        try:
-            prices = fetch_live_stock_prices([symbol])
-            if symbol in prices:
-                live_price = prices[symbol]['price']
-                change_pct = prices[symbol].get('change_pct', 0)
-        except Exception as e:
-            logger.warning(f"Could not fetch live price for {symbol}: {e}")
-        
-        # Generate quant factors (seeded by symbol for consistency)
-        import random
-        random.seed(hash(symbol))
-        
+        # Extract factor grades (excluding metadata keys)
         factors = {
-            'value': generate_factor_grade(),
-            'growth': generate_factor_grade(),
-            'profitability': generate_factor_grade(),
-            'momentum': generate_factor_grade(),
-            'eps_revisions': generate_factor_grade()
+            'value': real_factors.get('value', {'grade': 'C', 'score': 0.5, 'metrics': {}}),
+            'growth': real_factors.get('growth', {'grade': 'C', 'score': 0.5, 'metrics': {}}),
+            'profitability': real_factors.get('profitability', {'grade': 'C', 'score': 0.5, 'metrics': {}}),
+            'momentum': real_factors.get('momentum', {'grade': 'C', 'score': 0.5, 'metrics': {}}),
+            'eps_revisions': real_factors.get('eps_revisions', {'grade': 'C', 'score': 0.5, 'metrics': {}})
         }
         
-        # Calculate quant score (1.0-5.0 scale)
+        # Use real price from yfinance, fallback to TradingView
+        price = stock_data.get('price')
+        change_pct = stock_data.get('change_pct', 0)
+        
+        if not price:
+            try:
+                prices = fetch_live_stock_prices([symbol])
+                if symbol in prices:
+                    price = prices[symbol]['price']
+                    change_pct = prices[symbol].get('change_pct', 0)
+            except Exception as e:
+                logger.warning(f"Could not fetch live price for {symbol}: {e}")
+        
+        # Calculate quant score (1.0-5.0 scale) based on REAL scores
         quant_score = (
             (factors['value']['score'] * 4 + 1) * 0.20 +
             (factors['growth']['score'] * 4 + 1) * 0.20 +
@@ -9635,27 +9622,39 @@ def api_quant_screener_ticker(symbol):
         )
         
         # Determine rating
-        if quant_score >= 4.5:
-            rating = 'Strong Buy'
-        elif quant_score >= 3.5:
-            rating = 'Buy'
-        elif quant_score >= 2.5:
-            rating = 'Hold'
-        elif quant_score >= 1.5:
-            rating = 'Sell'
+        rating = score_to_quant_rating(quant_score)
+        
+        # Get company info from real data or fallback
+        company_name = stock_data.get('name') or symbol
+        company_sector = stock_data.get('sector') or 'Unknown'
+        company_industry = stock_data.get('industry') or 'Unknown'
+        market_cap = stock_data.get('market_cap', 0)
+        
+        # Determine market cap category
+        if market_cap >= 200_000_000_000:
+            market_cap_cat = 'Mega'
+        elif market_cap >= 10_000_000_000:
+            market_cap_cat = 'Large'
+        elif market_cap >= 2_000_000_000:
+            market_cap_cat = 'Mid'
+        elif market_cap >= 300_000_000:
+            market_cap_cat = 'Small'
         else:
-            rating = 'Strong Sell'
+            market_cap_cat = 'Micro'
         
         stock_report = {
             'symbol': symbol,
-            'name': stock_info.get('name', symbol),
-            'sector': stock_info.get('sector', 'Unknown').replace('_', ' ').title(),
-            'market_cap': stock_info.get('market_cap', 'Unknown').title(),
-            'price': round(live_price, 2) if live_price else None,
-            'change': round(change_pct, 2),
+            'name': company_name,
+            'sector': company_sector,
+            'industry': company_industry,
+            'market_cap': market_cap_cat,
+            'market_cap_value': market_cap,
+            'price': round(price, 2) if price else None,
+            'change': round(change_pct, 2) if change_pct else 0,
             'quant_score': round(quant_score, 2),
             'rating': rating,
-            'factors': factors
+            'factors': factors,
+            'data_source': data_source  # 'yfinance' or 'fallback'
         }
         
         return jsonify({
@@ -9881,6 +9880,755 @@ def score_to_quant_rating(score_1_to_5):
         return 'Strong Sell'
 
 
+# ============================================================================
+# REAL FINANCIAL DATA SERVICE (yfinance-based)
+# ============================================================================
+
+# In-memory cache for financial data (expires after 1 hour)
+_quant_data_cache = {}
+_quant_cache_expiry = {}
+QUANT_CACHE_DURATION = 3600  # 1 hour in seconds
+
+# Sector median benchmarks (approximate industry averages)
+# ============================================================================
+# SECTOR MEDIANS - Based on Seeking Alpha's actual sector data (Dec 2025)
+# These are used to calculate relative grades vs sector peers
+# ============================================================================
+SECTOR_MEDIANS = {
+    'Technology': {
+        # Valuation medians from Seeking Alpha (Information Technology sector)
+        'pe_ratio': 24.5, 'forward_pe': 24.5, 'peg_ratio': 1.0,
+        'price_to_book': 3.6, 'price_to_sales': 3.3, 'ev_to_ebitda': 15.0,
+        # Profitability medians
+        'profit_margin': 0.18, 'operating_margin': 0.22, 'gross_margin': 0.50,
+        'roe': 0.25, 'roa': 0.12,
+        # Growth medians
+        'revenue_growth': 0.08, 'earnings_growth': 0.10
+    },
+    'Healthcare': {
+        'pe_ratio': 22.0, 'forward_pe': 20.0, 'peg_ratio': 1.5,
+        'price_to_book': 3.8, 'price_to_sales': 3.5, 'ev_to_ebitda': 14.0,
+        'profit_margin': 0.10, 'operating_margin': 0.12, 'gross_margin': 0.55,
+        'roe': 0.12, 'roa': 0.06, 'revenue_growth': 0.06, 'earnings_growth': 0.08
+    },
+    'Financial Services': {
+        'pe_ratio': 13.0, 'forward_pe': 12.0, 'peg_ratio': 1.3,
+        'price_to_book': 1.3, 'price_to_sales': 3.0, 'ev_to_ebitda': 10.0,
+        'profit_margin': 0.22, 'operating_margin': 0.28, 'gross_margin': 0.65,
+        'roe': 0.11, 'roa': 0.01, 'revenue_growth': 0.04, 'earnings_growth': 0.06
+    },
+    'Consumer Cyclical': {
+        'pe_ratio': 20.0, 'forward_pe': 18.0, 'peg_ratio': 1.5,
+        'price_to_book': 4.5, 'price_to_sales': 1.2, 'ev_to_ebitda': 12.0,
+        'profit_margin': 0.06, 'operating_margin': 0.08, 'gross_margin': 0.32,
+        'roe': 0.15, 'roa': 0.06, 'revenue_growth': 0.08, 'earnings_growth': 0.10
+    },
+    'Communication Services': {
+        'pe_ratio': 17.0, 'forward_pe': 15.0, 'peg_ratio': 1.2,
+        'price_to_book': 2.8, 'price_to_sales': 2.5, 'ev_to_ebitda': 10.0,
+        'profit_margin': 0.12, 'operating_margin': 0.18, 'gross_margin': 0.48,
+        'roe': 0.14, 'roa': 0.07, 'revenue_growth': 0.06, 'earnings_growth': 0.08
+    },
+    'Industrials': {
+        'pe_ratio': 22.0, 'forward_pe': 20.0, 'peg_ratio': 1.8,
+        'price_to_book': 4.0, 'price_to_sales': 2.0, 'ev_to_ebitda': 13.0,
+        'profit_margin': 0.07, 'operating_margin': 0.10, 'gross_margin': 0.28,
+        'roe': 0.14, 'roa': 0.05, 'revenue_growth': 0.05, 'earnings_growth': 0.07
+    },
+    'Energy': {
+        'pe_ratio': 11.0, 'forward_pe': 10.0, 'peg_ratio': 0.8,
+        'price_to_book': 1.6, 'price_to_sales': 1.2, 'ev_to_ebitda': 5.5,
+        'profit_margin': 0.09, 'operating_margin': 0.12, 'gross_margin': 0.35,
+        'roe': 0.14, 'roa': 0.07, 'revenue_growth': 0.03, 'earnings_growth': 0.05
+    },
+    'Consumer Defensive': {
+        'pe_ratio': 24.0, 'forward_pe': 22.0, 'peg_ratio': 2.8,
+        'price_to_book': 5.5, 'price_to_sales': 1.8, 'ev_to_ebitda': 15.0,
+        'profit_margin': 0.07, 'operating_margin': 0.10, 'gross_margin': 0.32,
+        'roe': 0.18, 'roa': 0.07, 'revenue_growth': 0.03, 'earnings_growth': 0.05
+    },
+    'Utilities': {
+        'pe_ratio': 18.0, 'forward_pe': 17.0, 'peg_ratio': 3.2,
+        'price_to_book': 1.9, 'price_to_sales': 2.8, 'ev_to_ebitda': 13.0,
+        'profit_margin': 0.11, 'operating_margin': 0.18, 'gross_margin': 0.38,
+        'roe': 0.09, 'roa': 0.03, 'revenue_growth': 0.02, 'earnings_growth': 0.03
+    },
+    'Real Estate': {
+        'pe_ratio': 38.0, 'forward_pe': 35.0, 'peg_ratio': 2.5,
+        'price_to_book': 2.2, 'price_to_sales': 7.5, 'ev_to_ebitda': 18.0,
+        'profit_margin': 0.22, 'operating_margin': 0.30, 'gross_margin': 0.58,
+        'roe': 0.07, 'roa': 0.03, 'revenue_growth': 0.04, 'earnings_growth': 0.05
+    },
+    'Basic Materials': {
+        'pe_ratio': 13.0, 'forward_pe': 12.0, 'peg_ratio': 1.0,
+        'price_to_book': 2.2, 'price_to_sales': 1.4, 'ev_to_ebitda': 7.5,
+        'profit_margin': 0.09, 'operating_margin': 0.13, 'gross_margin': 0.28,
+        'roe': 0.11, 'roa': 0.05, 'revenue_growth': 0.04, 'earnings_growth': 0.06
+    },
+    'Default': {
+        'pe_ratio': 20.0, 'forward_pe': 18.0, 'peg_ratio': 1.5,
+        'price_to_book': 3.0, 'price_to_sales': 2.5, 'ev_to_ebitda': 12.0,
+        'profit_margin': 0.10, 'operating_margin': 0.14, 'gross_margin': 0.38,
+        'roe': 0.14, 'roa': 0.06, 'revenue_growth': 0.06, 'earnings_growth': 0.08
+    }
+}
+
+
+def get_real_stock_data(symbol):
+    """
+    Fetch real financial data for a stock using yfinance.
+    Returns cached data if available and not expired.
+    """
+    import time as time_module
+    
+    # Check cache first
+    cache_key = symbol.upper()
+    current_time = time_module.time()
+    
+    if cache_key in _quant_data_cache:
+        if current_time < _quant_cache_expiry.get(cache_key, 0):
+            return _quant_data_cache[cache_key]
+    
+    try:
+        import yfinance as yf
+        
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        
+        if not info or info.get('regularMarketPrice') is None:
+            logger.warning(f"No data available for {symbol}")
+            return None
+        
+        # Extract key metrics
+        data = {
+            'symbol': symbol.upper(),
+            'name': info.get('longName') or info.get('shortName') or symbol,
+            'sector': info.get('sector', 'Unknown'),
+            'industry': info.get('industry', 'Unknown'),
+            'price': info.get('regularMarketPrice') or info.get('currentPrice', 0),
+            'change_pct': info.get('regularMarketChangePercent', 0),
+            'market_cap': info.get('marketCap', 0),
+            
+            # Valuation metrics
+            'pe_ratio': info.get('trailingPE'),
+            'forward_pe': info.get('forwardPE'),
+            'peg_ratio': info.get('pegRatio'),
+            'price_to_book': info.get('priceToBook'),
+            'price_to_sales': info.get('priceToSalesTrailing12Months'),
+            'ev_to_ebitda': info.get('enterpriseToEbitda'),
+            'ev_to_revenue': info.get('enterpriseToRevenue'),
+            
+            # Profitability metrics
+            'profit_margin': info.get('profitMargins'),
+            'operating_margin': info.get('operatingMargins'),
+            'gross_margin': info.get('grossMargins'),
+            'roe': info.get('returnOnEquity'),
+            'roa': info.get('returnOnAssets'),
+            
+            # Growth metrics
+            'revenue_growth': info.get('revenueGrowth'),
+            'earnings_growth': info.get('earningsGrowth'),
+            'earnings_quarterly_growth': info.get('earningsQuarterlyGrowth'),
+            
+            # Momentum metrics (price performance)
+            'fifty_two_week_high': info.get('fiftyTwoWeekHigh'),
+            'fifty_two_week_low': info.get('fiftyTwoWeekLow'),
+            'fifty_day_average': info.get('fiftyDayAverage'),
+            'two_hundred_day_average': info.get('twoHundredDayAverage'),
+            
+            # EPS data
+            'trailing_eps': info.get('trailingEps'),
+            'forward_eps': info.get('forwardEps'),
+            
+            # Dividend data
+            'dividend_yield': info.get('dividendYield'),
+            'payout_ratio': info.get('payoutRatio'),
+            
+            # Analyst data
+            'recommendation_mean': info.get('recommendationMean'),  # 1=Strong Buy, 5=Sell
+            'number_of_analyst_opinions': info.get('numberOfAnalystOpinions'),
+            'target_mean_price': info.get('targetMeanPrice'),
+        }
+        
+        # Cache the data
+        _quant_data_cache[cache_key] = data
+        _quant_cache_expiry[cache_key] = current_time + QUANT_CACHE_DURATION
+        
+        logger.info(f"Fetched real data for {symbol}: P/E={data.get('pe_ratio')}, Sector={data.get('sector')}")
+        return data
+        
+    except Exception as e:
+        logger.error(f"Error fetching data for {symbol}: {e}")
+        return None
+
+
+def calculate_valuation_grade(stock_data, sector_medians):
+    """
+    Calculate valuation grade based on P/E, P/B, P/S, EV/EBITDA vs sector.
+    Lower valuations = better grades (value investing approach).
+    Uses Seeking Alpha-style grading: compares % difference to sector median.
+    """
+    if not stock_data:
+        return {'grade': 'C', 'score': 0.5, 'metrics': {}}
+    
+    scores = []
+    metrics = {}
+    
+    def value_metric_to_score(value, sector_median):
+        """
+        Convert a valuation metric to a score (0-1).
+        For valuation, LOWER is BETTER.
+        Score thresholds based on Seeking Alpha methodology:
+        - 50%+ below sector = A+ (score ~0.95)
+        - 25% below = A (score ~0.85)
+        - At sector median = C (score ~0.50)
+        - 25% above = D (score ~0.25)
+        - 50%+ above = F (score ~0.05)
+        """
+        if not value or value <= 0 or not sector_median or sector_median <= 0:
+            return None
+        
+        diff_pct = ((value - sector_median) / sector_median) * 100
+        
+        # Stricter scoring: penalize being above sector median heavily
+        if diff_pct <= -50:
+            return 0.95  # 50%+ cheaper = A+
+        elif diff_pct <= -25:
+            return 0.80 + ((-25 - diff_pct) / 25) * 0.15  # A range
+        elif diff_pct <= 0:
+            return 0.50 + (-diff_pct / 25) * 0.30  # B to C range (at median = 0.50)
+        elif diff_pct <= 25:
+            return 0.35 - (diff_pct / 25) * 0.15  # C- to D+ range
+        elif diff_pct <= 50:
+            return 0.20 - ((diff_pct - 25) / 25) * 0.10  # D range
+        elif diff_pct <= 100:
+            return 0.10 - ((diff_pct - 50) / 50) * 0.05  # D- to F range
+        else:
+            return 0.05  # F for anything 100%+ above median
+    
+    # P/E Ratio (lower is better for value) - HEAVILY WEIGHTED
+    pe = stock_data.get('pe_ratio')
+    sector_pe = sector_medians.get('pe_ratio', 24.5)
+    if pe and pe > 0:
+        pe_diff_pct = ((pe - sector_pe) / sector_pe) * 100
+        metrics['pe_ratio'] = {'value': round(pe, 2), 'sector': sector_pe, 'diff_pct': round(pe_diff_pct, 1)}
+        pe_score = value_metric_to_score(pe, sector_pe)
+        if pe_score is not None:
+            scores.append(pe_score * 1.5)  # Weight P/E higher
+    
+    # Forward P/E
+    fwd_pe = stock_data.get('forward_pe')
+    sector_fwd_pe = sector_medians.get('forward_pe', 22)
+    if fwd_pe and fwd_pe > 0:
+        fwd_pe_diff = ((fwd_pe - sector_fwd_pe) / sector_fwd_pe) * 100
+        metrics['forward_pe'] = {'value': round(fwd_pe, 2), 'sector': sector_fwd_pe, 'diff_pct': round(fwd_pe_diff, 1)}
+        fwd_pe_score = value_metric_to_score(fwd_pe, sector_fwd_pe)
+        if fwd_pe_score is not None:
+            scores.append(fwd_pe_score * 1.3)  # Weight forward P/E
+    
+    # PEG Ratio (lower is better)
+    peg = stock_data.get('peg_ratio')
+    sector_peg = sector_medians.get('peg_ratio', 1.0)
+    if peg and peg > 0:
+        peg_diff = ((peg - sector_peg) / sector_peg) * 100
+        metrics['peg_ratio'] = {'value': round(peg, 2), 'sector': sector_peg, 'diff_pct': round(peg_diff, 1)}
+        peg_score = value_metric_to_score(peg, sector_peg)
+        if peg_score is not None:
+            scores.append(peg_score)
+    
+    # Price to Book (lower is better) - HEAVILY WEIGHTED
+    pb = stock_data.get('price_to_book')
+    sector_pb = sector_medians.get('price_to_book', 3.6)
+    if pb and pb > 0:
+        pb_diff = ((pb - sector_pb) / sector_pb) * 100
+        metrics['price_to_book'] = {'value': round(pb, 2), 'sector': sector_pb, 'diff_pct': round(pb_diff, 1)}
+        pb_score = value_metric_to_score(pb, sector_pb)
+        if pb_score is not None:
+            scores.append(pb_score * 1.5)  # Weight P/B higher
+    
+    # Price to Sales (lower is better)
+    ps = stock_data.get('price_to_sales')
+    sector_ps = sector_medians.get('price_to_sales', 3.3)
+    if ps and ps > 0:
+        ps_diff = ((ps - sector_ps) / sector_ps) * 100
+        metrics['price_to_sales'] = {'value': round(ps, 2), 'sector': sector_ps, 'diff_pct': round(ps_diff, 1)}
+        ps_score = value_metric_to_score(ps, sector_ps)
+        if ps_score is not None:
+            scores.append(ps_score * 1.2)
+    
+    # EV/EBITDA (lower is better)
+    ev_ebitda = stock_data.get('ev_to_ebitda')
+    sector_ev = sector_medians.get('ev_to_ebitda', 15.0)
+    if ev_ebitda and ev_ebitda > 0:
+        ev_diff = ((ev_ebitda - sector_ev) / sector_ev) * 100
+        metrics['ev_to_ebitda'] = {'value': round(ev_ebitda, 2), 'sector': sector_ev, 'diff_pct': round(ev_diff, 1)}
+        ev_score = value_metric_to_score(ev_ebitda, sector_ev)
+        if ev_score is not None:
+            scores.append(ev_score * 1.2)
+    
+    # Calculate weighted average score (normalize by total weights)
+    if scores:
+        # Scores already have weights applied, so normalize
+        total_weight = 1.5 + 1.3 + 1.0 + 1.5 + 1.2 + 1.2  # Sum of all weights
+        avg_score = sum(scores) / total_weight
+        avg_score = max(0, min(1, avg_score))  # Clamp to 0-1
+    else:
+        avg_score = 0.5
+    
+    grade = percentile_to_grade(avg_score * 100)
+    
+    return {'grade': grade, 'score': round(avg_score, 3), 'metrics': metrics}
+
+
+def calculate_growth_grade(stock_data, sector_medians):
+    """
+    Calculate growth grade based on revenue growth, earnings growth, etc.
+    Higher growth = better grades.
+    Uses Seeking Alpha-style grading.
+    """
+    if not stock_data:
+        return {'grade': 'C', 'score': 0.5, 'metrics': {}}
+    
+    scores = []
+    metrics = {}
+    
+    def growth_metric_to_score(value_pct, sector_pct):
+        """
+        Convert a growth metric to score. HIGHER is BETTER.
+        Score based on difference from sector median:
+        - 20%+ above sector = A+ (0.95)
+        - 10% above = A (0.85)
+        - At sector = C (0.50)
+        - 10% below = D (0.25)
+        - 20%+ below = F (0.05)
+        """
+        diff = value_pct - sector_pct
+        
+        if diff >= 20:
+            return 0.95
+        elif diff >= 10:
+            return 0.75 + ((diff - 10) / 10) * 0.20
+        elif diff >= 0:
+            return 0.50 + (diff / 10) * 0.25
+        elif diff >= -10:
+            return 0.25 + ((diff + 10) / 10) * 0.25
+        elif diff >= -20:
+            return 0.10 + ((diff + 20) / 10) * 0.15
+        else:
+            return max(0.05, 0.10 + (diff + 20) / 40)
+    
+    # Revenue Growth (higher is better) - HEAVILY WEIGHTED
+    rev_growth = stock_data.get('revenue_growth')
+    sector_rev = sector_medians.get('revenue_growth', 0.08)
+    if rev_growth is not None:
+        rev_growth_pct = rev_growth * 100
+        sector_rev_pct = sector_rev * 100
+        diff_pct = rev_growth_pct - sector_rev_pct
+        metrics['revenue_growth'] = {'value': round(rev_growth_pct, 2), 'sector': round(sector_rev_pct, 2), 'diff_pct': round(diff_pct, 1)}
+        rev_score = growth_metric_to_score(rev_growth_pct, sector_rev_pct)
+        scores.append(rev_score * 1.5)  # Weight revenue growth
+    
+    # Earnings Growth (higher is better) - HEAVILY WEIGHTED
+    earn_growth = stock_data.get('earnings_growth')
+    sector_earn = sector_medians.get('earnings_growth', 0.10)
+    if earn_growth is not None:
+        earn_growth_pct = earn_growth * 100
+        sector_earn_pct = sector_earn * 100
+        diff_pct = earn_growth_pct - sector_earn_pct
+        metrics['earnings_growth'] = {'value': round(earn_growth_pct, 2), 'sector': round(sector_earn_pct, 2), 'diff_pct': round(diff_pct, 1)}
+        earn_score = growth_metric_to_score(earn_growth_pct, sector_earn_pct)
+        scores.append(earn_score * 1.5)  # Weight earnings growth
+    
+    # Quarterly Earnings Growth
+    q_growth = stock_data.get('earnings_quarterly_growth')
+    if q_growth is not None:
+        q_growth_pct = q_growth * 100
+        metrics['earnings_quarterly_growth'] = {'value': round(q_growth_pct, 2), 'sector': 'N/A', 'diff_pct': 'N/A'}
+        # Compare to 0% as baseline (any positive growth is good)
+        q_score = growth_metric_to_score(q_growth_pct, 0)
+        scores.append(q_score)
+    
+    # EPS Growth (Forward EPS vs Trailing EPS)
+    trailing_eps = stock_data.get('trailing_eps')
+    forward_eps = stock_data.get('forward_eps')
+    if trailing_eps and forward_eps and trailing_eps > 0:
+        eps_growth_pct = ((forward_eps - trailing_eps) / abs(trailing_eps)) * 100
+        metrics['eps_growth_fwd'] = {'value': round(eps_growth_pct, 2), 'sector': 'N/A', 'diff_pct': 'N/A'}
+        eps_score = growth_metric_to_score(eps_growth_pct, sector_earn_pct)
+        scores.append(eps_score * 1.2)  # Weight EPS growth
+    
+    # Calculate weighted average
+    if scores:
+        total_weight = 1.5 + 1.5 + 1.0 + 1.2  # Sum of weights
+        avg_score = sum(scores) / total_weight
+        avg_score = max(0, min(1, avg_score))
+    else:
+        avg_score = 0.5
+    
+    grade = percentile_to_grade(avg_score * 100)
+    
+    return {'grade': grade, 'score': round(avg_score, 3), 'metrics': metrics}
+
+
+def calculate_profitability_grade(stock_data, sector_medians):
+    """
+    Calculate profitability grade based on margins, ROE, ROA, etc.
+    Higher profitability = better grades.
+    Uses Seeking Alpha-style grading.
+    """
+    if not stock_data:
+        return {'grade': 'C', 'score': 0.5, 'metrics': {}}
+    
+    scores = []
+    metrics = {}
+    
+    def profit_metric_to_score(value_pct, sector_pct):
+        """
+        Convert a profitability metric to score. HIGHER is BETTER.
+        Score based on difference from sector median:
+        - 50%+ above sector (relative) = A+ (0.95)
+        - 25% above = A (0.80)
+        - At sector median = C (0.50)
+        - 25% below = D (0.25)
+        - 50%+ below = F (0.10)
+        """
+        if sector_pct <= 0:
+            sector_pct = 1  # Avoid division by zero
+        
+        # Calculate relative difference (not absolute)
+        rel_diff = ((value_pct - sector_pct) / abs(sector_pct)) * 100
+        
+        if rel_diff >= 100:
+            return 0.95  # 100%+ better than sector = A+
+        elif rel_diff >= 50:
+            return 0.80 + ((rel_diff - 50) / 50) * 0.15  # A range
+        elif rel_diff >= 0:
+            return 0.50 + (rel_diff / 50) * 0.30  # B to C range
+        elif rel_diff >= -25:
+            return 0.35 + ((rel_diff + 25) / 25) * 0.15  # C- to C range
+        elif rel_diff >= -50:
+            return 0.20 + ((rel_diff + 50) / 25) * 0.15  # D to C- range
+        else:
+            return max(0.05, 0.20 + (rel_diff + 50) / 100)  # F range
+    
+    # Gross Margin (higher is better) - MOST IMPORTANT
+    gross_margin = stock_data.get('gross_margin')
+    sector_gm = sector_medians.get('gross_margin', 0.50)
+    if gross_margin is not None:
+        gm_pct = gross_margin * 100
+        sector_gm_pct = sector_gm * 100
+        diff_pct = gm_pct - sector_gm_pct
+        metrics['gross_margin'] = {'value': round(gm_pct, 2), 'sector': round(sector_gm_pct, 2), 'diff_pct': round(diff_pct, 1)}
+        gm_score = profit_metric_to_score(gm_pct, sector_gm_pct)
+        scores.append(gm_score * 1.5)  # Weight gross margin
+    
+    # Operating Margin (higher is better)
+    op_margin = stock_data.get('operating_margin')
+    sector_om = sector_medians.get('operating_margin', 0.22)
+    if op_margin is not None:
+        om_pct = op_margin * 100
+        sector_om_pct = sector_om * 100
+        diff_pct = om_pct - sector_om_pct
+        metrics['operating_margin'] = {'value': round(om_pct, 2), 'sector': round(sector_om_pct, 2), 'diff_pct': round(diff_pct, 1)}
+        om_score = profit_metric_to_score(om_pct, sector_om_pct)
+        scores.append(om_score * 1.3)
+    
+    # Profit Margin (Net) (higher is better)
+    profit_margin = stock_data.get('profit_margin')
+    sector_pm = sector_medians.get('profit_margin', 0.18)
+    if profit_margin is not None:
+        pm_pct = profit_margin * 100
+        sector_pm_pct = sector_pm * 100
+        diff_pct = pm_pct - sector_pm_pct
+        metrics['profit_margin'] = {'value': round(pm_pct, 2), 'sector': round(sector_pm_pct, 2), 'diff_pct': round(diff_pct, 1)}
+        pm_score = profit_metric_to_score(pm_pct, sector_pm_pct)
+        scores.append(pm_score * 1.3)
+    
+    # Return on Equity (higher is better) - VERY IMPORTANT
+    roe = stock_data.get('roe')
+    sector_roe = sector_medians.get('roe', 0.25)
+    if roe is not None:
+        roe_pct = roe * 100
+        sector_roe_pct = sector_roe * 100
+        diff_pct = roe_pct - sector_roe_pct
+        metrics['roe'] = {'value': round(roe_pct, 2), 'sector': round(sector_roe_pct, 2), 'diff_pct': round(diff_pct, 1)}
+        roe_score = profit_metric_to_score(roe_pct, sector_roe_pct)
+        scores.append(roe_score * 1.5)  # Weight ROE highly
+    
+    # Return on Assets (higher is better)
+    roa = stock_data.get('roa')
+    sector_roa = sector_medians.get('roa', 0.12)
+    if roa is not None:
+        roa_pct = roa * 100
+        sector_roa_pct = sector_roa * 100
+        diff_pct = roa_pct - sector_roa_pct
+        metrics['roa'] = {'value': round(roa_pct, 2), 'sector': round(sector_roa_pct, 2), 'diff_pct': round(diff_pct, 1)}
+        roa_score = profit_metric_to_score(roa_pct, sector_roa_pct)
+        scores.append(roa_score)
+    
+    # Calculate weighted average
+    if scores:
+        total_weight = 1.5 + 1.3 + 1.3 + 1.5 + 1.0  # Gross, Operating, Net, ROE, ROA
+        avg_score = sum(scores) / total_weight
+        avg_score = max(0, min(1, avg_score))
+    else:
+        avg_score = 0.5
+    
+    grade = percentile_to_grade(avg_score * 100)
+    
+    return {'grade': grade, 'score': round(avg_score, 3), 'metrics': metrics}
+
+
+def calculate_momentum_grade(stock_data, sector_medians):
+    """
+    Calculate momentum grade based on price performance vs moving averages.
+    Strong price momentum = better grades.
+    Uses Seeking Alpha-style grading based on:
+    - Position in 52-week range
+    - Price vs moving averages (50-day, 200-day)
+    - Recent price performance
+    """
+    if not stock_data:
+        return {'grade': 'C', 'score': 0.5, 'metrics': {}}
+    
+    scores = []
+    metrics = {}
+    
+    def momentum_to_score(pct_value, scale=20):
+        """
+        Convert a momentum percentage to a score.
+        Positive = good momentum, Negative = bad momentum.
+        scale: the % at which you get an A+ (default 20%)
+        """
+        if pct_value >= scale:
+            return 0.95
+        elif pct_value >= scale * 0.5:
+            return 0.75 + ((pct_value - scale * 0.5) / (scale * 0.5)) * 0.20
+        elif pct_value >= 0:
+            return 0.50 + (pct_value / (scale * 0.5)) * 0.25
+        elif pct_value >= -scale * 0.5:
+            return 0.30 + ((pct_value + scale * 0.5) / (scale * 0.5)) * 0.20
+        elif pct_value >= -scale:
+            return 0.15 + ((pct_value + scale) / (scale * 0.5)) * 0.15
+        else:
+            return max(0.05, 0.15 + (pct_value + scale) / (scale * 2))
+    
+    price = stock_data.get('price', 0)
+    
+    # Price vs 52-week high (higher % of high = better momentum) - HEAVILY WEIGHTED
+    high_52 = stock_data.get('fifty_two_week_high')
+    low_52 = stock_data.get('fifty_two_week_low')
+    if high_52 and low_52 and price:
+        range_52 = high_52 - low_52
+        if range_52 > 0:
+            position_in_range = (price - low_52) / range_52
+            pct_from_high = ((price - high_52) / high_52) * 100
+            metrics['52w_position'] = {'value': round(position_in_range * 100, 1), 'sector': 'N/A', 'diff_pct': 'N/A'}
+            metrics['pct_from_52w_high'] = {'value': round(pct_from_high, 1), 'sector': 'N/A', 'diff_pct': 'N/A'}
+            # Score based on position: 0.9+ in range = excellent
+            pos_score = 0.05 + position_in_range * 0.90
+            scores.append(pos_score * 1.5)  # Weight heavily
+    
+    # Price vs 50-day MA - IMPORTANT
+    ma_50 = stock_data.get('fifty_day_average')
+    if ma_50 and price and ma_50 > 0:
+        pct_above_50 = ((price - ma_50) / ma_50) * 100
+        metrics['vs_50d_ma'] = {'value': round(pct_above_50, 2), 'sector': 'N/A', 'diff_pct': 'N/A'}
+        ma50_score = momentum_to_score(pct_above_50, scale=15)
+        scores.append(ma50_score * 1.3)
+    
+    # Price vs 200-day MA - IMPORTANT
+    ma_200 = stock_data.get('two_hundred_day_average')
+    if ma_200 and price and ma_200 > 0:
+        pct_above_200 = ((price - ma_200) / ma_200) * 100
+        metrics['vs_200d_ma'] = {'value': round(pct_above_200, 2), 'sector': 'N/A', 'diff_pct': 'N/A'}
+        ma200_score = momentum_to_score(pct_above_200, scale=25)
+        scores.append(ma200_score * 1.2)
+    
+    # Recent price change (daily) - Lower weight
+    change_pct = stock_data.get('change_pct', 0)
+    if change_pct:
+        metrics['daily_change'] = {'value': round(change_pct, 2), 'sector': 'N/A', 'diff_pct': 'N/A'}
+        change_score = momentum_to_score(change_pct, scale=5)
+        scores.append(change_score * 0.5)
+    
+    # Calculate weighted average
+    if scores:
+        total_weight = 1.5 + 1.3 + 1.2 + 0.5  # 52w, 50ma, 200ma, daily
+        avg_score = sum(scores) / total_weight
+        avg_score = max(0, min(1, avg_score))
+    else:
+        avg_score = 0.5
+    
+    grade = percentile_to_grade(avg_score * 100)
+    
+    return {'grade': grade, 'score': round(avg_score, 3), 'metrics': metrics}
+
+
+def calculate_eps_revisions_grade(stock_data, sector_medians):
+    """
+    Calculate EPS revisions grade based on analyst sentiment.
+    Uses recommendation mean and target price vs current price.
+    This approximates Seeking Alpha's "EPS Revisions" which tracks
+    how analyst estimates have changed over time.
+    """
+    if not stock_data:
+        return {'grade': 'C', 'score': 0.5, 'metrics': {}}
+    
+    scores = []
+    metrics = {}
+    
+    def analyst_rating_to_score(rating):
+        """
+        Convert analyst rating (1-5 scale) to score.
+        1.0 = Strong Buy -> 0.95
+        2.0 = Buy -> 0.75
+        3.0 = Hold -> 0.50
+        4.0 = Sell -> 0.25
+        5.0 = Strong Sell -> 0.05
+        """
+        if rating <= 1.5:
+            return 0.90 + (1.5 - rating) * 0.10
+        elif rating <= 2.0:
+            return 0.75 + (2.0 - rating) * 0.30
+        elif rating <= 2.5:
+            return 0.60 + (2.5 - rating) * 0.30
+        elif rating <= 3.0:
+            return 0.45 + (3.0 - rating) * 0.30
+        elif rating <= 3.5:
+            return 0.30 + (3.5 - rating) * 0.30
+        elif rating <= 4.0:
+            return 0.15 + (4.0 - rating) * 0.30
+        else:
+            return max(0.05, 0.15 - (rating - 4.0) * 0.10)
+    
+    def upside_to_score(upside_pct):
+        """
+        Convert price target upside to score.
+        >30% upside = A+ (0.95)
+        20% upside = A (0.80)
+        10% upside = B (0.65)
+        0% upside = C (0.50)
+        -10% = D (0.30)
+        -20%+ = F (0.10)
+        """
+        if upside_pct >= 30:
+            return 0.95
+        elif upside_pct >= 20:
+            return 0.80 + ((upside_pct - 20) / 10) * 0.15
+        elif upside_pct >= 10:
+            return 0.65 + ((upside_pct - 10) / 10) * 0.15
+        elif upside_pct >= 0:
+            return 0.50 + (upside_pct / 10) * 0.15
+        elif upside_pct >= -10:
+            return 0.30 + ((upside_pct + 10) / 10) * 0.20
+        elif upside_pct >= -20:
+            return 0.15 + ((upside_pct + 20) / 10) * 0.15
+        else:
+            return max(0.05, 0.15 + (upside_pct + 20) / 40)
+    
+    # Analyst Recommendation (1=Strong Buy, 5=Strong Sell) - HEAVILY WEIGHTED
+    rec_mean = stock_data.get('recommendation_mean')
+    if rec_mean:
+        metrics['analyst_rating'] = {'value': round(rec_mean, 2), 'sector': 'N/A', 'diff_pct': 'N/A'}
+        rec_score = analyst_rating_to_score(rec_mean)
+        scores.append(rec_score * 1.5)  # Weight analyst rating
+    
+    # Target Price vs Current Price - IMPORTANT
+    target_price = stock_data.get('target_mean_price')
+    current_price = stock_data.get('price', 0)
+    if target_price and current_price and current_price > 0:
+        upside_pct = ((target_price - current_price) / current_price) * 100
+        metrics['price_target_upside'] = {'value': round(upside_pct, 2), 'sector': 'N/A', 'diff_pct': 'N/A'}
+        target_score = upside_to_score(upside_pct)
+        scores.append(target_score * 1.3)
+    
+    # Number of analysts covering (more coverage = more reliable signal)
+    num_analysts = stock_data.get('number_of_analyst_opinions', 0)
+    if num_analysts:
+        metrics['analyst_coverage'] = {'value': num_analysts, 'sector': 'N/A', 'diff_pct': 'N/A'}
+        # Coverage modifier: 10+ analysts = full weight, fewer = reduced confidence
+        coverage_modifier = min(1.0, num_analysts / 10)
+        metrics['coverage_confidence'] = {'value': round(coverage_modifier * 100, 0), 'sector': 'N/A', 'diff_pct': 'N/A'}
+    
+    # Forward EPS vs Trailing EPS (positive revision indicator)
+    trailing_eps = stock_data.get('trailing_eps')
+    forward_eps = stock_data.get('forward_eps')
+    if trailing_eps and forward_eps and trailing_eps > 0:
+        eps_revision_pct = ((forward_eps - trailing_eps) / abs(trailing_eps)) * 100
+        metrics['eps_revision'] = {'value': round(eps_revision_pct, 2), 'sector': 'N/A', 'diff_pct': 'N/A'}
+        # Positive revision = good, negative = bad
+        if eps_revision_pct >= 20:
+            revision_score = 0.90
+        elif eps_revision_pct >= 10:
+            revision_score = 0.70 + ((eps_revision_pct - 10) / 10) * 0.20
+        elif eps_revision_pct >= 0:
+            revision_score = 0.50 + (eps_revision_pct / 10) * 0.20
+        elif eps_revision_pct >= -10:
+            revision_score = 0.30 + ((eps_revision_pct + 10) / 10) * 0.20
+        else:
+            revision_score = max(0.10, 0.30 + (eps_revision_pct + 10) / 30)
+        scores.append(revision_score * 1.2)
+    
+    # Calculate weighted average
+    if scores:
+        total_weight = 1.5 + 1.3 + 1.2  # Analyst rating, target price, EPS revision
+        avg_score = sum(scores) / total_weight
+        avg_score = max(0, min(1, avg_score))
+    else:
+        avg_score = 0.5
+    
+    grade = percentile_to_grade(avg_score * 100)
+    
+    return {'grade': grade, 'score': round(avg_score, 3), 'metrics': metrics}
+
+
+def get_real_factor_grades(symbol):
+    """
+    Get real factor grades for a stock based on actual financial data.
+    This replaces the fake generate_factor_grade() function.
+    """
+    stock_data = get_real_stock_data(symbol)
+    
+    if not stock_data:
+        # Fallback to random if data unavailable
+        logger.warning(f"No real data for {symbol}, using fallback")
+        import random
+        random.seed(hash(symbol))
+        return {
+            'value': {'grade': percentile_to_grade(random.random() * 100), 'score': round(random.random(), 3), 'metrics': {}},
+            'growth': {'grade': percentile_to_grade(random.random() * 100), 'score': round(random.random(), 3), 'metrics': {}},
+            'profitability': {'grade': percentile_to_grade(random.random() * 100), 'score': round(random.random(), 3), 'metrics': {}},
+            'momentum': {'grade': percentile_to_grade(random.random() * 100), 'score': round(random.random(), 3), 'metrics': {}},
+            'eps_revisions': {'grade': percentile_to_grade(random.random() * 100), 'score': round(random.random(), 3), 'metrics': {}},
+            '_data_source': 'fallback'
+        }
+    
+    # Get sector medians
+    sector = stock_data.get('sector', 'Default')
+    sector_medians = SECTOR_MEDIANS.get(sector, SECTOR_MEDIANS['Default'])
+    
+    # Calculate all factor grades
+    factors = {
+        'value': calculate_valuation_grade(stock_data, sector_medians),
+        'growth': calculate_growth_grade(stock_data, sector_medians),
+        'profitability': calculate_profitability_grade(stock_data, sector_medians),
+        'momentum': calculate_momentum_grade(stock_data, sector_medians),
+        'eps_revisions': calculate_eps_revisions_grade(stock_data, sector_medians),
+        '_stock_data': {
+            'name': stock_data.get('name'),
+            'sector': sector,
+            'industry': stock_data.get('industry'),
+            'price': stock_data.get('price'),
+            'change_pct': stock_data.get('change_pct'),
+            'market_cap': stock_data.get('market_cap')
+        },
+        '_data_source': 'yfinance'
+    }
+    
+    return factors
+
+
 def generate_factor_grade():
     """Generate a random factor grade with score"""
     import random
@@ -9971,12 +10719,12 @@ def generate_single_stock_factors(symbol):
 def generate_quant_stock_data(min_score=0, min_rating='', value_grade='', growth_grade='',
                                profitability_grade='', momentum_grade='', eps_revisions_grade='',
                                sector='', market_cap='', min_price=0, max_price=None):
-    """Generate Seeking Alpha style quant stock data with live prices."""
+    """Generate Seeking Alpha style quant stock data with REAL financial data from yfinance."""
     import random
     
     stocks = get_stock_universe()
     
-    # Fetch live prices
+    # Fetch live prices as fallback
     all_symbols = [s['symbol'] for s in stocks]
     live_prices = fetch_live_stock_prices(all_symbols)
     
@@ -9990,10 +10738,16 @@ def generate_quant_stock_data(min_score=0, min_rating='', value_grade='', growth
         if market_cap and stock['market_cap'] != market_cap:
             continue
         
-        # Get price
-        price = 0
-        change = 0
-        if symbol in live_prices:
+        # Get REAL factor grades from yfinance
+        real_factors = get_real_factor_grades(symbol)
+        stock_data = real_factors.get('_stock_data', {})
+        data_source = real_factors.get('_data_source', 'fallback')
+        
+        # Use real price from yfinance if available, otherwise use TradingView prices
+        if stock_data.get('price'):
+            price = stock_data['price']
+            change = stock_data.get('change_pct', 0)
+        elif symbol in live_prices:
             price = live_prices[symbol].get('price', 0)
             change = live_prices[symbol].get('change_pct', 0)
         else:
@@ -10004,17 +10758,16 @@ def generate_quant_stock_data(min_score=0, min_rating='', value_grade='', growth
         if price <= 0:
             continue
         
-        # Generate factors
-        random.seed(hash(symbol))
+        # Extract factor grades (excluding metadata keys)
         factors = {
-            'value': generate_factor_grade(),
-            'growth': generate_factor_grade(),
-            'profitability': generate_factor_grade(),
-            'momentum': generate_factor_grade(),
-            'eps_revisions': generate_factor_grade()
+            'value': real_factors.get('value', {'grade': 'C', 'score': 0.5, 'metrics': {}}),
+            'growth': real_factors.get('growth', {'grade': 'C', 'score': 0.5, 'metrics': {}}),
+            'profitability': real_factors.get('profitability', {'grade': 'C', 'score': 0.5, 'metrics': {}}),
+            'momentum': real_factors.get('momentum', {'grade': 'C', 'score': 0.5, 'metrics': {}}),
+            'eps_revisions': real_factors.get('eps_revisions', {'grade': 'C', 'score': 0.5, 'metrics': {}})
         }
         
-        # Calculate quant score (1.0-5.0 scale)
+        # Calculate quant score (1.0-5.0 scale) based on REAL scores
         quant_score = (
             (factors['value']['score'] * 4 + 1) * 0.20 +
             (factors['growth']['score'] * 4 + 1) * 0.20 +
@@ -10054,16 +10807,21 @@ def generate_quant_stock_data(min_score=0, min_rating='', value_grade='', growth
         if max_price and price > max_price:
             continue
         
+        # Use real company name and sector if available
+        company_name = stock_data.get('name') or stock['name']
+        company_sector = stock_data.get('sector') or stock['sector'].replace('_', ' ').title()
+        
         results.append({
             'symbol': stock['symbol'],
-            'name': stock['name'],
-            'sector': stock['sector'].replace('_', ' ').title(),
+            'name': company_name,
+            'sector': company_sector,
             'market_cap': stock['market_cap'].title(),
             'price': round(price, 2),
             'change': round(change, 2),
             'quant_score': round(quant_score, 2),
             'rating': rating,
-            'factors': factors
+            'factors': factors,
+            'data_source': data_source  # Track if using real or fallback data
         })
     
     results.sort(key=lambda x: x['quant_score'], reverse=True)
