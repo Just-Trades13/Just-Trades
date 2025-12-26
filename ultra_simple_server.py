@@ -10210,11 +10210,12 @@ def get_real_stock_data(symbol):
             logger.warning(f"No data available for {symbol} from yfinance either")
             return None
         
-        # Extract key metrics
+        # Extract key metrics - use our sector map as primary source
+        sector = STOCK_SECTOR_MAP.get(symbol.upper()) or info.get('sector', 'Unknown')
         data = {
             'symbol': symbol.upper(),
             'name': info.get('longName') or info.get('shortName') or symbol,
-            'sector': info.get('sector', 'Unknown'),
+            'sector': sector,
             'industry': info.get('industry', 'Unknown'),
             'price': info.get('regularMarketPrice') or info.get('currentPrice', 0),
             'change_pct': info.get('regularMarketChangePercent', 0),
