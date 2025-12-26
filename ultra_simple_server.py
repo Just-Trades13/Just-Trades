@@ -2499,6 +2499,42 @@ def index():
 # ============================================================================
 # USER AUTHENTICATION ROUTES
 # ============================================================================
+
+# EMERGENCY ADMIN CREATION - Remove after use!
+@app.route('/emergency-admin-setup-dec26')
+def emergency_admin_setup():
+    """One-time emergency admin creation. DELETE THIS AFTER USE!"""
+    if not USER_AUTH_AVAILABLE:
+        return "Auth system not available", 500
+    
+    # Create admin user
+    from user_auth import create_user, get_user_by_username
+    
+    # Check if jtmj already exists
+    existing = get_user_by_username('jtmj')
+    if existing:
+        return f"User 'jtmj' already exists (id={existing.id}). Try password: JustTrades2025!", 200
+    
+    # Create new admin
+    new_admin = create_user(
+        username='jtmj',
+        email='jtmj@justtrades.com',
+        password='JustTrades2025!',
+        display_name='JTMJ Admin',
+        is_admin=True
+    )
+    
+    if new_admin:
+        return f"""
+        <h1>✅ Admin Created!</h1>
+        <p><strong>Username:</strong> jtmj</p>
+        <p><strong>Password:</strong> JustTrades2025!</p>
+        <p><a href="/login">Go to Login</a></p>
+        <p style="color:red;">⚠️ DELETE THIS ENDPOINT AFTER LOGGING IN!</p>
+        """, 200
+    else:
+        return "Failed to create admin - username/email may exist", 500
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page and handler."""
