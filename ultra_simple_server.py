@@ -10050,7 +10050,7 @@ def get_stock_data_from_tradingview(symbol):
         ]
         
         # Request fundamental columns we need for quant analysis
-        # TradingView Scanner API - ONLY use validated column names
+        # TradingView Scanner API - VALIDATED column names only
         columns = [
             # Price & Basic Info
             "close", "change", "change_abs", "volume", "name", "description",
@@ -10058,12 +10058,12 @@ def get_stock_data_from_tradingview(symbol):
             # Valuation metrics (TTM = trailing twelve months)
             "price_earnings_ttm", "earnings_per_share_basic_ttm",
             "price_book_ratio", "price_sales_ratio",  # P/B, P/S
-            "enterprise_value_ebitda_ttm", "enterprise_value",  # EV/EBITDA
+            "enterprise_value_ebitda_ttm",  # EV/EBITDA (no standalone enterprise_value)
             "price_free_cash_flow_ttm",
             # Profitability metrics (as percentages)
             "gross_margin", "operating_margin", "pre_tax_margin", "net_margin",  
             "return_on_equity", "return_on_assets", "return_on_invested_capital",
-            # Momentum metrics - ONLY VALIDATED column names
+            # Momentum metrics
             "SMA50", "SMA200",  # Moving averages
             "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y", "Perf.YTD",  # Performance
             # Analyst data
