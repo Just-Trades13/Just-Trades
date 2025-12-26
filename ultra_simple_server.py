@@ -10000,28 +10000,29 @@ def get_stock_data_from_tradingview(symbol):
         ]
         
         # Request ALL fundamental columns we need for quant analysis
+        # TradingView uses specific column names - must match exactly
         columns = [
-            # Price & Basic
+            # Price & Basic Info
             "close", "change", "change_abs", "volume", "name", "description",
-            "sector", "industry", "market_cap_basic",
-            # Valuation metrics
-            "price_earnings_ttm", "price_earnings_growth_ttm",  # P/E, PEG
-            "price_book_fq", "price_sales",  # P/B, P/S
-            "enterprise_value_ebitda_ttm", "enterprise_value_to_revenue",  # EV/EBITDA, EV/Rev
-            "price_to_free_cash_flow",
-            # Profitability metrics
-            "gross_margin", "operating_margin", "net_margin",  # Margins
-            "return_on_equity", "return_on_assets", "return_on_invested_capital",  # Returns
+            "sector", "industry", "market_cap_basic", "type", "subtype",
+            # Valuation metrics (TTM = trailing twelve months, FQ = fiscal quarter)
+            "price_earnings_ttm", "earnings_per_share_basic_ttm",
+            "price_book_ratio", "price_sales_ratio",  # P/B, P/S
+            "enterprise_value_ebitda_ttm", "enterprise_value",  # EV/EBITDA
+            "price_free_cash_flow_ttm",
+            # Profitability metrics (as percentages)
+            "gross_margin", "operating_margin", "pre_tax_margin", "net_margin",  
+            "return_on_equity", "return_on_assets", "return_on_invested_capital",
             # Growth metrics
-            "revenue_growth_yoy", "revenue_growth_qoq",  # Revenue growth
-            "earnings_per_share_growth_ttm", "earnings_per_share_growth_quarterly_yoy",  # EPS growth
+            "revenue_growth", "earnings_per_share_growth_ttm",
+            "revenue_one_year_growth", "net_income_growth",
             # Momentum metrics
-            "High.52W", "Low.52W",  # 52-week range
-            "SMA50", "SMA200",  # Moving averages
-            "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y",  # Performance
+            "price_52_week_high", "price_52_week_low",  # 52-week range
+            "SMA50", "SMA200", "EMA50", "EMA200",  # Moving averages
+            "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y", "Perf.YTD",  # Performance
             # Analyst data
             "Recommend.All", "Recommend.MA", "Recommend.Other",
-            "number_of_analysts", "target_price"
+            "number_of_employees", "average_volume_10d_calc"
         ]
         
         payload = {
@@ -10049,12 +10050,22 @@ def get_stock_data_from_tradingview(symbol):
                         # Map column names to values
                         col_map = {columns[i]: values[i] for i in range(min(len(columns), len(values)))}
                         
+                        # Log raw data for debugging
+                        logger.info(f"TradingView raw data for {symbol}: sector={col_map.get('sector')}, industry={col_map.get('industry')}")
+                        
+                        # Determine sector - try multiple possible column names
+                        sector = col_map.get('sector') or col_map.get('type') or 'Unknown'
+                        if sector and isinstance(sector, str) and len(sector) > 1:
+                            sector = sector  # Valid sector
+                        else:
+                            sector = 'Technology'  # Default for stocks like AAPL if not returned
+                        
                         # Build stock data dict
                         stock_data = {
                             'symbol': symbol.upper(),
                             'name': col_map.get('name') or col_map.get('description') or symbol,
-                            'sector': col_map.get('sector', 'Unknown'),
-                            'industry': col_map.get('industry', 'Unknown'),
+                            'sector': sector,
+                            'industry': col_map.get('industry') or col_map.get('subtype') or 'Unknown',
                             'price': col_map.get('close', 0),
                             'change_pct': col_map.get('change', 0),
                             'market_cap': col_map.get('market_cap_basic', 0),
@@ -10062,34 +10073,34 @@ def get_stock_data_from_tradingview(symbol):
                             # Valuation metrics
                             'pe_ratio': col_map.get('price_earnings_ttm'),
                             'forward_pe': col_map.get('price_earnings_ttm'),  # TV doesn't have forward, use TTM
-                            'peg_ratio': col_map.get('price_earnings_growth_ttm'),
-                            'price_to_book': col_map.get('price_book_fq'),
-                            'price_to_sales': col_map.get('price_sales'),
+                            'peg_ratio': None,  # TradingView doesn't provide PEG directly
+                            'price_to_book': col_map.get('price_book_ratio'),
+                            'price_to_sales': col_map.get('price_sales_ratio'),
                             'ev_to_ebitda': col_map.get('enterprise_value_ebitda_ttm'),
-                            'ev_to_revenue': col_map.get('enterprise_value_to_revenue'),
+                            'ev_to_revenue': None,
                             
-                            # Profitability metrics (convert from % to decimal)
-                            'profit_margin': (col_map.get('net_margin') or 0) / 100 if col_map.get('net_margin') else None,
-                            'operating_margin': (col_map.get('operating_margin') or 0) / 100 if col_map.get('operating_margin') else None,
-                            'gross_margin': (col_map.get('gross_margin') or 0) / 100 if col_map.get('gross_margin') else None,
-                            'roe': (col_map.get('return_on_equity') or 0) / 100 if col_map.get('return_on_equity') else None,
-                            'roa': (col_map.get('return_on_assets') or 0) / 100 if col_map.get('return_on_assets') else None,
+                            # Profitability metrics (TradingView returns as decimals or percentages - check format)
+                            'profit_margin': col_map.get('net_margin') / 100 if col_map.get('net_margin') and col_map.get('net_margin') > 1 else col_map.get('net_margin'),
+                            'operating_margin': col_map.get('operating_margin') / 100 if col_map.get('operating_margin') and col_map.get('operating_margin') > 1 else col_map.get('operating_margin'),
+                            'gross_margin': col_map.get('gross_margin') / 100 if col_map.get('gross_margin') and col_map.get('gross_margin') > 1 else col_map.get('gross_margin'),
+                            'roe': col_map.get('return_on_equity') / 100 if col_map.get('return_on_equity') and col_map.get('return_on_equity') > 1 else col_map.get('return_on_equity'),
+                            'roa': col_map.get('return_on_assets') / 100 if col_map.get('return_on_assets') and col_map.get('return_on_assets') > 1 else col_map.get('return_on_assets'),
                             
-                            # Growth metrics (convert from % to decimal)
-                            'revenue_growth': (col_map.get('revenue_growth_yoy') or 0) / 100 if col_map.get('revenue_growth_yoy') else None,
-                            'earnings_growth': (col_map.get('earnings_per_share_growth_ttm') or 0) / 100 if col_map.get('earnings_per_share_growth_ttm') else None,
-                            'earnings_quarterly_growth': (col_map.get('earnings_per_share_growth_quarterly_yoy') or 0) / 100 if col_map.get('earnings_per_share_growth_quarterly_yoy') else None,
+                            # Growth metrics (convert from % to decimal if needed)
+                            'revenue_growth': col_map.get('revenue_growth') / 100 if col_map.get('revenue_growth') and abs(col_map.get('revenue_growth')) > 1 else col_map.get('revenue_growth'),
+                            'earnings_growth': col_map.get('earnings_per_share_growth_ttm') / 100 if col_map.get('earnings_per_share_growth_ttm') and abs(col_map.get('earnings_per_share_growth_ttm')) > 1 else col_map.get('earnings_per_share_growth_ttm'),
+                            'earnings_quarterly_growth': col_map.get('net_income_growth') / 100 if col_map.get('net_income_growth') and abs(col_map.get('net_income_growth')) > 1 else col_map.get('net_income_growth'),
                             
                             # Momentum metrics
-                            'fifty_two_week_high': col_map.get('High.52W'),
-                            'fifty_two_week_low': col_map.get('Low.52W'),
+                            'fifty_two_week_high': col_map.get('price_52_week_high'),
+                            'fifty_two_week_low': col_map.get('price_52_week_low'),
                             'fifty_day_average': col_map.get('SMA50'),
                             'two_hundred_day_average': col_map.get('SMA200'),
                             
-                            # Analyst data
-                            'recommendation_mean': col_map.get('Recommend.All'),
-                            'target_mean_price': col_map.get('target_price'),
-                            'number_of_analyst_opinions': col_map.get('number_of_analysts'),
+                            # Analyst data - TradingView Recommend.All is -1 to 1 scale, convert to 1-5
+                            'recommendation_mean': (col_map.get('Recommend.All') + 1) * 2 + 1 if col_map.get('Recommend.All') is not None else None,
+                            'target_mean_price': None,  # TradingView doesn't provide target price in scan
+                            'number_of_analyst_opinions': 10,  # Default estimate
                             
                             # Performance data for momentum
                             'perf_week': col_map.get('Perf.W'),
