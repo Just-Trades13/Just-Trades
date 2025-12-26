@@ -2694,7 +2694,10 @@ def admin_delete_user(user_id):
 
 @app.route('/health')
 def health():
-    """Health check endpoint for load balancers and monitoring."""
+    """
+    Health check endpoint for load balancers and monitoring.
+    Now includes thread watchdog status for 24/7 reliability monitoring.
+    """
     try:
         # Check database connection
         conn = get_db_connection()
@@ -2720,14 +2723,34 @@ def health():
     # Check async utils
     async_status = "available" if ASYNC_UTILS_AVAILABLE else "not loaded"
     
+    # Check thread watchdog status (if available - initialized later in startup)
+    thread_status = {}
+    critical_threads_alive = True
+    total_restarts = 0
+    try:
+        if '_thread_watchdog' in globals() and _thread_watchdog:
+            thread_status = _thread_watchdog.get_status()
+            critical_threads_alive = all(
+                status.get('alive', False) for name, status in thread_status.items()
+                if name in ['token_refresh', 'signal_processor']
+            )
+            total_restarts = sum(status.get('restart_count', 0) for status in thread_status.values())
+    except:
+        pass  # Watchdog not yet initialized
+    
+    # Determine overall health
+    is_healthy = db_status == "healthy" and critical_threads_alive
+    
     status = {
-        "status": "healthy" if db_status == "healthy" else "degraded",
+        "status": "healthy" if is_healthy else "degraded",
         "database": db_status,
         "database_type": db_type,
         "cache": cache_status,
         "async_utils": async_status,
+        "threads": thread_status if thread_status else "watchdog not yet started",
+        "thread_restarts": total_restarts,
         "timestamp": datetime.now().isoformat(),
-        "version": "2025-12-19-v4-auth-fix"
+        "version": "2025-12-26-v5-reliability"
     }
     
     return jsonify(status), 200 if db_status == "healthy" else 503
