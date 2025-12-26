@@ -7732,40 +7732,6 @@ def process_webhook_directly(webhook_token):
                     pnl_ticks_close = (current_price - entry_price_close) / tick_size_close
                     pnl_dollars = pnl_ticks_close * tick_value_close * quantity
                     
-                    # ============================================================
-                    # 🚀 EXECUTE ON BROKER - Check position first, then close!
-                    # ============================================================
-                    from recorder_service import execute_trade_simple, get_broker_position_for_recorder
-                    
-                    # Map ticker to contract symbol for broker position check
-                    ticker_to_symbol = {
-                        'NQ1!': 'NQH6', 'MNQ1!': 'MNQH6',
-                        'ES1!': 'ESH6', 'MES1!': 'MESH6',
-                        'YM1!': 'YMH6', 'MYM1!': 'MYMH6',
-                        'RTY1!': 'RTYH6', 'M2K1!': 'M2KH6',
-                    }
-                    contract_symbol = ticker_to_symbol.get(ticker, ticker.replace('1!', 'H6'))
-                    
-                    # Check broker's NET position FIRST
-                    broker_pos = get_broker_position_for_recorder(recorder_id, contract_symbol)
-                    broker_qty = broker_pos.get('quantity', 0) if broker_pos else 0  # positive=LONG, negative=SHORT
-                    
-                    broker_closed = False
-                    if broker_qty > 0:  # Only close if broker has LONG position
-                        close_qty = min(quantity, broker_qty)  # Cap to actual position
-                        logger.info(f"🔥 BROKER: Found LONG {broker_qty}, closing {close_qty}")
-                        broker_result = execute_trade_simple(
-                            recorder_id=recorder_id,
-                            action='SELL',  # SELL to close LONG
-                            ticker=ticker,
-                            quantity=close_qty,
-                            tp_ticks=0  # No TP - this is a close
-                        )
-                        broker_closed = broker_result.get('success', False)
-                        logger.info(f"🔥 BROKER CLOSE LONG: {'✅ SUCCESS' if broker_closed else '❌ FAILED'} - {broker_result}")
-                    else:
-                        logger.info(f"⚠️ Broker is FLAT or SHORT ({broker_qty}), skipping broker close")
-                    
                     # Close the trade in DB
                     cursor.execute(f'''
                         UPDATE recorded_trades 
@@ -7776,7 +7742,7 @@ def process_webhook_directly(webhook_token):
                     ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
                     conn.commit()
                     
-                    logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f} | Broker: {'✅' if broker_closed else '❌'}")
+                    logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
                     
                     conn.close()
                     return jsonify({
@@ -7788,8 +7754,7 @@ def process_webhook_directly(webhook_token):
                         'exit_price': current_price,
                         'pnl': pnl_dollars,
                         'pnl_ticks': pnl_ticks_close,
-                        'exit_reason': 'signal',
-                        'broker_closed': broker_closed
+                        'exit_reason': 'signal'
                     })
                 except Exception as close_err:
                     logger.warning(f"⚠️ Could not close LONG: {close_err}")
@@ -7805,40 +7770,6 @@ def process_webhook_directly(webhook_token):
                     pnl_ticks_close = (entry_price_close - current_price) / tick_size_close
                     pnl_dollars = pnl_ticks_close * tick_value_close * quantity
                     
-                    # ============================================================
-                    # 🚀 EXECUTE ON BROKER - Check position first, then close!
-                    # ============================================================
-                    from recorder_service import execute_trade_simple, get_broker_position_for_recorder
-                    
-                    # Map ticker to contract symbol for broker position check
-                    ticker_to_symbol = {
-                        'NQ1!': 'NQH6', 'MNQ1!': 'MNQH6',
-                        'ES1!': 'ESH6', 'MES1!': 'MESH6',
-                        'YM1!': 'YMH6', 'MYM1!': 'MYMH6',
-                        'RTY1!': 'RTYH6', 'M2K1!': 'M2KH6',
-                    }
-                    contract_symbol = ticker_to_symbol.get(ticker, ticker.replace('1!', 'H6'))
-                    
-                    # Check broker's NET position FIRST
-                    broker_pos = get_broker_position_for_recorder(recorder_id, contract_symbol)
-                    broker_qty = broker_pos.get('quantity', 0) if broker_pos else 0  # positive=LONG, negative=SHORT
-                    
-                    broker_closed = False
-                    if broker_qty < 0:  # Only close if broker has SHORT position (negative)
-                        close_qty = min(quantity, abs(broker_qty))  # Cap to actual position
-                        logger.info(f"🔥 BROKER: Found SHORT {broker_qty}, closing {close_qty}")
-                        broker_result = execute_trade_simple(
-                            recorder_id=recorder_id,
-                            action='BUY',  # BUY to close SHORT
-                            ticker=ticker,
-                            quantity=close_qty,
-                            tp_ticks=0  # No TP - this is a close
-                        )
-                        broker_closed = broker_result.get('success', False)
-                        logger.info(f"🔥 BROKER CLOSE SHORT: {'✅ SUCCESS' if broker_closed else '❌ FAILED'} - {broker_result}")
-                    else:
-                        logger.info(f"⚠️ Broker is FLAT or LONG ({broker_qty}), skipping broker close")
-                    
                     # Close the trade in DB
                     cursor.execute(f'''
                         UPDATE recorded_trades 
@@ -7849,7 +7780,7 @@ def process_webhook_directly(webhook_token):
                     ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
                     conn.commit()
                     
-                    logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f} | Broker: {'✅' if broker_closed else '❌'}")
+                    logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
                     
                     conn.close()
                     return jsonify({
@@ -7861,8 +7792,7 @@ def process_webhook_directly(webhook_token):
                         'exit_price': current_price,
                         'pnl': pnl_dollars,
                         'pnl_ticks': pnl_ticks_close,
-                        'exit_reason': 'signal',
-                        'broker_closed': broker_closed
+                        'exit_reason': 'signal'
                     })
                 except Exception as close_err:
                     logger.warning(f"⚠️ Could not close SHORT: {close_err}")
