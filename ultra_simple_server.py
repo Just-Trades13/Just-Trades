@@ -7723,7 +7723,7 @@ def process_webhook_directly(webhook_token):
             
             # SELL signal when in LONG = just exit (don't open SHORT)
             if trade_action.upper() == 'SELL' and open_side == 'LONG':
-                logger.info(f"📊 SELL closes LONG - exiting position only")
+                logger.info(f"📊 SELL closes LONG - exiting position AND executing on broker")
                 try:
                     tick_size_close = get_tick_size(ticker) if ticker else 0.25
                     tick_value_close = get_tick_value(ticker) if ticker else 0.50
@@ -7731,6 +7731,18 @@ def process_webhook_directly(webhook_token):
                     
                     pnl_ticks_close = (current_price - entry_price_close) / tick_size_close
                     pnl_dollars = pnl_ticks_close * tick_value_close * quantity
+                    
+                    # 🔥 EXECUTE ON BROKER - Use execute_trade_simple to close position
+                    from recorder_service import execute_trade_simple
+                    broker_result = execute_trade_simple(
+                        recorder_id=recorder_id,
+                        action='SELL',  # SELL to close LONG
+                        ticker=ticker,
+                        quantity=quantity,
+                        tp_ticks=0  # No TP - this is a close
+                    )
+                    broker_closed = broker_result.get('success', False)
+                    logger.info(f"🔥 BROKER CLOSE LONG: {'✅' if broker_closed else '❌'} - {broker_result}")
                     
                     # Close the trade in DB
                     cursor.execute(f'''
@@ -7742,7 +7754,7 @@ def process_webhook_directly(webhook_token):
                     ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
                     conn.commit()
                     
-                    logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
+                    logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f} | Broker: {'✅' if broker_closed else '❌'}")
                     
                     conn.close()
                     return jsonify({
@@ -7754,14 +7766,16 @@ def process_webhook_directly(webhook_token):
                         'exit_price': current_price,
                         'pnl': pnl_dollars,
                         'pnl_ticks': pnl_ticks_close,
-                        'exit_reason': 'signal'
+                        'exit_reason': 'signal',
+                        'broker_closed': broker_closed,
+                        'broker_result': broker_result
                     })
                 except Exception as close_err:
                     logger.warning(f"⚠️ Could not close LONG: {close_err}")
             
             # BUY signal when in SHORT = just exit (don't open LONG)
             elif trade_action.upper() == 'BUY' and open_side == 'SHORT':
-                logger.info(f"📊 BUY closes SHORT - exiting position only")
+                logger.info(f"📊 BUY closes SHORT - exiting position AND executing on broker")
                 try:
                     tick_size_close = get_tick_size(ticker) if ticker else 0.25
                     tick_value_close = get_tick_value(ticker) if ticker else 0.50
@@ -7769,6 +7783,18 @@ def process_webhook_directly(webhook_token):
                     
                     pnl_ticks_close = (entry_price_close - current_price) / tick_size_close
                     pnl_dollars = pnl_ticks_close * tick_value_close * quantity
+                    
+                    # 🔥 EXECUTE ON BROKER - Use execute_trade_simple to close position
+                    from recorder_service import execute_trade_simple
+                    broker_result = execute_trade_simple(
+                        recorder_id=recorder_id,
+                        action='BUY',  # BUY to close SHORT
+                        ticker=ticker,
+                        quantity=quantity,
+                        tp_ticks=0  # No TP - this is a close
+                    )
+                    broker_closed = broker_result.get('success', False)
+                    logger.info(f"🔥 BROKER CLOSE SHORT: {'✅' if broker_closed else '❌'} - {broker_result}")
                     
                     # Close the trade in DB
                     cursor.execute(f'''
@@ -7780,7 +7806,7 @@ def process_webhook_directly(webhook_token):
                     ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
                     conn.commit()
                     
-                    logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
+                    logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f} | Broker: {'✅' if broker_closed else '❌'}")
                     
                     conn.close()
                     return jsonify({
@@ -7792,7 +7818,9 @@ def process_webhook_directly(webhook_token):
                         'exit_price': current_price,
                         'pnl': pnl_dollars,
                         'pnl_ticks': pnl_ticks_close,
-                        'exit_reason': 'signal'
+                        'exit_reason': 'signal',
+                        'broker_closed': broker_closed,
+                        'broker_result': broker_result
                     })
                 except Exception as close_err:
                     logger.warning(f"⚠️ Could not close SHORT: {close_err}")
