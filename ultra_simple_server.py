@@ -9974,6 +9974,56 @@ SECTOR_MEDIANS = {
 }
 
 
+# Hardcoded sector mapping for major stocks (TradingView doesn't return sector reliably)
+STOCK_SECTOR_MAP = {
+    # Technology
+    'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
+    'META': 'Technology', 'NVDA': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology',
+    'CRM': 'Technology', 'ADBE': 'Technology', 'ORCL': 'Technology', 'CSCO': 'Technology',
+    'IBM': 'Technology', 'QCOM': 'Technology', 'TXN': 'Technology', 'AVGO': 'Technology',
+    'NOW': 'Technology', 'INTU': 'Technology', 'AMAT': 'Technology', 'MU': 'Technology',
+    'LRCX': 'Technology', 'KLAC': 'Technology', 'SNPS': 'Technology', 'CDNS': 'Technology',
+    'PLTR': 'Technology', 'SNOW': 'Technology', 'NET': 'Technology', 'DDOG': 'Technology',
+    'ZS': 'Technology', 'CRWD': 'Technology', 'PANW': 'Technology', 'FTNT': 'Technology',
+    # Consumer Cyclical
+    'AMZN': 'Consumer Cyclical', 'TSLA': 'Consumer Cyclical', 'HD': 'Consumer Cyclical',
+    'NKE': 'Consumer Cyclical', 'MCD': 'Consumer Cyclical', 'SBUX': 'Consumer Cyclical',
+    'TGT': 'Consumer Cyclical', 'LOW': 'Consumer Cyclical', 'BKNG': 'Consumer Cyclical',
+    'MAR': 'Consumer Cyclical', 'GM': 'Consumer Cyclical', 'F': 'Consumer Cyclical',
+    # Communication Services
+    'NFLX': 'Communication Services', 'DIS': 'Communication Services', 'CMCSA': 'Communication Services',
+    'T': 'Communication Services', 'VZ': 'Communication Services', 'TMUS': 'Communication Services',
+    # Healthcare
+    'JNJ': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare', 'ABBV': 'Healthcare',
+    'MRK': 'Healthcare', 'LLY': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
+    'DHR': 'Healthcare', 'BMY': 'Healthcare', 'AMGN': 'Healthcare', 'GILD': 'Healthcare',
+    'ISRG': 'Healthcare', 'VRTX': 'Healthcare', 'REGN': 'Healthcare', 'MRNA': 'Healthcare',
+    # Financial Services
+    'JPM': 'Financial Services', 'BAC': 'Financial Services', 'WFC': 'Financial Services',
+    'GS': 'Financial Services', 'MS': 'Financial Services', 'C': 'Financial Services',
+    'BLK': 'Financial Services', 'SCHW': 'Financial Services', 'AXP': 'Financial Services',
+    'V': 'Financial Services', 'MA': 'Financial Services', 'PYPL': 'Financial Services',
+    # Consumer Defensive
+    'WMT': 'Consumer Defensive', 'PG': 'Consumer Defensive', 'KO': 'Consumer Defensive',
+    'PEP': 'Consumer Defensive', 'COST': 'Consumer Defensive', 'PM': 'Consumer Defensive',
+    'MO': 'Consumer Defensive', 'CL': 'Consumer Defensive', 'KMB': 'Consumer Defensive',
+    # Energy
+    'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'SLB': 'Energy', 'EOG': 'Energy',
+    'OXY': 'Energy', 'MPC': 'Energy', 'PSX': 'Energy', 'VLO': 'Energy',
+    # Industrials
+    'CAT': 'Industrials', 'BA': 'Industrials', 'HON': 'Industrials', 'UPS': 'Industrials',
+    'UNP': 'Industrials', 'RTX': 'Industrials', 'LMT': 'Industrials', 'GE': 'Industrials',
+    'DE': 'Industrials', 'MMM': 'Industrials', 'FDX': 'Industrials',
+    # Utilities
+    'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities', 'D': 'Utilities',
+    # Real Estate
+    'AMT': 'Real Estate', 'PLD': 'Real Estate', 'CCI': 'Real Estate', 'EQIX': 'Real Estate',
+    # Basic Materials
+    'LIN': 'Basic Materials', 'APD': 'Basic Materials', 'SHW': 'Basic Materials', 'FCX': 'Basic Materials',
+    'NEM': 'Basic Materials', 'NUE': 'Basic Materials', 'DOW': 'Basic Materials',
+}
+
+
 def get_stock_data_from_tradingview(symbol):
     """
     Fetch fundamental stock data from TradingView Scanner API.
@@ -10053,12 +10103,13 @@ def get_stock_data_from_tradingview(symbol):
                         # Log raw data for debugging
                         logger.info(f"TradingView raw data for {symbol}: sector={col_map.get('sector')}, industry={col_map.get('industry')}")
                         
-                        # Determine sector - try multiple possible column names
-                        sector = col_map.get('sector') or col_map.get('type') or 'Unknown'
-                        if sector and isinstance(sector, str) and len(sector) > 1:
-                            sector = sector  # Valid sector
-                        else:
-                            sector = 'Technology'  # Default for stocks like AAPL if not returned
+                        # Determine sector - FIRST check our hardcoded map, then TradingView data
+                        sector = STOCK_SECTOR_MAP.get(symbol.upper())  # Our reliable map FIRST
+                        if not sector:
+                            # Try TradingView data as fallback
+                            sector = col_map.get('sector') or col_map.get('type')
+                        if not sector or sector == 'Unknown' or len(str(sector)) < 2:
+                            sector = 'Technology'  # Default fallback
                         
                         # Build stock data dict
                         stock_data = {
