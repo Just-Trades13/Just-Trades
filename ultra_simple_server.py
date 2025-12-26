@@ -9974,10 +9974,149 @@ SECTOR_MEDIANS = {
 }
 
 
+def get_stock_data_from_tradingview(symbol):
+    """
+    Fetch fundamental stock data from TradingView Scanner API.
+    This is more reliable than yfinance on Railway.
+    """
+    import requests
+    
+    try:
+        session = get_tradingview_session_for_stocks()
+        cookies = {}
+        if session:
+            cookies = {
+                'sessionid': session.get('sessionid', ''),
+                'sessionid_sign': session.get('sessionid_sign', '')
+            }
+        
+        url = "https://scanner.tradingview.com/america/scan"
+        
+        # Try multiple exchanges
+        tv_symbols = [
+            f"NASDAQ:{symbol}",
+            f"NYSE:{symbol}",
+            f"AMEX:{symbol}"
+        ]
+        
+        # Request ALL fundamental columns we need for quant analysis
+        columns = [
+            # Price & Basic
+            "close", "change", "change_abs", "volume", "name", "description",
+            "sector", "industry", "market_cap_basic",
+            # Valuation metrics
+            "price_earnings_ttm", "price_earnings_growth_ttm",  # P/E, PEG
+            "price_book_fq", "price_sales",  # P/B, P/S
+            "enterprise_value_ebitda_ttm", "enterprise_value_to_revenue",  # EV/EBITDA, EV/Rev
+            "price_to_free_cash_flow",
+            # Profitability metrics
+            "gross_margin", "operating_margin", "net_margin",  # Margins
+            "return_on_equity", "return_on_assets", "return_on_invested_capital",  # Returns
+            # Growth metrics
+            "revenue_growth_yoy", "revenue_growth_qoq",  # Revenue growth
+            "earnings_per_share_growth_ttm", "earnings_per_share_growth_quarterly_yoy",  # EPS growth
+            # Momentum metrics
+            "High.52W", "Low.52W",  # 52-week range
+            "SMA50", "SMA200",  # Moving averages
+            "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y",  # Performance
+            # Analyst data
+            "Recommend.All", "Recommend.MA", "Recommend.Other",
+            "number_of_analysts", "target_price"
+        ]
+        
+        payload = {
+            "symbols": {"tickers": tv_symbols},
+            "columns": columns
+        }
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Origin': 'https://www.tradingview.com',
+            'Referer': 'https://www.tradingview.com/'
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, cookies=cookies, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if data.get('data') and len(data['data']) > 0:
+                # Find the first valid result
+                for item in data['data']:
+                    values = item.get('d', [])
+                    if values and values[0] is not None:  # Has price data
+                        # Map column names to values
+                        col_map = {columns[i]: values[i] for i in range(min(len(columns), len(values)))}
+                        
+                        # Build stock data dict
+                        stock_data = {
+                            'symbol': symbol.upper(),
+                            'name': col_map.get('name') or col_map.get('description') or symbol,
+                            'sector': col_map.get('sector', 'Unknown'),
+                            'industry': col_map.get('industry', 'Unknown'),
+                            'price': col_map.get('close', 0),
+                            'change_pct': col_map.get('change', 0),
+                            'market_cap': col_map.get('market_cap_basic', 0),
+                            
+                            # Valuation metrics
+                            'pe_ratio': col_map.get('price_earnings_ttm'),
+                            'forward_pe': col_map.get('price_earnings_ttm'),  # TV doesn't have forward, use TTM
+                            'peg_ratio': col_map.get('price_earnings_growth_ttm'),
+                            'price_to_book': col_map.get('price_book_fq'),
+                            'price_to_sales': col_map.get('price_sales'),
+                            'ev_to_ebitda': col_map.get('enterprise_value_ebitda_ttm'),
+                            'ev_to_revenue': col_map.get('enterprise_value_to_revenue'),
+                            
+                            # Profitability metrics (convert from % to decimal)
+                            'profit_margin': (col_map.get('net_margin') or 0) / 100 if col_map.get('net_margin') else None,
+                            'operating_margin': (col_map.get('operating_margin') or 0) / 100 if col_map.get('operating_margin') else None,
+                            'gross_margin': (col_map.get('gross_margin') or 0) / 100 if col_map.get('gross_margin') else None,
+                            'roe': (col_map.get('return_on_equity') or 0) / 100 if col_map.get('return_on_equity') else None,
+                            'roa': (col_map.get('return_on_assets') or 0) / 100 if col_map.get('return_on_assets') else None,
+                            
+                            # Growth metrics (convert from % to decimal)
+                            'revenue_growth': (col_map.get('revenue_growth_yoy') or 0) / 100 if col_map.get('revenue_growth_yoy') else None,
+                            'earnings_growth': (col_map.get('earnings_per_share_growth_ttm') or 0) / 100 if col_map.get('earnings_per_share_growth_ttm') else None,
+                            'earnings_quarterly_growth': (col_map.get('earnings_per_share_growth_quarterly_yoy') or 0) / 100 if col_map.get('earnings_per_share_growth_quarterly_yoy') else None,
+                            
+                            # Momentum metrics
+                            'fifty_two_week_high': col_map.get('High.52W'),
+                            'fifty_two_week_low': col_map.get('Low.52W'),
+                            'fifty_day_average': col_map.get('SMA50'),
+                            'two_hundred_day_average': col_map.get('SMA200'),
+                            
+                            # Analyst data
+                            'recommendation_mean': col_map.get('Recommend.All'),
+                            'target_mean_price': col_map.get('target_price'),
+                            'number_of_analyst_opinions': col_map.get('number_of_analysts'),
+                            
+                            # Performance data for momentum
+                            'perf_week': col_map.get('Perf.W'),
+                            'perf_month': col_map.get('Perf.1M'),
+                            'perf_quarter': col_map.get('Perf.3M'),
+                            'perf_half': col_map.get('Perf.6M'),
+                            'perf_year': col_map.get('Perf.Y'),
+                            
+                            '_data_source': 'tradingview'
+                        }
+                        
+                        logger.info(f"✅ TradingView data for {symbol}: sector={stock_data['sector']}, P/E={stock_data['pe_ratio']}, ROE={stock_data['roe']}")
+                        return stock_data
+        
+        logger.warning(f"TradingView returned no data for {symbol}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error fetching TradingView data for {symbol}: {e}")
+        return None
+
+
 def get_real_stock_data(symbol):
     """
-    Fetch real financial data for a stock using yfinance.
-    Returns cached data if available and not expired.
+    Fetch real financial data for a stock.
+    Primary: TradingView Scanner API (works on Railway)
+    Fallback: yfinance (may not work on Railway)
     """
     import time as time_module
     
@@ -9989,6 +10128,16 @@ def get_real_stock_data(symbol):
         if current_time < _quant_cache_expiry.get(cache_key, 0):
             return _quant_data_cache[cache_key]
     
+    # Try TradingView first (more reliable on Railway)
+    data = get_stock_data_from_tradingview(symbol)
+    if data:
+        # Cache the result
+        _quant_data_cache[cache_key] = data
+        _quant_cache_expiry[cache_key] = current_time + 3600  # 1 hour cache
+        return data
+    
+    # Fallback to yfinance
+    logger.info(f"TradingView failed for {symbol}, trying yfinance...")
     try:
         import yfinance as yf
         
@@ -9996,7 +10145,7 @@ def get_real_stock_data(symbol):
         info = ticker.info
         
         if not info or info.get('regularMarketPrice') is None:
-            logger.warning(f"No data available for {symbol}")
+            logger.warning(f"No data available for {symbol} from yfinance either")
             return None
         
         # Extract key metrics
