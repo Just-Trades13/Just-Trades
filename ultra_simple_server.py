@@ -10049,13 +10049,13 @@ def get_stock_data_from_tradingview(symbol):
             f"AMEX:{symbol}"
         ]
         
-        # Request ALL fundamental columns we need for quant analysis
-        # TradingView uses specific column names - must match exactly
+        # Request fundamental columns we need for quant analysis
+        # TradingView Scanner API - ONLY use validated column names
         columns = [
             # Price & Basic Info
             "close", "change", "change_abs", "volume", "name", "description",
             "sector", "industry", "market_cap_basic", "type", "subtype",
-            # Valuation metrics (TTM = trailing twelve months, FQ = fiscal quarter)
+            # Valuation metrics (TTM = trailing twelve months)
             "price_earnings_ttm", "earnings_per_share_basic_ttm",
             "price_book_ratio", "price_sales_ratio",  # P/B, P/S
             "enterprise_value_ebitda_ttm", "enterprise_value",  # EV/EBITDA
@@ -10063,16 +10063,11 @@ def get_stock_data_from_tradingview(symbol):
             # Profitability metrics (as percentages)
             "gross_margin", "operating_margin", "pre_tax_margin", "net_margin",  
             "return_on_equity", "return_on_assets", "return_on_invested_capital",
-            # Growth metrics
-            "revenue_growth", "earnings_per_share_growth_ttm",
-            "revenue_one_year_growth", "net_income_growth",
-            # Momentum metrics
-            "price_52_week_high", "price_52_week_low",  # 52-week range
-            "SMA50", "SMA200", "EMA50", "EMA200",  # Moving averages
+            # Momentum metrics - ONLY VALIDATED column names
+            "SMA50", "SMA200",  # Moving averages
             "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y", "Perf.YTD",  # Performance
             # Analyst data
-            "Recommend.All", "Recommend.MA", "Recommend.Other",
-            "number_of_employees", "average_volume_10d_calc"
+            "Recommend.All", "number_of_employees", "average_volume_10d_calc"
         ]
         
         payload = {
@@ -10137,10 +10132,11 @@ def get_stock_data_from_tradingview(symbol):
                             'roe': col_map.get('return_on_equity') / 100 if col_map.get('return_on_equity') and col_map.get('return_on_equity') > 1 else col_map.get('return_on_equity'),
                             'roa': col_map.get('return_on_assets') / 100 if col_map.get('return_on_assets') and col_map.get('return_on_assets') > 1 else col_map.get('return_on_assets'),
                             
-                            # Growth metrics (convert from % to decimal if needed)
-                            'revenue_growth': col_map.get('revenue_growth') / 100 if col_map.get('revenue_growth') and abs(col_map.get('revenue_growth')) > 1 else col_map.get('revenue_growth'),
-                            'earnings_growth': col_map.get('earnings_per_share_growth_ttm') / 100 if col_map.get('earnings_per_share_growth_ttm') and abs(col_map.get('earnings_per_share_growth_ttm')) > 1 else col_map.get('earnings_per_share_growth_ttm'),
-                            'earnings_quarterly_growth': col_map.get('net_income_growth') / 100 if col_map.get('net_income_growth') and abs(col_map.get('net_income_growth')) > 1 else col_map.get('net_income_growth'),
+                            # Growth metrics - TradingView Scanner doesn't provide these, set to None
+                            # Growth calculation will fall back to sector median comparison
+                            'revenue_growth': None,  # TradingView Scanner doesn't provide this
+                            'earnings_growth': None,  # TradingView Scanner doesn't provide this
+                            'earnings_quarterly_growth': None,  # TradingView Scanner doesn't provide this
                             
                             # Momentum metrics
                             'fifty_two_week_high': col_map.get('price_52_week_high'),
