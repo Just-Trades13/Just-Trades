@@ -10820,8 +10820,12 @@ def get_real_factor_grades(symbol):
             '_data_source': 'fallback'
         }
     
-    # Get sector medians
-    sector = stock_data.get('sector', 'Default')
+    # Get sector medians - use STOCK_SECTOR_MAP as primary source
+    sector = STOCK_SECTOR_MAP.get(symbol.upper())  # Our reliable map FIRST
+    if not sector:
+        sector = stock_data.get('sector', 'Default')
+    if sector == 'Unknown' or not sector:
+        sector = 'Default'
     sector_medians = SECTOR_MEDIANS.get(sector, SECTOR_MEDIANS['Default'])
     
     # Calculate all factor grades
