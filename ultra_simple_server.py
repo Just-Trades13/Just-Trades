@@ -7728,9 +7728,21 @@ def process_webhook_directly(webhook_token):
                     tick_size_close = get_tick_size(ticker) if ticker else 0.25
                     tick_value_close = get_tick_value(ticker) if ticker else 0.50
                     entry_price_close = float(strategy_open_trade.get('entry_price', 0) or 0)
+                    trade_id = strategy_open_trade['id']
                     
                     pnl_ticks_close = (current_price - entry_price_close) / tick_size_close
                     pnl_dollars = pnl_ticks_close * tick_value_close * quantity
+                    
+                    # Close the trade in DB FIRST (before releasing connection)
+                    cursor.execute(f'''
+                        UPDATE recorded_trades 
+                        SET status = 'closed', exit_price = {placeholder}, pnl = {placeholder}, 
+                            pnl_ticks = {placeholder}, exit_reason = 'signal', 
+                            exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = {placeholder}
+                    ''', (current_price, pnl_dollars, pnl_ticks_close, trade_id))
+                    conn.commit()
+                    conn.close()  # Release connection BEFORE calling execute_trade_simple
                     
                     # 🔥 EXECUTE ON BROKER - Use execute_trade_simple to close position
                     from recorder_service import execute_trade_simple
@@ -7744,23 +7756,12 @@ def process_webhook_directly(webhook_token):
                     broker_closed = broker_result.get('success', False)
                     logger.info(f"🔥 BROKER CLOSE LONG: {'✅' if broker_closed else '❌'} - {broker_result}")
                     
-                    # Close the trade in DB
-                    cursor.execute(f'''
-                        UPDATE recorded_trades 
-                        SET status = 'closed', exit_price = {placeholder}, pnl = {placeholder}, 
-                            pnl_ticks = {placeholder}, exit_reason = 'signal', 
-                            exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = {placeholder}
-                    ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
-                    conn.commit()
+                    logger.info(f"✅ LONG closed by SELL: #{trade_id} | Exit: {current_price} | PnL: ${pnl_dollars:.2f} | Broker: {'✅' if broker_closed else '❌'}")
                     
-                    logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f} | Broker: {'✅' if broker_closed else '❌'}")
-                    
-                    conn.close()
                     return jsonify({
                         'success': True,
                         'action': 'closed',
-                        'trade_id': strategy_open_trade['id'],
+                        'trade_id': trade_id,
                         'side': 'LONG',
                         'entry_price': entry_price_close,
                         'exit_price': current_price,
@@ -7780,9 +7781,21 @@ def process_webhook_directly(webhook_token):
                     tick_size_close = get_tick_size(ticker) if ticker else 0.25
                     tick_value_close = get_tick_value(ticker) if ticker else 0.50
                     entry_price_close = float(strategy_open_trade.get('entry_price', 0) or 0)
+                    trade_id = strategy_open_trade['id']
                     
                     pnl_ticks_close = (entry_price_close - current_price) / tick_size_close
                     pnl_dollars = pnl_ticks_close * tick_value_close * quantity
+                    
+                    # Close the trade in DB FIRST (before releasing connection)
+                    cursor.execute(f'''
+                        UPDATE recorded_trades 
+                        SET status = 'closed', exit_price = {placeholder}, pnl = {placeholder}, 
+                            pnl_ticks = {placeholder}, exit_reason = 'signal', 
+                            exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = {placeholder}
+                    ''', (current_price, pnl_dollars, pnl_ticks_close, trade_id))
+                    conn.commit()
+                    conn.close()  # Release connection BEFORE calling execute_trade_simple
                     
                     # 🔥 EXECUTE ON BROKER - Use execute_trade_simple to close position
                     from recorder_service import execute_trade_simple
@@ -7796,23 +7809,12 @@ def process_webhook_directly(webhook_token):
                     broker_closed = broker_result.get('success', False)
                     logger.info(f"🔥 BROKER CLOSE SHORT: {'✅' if broker_closed else '❌'} - {broker_result}")
                     
-                    # Close the trade in DB
-                    cursor.execute(f'''
-                        UPDATE recorded_trades 
-                        SET status = 'closed', exit_price = {placeholder}, pnl = {placeholder}, 
-                            pnl_ticks = {placeholder}, exit_reason = 'signal', 
-                            exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = {placeholder}
-                    ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
-                    conn.commit()
+                    logger.info(f"✅ SHORT closed by BUY: #{trade_id} | Exit: {current_price} | PnL: ${pnl_dollars:.2f} | Broker: {'✅' if broker_closed else '❌'}")
                     
-                    logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f} | Broker: {'✅' if broker_closed else '❌'}")
-                    
-                    conn.close()
                     return jsonify({
                         'success': True,
                         'action': 'closed',
-                        'trade_id': strategy_open_trade['id'],
+                        'trade_id': trade_id,
                         'side': 'SHORT',
                         'entry_price': entry_price_close,
                         'exit_price': current_price,
