@@ -3254,7 +3254,14 @@ def _insider_fetch_form4_details(filing_url):
                 except:
                     pass
         details['shares'] = int(total_shares)
-        details['total_value'] = round(total_value, 2)
+        # Calculate total_value - use accumulated value OR fallback to shares * price
+        if total_value > 0:
+            details['total_value'] = round(total_value, 2)
+        elif total_shares > 0 and details.get('price', 0) > 0:
+            # Fallback: calculate from final shares and price if per-transaction calc failed
+            details['total_value'] = round(total_shares * details['price'], 2)
+        else:
+            details['total_value'] = 0.0
         if details['shares_owned_after'] > 0 and total_shares > 0:
             before = details['shares_owned_after'] - total_shares if details['transaction_type'] == 'BUY' else details['shares_owned_after'] + total_shares
             if before > 0:
