@@ -1040,7 +1040,9 @@
             const scoreClass = signal.signal_score >= 85 ? 'conviction' : (signal.signal_score >= 70 ? 'highlighted' : 'normal');
             const roleClass = getRoleClass(signal.insider_role);
             const timeAgo = getTimeAgo(signal.created_at);
-            const dollarValue = formatDollar(signal.dollar_value);
+            // Calculate dollar value if not available but shares and price are
+            const calcDollarValue = signal.dollar_value || (signal.shares && signal.price ? signal.shares * signal.price : 0);
+            const dollarValue = formatDollar(calcDollarValue);
             const reasonFlags = parseReasonFlags(signal.reason_flags);
             const purchasePrice = signal.price ? `$${signal.price.toFixed(2)}` : '--';
             const shares = signal.shares ? signal.shares.toLocaleString() : '--';
@@ -1105,7 +1107,9 @@
         document.getElementById('detailCompany').textContent = signal.company_name || '--';
         document.getElementById('detailInsider').textContent = signal.insider_name || '--';
         document.getElementById('detailRole').textContent = signal.insider_role || '--';
-        document.getElementById('detailAmount').textContent = formatDollar(signal.dollar_value);
+        // Calculate dollar value if not available but shares and price are
+        const calcDollarValue = signal.dollar_value || (signal.shares && signal.price ? signal.shares * signal.price : 0);
+        document.getElementById('detailAmount').textContent = formatDollar(calcDollarValue);
         document.getElementById('detailShares').textContent = signal.shares ? signal.shares.toLocaleString() : '--';
         document.getElementById('detailPrice').textContent = signal.price ? `$${signal.price.toFixed(2)}` : '--';
         document.getElementById('detailOwnership').textContent = signal.ownership_change_percent ? `+${signal.ownership_change_percent.toFixed(1)}%` : '--';
