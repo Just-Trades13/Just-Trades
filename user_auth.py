@@ -78,6 +78,7 @@ def init_users_table():
                     display_name VARCHAR(100),
                     is_admin BOOLEAN DEFAULT FALSE,
                     is_active BOOLEAN DEFAULT TRUE,
+                    is_approved BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP,
@@ -103,6 +104,7 @@ def init_users_table():
                     display_name TEXT,
                     is_admin INTEGER DEFAULT 0,
                     is_active INTEGER DEFAULT 1,
+                    is_approved INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP,
@@ -119,6 +121,51 @@ def init_users_table():
         return True
     except Exception as e:
         logger.error(f"❌ Failed to initialize users table: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def migrate_add_is_approved():
+    """
+    Add is_approved column to users table if it doesn't exist.
+    Sets existing users to approved=True (they were created before approval was required).
+    """
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if db_type == 'postgresql':
+            # Check if column exists
+            cursor.execute('''
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'is_approved'
+            ''')
+            if not cursor.fetchone():
+                cursor.execute('ALTER TABLE users ADD COLUMN is_approved BOOLEAN DEFAULT FALSE')
+                # Set existing users to approved (they were created before this feature)
+                cursor.execute('UPDATE users SET is_approved = TRUE WHERE is_approved IS NULL OR is_approved = FALSE')
+                # Admins are always considered approved
+                cursor.execute('UPDATE users SET is_approved = TRUE WHERE is_admin = TRUE')
+                logger.info("✅ Added is_approved column to users table")
+        else:
+            # SQLite - check if column exists
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [row[1] if isinstance(row, tuple) else row['name'] for row in cursor.fetchall()]
+            if 'is_approved' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN is_approved INTEGER DEFAULT 0')
+                # Set existing users to approved (they were created before this feature)
+                cursor.execute('UPDATE users SET is_approved = 1')
+                # Admins are always considered approved
+                cursor.execute('UPDATE users SET is_approved = 1 WHERE is_admin = 1')
+                logger.info("✅ Added is_approved column to users table")
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to add is_approved column: {e}")
         conn.rollback()
         return False
     finally:
@@ -178,13 +225,14 @@ class User:
     """User model for authentication."""
     
     def __init__(self, id: int, username: str, email: str, display_name: str = None,
-                 is_admin: bool = False, is_active: bool = True, settings: dict = None):
+                 is_admin: bool = False, is_active: bool = True, is_approved: bool = False, settings: dict = None):
         self.id = id
         self.username = username
         self.email = email
         self.display_name = display_name or username
         self.is_admin = is_admin
         self.is_active = is_active
+        self.is_approved = is_approved
         self.settings = settings or {}
     
     @property
@@ -218,6 +266,7 @@ class User:
             display_name=data.get('display_name'),
             is_admin=bool(data.get('is_admin', 0)),
             is_active=bool(data.get('is_active', 1)),
+            is_approved=bool(data.get('is_approved', 0)),
             settings=settings
         )
     
@@ -230,6 +279,7 @@ class User:
             'display_name': self.display_name,
             'is_admin': self.is_admin,
             'is_active': self.is_active,
+            'is_approved': self.is_approved,
             'settings': self.settings
         }
 
@@ -388,6 +438,13 @@ def authenticate_user(username_or_email: str, password: str) -> Optional[User]:
             logger.warning(f"Login failed: User not found - {username_or_email}")
             return None
         
+        # Check if user is approved (admins are always approved)
+        is_admin = bool(row['is_admin'] if hasattr(row, 'keys') else row[5])
+        is_approved = bool(row['is_approved'] if hasattr(row, 'keys') else row[7])
+        if not is_approved and not is_admin:
+            logger.warning(f"Login failed: User not approved - {username_or_email}")
+            return 'pending_approval'  # Special return value to indicate pending
+        
         # Check password
         password_hash = row['password_hash'] if hasattr(row, 'keys') else row[3]
         if not check_password_hash(password_hash, password):
@@ -452,6 +509,71 @@ def get_all_users() -> list:
     
     try:
         cursor.execute('SELECT * FROM users ORDER BY created_at DESC')
+        rows = cursor.fetchall()
+        return [User.from_row(row) for row in rows]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def approve_user(user_id: int) -> bool:
+    """Approve a pending user account (admin function)."""
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if db_type == 'postgresql':
+            cursor.execute('UPDATE users SET is_approved = TRUE WHERE id = %s', (user_id,))
+        else:
+            cursor.execute('UPDATE users SET is_approved = 1 WHERE id = ?', (user_id,))
+        
+        conn.commit()
+        affected = cursor.rowcount
+        logger.info(f"✅ User {user_id} approved")
+        return affected > 0
+    except Exception as e:
+        logger.error(f"❌ Failed to approve user {user_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def reject_user(user_id: int) -> bool:
+    """Reject (delete) a pending user account (admin function)."""
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if db_type == 'postgresql':
+            cursor.execute('DELETE FROM users WHERE id = %s AND is_approved = FALSE', (user_id,))
+        else:
+            cursor.execute('DELETE FROM users WHERE id = ? AND is_approved = 0', (user_id,))
+        
+        conn.commit()
+        affected = cursor.rowcount
+        logger.info(f"✅ User {user_id} rejected/deleted")
+        return affected > 0
+    except Exception as e:
+        logger.error(f"❌ Failed to reject user {user_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_pending_users() -> list:
+    """Get all pending (unapproved) users (admin function)."""
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if db_type == 'postgresql':
+            cursor.execute('SELECT * FROM users WHERE is_approved = FALSE ORDER BY created_at DESC')
+        else:
+            cursor.execute('SELECT * FROM users WHERE is_approved = 0 ORDER BY created_at DESC')
         rows = cursor.fetchall()
         return [User.from_row(row) for row in rows]
     finally:
@@ -655,6 +777,9 @@ def init_auth_system():
     
     # Add user_id to existing tables (safe - won't fail if column exists)
     add_user_id_to_tables()
+    
+    # Add is_approved column to existing users table (migration)
+    migrate_add_is_approved()
     
     logger.info("✅ Authentication system initialized")
     return True

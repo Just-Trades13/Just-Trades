@@ -2508,11 +2508,13 @@ def emergency_admin_setup():
         return "Auth system not available", 500
     
     # Create admin user
-    from user_auth import create_user, get_user_by_username
+    from user_auth import create_user, get_user_by_username, approve_user
     
     # Check if jtmj already exists
     existing = get_user_by_username('jtmj')
     if existing:
+        # Make sure existing admin is approved
+        approve_user(existing.id)
         return f"User 'jtmj' already exists (id={existing.id}). Try password: JustTrades2025!", 200
     
     # Create new admin
@@ -2525,6 +2527,8 @@ def emergency_admin_setup():
     )
     
     if new_admin:
+        # Auto-approve admin user
+        approve_user(new_admin.id)
         return f"""
         <h1>✅ Admin Created!</h1>
         <p><strong>Username:</strong> jtmj</p>
@@ -2556,7 +2560,10 @@ def login():
             return render_template('login.html')
         
         user = authenticate_user(username_or_email, password)
-        if user:
+        if user == 'pending_approval':
+            flash('Your account is pending admin approval. Please wait for an administrator to approve your account.', 'warning')
+            return render_template('login.html')
+        elif user:
             login_user(user)
             
             # Set session permanence based on "remember me"
@@ -2614,13 +2621,12 @@ def register():
                 flash(error, 'error')
             return render_template('register.html')
         
-        # Try to create user
+        # Try to create user (new users are NOT approved by default - admin must approve)
         user = create_user(username, email, password, display_name)
         if user:
-            # Auto-login after registration
-            login_user(user)
-            flash(f'Welcome to Just.Trades., {user.display_name}! Your account has been created.', 'success')
-            return redirect(url_for('dashboard'))
+            # Do NOT auto-login - account needs admin approval first
+            flash(f'Your account has been created! Please wait for an administrator to approve your account before you can log in.', 'info')
+            return redirect(url_for('login'))
         else:
             flash('Username or email already exists. Please try different credentials.', 'error')
     
@@ -2654,9 +2660,52 @@ def admin_users():
         flash('You do not have permission to access this page.', 'error')
         return redirect(url_for('dashboard'))
     
-    from user_auth import get_all_users
+    from user_auth import get_all_users, get_pending_users
     users = get_all_users()
-    return render_template('admin_users.html', users=users)
+    pending_count = len([u for u in users if not u.is_approved and not u.is_admin])
+    return render_template('admin_users.html', users=users, pending_count=pending_count)
+
+
+@app.route('/admin/users/approve/<int:user_id>', methods=['POST'])
+def admin_approve_user(user_id):
+    """Admin endpoint to approve a pending user."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    
+    from user_auth import approve_user
+    if approve_user(user_id):
+        flash('User approved successfully!', 'success')
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'Failed to approve user'}), 400
+
+
+@app.route('/admin/users/reject/<int:user_id>', methods=['POST'])
+def admin_reject_user(user_id):
+    """Admin endpoint to reject (delete) a pending user."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    
+    from user_auth import reject_user
+    if reject_user(user_id):
+        flash('User rejected and removed.', 'success')
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'Failed to reject user'}), 400
 
 
 @app.route('/admin/users/create', methods=['POST'])
@@ -2685,7 +2734,10 @@ def admin_create_user():
     
     new_user = create_user(username, email, password, display_name, is_admin)
     if new_user:
-        flash(f'User "{username}" created successfully.', 'success')
+        # Admin-created users are automatically approved
+        from user_auth import approve_user
+        approve_user(new_user.id)
+        flash(f'User "{username}" created and approved successfully.', 'success')
     else:
         flash('Failed to create user. Username or email may already exist.', 'error')
     

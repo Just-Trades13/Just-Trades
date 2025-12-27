@@ -152,6 +152,42 @@
         border: 1px solid rgba(148, 163, 184, 0.3);
     }
     
+    .badge-pending {
+        background: rgba(255, 193, 7, 0.15);
+        color: #ffc107;
+        border: 1px solid rgba(255, 193, 7, 0.3);
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+    
+    .pending-row {
+        background: rgba(255, 193, 7, 0.05);
+    }
+    
+    .btn-approve {
+        background: rgba(45, 206, 137, 0.15) !important;
+        border-color: rgba(45, 206, 137, 0.3) !important;
+        color: var(--green) !important;
+    }
+    
+    .btn-approve:hover {
+        background: rgba(45, 206, 137, 0.25) !important;
+    }
+    
+    .btn-reject {
+        background: rgba(245, 54, 92, 0.15) !important;
+        border-color: rgba(245, 54, 92, 0.3) !important;
+        color: #f5365c !important;
+    }
+    
+    .btn-reject:hover {
+        background: rgba(245, 54, 92, 0.25) !important;
+    }
+    
     .action-buttons {
         display: flex;
         gap: 8px;
@@ -225,6 +261,11 @@
     .stat-icon.admins {
         background: linear-gradient(135deg, rgba(245, 54, 92, 0.2), rgba(245, 54, 92, 0.1));
         color: #f5365c;
+    }
+    
+    .stat-icon.pending {
+        background: linear-gradient(135deg, rgba(255, 193, 7, 0.2), rgba(255, 193, 7, 0.1));
+        color: #ffc107;
     }
     
     .stat-icon .material-icons {
@@ -487,6 +528,15 @@
             <div class="stat-label">Administrators</div>
         </div>
     </div>
+    <div class="stat-card">
+        <div class="stat-icon pending">
+            <span class="material-icons">hourglass_empty</span>
+        </div>
+        <div class="stat-info">
+            <div class="stat-value">{{ pending_count|default(0) }}</div>
+            <div class="stat-label">Pending Approval</div>
+        </div>
+    </div>
 </div>
 
 <div class="users-table-container">
@@ -504,7 +554,7 @@
         </thead>
         <tbody>
             {% for user in users %}
-            <tr>
+            <tr class="{{ 'pending-row' if not user.is_approved and not user.is_admin else '' }}">
                 <td>
                     <div class="user-info">
                         <div class="user-avatar">{{ user.username[0]|upper }}</div>
@@ -528,7 +578,12 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if user.is_active %}
+                    {% if not user.is_approved and not user.is_admin %}
+                    <span class="badge badge-pending">
+                        <span class="material-icons" style="font-size:14px">hourglass_empty</span>
+                        Pending
+                    </span>
+                    {% elif user.is_active %}
                     <span class="badge badge-active">Active</span>
                     {% else %}
                     <span class="badge badge-inactive">Inactive</span>
@@ -542,9 +597,18 @@
                 </td>
                 <td>
                     <div class="action-buttons">
+                        {% if not user.is_approved and not user.is_admin %}
+                        <button class="btn-action btn-approve" onclick="approveUser({{ user.id }}, '{{ user.username }}')" title="Approve user">
+                            <span class="material-icons">check_circle</span>
+                        </button>
+                        <button class="btn-action btn-reject" onclick="rejectUser({{ user.id }}, '{{ user.username }}')" title="Reject user">
+                            <span class="material-icons">cancel</span>
+                        </button>
+                        {% else %}
                         <button class="btn-action" onclick="editUser({{ user.id }})" title="Edit user">
                             <span class="material-icons">edit</span>
                         </button>
+                        {% endif %}
                         {% if user.id != current_user.id %}
                         <button class="btn-action delete" onclick="deleteUser({{ user.id }}, '{{ user.username }}')" title="Delete user">
                             <span class="material-icons">delete</span>
@@ -619,6 +683,44 @@ function hideAddUserModal() {
 function editUser(userId) {
     // TODO: Implement edit user modal
     alert('Edit user ' + userId + ' - Coming soon!');
+}
+
+function approveUser(userId, username) {
+    if (confirm('Approve user "' + username + '"? They will be able to log in and use the system.')) {
+        fetch('/admin/users/approve/' + userId, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('Error approving user: ' + error);
+        });
+    }
+}
+
+function rejectUser(userId, username) {
+    if (confirm('Reject and delete user "' + username + '"? This action cannot be undone.')) {
+        fetch('/admin/users/reject/' + userId, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('Error rejecting user: ' + error);
+        });
+    }
 }
 
 function deleteUser(userId, username) {
