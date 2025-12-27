@@ -7902,14 +7902,15 @@ def process_webhook_directly(webhook_token):
             # Import the SIMPLE trade function
             from recorder_service import execute_trade_simple
             
-            # Note: execute_trade_simple handles TP only
-            # SL is handled separately via bracket orders or trailing stop logic
+            # Execute with TP and SL (if configured)
+            # SL=0 means no SL order (TradingView strategy may handle it)
             result = execute_trade_simple(
                 recorder_id=recorder_id,
                 action=trade_action,
                 ticker=ticker,
                 quantity=quantity,
-                tp_ticks=tp_ticks
+                tp_ticks=tp_ticks,
+                sl_ticks=sl_ticks if sl_ticks > 0 else 0
             )
             
             if result.get('success'):

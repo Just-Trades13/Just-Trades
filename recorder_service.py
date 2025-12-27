@@ -634,16 +634,21 @@ def execute_trade_simple(
     action: str,  # 'BUY' or 'SELL'
     ticker: str,
     quantity: int,
-    tp_ticks: int = 10
+    tp_ticks: int = 10,
+    sl_ticks: int = 0  # 0 = no SL (TradingView strategy may handle it)
 ) -> Dict[str, Any]:
     """
-    SIMPLE TRADE EXECUTION WITH TP - Executes on ALL linked accounts.
+    SIMPLE TRADE EXECUTION WITH TP/SL - Executes on ALL linked accounts.
     
     The Formula:
-    1. Place market order for entry
+    1. Place market order for entry (or bracket if TP/SL configured)
     2. Get broker's position (netPrice = average, netPos = quantity)
     3. Calculate TP = average +/- (tp_ticks * tick_size)
-    4. Place or modify ONE TP order
+    4. Calculate SL = average -/+ (sl_ticks * tick_size) if sl_ticks > 0
+    5. Place or modify TP/SL orders
+    
+    NOTE: sl_ticks=0 means NO stop loss order will be placed.
+    This allows TradingView strategies to manage their own exits.
     """
     from phantom_scraper.tradovate_integration import TradovateIntegration
     from tradovate_api_access import TradovateAPIAccess
@@ -656,11 +661,14 @@ def execute_trade_simple(
         'broker_qty': None,
         'tp_price': None,
         'tp_order_id': None,
+        'sl_price': None,
+        'sl_order_id': None,
         'accounts_traded': 0,
         'error': None
     }
     
-    logger.info(f"🎯 SIMPLE EXECUTE: {action} {quantity} {ticker} (TP: {tp_ticks} ticks)")
+    sl_info = f", SL: {sl_ticks} ticks" if sl_ticks > 0 else " (no SL)"
+    logger.info(f"🎯 SIMPLE EXECUTE: {action} {quantity} {ticker} (TP: {tp_ticks} ticks{sl_info})")
     
     try:
         conn = get_db_connection()
@@ -894,9 +902,10 @@ def execute_trade_simple(
                             break
                     
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
-                    # This sends entry + TP in ONE call (no rate limits, guaranteed TP)
+                    # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
                     if not has_existing_position and tp_ticks and tp_ticks > 0:
-                        logger.info(f"📤 [{acct_name}] Using BRACKET ORDER (WebSocket) - Entry + TP in one call")
+                        sl_log = f" + SL: {sl_ticks} ticks" if sl_ticks > 0 else ""
+                        logger.info(f"📤 [{acct_name}] Using BRACKET ORDER (WebSocket) - Entry + TP{sl_log} in one call")
                         bracket_result = await tradovate.place_bracket_order(
                             account_id=tradovate_account_id,
                             account_spec=tradovate_account_spec,
@@ -904,7 +913,7 @@ def execute_trade_simple(
                             entry_side=order_action,
                             quantity=quantity,
                             profit_target_ticks=tp_ticks,
-                            stop_loss_ticks=None,  # No SL for now
+                            stop_loss_ticks=sl_ticks if sl_ticks > 0 else None,  # Only place SL if configured
                             trailing_stop=False
                         )
                         
@@ -931,8 +940,10 @@ def execute_trade_simple(
                             
                             if broker_side == 'LONG':
                                 tp_price = broker_avg + (tp_ticks * tick_size) if broker_avg else None
+                                sl_price = broker_avg - (sl_ticks * tick_size) if broker_avg and sl_ticks > 0 else None
                             else:
                                 tp_price = broker_avg - (tp_ticks * tick_size) if broker_avg else None
+                                sl_price = broker_avg + (sl_ticks * tick_size) if broker_avg and sl_ticks > 0 else None
                             
                             return {
                                 'success': True,
@@ -941,6 +952,8 @@ def execute_trade_simple(
                                 'broker_side': broker_side,
                                 'tp_price': tp_price,
                                 'tp_order_id': strategy_id,
+                                'sl_price': sl_price,
+                                'sl_order_id': strategy_id if sl_ticks > 0 else None,  # Same strategy ID manages both
                                 'acct_name': acct_name,
                                 'method': 'BRACKET_WS'
                             }
@@ -1066,6 +1079,38 @@ def execute_trade_simple(
                             tp_order_id = tp_result.get('orderId') or tp_result.get('id')
                             logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price}")
                     
+                    # STEP 5: Place SL order if configured (sl_ticks > 0)
+                    sl_price = None
+                    sl_order_id = None
+                    
+                    if sl_ticks and sl_ticks > 0:
+                        # Calculate SL price (opposite direction from TP)
+                        if broker_side == 'LONG':
+                            sl_price = broker_avg - (sl_ticks * tick_size)
+                            sl_action = 'Sell'  # SL sells to close LONG
+                        else:
+                            sl_price = broker_avg + (sl_ticks * tick_size)
+                            sl_action = 'Buy'   # SL buys to close SHORT
+                        
+                        logger.info(f"📊 [{acct_name}] PLACING SL @ {sl_price} ({sl_ticks} ticks)")
+                        sl_order_data = {
+                            "accountId": tradovate_account_id,
+                            "accountSpec": tradovate_account_spec,
+                            "symbol": tradovate_symbol,
+                            "action": sl_action,
+                            "orderQty": broker_qty,
+                            "orderType": "Stop",
+                            "stopPrice": sl_price,
+                            "timeInForce": "GTC",
+                            "isAutomated": True
+                        }
+                        sl_result = await tradovate.place_order(sl_order_data)
+                        if sl_result and sl_result.get('success'):
+                            sl_order_id = sl_result.get('orderId') or sl_result.get('id')
+                            logger.info(f"✅ [{acct_name}] SL PLACED @ {sl_price}")
+                        else:
+                            logger.warning(f"⚠️ [{acct_name}] SL order failed: {sl_result}")
+                    
                     return {
                         'success': True,
                         'broker_avg': broker_avg,
@@ -1073,6 +1118,8 @@ def execute_trade_simple(
                         'broker_side': broker_side,
                         'tp_price': tp_price,
                         'tp_order_id': tp_order_id,
+                        'sl_price': sl_price,
+                        'sl_order_id': sl_order_id,
                         'acct_name': acct_name
                     }
                 finally:
