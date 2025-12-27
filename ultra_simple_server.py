@@ -9080,7 +9080,7 @@ def traders_list():
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
         
-        # Filter by user_id if logged in
+        # Filter by user_id if logged in - also show traders with NULL user_id (legacy)
         if user_id:
             if is_postgres:
                 cursor.execute('''
@@ -9090,7 +9090,7 @@ def traders_list():
                     FROM traders t
                     LEFT JOIN recorders r ON t.recorder_id = r.id
                     LEFT JOIN accounts a ON t.account_id = a.id
-                    WHERE t.user_id = %s
+                    WHERE t.user_id = %s OR t.user_id IS NULL
                     ORDER BY t.created_at DESC
                 ''', (user_id,))
             else:
@@ -9101,7 +9101,7 @@ def traders_list():
                     FROM traders t
                     LEFT JOIN recorders r ON t.recorder_id = r.id
                     LEFT JOIN accounts a ON t.account_id = a.id
-                    WHERE t.user_id = ?
+                    WHERE t.user_id = ? OR t.user_id IS NULL
                     ORDER BY t.created_at DESC
                 ''', (user_id,))
         else:
