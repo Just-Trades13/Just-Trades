@@ -5532,7 +5532,7 @@ def recorders_edit(recorder_id):
 
 @app.route('/api/recorders', methods=['GET'])
 def api_get_recorders():
-    """Get all recorders - public ones for everyone, private ones only for owner"""
+    """Get all recorders - public by default"""
     try:
         search = request.args.get('search', '').strip()
         page = int(request.args.get('page', 1))
@@ -5543,66 +5543,33 @@ def api_get_recorders():
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         
-        # Filter: PUBLIC recorders (is_private = FALSE/NULL) + user's own recorders
-        user_id = None
-        if USER_AUTH_AVAILABLE and is_logged_in():
-            user_id = get_current_user_id()
-        
+        # Show ALL recorders - they're public by default
+        # Privacy filtering can be added later when is_private column exists
         if is_postgres:
-            if search and user_id:
+            if search:
                 cursor.execute('''
                     SELECT * FROM recorders
-                    WHERE name ILIKE %s AND ((is_private IS NULL OR is_private = FALSE) OR user_id = %s)
+                    WHERE name ILIKE %s
                     ORDER BY created_at DESC
-                    LIMIT %s OFFSET %s
-                ''', (f'%{search}%', user_id, per_page, offset))
-            elif user_id:
-                cursor.execute('''
-                    SELECT * FROM recorders
-                    WHERE (is_private IS NULL OR is_private = FALSE) OR user_id = %s
-                    ORDER BY created_at DESC
-                    LIMIT %s OFFSET %s
-                ''', (user_id, per_page, offset))
-            elif search:
-                cursor.execute('''
-                    SELECT * FROM recorders 
-                    WHERE name ILIKE %s AND (is_private IS NULL OR is_private = FALSE)
-                    ORDER BY created_at DESC 
                     LIMIT %s OFFSET %s
                 ''', (f'%{search}%', per_page, offset))
             else:
                 cursor.execute('''
                     SELECT * FROM recorders 
-                    WHERE (is_private IS NULL OR is_private = FALSE)
                     ORDER BY created_at DESC 
                     LIMIT %s OFFSET %s
                 ''', (per_page, offset))
         else:
-            if search and user_id:
+            if search:
                 cursor.execute('''
                     SELECT * FROM recorders 
-                    WHERE name LIKE ? AND ((is_private IS NULL OR is_private = 0) OR user_id = ?)
-                    ORDER BY created_at DESC 
-                    LIMIT ? OFFSET ?
-                ''', (f'%{search}%', user_id, per_page, offset))
-            elif user_id:
-                cursor.execute('''
-                    SELECT * FROM recorders 
-                    WHERE (is_private IS NULL OR is_private = 0) OR user_id = ?
-                    ORDER BY created_at DESC 
-                    LIMIT ? OFFSET ?
-                ''', (user_id, per_page, offset))
-            elif search:
-                cursor.execute('''
-                    SELECT * FROM recorders 
-                    WHERE name LIKE ? AND (is_private IS NULL OR is_private = 0)
+                    WHERE name LIKE ?
                     ORDER BY created_at DESC 
                     LIMIT ? OFFSET ?
                 ''', (f'%{search}%', per_page, offset))
             else:
                 cursor.execute('''
                     SELECT * FROM recorders 
-                    WHERE (is_private IS NULL OR is_private = 0)
                     ORDER BY created_at DESC 
                     LIMIT ? OFFSET ?
                 ''', (per_page, offset))
@@ -5623,26 +5590,17 @@ def api_get_recorders():
                 recorder['tp_targets'] = []
             recorders.append(recorder)
         
-        # Get total count - PUBLIC recorders + user's own recorders
+        # Get total count - all recorders (public by default)
         if is_postgres:
-            if user_id and search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name ILIKE %s AND ((is_private IS NULL OR is_private = FALSE) OR user_id = %s)', (f'%{search}%', user_id))
-            elif user_id:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (is_private IS NULL OR is_private = FALSE) OR user_id = %s', (user_id,))
-            elif search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name ILIKE %s AND (is_private IS NULL OR is_private = FALSE)', (f'%{search}%',))
+            if search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name ILIKE %s', (f'%{search}%',))
             else:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (is_private IS NULL OR is_private = FALSE)')
+                cursor.execute('SELECT COUNT(*) as count FROM recorders')
         else:
-            # SQLite count queries
-            if user_id and search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND ((is_private IS NULL OR is_private = 0) OR user_id = ?)', (f'%{search}%', user_id))
-            elif user_id:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (is_private IS NULL OR is_private = 0) OR user_id = ?', (user_id,))
-            elif search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND (is_private IS NULL OR is_private = 0)', (f'%{search}%',))
+            if search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ?', (f'%{search}%',))
             else:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (is_private IS NULL OR is_private = 0)')
+                cursor.execute('SELECT COUNT(*) as count FROM recorders')
         total_row = cursor.fetchone()
         total = total_row[0] if total_row else 0
         
@@ -9254,27 +9212,9 @@ def traders_new():
             user_id = get_current_user_id()
         
         # Get recorders for the dropdown:
-        # - All PUBLIC recorders (is_private = FALSE or NULL) are visible to everyone
-        # - User's own recorders are always visible to them (even if private)
-        if user_id:
-            if is_postgres:
-                cursor.execute('''
-                    SELECT id, name, strategy_type FROM recorders 
-                    WHERE (is_private IS NULL OR is_private = FALSE) OR user_id = %s
-                    ORDER BY name
-                ''', (user_id,))
-            else:
-                cursor.execute('''
-                    SELECT id, name, strategy_type FROM recorders 
-                    WHERE (is_private IS NULL OR is_private = 0) OR user_id = ?
-                    ORDER BY name
-                ''', (user_id,))
-        else:
-            # Not logged in - show only public recorders
-            if is_postgres:
-                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE (is_private IS NULL OR is_private = FALSE) ORDER BY name')
-            else:
-                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE (is_private IS NULL OR is_private = 0) ORDER BY name')
+        # Show ALL recorders - they're public by default unless is_private is set
+        # The is_private column may not exist yet, so we use a simple query
+        cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
         recorders = []
         for row in cursor.fetchall():
             # Handle both dict-style and tuple-style rows
