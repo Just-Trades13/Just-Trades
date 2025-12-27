@@ -817,61 +817,41 @@
                     </div>
                 </label>
                 <div class="time-filters">
-                    <div class="time-block">
-                        <h4>Time Filter #1</h4>
-                        <div class="time-grid">
+                    <div class="time-block" id="new_time_filter_1_block">
+                        <div class="toggle-row" style="margin-bottom: 0.75rem;">
+                            <h4 style="margin: 0;">Time Filter #1</h4>
+                            <label class="switch">
+                                <input type="checkbox" id="new_time_filter_1_enabled">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="time-grid" id="new_time_filter_1_fields">
                             <label class="form-field">
                                 <span>Start #1</span>
-                                <div class="time-shell">
-                                    <input type="number" value="8">
-                                    <span>:</span>
-                                    <input type="number" value="45">
-                                    <select>
-                                        <option>AM</option>
-                                        <option>PM</option>
-                                    </select>
-                                </div>
+                                <input type="text" id="newTimeFilter1Start" placeholder="e.g. 8:45 AM">
                             </label>
                             <label class="form-field">
                                 <span>Stop #1</span>
-                                <div class="time-shell">
-                                    <input type="number" value="1">
-                                    <span>:</span>
-                                    <input type="number" value="45">
-                                    <select>
-                                        <option>PM</option>
-                                        <option>AM</option>
-                                    </select>
-                                </div>
+                                <input type="text" id="newTimeFilter1Stop" placeholder="e.g. 1:45 PM">
                             </label>
                         </div>
                     </div>
-                    <div class="time-block">
-                        <h4>Time Filter #2</h4>
-                        <div class="time-grid">
+                    <div class="time-block" id="new_time_filter_2_block">
+                        <div class="toggle-row" style="margin-bottom: 0.75rem;">
+                            <h4 style="margin: 0;">Time Filter #2</h4>
+                            <label class="switch">
+                                <input type="checkbox" id="new_time_filter_2_enabled">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="time-grid" id="new_time_filter_2_fields">
                             <label class="form-field">
                                 <span>Start #2</span>
-                                <div class="time-shell">
-                                    <input type="number" value="12">
-                                    <span>:</span>
-                                    <input type="number" value="30">
-                                    <select>
-                                        <option>PM</option>
-                                        <option>AM</option>
-                                    </select>
-                                </div>
+                                <input type="text" id="newTimeFilter2Start" placeholder="e.g. 6:00 PM">
                             </label>
                             <label class="form-field">
                                 <span>Stop #2</span>
-                                <div class="time-shell">
-                                    <input type="number" value="3">
-                                    <span>:</span>
-                                    <input type="number" value="15">
-                                    <select>
-                                        <option>PM</option>
-                                        <option>AM</option>
-                                    </select>
-                                </div>
+                                <input type="text" id="newTimeFilter2Stop" placeholder="e.g. 11:00 PM">
                             </label>
                         </div>
                     </div>
@@ -1561,6 +1541,34 @@
             });
         });
         
+        // Time Filter Toggle functionality (Create mode)
+        function setupNewTimeFilterToggles() {
+            // Time Filter 1 (Create mode)
+            const tf1Enabled = document.getElementById('new_time_filter_1_enabled');
+            const tf1Fields = document.getElementById('new_time_filter_1_fields');
+            if (tf1Enabled && tf1Fields) {
+                const updateTf1 = () => {
+                    tf1Fields.style.opacity = tf1Enabled.checked ? '1' : '0.4';
+                    tf1Fields.style.pointerEvents = tf1Enabled.checked ? 'auto' : 'none';
+                };
+                tf1Enabled.addEventListener('change', updateTf1);
+                updateTf1(); // Set initial state (disabled by default)
+            }
+            
+            // Time Filter 2 (Create mode)
+            const tf2Enabled = document.getElementById('new_time_filter_2_enabled');
+            const tf2Fields = document.getElementById('new_time_filter_2_fields');
+            if (tf2Enabled && tf2Fields) {
+                const updateTf2 = () => {
+                    tf2Fields.style.opacity = tf2Enabled.checked ? '1' : '0.4';
+                    tf2Fields.style.pointerEvents = tf2Enabled.checked ? 'auto' : 'none';
+                };
+                tf2Enabled.addEventListener('change', updateTf2);
+                updateTf2(); // Set initial state (disabled by default)
+            }
+        }
+        setupNewTimeFilterToggles();
+        
         // Form submission handler
         const form = document.getElementById('traderForm');
         if (form) {
@@ -1733,6 +1741,14 @@
                         let successCount = 0;
                         let errorMessages = [];
                         
+                        // Collect time filter settings for create mode
+                        const newTimeFilter1Enabled = document.getElementById('new_time_filter_1_enabled')?.checked ? true : false;
+                        const newTimeFilter1Start = document.getElementById('newTimeFilter1Start')?.value || '';
+                        const newTimeFilter1Stop = document.getElementById('newTimeFilter1Stop')?.value || '';
+                        const newTimeFilter2Enabled = document.getElementById('new_time_filter_2_enabled')?.checked ? true : false;
+                        const newTimeFilter2Start = document.getElementById('newTimeFilter2Start')?.value || '';
+                        const newTimeFilter2Stop = document.getElementById('newTimeFilter2Stop')?.value || '';
+                        
                         for (const account of enabledAccounts) {
                             const response = await fetch('/api/traders', {
                                 method: 'POST',
@@ -1744,7 +1760,14 @@
                                     account_id: account.account_id,
                                     subaccount_id: account.subaccount_id,
                                     subaccount_name: account.subaccount_name,
-                                    is_demo: account.is_demo
+                                    is_demo: account.is_demo,
+                                    // Time filter settings (optional overrides)
+                                    time_filter_1_enabled: newTimeFilter1Enabled,
+                                    time_filter_1_start: newTimeFilter1Start,
+                                    time_filter_1_stop: newTimeFilter1Stop,
+                                    time_filter_2_enabled: newTimeFilter2Enabled,
+                                    time_filter_2_start: newTimeFilter2Start,
+                                    time_filter_2_stop: newTimeFilter2Stop
                                 })
                             });
                             
