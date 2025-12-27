@@ -2763,7 +2763,7 @@ def health():
         "cache": cache_status,
         "async_utils": async_status,
         "timestamp": datetime.now().isoformat(),
-        "version": "2025-12-19-v4-auth-fix"
+        "version": "2025-12-27-neon-migration"
     }
     
     return jsonify(status), 200 if db_status == "healthy" else 503
