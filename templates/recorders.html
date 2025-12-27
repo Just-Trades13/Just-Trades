@@ -326,6 +326,16 @@
                         <p>Allow this recorder to capture trading signals and positions.</p>
                     </div>
                 </div>
+                <div class="switch-row">
+                    <label class="switch">
+                        <input type="checkbox" id="is_private" {{ 'checked' if recorder and recorder.is_private else '' }}>
+                        <span class="slider"></span>
+                    </label>
+                    <div>
+                        <h3>Make Private</h3>
+                        <p>Only you can see and use this recorder. Uncheck to make it available to all users.</p>
+                    </div>
+                </div>
             </div>
         </section>
     </section>
@@ -984,7 +994,8 @@
             max_daily_loss: parseFloat(document.getElementById('max_daily_loss').value) || 0,
             auto_flat_after_cutoff: document.getElementById('auto_flat_after_cutoff').checked,
             notes: document.getElementById('notes').value.trim(),
-            recording_enabled: document.getElementById('recording_enabled').checked
+            recording_enabled: document.getElementById('recording_enabled').checked,
+            is_private: document.getElementById('is_private').checked
         };
     }
 

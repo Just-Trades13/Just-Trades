@@ -5722,8 +5722,8 @@ def api_create_recorder():
                 INSERT INTO recorders (
                     name, enabled, webhook_token, ticker, position_size,
                     tp_enabled, tp_targets, sl_enabled, sl_amount, trailing_sl,
-                    account_id, user_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                    account_id, user_id, is_private
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             ''', (
                 name,
                 True,
@@ -5736,7 +5736,8 @@ def api_create_recorder():
                 data.get('sl_amount', 0),
                 data.get('trailing_sl', False),
                 data.get('account_id'),
-                current_user_id
+                current_user_id,
+                data.get('is_private', False)
             ))
             result = cursor.fetchone()
             if result:
@@ -5748,8 +5749,8 @@ def api_create_recorder():
                 INSERT INTO recorders (
                     name, enabled, webhook_token, ticker, position_size,
                     tp_enabled, tp_targets, sl_enabled, sl_amount, trailing_sl,
-                    account_id, user_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    account_id, user_id, is_private
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 name,
                 1,
@@ -5762,7 +5763,8 @@ def api_create_recorder():
                 data.get('sl_amount', 0),
                 1 if data.get('trailing_sl', False) else 0,
                 data.get('account_id'),
-                current_user_id
+                current_user_id,
+                1 if data.get('is_private', False) else 0
             ))
             recorder_id = cursor.lastrowid
         
@@ -5858,6 +5860,9 @@ def api_update_recorder(recorder_id):
         if 'recording_enabled' in data:
             fields.append(f'recording_enabled = {placeholder}')
             values.append(bool(data['recording_enabled']) if is_postgres else (1 if data['recording_enabled'] else 0))
+        if 'is_private' in data:
+            fields.append(f'is_private = {placeholder}')
+            values.append(bool(data['is_private']) if is_postgres else (1 if data['is_private'] else 0))
         
         # Handle TP targets JSON
         if 'tp_targets' in data:
