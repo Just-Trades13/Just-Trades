@@ -412,6 +412,7 @@ def _init_sqlite_tables(conn):
             symbol TEXT,
             demo_account_id TEXT,
             account_id INTEGER,
+            is_private INTEGER DEFAULT 0,
             initial_position_size INTEGER DEFAULT 2,
             add_position_size INTEGER DEFAULT 2,
             tp_units TEXT DEFAULT 'Ticks',
@@ -829,6 +830,7 @@ def _init_postgres_tables():
             symbol TEXT,
             demo_account_id TEXT,
             account_id INTEGER,
+            is_private BOOLEAN DEFAULT FALSE,
             initial_position_size INTEGER DEFAULT 2,
             add_position_size INTEGER DEFAULT 2,
             tp_units TEXT DEFAULT 'Ticks',
@@ -2343,6 +2345,19 @@ def init_db():
             pass  # Column already exists
         try:
             cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_2_enabled INTEGER DEFAULT 0')
+        except:
+            pass  # Column already exists
+    
+    # Add is_private column to recorders table (Dec 2025)
+    # Defaults to FALSE so all existing recorders are public
+    if is_postgres:
+        try:
+            cursor.execute('ALTER TABLE recorders ADD COLUMN is_private BOOLEAN DEFAULT FALSE')
+        except:
+            pass  # Column already exists
+    else:
+        try:
+            cursor.execute('ALTER TABLE recorders ADD COLUMN is_private INTEGER DEFAULT 0')
         except:
             pass  # Column already exists
     
@@ -5517,7 +5532,7 @@ def recorders_edit(recorder_id):
 
 @app.route('/api/recorders', methods=['GET'])
 def api_get_recorders():
-    """Get all recorders for the current user"""
+    """Get all recorders - public ones for everyone, private ones only for owner"""
     try:
         search = request.args.get('search', '').strip()
         page = int(request.args.get('page', 1))
@@ -5528,7 +5543,7 @@ def api_get_recorders():
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         
-        # Filter by user_id if logged in
+        # Filter: PUBLIC recorders (is_private = FALSE/NULL) + user's own recorders
         user_id = None
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
@@ -5537,27 +5552,28 @@ def api_get_recorders():
             if search and user_id:
                 cursor.execute('''
                     SELECT * FROM recorders
-                    WHERE name LIKE %s AND (user_id = %s OR user_id IS NULL)
+                    WHERE name ILIKE %s AND ((is_private IS NULL OR is_private = FALSE) OR user_id = %s)
                     ORDER BY created_at DESC
                     LIMIT %s OFFSET %s
                 ''', (f'%{search}%', user_id, per_page, offset))
             elif user_id:
                 cursor.execute('''
                     SELECT * FROM recorders
-                    WHERE (user_id = %s OR user_id IS NULL)
+                    WHERE (is_private IS NULL OR is_private = FALSE) OR user_id = %s
                     ORDER BY created_at DESC
                     LIMIT %s OFFSET %s
                 ''', (user_id, per_page, offset))
             elif search:
                 cursor.execute('''
                     SELECT * FROM recorders 
-                    WHERE name LIKE %s
+                    WHERE name ILIKE %s AND (is_private IS NULL OR is_private = FALSE)
                     ORDER BY created_at DESC 
                     LIMIT %s OFFSET %s
                 ''', (f'%{search}%', per_page, offset))
             else:
                 cursor.execute('''
                     SELECT * FROM recorders 
+                    WHERE (is_private IS NULL OR is_private = FALSE)
                     ORDER BY created_at DESC 
                     LIMIT %s OFFSET %s
                 ''', (per_page, offset))
@@ -5565,27 +5581,28 @@ def api_get_recorders():
             if search and user_id:
                 cursor.execute('''
                     SELECT * FROM recorders 
-                    WHERE name LIKE ? AND (user_id = ? OR user_id IS NULL)
+                    WHERE name LIKE ? AND ((is_private IS NULL OR is_private = 0) OR user_id = ?)
                     ORDER BY created_at DESC 
                     LIMIT ? OFFSET ?
                 ''', (f'%{search}%', user_id, per_page, offset))
             elif user_id:
                 cursor.execute('''
                     SELECT * FROM recorders 
-                    WHERE (user_id = ? OR user_id IS NULL)
+                    WHERE (is_private IS NULL OR is_private = 0) OR user_id = ?
                     ORDER BY created_at DESC 
                     LIMIT ? OFFSET ?
                 ''', (user_id, per_page, offset))
             elif search:
                 cursor.execute('''
                     SELECT * FROM recorders 
-                    WHERE name LIKE ?
+                    WHERE name LIKE ? AND (is_private IS NULL OR is_private = 0)
                     ORDER BY created_at DESC 
                     LIMIT ? OFFSET ?
                 ''', (f'%{search}%', per_page, offset))
             else:
                 cursor.execute('''
                     SELECT * FROM recorders 
+                    WHERE (is_private IS NULL OR is_private = 0)
                     ORDER BY created_at DESC 
                     LIMIT ? OFFSET ?
                 ''', (per_page, offset))
@@ -5606,26 +5623,26 @@ def api_get_recorders():
                 recorder['tp_targets'] = []
             recorders.append(recorder)
         
-        # Get total count with user filter - includes shared recorders (user_id IS NULL)
+        # Get total count - PUBLIC recorders + user's own recorders
         if is_postgres:
             if user_id and search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s AND (user_id = %s OR user_id IS NULL)', (f'%{search}%', user_id))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name ILIKE %s AND ((is_private IS NULL OR is_private = FALSE) OR user_id = %s)', (f'%{search}%', user_id))
             elif user_id:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (user_id = %s OR user_id IS NULL)', (user_id,))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (is_private IS NULL OR is_private = FALSE) OR user_id = %s', (user_id,))
             elif search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE %s', (f'%{search}%',))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name ILIKE %s AND (is_private IS NULL OR is_private = FALSE)', (f'%{search}%',))
             else:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders')
-        elif USER_AUTH_AVAILABLE and is_logged_in():
-            if search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND (user_id = ? OR user_id IS NULL)', (f'%{search}%', user_id))
-            else:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (user_id = ? OR user_id IS NULL)', (user_id,))
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (is_private IS NULL OR is_private = FALSE)')
         else:
-            if search:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ?', (f'%{search}%',))
+            # SQLite count queries
+            if user_id and search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND ((is_private IS NULL OR is_private = 0) OR user_id = ?)', (f'%{search}%', user_id))
+            elif user_id:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (is_private IS NULL OR is_private = 0) OR user_id = ?', (user_id,))
+            elif search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ? AND (is_private IS NULL OR is_private = 0)', (f'%{search}%',))
             else:
-                cursor.execute('SELECT COUNT(*) as count FROM recorders')
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE (is_private IS NULL OR is_private = 0)')
         total_row = cursor.fetchone()
         total = total_row[0] if total_row else 0
         
@@ -9236,15 +9253,28 @@ def traders_new():
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
         
-        # Get recorders with their IDs for the dropdown - includes shared recorders (user_id IS NULL)
+        # Get recorders for the dropdown:
+        # - All PUBLIC recorders (is_private = FALSE or NULL) are visible to everyone
+        # - User's own recorders are always visible to them (even if private)
         if user_id:
             if is_postgres:
-                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE (user_id = %s OR user_id IS NULL) ORDER BY name', (user_id,))
+                cursor.execute('''
+                    SELECT id, name, strategy_type FROM recorders 
+                    WHERE (is_private IS NULL OR is_private = FALSE) OR user_id = %s
+                    ORDER BY name
+                ''', (user_id,))
             else:
-                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE (user_id = ? OR user_id IS NULL) ORDER BY name', (user_id,))
+                cursor.execute('''
+                    SELECT id, name, strategy_type FROM recorders 
+                    WHERE (is_private IS NULL OR is_private = 0) OR user_id = ?
+                    ORDER BY name
+                ''', (user_id,))
         else:
-            # Not logged in - show nothing
-            cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE 1=0')
+            # Not logged in - show only public recorders
+            if is_postgres:
+                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE (is_private IS NULL OR is_private = FALSE) ORDER BY name')
+            else:
+                cursor.execute('SELECT id, name, strategy_type FROM recorders WHERE (is_private IS NULL OR is_private = 0) ORDER BY name')
         recorders = []
         for row in cursor.fetchall():
             # Handle both dict-style and tuple-style rows
