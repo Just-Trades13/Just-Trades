@@ -1,4 +1,4 @@
-# Deploy timestamp: 20251226175900
+# Deploy timestamp: 20251227001900 - Neon PostgreSQL migration
 #!/usr/bin/env python3
 """
 ⚠️ CRITICAL FOR AI ASSISTANTS: READ START_HERE.md BEFORE MODIFYING THIS FILE
