@@ -5647,11 +5647,13 @@ def api_get_recorders():
 
 @app.route('/api/recorders/<int:recorder_id>', methods=['GET'])
 def api_get_recorder(recorder_id):
-    """Get a single recorder by ID"""
+    """Get a single recorder by ID with all settings for auto-population"""
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
         is_postgres = is_using_postgres()
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
         
         if is_postgres:
             cursor.execute('SELECT * FROM recorders WHERE id = %s', (recorder_id,))
@@ -5663,17 +5665,49 @@ def api_get_recorder(recorder_id):
         if not row:
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
         
-        columns = ['id', 'user_id', 'name', 'enabled', 'webhook_token', 'ticker', 'position_size', 
-                   'tp_enabled', 'tp_targets', 'sl_enabled', 'sl_amount', 'trailing_sl', 'account_id', 
-                   'created_at', 'updated_at']
+        # Convert row to dict - works for both PostgreSQL RealDictRow and SQLite Row
         if hasattr(row, 'keys'):
             recorder = dict(row)
+        elif hasattr(row, '_fields'):
+            recorder = row._asdict()
         else:
-            recorder = dict(zip(columns[:len(row)], row))
+            # Fallback for tuple rows - use column description
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
+            recorder = dict(zip(columns, row))
+        
+        # Parse JSON fields
         try:
             recorder['tp_targets'] = json.loads(recorder.get('tp_targets') or '[]')
         except:
             recorder['tp_targets'] = []
+        
+        # Ensure all settings fields have defaults for the form
+        defaults = {
+            'strategy_type': 'Futures',
+            'initial_position_size': 1,
+            'add_position_size': 1,
+            'tp_units': 'Ticks',
+            'trim_units': 'Contracts',
+            'sl_enabled': False,
+            'sl_amount': 0,
+            'sl_units': 'Ticks',
+            'sl_type': 'Fixed',
+            'avg_down_enabled': False,
+            'avg_down_amount': 1,
+            'avg_down_point': 10,
+            'avg_down_units': 'Ticks',
+            'max_contracts': 0,
+            'time_filter_1_enabled': False,
+            'time_filter_1_start': '',
+            'time_filter_1_stop': '',
+            'time_filter_2_enabled': False,
+            'time_filter_2_start': '',
+            'time_filter_2_stop': ''
+        }
+        
+        for key, default_value in defaults.items():
+            if key not in recorder or recorder[key] is None:
+                recorder[key] = default_value
         
         return jsonify({'success': True, 'recorder': recorder})
     except Exception as e:

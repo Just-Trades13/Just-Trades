@@ -494,17 +494,17 @@
         <div>
             <h1>{{ header_title }}</h1>
             <span class="chip">TRADER</span>
-            <p>Select a strategy template to auto-fill settings, then customize and route to your accounts.</p>
+            <p>Select a recorder (signal source) and customize settings for your accounts.</p>
         </div>
         <div class="header-actions">
             <button type="submit" class="btn btn-primary" id="createTraderBtn">{{ header_cta }}</button>
-            <a class="link-button" href="/strategies/manage">Manage Strategies</a>
+            <a class="link-button" href="/my-recorders">Manage Recorders</a>
         </div>
     </section>
 
-    <section class="builder-alert builder-alert--info" id="templateAlert" style="display: none;">
-        <strong>✓ TEMPLATE LOADED:</strong>
-        <span id="templateAlertMessage">Settings auto-populated from template. Customize as needed.</span>
+    <section class="builder-alert builder-alert--info" id="recorderAlert" style="display: none;">
+        <strong>✓ RECORDER LOADED:</strong>
+        <span id="recorderAlertMessage">Settings auto-populated from recorder defaults. Customize as needed.</span>
     </section>
 
     <section class="builder-alert builder-alert--error" id="validationAlert" style="display: none;">
@@ -514,32 +514,19 @@
     </section>
 
     <section class="builder-form">
-        <!-- Strategy Template Dropdown (SHARED) -->
-        <label class="form-field">
-            <span>📋 Strategy Template (Auto-fills settings)</span>
-            <div class="select-shell">
-                <select id="strategyTemplateSelect" name="strategy_template_id">
-                    <option value="">-- Select a strategy template --</option>
-                    <!-- Options populated via JavaScript -->
-                </select>
-                <span class="material-icons">expand_more</span>
-            </div>
-            <small id="templateInfo" style="color: #64748b; margin-top: 4px;">Loading templates...</small>
-        </label>
-
-        <!-- Recorder Selection (for webhook signal source) -->
+        <!-- Recorder Selection (for webhook signal source) - Auto-populates settings -->
         <label class="form-field">
             <span>📡 Signal Source (Recorder)</span>
             <div class="select-shell">
                 <select id="recorderSelect" name="recorder_id" required>
-                    <option value="">Select recorder...</option>
+                    <option value="">Select a recorder to load defaults...</option>
                     {% for recorder in recorders %}
-                    <option value="{{ recorder.id }}">{{ recorder.name }}</option>
+                    <option value="{{ recorder.id }}">{{ recorder.name }} ({{ recorder.strategy_type }})</option>
                     {% endfor %}
                 </select>
                 <span class="material-icons">expand_more</span>
             </div>
-            <small style="color: #64748b;">The recorder that receives webhook signals for this trader</small>
+            <small style="color: #64748b;">Select a recorder to auto-fill its default settings below</small>
         </label>
 
         <label class="form-field">
@@ -1424,121 +1411,117 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         // =============================================
-        // Strategy Template Loading & Auto-Population
+        // Recorder Selection & Auto-Population
         // =============================================
         
-        let strategyTemplates = []; // Store loaded templates
-        
-        async function loadStrategyTemplates() {
-            const select = document.getElementById('strategyTemplateSelect');
-            const templateInfo = document.getElementById('templateInfo');
-            
-            if (!select) return; // Not on create page
+        async function loadRecorderDefaults(recorderId) {
+            if (!recorderId) return;
             
             try {
-                const response = await fetch('/api/strategies/templates');
+                const response = await fetch(`/api/recorders/${recorderId}`);
                 const data = await response.json();
                 
-                if (data.success && data.templates) {
-                    strategyTemplates = data.templates;
-                    
-                    // Clear and rebuild options
-                    select.innerHTML = '<option value="">-- Select a strategy template --</option>';
-                    
-                    // Group by public vs private
-                    const publicTemplates = data.templates.filter(t => t.is_public && !t.is_own);
-                    const myTemplates = data.templates.filter(t => t.is_own);
-                    
-                    if (publicTemplates.length > 0) {
-                        const publicGroup = document.createElement('optgroup');
-                        publicGroup.label = '📢 Public Strategies';
-                        publicTemplates.forEach(t => {
-                            const opt = document.createElement('option');
-                            opt.value = t.id;
-                            opt.textContent = `${t.name} (by ${t.owner_username})`;
-                            publicGroup.appendChild(opt);
-                        });
-                        select.appendChild(publicGroup);
-                    }
-                    
-                    if (myTemplates.length > 0) {
-                        const myGroup = document.createElement('optgroup');
-                        myGroup.label = '🔒 My Strategies';
-                        myTemplates.forEach(t => {
-                            const opt = document.createElement('option');
-                            opt.value = t.id;
-                            opt.textContent = t.name;
-                            myGroup.appendChild(opt);
-                        });
-                        select.appendChild(myGroup);
-                    }
-                    
-                    templateInfo.textContent = `${data.count} template(s) available`;
-                    templateInfo.style.color = '#10b981';
+                if (data.success && data.recorder) {
+                    populateFormFromRecorder(data.recorder);
                 } else {
-                    templateInfo.textContent = 'No templates available. Create one in Manage Strategies.';
-                    templateInfo.style.color = '#f59e0b';
+                    console.error('Failed to load recorder:', data.error);
+                    showToast('Failed to load recorder settings', 'error');
                 }
             } catch (error) {
-                console.error('Error loading templates:', error);
-                templateInfo.textContent = 'Error loading templates';
-                templateInfo.style.color = '#ef4444';
+                console.error('Error loading recorder:', error);
+                showToast('Error loading recorder settings', 'error');
             }
         }
         
-        function populateFormFromTemplate(templateId) {
-            const template = strategyTemplates.find(t => t.id == templateId);
-            if (!template) return;
+        function populateFormFromRecorder(recorder) {
+            console.log('Populating form with recorder:', recorder);
             
-            console.log('Populating form with template:', template);
-            
-            // Show the template loaded alert
-            const templateAlert = document.getElementById('templateAlert');
-            const templateAlertMessage = document.getElementById('templateAlertMessage');
-            if (templateAlert && templateAlertMessage) {
-                templateAlertMessage.textContent = `Settings loaded from "${template.name}" by ${template.owner_username}. Customize as needed.`;
-                templateAlert.style.display = 'block';
+            // Show the recorder loaded alert
+            const recorderAlert = document.getElementById('recorderAlert');
+            const recorderAlertMessage = document.getElementById('recorderAlertMessage');
+            if (recorderAlert && recorderAlertMessage) {
+                recorderAlertMessage.textContent = `Settings loaded from "${recorder.name}". Customize as needed for your accounts.`;
+                recorderAlert.style.display = 'block';
             }
             
             // Populate Strategy Type
             const strategyType = document.getElementById('strategyType');
-            if (strategyType && template.strat_type) {
-                strategyType.value = template.strat_type;
+            if (strategyType && recorder.strategy_type) {
+                strategyType.value = recorder.strategy_type;
             }
             
             // Populate Position Settings
             const initialPositionSize = document.getElementById('createInitialPositionSize');
-            if (initialPositionSize) initialPositionSize.value = template.position_size || 1;
+            if (initialPositionSize) initialPositionSize.value = recorder.initial_position_size || 1;
             
             const addPositionSize = document.getElementById('createAddPositionSize');
-            if (addPositionSize) addPositionSize.value = template.position_add || 1;
+            if (addPositionSize) addPositionSize.value = recorder.add_position_size || 1;
             
             // Populate TP Settings
             const tpUnits = document.getElementById('createTpUnits');
-            if (tpUnits && template.tpsl_units) tpUnits.value = template.tpsl_units;
+            if (tpUnits && recorder.tp_units) tpUnits.value = recorder.tp_units;
             
-            const tpValue = document.getElementById('createTpValue');
-            if (tpValue) tpValue.value = template.take_profit || 0;
+            const trimUnits = document.getElementById('createTrimUnits');
+            if (trimUnits && recorder.trim_units) trimUnits.value = recorder.trim_units;
             
-            const tpTrim = document.getElementById('createTpTrim');
-            if (tpTrim) tpTrim.value = template.trim || 100;
+            // Parse TP targets if available
+            let tpValue = 0;
+            let tpTrim = 100;
+            if (recorder.tp_targets) {
+                try {
+                    const targets = typeof recorder.tp_targets === 'string' ? JSON.parse(recorder.tp_targets) : recorder.tp_targets;
+                    if (targets && targets.length > 0) {
+                        tpValue = targets[0].value || targets[0].ticks || 0;
+                        tpTrim = targets[0].trim || targets[0].percent || 100;
+                    }
+                } catch (e) {
+                    console.log('Could not parse TP targets:', e);
+                }
+            }
+            
+            const tpValueInput = document.getElementById('createTpValue');
+            if (tpValueInput) tpValueInput.value = tpValue;
+            
+            const tpTrimInput = document.getElementById('createTpTrim');
+            if (tpTrimInput) tpTrimInput.value = tpTrim;
             
             // Populate SL Settings
             const slEnabled = document.getElementById('createSlEnabled');
-            if (slEnabled) slEnabled.checked = (template.stop_loss && template.stop_loss > 0);
+            if (slEnabled) slEnabled.checked = recorder.sl_enabled ? true : false;
             
             const slAmount = document.getElementById('createSlAmount');
-            if (slAmount) slAmount.value = template.stop_loss || 0;
+            if (slAmount) slAmount.value = recorder.sl_amount || 0;
             
             const slUnits = document.getElementById('createSlUnits');
-            if (slUnits && template.tpsl_units) slUnits.value = template.tpsl_units;
+            if (slUnits && recorder.sl_units) slUnits.value = recorder.sl_units;
+            
+            const slType = document.getElementById('createSlType');
+            if (slType && recorder.sl_type) slType.value = recorder.sl_type;
+            
+            // Populate DCA/Averaging Down Settings
+            const avgDownEnabled = document.getElementById('createAvgDownEnabled');
+            if (avgDownEnabled) avgDownEnabled.checked = recorder.avg_down_enabled ? true : false;
+            
+            const avgDownAmount = document.getElementById('createAvgDownAmount');
+            if (avgDownAmount) avgDownAmount.value = recorder.avg_down_amount || 1;
+            
+            const avgDownPoint = document.getElementById('createAvgDownPoint');
+            if (avgDownPoint) avgDownPoint.value = recorder.avg_down_point || 10;
             
             // Populate Max Contracts
             const maxContracts = document.getElementById('createMaxContracts');
-            if (maxContracts) maxContracts.value = template.max_contracts || 0;
+            if (maxContracts) maxContracts.value = recorder.max_contracts || 0;
             
-            // Flash highlight on populated fields
-            document.querySelectorAll('#createInitialPositionSize, #createAddPositionSize, #createTpValue, #createSlAmount, #createMaxContracts').forEach(el => {
+            // Flash highlight on populated fields to show what changed
+            const fieldsToHighlight = [
+                '#createInitialPositionSize', '#createAddPositionSize', 
+                '#createTpValue', '#createTpTrim',
+                '#createSlAmount', '#createAvgDownAmount', '#createAvgDownPoint',
+                '#createMaxContracts'
+            ];
+            
+            fieldsToHighlight.forEach(selector => {
+                const el = document.querySelector(selector);
                 if (el) {
                     el.style.transition = 'background-color 0.3s ease';
                     el.style.backgroundColor = 'rgba(16, 185, 129, 0.3)';
@@ -1548,22 +1531,19 @@
                 }
             });
             
-            showToast(`Template "${template.name}" loaded! Customize settings as needed.`, 'success', 3000);
+            showToast(`Recorder "${recorder.name}" defaults loaded! Customize settings as needed.`, 'success', 3000);
         }
         
-        // Load templates on page load
-        loadStrategyTemplates();
-        
-        // Handle template selection
-        const templateSelect = document.getElementById('strategyTemplateSelect');
-        if (templateSelect) {
-            templateSelect.addEventListener('change', function() {
+        // Handle recorder selection - auto-populate settings
+        const recorderSelect = document.getElementById('recorderSelect');
+        if (recorderSelect) {
+            recorderSelect.addEventListener('change', function() {
                 if (this.value) {
-                    populateFormFromTemplate(this.value);
+                    loadRecorderDefaults(this.value);
                 } else {
-                    // Hide the alert if no template selected
-                    const templateAlert = document.getElementById('templateAlert');
-                    if (templateAlert) templateAlert.style.display = 'none';
+                    // Hide the alert if no recorder selected
+                    const recorderAlert = document.getElementById('recorderAlert');
+                    if (recorderAlert) recorderAlert.style.display = 'none';
                 }
             });
         }
