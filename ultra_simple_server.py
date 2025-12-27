@@ -2728,6 +2728,28 @@ def admin_delete_user(user_id):
         conn.close()
 
 
+@app.route('/debug-db-config')
+def debug_db_config():
+    """Debug endpoint to check DATABASE_URL configuration."""
+    db_url = os.getenv('DATABASE_URL', 'NOT SET')
+    if db_url != 'NOT SET':
+        # Mask the password for security
+        if '@' in db_url:
+            parts = db_url.split('@')
+            masked = parts[0].split(':')[0] + ':****@' + parts[1]
+        else:
+            masked = 'Invalid format'
+    else:
+        masked = 'NOT SET'
+    
+    return jsonify({
+        'database_url_set': db_url != 'NOT SET',
+        'database_url_masked': masked,
+        'starts_with_postgres': db_url.startswith('postgres') if db_url != 'NOT SET' else False,
+        'using_postgres': is_using_postgres(),
+        'db_url_internal': _db_url[:50] + '...' if _db_url else None
+    })
+
 @app.route('/health')
 def health():
     """Health check endpoint for load balancers and monitoring."""
