@@ -3583,30 +3583,35 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
             hit_type = None
             exit_price = None
             
-            # CRITICAL: DISABLE TP price polling - let broker TP limit order handle it
-            # On demo accounts, fill price differs from market price (demo simulates differently)
-            # Price polling sees market price (25421) vs TP (25356) and thinks TP hit
-            # But broker's TP limit hasn't actually filled yet
-            # Only check SL (stop orders need manual monitoring if not placed on broker)
+            # Check if this trade has broker TP order (tp_order_id set) - if so, let broker handle TP
+            has_broker_tp = bool(trade.get('tp_order_id'))
             
             if side == 'LONG':
-                logger.debug(f"📍 LONG check: price={current_price} vs SL={sl_price} (TP via broker order)")
+                logger.debug(f"📍 LONG check: price={current_price} vs TP={tp_price}, SL={sl_price} (broker_tp={has_broker_tp})")
                 
-                # TP: Let broker limit order handle - don't check price
-                # SL: Only check if SL is set (stop orders)
-                if sl_price and current_price <= sl_price:
+                # TP CHECK: Only if NO broker TP order (signal-only mode / Trade Manager style)
+                if tp_price and not has_broker_tp and current_price >= tp_price:
+                    hit_type = 'tp'
+                    exit_price = tp_price
+                    logger.info(f"🎯 TP HIT for LONG! {current_price} >= {tp_price}")
+                # SL CHECK: Always check SL via price (stops need manual monitoring)
+                elif sl_price and current_price <= sl_price:
                     hit_type = 'sl'
                     exit_price = sl_price
-                    logger.info(f"🛑 SL CONDITION MET for LONG! {current_price} <= {sl_price}")
+                    logger.info(f"🛑 SL HIT for LONG! {current_price} <= {sl_price}")
             else:  # SHORT
-                logger.debug(f"📍 SHORT check: price={current_price} vs SL={sl_price} (TP via broker order)")
+                logger.debug(f"📍 SHORT check: price={current_price} vs TP={tp_price}, SL={sl_price} (broker_tp={has_broker_tp})")
                 
-                # TP: Let broker limit order handle - don't check price
-                # SL: Only check if SL is set (stop orders)
-                if sl_price and current_price >= sl_price:
+                # TP CHECK: Only if NO broker TP order (signal-only mode / Trade Manager style)
+                if tp_price and not has_broker_tp and current_price <= tp_price:
+                    hit_type = 'tp'
+                    exit_price = tp_price
+                    logger.info(f"🎯 TP HIT for SHORT! {current_price} <= {tp_price}")
+                # SL CHECK: Always check SL via price
+                elif sl_price and current_price >= sl_price:
                     hit_type = 'sl'
                     exit_price = sl_price
-                    logger.info(f"🛑 SL CONDITION MET for SHORT! {current_price} >= {sl_price}")
+                    logger.info(f"🛑 SL HIT for SHORT! {current_price} >= {sl_price}")
             
             if hit_type and exit_price:
                 # TP/SL condition met via price monitoring
@@ -5514,17 +5519,20 @@ def receive_webhook(webhook_token):
         
         # Get TP/SL settings from recorder
         sl_enabled = recorder.get('sl_enabled', 0)
-        sl_amount = recorder.get('sl_amount', 0) or 0
+        sl_amount = recorder.get('sl_ticks', 0) or recorder.get('sl_amount', 0) or 0
         
-        # Parse TP targets (JSON array)
-        tp_targets_raw = recorder.get('tp_targets', '[]')
-        try:
-            tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
-        except:
-            tp_targets = []
+        # Get TP ticks - first try direct column, then tp_targets JSON
+        tp_ticks = recorder.get('tp_ticks', 0) or 0
+        if not tp_ticks:
+            # Fallback: Parse TP targets (JSON array) if direct column is empty
+            tp_targets_raw = recorder.get('tp_targets', '[]')
+            try:
+                tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
+                tp_ticks = tp_targets[0].get('value', 0) if tp_targets else 0
+            except:
+                tp_ticks = 0
         
-        # Get first TP target (primary)
-        tp_ticks = tp_targets[0].get('value', 0) if tp_targets else 0
+        logger.info(f"📊 Recorder TP/SL config: tp_ticks={tp_ticks}, sl_ticks={sl_amount}, sl_enabled={sl_enabled}")
         
         # Determine tick size and tick value for PnL calculation
         tick_size = get_tick_size(ticker) if ticker else 0.25
@@ -5777,29 +5785,45 @@ def receive_webhook(webhook_token):
                 }
                 logger.info(f"✅ BUY EXECUTED: {broker_result['broker_qty']} @ {broker_result['broker_avg']:.2f} | TP: {broker_result['tp_price']}")
             elif broker_result.get('error'):
-                logger.error(f"❌ BUY REJECTED: {broker_result['error']}")
-                trade_result = {'action': 'rejected', 'error': broker_result['error']}
-            else:
-                logger.warning(f"⚠️ BUY executed but no position confirmed")
-                trade_result = {'action': 'executed', 'side': 'LONG', 'warning': 'No position data'}
+                # Broker failed - fall through to signal-only tracking (Trade Manager style)
+                logger.warning(f"⚠️ Broker unavailable: {broker_result['error']} - using signal-only tracking")
+                broker_result = {'success': False, 'no_broker': True}
+            
+            # Check if we should do signal-only tracking (no broker or broker failed)
+            if broker_result.get('no_broker') or (not broker_result.get('success') and not broker_result.get('broker_avg')):
+                # SIGNAL-ONLY MODE (Trade Manager style) - record trade with internal TP/SL
+                logger.info(f"📝 Recording signal-only trade with internal TP/SL (Trade Manager style)")
                 
-                # BROKER-FIRST: Execute on broker with bracket order
-                broker_result = execute_live_trade_with_bracket(
-                    recorder_id=recorder_id,
-                    action='BUY',
-                    ticker=ticker,
-                    quantity=quantity,
-                    tp_ticks=tp_ticks,
-                    sl_ticks=int(sl_amount) if sl_enabled else None,
-                    is_dca=False
+                entry_price = current_price
+                calculated_tp, sl_price = calculate_tp_sl_prices(
+                    entry_price, 'LONG', tp_ticks, sl_amount if sl_enabled else 0, tick_size
                 )
                 
-                # CRITICAL: Only record trade if broker confirmed OR no broker linked
-                # If broker rejected (error), DO NOT record - prevents DB/broker mismatch
-                if broker_result.get('error'):
-                    logger.error(f"❌ LONG REJECTED by broker: {broker_result['error']} - NOT recording trade")
-                    trade_result = {'action': 'rejected', 'error': broker_result['error']}
-                elif broker_result.get('success') and broker_result.get('fill_price'):
+                # Create trade with TP/SL for internal monitoring (broker_managed_tp_sl = 0)
+                cursor.execute('''
+                    INSERT INTO recorded_trades
+                    (recorder_id, signal_id, ticker, action, side, entry_price, entry_time,
+                     quantity, status, tp_price, sl_price, broker_managed_tp_sl)
+                    VALUES (?, ?, ?, 'BUY', 'LONG', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, 0)
+                ''', (recorder_id, signal_id, ticker, entry_price, quantity, calculated_tp, sl_price))
+                
+                new_trade_id = cursor.lastrowid
+                
+                # Update position tracking
+                pos_id, is_new_pos, total_qty = update_recorder_position_helper(
+                    cursor, recorder_id, ticker, 'LONG', entry_price, quantity
+                )
+                
+                trade_result = {
+                    'action': 'opened', 'trade_id': new_trade_id, 'side': 'LONG',
+                    'entry_price': entry_price, 'quantity': quantity,
+                    'tp_price': calculated_tp, 'sl_price': sl_price,
+                    'position_id': pos_id, 'position_qty': total_qty,
+                    'broker_managed_tp_sl': False,
+                    'internal_tp_sl': True
+                }
+                logger.info(f"📈 LONG OPENED (signal-only) for '{recorder_name}': {ticker} @ {entry_price} x{quantity} | TP: {calculated_tp} | Internal TP/SL monitoring")
+            elif broker_result.get('success') and broker_result.get('fill_price'):
                     fill_price = broker_result['fill_price']
                     broker_managed = broker_result.get('bracket_managed', False)
                     tp_order_id = broker_result.get('tp_order_id')  # Check if TP was actually placed
@@ -5845,10 +5869,6 @@ def receive_webhook(webhook_token):
                         'broker_confirmed': True
                     }
                     logger.info(f"📈 LONG OPENED for '{recorder_name}': {ticker} @ {fill_price} x{quantity} | TP: {tp_price} | Broker-managed: {broker_managed}")
-                else:
-                    # No broker linked (success=True but no fill_price) - record for signal tracking only
-                    logger.info(f"📝 No broker linked - recording signal only (no position)")
-                    trade_result = {'action': 'signal_only', 'side': 'LONG'}
         
         elif normalized_action == 'SELL':
             # ============================================================
@@ -5888,11 +5908,44 @@ def receive_webhook(webhook_token):
                 }
                 logger.info(f"✅ SELL EXECUTED: {broker_result['broker_qty']} @ {broker_result['broker_avg']:.2f} | TP: {broker_result['tp_price']}")
             elif broker_result.get('error'):
-                logger.error(f"❌ SELL REJECTED: {broker_result['error']}")
-                trade_result = {'action': 'rejected', 'error': broker_result['error']}
-            else:
-                logger.warning(f"⚠️ SELL executed but no position confirmed")
-                trade_result = {'action': 'executed', 'side': 'SHORT', 'warning': 'No position data'}
+                # Broker failed - fall through to signal-only tracking (Trade Manager style)
+                logger.warning(f"⚠️ Broker unavailable: {broker_result['error']} - using signal-only tracking")
+                broker_result = {'success': False, 'no_broker': True}
+            
+            # Check if we should do signal-only tracking (no broker or broker failed)
+            if broker_result.get('no_broker') or (not broker_result.get('success') and not broker_result.get('broker_avg')):
+                # SIGNAL-ONLY MODE (Trade Manager style) - record trade with internal TP/SL
+                logger.info(f"📝 Recording signal-only trade with internal TP/SL (Trade Manager style)")
+                
+                entry_price = current_price
+                calculated_tp, sl_price = calculate_tp_sl_prices(
+                    entry_price, 'SHORT', tp_ticks, sl_amount if sl_enabled else 0, tick_size
+                )
+                
+                # Create trade with TP/SL for internal monitoring (broker_managed_tp_sl = 0)
+                cursor.execute('''
+                    INSERT INTO recorded_trades
+                    (recorder_id, signal_id, ticker, action, side, entry_price, entry_time,
+                     quantity, status, tp_price, sl_price, broker_managed_tp_sl)
+                    VALUES (?, ?, ?, 'SELL', 'SHORT', ?, CURRENT_TIMESTAMP, ?, 'open', ?, ?, 0)
+                ''', (recorder_id, signal_id, ticker, entry_price, quantity, calculated_tp, sl_price))
+                
+                new_trade_id = cursor.lastrowid
+                
+                # Update position tracking
+                pos_id, is_new_pos, total_qty = update_recorder_position_helper(
+                    cursor, recorder_id, ticker, 'SHORT', entry_price, quantity
+                )
+                
+                trade_result = {
+                    'action': 'opened', 'trade_id': new_trade_id, 'side': 'SHORT',
+                    'entry_price': entry_price, 'quantity': quantity,
+                    'tp_price': calculated_tp, 'sl_price': sl_price,
+                    'position_id': pos_id, 'position_qty': total_qty,
+                    'broker_managed_tp_sl': False,
+                    'internal_tp_sl': True
+                }
+                logger.info(f"📉 SHORT OPENED (signal-only) for '{recorder_name}': {ticker} @ {entry_price} x{quantity} | TP: {calculated_tp} | Internal TP/SL monitoring")
         
         conn.commit()
         
@@ -5929,7 +5982,7 @@ def receive_webhook(webhook_token):
             response['note'] = 'Simple alert - Recorder settings control sizing/risk'
             response['recorder_settings'] = {
                 'initial_position_size': recorder.get('initial_position_size'),
-                'tp_enabled': bool(tp_targets),
+                'tp_enabled': bool(tp_ticks),
                 'sl_enabled': bool(sl_enabled)
             }
         
