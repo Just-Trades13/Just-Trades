@@ -71,6 +71,299 @@ BATCH_SIZE = 50  # Process signals in batches for faster DB writes
 BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 
 # ============================================================================
+# 🚀 BROKER API QUEUE SYSTEM - Bulk requests, rate limit protection
+# ============================================================================
+# This system ensures we:
+# 1. Process broker API calls ONE at a time (serial, not parallel)
+# 2. Cache results to avoid duplicate calls
+# 3. Batch requests for multiple accounts into fewer calls
+# 4. Stay under rate limits even with many users
+
+class BrokerAPIQueue:
+    """
+    Centralized queue for all broker API calls.
+    Processes requests serially to avoid rate limiting.
+    Caches results to reduce duplicate calls.
+    """
+    
+    def __init__(self, cache_ttl: int = 10):
+        self._queue = Queue()
+        self._cache = {}  # {cache_key: {'data': ..., 'expires': timestamp}}
+        self._cache_ttl = cache_ttl  # Cache time-to-live in seconds
+        self._cache_lock = threading.Lock()
+        self._processing = False
+        self._last_call_time = 0
+        self._min_call_interval = 0.5  # Minimum seconds between API calls
+        self._rate_limit_until = 0  # Timestamp until which we're rate limited
+        self._stats = {
+            'total_requests': 0,
+            'cache_hits': 0,
+            'api_calls': 0,
+            'rate_limits': 0
+        }
+        
+    def get_cached(self, cache_key: str):
+        """Get cached data if not expired."""
+        with self._cache_lock:
+            if cache_key in self._cache:
+                entry = self._cache[cache_key]
+                if time.time() < entry['expires']:
+                    self._stats['cache_hits'] += 1
+                    return entry['data']
+                else:
+                    del self._cache[cache_key]
+        return None
+    
+    def set_cached(self, cache_key: str, data, ttl: int = None):
+        """Cache data with TTL."""
+        with self._cache_lock:
+            self._cache[cache_key] = {
+                'data': data,
+                'expires': time.time() + (ttl or self._cache_ttl)
+            }
+    
+    def clear_cache(self, pattern: str = None):
+        """Clear cache entries matching pattern (or all if None)."""
+        with self._cache_lock:
+            if pattern:
+                keys_to_delete = [k for k in self._cache if pattern in k]
+                for k in keys_to_delete:
+                    del self._cache[k]
+            else:
+                self._cache.clear()
+    
+    def is_rate_limited(self) -> bool:
+        """Check if we're in a rate limit cooldown."""
+        return time.time() < self._rate_limit_until
+    
+    def set_rate_limited(self, cooldown_seconds: int = 60):
+        """Set rate limit cooldown."""
+        self._rate_limit_until = time.time() + cooldown_seconds
+        self._stats['rate_limits'] += 1
+    
+    def wait_for_rate_limit(self):
+        """Wait until rate limit clears, with respect to min interval."""
+        # Wait for rate limit cooldown
+        if self.is_rate_limited():
+            wait_time = self._rate_limit_until - time.time()
+            if wait_time > 0:
+                time.sleep(wait_time)
+        
+        # Also respect minimum call interval
+        elapsed = time.time() - self._last_call_time
+        if elapsed < self._min_call_interval:
+            time.sleep(self._min_call_interval - elapsed)
+        
+        self._last_call_time = time.time()
+    
+    def get_stats(self) -> dict:
+        """Get queue statistics."""
+        return {
+            **self._stats,
+            'cache_size': len(self._cache),
+            'cache_hit_rate': (
+                round(self._stats['cache_hits'] / max(1, self._stats['total_requests']) * 100, 1)
+            )
+        }
+
+# Global broker API queue instance
+broker_api_queue = BrokerAPIQueue(cache_ttl=10)
+
+def bulk_fetch_account_data(account_ids: list = None) -> dict:
+    """
+    Fetch PnL and position data for ALL accounts in ONE batch.
+    This is the key function for reducing API calls.
+    
+    Returns: {
+        'accounts': {account_id: {pnl_data}},
+        'positions': [position_list],
+        'timestamp': fetch_time
+    }
+    """
+    import requests
+    
+    cache_key = f"bulk_accounts_{','.join(map(str, sorted(account_ids or [])))}"
+    
+    # Check cache first
+    cached = broker_api_queue.get_cached(cache_key)
+    if cached:
+        return cached
+    
+    broker_api_queue._stats['total_requests'] += 1
+    
+    # Wait for rate limit
+    broker_api_queue.wait_for_rate_limit()
+    
+    result = {
+        'accounts': {},
+        'positions': [],
+        'timestamp': time.time(),
+        'errors': []
+    }
+    
+    try:
+        # Get database connection to fetch account tokens
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if account_ids:
+            placeholders = ','.join('?' * len(account_ids))
+            cursor.execute(f'''
+                SELECT id, name, tradovate_token, tradovate_accounts, environment, user_id
+                FROM accounts 
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+                AND id IN ({placeholders})
+            ''', account_ids)
+        else:
+            cursor.execute('''
+                SELECT id, name, tradovate_token, tradovate_accounts, environment, user_id
+                FROM accounts 
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+            ''')
+        
+        all_accounts = cursor.fetchall()
+        conn.close()
+        
+        if not all_accounts:
+            broker_api_queue.set_cached(cache_key, result)
+            return result
+        
+        # Process each account (but rate-limit between them)
+        for account in all_accounts:
+            account_id = account['id']
+            
+            # Get valid token
+            token = get_valid_tradovate_token(account_id)
+            if not token:
+                result['errors'].append(f"No valid token for account {account_id}")
+                continue
+            
+            env = account['environment'] or 'demo'
+            base_url = 'https://demo.tradovateapi.com/v1' if env == 'demo' else 'https://live.tradovateapi.com/v1'
+            
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Parse subaccounts
+            tradovate_accounts = []
+            try:
+                if account['tradovate_accounts']:
+                    tradovate_accounts = json.loads(account['tradovate_accounts'])
+            except:
+                pass
+            
+            account_pnl = {
+                'name': account['name'],
+                'user_id': account['user_id'],
+                'subaccounts': {}
+            }
+            
+            # Fetch data for all subaccounts under this account
+            for ta in tradovate_accounts:
+                sub_id = ta.get('id')
+                sub_name = ta.get('name', str(sub_id))
+                is_demo = ta.get('is_demo', True)
+                
+                sub_base_url = 'https://demo.tradovateapi.com/v1' if is_demo else 'https://live.tradovateapi.com/v1'
+                
+                try:
+                    # Brief pause between subaccount calls
+                    time.sleep(0.1)
+                    
+                    # Fetch cash balance
+                    cash_resp = requests.get(
+                        f"{sub_base_url}/cashBalance/getCashBalanceSnapshot",
+                        params={'accountId': sub_id},
+                        headers=headers,
+                        timeout=10
+                    )
+                    
+                    if cash_resp.status_code == 429:
+                        broker_api_queue.set_rate_limited(60)
+                        result['errors'].append(f"Rate limited on account {sub_id}")
+                        continue
+                    
+                    broker_api_queue._stats['api_calls'] += 1
+                    
+                    cash_data = cash_resp.json() if cash_resp.status_code == 200 else {}
+                    
+                    # Fetch positions
+                    time.sleep(0.1)
+                    pos_resp = requests.get(
+                        f"{sub_base_url}/position/list",
+                        headers=headers,
+                        timeout=10
+                    )
+                    
+                    broker_api_queue._stats['api_calls'] += 1
+                    
+                    positions = pos_resp.json() if pos_resp.status_code == 200 else []
+                    
+                    # Store subaccount data
+                    account_pnl['subaccounts'][sub_id] = {
+                        'name': sub_name,
+                        'is_demo': is_demo,
+                        'cash_balance': cash_data,
+                        'realized_pnl': cash_data.get('realizedPnL', 0),
+                        'unrealized_pnl': cash_data.get('openPnL', 0),
+                        'total_pnl': cash_data.get('realizedPnL', 0) + cash_data.get('openPnL', 0)
+                    }
+                    
+                    # Add positions to global list
+                    for pos in positions:
+                        if pos.get('netPos', 0) != 0:
+                            result['positions'].append({
+                                'account_id': account_id,
+                                'subaccount_id': sub_id,
+                                'subaccount_name': sub_name,
+                                **pos
+                            })
+                    
+                except requests.exceptions.Timeout:
+                    result['errors'].append(f"Timeout on subaccount {sub_id}")
+                except Exception as e:
+                    result['errors'].append(f"Error on subaccount {sub_id}: {str(e)}")
+            
+            result['accounts'][account_id] = account_pnl
+        
+        # Cache the result
+        broker_api_queue.set_cached(cache_key, result, ttl=10)
+        
+    except Exception as e:
+        result['errors'].append(f"Bulk fetch error: {str(e)}")
+    
+    return result
+
+def get_cached_account_pnl(account_id: int = None) -> dict:
+    """
+    Get account PnL from cache or trigger bulk fetch.
+    This is the function other parts of the code should call.
+    """
+    # First, try to get from bulk cache
+    bulk_data = broker_api_queue.get_cached("bulk_accounts_")
+    
+    if not bulk_data:
+        # No cache, do a bulk fetch
+        bulk_data = bulk_fetch_account_data()
+    
+    if account_id:
+        return bulk_data.get('accounts', {}).get(account_id, {})
+    
+    return bulk_data
+
+def get_cached_positions() -> list:
+    """Get all positions from cache or trigger bulk fetch."""
+    bulk_data = broker_api_queue.get_cached("bulk_accounts_")
+    
+    if not bulk_data:
+        bulk_data = bulk_fetch_account_data()
+    
+    return bulk_data.get('positions', [])
+
+# ============================================================================
 # 🛡️ BULLETPROOF AUTH TRACKING - Track accounts that need OAuth re-authentication
 # ============================================================================
 _ACCOUNTS_NEED_REAUTH = set()  # Set of account IDs that need manual OAuth re-auth
@@ -2845,17 +3138,36 @@ def health():
     # Check async utils
     async_status = "available" if ASYNC_UTILS_AVAILABLE else "not loaded"
     
+    # Get broker API queue stats
+    queue_stats = broker_api_queue.get_stats()
+    
     status = {
         "status": "healthy" if db_status == "healthy" else "degraded",
         "database": db_status,
         "database_type": db_type,
         "cache": cache_status,
         "async_utils": async_status,
+        "broker_api_queue": queue_stats,
         "timestamp": datetime.now().isoformat(),
-        "version": "2025-12-27-neon-migration"
+        "version": "2025-12-29-bulk-api"
     }
     
     return jsonify(status), 200 if db_status == "healthy" else 503
+
+@app.route('/api/broker-queue/stats')
+def broker_queue_stats():
+    """Get broker API queue statistics - useful for monitoring rate limit status."""
+    stats = broker_api_queue.get_stats()
+    stats['rate_limited'] = broker_api_queue.is_rate_limited()
+    if broker_api_queue.is_rate_limited():
+        stats['rate_limit_expires_in'] = max(0, broker_api_queue._rate_limit_until - time.time())
+    return jsonify(stats)
+
+@app.route('/api/broker-queue/clear-cache', methods=['POST'])
+def broker_queue_clear_cache():
+    """Clear broker API cache - useful after account changes."""
+    broker_api_queue.clear_cache()
+    return jsonify({'success': True, 'message': 'Cache cleared'})
 
 
 @app.route('/api/accounts/auth-status')
