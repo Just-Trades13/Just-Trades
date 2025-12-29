@@ -5531,9 +5531,15 @@ def receive_webhook(webhook_token):
             current_price = webhook_price
             logger.warning(f"⚠️ Could not fetch live price for {ticker}, using webhook price: {webhook_price}")
         
-        # Parse quantity from webhook - log raw values for debugging
-        raw_quantity = data.get('quantity', data.get('qty', 1))
-        quantity = int(raw_quantity) if raw_quantity else (int(position_size) if position_size else recorder.get('initial_position_size', 1))
+        # Parse quantity from webhook - use recorder's initial_position_size if not specified
+        raw_quantity = data.get('quantity', data.get('qty'))  # Don't default to 1
+        if raw_quantity:
+            quantity = int(raw_quantity)
+        elif position_size:
+            quantity = int(position_size)
+        else:
+            # Use recorder's initial_position_size setting
+            quantity = int(recorder.get('initial_position_size', 1))
         
         # Detailed logging for quantity tracking
         logger.info(f"🎯 Processing webhook for '{recorder_name}': qty={quantity} (raw from webhook: {raw_quantity}, position_size: {position_size}, data keys: {list(data.keys())})")
