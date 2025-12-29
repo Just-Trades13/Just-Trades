@@ -3809,6 +3809,27 @@ def reconcile_positions_with_broker():
                             
                             if trade_check:
                                 from datetime import datetime as dt
+                                
+                                # CHECK: Is this a signal-only trade? If so, DON'T sync with broker
+                                # Signal-only trades (broker_managed_tp_sl = 0) should be closed by TP/SL polling, not broker sync
+                                conn_signal_check = get_db_connection()
+                                cursor_signal_check = conn_signal_check.cursor()
+                                cursor_signal_check.execute('''
+                                    SELECT broker_managed_tp_sl, tp_order_id FROM recorded_trades 
+                                    WHERE recorder_id = ? AND status = 'open' LIMIT 1
+                                ''', (recorder_id,))
+                                signal_check = cursor_signal_check.fetchone()
+                                conn_signal_check.close()
+                                
+                                if signal_check:
+                                    broker_managed = signal_check['broker_managed_tp_sl'] or 0
+                                    has_broker_tp = bool(signal_check['tp_order_id'])
+                                    
+                                    # SKIP BROKER SYNC for signal-only trades (Trade Manager style)
+                                    if broker_managed == 0 and not has_broker_tp:
+                                        logger.debug(f"📊 SYNC SKIP: Signal-only trade for {ticker} - letting TP/SL polling handle close")
+                                        continue
+                                
                                 try:
                                     updated_str = trade_check['updated_at'] or trade_check['entry_time']
                                     if updated_str:
