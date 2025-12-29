@@ -14340,7 +14340,7 @@ def api_dashboard_chart_data():
             WHERE rt.status = 'closed' {date_filter} {recorder_filter} {symbol_filter}
             GROUP BY DATE(rt.exit_time)
             ORDER BY DATE(rt.exit_time) ASC
-        ''', params if params else None)
+        ''', params if params else ())
         
         # Convert rows to dicts
         columns = [desc[0] for desc in cursor.description]
