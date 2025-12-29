@@ -53,6 +53,12 @@ from flask import Flask, request, jsonify, render_template
 # ============================================================================
 import os
 
+# TEST MODE: Signal-based tracking (disable broker sync when enabled)
+# Set via environment variable: SIGNAL_BASED_TEST=true
+SIGNAL_BASED_TEST_MODE = os.getenv('SIGNAL_BASED_TEST', 'false').lower() == 'true'
+if SIGNAL_BASED_TEST_MODE:
+    print("🧪 TEST MODE ENABLED: Signal-based tracking (broker sync disabled)")
+
 SERVICE_PORT = 8083
 DATABASE_PATH = 'just_trades.db'
 LOG_LEVEL = logging.INFO
@@ -5370,7 +5376,8 @@ def receive_webhook(webhook_token):
         # which has comprehensive logic to cancel old TPs without cancelling new ones.
         # We don't cancel here to avoid race conditions with newly placed TP orders.
         
-        if ticker:
+        # TEST MODE: Skip broker sync for signal-based tracking test
+        if ticker and not SIGNAL_BASED_TEST_MODE:
             try:
                 sync_result = sync_position_with_broker(recorder_id, ticker)
                 if sync_result.get('cleared'):
@@ -5380,6 +5387,8 @@ def receive_webhook(webhook_token):
             except Exception as e:
                 # If sync fails (e.g., rate limited), continue anyway - don't block the trade
                 logger.warning(f"⚠️ Sync failed (continuing anyway): {e}")
+        elif SIGNAL_BASED_TEST_MODE:
+            logger.debug(f"🧪 TEST MODE: Skipping broker sync for {ticker}")
         
         # Parse incoming data (support both JSON and form data)
         if request.is_json:

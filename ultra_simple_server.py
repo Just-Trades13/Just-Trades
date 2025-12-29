@@ -7160,6 +7160,16 @@ def process_webhook_directly(webhook_token):
     - Take Profit
     """
     from datetime import datetime, timedelta, timezone
+    import logging
+    
+    # CRITICAL: Set up logger FIRST, before anything else
+    # Use logging module directly - this can NEVER fail
+    _logger = logging.getLogger('ultra_simple_server.webhook')
+    if not _logger.handlers:
+        _logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        _logger.addHandler(handler)
     
     try:
         # Import the heavy-duty trading functions from recorder_service
@@ -7189,7 +7199,7 @@ def process_webhook_directly(webhook_token):
         recorder_row = cursor.fetchone()
         
         if not recorder_row:
-            logger.warning(f"Webhook received for unknown token: {webhook_token[:8]}...")
+            _logger.warning(f"Webhook received for unknown token: {webhook_token[:8]}...")
             conn.close()
             return jsonify({'success': False, 'error': 'Invalid webhook token'}), 404
         
@@ -7199,7 +7209,7 @@ def process_webhook_directly(webhook_token):
         
         # Check if recorder is enabled - if disabled, reject the signal
         if not recorder.get('recording_enabled', 1):
-            logger.info(f"⚠️ Webhook BLOCKED for '{recorder_name}' - recorder is DISABLED")
+            _logger.info(f"⚠️ Webhook BLOCKED for '{recorder_name}' - recorder is DISABLED")
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder is disabled', 'blocked': True}), 200
         
@@ -7215,7 +7225,7 @@ def process_webhook_directly(webhook_token):
             conn.close()
             return jsonify({'success': False, 'error': 'No data received'}), 400
         
-        logger.info(f"📨 Webhook received for recorder '{recorder_name}': {data}")
+        _logger.info(f"📨 Webhook received for recorder '{recorder_name}': {data}")
         
         # ============================================================
         # UNIVERSAL MESSAGE PARSING - Handle ANY webhook format
@@ -7266,33 +7276,33 @@ def process_webhook_directly(webhook_token):
         # Priority 1: market_position tells us the FINAL state (MOST RELIABLE)
         if market_position == 'flat':
             action = 'close'
-            logger.info(f"🧠 PARSE: market_position=flat → CLOSE")
+            _logger.info(f"🧠 PARSE: market_position=flat → CLOSE")
         elif market_position == 'long':
             action = 'buy'
-            logger.info(f"🧠 PARSE: market_position=long → BUY")
+            _logger.info(f"🧠 PARSE: market_position=long → BUY")
         elif market_position == 'short':
             action = 'short'
-            logger.info(f"🧠 PARSE: market_position=short → SHORT")
+            _logger.info(f"🧠 PARSE: market_position=short → SHORT")
         
         # Priority 2: position_size change detection (strategy mode)
         elif pos_size is not None and prev_pos_size is not None:
             if pos_size == 0 and prev_pos_size > 0:
                 action = 'close'
-                logger.info(f"🧠 PARSE: position {prev_pos_size}→0 → CLOSE")
+                _logger.info(f"🧠 PARSE: position {prev_pos_size}→0 → CLOSE")
             elif pos_size > prev_pos_size:
                 # Position increased - use action field or default to buy
                 if not action or action not in ['buy', 'sell', 'long', 'short']:
                     action = 'buy'
-                logger.info(f"🧠 PARSE: position {prev_pos_size}→{pos_size} → {action.upper()}")
+                _logger.info(f"🧠 PARSE: position {prev_pos_size}→{pos_size} → {action.upper()}")
             elif pos_size < prev_pos_size and pos_size > 0:
                 # Position decreased but not flat - partial close
                 action = 'close'
-                logger.info(f"🧠 PARSE: position {prev_pos_size}→{pos_size} (partial) → CLOSE")
+                _logger.info(f"🧠 PARSE: position {prev_pos_size}→{pos_size} (partial) → CLOSE")
         
         # Priority 3: position_size alone with no action
         elif pos_size is not None and pos_size == 0 and not action:
             action = 'close'
-            logger.info(f"🧠 PARSE: position_size=0 → CLOSE")
+            _logger.info(f"🧠 PARSE: position_size=0 → CLOSE")
         
         # Priority 4: Normalize action synonyms
         if action in ['long']:
@@ -7304,19 +7314,19 @@ def process_webhook_directly(webhook_token):
             action = 'close'
         
         if original_action and original_action != action:
-            logger.info(f"🧠 PARSE: Normalized '{original_action}' → '{action}'")
+            _logger.info(f"🧠 PARSE: Normalized '{original_action}' → '{action}'")
         
         # Validate action - allow empty if we couldn't determine from context
         valid_actions = ['buy', 'sell', 'long', 'short', 'close', 'flat', 'exit']
         if not action:
             # If we still have no action, try to use the raw action from TradingView
             # TradingView {{strategy.order.action}} returns "buy" or "sell"
-            logger.warning(f"⚠️ No action determined for {recorder_name}, data: {data}")
+            _logger.warning(f"⚠️ No action determined for {recorder_name}, data: {data}")
             conn.close()
             return jsonify({'success': False, 'error': 'Could not determine action from message'}), 400
         
         if action not in valid_actions:
-            logger.warning(f"Invalid action '{action}' for recorder {recorder_name}")
+            _logger.warning(f"Invalid action '{action}' for recorder {recorder_name}")
             conn.close()
             return jsonify({'success': False, 'error': f'Invalid action: {action}'}), 400
         
@@ -7324,7 +7334,7 @@ def process_webhook_directly(webhook_token):
         # SMART CLOSE: Validates close makes sense before executing
         # Handles multiple strategies on same ticker correctly
         if market_position and market_position.lower() == 'flat':
-            logger.info(f"🔄 FLAT signal for {recorder_name} - validating close order")
+            _logger.info(f"🔄 FLAT signal for {recorder_name} - validating close order")
             
             # TradingView tells us what IT wants to do
             tv_action = action.upper()  # 'BUY' or 'SELL' from TradingView
@@ -7348,7 +7358,7 @@ def process_webhook_directly(webhook_token):
             broker_pos = get_broker_position_for_recorder(recorder_id, contract_symbol)
             broker_qty = broker_pos.get('quantity', 0) if broker_pos else 0  # positive=LONG, negative=SHORT
             
-            logger.info(f"📊 {recorder_name} FLAT check: TV wants {tv_action} {tv_qty}, broker net={broker_qty}")
+            _logger.info(f"📊 {recorder_name} FLAT check: TV wants {tv_action} {tv_qty}, broker net={broker_qty}")
             
             # VALIDATION: Does this close make sense?
             # BUY closes SHORT (should only execute if broker has SHORT/negative position)
@@ -7356,7 +7366,7 @@ def process_webhook_directly(webhook_token):
             
             if broker_qty == 0:
                 # Broker is completely flat - skip to prevent orphan
-                logger.info(f"⚠️ FLAT signal for {recorder_name} - broker is FLAT, skipping (prevents orphan)")
+                _logger.info(f"⚠️ FLAT signal for {recorder_name} - broker is FLAT, skipping (prevents orphan)")
                 conn.close()
                 return jsonify({'success': True, 'action': 'skip', 'message': 'Broker already flat - no position to close'})
             
@@ -7364,7 +7374,7 @@ def process_webhook_directly(webhook_token):
                 # TradingView wants to BUY to close (was SHORT)
                 if broker_qty > 0:
                     # Broker is LONG - BUY would INCREASE position, not close! Skip.
-                    logger.info(f"⚠️ FLAT signal {recorder_name}: TV says BUY but broker is LONG {broker_qty}, skipping (would increase position)")
+                    _logger.info(f"⚠️ FLAT signal {recorder_name}: TV says BUY but broker is LONG {broker_qty}, skipping (would increase position)")
                     conn.close()
                     return jsonify({'success': True, 'action': 'skip', 'message': 'Close direction mismatch - broker is LONG, cannot BUY to close'})
                 # Broker is SHORT - BUY will reduce/close. Use TV quantity but cap to broker's position
@@ -7375,14 +7385,14 @@ def process_webhook_directly(webhook_token):
                 # TradingView wants to SELL to close (was LONG)
                 if broker_qty < 0:
                     # Broker is SHORT - SELL would INCREASE position, not close! Skip.
-                    logger.info(f"⚠️ FLAT signal {recorder_name}: TV says SELL but broker is SHORT {broker_qty}, skipping (would increase position)")
+                    _logger.info(f"⚠️ FLAT signal {recorder_name}: TV says SELL but broker is SHORT {broker_qty}, skipping (would increase position)")
                     conn.close()
                     return jsonify({'success': True, 'action': 'skip', 'message': 'Close direction mismatch - broker is SHORT, cannot SELL to close'})
                 # Broker is LONG - SELL will reduce/close. Use TV quantity but cap to broker's position
                 close_qty = min(tv_qty, broker_qty)
                 close_action = 'SELL'
             
-            logger.info(f"✅ FLAT validated for {recorder_name}: executing {close_action} {close_qty} (TV requested {tv_qty})")
+            _logger.info(f"✅ FLAT validated for {recorder_name}: executing {close_action} {close_qty} (TV requested {tv_qty})")
             
             result = execute_trade_simple(
                 recorder_id=recorder_id,
@@ -7392,7 +7402,7 @@ def process_webhook_directly(webhook_token):
                 tp_ticks=0  # No TP - this is a close
             )
             
-            logger.info(f"✅ CLOSE executed for {recorder_name}: {result}")
+            _logger.info(f"✅ CLOSE executed for {recorder_name}: {result}")
             conn.close()
             return jsonify({'success': True, 'action': 'close', 'result': result})
         
@@ -7405,7 +7415,7 @@ def process_webhook_directly(webhook_token):
             trade_action = 'SELL'
         elif action in ['close', 'flat', 'exit']:
             # Close signals bypass filters - update open trades to closed
-            logger.info(f"🔄 CLOSE signal received for {recorder_name}")
+            _logger.info(f"🔄 CLOSE signal received for {recorder_name}")
             
             # Get current price
             close_price = float(price) if price else 0
@@ -7446,9 +7456,9 @@ def process_webhook_directly(webhook_token):
                     ''', (close_price, pnl, pnl_ticks, trade_id))
                     
                     conn.commit()
-                    logger.info(f"📊 Trade #{trade_id} closed: {trade_side} {ticker} @ {entry_price} → {close_price} | PnL: ${pnl:.2f}")
+                    _logger.info(f"📊 Trade #{trade_id} closed: {trade_side} {ticker} @ {entry_price} → {close_price} | PnL: ${pnl:.2f}")
             except Exception as e:
-                logger.warning(f"⚠️ Could not update trade record: {e}")
+                _logger.warning(f"⚠️ Could not update trade record: {e}")
             
             conn.close()
             return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed'})
@@ -7468,14 +7478,14 @@ def process_webhook_directly(webhook_token):
         direction_filter = recorder.get('direction_filter', '')
         if direction_filter:
             if direction_filter.lower() == 'long only' and side != 'LONG':
-                logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Long Only)")
+                _logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Long Only)")
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Direction filter: Long Only (received {side})'}), 200
             elif direction_filter.lower() == 'short only' and side != 'SHORT':
-                logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Short Only)")
+                _logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Short Only)")
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Direction filter: Short Only (received {side})'}), 200
-            logger.info(f"✅ Direction filter passed: {direction_filter}")
+            _logger.info(f"✅ Direction filter passed: {direction_filter}")
         
         # --- FILTER 2: Time Filters (Trading Windows) ---
         def parse_time(time_str):
@@ -7522,14 +7532,14 @@ def process_webhook_directly(webhook_token):
             in_window_2 = is_time_in_window(now, time_filter_2_start, time_filter_2_stop) if has_time_filter_2 else False
             
             if not in_window_1 and not in_window_2:
-                logger.warning(f"🚫 [{recorder_name}] Time filter BLOCKED: {now.strftime('%I:%M %p')} not in trading window")
+                _logger.warning(f"🚫 [{recorder_name}] Time filter BLOCKED: {now.strftime('%I:%M %p')} not in trading window")
                 if has_time_filter_1:
-                    logger.warning(f"   Window 1 (enabled): {time_filter_1_start} - {time_filter_1_stop}")
+                    _logger.warning(f"   Window 1 (enabled): {time_filter_1_start} - {time_filter_1_stop}")
                 if has_time_filter_2:
-                    logger.warning(f"   Window 2 (enabled): {time_filter_2_start} - {time_filter_2_stop}")
+                    _logger.warning(f"   Window 2 (enabled): {time_filter_2_start} - {time_filter_2_stop}")
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Outside trading hours ({now.strftime("%I:%M %p")})'}), 200
-            logger.info(f"✅ Time filter passed: {now.strftime('%I:%M %p')} in window")
+            _logger.info(f"✅ Time filter passed: {now.strftime('%I:%M %p')} in window")
         
         # --- FILTER 3: Signal Cooldown ---
         signal_cooldown = int(recorder.get('signal_cooldown', 0) or 0)
@@ -7546,10 +7556,10 @@ def process_webhook_directly(webhook_token):
                 ''', (recorder_id, f'-{signal_cooldown} seconds'))
             last_signal = cursor.fetchone()
             if last_signal and last_signal[0]:
-                logger.warning(f"🚫 [{recorder_name}] Cooldown BLOCKED: Last signal was within {signal_cooldown}s")
+                _logger.warning(f"🚫 [{recorder_name}] Cooldown BLOCKED: Last signal was within {signal_cooldown}s")
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Signal cooldown ({signal_cooldown}s)'}), 200
-            logger.info(f"✅ Signal cooldown passed: {signal_cooldown}s")
+            _logger.info(f"✅ Signal cooldown passed: {signal_cooldown}s")
         
         # --- FILTER 4: Max Signals Per Session ---
         max_signals = int(recorder.get('max_signals_per_session', 0) or 0)
@@ -7567,10 +7577,10 @@ def process_webhook_directly(webhook_token):
                 ''', (recorder_id,))
             signal_count = cursor.fetchone()[0] or 0
             if signal_count >= max_signals:
-                logger.warning(f"🚫 [{recorder_name}] Max signals BLOCKED: {signal_count}/{max_signals} signals today")
+                _logger.warning(f"🚫 [{recorder_name}] Max signals BLOCKED: {signal_count}/{max_signals} signals today")
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Max signals reached ({signal_count}/{max_signals})'}), 200
-            logger.info(f"✅ Max signals passed: {signal_count}/{max_signals}")
+            _logger.info(f"✅ Max signals passed: {signal_count}/{max_signals}")
         
         # --- FILTER 5: Max Daily Loss ---
         max_daily_loss = float(recorder.get('max_daily_loss', 0) or 0)
@@ -7588,15 +7598,15 @@ def process_webhook_directly(webhook_token):
                 ''', (recorder_id,))
             daily_pnl = cursor.fetchone()[0] or 0
             if daily_pnl <= -max_daily_loss:
-                logger.warning(f"🚫 [{recorder_name}] Max daily loss BLOCKED: ${daily_pnl:.2f} (limit: -${max_daily_loss})")
+                _logger.warning(f"🚫 [{recorder_name}] Max daily loss BLOCKED: ${daily_pnl:.2f} (limit: -${max_daily_loss})")
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Max daily loss hit (${daily_pnl:.2f})'}), 200
-            logger.info(f"✅ Max daily loss passed: ${daily_pnl:.2f} / -${max_daily_loss}")
+            _logger.info(f"✅ Max daily loss passed: ${daily_pnl:.2f} / -${max_daily_loss}")
         
         # --- FILTER 6: Max Contracts Per Trade ---
         max_contracts = int(recorder.get('max_contracts_per_trade', 0) or 0)
         if max_contracts > 0 and quantity > max_contracts:
-            logger.info(f"📊 [{recorder_name}] Quantity capped: {quantity} → {max_contracts} (max_contracts_per_trade)")
+            _logger.info(f"📊 [{recorder_name}] Quantity capped: {quantity} → {max_contracts} (max_contracts_per_trade)")
             quantity = max_contracts
         
         # --- FILTER 7: Option Premium Filter (for options strategies) ---
@@ -7610,11 +7620,11 @@ def process_webhook_directly(webhook_token):
                 signal_premium = 0
             
             if signal_premium > 0 and signal_premium < option_premium_filter:
-                logger.warning(f"🚫 [{recorder_name}] Option premium filter BLOCKED: ${signal_premium} < ${option_premium_filter}")
+                _logger.warning(f"🚫 [{recorder_name}] Option premium filter BLOCKED: ${signal_premium} < ${option_premium_filter}")
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Premium ${signal_premium} below minimum ${option_premium_filter}'}), 200
             elif signal_premium >= option_premium_filter:
-                logger.info(f"✅ Option premium filter passed: ${signal_premium} >= ${option_premium_filter}")
+                _logger.info(f"✅ Option premium filter passed: ${signal_premium} >= ${option_premium_filter}")
         
         # --- FILTER 8: Auto Flat After Cutoff ---
         auto_flat_after_cutoff = recorder.get('auto_flat_after_cutoff', False)
@@ -7638,10 +7648,10 @@ def process_webhook_directly(webhook_token):
                     open_positions = cursor.fetchall()
                     
                     if open_positions:
-                        logger.info(f"⏰ [{recorder_name}] Auto-flat triggered: Past cutoff time {time_filter_1_stop or time_filter_2_stop}")
+                        _logger.info(f"⏰ [{recorder_name}] Auto-flat triggered: Past cutoff time {time_filter_1_stop or time_filter_2_stop}")
                         # Don't block the signal if it's a close/flatten - allow it through
                         if action.upper() not in ['CLOSE', 'FLATTEN', 'EXIT', 'TP_HIT', 'SL_HIT']:
-                            logger.warning(f"🚫 [{recorder_name}] Auto-flat BLOCKING new entries after cutoff - only exits allowed")
+                            _logger.warning(f"🚫 [{recorder_name}] Auto-flat BLOCKING new entries after cutoff - only exits allowed")
                             conn.close()
                             return jsonify({'success': False, 'blocked': True, 'reason': f'Past cutoff time - only exits allowed'}), 200
         
@@ -7654,7 +7664,7 @@ def process_webhook_directly(webhook_token):
             signal_number = total_signals + 1  # This will be the Nth signal
             
             if signal_number % add_delay != 0:
-                logger.warning(f"🚫 [{recorder_name}] Signal delay BLOCKED: Signal #{signal_number} (executing every {add_delay})")
+                _logger.warning(f"🚫 [{recorder_name}] Signal delay BLOCKED: Signal #{signal_number} (executing every {add_delay})")
                 # Still record the signal but don't execute
                 # For PostgreSQL: created_at has DEFAULT, store quantity in raw_signal as JSON
                 if is_postgres:
@@ -7673,7 +7683,7 @@ def process_webhook_directly(webhook_token):
                 conn.commit()
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Signal delay ({signal_number} mod {add_delay} != 0)'}), 200
-            logger.info(f"✅ Signal delay passed: #{signal_number} (every {add_delay})")
+            _logger.info(f"✅ Signal delay passed: #{signal_number} (every {add_delay})")
         
         # ============================================================
         # 📊 RECORD THE SIGNAL (after filters pass)
@@ -7695,7 +7705,7 @@ def process_webhook_directly(webhook_token):
                 ''', (recorder_id, action, ticker, price))
             conn.commit()
         except Exception as e:
-            logger.warning(f"Could not record signal: {e}")
+            _logger.warning(f"Could not record signal: {e}")
         
         # ============================================================
         # 📈 GET RISK SETTINGS
@@ -7706,15 +7716,17 @@ def process_webhook_directly(webhook_token):
             try:
                 sync_result = sync_position_with_broker(recorder_id, ticker)
                 if sync_result.get('cleared'):
-                    logger.info(f"🔄 Cleared database position - broker has no position for {ticker}")
+                    _logger.info(f"🔄 Cleared database position - broker has no position for {ticker}")
                 elif sync_result.get('synced'):
-                    logger.info(f"🔄 Synced database with broker position for {ticker}")
+                    _logger.info(f"🔄 Synced database with broker position for {ticker}")
             except Exception as e:
-                logger.warning(f"⚠️ Sync failed (continuing anyway): {e}")
+                _logger.warning(f"⚠️ Sync failed (continuing anyway): {e}")
         
-        # Get LIVE market price for accurate TP/SL calculation
+        # Use SIGNAL price for tracking (Trade Manager style)
+        # Signal price takes priority - this is what the indicator/strategy says the price is
+        signal_price = float(price) if price else 0
         live_price = get_price_from_tradingview_api(ticker) if ticker else None
-        current_price = live_price if live_price else (float(price) if price else 0)
+        current_price = signal_price if signal_price > 0 else (live_price if live_price else 0)
         
         # Get tick size for this symbol
         tick_size = get_tick_size(ticker) if ticker else 0.25
@@ -7773,7 +7785,7 @@ def process_webhook_directly(webhook_token):
         # User has full control via recorder settings regardless of signal type
         # Strategy "flat" signals are handled separately as close orders
         signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
-        logger.info(f"📊 {signal_type} SIGNAL: Applying recorder settings - TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
+        _logger.info(f"📊 {signal_type} SIGNAL: Applying recorder settings - TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
         
         # Get linked trader for live execution
         # PostgreSQL uses TRUE (boolean), SQLite uses 1 (integer)
@@ -7798,11 +7810,11 @@ def process_webhook_directly(webhook_token):
         
         if not trader:
             conn.close()
-            logger.warning(f"No active trader linked to recorder '{recorder_name}'")
+            _logger.warning(f"No active trader linked to recorder '{recorder_name}'")
             return jsonify({'success': False, 'error': 'No trader linked'}), 400
         
         # Execute the trade with FULL risk settings
-        logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks | SL: {sl_ticks} ticks")
+        _logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks | SL: {sl_ticks} ticks")
         
         # ============================================================
         # STRATEGY MODE: Check for open position BEFORE broker execution
@@ -7820,11 +7832,11 @@ def process_webhook_directly(webhook_token):
             strategy_open_trade = dict(zip(columns, strategy_open_trade_row))
             open_side = strategy_open_trade.get('side', '')
             
-            logger.info(f"🔍 STRATEGY CHECK: Found open {open_side} trade #{strategy_open_trade['id']}, trade_action={trade_action}")
+            _logger.info(f"🔍 STRATEGY CHECK: Found open {open_side} trade #{strategy_open_trade['id']}, trade_action={trade_action}")
             
             # SELL signal when in LONG = just exit (don't open SHORT)
             if trade_action.upper() == 'SELL' and open_side == 'LONG':
-                logger.info(f"📊 SELL closes LONG - exiting position only")
+                _logger.info(f"📊 SELL closes LONG - exiting position only")
                 try:
                     tick_size_close = get_tick_size(ticker) if ticker else 0.25
                     tick_value_close = get_tick_value(ticker) if ticker else 0.50
@@ -7843,7 +7855,7 @@ def process_webhook_directly(webhook_token):
                     ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
                     conn.commit()
                     
-                    logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
+                    _logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
                     
                     conn.close()
                     return jsonify({
@@ -7858,11 +7870,11 @@ def process_webhook_directly(webhook_token):
                         'exit_reason': 'signal'
                     })
                 except Exception as close_err:
-                    logger.warning(f"⚠️ Could not close LONG: {close_err}")
+                    _logger.warning(f"⚠️ Could not close LONG: {close_err}")
             
             # BUY signal when in SHORT = just exit (don't open LONG)
             elif trade_action.upper() == 'BUY' and open_side == 'SHORT':
-                logger.info(f"📊 BUY closes SHORT - exiting position only")
+                _logger.info(f"📊 BUY closes SHORT - exiting position only")
                 try:
                     tick_size_close = get_tick_size(ticker) if ticker else 0.25
                     tick_value_close = get_tick_value(ticker) if ticker else 0.50
@@ -7881,7 +7893,7 @@ def process_webhook_directly(webhook_token):
                     ''', (current_price, pnl_dollars, pnl_ticks_close, strategy_open_trade['id']))
                     conn.commit()
                     
-                    logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
+                    _logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
                     
                     conn.close()
                     return jsonify({
@@ -7896,14 +7908,151 @@ def process_webhook_directly(webhook_token):
                         'exit_reason': 'signal'
                     })
                 except Exception as close_err:
-                    logger.warning(f"⚠️ Could not close SHORT: {close_err}")
+                    _logger.warning(f"⚠️ Could not close SHORT: {close_err}")
         
+        # ============================================================
+        # SIGNAL-BASED TRACKING (Like Trade Manager)
+        # Record position FIRST based on signal, THEN try broker execution
+        # This ensures P&L tracking works even without broker connection
+        # ============================================================
+        
+        trade_side = 'LONG' if trade_action.upper() in ['BUY', 'LONG'] else 'SHORT'
+        tick_size = get_tick_size(ticker) if ticker else 0.25
+        tick_value = get_tick_value(ticker) if ticker else 0.50
+        
+        # Calculate TP/SL prices based on signal price
+        tp_price = None
+        sl_price = None
+        if tp_ticks and tp_ticks > 0:
+            if trade_side == 'LONG':
+                tp_price = current_price + (tp_ticks * tick_size)
+            else:
+                tp_price = current_price - (tp_ticks * tick_size)
+        if sl_ticks and sl_ticks > 0:
+            if trade_side == 'LONG':
+                sl_price = current_price - (sl_ticks * tick_size)
+            else:
+                sl_price = current_price + (sl_ticks * tick_size)
+        
+        # STEP 1: Record trade based on SIGNAL (not broker) - Like Trade Manager!
         try:
-            # Import the SIMPLE trade function
+            trade_conn = get_db_connection()
+            trade_cursor = trade_conn.cursor()
+            is_pg = is_using_postgres()
+            ph = '%s' if is_pg else '?'
+            
+            # Check for existing open position to handle reversals
+            trade_cursor.execute(f'''
+                SELECT id, side, entry_price, quantity FROM recorded_trades 
+                WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
+                ORDER BY id DESC LIMIT 1
+            ''', (recorder_id, ticker))
+            existing_trade = trade_cursor.fetchone()
+            
+            recorded_trade_id = None
+            pnl_result = None
+            
+            if existing_trade:
+                existing_id, existing_side, existing_entry, existing_qty = existing_trade
+                
+                if existing_side != trade_side:
+                    # REVERSAL: Close existing position and calculate P&L
+                    if existing_side == 'LONG':
+                        pnl_ticks = (current_price - existing_entry) / tick_size
+                    else:
+                        pnl_ticks = (existing_entry - current_price) / tick_size
+                    pnl_dollars = pnl_ticks * tick_value * existing_qty
+                    
+                    trade_cursor.execute(f'''
+                        UPDATE recorded_trades 
+                        SET status = 'closed', exit_price = {ph}, pnl = {ph}, pnl_ticks = {ph},
+                            exit_reason = 'signal', exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = {ph}
+                    ''', (current_price, pnl_dollars, pnl_ticks, existing_id))
+                    
+                    _logger.info(f"📊 {existing_side} CLOSED by {trade_side} signal | Entry: {existing_entry} | Exit: {current_price} | P&L: ${pnl_dollars:.2f} ({pnl_ticks:.1f} ticks)")
+                    pnl_result = {'pnl': pnl_dollars, 'pnl_ticks': pnl_ticks, 'closed_side': existing_side}
+                    
+                    # Now open new position in opposite direction
+                    trade_cursor.execute(f'''
+                        INSERT INTO recorded_trades 
+                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, created_at, updated_at)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price))
+                    recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
+                    if is_pg:
+                        trade_cursor.execute('SELECT lastval()')
+                        recorded_trade_id = trade_cursor.fetchone()[0]
+                    
+                    _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
+                else:
+                    # SAME SIDE: Could be DCA - for now just log
+                    _logger.info(f"📊 Signal {trade_side} while already {existing_side} - position unchanged")
+                    recorded_trade_id = existing_id
+            else:
+                # NO EXISTING POSITION: Open new trade
+                trade_cursor.execute(f'''
+                    INSERT INTO recorded_trades 
+                    (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, created_at, updated_at)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price))
+                recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
+                if is_pg:
+                    trade_cursor.execute('SELECT lastval()')
+                    recorded_trade_id = trade_cursor.fetchone()[0]
+                
+                _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
+            
+            # Also update recorder_positions for aggregate tracking
+            trade_cursor.execute(f'''
+                SELECT id, side, total_quantity, avg_entry_price FROM recorder_positions
+                WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
+            ''', (recorder_id, ticker))
+            existing_pos = trade_cursor.fetchone()
+            
+            if existing_pos:
+                pos_id, pos_side, pos_qty, pos_avg = existing_pos
+                if pos_side != trade_side:
+                    # Close position
+                    if pos_side == 'LONG':
+                        pos_pnl_ticks = (current_price - pos_avg) / tick_size
+                    else:
+                        pos_pnl_ticks = (pos_avg - current_price) / tick_size
+                    pos_pnl = pos_pnl_ticks * tick_value * pos_qty
+                    
+                    trade_cursor.execute(f'''
+                        UPDATE recorder_positions
+                        SET status = 'closed', exit_price = {ph}, realized_pnl = {ph}, 
+                            exit_time = CURRENT_TIMESTAMP, closed_at = CURRENT_TIMESTAMP
+                        WHERE id = {ph}
+                    ''', (current_price, pos_pnl, pos_id))
+                    
+                    # Create new position
+                    trade_cursor.execute(f'''
+                        INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+                    ''', (recorder_id, ticker, trade_side, quantity, current_price))
+            else:
+                # Create new position
+                trade_cursor.execute(f'''
+                    INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+                ''', (recorder_id, ticker, trade_side, quantity, current_price))
+            
+            trade_conn.commit()
+            trade_conn.close()
+            _logger.info(f"✅ SIGNAL TRACKED: {trade_side} {ticker} @ {current_price} (Trade Manager style)")
+            
+        except Exception as track_err:
+            _logger.error(f"❌ Signal tracking error: {track_err}")
+            import traceback
+            traceback.print_exc()
+        
+        # STEP 2: Try broker execution (optional - doesn't affect tracking)
+        broker_result = None
+        try:
             from recorder_service import execute_trade_simple
             
-            # Execute with TP and SL (if configured)
-            # SL=0 means no SL order (TradingView strategy may handle it)
             result = execute_trade_simple(
                 recorder_id=recorder_id,
                 action=trade_action,
@@ -7914,65 +8063,53 @@ def process_webhook_directly(webhook_token):
             )
             
             if result.get('success'):
-                logger.info(f"✅ Trade executed: {result}")
-                
-                # Record the trade in recorded_trades table for dashboard analytics
-                try:
-                    trade_conn = get_db_connection()
-                    trade_cursor = trade_conn.cursor()
-                    is_pg = is_using_postgres()
-                    ph = '%s' if is_pg else '?'
-                    
-                    # Get entry price from result or use current price
-                    entry_price = result.get('broker_avg') or result.get('fill_price') or current_price
-                    trade_qty = result.get('broker_qty') or quantity
-                    tp_price = result.get('tp_price')
-                    sl_price = result.get('sl_price')
-                    
-                    # Determine trade side
-                    trade_side = 'LONG' if trade_action.upper() in ['BUY', 'LONG'] else 'SHORT'
-                    
-                    # ALWAYS record trade - each signal that executes gets logged
-                    # This allows multiple strategies, DCA, pyramiding, etc.
-                    trade_cursor.execute(f'''
-                        INSERT INTO recorded_trades 
-                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, created_at, updated_at)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ''', (recorder_id, ticker, trade_action, trade_side, entry_price, trade_qty, tp_price, sl_price))
-                    
-                    trade_conn.commit()
-                    logger.info(f"📊 Trade recorded: {trade_side} {ticker} @ {entry_price} x{trade_qty}")
-                    
-                    trade_conn.close()
-                except Exception as rec_err:
-                    logger.warning(f"⚠️ Could not record trade (non-fatal): {rec_err}")
-                
-                return jsonify({
-                    'success': True,
-                    'action': trade_action,
-                    'side': side,
-                    'quantity': quantity,
-                    'broker_avg': result.get('broker_avg'),
-                    'broker_qty': result.get('broker_qty'),
-                    'tp_price': result.get('tp_price'),
-                    'tp_order_id': result.get('tp_order_id'),
-                    'sl_price': result.get('sl_price'),
-                    'sl_order_id': result.get('sl_order_id'),
-                    'filters_passed': True,
-                    'result': result
-                })
+                _logger.info(f"✅ Broker execution successful: {result}")
+                broker_result = result
             else:
-                logger.error(f"❌ Trade execution failed: {result}")
-                return jsonify({'success': False, 'error': result.get('error', 'Execution failed')}), 500
+                _logger.warning(f"⚠️ Broker execution failed (tracking still works): {result.get('error')}")
                 
         except Exception as e:
-            logger.error(f"❌ Trade execution error: {e}")
-            import traceback
-            traceback.print_exc()
-            return jsonify({'success': False, 'error': str(e)}), 500
+            _logger.warning(f"⚠️ Broker execution error (tracking still works): {e}")
+        
+        # Return success - position is tracked regardless of broker!
+        return jsonify({
+            'success': True,
+            'action': trade_action,
+            'side': trade_side,
+            'entry_price': current_price,
+            'quantity': quantity,
+            'tp_price': tp_price,
+            'sl_price': sl_price,
+            'trade_id': recorded_trade_id,
+            'pnl': pnl_result,
+            'broker_executed': broker_result is not None,
+            'broker_result': broker_result,
+            'tracking': 'signal-based'
+        })
             
+    except NameError as name_err:
+        # Special handling for NameError (like 'logger' not defined)
+        import logging
+        safe_logger = logging.getLogger('webhook_handler')
+        safe_logger.error(f"❌ NameError in webhook handler: {name_err}")
+        import traceback
+        traceback.print_exc()
+        # Return a more helpful error message
+        error_msg = str(name_err)
+        if 'logger' in error_msg:
+            error_msg = "Internal error: logger configuration issue. Please check server logs."
+        return jsonify({'success': False, 'error': error_msg}), 500
     except Exception as e:
-        logger.error(f"❌ Webhook processing error: {e}")
+        # Safe error handling - ensure we have a logger
+        import logging
+        safe_logger = logging.getLogger('webhook_handler')
+        try:
+            if '_logger' in locals() and _logger:
+                _logger.error(f"❌ Webhook processing error: {e}")
+            else:
+                safe_logger.error(f"❌ Webhook processing error: {e}")
+        except:
+            safe_logger.error(f"❌ Webhook processing error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -8053,8 +8190,8 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         elif action in ['sl_hit', 'stop_loss']:
             normalized_action = 'SL_HIT'
             direction = 'flat'
-        elif action == 'price_alert':
-            # Generic price update - check if it hits TP/SL
+        elif action in ['price_alert', 'price_update', 'price', 'tick', 'update']:
+            # Price update for unrealized P&L tracking (Trade Manager style)
             normalized_action = 'PRICE_UPDATE'
             direction = None
         # Standard actions
@@ -12823,7 +12960,8 @@ def api_control_center_close_all():
             from recorder_service import execute_live_trade_with_bracket
         except ImportError:
             # If recorder_service is not importable, use alternative approach
-            logger.error("Cannot import execute_live_trade_with_bracket - using alternative close method")
+            _logger = globals().get('logger') or logging.getLogger(__name__)
+            _logger.error("Cannot import execute_live_trade_with_bracket - using alternative close method")
             conn.close()
             return jsonify({'success': False, 'error': 'Cannot import trade execution function'}), 500
         
@@ -17411,13 +17549,20 @@ else:
 # start_recorder_tp_sl_polling()  # DISABLED - handled by Trading Engine
 logger.info("ℹ️ Recorder TP/SL monitoring handled by Trading Engine (port 8083)")
 
-# NOTE: Position drawdown tracking now handled by Trading Engine
-# start_position_drawdown_polling()  # DISABLED - handled by Trading Engine
-logger.info("ℹ️ Position drawdown tracking handled by Trading Engine (port 8083)")
+# Enable position drawdown tracking for unrealized P&L (Trade Manager style)
+start_position_drawdown_polling()
+logger.info("✅ Position drawdown tracking ENABLED - using TradingView prices for unrealized P&L")
 
-# NOTE: TradingView WebSocket for recorders now handled by Trading Engine
-# The main server's TradingView WebSocket is only for Tradovate market data
-logger.info("ℹ️ Recorder price streaming handled by Trading Engine (port 8083)")
+# Auto-start TradingView WebSocket if session is configured (Trade Manager style real-time prices)
+try:
+    tv_session = get_tradingview_session()
+    if tv_session and tv_session.get('sessionid'):
+        start_tradingview_websocket()
+        logger.info("✅ TradingView WebSocket AUTO-STARTED for real-time prices")
+    else:
+        logger.info("ℹ️ TradingView session not configured - set via /api/tradingview/session")
+except Exception as e:
+    logger.warning(f"Could not auto-start TradingView WebSocket: {e}")
 
 # Configure logging for production
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
