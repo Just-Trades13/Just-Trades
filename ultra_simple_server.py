@@ -16018,6 +16018,20 @@ def poll_recorder_positions_drawdown():
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                     ''', (current_price, unrealized_pnl, new_worst, new_best, pos['id']))
+                    
+                    # ALSO update recorded_trades.max_adverse so dashboard shows drawdown
+                    # Convert unrealized PnL to adverse excursion (always positive)
+                    adverse_excursion = abs(min(0, unrealized_pnl))
+                    favorable_excursion = max(0, unrealized_pnl)
+                    
+                    cursor.execute('''
+                        UPDATE recorded_trades
+                        SET max_adverse = MAX(COALESCE(max_adverse, 0), ?),
+                            max_favorable = MAX(COALESCE(max_favorable, 0), ?),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                    ''', (adverse_excursion, favorable_excursion, pos['recorder_id'], ticker))
+                    
                     conn.commit()
                     
                     # Log significant drawdown changes
@@ -17857,9 +17871,9 @@ else:
 # and cause race conditions with the shared database.
 # ============================================================================
 
-# NOTE: Recorder TP/SL monitoring now handled by Trading Engine
-# start_recorder_tp_sl_polling()  # DISABLED - handled by Trading Engine
-logger.info("ℹ️ Recorder TP/SL monitoring handled by Trading Engine (port 8083)")
+# Enable recorder TP/SL monitoring for drawdown tracking (Trade Manager style)
+start_recorder_tp_sl_polling()
+logger.info("✅ Recorder TP/SL monitoring ENABLED - tracking drawdown on recorded_trades")
 
 # Enable position drawdown tracking for unrealized P&L (Trade Manager style)
 start_position_drawdown_polling()
