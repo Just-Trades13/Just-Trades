@@ -16020,9 +16020,11 @@ def poll_recorder_positions_drawdown():
                     ''', (current_price, unrealized_pnl, new_worst, new_best, pos['id']))
                     
                     # ALSO update recorded_trades.max_adverse so dashboard shows drawdown
-                    # Convert unrealized PnL to adverse excursion (always positive)
-                    adverse_excursion = abs(min(0, unrealized_pnl))
-                    favorable_excursion = max(0, unrealized_pnl)
+                    # Convert unrealized PnL to excursion values (always positive)
+                    # adverse = worst loss ever (use new_worst which tracks the worst)
+                    # favorable = best profit ever (use new_best which tracks the best)
+                    adverse_excursion = abs(new_worst) if new_worst < 0 else 0
+                    favorable_excursion = new_best if new_best > 0 else 0
                     
                     cursor.execute('''
                         UPDATE recorded_trades
