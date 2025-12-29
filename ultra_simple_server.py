@@ -14149,7 +14149,7 @@ def api_dashboard_trade_history():
             # Get total count
             cursor.execute(f'''
                 SELECT COUNT(*) FROM recorded_trades rt WHERE {where_sql}
-        ''', params if params else None)
+        ''', params if params else ())
             total_count = cursor.fetchone()[0]
             
             # Get paginated trades with recorder name
