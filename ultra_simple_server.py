@@ -18639,6 +18639,168 @@ except Exception as e:
 # Configure logging for production
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+# ============================================================================
+# THREAD HEALTH WATCHDOG - Ensures threads never die overnight
+# ============================================================================
+
+# Registry of critical threads that must stay alive
+_critical_threads = {}
+
+def register_critical_thread(name: str, thread: threading.Thread, restart_func):
+    """Register a thread for health monitoring"""
+    _critical_threads[name] = {
+        'thread': thread,
+        'restart_func': restart_func,
+        'restarts': 0,
+        'last_restart': None
+    }
+
+def thread_health_watchdog():
+    """
+    CRITICAL: Watchdog that monitors all critical threads and restarts dead ones.
+    This ensures the system NEVER stops overnight.
+    
+    Runs every 60 seconds and:
+    1. Checks if each critical thread is alive
+    2. Restarts dead threads
+    3. Logs all restarts for debugging
+    """
+    logger.info("🐕 Thread Health Watchdog started - monitoring all critical threads")
+    
+    while True:
+        try:
+            time.sleep(60)  # Check every 60 seconds
+            
+            dead_threads = []
+            for name, info in _critical_threads.items():
+                thread = info['thread']
+                if thread is None or not thread.is_alive():
+                    dead_threads.append(name)
+            
+            if dead_threads:
+                logger.warning(f"🚨 WATCHDOG: Found {len(dead_threads)} dead threads: {dead_threads}")
+                
+                for name in dead_threads:
+                    info = _critical_threads[name]
+                    restart_func = info['restart_func']
+                    
+                    if restart_func:
+                        try:
+                            logger.info(f"🔄 WATCHDOG: Restarting thread '{name}'...")
+                            new_thread = restart_func()
+                            if new_thread:
+                                _critical_threads[name]['thread'] = new_thread
+                                _critical_threads[name]['restarts'] += 1
+                                _critical_threads[name]['last_restart'] = datetime.now().isoformat()
+                                logger.info(f"✅ WATCHDOG: Thread '{name}' restarted successfully (total restarts: {info['restarts'] + 1})")
+                            else:
+                                logger.error(f"❌ WATCHDOG: Failed to restart thread '{name}' - restart function returned None")
+                        except Exception as e:
+                            logger.error(f"❌ WATCHDOG: Error restarting thread '{name}': {e}")
+                            import traceback
+                            traceback.print_exc()
+                    else:
+                        logger.warning(f"⚠️ WATCHDOG: No restart function for thread '{name}'")
+            else:
+                # Log healthy status every 10 minutes (every 10th check)
+                pass  # Silent when healthy to reduce log noise
+                
+        except Exception as e:
+            logger.error(f"❌ WATCHDOG ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+
+def restart_tradingview_websocket():
+    """Restart TradingView WebSocket thread"""
+    global _tradingview_ws_thread
+    try:
+        start_tradingview_websocket()
+        return _tradingview_ws_thread
+    except Exception as e:
+        logger.error(f"Failed to restart TradingView WebSocket: {e}")
+        return None
+
+def restart_tradingview_health_monitor():
+    """Restart TradingView health monitor thread"""
+    global _tradingview_health_thread
+    try:
+        start_tradingview_health_monitor()
+        return _tradingview_health_thread
+    except Exception as e:
+        logger.error(f"Failed to restart TradingView health monitor: {e}")
+        return None
+
+def restart_tp_sl_polling():
+    """Restart TP/SL polling thread"""
+    global _recorder_tp_sl_thread
+    try:
+        start_recorder_tp_sl_polling()
+        return _recorder_tp_sl_thread
+    except Exception as e:
+        logger.error(f"Failed to restart TP/SL polling: {e}")
+        return None
+
+def restart_position_drawdown_polling():
+    """Restart position drawdown polling thread"""
+    global _position_drawdown_thread
+    try:
+        start_position_drawdown_polling()
+        return _position_drawdown_thread
+    except Exception as e:
+        logger.error(f"Failed to restart position drawdown polling: {e}")
+        return None
+
+# Register all critical threads for monitoring
+# TradingView WebSocket - CRITICAL for price tracking
+if '_tradingview_ws_thread' in dir() and _tradingview_ws_thread:
+    register_critical_thread('TradingView-WebSocket', _tradingview_ws_thread, restart_tradingview_websocket)
+
+# TradingView Health Monitor - CRITICAL for auto-reconnect
+if '_tradingview_health_thread' in dir() and _tradingview_health_thread:
+    register_critical_thread('TradingView-Health', _tradingview_health_thread, restart_tradingview_health_monitor)
+
+# TP/SL Polling - CRITICAL for taking profits
+if '_recorder_tp_sl_thread' in dir() and _recorder_tp_sl_thread:
+    register_critical_thread('TP-SL-Polling', _recorder_tp_sl_thread, restart_tp_sl_polling)
+
+# Position Drawdown Polling - CRITICAL for tracking P&L
+if '_position_drawdown_thread' in dir() and _position_drawdown_thread:
+    register_critical_thread('Position-Drawdown', _position_drawdown_thread, restart_position_drawdown_polling)
+
+# Token Refresh - CRITICAL for broker auth
+if 'token_refresh_thread' in dir() and token_refresh_thread:
+    register_critical_thread('Token-Refresh', token_refresh_thread, None)  # Can't easily restart
+
+# Start the watchdog thread
+watchdog_thread = threading.Thread(target=thread_health_watchdog, daemon=True, name="Thread-Watchdog")
+watchdog_thread.start()
+logger.info("🐕 Thread Health Watchdog started - will restart dead threads automatically")
+
+# API endpoint to check thread health
+@app.route('/api/thread-health')
+def api_thread_health():
+    """Get status of all monitored threads"""
+    thread_status = {}
+    for name, info in _critical_threads.items():
+        thread = info['thread']
+        thread_status[name] = {
+            'alive': thread.is_alive() if thread else False,
+            'restarts': info['restarts'],
+            'last_restart': info['last_restart']
+        }
+    
+    all_alive = all(s['alive'] for s in thread_status.values())
+    
+    return jsonify({
+        'success': True,
+        'all_threads_healthy': all_alive,
+        'threads': thread_status,
+        'watchdog_active': watchdog_thread.is_alive(),
+        'timestamp': datetime.now().isoformat()
+    })
+
+# ============================================================================
+
 if __name__ == '__main__':
     # Railway/Production uses PORT env variable, local dev uses --port arg
     parser = argparse.ArgumentParser(description='Start the trading webhook server.')
