@@ -6550,8 +6550,11 @@ def api_get_recorder_webhook(recorder_id):
         if not row:
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
         
-        # Build webhook URL
+        # Build webhook URL - ALWAYS use HTTPS for TradingView webhooks
         base_url = request.host_url.rstrip('/')
+        # Force HTTPS (Railway uses edge proxy that may report HTTP internally)
+        if base_url.startswith('http://'):
+            base_url = base_url.replace('http://', 'https://', 1)
         webhook_url = f"{base_url}/webhook/{row['webhook_token']}"
         
         # Simple indicator alert message (user specifies buy or sell)
