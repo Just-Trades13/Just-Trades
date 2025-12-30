@@ -3331,7 +3331,7 @@ def check_position_discrepancies():
             # Get all traders linked to this recorder
             cursor.execute('''
                 SELECT t.id, t.name, t.subaccount_id, t.subaccount_name, t.is_demo,
-                       t.position_size, a.tradovate_token, a.name as account_name
+                       a.tradovate_token, a.name as account_name
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
                 WHERE t.recorder_id = ? AND t.enabled = 1
