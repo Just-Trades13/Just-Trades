@@ -3180,6 +3180,78 @@ def broker_queue_clear_cache():
     return jsonify({'success': True, 'message': 'Cache cleared'})
 
 
+@app.route('/api/migrate-db', methods=['POST'])
+def migrate_database():
+    """Run database migrations to add missing columns."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        migrations_run = []
+        
+        # Add is_private column to recorders table
+        try:
+            if is_postgres:
+                cursor.execute('ALTER TABLE recorders ADD COLUMN is_private BOOLEAN DEFAULT FALSE')
+            else:
+                cursor.execute('ALTER TABLE recorders ADD COLUMN is_private INTEGER DEFAULT 0')
+            migrations_run.append('Added is_private to recorders')
+        except Exception as e:
+            if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
+                pass  # Column already exists
+            else:
+                migrations_run.append(f'is_private: {str(e)}')
+        
+        # Add user_id column to recorders table
+        try:
+            if is_postgres:
+                cursor.execute('ALTER TABLE recorders ADD COLUMN user_id INTEGER REFERENCES users(id)')
+            else:
+                cursor.execute('ALTER TABLE recorders ADD COLUMN user_id INTEGER')
+            migrations_run.append('Added user_id to recorders')
+        except Exception as e:
+            if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
+                pass
+            else:
+                migrations_run.append(f'user_id: {str(e)}')
+        
+        # Add time filter columns
+        for col in ['time_filter_1_enabled', 'time_filter_2_enabled', 'time_filter_1_start', 
+                    'time_filter_1_stop', 'time_filter_2_start', 'time_filter_2_stop']:
+            try:
+                if 'enabled' in col:
+                    if is_postgres:
+                        cursor.execute(f'ALTER TABLE recorders ADD COLUMN {col} BOOLEAN DEFAULT FALSE')
+                    else:
+                        cursor.execute(f'ALTER TABLE recorders ADD COLUMN {col} INTEGER DEFAULT 0')
+                else:
+                    cursor.execute(f"ALTER TABLE recorders ADD COLUMN {col} TEXT DEFAULT ''")
+                migrations_run.append(f'Added {col} to recorders')
+            except:
+                pass
+        
+        # Add auto_flat_after_cutoff column
+        try:
+            if is_postgres:
+                cursor.execute('ALTER TABLE recorders ADD COLUMN auto_flat_after_cutoff BOOLEAN DEFAULT FALSE')
+            else:
+                cursor.execute('ALTER TABLE recorders ADD COLUMN auto_flat_after_cutoff INTEGER DEFAULT 0')
+            migrations_run.append('Added auto_flat_after_cutoff to recorders')
+        except:
+            pass
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'migrations_run': migrations_run if migrations_run else ['No new migrations needed']
+        })
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/tradingview/status')
 def tradingview_status():
     """Get TradingView WebSocket connection status - critical for live price updates."""
