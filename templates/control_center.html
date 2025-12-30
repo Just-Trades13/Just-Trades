@@ -60,6 +60,25 @@
             </div>
         </article>
     </section>
+    
+    <!-- LIVE POSITIONS SECTION - Real-time P&L from TradingView (Trade Manager style) -->
+    <section class="live-positions-section">
+        <article class="live-positions-panel">
+            <header>
+                <div>
+                    <h2>📊 Live Positions</h2>
+                    <p>Real-time P&L from TradingView price stream</p>
+                </div>
+                <span class="price-source">TradingView</span>
+            </header>
+            <div class="positions-grid" id="livePositionsGrid">
+                <div class="no-positions">
+                    <span class="material-icons">trending_flat</span>
+                    <p>No open positions</p>
+                </div>
+            </div>
+        </article>
+    </section>
 </div>
 {% endblock %}
 {% block styles %}
@@ -202,12 +221,189 @@
     .log-content { color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .log-time { color: #64748b; font-size: 0.7rem; white-space: nowrap; }
 
+    /* ============================================
+       LIVE POSITIONS SECTION - Trade Manager Style
+       ============================================ */
+    .live-positions-section { margin-top: 1.5rem; }
+    .live-positions-panel {
+        background: rgba(7,12,23,0.92);
+        border-radius: 18px;
+        border: 1px solid rgba(148,163,184,0.12);
+        overflow: hidden;
+    }
+    .live-positions-panel header {
+        background: linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8));
+        padding: 1rem 1.25rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(59,130,246,0.2);
+    }
+    .live-positions-panel h2 { margin: 0; font-size: 1.1rem; color: #60a5fa; }
+    .live-positions-panel p { margin: 0.25rem 0 0; font-size: 0.75rem; color: #64748b; }
+    .price-source {
+        background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(22,163,74,0.15));
+        color: #22c55e;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        border: 1px solid rgba(34,197,94,0.3);
+    }
+    
+    .positions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 1rem;
+        padding: 1.25rem;
+    }
+    
+    .no-positions {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 2rem;
+        color: #64748b;
+    }
+    .no-positions .material-icons { font-size: 2.5rem; opacity: 0.5; margin-bottom: 0.5rem; }
+    .no-positions p { margin: 0; }
+    
+    /* Position Card */
+    .position-card {
+        background: linear-gradient(145deg, rgba(15,23,42,0.95), rgba(30,41,59,0.85));
+        border-radius: 14px;
+        border: 1px solid rgba(148,163,184,0.1);
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    .position-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        border-color: rgba(59,130,246,0.3);
+    }
+    .position-card.positive { border-left: 3px solid #22c55e; }
+    .position-card.negative { border-left: 3px solid #ef4444; }
+    
+    .position-card-header {
+        padding: 0.85rem 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(0,0,0,0.2);
+        border-bottom: 1px solid rgba(148,163,184,0.08);
+    }
+    .position-symbol {
+        font-weight: 700;
+        font-size: 1rem;
+        color: #f1f5f9;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .position-side {
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        text-transform: uppercase;
+    }
+    .position-side.long { background: rgba(34,197,94,0.2); color: #22c55e; }
+    .position-side.short { background: rgba(239,68,68,0.2); color: #ef4444; }
+    .position-strategy {
+        font-size: 0.7rem;
+        color: #60a5fa;
+        font-weight: 500;
+    }
+    
+    .position-card-body { padding: 1rem; }
+    
+    /* Live P&L Display */
+    .pnl-display {
+        text-align: center;
+        padding: 0.75rem;
+        background: rgba(0,0,0,0.25);
+        border-radius: 10px;
+        margin-bottom: 0.85rem;
+    }
+    .pnl-amount {
+        font-size: 1.6rem;
+        font-weight: 700;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .pnl-amount.positive { color: #22c55e; text-shadow: 0 0 20px rgba(34,197,94,0.4); }
+    .pnl-amount.negative { color: #ef4444; text-shadow: 0 0 20px rgba(239,68,68,0.4); }
+    .pnl-ticks {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        margin-top: 0.25rem;
+    }
+    
+    /* Position Details */
+    .position-details {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem;
+    }
+    .detail-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+    .detail-label {
+        font-size: 0.65rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .detail-value {
+        font-size: 0.85rem;
+        color: #e2e8f0;
+        font-weight: 500;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .detail-value.price-live {
+        color: #fbbf24;
+        animation: pricePulse 1s ease-in-out infinite;
+    }
+    @keyframes pricePulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+    
+    /* Drawdown indicator */
+    .drawdown-bar {
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid rgba(148,163,184,0.1);
+    }
+    .drawdown-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.7rem;
+        margin-bottom: 0.35rem;
+    }
+    .drawdown-label span:first-child { color: #64748b; }
+    .drawdown-label span:last-child { color: #ef4444; font-weight: 600; }
+    .drawdown-progress {
+        height: 4px;
+        background: rgba(239,68,68,0.2);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .drawdown-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #ef4444, #dc2626);
+        border-radius: 2px;
+        transition: width 0.3s ease;
+    }
+
     @media (max-width: 1100px) {
         .live-panels { grid-template-columns: 1fr; }
     }
     @media (max-width: 600px) {
         .panel-actions { width: 100%; justify-content: center; }
         .panel-actions .btn { flex: 1; justify-content: center; }
+        .positions-grid { grid-template-columns: 1fr; }
     }
 </style>
 {% endblock %}
@@ -274,6 +470,136 @@
         socket.on('strategy_pnl_update', (data) => {
             updateStrategyPnL(data.strategy_id, data.strategy_name, data.pnl);
         });
+        
+        // ============================================
+        // LIVE POSITION UPDATES - Trade Manager Style
+        // Real-time P&L from TradingView price stream
+        // ============================================
+        
+        // Individual position update (every tick)
+        socket.on('live_position_update', (data) => {
+            console.log('Live position update:', data);
+            updatePositionCard(data);
+        });
+        
+        // All positions summary (every second)
+        socket.on('live_positions_all', (data) => {
+            console.log('Live positions all:', data);
+            updateAllPositionCards(data.positions);
+        });
+        
+        function updatePositionCard(pos) {
+            const grid = document.getElementById('livePositionsGrid');
+            if (!grid) return;
+            
+            // Find or create position card
+            let card = document.getElementById(`position-${pos.position_id}`);
+            
+            if (!card) {
+                // Create new card
+                card = document.createElement('div');
+                card.id = `position-${pos.position_id}`;
+                card.className = 'position-card';
+                
+                // Remove "no positions" message if present
+                const noPos = grid.querySelector('.no-positions');
+                if (noPos) noPos.remove();
+                
+                grid.appendChild(card);
+            }
+            
+            // Determine P&L class
+            const pnlClass = pos.unrealized_pnl >= 0 ? 'positive' : 'negative';
+            const pnlSign = pos.unrealized_pnl >= 0 ? '+' : '-';
+            const ticksSign = pos.pnl_ticks >= 0 ? '+' : '';
+            
+            // Calculate drawdown percentage (for bar)
+            const maxDrawdown = 500; // $500 reference for bar
+            const ddPercent = Math.min((pos.drawdown / maxDrawdown) * 100, 100);
+            
+            card.className = `position-card ${pnlClass}`;
+            card.innerHTML = `
+                <div class="position-card-header">
+                    <div class="position-symbol">
+                        ${pos.ticker}
+                        <span class="position-side ${pos.side.toLowerCase()}">${pos.side}</span>
+                    </div>
+                    <span class="position-strategy">${pos.recorder_name}</span>
+                </div>
+                <div class="position-card-body">
+                    <div class="pnl-display">
+                        <div class="pnl-amount ${pnlClass}">${pnlSign}$${Math.abs(pos.unrealized_pnl).toFixed(2)}</div>
+                        <div class="pnl-ticks">${ticksSign}${pos.pnl_ticks} ticks</div>
+                    </div>
+                    <div class="position-details">
+                        <div class="detail-item">
+                            <span class="detail-label">Entry</span>
+                            <span class="detail-value">${pos.entry_price.toFixed(2)}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Current</span>
+                            <span class="detail-value price-live">${pos.current_price.toFixed(2)}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Quantity</span>
+                            <span class="detail-value">${pos.quantity}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Max Profit</span>
+                            <span class="detail-value" style="color: #22c55e;">$${pos.max_favorable.toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div class="drawdown-bar">
+                        <div class="drawdown-label">
+                            <span>Drawdown</span>
+                            <span>-$${pos.drawdown.toFixed(2)}</span>
+                        </div>
+                        <div class="drawdown-progress">
+                            <div class="drawdown-fill" style="width: ${ddPercent}%;"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function updateAllPositionCards(positions) {
+            const grid = document.getElementById('livePositionsGrid');
+            if (!grid) return;
+            
+            if (!positions || positions.length === 0) {
+                grid.innerHTML = `
+                    <div class="no-positions">
+                        <span class="material-icons">trending_flat</span>
+                        <p>No open positions</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Update each position
+            positions.forEach(pos => {
+                updatePositionCard(pos);
+            });
+            
+            // Remove cards for closed positions
+            const existingCards = grid.querySelectorAll('.position-card');
+            const activeIds = new Set(positions.map(p => `position-${p.position_id}`));
+            existingCards.forEach(card => {
+                if (!activeIds.has(card.id)) {
+                    card.remove();
+                }
+            });
+            
+            // Show "no positions" if all removed
+            if (grid.children.length === 0) {
+                grid.innerHTML = `
+                    <div class="no-positions">
+                        <span class="material-icons">trending_flat</span>
+                        <p>No open positions</p>
+                    </div>
+                `;
+            }
+        }
         
         async function loadControlCenterStats() {
             try {

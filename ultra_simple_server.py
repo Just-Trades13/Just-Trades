@@ -16039,6 +16039,66 @@ def poll_recorder_positions_drawdown():
                     # Log significant drawdown changes
                     if new_worst < current_worst:
                         logger.debug(f"📉 Position drawdown update: {pos['recorder_name']} {side} {ticker} x{total_qty} | Drawdown: ${abs(new_worst):.2f}")
+                    
+                    # EMIT LIVE P&L UPDATE via WebSocket (Trade Manager style)
+                    # This sends real-time P&L to Control Center using TradingView prices
+                    try:
+                        socketio.emit('live_position_update', {
+                            'position_id': pos['id'],
+                            'recorder_id': pos['recorder_id'],
+                            'recorder_name': pos['recorder_name'],
+                            'ticker': ticker,
+                            'side': side,
+                            'quantity': total_qty,
+                            'entry_price': avg_entry,
+                            'current_price': current_price,
+                            'unrealized_pnl': round(unrealized_pnl, 2),
+                            'pnl_ticks': round(pnl_ticks, 2),
+                            'drawdown': round(abs(new_worst), 2) if new_worst < 0 else 0,
+                            'max_favorable': round(new_best, 2) if new_best > 0 else 0,
+                            'pnl_percent': round((unrealized_pnl / (avg_entry * total_qty)) * 100, 2) if avg_entry else 0,
+                            'timestamp': time.time()
+                        })
+                    except Exception as emit_err:
+                        logger.debug(f"WebSocket emit error (non-critical): {emit_err}")
+            
+            # Emit summary of all live positions for Control Center dashboard
+            if positions:
+                try:
+                    live_positions_summary = []
+                    for pos in positions:
+                        root = extract_symbol_root(pos['ticker'])
+                        price = _market_data_cache.get(root, {}).get('last') or get_cached_price(pos['ticker'])
+                        if price:
+                            tick_size = get_tick_size(pos['ticker'])
+                            tick_value = get_tick_value(pos['ticker'])
+                            if pos['side'] == 'LONG':
+                                pnl_ticks = (price - pos['avg_entry_price']) / tick_size
+                            else:
+                                pnl_ticks = (pos['avg_entry_price'] - price) / tick_size
+                            unrealized = pnl_ticks * tick_value * pos['total_quantity']
+                            
+                            live_positions_summary.append({
+                                'position_id': pos['id'],
+                                'recorder_id': pos['recorder_id'],
+                                'recorder_name': pos['recorder_name'],
+                                'ticker': pos['ticker'],
+                                'side': pos['side'],
+                                'quantity': pos['total_quantity'],
+                                'entry_price': pos['avg_entry_price'],
+                                'current_price': price,
+                                'unrealized_pnl': round(unrealized, 2),
+                                'drawdown': round(abs(pos['worst_unrealized_pnl'] or 0), 2),
+                            })
+                    
+                    if live_positions_summary:
+                        socketio.emit('live_positions_all', {
+                            'positions': live_positions_summary,
+                            'count': len(live_positions_summary),
+                            'timestamp': time.time()
+                        })
+                except Exception as summary_err:
+                    logger.debug(f"Summary emit error: {summary_err}")
             
             conn.close()
             
