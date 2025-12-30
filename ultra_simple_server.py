@@ -3306,6 +3306,8 @@ def check_position_discrepancies():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
         
         # Get all active recorder positions (TradingView tracked)
         cursor.execute('''
@@ -3328,14 +3330,23 @@ def check_position_discrepancies():
             tv_qty = tv_pos['total_quantity'] or 0
             tv_side = tv_pos['side']
             
-            # Get all traders linked to this recorder
-            cursor.execute('''
-                SELECT t.id, t.name, t.subaccount_id, t.subaccount_name, t.is_demo,
-                       a.tradovate_token, a.name as account_name
-                FROM traders t
-                JOIN accounts a ON t.account_id = a.id
-                WHERE t.recorder_id = ? AND t.enabled = 1
-            ''', (recorder_id,))
+            # Get all traders linked to this recorder (handle SQLite vs PostgreSQL)
+            if is_postgres:
+                cursor.execute('''
+                    SELECT t.id, t.name, t.subaccount_id, t.subaccount_name, t.is_demo,
+                           a.tradovate_token, a.name as account_name
+                    FROM traders t
+                    JOIN accounts a ON t.account_id = a.id
+                    WHERE t.recorder_id = %s AND t.enabled = TRUE
+                ''', (recorder_id,))
+            else:
+                cursor.execute('''
+                    SELECT t.id, t.name, t.subaccount_id, t.subaccount_name, t.is_demo,
+                           a.tradovate_token, a.name as account_name
+                    FROM traders t
+                    JOIN accounts a ON t.account_id = a.id
+                    WHERE t.recorder_id = ? AND t.enabled = 1
+                ''', (recorder_id,))
             
             traders = [dict(row) for row in cursor.fetchall()]
             
