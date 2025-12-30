@@ -3119,7 +3119,7 @@ def health():
         conn.execute("SELECT 1")
         conn.close()
         db_status = "healthy"
-        db_type = get_db_type() if PRODUCTION_DB_AVAILABLE else "sqlite"
+        db_type = "postgresql" if is_using_postgres() else "sqlite"
     except Exception as e:
         db_status = f"error: {str(e)}"
         db_type = "unknown"
@@ -3189,62 +3189,45 @@ def migrate_database():
         is_postgres = is_using_postgres()
         migrations_run = []
         
-        # Add is_private column to recorders table
-        try:
-            if is_postgres:
-                cursor.execute('ALTER TABLE recorders ADD COLUMN is_private BOOLEAN DEFAULT FALSE')
-            else:
-                cursor.execute('ALTER TABLE recorders ADD COLUMN is_private INTEGER DEFAULT 0')
-            migrations_run.append('Added is_private to recorders')
-        except Exception as e:
-            if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
-                pass  # Column already exists
-            else:
-                migrations_run.append(f'is_private: {str(e)}')
+        logger.info(f"Running migrations - PostgreSQL: {is_postgres}")
         
-        # Add user_id column to recorders table
-        try:
-            if is_postgres:
-                cursor.execute('ALTER TABLE recorders ADD COLUMN user_id INTEGER REFERENCES users(id)')
-            else:
-                cursor.execute('ALTER TABLE recorders ADD COLUMN user_id INTEGER')
-            migrations_run.append('Added user_id to recorders')
-        except Exception as e:
-            if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
-                pass
-            else:
-                migrations_run.append(f'user_id: {str(e)}')
+        # For PostgreSQL, use ADD COLUMN IF NOT EXISTS (Postgres 9.6+)
+        # For SQLite, catch the error
         
-        # Add time filter columns
-        for col in ['time_filter_1_enabled', 'time_filter_2_enabled', 'time_filter_1_start', 
-                    'time_filter_1_stop', 'time_filter_2_start', 'time_filter_2_stop']:
+        columns_to_add = [
+            ('is_private', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+            ('user_id', 'INTEGER'),
+            ('account_id', 'INTEGER'),
+            ('time_filter_1_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+            ('time_filter_2_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+            ('time_filter_1_start', "TEXT DEFAULT ''"),
+            ('time_filter_1_stop', "TEXT DEFAULT ''"),
+            ('time_filter_2_start', "TEXT DEFAULT ''"),
+            ('time_filter_2_stop', "TEXT DEFAULT ''"),
+            ('auto_flat_after_cutoff', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        ]
+        
+        for col_name, col_type in columns_to_add:
             try:
-                if 'enabled' in col:
-                    if is_postgres:
-                        cursor.execute(f'ALTER TABLE recorders ADD COLUMN {col} BOOLEAN DEFAULT FALSE')
-                    else:
-                        cursor.execute(f'ALTER TABLE recorders ADD COLUMN {col} INTEGER DEFAULT 0')
+                if is_postgres:
+                    # PostgreSQL: Use IF NOT EXISTS
+                    cursor.execute(f'ALTER TABLE recorders ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
                 else:
-                    cursor.execute(f"ALTER TABLE recorders ADD COLUMN {col} TEXT DEFAULT ''")
-                migrations_run.append(f'Added {col} to recorders')
-            except:
-                pass
-        
-        # Add auto_flat_after_cutoff column
-        try:
-            if is_postgres:
-                cursor.execute('ALTER TABLE recorders ADD COLUMN auto_flat_after_cutoff BOOLEAN DEFAULT FALSE')
-            else:
-                cursor.execute('ALTER TABLE recorders ADD COLUMN auto_flat_after_cutoff INTEGER DEFAULT 0')
-            migrations_run.append('Added auto_flat_after_cutoff to recorders')
-        except:
-            pass
+                    cursor.execute(f'ALTER TABLE recorders ADD COLUMN {col_name} {col_type}')
+                migrations_run.append(f'Added/verified {col_name}')
+            except Exception as e:
+                err_str = str(e).lower()
+                if 'already exists' in err_str or 'duplicate' in err_str:
+                    migrations_run.append(f'{col_name} already exists')
+                else:
+                    migrations_run.append(f'{col_name} error: {str(e)}')
         
         conn.commit()
         conn.close()
         
         return jsonify({
             'success': True,
+            'is_postgres': is_postgres,
             'migrations_run': migrations_run if migrations_run else ['No new migrations needed']
         })
     except Exception as e:
