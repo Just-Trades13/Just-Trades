@@ -3141,18 +3141,28 @@ def health():
     # Get broker API queue stats
     queue_stats = broker_api_queue.get_stats()
     
+    # Get TradingView WebSocket status
+    try:
+        tv_status = get_tradingview_connection_status()
+    except:
+        tv_status = {'status': 'unknown', 'connected': False}
+    
+    # Overall health considers TradingView connection
+    overall_healthy = db_status == "healthy" and tv_status.get('status') != 'error'
+    
     status = {
-        "status": "healthy" if db_status == "healthy" else "degraded",
+        "status": "healthy" if overall_healthy else "degraded",
         "database": db_status,
         "database_type": db_type,
         "cache": cache_status,
         "async_utils": async_status,
         "broker_api_queue": queue_stats,
+        "tradingview": tv_status,
         "timestamp": datetime.now().isoformat(),
-        "version": "2025-12-29-bulk-api"
+        "version": "2025-12-29-robust-tv"
     }
     
-    return jsonify(status), 200 if db_status == "healthy" else 503
+    return jsonify(status), 200 if overall_healthy else 503
 
 @app.route('/api/broker-queue/stats')
 def broker_queue_stats():
@@ -3168,6 +3178,32 @@ def broker_queue_clear_cache():
     """Clear broker API cache - useful after account changes."""
     broker_api_queue.clear_cache()
     return jsonify({'success': True, 'message': 'Cache cleared'})
+
+
+@app.route('/api/tradingview/status')
+def tradingview_status():
+    """Get TradingView WebSocket connection status - critical for live price updates."""
+    try:
+        status = get_tradingview_connection_status()
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({
+            'connected': False,
+            'error': str(e),
+            'status': 'error'
+        }), 500
+
+
+@app.route('/api/tradingview/reconnect', methods=['POST'])
+def tradingview_reconnect():
+    """Force TradingView WebSocket to reconnect - use if prices are stale."""
+    global _tradingview_force_reconnect
+    _tradingview_force_reconnect = True
+    logger.info("🔄 Manual TradingView reconnect requested via API")
+    return jsonify({
+        'success': True, 
+        'message': 'Reconnect requested - WebSocket will reconnect within 10 seconds'
+    })
 
 
 @app.route('/api/accounts/auth-status')
@@ -8034,11 +8070,23 @@ def process_webhook_directly(webhook_token):
             except Exception as e:
                 _logger.warning(f"⚠️ Sync failed (continuing anyway): {e}")
         
-        # Use SIGNAL price for tracking (Trade Manager style)
-        # Signal price takes priority - this is what the indicator/strategy says the price is
+        # Use LIVE TradingView price for entry (so P&L starts at ~$0)
+        # Priority: 1) Live WebSocket price, 2) Cached price, 3) Signal price (fallback)
         signal_price = float(price) if price else 0
-        live_price = get_price_from_tradingview_api(ticker) if ticker else None
-        current_price = signal_price if signal_price > 0 else (live_price if live_price else 0)
+        
+        # Try to get live price from TradingView WebSocket cache
+        live_price = None
+        ticker_root = extract_symbol_root(ticker) if ticker else None
+        if ticker_root and ticker_root in _market_data_cache:
+            live_price = _market_data_cache[ticker_root].get('last')
+        
+        # Fallback to cached price function
+        if not live_price:
+            live_price = get_cached_price(ticker) if ticker else None
+        
+        # Use LIVE price if available (P&L starts at $0), otherwise fallback to signal price
+        current_price = live_price if live_price else signal_price
+        _logger.info(f"📊 Entry price: {current_price} (live={live_price}, signal={signal_price})")
         
         # Get tick size for this symbol
         tick_size = get_tick_size(ticker) if ticker else 0.25
@@ -8612,7 +8660,17 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         # WITH TP/SL SETTINGS FROM RECORDER
         # =====================================================
         trade_result = None
-        current_price = float(price) if price else 0
+        
+        # Use LIVE TradingView price for entry (so P&L starts at ~$0)
+        signal_price = float(price) if price else 0
+        live_price = None
+        ticker_root = extract_symbol_root(ticker) if ticker else None
+        if ticker_root and ticker_root in _market_data_cache:
+            live_price = _market_data_cache[ticker_root].get('last')
+        if not live_price:
+            live_price = get_cached_price(ticker) if ticker else None
+        current_price = live_price if live_price else signal_price
+        logger.info(f"📊 Entry price: {current_price} (live={live_price}, signal={signal_price})")
         
         # Get position size from recorder settings
         # Use add_position_size when adding to existing position (DCA), otherwise use initial_position_size
@@ -16148,11 +16206,21 @@ def start_position_drawdown_polling():
 
 # ============================================================================
 # TradingView WebSocket for Real-Time Price Data
+# WITH ROBUST AUTO-RECONNECT AND HEALTH MONITORING
 # ============================================================================
 
 _tradingview_ws = None
 _tradingview_ws_thread = None
 _tradingview_subscribed_symbols = set()
+_tradingview_last_message_time = 0  # Track last message for health monitoring
+_tradingview_reconnect_count = 0
+_tradingview_health_thread = None
+_tradingview_force_reconnect = False
+
+# Health monitoring settings
+TV_STALE_TIMEOUT = 30  # Seconds without data before considering stale
+TV_RECONNECT_INTERVAL = 5  # Seconds between reconnect attempts
+TV_MAX_RECONNECT_BACKOFF = 60  # Max seconds between reconnect attempts
 
 def get_tradingview_session():
     """Get TradingView session cookies from database"""
@@ -16172,8 +16240,9 @@ def get_tradingview_session():
 
 
 async def connect_tradingview_websocket():
-    """Connect to TradingView WebSocket for real-time quotes"""
+    """Connect to TradingView WebSocket for real-time quotes with robust reconnection"""
     global _market_data_cache, _tradingview_ws, _tradingview_subscribed_symbols
+    global _tradingview_last_message_time, _tradingview_reconnect_count, _tradingview_force_reconnect
     
     if not WEBSOCKETS_AVAILABLE:
         logger.error("websockets library not available for TradingView")
@@ -16187,11 +16256,25 @@ async def connect_tradingview_websocket():
     sessionid = session.get('sessionid')
     sessionid_sign = session.get('sessionid_sign', '')
     
-    # TradingView WebSocket URL
-    ws_url = "wss://data.tradingview.com/socket.io/websocket"
+    # TradingView WebSocket URL options:
+    # - data.tradingview.com = may be delayed
+    # - prodata.tradingview.com = for paid accounts
+    # - widgetdata.tradingview.com = real-time widget data (what Trade Manager likely uses)
+    ws_url = "wss://widgetdata.tradingview.com/socket.io/websocket"
     
     while True:
         try:
+            # Check for force reconnect flag
+            if _tradingview_force_reconnect:
+                _tradingview_force_reconnect = False
+                logger.info("🔄 Force reconnect requested by health monitor")
+            
+            # Calculate backoff time with exponential increase (capped)
+            backoff = min(TV_RECONNECT_INTERVAL * (2 ** min(_tradingview_reconnect_count, 4)), TV_MAX_RECONNECT_BACKOFF)
+            
+            if _tradingview_reconnect_count > 0:
+                logger.info(f"🔄 TradingView reconnect attempt #{_tradingview_reconnect_count} (backoff: {backoff}s)")
+            
             logger.info(f"Connecting to TradingView WebSocket...")
             
             # Create connection with headers
@@ -16200,20 +16283,27 @@ async def connect_tradingview_websocket():
                 additional_headers={
                     'Origin': 'https://www.tradingview.com',
                     'Cookie': f'sessionid={sessionid}; sessionid_sign={sessionid_sign}'
-                }
+                },
+                ping_interval=20,  # Send ping every 20 seconds
+                ping_timeout=10,   # Wait 10 seconds for pong
+                close_timeout=5    # Wait 5 seconds for close
             ) as ws:
                 _tradingview_ws = ws
-                logger.info("✅ TradingView WebSocket connected!")
+                _tradingview_reconnect_count = 0  # Reset on successful connection
+                _tradingview_last_message_time = time.time()
+                _tradingview_subscribed_symbols.clear()  # CRITICAL: Clear old subscriptions on reconnect!
+                logger.info("✅ TradingView WebSocket CONNECTED!")
                 
-                # TradingView uses a custom protocol
-                # The cookies handle auth, we use "unauthorized_user_token" for WebSocket
-                # but the cookies give us access to real-time data
+                # TradingView WebSocket auth: cookies provide session, but we need a token for the protocol
+                # "unauthorized_user_token" is the standard token that works with cookie-based auth
+                # The COOKIES determine data access level (real-time vs delayed), not the auth token
+                # The auth token just establishes the WebSocket protocol session
                 auth_msg = json.dumps({
                     "m": "set_auth_token",
                     "p": ["unauthorized_user_token"]
                 })
                 await ws.send(f"~m~{len(auth_msg)}~m~{auth_msg}")
-                logger.info("Sent TradingView auth")
+                logger.info(f"Sent TradingView auth (cookies should provide real-time access)")
                 
                 # Create a quote session
                 quote_session = f"qs_{int(time.time())}"
@@ -16229,11 +16319,18 @@ async def connect_tradingview_websocket():
                 # Listen for messages
                 msg_count = 0
                 async for message in ws:
+                    # Update last message time for health monitoring
+                    _tradingview_last_message_time = time.time()
                     msg_count += 1
+                    
+                    # Check if health monitor requested reconnect
+                    if _tradingview_force_reconnect:
+                        logger.info("🔄 Health monitor requested reconnect, closing connection...")
+                        break
+                    
                     try:
                         # Handle ping/pong
                         if message.startswith('~h~'):
-                            # Respond to heartbeat
                             await ws.send(message)
                             continue
                         
@@ -16247,13 +16344,15 @@ async def connect_tradingview_websocket():
                         logger.warning(f"Error processing TradingView message: {e}")
                         
         except websockets.exceptions.ConnectionClosed as e:
-            logger.warning(f"TradingView WebSocket closed: {e}. Reconnecting in 5 seconds...")
-            await asyncio.sleep(5)
+            _tradingview_reconnect_count += 1
+            logger.warning(f"⚠️ TradingView WebSocket DISCONNECTED: {e}. Reconnecting...")
+            await asyncio.sleep(min(backoff, TV_RECONNECT_INTERVAL))
         except Exception as e:
-            logger.error(f"TradingView WebSocket error: {e}. Reconnecting in 10 seconds...")
+            _tradingview_reconnect_count += 1
+            logger.error(f"❌ TradingView WebSocket ERROR: {e}. Reconnecting...")
             import traceback
             logger.debug(traceback.format_exc())
-            await asyncio.sleep(10)
+            await asyncio.sleep(min(backoff, TV_MAX_RECONNECT_BACKOFF))
 
 
 async def subscribe_tradingview_symbols(ws, quote_session):
@@ -16390,9 +16489,98 @@ def start_tradingview_websocket():
     def run_websocket():
         asyncio.run(connect_tradingview_websocket())
     
-    _tradingview_ws_thread = threading.Thread(target=run_websocket, daemon=True)
+    _tradingview_ws_thread = threading.Thread(target=run_websocket, daemon=True, name="TradingView-WS")
     _tradingview_ws_thread.start()
     logger.info("✅ TradingView WebSocket thread started")
+    
+    # Start health monitor
+    start_tradingview_health_monitor()
+
+
+def tradingview_health_monitor():
+    """
+    Background thread that monitors TradingView WebSocket health.
+    Forces reconnect if connection is stale (no data for TV_STALE_TIMEOUT seconds).
+    """
+    global _tradingview_last_message_time, _tradingview_force_reconnect, _tradingview_ws_thread
+    
+    logger.info("🏥 TradingView health monitor STARTED")
+    
+    check_interval = 10  # Check every 10 seconds
+    stale_warning_logged = False
+    
+    while True:
+        try:
+            time.sleep(check_interval)
+            
+            # Check if WebSocket thread is alive
+            if not _tradingview_ws_thread or not _tradingview_ws_thread.is_alive():
+                logger.warning("⚠️ TradingView WebSocket thread DEAD - restarting...")
+                start_tradingview_websocket()
+                stale_warning_logged = False
+                continue
+            
+            # Check if data is stale
+            if _tradingview_last_message_time > 0:
+                seconds_since_last = time.time() - _tradingview_last_message_time
+                
+                if seconds_since_last > TV_STALE_TIMEOUT:
+                    if not stale_warning_logged:
+                        logger.warning(f"⚠️ TradingView data STALE ({seconds_since_last:.0f}s since last message)")
+                        stale_warning_logged = True
+                    
+                    # Force reconnect if very stale (2x timeout)
+                    if seconds_since_last > TV_STALE_TIMEOUT * 2:
+                        logger.error(f"🔴 TradingView connection STALE for {seconds_since_last:.0f}s - FORCING RECONNECT")
+                        _tradingview_force_reconnect = True
+                        stale_warning_logged = False
+                else:
+                    if stale_warning_logged:
+                        logger.info(f"✅ TradingView connection RECOVERED - data flowing")
+                    stale_warning_logged = False
+            
+            # Log health status every 5 minutes
+            if int(time.time()) % 300 < check_interval:
+                if _tradingview_last_message_time > 0:
+                    age = time.time() - _tradingview_last_message_time
+                    cache_size = len(_market_data_cache)
+                    logger.info(f"📊 TradingView health: OK | Last msg: {age:.1f}s ago | Symbols cached: {cache_size}")
+                    
+        except Exception as e:
+            logger.error(f"Error in TradingView health monitor: {e}")
+
+
+def start_tradingview_health_monitor():
+    """Start the TradingView health monitor thread"""
+    global _tradingview_health_thread
+    
+    if _tradingview_health_thread and _tradingview_health_thread.is_alive():
+        return
+    
+    _tradingview_health_thread = threading.Thread(
+        target=tradingview_health_monitor, 
+        daemon=True, 
+        name="TradingView-Health"
+    )
+    _tradingview_health_thread.start()
+    logger.info("✅ TradingView health monitor thread started")
+
+
+def get_tradingview_connection_status():
+    """Get current TradingView WebSocket connection status"""
+    global _tradingview_ws_thread, _tradingview_last_message_time, _tradingview_reconnect_count
+    
+    is_connected = _tradingview_ws_thread and _tradingview_ws_thread.is_alive()
+    last_msg_age = time.time() - _tradingview_last_message_time if _tradingview_last_message_time > 0 else -1
+    
+    return {
+        'connected': is_connected,
+        'last_message_age_seconds': round(last_msg_age, 1) if last_msg_age >= 0 else None,
+        'is_stale': last_msg_age > TV_STALE_TIMEOUT if last_msg_age >= 0 else True,
+        'reconnect_count': _tradingview_reconnect_count,
+        'cached_symbols': list(_market_data_cache.keys()),
+        'status': 'healthy' if is_connected and last_msg_age >= 0 and last_msg_age < TV_STALE_TIMEOUT else 'degraded'
+    }
 
 
 def update_position_pnl():
