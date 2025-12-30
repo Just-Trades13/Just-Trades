@@ -16088,7 +16088,9 @@ def poll_recorder_positions_drawdown():
                                 'entry_price': pos['avg_entry_price'],
                                 'current_price': price,
                                 'unrealized_pnl': round(unrealized, 2),
+                                'pnl_ticks': round(pnl_ticks, 2),
                                 'drawdown': round(abs(pos['worst_unrealized_pnl'] or 0), 2),
+                                'max_favorable': round(pos['best_unrealized_pnl'] or 0, 2),
                             })
                     
                     if live_positions_summary:
