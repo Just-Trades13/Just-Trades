@@ -3430,6 +3430,214 @@ def check_position_discrepancies():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/position-sync', methods=['POST'])
+def sync_positions_to_broker():
+    """
+    Sync broker positions to match TradingView tracker.
+    If broker is behind TV tracker, place catch-up orders.
+    
+    POST body (optional):
+    {
+        "recorder_id": 2,  // specific recorder, or omit for all
+        "dry_run": true    // just check what would happen, don't execute
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        specific_recorder_id = data.get('recorder_id')
+        dry_run = data.get('dry_run', False)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        # Get all active recorder positions
+        cursor.execute('''
+            SELECT rp.id, rp.recorder_id, rp.ticker, rp.side, rp.total_quantity,
+                   rp.avg_entry_price, r.name as recorder_name, r.tp_targets
+            FROM recorder_positions rp
+            JOIN recorders r ON rp.recorder_id = r.id
+            WHERE rp.status = 'open'
+        ''')
+        
+        tv_positions = [dict(row) for row in cursor.fetchall()]
+        
+        if specific_recorder_id:
+            tv_positions = [p for p in tv_positions if p['recorder_id'] == specific_recorder_id]
+        
+        sync_results = []
+        
+        for tv_pos in tv_positions:
+            recorder_id = tv_pos['recorder_id']
+            ticker = tv_pos['ticker']
+            tv_qty = tv_pos['total_quantity'] or 0
+            tv_side = tv_pos['side']
+            
+            # Get all traders linked to this recorder
+            if is_postgres:
+                cursor.execute('''
+                    SELECT t.id, t.name, t.subaccount_id, t.subaccount_name, t.is_demo,
+                           a.tradovate_token, a.name as account_name, a.id as account_id
+                    FROM traders t
+                    JOIN accounts a ON t.account_id = a.id
+                    WHERE t.recorder_id = %s AND t.enabled = TRUE
+                ''', (recorder_id,))
+            else:
+                cursor.execute('''
+                    SELECT t.id, t.name, t.subaccount_id, t.subaccount_name, t.is_demo,
+                           a.tradovate_token, a.name as account_name, a.id as account_id
+                    FROM traders t
+                    JOIN accounts a ON t.account_id = a.id
+                    WHERE t.recorder_id = ? AND t.enabled = 1
+                ''', (recorder_id,))
+            
+            traders = [dict(row) for row in cursor.fetchall()]
+            
+            for trader in traders:
+                try:
+                    from recorder_service import get_broker_position_for_recorder, execute_trade_simple
+                    
+                    # Get broker's current position
+                    contract_symbol = ticker.replace('!', '').replace('1', '')
+                    broker_pos = get_broker_position_for_recorder(recorder_id, contract_symbol)
+                    
+                    broker_qty = 0
+                    broker_side = 'FLAT'
+                    if broker_pos:
+                        raw_qty = broker_pos.get('quantity', 0)
+                        broker_qty = abs(raw_qty)
+                        if raw_qty > 0:
+                            broker_side = 'LONG'
+                        elif raw_qty < 0:
+                            broker_side = 'SHORT'
+                    
+                    # Calculate what we need to do
+                    action_needed = None
+                    qty_needed = 0
+                    
+                    if tv_side == broker_side:
+                        # Same side - just need to add contracts if broker is behind
+                        if broker_qty < tv_qty:
+                            qty_needed = tv_qty - broker_qty
+                            action_needed = 'BUY' if tv_side == 'LONG' else 'SELL'
+                    elif broker_side == 'FLAT':
+                        # Broker is flat but should have position
+                        qty_needed = tv_qty
+                        action_needed = 'BUY' if tv_side == 'LONG' else 'SELL'
+                    else:
+                        # Different sides - broker went opposite direction
+                        # Would need to close and reverse - too risky for auto-sync
+                        sync_results.append({
+                            'recorder_name': tv_pos['recorder_name'],
+                            'trader_name': trader['name'],
+                            'account_name': trader['account_name'],
+                            'ticker': ticker,
+                            'status': 'SKIPPED',
+                            'reason': f'Side mismatch: TV={tv_side}, Broker={broker_side}. Manual intervention required.',
+                            'tv_qty': tv_qty,
+                            'broker_qty': broker_qty
+                        })
+                        continue
+                    
+                    if qty_needed > 0:
+                        result_entry = {
+                            'recorder_name': tv_pos['recorder_name'],
+                            'recorder_id': recorder_id,
+                            'trader_name': trader['name'],
+                            'account_name': trader['account_name'],
+                            'ticker': ticker,
+                            'action': action_needed,
+                            'qty_needed': qty_needed,
+                            'tv_qty': tv_qty,
+                            'broker_qty': broker_qty
+                        }
+                        
+                        if dry_run:
+                            result_entry['status'] = 'DRY_RUN'
+                            result_entry['message'] = f'Would place {action_needed} {qty_needed} to catch up'
+                        else:
+                            # Actually execute the catch-up order
+                            logger.info(f"🔄 POSITION SYNC: {action_needed} {qty_needed} {ticker} for {trader['name']}")
+                            
+                            # Get TP settings from recorder
+                            tp_ticks = 10  # default
+                            try:
+                                tp_targets = json.loads(tv_pos.get('tp_targets', '[]'))
+                                if tp_targets and len(tp_targets) > 0:
+                                    tp_ticks = tp_targets[0].get('ticks', 10)
+                            except:
+                                pass
+                            
+                            exec_result = execute_trade_simple(
+                                recorder_id=recorder_id,
+                                action=action_needed,
+                                ticker=ticker,
+                                quantity=qty_needed,
+                                tp_ticks=tp_ticks,
+                                sl_ticks=0
+                            )
+                            
+                            if exec_result.get('success'):
+                                result_entry['status'] = 'SUCCESS'
+                                result_entry['broker_fill'] = exec_result.get('fill_price')
+                                result_entry['broker_qty_after'] = exec_result.get('broker_qty')
+                            else:
+                                result_entry['status'] = 'FAILED'
+                                result_entry['error'] = exec_result.get('error')
+                        
+                        sync_results.append(result_entry)
+                    else:
+                        sync_results.append({
+                            'recorder_name': tv_pos['recorder_name'],
+                            'trader_name': trader['name'],
+                            'account_name': trader['account_name'],
+                            'ticker': ticker,
+                            'status': 'IN_SYNC',
+                            'tv_qty': tv_qty,
+                            'broker_qty': broker_qty
+                        })
+                        
+                except Exception as e:
+                    sync_results.append({
+                        'recorder_name': tv_pos['recorder_name'],
+                        'trader_name': trader['name'],
+                        'account_name': trader['account_name'],
+                        'ticker': ticker,
+                        'status': 'ERROR',
+                        'error': str(e)
+                    })
+        
+        conn.close()
+        
+        # Summary
+        in_sync = sum(1 for r in sync_results if r.get('status') == 'IN_SYNC')
+        synced = sum(1 for r in sync_results if r.get('status') == 'SUCCESS')
+        failed = sum(1 for r in sync_results if r.get('status') in ['FAILED', 'ERROR'])
+        skipped = sum(1 for r in sync_results if r.get('status') == 'SKIPPED')
+        dry_run_count = sum(1 for r in sync_results if r.get('status') == 'DRY_RUN')
+        
+        return jsonify({
+            'success': True,
+            'dry_run': dry_run,
+            'summary': {
+                'total': len(sync_results),
+                'already_in_sync': in_sync,
+                'synced': synced,
+                'failed': failed,
+                'skipped': skipped,
+                'dry_run_would_sync': dry_run_count
+            },
+            'results': sync_results,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Position sync error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/accounts/auth-status')
 def api_accounts_auth_status():
     """
