@@ -3222,6 +3222,42 @@ def migrate_database():
                 else:
                     migrations_run.append(f'{col_name} error: {str(e)}')
         
+        # Add missing columns to recorder_positions table
+        position_columns = [
+            ('best_unrealized_pnl', 'REAL DEFAULT 0'),
+            ('worst_unrealized_pnl', 'REAL DEFAULT 0'),
+            ('current_price', 'REAL'),
+            ('unrealized_pnl', 'REAL DEFAULT 0'),
+        ]
+        
+        for col_name, col_type in position_columns:
+            try:
+                if is_postgres:
+                    cursor.execute(f'ALTER TABLE recorder_positions ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
+                else:
+                    cursor.execute(f'ALTER TABLE recorder_positions ADD COLUMN {col_name} {col_type}')
+                migrations_run.append(f'recorder_positions.{col_name} added')
+            except Exception as e:
+                if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+                    migrations_run.append(f'recorder_positions.{col_name}: {str(e)}')
+        
+        # Add missing columns to recorded_trades table
+        trade_columns = [
+            ('max_favorable', 'REAL DEFAULT 0'),
+            ('max_adverse', 'REAL DEFAULT 0'),
+        ]
+        
+        for col_name, col_type in trade_columns:
+            try:
+                if is_postgres:
+                    cursor.execute(f'ALTER TABLE recorded_trades ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
+                else:
+                    cursor.execute(f'ALTER TABLE recorded_trades ADD COLUMN {col_name} {col_type}')
+                migrations_run.append(f'recorded_trades.{col_name} added')
+            except Exception as e:
+                if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
+                    migrations_run.append(f'recorded_trades.{col_name}: {str(e)}')
+        
         conn.commit()
         conn.close()
         
