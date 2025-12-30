@@ -8298,9 +8298,21 @@ def process_webhook_directly(webhook_token):
                     
                     _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
                 else:
-                    # SAME SIDE: Could be DCA - for now just log
-                    _logger.info(f"📊 Signal {trade_side} while already {existing_side} - position unchanged")
-                    recorded_trade_id = existing_id
+                    # SAME SIDE: DCA - Add to existing position!
+                    _logger.info(f"📈 DCA: Adding {quantity} to existing {existing_side} position")
+                    
+                    # Create a new trade entry for DCA
+                    trade_cursor.execute(f'''
+                        INSERT INTO recorded_trades 
+                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, created_at, updated_at)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price))
+                    recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
+                    if is_pg:
+                        trade_cursor.execute('SELECT lastval()')
+                        recorded_trade_id = trade_cursor.fetchone()[0]
+                    
+                    _logger.info(f"📈 DCA {trade_side} +{quantity} @ {current_price} | Total trades open: counting...")
             else:
                 # NO EXISTING POSITION: Open new trade
                 trade_cursor.execute(f'''
@@ -8325,7 +8337,7 @@ def process_webhook_directly(webhook_token):
             if existing_pos:
                 pos_id, pos_side, pos_qty, pos_avg = existing_pos
                 if pos_side != trade_side:
-                    # Close position
+                    # Close position (opposite side signal)
                     if pos_side == 'LONG':
                         pos_pnl_ticks = (current_price - pos_avg) / tick_size
                     else:
@@ -8344,6 +8356,18 @@ def process_webhook_directly(webhook_token):
                         INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
                         VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'open')
                     ''', (recorder_id, ticker, trade_side, quantity, current_price))
+                else:
+                    # SAME SIDE: DCA - Update position with new average
+                    new_qty = pos_qty + quantity
+                    new_avg = ((pos_avg * pos_qty) + (current_price * quantity)) / new_qty
+                    
+                    trade_cursor.execute(f'''
+                        UPDATE recorder_positions
+                        SET total_quantity = {ph}, avg_entry_price = {ph}, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = {ph}
+                    ''', (new_qty, new_avg, pos_id))
+                    
+                    _logger.info(f"📈 Position DCA: {pos_side} {ticker} +{quantity} @ {current_price} | Total: {new_qty} @ avg {new_avg:.2f}")
             else:
                 # Create new position
                 trade_cursor.execute(f'''
