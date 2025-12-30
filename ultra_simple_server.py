@@ -16226,13 +16226,24 @@ def poll_recorder_positions_drawdown():
                     adverse_excursion = abs(new_worst) if new_worst < 0 else 0
                     favorable_excursion = new_best if new_best > 0 else 0
                     
-                    cursor.execute('''
-                        UPDATE recorded_trades
-                        SET max_adverse = MAX(COALESCE(max_adverse, 0), ?),
-                            max_favorable = MAX(COALESCE(max_favorable, 0), ?),
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE recorder_id = ? AND ticker = ? AND status = 'open'
-                    ''', (adverse_excursion, favorable_excursion, pos['recorder_id'], ticker))
+                    # Use GREATEST() for PostgreSQL, or simple comparison
+                    # Cast values to same type to avoid PostgreSQL type mismatch
+                    if is_using_postgres():
+                        cursor.execute('''
+                            UPDATE recorded_trades
+                            SET max_adverse = GREATEST(COALESCE(max_adverse, 0)::real, %s::real),
+                                max_favorable = GREATEST(COALESCE(max_favorable, 0)::real, %s::real),
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE recorder_id = %s AND ticker = %s AND status = 'open'
+                        ''', (adverse_excursion, favorable_excursion, pos['recorder_id'], ticker))
+                    else:
+                        cursor.execute('''
+                            UPDATE recorded_trades
+                            SET max_adverse = MAX(COALESCE(max_adverse, 0), ?),
+                                max_favorable = MAX(COALESCE(max_favorable, 0), ?),
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                        ''', (adverse_excursion, favorable_excursion, pos['recorder_id'], ticker))
                     
                     conn.commit()
                     
