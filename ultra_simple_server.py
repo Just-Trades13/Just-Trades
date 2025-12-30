@@ -2806,6 +2806,46 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
         logger.error(f"Error storing Tradovate accounts: {e}")
         return {"success": False, "error": str(e)}
 
+# Handle missing source map files gracefully (browsers request these automatically)
+# Source maps are optional and only used for debugging, so we return 204 No Content
+@app.route('/static/js/<path:filename>')
+def handle_static_js(filename):
+    """Handle static JS files and source maps"""
+    from flask import send_from_directory, Response
+    import os
+    
+    # If it's a source map request, return 204 (they're optional)
+    if filename.endswith('.map'):
+        return Response(status=204)  # No Content - source maps are optional
+    
+    # Otherwise try to serve the actual file
+    static_dir = os.path.join(os.path.dirname(__file__), 'static', 'js')
+    file_path = os.path.join(static_dir, filename)
+    if os.path.exists(file_path):
+        return send_from_directory(static_dir, filename)
+    
+    # File doesn't exist
+    return Response(status=404)
+
+@app.route('/static/<path:filename>')
+def handle_static_file(filename):
+    """Handle static files and source maps"""
+    from flask import send_from_directory, Response
+    import os
+    
+    # If it's a source map request, return 204 (they're optional)
+    if filename.endswith('.map'):
+        return Response(status=204)  # No Content - source maps are optional
+    
+    # Otherwise try to serve the actual file
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    file_path = os.path.join(static_dir, filename)
+    if os.path.exists(file_path):
+        return send_from_directory(static_dir, filename)
+    
+    # File doesn't exist
+    return Response(status=404)
+
 @app.route('/')
 def index():
     """Root route - redirect to dashboard if logged in, otherwise to login."""
@@ -13643,176 +13683,273 @@ except Exception as e:
 
 @app.route('/api/control-center/stats', methods=['GET'])
 def api_control_center_stats():
-    """Get live recorder stats for control center (real-time updates)"""
+    """Get live recorder stats for control center (real-time updates)
+    
+    FIXED: Now uses recorder_positions table (same as Live Positions section)
+    and TradingView market data cache for consistent P&L calculations.
+    Also filters by current user's traders to match /api/traders behavior.
+    """
     try:
+        # Get current user for filtering (same as /api/traders)
+        current_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+        
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
         
-        # Get all recorders with their current stats
-        cursor.execute('''
-            SELECT 
-                r.id,
-                r.name,
-                r.symbol,
-                r.recording_enabled,
-                r.signal_count,
-                COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
-                COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
-                (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
-            FROM recorders r
-            LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
-            GROUP BY r.id
-            ORDER BY r.name
-        ''')
+        # FIXED: Filter recorders by user's traders (same as /api/traders)
+        # Only show recorders that the current user has traders for
+        if current_user_id:
+            if is_postgres:
+                cursor.execute('''
+                    SELECT DISTINCT
+                        r.id,
+                        r.name,
+                        r.symbol,
+                        r.recording_enabled,
+                        r.signal_count,
+                        COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
+                        COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
+                        (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
+                    FROM recorders r
+                    LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
+                    INNER JOIN traders t ON r.id = t.recorder_id
+                    LEFT JOIN accounts a ON t.account_id = a.id
+                    WHERE (t.user_id = %s OR a.user_id = %s)
+                    GROUP BY r.id
+                    ORDER BY r.name
+                ''', (current_user_id, current_user_id))
+            else:
+                cursor.execute('''
+                    SELECT DISTINCT
+                        r.id,
+                        r.name,
+                        r.symbol,
+                        r.recording_enabled,
+                        r.signal_count,
+                        COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
+                        COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
+                        (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
+                    FROM recorders r
+                    LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
+                    INNER JOIN traders t ON r.id = t.recorder_id
+                    LEFT JOIN accounts a ON t.account_id = a.id
+                    WHERE (t.user_id = ? OR a.user_id = ?)
+                    GROUP BY r.id
+                    ORDER BY r.name
+                ''', (current_user_id, current_user_id))
+        else:
+            # No user auth, show all recorders
+            cursor.execute('''
+                SELECT 
+                    r.id,
+                    r.name,
+                    r.symbol,
+                    r.recording_enabled,
+                    r.signal_count,
+                    COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
+                    COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
+                    (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
+                FROM recorders r
+                LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
+                GROUP BY r.id
+                ORDER BY r.name
+            ''')
         
         recorder_rows = cursor.fetchall()
         
-        # Get all open trades to calculate unrealized P&L
-        cursor.execute('''
-            SELECT 
-                rt.id,
-                rt.recorder_id,
-                rt.ticker,
-                rt.side,
-                rt.entry_price,
-                rt.quantity,
-                r.name as recorder_name
-            FROM recorded_trades rt
-            JOIN recorders r ON rt.recorder_id = r.id
-            WHERE rt.status = 'open'
-        ''')
-        open_trades = cursor.fetchall()
+        # Get list of recorder IDs for current user (for filtering positions)
+        user_recorder_ids = []
+        if current_user_id:
+            if is_postgres:
+                cursor.execute('''
+                    SELECT DISTINCT t.recorder_id
+                    FROM traders t
+                    LEFT JOIN accounts a ON t.account_id = a.id
+                    WHERE (t.user_id = %s OR a.user_id = %s) AND t.recorder_id IS NOT NULL
+                ''', (current_user_id, current_user_id))
+            else:
+                cursor.execute('''
+                    SELECT DISTINCT t.recorder_id
+                    FROM traders t
+                    LEFT JOIN accounts a ON t.account_id = a.id
+                    WHERE (t.user_id = ? OR a.user_id = ?) AND t.recorder_id IS NOT NULL
+                ''', (current_user_id, current_user_id))
+            user_recorder_ids = [row[0] for row in cursor.fetchall()]
         
-        # Build map of recorder_id -> open trades
-        open_trades_by_recorder = {}
-        for trade in open_trades:
-            rid = trade['recorder_id']
-            if rid not in open_trades_by_recorder:
-                open_trades_by_recorder[rid] = []
-            open_trades_by_recorder[rid].append(dict(trade))
+        # FIXED: Use recorder_positions table (same as Live Positions WebSocket updates)
+        # This ensures both sections use the same aggregated position data
+        # Also filter by user's recorders
+        if user_recorder_ids:
+            placeholders = ','.join([placeholder] * len(user_recorder_ids))
+            cursor.execute(f'''
+                SELECT 
+                    rp.id,
+                    rp.recorder_id,
+                    rp.ticker,
+                    rp.side,
+                    rp.avg_entry_price,
+                    rp.total_quantity,
+                    rp.unrealized_pnl,
+                    rp.current_price,
+                    r.name as recorder_name
+                FROM recorder_positions rp
+                JOIN recorders r ON rp.recorder_id = r.id
+                WHERE rp.status = 'open' AND rp.recorder_id IN ({placeholders})
+            ''', tuple(user_recorder_ids))
+        else:
+            cursor.execute('''
+                SELECT 
+                    rp.id,
+                    rp.recorder_id,
+                    rp.ticker,
+                    rp.side,
+                    rp.avg_entry_price,
+                    rp.total_quantity,
+                    rp.unrealized_pnl,
+                    rp.current_price,
+                    r.name as recorder_name
+                FROM recorder_positions rp
+                JOIN recorders r ON rp.recorder_id = r.id
+                WHERE rp.status = 'open'
+            ''')
+        open_positions_db = cursor.fetchall()
         
-        # Get current prices for open trade symbols (with caching to avoid rate limits)
-        symbols_needed = set()
-        for trade in open_trades:
-            ticker = trade['ticker']
-            if ticker:
-                symbols_needed.add(ticker)
+        # Build map of recorder_id -> positions (grouped by recorder)
+        positions_by_recorder = {}
+        for pos in open_positions_db:
+            rid = pos['recorder_id']
+            if rid not in positions_by_recorder:
+                positions_by_recorder[rid] = []
+            positions_by_recorder[rid].append(dict(pos))
         
-        # Use cached prices to avoid excessive API calls
-        # Prices are cached for 10 seconds to reduce rate limiting
-        global _price_cache
-        import time
-        current_prices = {}
-        current_time = time.time()
-        
-        for symbol in symbols_needed:
-            # Check cache first (30 second TTL - trades are priority)
-            cache_key = f"stats_{symbol}"
-            if cache_key in _price_cache:
-                cached_price, cached_time = _price_cache[cache_key]
-                if current_time - cached_time < 30:  # 30 second cache (trades are priority)
-                    current_prices[symbol] = cached_price
-                    continue
-            
-            # Only fetch if cache expired (use cached price function)
-            price = get_cached_price(symbol)
-            if price:
-                current_prices[symbol] = price
-        
-        # Tick values for common futures
-        tick_values = {
-            'MNQ': 0.50, 'NQ': 5.00, 'MES': 1.25, 'ES': 12.50,
-            'M2K': 0.50, 'RTY': 5.00, 'MCL': 1.00, 'CL': 10.00,
-            'MGC': 1.00, 'GC': 10.00
-        }
-        
-        def get_tick_value(ticker):
-            """Get tick value for a symbol"""
-            if not ticker:
-                return 1.0
-            root = ticker.upper().replace('1!', '').replace('!', '')
-            for key in tick_values:
-                if root.startswith(key):
-                    return tick_values[key]
-            return 1.0  # Default
+        # FIXED: Use TradingView market data cache (same as poll_recorder_positions_drawdown)
+        # This ensures both sections use the same price source
+        global _market_data_cache
         
         recorders = []
         total_unrealized_pnl = 0
         
         for row in recorder_rows:
             rid = row['id']
-            open_trades_list = open_trades_by_recorder.get(rid, [])
+            positions_list = positions_by_recorder.get(rid, [])
             
-            # Calculate unrealized P&L for this recorder's open trades
+            # Calculate unrealized P&L for this recorder's positions
+            # FIXED: Use same calculation method as WebSocket updates (tick-based)
             unrealized_pnl = 0.0
-            has_open_position = len(open_trades_list) > 0
+            has_open_position = len(positions_list) > 0
             
-            for trade in open_trades_list:
-                ticker = trade['ticker']
-                entry_price = trade['entry_price'] or 0
-                quantity = trade['quantity'] or 1
-                side = trade['side']
+            for pos in positions_list:
+                ticker = pos['ticker']
+                avg_entry = pos['avg_entry_price'] or 0
+                total_qty = pos['total_quantity'] or 0
+                side = pos['side']
                 
-                current_price = current_prices.get(ticker, entry_price)
+                # Get current price from TradingView market data cache (same as WebSocket)
+                root = extract_symbol_root(ticker)
+                current_price = None
+                if root in _market_data_cache:
+                    current_price = _market_data_cache[root].get('last')
+                
+                if not current_price:
+                    # Fallback to get_cached_price if TradingView cache doesn't have it
+                    current_price = get_cached_price(ticker)
+                
+                if not current_price:
+                    # Use entry price if no current price available
+                    current_price = avg_entry
+                
+                # FIXED: Use same tick-based calculation as WebSocket updates
+                tick_size = get_tick_size(ticker)
                 tick_value = get_tick_value(ticker)
                 
                 if side == 'LONG':
-                    pnl = (current_price - entry_price) * tick_value * quantity
+                    pnl_ticks = (current_price - avg_entry) / tick_size
                 else:  # SHORT
-                    pnl = (entry_price - current_price) * tick_value * quantity
+                    pnl_ticks = (avg_entry - current_price) / tick_size
                 
-                unrealized_pnl += pnl
+                position_pnl = pnl_ticks * tick_value * total_qty
+                unrealized_pnl += position_pnl
+                
+                # Debug logging for comparison
+                logger.debug(f"📊 Control Center Stats: Recorder {rid} ({row['name']}) | Position {ticker} {side} x{total_qty} | Entry: {avg_entry:.2f} | Current: {current_price:.2f} | P&L: ${position_pnl:.2f}")
             
             total_unrealized_pnl += unrealized_pnl
+            
+            # Debug: Log total P&L per recorder
+            if unrealized_pnl != 0:
+                logger.debug(f"📊 Control Center Stats: Recorder {rid} ({row['name']}) | Total P&L: ${unrealized_pnl:.2f} | Positions: {len(positions_list)}")
             
             recorders.append({
                 'id': rid,
                 'name': row['name'],
                 'symbol': row['symbol'] or '',
                 'enabled': bool(row['recording_enabled']),
-                'pnl': unrealized_pnl,  # Now shows unrealized P&L only
+                'pnl': round(unrealized_pnl, 2),  # Round to match WebSocket format
                 'has_open_position': has_open_position,
                 'open_trades': row['open_trades'] or 0,
                 'closed_trades': row['closed_trades'] or 0,
                 'signal_count': row['signal_count'] or 0,
                 'last_signal': row['last_signal'],
-                'open_trade_details': open_trades_list if has_open_position else []
+                'open_trade_details': positions_list if has_open_position else []
             })
         
-        # Get open recorded trades with current prices
+        # Build open_positions array for compatibility (using same data source)
         open_positions = []
-        for trade in open_trades:
-            trade_dict = dict(trade)
-            ticker = trade['ticker']
-            trade_dict['current_price'] = current_prices.get(ticker, trade['entry_price'])
+        for pos in open_positions_db:
+            pos_dict = dict(pos)
+            ticker = pos['ticker']
+            avg_entry = pos['avg_entry_price'] or 0
+            total_qty = pos['total_quantity'] or 0
+            side = pos['side']
             
-            # Calculate unrealized P&L
-            entry_price = trade['entry_price'] or 0
-            current_price = trade_dict['current_price']
-            quantity = trade['quantity'] or 1
-            side = trade['side']
+            # Get current price from TradingView cache (same as above)
+            root = extract_symbol_root(ticker)
+            current_price = None
+            if root in _market_data_cache:
+                current_price = _market_data_cache[root].get('last')
+            
+            if not current_price:
+                current_price = get_cached_price(ticker)
+            
+            if not current_price:
+                current_price = avg_entry
+            
+            pos_dict['current_price'] = current_price
+            
+            # Calculate unrealized P&L using same method
+            tick_size = get_tick_size(ticker)
             tick_value = get_tick_value(ticker)
             
             if side == 'LONG':
-                trade_dict['unrealized_pnl'] = (current_price - entry_price) * tick_value * quantity
+                pnl_ticks = (current_price - avg_entry) / tick_size
             else:
-                trade_dict['unrealized_pnl'] = (entry_price - current_price) * tick_value * quantity
+                pnl_ticks = (avg_entry - current_price) / tick_size
             
-            open_positions.append(trade_dict)
+            pos_dict['unrealized_pnl'] = round(pnl_ticks * tick_value * total_qty, 2)
+            pos_dict['entry_price'] = avg_entry  # For compatibility
+            pos_dict['quantity'] = total_qty  # For compatibility
+            
+            open_positions.append(pos_dict)
         
         conn.close()
         
         return jsonify({
             'success': True,
             'recorders': recorders,
-            'total_pnl': total_unrealized_pnl,  # Total unrealized P&L
+            'total_pnl': round(total_unrealized_pnl, 2),  # Round to match WebSocket format
             'open_positions': open_positions,
             'total_recorders': len(recorders),
             'active_recorders': sum(1 for r in recorders if r['enabled'])
         })
     except Exception as e:
         logger.error(f"Error getting control center stats: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

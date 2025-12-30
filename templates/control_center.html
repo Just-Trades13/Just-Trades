@@ -484,7 +484,23 @@
         
         // All positions summary (every second)
         socket.on('live_positions_all', (data) => {
-            console.log('Live positions all:', data);
+            console.log('📊 Live positions all:', data);
+            // Debug: Sum P&L by recorder for comparison
+            if (data.positions && data.positions.length > 0) {
+                const pnlByRecorder = {};
+                data.positions.forEach(pos => {
+                    const rid = pos.recorder_id;
+                    if (!pnlByRecorder[rid]) {
+                        pnlByRecorder[rid] = { name: pos.recorder_name, total: 0, positions: [] };
+                    }
+                    pnlByRecorder[rid].total += pos.unrealized_pnl || 0;
+                    pnlByRecorder[rid].positions.push({
+                        ticker: pos.ticker,
+                        pnl: pos.unrealized_pnl
+                    });
+                });
+                console.log('📊 Live Positions P&L by Recorder:', pnlByRecorder);
+            }
             updateAllPositionCards(data.positions);
         });
         
@@ -631,9 +647,11 @@
                         const pnlResponse = await fetch('/api/control-center/stats');
                         const pnlData = await pnlResponse.json();
                         if (pnlData.success && pnlData.recorders) {
+                            console.log('📊 Control Center Stats Response:', pnlData);
                             pnlData.recorders.forEach(rec => {
                                 if (strategyMap.has(rec.id)) {
                                     strategyMap.get(rec.id).pnl = rec.pnl || 0;
+                                    console.log(`📊 Strategy ${rec.name} (ID: ${rec.id}): P&L = $${rec.pnl.toFixed(2)}`);
                                 }
                             });
                         }
@@ -698,15 +716,16 @@
         }
         
         function updateStrategyPnL(strategyId, strategyName, pnl) {
-            const row = document.querySelector(`tr[data-recorder-id="${strategyId}"]`);
+            // FIXED: Use data-strategy-id (matches table row attribute)
+            const row = document.querySelector(`tr[data-strategy-id="${strategyId}"]`);
             if (row) {
-                    const pnlCell = row.querySelector('.pl-cell');
-                    if (pnlCell) {
-                    const pnlFormatted = pnl >= 0 ? `$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`;
+                const pnlCell = row.querySelector('.pl-cell');
+                if (pnlCell) {
+                    const pnlFormatted = pnl >= 0 ? `+$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`;
                     pnlCell.textContent = pnlFormatted;
-                        pnlCell.className = `pl-cell ${pnl >= 0 ? 'positive' : 'negative'}`;
-                    }
+                    pnlCell.className = `pl-cell ${pnl >= 0 ? 'positive' : 'negative'}`;
                 }
+            }
         }
         
         function addLogEntry(type, message, time) {
