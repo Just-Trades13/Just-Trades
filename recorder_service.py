@@ -599,8 +599,9 @@ def get_db_connection():
             db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
             
             if _pg_pool is None:
-                _pg_pool = psycopg2.pool.ThreadedConnectionPool(2, 20, dsn=db_url)
-                logger.info("✅ recorder_service: PostgreSQL pool initialized")
+                # Increased pool size: min 5, max 50 to prevent exhaustion
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(5, 50, dsn=db_url)
+                logger.info("✅ recorder_service: PostgreSQL pool initialized (5-50 connections)")
             
             conn = _pg_pool.getconn()
             conn.cursor_factory = RealDictCursor
@@ -615,12 +616,14 @@ def get_db_connection():
             return PostgresConnectionWrapper(conn, _pg_pool)
         except ImportError:
             logger.warning("⚠️ psycopg2 not installed, using SQLite")
+            is_postgres = False  # CRITICAL: Reset so SQL uses ? placeholders
         except Exception as e:
             logger.warning(f"⚠️ PostgreSQL failed: {e}, using SQLite")
+            is_postgres = False  # CRITICAL: Reset so SQL uses ? placeholders
     
     # SQLite fallback - ensure is_postgres is False
+    is_postgres = False  # ALWAYS set to False when using SQLite
     if not _is_postgres_verified:
-        is_postgres = False
         _is_postgres_verified = True
         logger.info("✅ recorder_service: Using SQLite, using ? placeholders")
     

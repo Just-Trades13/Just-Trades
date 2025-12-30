@@ -80,12 +80,12 @@ class DatabaseManager:
                     database_url = database_url.replace('postgres://', 'postgresql://', 1)
                 
                 self.pool = psycopg2.pool.ThreadedConnectionPool(
-                    minconn=2,
-                    maxconn=20,
+                    minconn=5,
+                    maxconn=50,
                     dsn=database_url
                 )
                 self.is_postgres = True
-                logger.info("✅ PostgreSQL connection pool initialized (2-20 connections)")
+                logger.info("✅ PostgreSQL connection pool initialized (5-50 connections)")
             except Exception as e:
                 logger.error(f"❌ PostgreSQL init failed: {e} - falling back to SQLite")
                 self.is_postgres = False
