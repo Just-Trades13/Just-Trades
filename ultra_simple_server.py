@@ -71,6 +71,14 @@ BATCH_SIZE = 50  # Process signals in batches for faster DB writes
 BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 
 # ============================================================================
+# BROKER EXECUTION QUEUE - Trade Manager Style (Async, Non-Blocking)
+# ============================================================================
+# Webhook handler queues broker execution here, returns immediately.
+# Background worker processes queue with retries.
+# This ensures webhooks NEVER fail due to broker issues.
+broker_execution_queue = Queue(maxsize=1000)
+
+# ============================================================================
 # WEBHOOK HEALTH TRACKING - Detect stuck webhook processing
 # ============================================================================
 _webhook_last_received = 0  # Timestamp of last webhook received
@@ -7974,6 +7982,107 @@ def signal_processor_worker():
 signal_processor_thread = threading.Thread(target=signal_processor_worker, daemon=True)
 signal_processor_thread.start()
 
+# ============================================================================
+# BROKER EXECUTION WORKER - Trade Manager Style (Async, Reliable)
+# ============================================================================
+def broker_execution_worker():
+    """
+    Background worker that processes broker execution queue.
+    This ensures webhook handler NEVER waits for broker execution.
+    
+    Trade Manager Style:
+    - Webhook records signal instantly
+    - Broker execution happens async with retries
+    - If broker fails, it retries later (doesn't block webhook)
+    """
+    logger.info("🚀 Broker execution worker started (Trade Manager style)")
+    
+    while True:
+        try:
+            # Get next broker execution task (blocking, but that's OK - we're in background)
+            task = broker_execution_queue.get(timeout=1)
+            
+            recorder_id = task.get('recorder_id')
+            action = task.get('action')
+            ticker = task.get('ticker')
+            quantity = task.get('quantity')
+            tp_ticks = task.get('tp_ticks', 10)
+            sl_ticks = task.get('sl_ticks', 0)
+            retry_count = task.get('retry_count', 0)
+            max_retries = 3
+            
+            try:
+                from recorder_service import execute_trade_simple
+                
+                logger.info(f"🔄 Broker execution: {action} {quantity} {ticker} (attempt {retry_count + 1}/{max_retries + 1})")
+                
+                result = execute_trade_simple(
+                    recorder_id=recorder_id,
+                    action=action,
+                    ticker=ticker,
+                    quantity=quantity,
+                    tp_ticks=tp_ticks,
+                    sl_ticks=sl_ticks if sl_ticks > 0 else 0
+                )
+                
+                if result.get('success'):
+                    logger.info(f"✅ Broker execution successful: {action} {quantity} {ticker}")
+                else:
+                    error = result.get('error', 'Unknown error')
+                    logger.warning(f"⚠️ Broker execution failed: {error}")
+                    
+                    # Retry if we haven't exceeded max retries
+                    if retry_count < max_retries:
+                        logger.info(f"🔄 Retrying broker execution in 5 seconds...")
+                        time.sleep(5)
+                        task['retry_count'] = retry_count + 1
+                        broker_execution_queue.put(task)  # Re-queue for retry
+                    else:
+                        logger.error(f"❌ Broker execution failed after {max_retries + 1} attempts: {error}")
+                        
+            except Exception as e:
+                logger.error(f"❌ Broker execution error: {e}")
+                import traceback
+                traceback.print_exc()
+                
+                # Retry if we haven't exceeded max retries
+                if retry_count < max_retries:
+                    logger.info(f"🔄 Retrying broker execution in 5 seconds...")
+                    time.sleep(5)
+                    task['retry_count'] = retry_count + 1
+                    broker_execution_queue.put(task)  # Re-queue for retry
+                else:
+                    logger.error(f"❌ Broker execution failed after {max_retries + 1} attempts: {e}")
+            
+            # Mark task as done
+            broker_execution_queue.task_done()
+            
+        except Empty:
+            # Timeout - no tasks, continue loop
+            continue
+        except Exception as e:
+            logger.error(f"Broker execution worker error: {e}")
+            import traceback
+            traceback.print_exc()
+            time.sleep(1)  # Brief pause before retrying
+
+# Start broker execution worker
+broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
+broker_execution_thread.start()
+logger.info("✅ Broker execution worker started (Trade Manager style - async, non-blocking)")
+
+# Register for thread health monitoring
+def restart_broker_execution_worker():
+    """Restart broker execution worker thread"""
+    global broker_execution_thread
+    try:
+        broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
+        broker_execution_thread.start()
+        return broker_execution_thread
+    except Exception as e:
+        logger.error(f"Failed to restart broker execution worker: {e}")
+        return None
+
 # ============================================================
 # WEBHOOK HANDLER - Direct Processing (No Proxy)
 # ============================================================
@@ -8961,30 +9070,31 @@ def process_webhook_directly(webhook_token):
             import traceback
             traceback.print_exc()
         
-        # STEP 2: Try broker execution (optional - doesn't affect tracking)
-        broker_result = None
+        # STEP 2: Queue broker execution (Trade Manager style - async, non-blocking)
+        # Webhook returns immediately, broker execution happens in background
         try:
-            from recorder_service import execute_trade_simple
+            broker_task = {
+                'recorder_id': recorder_id,
+                'action': trade_action,
+                'ticker': ticker,
+                'quantity': quantity,
+                'tp_ticks': tp_ticks,
+                'sl_ticks': sl_ticks if sl_ticks > 0 else 0,
+                'retry_count': 0
+            }
             
-            result = execute_trade_simple(
-                recorder_id=recorder_id,
-                action=trade_action,
-                ticker=ticker,
-                quantity=quantity,
-                tp_ticks=tp_ticks,
-                sl_ticks=sl_ticks if sl_ticks > 0 else 0
-            )
-            
-            if result.get('success'):
-                _logger.info(f"✅ Broker execution successful: {result}")
-                broker_result = result
-            else:
-                _logger.warning(f"⚠️ Broker execution failed (tracking still works): {result.get('error')}")
+            try:
+                broker_execution_queue.put_nowait(broker_task)
+                _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
+            except:
+                # Queue full - log but don't fail webhook
+                _logger.warning(f"⚠️ Broker execution queue full - signal still tracked, broker execution skipped")
                 
         except Exception as e:
-            _logger.warning(f"⚠️ Broker execution error (tracking still works): {e}")
+            # Queue error - log but don't fail webhook
+            _logger.warning(f"⚠️ Broker execution queue error (tracking still works): {e}")
         
-        # Return success - position is tracked regardless of broker!
+        # Return success IMMEDIATELY - position is tracked, broker execution is queued
         # Track successful webhook processing for health monitoring
         _webhook_last_processed = time.time()
         _webhook_processing_count += 1
@@ -9001,8 +9111,7 @@ def process_webhook_directly(webhook_token):
             'sl_price': sl_price,
             'trade_id': recorded_trade_id,
             'pnl': pnl_result,
-            'broker_executed': broker_result is not None,
-            'broker_result': broker_result,
+            'broker_queued': True,  # Broker execution queued (async)
             'tracking': 'signal-based',
             'processing_time_ms': int(processing_time * 1000)
         })
@@ -18948,6 +19057,10 @@ if '_position_drawdown_thread' in dir() and _position_drawdown_thread:
 # Token Refresh - CRITICAL for broker auth
 if 'token_refresh_thread' in dir() and token_refresh_thread:
     register_critical_thread('Token-Refresh', token_refresh_thread, None)  # Can't easily restart
+
+# Broker Execution Worker - CRITICAL for executing trades
+if 'broker_execution_thread' in dir() and broker_execution_thread:
+    register_critical_thread('Broker-Execution-Worker', broker_execution_thread, restart_broker_execution_worker)
 
 # Start the watchdog thread
 watchdog_thread = threading.Thread(target=thread_health_watchdog, daemon=True, name="Thread-Watchdog")
