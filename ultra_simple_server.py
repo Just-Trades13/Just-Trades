@@ -71,6 +71,15 @@ BATCH_SIZE = 50  # Process signals in batches for faster DB writes
 BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 
 # ============================================================================
+# WEBHOOK HEALTH TRACKING - Detect stuck webhook processing
+# ============================================================================
+_webhook_last_received = 0  # Timestamp of last webhook received
+_webhook_last_processed = 0  # Timestamp of last webhook successfully processed
+_webhook_processing_count = 0  # Total webhooks processed since startup
+_webhook_error_count = 0  # Total webhook errors since startup
+_webhook_stuck_threshold = 300  # 5 minutes - if webhook received but not processed, it's stuck
+
+# ============================================================================
 # 🚀 BROKER API QUEUE SYSTEM - Bulk requests, rate limit protection
 # ============================================================================
 # This system ensures we:
@@ -3147,8 +3156,17 @@ def health():
     except:
         tv_status = {'status': 'unknown', 'connected': False}
     
-    # Overall health considers TradingView connection
-    overall_healthy = db_status == "healthy" and tv_status.get('status') != 'error'
+    # Check webhook health
+    webhook_status = "healthy"
+    webhook_age = 0
+    if _webhook_last_received > 0:
+        webhook_age = time.time() - _webhook_last_received
+        # If webhook was received but not processed within threshold, it's stuck
+        if _webhook_last_received > _webhook_last_processed and webhook_age > _webhook_stuck_threshold:
+            webhook_status = "stuck"
+    
+    # Overall health considers TradingView connection and webhook processing
+    overall_healthy = db_status == "healthy" and tv_status.get('status') != 'error' and webhook_status != 'stuck'
     
     status = {
         "status": "healthy" if overall_healthy else "degraded",
@@ -3158,8 +3176,15 @@ def health():
         "async_utils": async_status,
         "broker_api_queue": queue_stats,
         "tradingview": tv_status,
+        "webhook": {
+            "status": webhook_status,
+            "last_received_ago_seconds": int(time.time() - _webhook_last_received) if _webhook_last_received > 0 else None,
+            "last_processed_ago_seconds": int(time.time() - _webhook_last_processed) if _webhook_last_processed > 0 else None,
+            "total_processed": _webhook_processing_count,
+            "total_errors": _webhook_error_count
+        },
         "timestamp": datetime.now().isoformat(),
-        "version": "2025-12-29-robust-tv"
+        "version": "2025-12-29-robust-tv-watchdog"
     }
     
     return jsonify(status), 200 if overall_healthy else 503
@@ -7978,6 +8003,11 @@ def process_webhook_directly(webhook_token):
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         _logger.addHandler(handler)
     
+    # Track webhook received time for health monitoring
+    global _webhook_last_received, _webhook_last_processed, _webhook_processing_count, _webhook_error_count
+    webhook_start_time = time.time()
+    _webhook_last_received = webhook_start_time
+    
     try:
         # Import the heavy-duty trading functions from recorder_service
         from recorder_service import (
@@ -8915,6 +8945,12 @@ def process_webhook_directly(webhook_token):
             _logger.warning(f"⚠️ Broker execution error (tracking still works): {e}")
         
         # Return success - position is tracked regardless of broker!
+        # Track successful webhook processing for health monitoring
+        _webhook_last_processed = time.time()
+        _webhook_processing_count += 1
+        processing_time = _webhook_last_processed - webhook_start_time
+        _logger.info(f"✅ Webhook processed in {processing_time:.2f}s (total: {_webhook_processing_count})")
+        
         return jsonify({
             'success': True,
             'action': trade_action,
@@ -8927,10 +8963,13 @@ def process_webhook_directly(webhook_token):
             'pnl': pnl_result,
             'broker_executed': broker_result is not None,
             'broker_result': broker_result,
-            'tracking': 'signal-based'
+            'tracking': 'signal-based',
+            'processing_time_ms': int(processing_time * 1000)
         })
             
     except NameError as name_err:
+        # Track webhook error
+        _webhook_error_count += 1
         # Special handling for NameError (like 'logger' not defined)
         import logging
         safe_logger = logging.getLogger('webhook_handler')
@@ -8943,6 +8982,8 @@ def process_webhook_directly(webhook_token):
             error_msg = "Internal error: logger configuration issue. Please check server logs."
         return jsonify({'success': False, 'error': error_msg}), 500
     except Exception as e:
+        # Track webhook error
+        _webhook_error_count += 1
         # Safe error handling - ensure we have a logger
         import logging
         safe_logger = logging.getLogger('webhook_handler')
