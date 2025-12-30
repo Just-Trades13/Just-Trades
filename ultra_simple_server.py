@@ -8158,10 +8158,8 @@ def process_webhook_directly(webhook_token):
     _webhook_last_received = webhook_start_time
     
     try:
-        # Import the heavy-duty trading functions from recorder_service
+        # Import helper functions (broker execution is queued, not called here)
         from recorder_service import (
-            execute_live_trade_with_bracket,
-            sync_position_with_broker,
             get_price_from_tradingview_api,
             convert_ticker_to_tradovate,
             get_tick_size,
@@ -8320,77 +8318,105 @@ def process_webhook_directly(webhook_token):
         # SMART CLOSE: Validates close makes sense before executing
         # Handles multiple strategies on same ticker correctly
         if market_position and market_position.lower() == 'flat':
-            _logger.info(f"🔄 FLAT signal for {recorder_name} - validating close order")
+            # Trade Manager Style: Trust the signal, close position in tracker
+            # No broker checks - signal is the source of truth
+            _logger.info(f"🔄 FLAT signal for {recorder_name} - closing position based on signal")
             
-            # TradingView tells us what IT wants to do
-            tv_action = action.upper()  # 'BUY' or 'SELL' from TradingView
-            tv_qty = quantity           # How many contracts TradingView wants to close
+            # TradingView tells us what to do - trust it
+            close_action = action.upper()  # 'BUY' or 'SELL' from TradingView
+            close_qty = quantity           # How many contracts TradingView wants to close
             
-            # Get the trader linked to this recorder to check broker position
-            from recorder_service import execute_trade_simple, get_broker_position_for_recorder
+            # Get current price for closing
+            current_price = float(price) if price else 0
+            if not current_price:
+                root = extract_symbol_root(ticker)
+                if root in _market_data_cache:
+                    current_price = _market_data_cache[root].get('last')
+                if not current_price:
+                    current_price = get_price_from_tradingview_api(ticker) or 0
             
-            # Map ticker to contract symbol (e.g., NQ1! -> NQH6)
-            ticker_to_symbol = {
-                'NQ1!': 'NQH6', 'MNQ1!': 'MNQH6',
-                'ES1!': 'ESH6', 'MES1!': 'MESH6',
-                'YM1!': 'YMH6', 'MYM1!': 'MYMH6',
-                'RTY1!': 'RTYH6', 'M2K1!': 'M2KH6',
-                'CL1!': 'CLF5', 'MCL1!': 'MCLF5',
-                'GC1!': 'GCG5', 'MGC1!': 'MGCG5',
-            }
-            contract_symbol = ticker_to_symbol.get(ticker, ticker.replace('1!', 'H6'))
-            
-            # Check broker's NET position for this ticker
-            broker_pos = get_broker_position_for_recorder(recorder_id, contract_symbol)
-            broker_qty = broker_pos.get('quantity', 0) if broker_pos else 0  # positive=LONG, negative=SHORT
-            
-            _logger.info(f"📊 {recorder_name} FLAT check: TV wants {tv_action} {tv_qty}, broker net={broker_qty}")
-            
-            # VALIDATION: Does this close make sense?
-            # BUY closes SHORT (should only execute if broker has SHORT/negative position)
-            # SELL closes LONG (should only execute if broker has LONG/positive position)
-            
-            if broker_qty == 0:
-                # Broker is completely flat - skip to prevent orphan
-                _logger.info(f"⚠️ FLAT signal for {recorder_name} - broker is FLAT, skipping (prevents orphan)")
-                conn.close()
-                return jsonify({'success': True, 'action': 'skip', 'message': 'Broker already flat - no position to close'})
-            
-            if tv_action in ['BUY', 'LONG']:
-                # TradingView wants to BUY to close (was SHORT)
-                if broker_qty > 0:
-                    # Broker is LONG - BUY would INCREASE position, not close! Skip.
-                    _logger.info(f"⚠️ FLAT signal {recorder_name}: TV says BUY but broker is LONG {broker_qty}, skipping (would increase position)")
-                    conn.close()
-                    return jsonify({'success': True, 'action': 'skip', 'message': 'Close direction mismatch - broker is LONG, cannot BUY to close'})
-                # Broker is SHORT - BUY will reduce/close. Use TV quantity but cap to broker's position
-                close_qty = min(tv_qty, abs(broker_qty))
-                close_action = 'BUY'
+            # Close position in tracker (signal-based, instant)
+            try:
+                trade_conn = get_db_connection()
+                trade_cursor = trade_conn.cursor()
+                is_pg = is_using_postgres()
+                ph = '%s' if is_pg else '?'
                 
-            else:  # SELL/SHORT
-                # TradingView wants to SELL to close (was LONG)
-                if broker_qty < 0:
-                    # Broker is SHORT - SELL would INCREASE position, not close! Skip.
-                    _logger.info(f"⚠️ FLAT signal {recorder_name}: TV says SELL but broker is SHORT {broker_qty}, skipping (would increase position)")
-                    conn.close()
-                    return jsonify({'success': True, 'action': 'skip', 'message': 'Close direction mismatch - broker is SHORT, cannot SELL to close'})
-                # Broker is LONG - SELL will reduce/close. Use TV quantity but cap to broker's position
-                close_qty = min(tv_qty, broker_qty)
-                close_action = 'SELL'
+                # Close recorder_positions
+                trade_cursor.execute(f'''
+                    SELECT id, side, total_quantity, avg_entry_price FROM recorder_positions
+                    WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
+                ''', (recorder_id, ticker))
+                existing_pos = trade_cursor.fetchone()
+                
+                if existing_pos:
+                    pos_id, pos_side, pos_qty, pos_avg = existing_pos
+                    tick_size = get_tick_size(ticker)
+                    tick_value = get_tick_value(ticker)
+                    
+                    # Calculate PnL
+                    if pos_side == 'LONG':
+                        pos_pnl_ticks = (current_price - pos_avg) / tick_size if tick_size else 0
+                    else:
+                        pos_pnl_ticks = (pos_avg - current_price) / tick_size if tick_size else 0
+                    pos_pnl = pos_pnl_ticks * tick_value * pos_qty
+                    
+                    # Close position
+                    trade_cursor.execute(f'''
+                        UPDATE recorder_positions
+                        SET status = 'closed', exit_price = {ph}, realized_pnl = {ph}, 
+                            exit_time = CURRENT_TIMESTAMP, closed_at = CURRENT_TIMESTAMP
+                        WHERE id = {ph}
+                    ''', (current_price, pos_pnl, pos_id))
+                    
+                    _logger.info(f"✅ Position closed in tracker: {pos_side} {pos_qty} @ {pos_avg} → {current_price} | PnL: ${pos_pnl:.2f}")
+                
+                # Close all open recorded_trades
+                trade_cursor.execute(f'''
+                    UPDATE recorded_trades
+                    SET status = 'closed', exit_price = {ph}, exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
+                ''', (current_price, recorder_id, ticker))
+                
+                trade_conn.commit()
+                trade_conn.close()
+                
+            except Exception as e:
+                _logger.error(f"❌ Error closing position in tracker: {e}")
             
-            _logger.info(f"✅ FLAT validated for {recorder_name}: executing {close_action} {close_qty} (TV requested {tv_qty})")
+            # Queue broker execution (async, non-blocking)
+            try:
+                broker_task = {
+                    'recorder_id': recorder_id,
+                    'action': close_action,
+                    'ticker': ticker,
+                    'quantity': close_qty,
+                    'tp_ticks': 0,  # No TP - this is a close
+                    'sl_ticks': 0,
+                    'retry_count': 0
+                }
+                broker_execution_queue.put_nowait(broker_task)
+                _logger.info(f"📤 Broker close queued: {close_action} {close_qty} {ticker}")
+            except:
+                _logger.warning(f"⚠️ Broker execution queue full - signal still tracked")
             
-            result = execute_trade_simple(
-                recorder_id=recorder_id,
-                action=close_action,
-                ticker=ticker,
-                quantity=close_qty,
-                tp_ticks=0  # No TP - this is a close
-            )
+            # Track successful webhook processing
+            _webhook_last_processed = time.time()
+            _webhook_processing_count += 1
+            processing_time = _webhook_last_processed - webhook_start_time
+            _logger.info(f"✅ FLAT signal processed in {processing_time:.2f}s")
             
-            _logger.info(f"✅ CLOSE executed for {recorder_name}: {result}")
             conn.close()
-            return jsonify({'success': True, 'action': 'close', 'result': result})
+            return jsonify({
+                'success': True,
+                'action': 'close',
+                'side': 'FLAT',
+                'quantity': close_qty,
+                'exit_price': current_price,
+                'broker_queued': True,
+                'tracking': 'signal-based',
+                'processing_time_ms': int(processing_time * 1000)
+            })
         
         # Determine side early (needed for filters)
         if action in ['buy', 'long']:
@@ -8697,16 +8723,9 @@ def process_webhook_directly(webhook_token):
         # 📈 GET RISK SETTINGS
         # ============================================================
         
-        # CRITICAL: Sync with broker BEFORE processing to prevent drift
-        if ticker:
-            try:
-                sync_result = sync_position_with_broker(recorder_id, ticker)
-                if sync_result.get('cleared'):
-                    _logger.info(f"🔄 Cleared database position - broker has no position for {ticker}")
-                elif sync_result.get('synced'):
-                    _logger.info(f"🔄 Synced database with broker position for {ticker}")
-            except Exception as e:
-                _logger.warning(f"⚠️ Sync failed (continuing anyway): {e}")
+        # Trade Manager Style: NO broker sync - position tracking is signal-based only
+        # Signals are the source of truth. Broker execution happens async.
+        # This makes webhook processing instant and never fails.
         
         # Use LIVE TradingView price for entry (so P&L starts at ~$0)
         # Priority: 1) Live WebSocket price, 2) Cached price, 3) Signal price (fallback)
