@@ -3297,6 +3297,128 @@ def tradingview_reconnect():
     })
 
 
+@app.route('/api/position-discrepancy-check')
+def check_position_discrepancies():
+    """
+    Compare recorder_positions (TradingView tracking) with actual broker positions.
+    Returns discrepancies for debugging sync issues between TV tracking and broker.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all active recorder positions (TradingView tracked)
+        cursor.execute('''
+            SELECT rp.id, rp.recorder_id, rp.ticker, rp.side, rp.total_quantity, 
+                   rp.avg_entry_price, rp.status,
+                   r.name as recorder_name
+            FROM recorder_positions rp
+            JOIN recorders r ON rp.recorder_id = r.id
+            WHERE rp.status = 'open'
+        ''')
+        
+        tv_positions = [dict(row) for row in cursor.fetchall()]
+        
+        # For each recorder position, get linked traders and their broker positions
+        discrepancies = []
+        
+        for tv_pos in tv_positions:
+            recorder_id = tv_pos['recorder_id']
+            ticker = tv_pos['ticker']
+            tv_qty = tv_pos['total_quantity'] or 0
+            tv_side = tv_pos['side']
+            
+            # Get all traders linked to this recorder
+            cursor.execute('''
+                SELECT t.id, t.name, t.subaccount_id, t.subaccount_name, t.is_demo,
+                       t.position_size, a.tradovate_token, a.name as account_name
+                FROM traders t
+                JOIN accounts a ON t.account_id = a.id
+                WHERE t.recorder_id = ? AND t.enabled = 1
+            ''', (recorder_id,))
+            
+            traders = [dict(row) for row in cursor.fetchall()]
+            
+            for trader in traders:
+                broker_qty = 0
+                broker_side = 'FLAT'
+                broker_error = None
+                
+                try:
+                    # Import here to avoid circular imports
+                    from recorder_service import get_broker_position_for_recorder
+                    
+                    # Convert ticker to tradovate symbol
+                    contract_symbol = ticker.replace('!', '').replace('1', '')  # Basic conversion
+                    broker_pos = get_broker_position_for_recorder(recorder_id, contract_symbol)
+                    
+                    if broker_pos:
+                        broker_qty = abs(broker_pos.get('quantity', 0))
+                        raw_qty = broker_pos.get('quantity', 0)
+                        if raw_qty > 0:
+                            broker_side = 'LONG'
+                        elif raw_qty < 0:
+                            broker_side = 'SHORT'
+                        else:
+                            broker_side = 'FLAT'
+                except Exception as e:
+                    broker_error = str(e)
+                
+                # Calculate discrepancy
+                qty_diff = tv_qty - broker_qty
+                side_match = (tv_side == broker_side) or (tv_qty == 0 and broker_qty == 0)
+                
+                discrepancy_entry = {
+                    'recorder_name': tv_pos['recorder_name'],
+                    'recorder_id': recorder_id,
+                    'ticker': ticker,
+                    'trader_name': trader['name'],
+                    'account_name': trader['account_name'],
+                    'subaccount': trader['subaccount_name'],
+                    'tv_tracking': {
+                        'side': tv_side,
+                        'quantity': tv_qty,
+                        'avg_price': tv_pos['avg_entry_price']
+                    },
+                    'broker_actual': {
+                        'side': broker_side,
+                        'quantity': broker_qty,
+                        'error': broker_error
+                    },
+                    'discrepancy': {
+                        'qty_difference': qty_diff,
+                        'side_mismatch': not side_match,
+                        'is_synced': qty_diff == 0 and side_match
+                    }
+                }
+                
+                discrepancies.append(discrepancy_entry)
+        
+        conn.close()
+        
+        # Summary
+        total_positions = len(discrepancies)
+        synced = sum(1 for d in discrepancies if d['discrepancy']['is_synced'])
+        out_of_sync = total_positions - synced
+        
+        return jsonify({
+            'success': True,
+            'summary': {
+                'total_positions': total_positions,
+                'synced': synced,
+                'out_of_sync': out_of_sync
+            },
+            'positions': discrepancies,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Position discrepancy check error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/accounts/auth-status')
 def api_accounts_auth_status():
     """
