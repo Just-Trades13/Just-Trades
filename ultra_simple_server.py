@@ -7541,9 +7541,33 @@ def receive_webhook_fast(webhook_token):
     """Fast webhook endpoint - processes directly."""
     return process_webhook_directly(webhook_token)
 
-@app.route('/webhook/<webhook_token>', methods=['POST'])
+@app.route('/webhook/<webhook_token>', methods=['GET', 'POST'])
 def receive_webhook(webhook_token):
-    """Main webhook endpoint - processes directly using DCA logic."""
+    """Main webhook endpoint - processes directly using DCA logic.
+    GET: Returns webhook status (for verification)
+    POST: Processes the actual signal
+    """
+    if request.method == 'GET':
+        # TradingView or browser verification - just confirm webhook exists
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if is_using_postgres():
+            cursor.execute('SELECT id, name FROM recorders WHERE webhook_token = %s', (webhook_token,))
+        else:
+            cursor.execute('SELECT id, name FROM recorders WHERE webhook_token = ?', (webhook_token,))
+        recorder = cursor.fetchone()
+        conn.close()
+        
+        if recorder:
+            return jsonify({
+                'status': 'active',
+                'message': f'Webhook ready for recorder: {recorder[1]}',
+                'recorder_id': recorder[0]
+            })
+        else:
+            return jsonify({'status': 'error', 'message': 'Invalid webhook token'}), 404
+    
+    # POST request - process the signal
     return process_webhook_directly(webhook_token)
 
 def process_webhook_directly(webhook_token):
