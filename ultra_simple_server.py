@@ -16200,15 +16200,15 @@ def poll_recorder_positions_drawdown():
                 
                 unrealized_pnl = pnl_ticks * tick_value * total_qty
                 
-                # Update worst/best unrealized P&L
-                current_worst = pos['worst_unrealized_pnl'] or 0
-                current_best = pos['best_unrealized_pnl'] or 0
+                # Update worst/best unrealized P&L (use .get() for missing columns)
+                current_worst = pos.get('worst_unrealized_pnl') or 0
+                current_best = pos.get('best_unrealized_pnl') or 0
                 
                 new_worst = min(current_worst, unrealized_pnl)  # Worst is most negative
                 new_best = max(current_best, unrealized_pnl)    # Best is most positive
                 
                 # Only update database if values changed
-                if new_worst != current_worst or new_best != current_best or pos['current_price'] != current_price:
+                if new_worst != current_worst or new_best != current_best or pos.get('current_price') != current_price:
                     cursor.execute('''
                         UPDATE recorder_positions
                         SET current_price = ?, 
@@ -16289,8 +16289,8 @@ def poll_recorder_positions_drawdown():
                                 'current_price': price,
                                 'unrealized_pnl': round(unrealized, 2),
                                 'pnl_ticks': round(pnl_ticks, 2),
-                                'drawdown': round(abs(pos['worst_unrealized_pnl'] or 0), 2),
-                                'max_favorable': round(pos['best_unrealized_pnl'] or 0, 2),
+                                'drawdown': round(abs(pos.get('worst_unrealized_pnl') or 0), 2),
+                                'max_favorable': round(pos.get('best_unrealized_pnl') or 0, 2),
                             })
                     
                     if live_positions_summary:
