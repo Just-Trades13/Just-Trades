@@ -10937,18 +10937,20 @@ def traders_edit(trader_id):
                                     except (ValueError, TypeError) as e:
                                         logger.debug(f"  - [{idx}] Account ID+name match failed: {e}")
                                 
-                                # Strategy 3: Last resort - match by account_name only (if unique)
-                                if not matched and enabled_account_name:
-                                    try:
-                                        enabled_name_clean = str(enabled_account_name).strip().lower()
-                                        acct_name_clean = str(acct_name).strip().lower()
-                                        # Only match by name if it's unique in enabled_accounts
-                                        name_count = sum(1 for e in enabled_accounts if str(e.get('account_name', '')).strip().lower() == enabled_name_clean)
-                                        if name_count == 1 and enabled_name_clean == acct_name_clean:
-                                            matched = True
-                                            logger.info(f"  ⚠️ [{idx}] Matched {acct_name} by name only (unique name match) - other matches failed")
-                                    except Exception as e:
-                                        logger.debug(f"  - [{idx}] Name-only match failed: {e}")
+                                # Strategy 3: Last resort - match by account_name only (VERY CONSERVATIVE - only if exact match and unique)
+                                # DISABLED: Too risky, can cause false matches
+                                # Only use if subaccount_id and account_id matching both fail AND names are exact match
+                                # if not matched and enabled_account_name and enabled_account_id and int(enabled_account_id) == int(parent_id):
+                                #     try:
+                                #         enabled_name_clean = str(enabled_account_name).strip().lower()
+                                #         acct_name_clean = str(acct_name).strip().lower()
+                                #         # Only match by name if it's unique in enabled_accounts AND same account_id
+                                #         name_count = sum(1 for e in enabled_accounts if str(e.get('account_name', '')).strip().lower() == enabled_name_clean and e.get('account_id') == enabled_account_id)
+                                #         if name_count == 1 and enabled_name_clean == acct_name_clean:
+                                #             matched = True
+                                #             logger.warning(f"  ⚠️ [{idx}] Matched {acct_name} by name only (unique name match) - other matches failed")
+                                #     except Exception as e:
+                                #         logger.debug(f"  - [{idx}] Name-only match failed: {e}")
                                 
                                 if matched:
                                     is_enabled = True
@@ -10959,17 +10961,6 @@ def traders_edit(trader_id):
                                     custom_ticker = str(enabled_acct.get('custom_ticker', '') or '')  # Extract custom ticker
                                     logger.info(f"  ✅ Account {acct_name} (subaccount_id={acct_subaccount_id}) is ENABLED, multiplier={multiplier} (raw={multiplier_raw}, type={type(multiplier_raw)}), max_contracts={max_contracts}")
                                     break
-                            
-                            # Last resort: If only one enabled account and this account is checked in the UI, use that multiplier
-                            if not is_enabled and enabled_accounts and len(enabled_accounts) == 1:
-                                single_enabled = enabled_accounts[0]
-                                # If this is the only enabled account, assume it's for this trader
-                                is_enabled = True
-                                multiplier_raw = single_enabled.get('multiplier', 1.0)
-                                multiplier = float(multiplier_raw) if multiplier_raw else 1.0
-                                max_contracts = int(single_enabled.get('max_contracts', 0) or 0)
-                                custom_ticker = str(single_enabled.get('custom_ticker', '') or '')
-                                logger.warning(f"  ⚠️ Account {acct_name} not matched, but using single enabled account's multiplier={multiplier}")
                             
                             if not is_enabled and enabled_accounts:
                                 logger.warning(f"  ❌ Account {acct_name} (subaccount_id={acct_subaccount_id}, parent_id={parent_id}) NOT found in enabled_accounts - will default to multiplier=1.0")
