@@ -8104,55 +8104,16 @@ def broker_execution_worker():
             quantity = task.get('quantity')
             tp_ticks = task.get('tp_ticks', 10)
             sl_ticks = task.get('sl_ticks', 0)
-            retry_count = task.get('retry_count', 0)
             
-            # CRITICAL: NO MAX RETRIES - Keep trying forever with exponential backoff
-            # Exponential backoff: 5s, 10s, 20s, 40s, 60s (max), then every 60s
-            retry_delay = min(60, 5 * (2 ** min(retry_count, 4)))
+            # NO RETRIES - Try once, if fail log and move on
+            # Retries can cause duplicate trades which is dangerous
             
             try:
                 from recorder_service import execute_trade_simple
                 
-                logger.info(f"🔄 Broker execution: {action} {quantity} {ticker} (attempt {retry_count + 1})")
+                logger.info(f"📤 Broker execution: {action} {quantity} {ticker}")
+                logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
                 
-                # CRITICAL: Try to refresh tokens before execution if this is a retry
-                if retry_count > 0:
-                    logger.info(f"🔄 Retry detected - attempting token refresh for all accounts...")
-                    try:
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
-                        is_postgres = is_using_postgres()
-                        placeholder = '%s' if is_postgres else '?'
-                        
-                        # Get all accounts for this recorder
-                        cursor.execute(f'''
-                            SELECT DISTINCT a.id
-                            FROM traders t
-                            JOIN accounts a ON t.account_id = a.id
-                            WHERE t.recorder_id = {placeholder} AND t.enabled = {'true' if is_postgres else '1'}
-                        ''', (recorder_id,))
-                        account_ids = [row[0] for row in cursor.fetchall()]
-                        conn.close()
-                        
-                        # Try to refresh tokens for all accounts
-                        # Note: try_refresh_tradovate_token is defined later in this file
-                        # We'll call it by name to avoid import issues
-                        for acct_id in account_ids:
-                            try:
-                                # Call the function that's defined in this module
-                                refresh_func = globals().get('try_refresh_tradovate_token')
-                                if refresh_func:
-                                    if refresh_func(acct_id):
-                                        logger.info(f"✅ Refreshed token for account {acct_id}")
-                                else:
-                                    # Function not loaded yet, skip (will be available on next retry)
-                                    logger.debug(f"Token refresh function not available yet for account {acct_id}")
-                            except Exception as refresh_err:
-                                logger.warning(f"⚠️ Could not refresh token for account {acct_id}: {refresh_err}")
-                    except Exception as refresh_all_err:
-                        logger.warning(f"⚠️ Error during token refresh: {refresh_all_err}")
-                
-                logger.info(f"🔧 About to call execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
                 result = execute_trade_simple(
                     recorder_id=recorder_id,
                     action=action,
@@ -8169,38 +8130,22 @@ def broker_execution_worker():
                     logger.info(f"✅ Broker execution successful: {action} {quantity} {ticker} on {accounts_traded} account(s)")
                     _broker_execution_stats['total_executed'] += 1
                     _broker_execution_stats['last_execution_time'] = time.time()
-                    # Reset retry count on success
-                    task['retry_count'] = 0
                 else:
                     error = result.get('error', 'Unknown error')
-                    logger.error(f"❌ Broker execution attempt {retry_count + 1} FAILED: {error}")
+                    logger.error(f"❌ Broker execution FAILED: {error}")
                     logger.error(f"   Recorder ID: {recorder_id}, Action: {action}, Quantity: {quantity}, Ticker: {ticker}")
                     logger.error(f"   Full result: {result}")
-                    
-                    # CRITICAL: NEVER GIVE UP - Always retry with exponential backoff
-                    logger.info(f"🔄 Will retry in {retry_delay} seconds (exponential backoff)...")
-                    time.sleep(retry_delay)
-                    task['retry_count'] = retry_count + 1
-                    broker_execution_queue.put(task)  # Re-queue for retry
+                    logger.error(f"   ⚠️ NO RETRY - task abandoned to prevent duplicate trades")
                     _broker_execution_stats['total_failed'] += 1
                     _broker_execution_stats['last_error'] = error
-                    # Don't mark as done - we're retrying
-                    continue
                         
             except Exception as e:
-                logger.warning(f"⚠️ Broker execution exception on attempt {retry_count + 1}: {e}")
+                logger.error(f"❌ Broker execution exception: {e}")
                 import traceback
                 traceback.print_exc()
-                
-                # CRITICAL: NEVER GIVE UP - Always retry with exponential backoff
-                logger.info(f"🔄 Will retry in {retry_delay} seconds (exponential backoff)...")
-                time.sleep(retry_delay)
-                task['retry_count'] = retry_count + 1
-                broker_execution_queue.put(task)  # Re-queue for retry
+                logger.error(f"   ⚠️ NO RETRY - task abandoned to prevent duplicate trades")
                 _broker_execution_stats['total_failed'] += 1
                 _broker_execution_stats['last_error'] = str(e)
-                # Don't mark as done - we're retrying
-                continue
             
             # Mark task as done only on success
             broker_execution_queue.task_done()

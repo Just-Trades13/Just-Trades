@@ -1,10 +1,12 @@
 # WEBHOOK BROKER EXECUTION FIX - December 31, 2025
 
-## ✅ WORKING STATE CONFIRMED
+## ✅ WORKING STATE CONFIRMED - OVERNIGHT TRADING SUCCESS
 
-**Date:** December 31, 2025  
-**Tag:** `WORKING_DEC31_2025_WEBHOOK_FIX`  
+**Date:** December 31, 2025 (Updated: Jan 1, 2025)  
+**Tag:** `WORKING_JAN1_2025_STABLE`  
 **Backup:** `backups/WORKING_STATE_DEC31_2025_WEBHOOK_FIX/`
+
+### 🎉 MILESTONE: First successful overnight trading session!
 
 ---
 
@@ -162,8 +164,25 @@ nohup python3 ultra_simple_server.py > /tmp/server.log 2>&1 &
 3. `89a6de2` - Remove non-existent tp_units column from trader query
 4. `7438157` - Remove non-existent sl_type column from trader query
 5. `3cdff26` - CRITICAL FIX: Queue broker close orders when closing positions
+6. `39e912d` - Remove all retries from broker execution - prevents duplicate trades
 
 ---
 
-*Last verified: December 31, 2025*
-*Status: ✅ FULLY WORKING - TradingView signals execute on broker*
+## Additional Fix: No Retries (Jan 1, 2025)
+
+**Problem:** Infinite retry loops were causing unexpected/duplicate trades.
+
+**Solution:** Removed ALL retry logic from broker execution worker:
+- Each task executes exactly ONCE
+- If it fails, log error and move on
+- No re-queuing, no duplicate trades
+
+**Broker Execution Flow (Final):**
+```
+Signal → Queue Task → Execute ONCE → Success/Fail → Done (no retry)
+```
+
+---
+
+*Last verified: January 1, 2025*
+*Status: ✅ FULLY WORKING - Overnight trading successful*
