@@ -19482,6 +19482,116 @@ def api_broker_execution_status():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/recorders/<int:recorder_id>/execution-status', methods=['GET'])
+def api_recorder_execution_status(recorder_id):
+    """Diagnostic endpoint to check why broker execution isn't happening for a recorder"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Get recorder info
+        cursor.execute(f'SELECT id, name, webhook_token, recording_enabled FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        recorder_row = cursor.fetchone()
+        
+        if not recorder_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        recorder = dict(recorder_row) if hasattr(recorder_row, 'keys') else {
+            'id': recorder_row[0],
+            'name': recorder_row[1],
+            'webhook_token': recorder_row[2],
+            'recording_enabled': recorder_row[3]
+        }
+        
+        # Get trader info
+        cursor.execute(f'''
+            SELECT t.id, t.enabled, t.enabled_accounts, t.recorder_id,
+                   a.id as account_id, a.name as account_name, a.enabled as account_enabled
+            FROM traders t
+            LEFT JOIN accounts a ON t.account_id = a.id
+            WHERE t.recorder_id = {placeholder}
+        ''', (recorder_id,))
+        trader_rows = cursor.fetchall()
+        
+        traders = []
+        for row in trader_rows:
+            trader = dict(row) if hasattr(row, 'keys') else {
+                'id': row[0],
+                'enabled': row[1],
+                'enabled_accounts': row[2],
+                'recorder_id': row[3],
+                'account_id': row[4],
+                'account_name': row[5],
+                'account_enabled': row[6]
+            }
+            
+            # Parse enabled_accounts
+            enabled_accounts_raw = trader.get('enabled_accounts')
+            enabled_accounts_parsed = None
+            if enabled_accounts_raw:
+                try:
+                    enabled_accounts_parsed = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
+                except:
+                    pass
+            
+            trader['enabled_accounts_parsed'] = enabled_accounts_parsed
+            trader['enabled_accounts_count'] = len(enabled_accounts_parsed) if enabled_accounts_parsed else 0
+            traders.append(trader)
+        
+        conn.close()
+        
+        # Check broker execution worker
+        worker_alive = broker_execution_thread.is_alive() if broker_execution_thread else False
+        queue_size = broker_execution_queue.qsize()
+        
+        # Analyze issues
+        issues = []
+        if not recorder.get('recording_enabled'):
+            issues.append("Recorder is disabled (recording_enabled = false)")
+        
+        enabled_traders = [t for t in traders if t.get('enabled')]
+        if len(enabled_traders) == 0:
+            issues.append("No enabled traders linked to this recorder")
+        else:
+            for trader in enabled_traders:
+                if not trader.get('enabled_accounts_parsed') or trader.get('enabled_accounts_count', 0) == 0:
+                    issues.append(f"Trader {trader.get('id')} has no enabled_accounts (empty or invalid)")
+                if not trader.get('account_enabled'):
+                    issues.append(f"Trader {trader.get('id')} linked to disabled account {trader.get('account_id')}")
+        
+        if not worker_alive:
+            issues.append("Broker execution worker thread is not running (CRITICAL)")
+        
+        if queue_size >= broker_execution_queue.maxsize:
+            issues.append(f"Broker execution queue is full ({queue_size}/{broker_execution_queue.maxsize})")
+        
+        return jsonify({
+            'success': True,
+            'recorder': {
+                'id': recorder.get('id'),
+                'name': recorder.get('name'),
+                'recording_enabled': bool(recorder.get('recording_enabled')),
+                'webhook_token': recorder.get('webhook_token')
+            },
+            'traders': traders,
+            'broker_execution': {
+                'worker_alive': worker_alive,
+                'queue_size': queue_size,
+                'queue_maxsize': broker_execution_queue.maxsize,
+                'stats': _broker_execution_stats
+            },
+            'issues': issues,
+            'ready_for_execution': len(issues) == 0
+        })
+    except Exception as e:
+        logger.error(f"Error getting recorder execution status: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/broker-execution/test', methods=['POST'])
 def api_test_broker_execution():
     """Test endpoint to manually trigger broker execution for debugging"""

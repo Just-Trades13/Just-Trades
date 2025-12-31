@@ -769,6 +769,21 @@ def execute_trade_simple(
         
         # CRITICAL: If no traders found, return error immediately
         if len(traders) == 0:
+            # Get more details for debugging
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            placeholder = '%s' if is_postgres else '?'
+            cursor.execute(f'SELECT COUNT(*) FROM traders WHERE recorder_id = {placeholder} AND enabled = {'true' if is_postgres else '1'}', (recorder_id,))
+            enabled_trader_count = cursor.fetchone()[0] if cursor.rowcount > 0 else 0
+            cursor.execute(f'SELECT id, enabled, enabled_accounts FROM traders WHERE recorder_id = {placeholder}', (recorder_id,))
+            all_traders = cursor.fetchall()
+            conn.close()
+            
+            logger.error(f"   DEBUG: Enabled traders for recorder {recorder_id}: {enabled_trader_count}")
+            for trader_row in all_traders:
+                trader_dict = dict(trader_row) if hasattr(trader_row, 'keys') else {'id': trader_row[0], 'enabled': trader_row[1], 'enabled_accounts': trader_row[2]}
+                enabled_accts = trader_dict.get('enabled_accounts')
+                logger.error(f"   DEBUG: Trader {trader_dict.get('id')}: enabled={trader_dict.get('enabled')}, enabled_accounts={str(enabled_accts)[:100] if enabled_accts else 'None'}")
             result['error'] = 'No accounts to trade on - check enabled_accounts or trader.enabled'
             logger.error(f"❌ No accounts to trade on for recorder {recorder_id}")
             logger.error(f"   Possible causes:")
