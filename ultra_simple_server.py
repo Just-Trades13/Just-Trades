@@ -8215,9 +8215,13 @@ def broker_execution_worker():
             time.sleep(1)  # Brief pause before retrying
 
 # Start broker execution worker
+logger.info("🔧 Creating broker execution worker thread...")
 broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
 broker_execution_thread.start()
-logger.info("✅ Broker execution worker started (Trade Manager style - async, non-blocking)")
+logger.info("✅ Broker execution worker thread started (Trade Manager style - async, non-blocking)")
+logger.info(f"   Thread name: {broker_execution_thread.name}")
+logger.info(f"   Thread alive: {broker_execution_thread.is_alive()}")
+logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
 
 # Track broker execution stats
 _broker_execution_stats = {
@@ -9375,7 +9379,12 @@ def process_webhook_directly(webhook_token):
         _webhook_last_processed = time.time()
         _webhook_processing_count += 1
         processing_time = _webhook_last_processed - webhook_start_time
+        
+        # Log final status
+        queue_status = broker_execution_queue.qsize()
+        worker_status = broker_execution_thread.is_alive() if broker_execution_thread else False
         _logger.info(f"✅ Webhook processed in {processing_time:.2f}s (total: {_webhook_processing_count})")
+        _logger.info(f"   Final status: Queue size={queue_status}, Worker alive={worker_status}, Broker task queued={'YES' if queue_status > 0 or 'broker_task' in locals() else 'NO'}")
         
         return jsonify({
             'success': True,
