@@ -10901,65 +10901,42 @@ def traders_edit(trader_id):
                             acct_subaccount_id = acct.get('id')  # This is the subaccount ID from tradovate_accounts
                             acct_name = acct.get('name', '')
                             
-                            # Try to match this account in enabled_accounts
-                            logger.info(f"  🔍 [MATCH] Trying to match account '{acct_name}' (subaccount_id={acct_subaccount_id}, parent_id={parent_id}) against {len(enabled_accounts)} enabled accounts")
+                            # CRITICAL: Only match accounts that are EXPLICITLY in enabled_accounts
+                            # NO FALLBACKS - if it doesn't match exactly, it's NOT enabled
+                            logger.debug(f"  🔍 [MATCH] Checking account '{acct_name}' (subaccount_id={acct_subaccount_id}, parent_id={parent_id}) against {len(enabled_accounts)} enabled accounts")
                             for idx, enabled_acct in enumerate(enabled_accounts):
-                                logger.info(f"     [{idx}] Checking: account_name='{enabled_acct.get('account_name')}', account_id={enabled_acct.get('account_id')}, subaccount_id={enabled_acct.get('subaccount_id')}, multiplier={enabled_acct.get('multiplier', 'NOT SET')}")
-                                matched = False
                                 enabled_subaccount_id = enabled_acct.get('subaccount_id')
                                 enabled_account_id = enabled_acct.get('account_id')
                                 enabled_account_name = enabled_acct.get('account_name', '')
                                 
-                                # Strategy 1: Match by subaccount_id (most reliable)
-                                try:
-                                    acct_id_int = int(acct_subaccount_id) if acct_subaccount_id else None
-                                    enabled_id_int = int(enabled_subaccount_id) if enabled_subaccount_id else None
-                                    if acct_id_int and enabled_id_int and acct_id_int == enabled_id_int:
-                                        matched = True
-                                        logger.info(f"  ✓ [{idx}] Matched {acct_name} by subaccount_id: {acct_id_int} == {enabled_id_int}")
-                                except (ValueError, TypeError) as e:
-                                    logger.debug(f"  - [{idx}] Subaccount ID match failed: {e}")
+                                matched = False
                                 
-                                # Strategy 2: Fallback - match by account_id + account_name (case-insensitive, strip whitespace)
-                                if not matched:
+                                # Strategy 1: Match by subaccount_id (EXACT match only)
+                                if acct_subaccount_id and enabled_subaccount_id:
                                     try:
-                                        enabled_name_clean = str(enabled_account_name).strip().lower() if enabled_account_name else ''
-                                        acct_name_clean = str(acct_name).strip().lower() if acct_name else ''
-                                        if enabled_account_id and int(enabled_account_id) == int(parent_id):
-                                            # Try exact match first
-                                            if enabled_account_name == acct_name:
-                                                matched = True
-                                                logger.info(f"  ⚠️ [{idx}] Matched {acct_name} by account_id+name (exact) - subaccount_id match failed")
-                                            # Try case-insensitive match
-                                            elif enabled_name_clean and acct_name_clean and enabled_name_clean == acct_name_clean:
-                                                matched = True
-                                                logger.info(f"  ⚠️ [{idx}] Matched {acct_name} by account_id+name (case-insensitive) - subaccount_id match failed")
-                                    except (ValueError, TypeError) as e:
-                                        logger.debug(f"  - [{idx}] Account ID+name match failed: {e}")
+                                        if int(acct_subaccount_id) == int(enabled_subaccount_id):
+                                            matched = True
+                                            logger.info(f"  ✓ [{idx}] Matched '{acct_name}' by subaccount_id: {acct_subaccount_id} == {enabled_subaccount_id}")
+                                    except (ValueError, TypeError):
+                                        pass
                                 
-                                # Strategy 3: Last resort - match by account_name only (VERY CONSERVATIVE - only if exact match and unique)
-                                # DISABLED: Too risky, can cause false matches
-                                # Only use if subaccount_id and account_id matching both fail AND names are exact match
-                                # if not matched and enabled_account_name and enabled_account_id and int(enabled_account_id) == int(parent_id):
-                                #     try:
-                                #         enabled_name_clean = str(enabled_account_name).strip().lower()
-                                #         acct_name_clean = str(acct_name).strip().lower()
-                                #         # Only match by name if it's unique in enabled_accounts AND same account_id
-                                #         name_count = sum(1 for e in enabled_accounts if str(e.get('account_name', '')).strip().lower() == enabled_name_clean and e.get('account_id') == enabled_account_id)
-                                #         if name_count == 1 and enabled_name_clean == acct_name_clean:
-                                #             matched = True
-                                #             logger.warning(f"  ⚠️ [{idx}] Matched {acct_name} by name only (unique name match) - other matches failed")
-                                #     except Exception as e:
-                                #         logger.debug(f"  - [{idx}] Name-only match failed: {e}")
+                                # Strategy 2: Fallback - match by account_id + account_name (EXACT match only, same account_id required)
+                                if not matched and enabled_account_id and parent_id:
+                                    try:
+                                        if int(enabled_account_id) == int(parent_id) and enabled_account_name == acct_name:
+                                            matched = True
+                                            logger.info(f"  ✓ [{idx}] Matched '{acct_name}' by account_id+name (account_id={parent_id})")
+                                    except (ValueError, TypeError):
+                                        pass
                                 
+                                # If matched, extract settings for THIS account only
                                 if matched:
                                     is_enabled = True
-                                    # Extract multiplier - ensure it's a float
                                     multiplier_raw = enabled_acct.get('multiplier', 1.0)
                                     multiplier = float(multiplier_raw) if multiplier_raw else 1.0
-                                    max_contracts = int(enabled_acct.get('max_contracts', 0) or 0)  # Extract max contracts
-                                    custom_ticker = str(enabled_acct.get('custom_ticker', '') or '')  # Extract custom ticker
-                                    logger.info(f"  ✅ Account {acct_name} (subaccount_id={acct_subaccount_id}) is ENABLED, multiplier={multiplier} (raw={multiplier_raw}, type={type(multiplier_raw)}), max_contracts={max_contracts}")
+                                    max_contracts = int(enabled_acct.get('max_contracts', 0) or 0)
+                                    custom_ticker = str(enabled_acct.get('custom_ticker', '') or '')
+                                    logger.info(f"  ✅ Account '{acct_name}' ENABLED with multiplier={multiplier}, max_contracts={max_contracts}")
                                     break
                             
                             if not is_enabled and enabled_accounts:
