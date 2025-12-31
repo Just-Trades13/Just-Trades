@@ -1,5 +1,6 @@
 # ⛔⛔⛔ CURSOR AI RULES - ZERO TOLERANCE ENFORCEMENT ⛔⛔⛔
-# LAST WORKING STATE: Dec 4, 2025 (Tag: WORKING_DEC4_2025_OAUTH_FIX)
+# LAST WORKING STATE: Dec 31, 2025 (Tag: WORKING_DEC31_2025_WEBHOOK_FIX)
+# PREVIOUS WORKING STATE: Dec 4, 2025 (Tag: WORKING_DEC4_2025_OAUTH_FIX)
 # ============================================================
 
 # ============================================================
@@ -107,6 +108,22 @@
 ## NEVER remove the "Cancelling any old TP orders" block before PLACE NEW TP
 ## LOCATION: recorder_service.py → execute_simple() → before "PLACE NEW TP"
 
+## 🚨🚨🚨 CRITICAL: WEBHOOK BROKER EXECUTION (Dec 31, 2025) 🚨🚨🚨
+## ALL webhook signals MUST queue broker orders before returning
+## See WEBHOOK_BROKER_EXECUTION_FIX.md for details
+##
+## When closing positions (BUY closes SHORT, SELL closes LONG):
+## - MUST queue broker_execution_queue.put_nowait(close_task) BEFORE return
+## - Without this, DB updates but broker never receives the order
+##
+## NEVER remove the broker queue blocks before early returns in process_webhook_directly()
+## LOCATION: ultra_simple_server.py → process_webhook_directly() → lines ~9130-9145 and ~9168-9183
+##
+## WITHOUT THIS FIX:
+## - Webhooks return "success" but no broker execution
+## - total_queued stays at 0
+## - Users see signals but no trades on broker
+
 ## 🚨 ABSOLUTE REQUIREMENT: ASK BEFORE MODIFYING
 
 **BEFORE touching ANY code, you MUST:**
@@ -165,7 +182,8 @@ These files are WORKING. Do not touch them without user saying "yes, modify X fi
 | Live Position Cards | ✅ WORKING | Dec 3, 2025 |
 | Account PnL Display | ✅ WORKING | Dec 3, 2025 |
 | Recorders Tab | ✅ WORKING | Dec 3, 2025 |
-| Webhook Signals | ✅ WORKING | Dec 3, 2025 |
+| Webhook Signals | ✅ WORKING | Dec 31, 2025 | **CRITICAL: All signals queue broker orders** |
+| Webhook Broker Execution | ✅ WORKING | Dec 31, 2025 | **CRITICAL: Close signals now execute on broker** |
 | Trade Recording | ✅ WORKING | Dec 3, 2025 |
 | Dashboard | ✅ WORKING | Dec 3, 2025 |
 | Control Center | ✅ WORKING | Dec 3, 2025 |
@@ -173,6 +191,7 @@ These files are WORKING. Do not touch them without user saying "yes, modify X fi
 | Tradovate OAuth | ✅ WORKING | Dec 4, 2025 | **CRITICAL: Uses LIVE+DEMO fallback** |
 | WebSocket Updates | ✅ WORKING | Dec 3, 2025 |
 | Copy Trading | ✅ WORKING | Dec 3, 2025 |
+| Multi-Account Trading | ✅ WORKING | Dec 31, 2025 | **With multipliers (3x, 5x per account)** |
 
 ---
 
@@ -313,6 +332,6 @@ token_endpoints = [
 
 ---
 
-*Backup: backups/WORKING_STATE_DEC4_2025_OAUTH_FIX/*
-*Git tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX*
-*Last verified: Dec 4, 2025*
+*Backup: backups/WORKING_STATE_DEC31_2025_WEBHOOK_FIX/*
+*Git tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC31_2025_WEBHOOK_FIX*
+*Last verified: Dec 31, 2025*
