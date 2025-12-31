@@ -8921,6 +8921,8 @@ def process_webhook_directly(webhook_token):
         # Get linked trader for live execution with ALL risk settings
         # PostgreSQL uses TRUE (boolean), SQLite uses 1 (integer)
         # CRITICAL: Include all trader risk settings (initial_position_size, add_position_size, tp_targets, sl_*, etc.)
+        _logger.info(f"🔍 Looking for trader linked to recorder_id={recorder_id} (recorder_name='{recorder_name}')")
+        
         if is_postgres:
             cursor.execute(f'''
                 SELECT t.*, 
@@ -8949,9 +8951,27 @@ def process_webhook_directly(webhook_token):
         trader = dict(trader_row) if trader_row else None
         
         if not trader:
+            # Check if ANY traders exist for this recorder (even disabled ones)
+            cursor.execute(f'SELECT COUNT(*) as count FROM traders WHERE recorder_id = {placeholder}', (recorder_id,))
+            trader_count = cursor.fetchone()[0] if cursor.rowcount > 0 else 0
+            cursor.execute(f'SELECT COUNT(*) as count FROM traders WHERE recorder_id = {placeholder} AND enabled = {1 if not is_postgres else "TRUE"}', (recorder_id,))
+            enabled_count = cursor.fetchone()[0] if cursor.rowcount > 0 else 0
+            
             conn.close()
-            _logger.warning(f"No active trader linked to recorder '{recorder_name}'")
-            return jsonify({'success': False, 'error': 'No trader linked'}), 400
+            _logger.error(f"❌ No active trader linked to recorder '{recorder_name}' (recorder_id={recorder_id})")
+            _logger.error(f"   Total traders for this recorder: {trader_count}")
+            _logger.error(f"   Enabled traders for this recorder: {enabled_count}")
+            _logger.error(f"   ACTION REQUIRED: Go to /traders and create/link a trader to recorder '{recorder_name}'")
+            return jsonify({
+                'success': False, 
+                'error': 'No trader linked',
+                'recorder_id': recorder_id,
+                'recorder_name': recorder_name,
+                'total_traders': trader_count,
+                'enabled_traders': enabled_count
+            }), 400
+        
+        _logger.info(f"✅ Found trader: id={trader.get('id')}, account_id={trader.get('account_id')}, enabled_accounts={bool(trader.get('enabled_accounts'))}")
         
         # CRITICAL: Use TRADER's risk settings (override recorder defaults)
         # Trader settings take precedence - these are what the user configured on /traders/{id}
@@ -9331,8 +9351,9 @@ def process_webhook_directly(webhook_token):
             try:
                 broker_execution_queue.put_nowait(broker_task)
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
-                _logger.info(f"   Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
-                _logger.info(f"   Worker alive: {broker_execution_thread.is_alive() if broker_execution_thread else False}")
+                _logger.info(f"   ✅ Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
+                _logger.info(f"   ✅ Worker alive: {broker_execution_thread.is_alive() if broker_execution_thread else False}")
+                _logger.info(f"   ✅ Task details: recorder_id={recorder_id}, action={trade_action}, quantity={quantity}, ticker={ticker}")
                 _broker_execution_stats['total_queued'] += 1
             except Exception as queue_err:
                 # Queue full - log but don't fail webhook
