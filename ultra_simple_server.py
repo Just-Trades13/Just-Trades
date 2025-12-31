@@ -19488,60 +19488,6 @@ def api_test_broker_execution():
     try:
         data = request.get_json() or {}
         recorder_id = data.get('recorder_id')
-        action = data.get('action', 'BUY')
-        ticker = data.get('ticker', 'MNQ1!')
-        quantity = int(data.get('quantity', 1))
-        tp_ticks = int(data.get('tp_ticks', 10))
-        sl_ticks = int(data.get('sl_ticks', 0))
-        
-        if not recorder_id:
-            return jsonify({'success': False, 'error': 'recorder_id required'}), 400
-        
-        logger.info(f"🧪 TEST: Manually triggering broker execution for recorder {recorder_id}")
-        logger.info(f"   Action: {action}, Ticker: {ticker}, Quantity: {quantity}, TP: {tp_ticks}, SL: {sl_ticks}")
-        
-        # Create test task
-        test_task = {
-            'recorder_id': recorder_id,
-            'action': action,
-            'ticker': ticker,
-            'quantity': quantity,
-            'tp_ticks': tp_ticks,
-            'sl_ticks': sl_ticks,
-            'retry_count': 0
-        }
-        
-        # Try to queue it
-        try:
-            broker_execution_queue.put_nowait(test_task)
-            logger.info(f"✅ TEST: Task queued successfully")
-            return jsonify({
-                'success': True,
-                'message': 'Test task queued',
-                'queue_size': broker_execution_queue.qsize(),
-                'worker_alive': broker_execution_thread.is_alive() if broker_execution_thread else False
-            })
-        except Exception as queue_err:
-            logger.error(f"❌ TEST: Failed to queue task: {queue_err}")
-            return jsonify({
-                'success': False,
-                'error': f'Queue error: {str(queue_err)}',
-                'queue_size': broker_execution_queue.qsize(),
-                'queue_full': broker_execution_queue.full()
-            }), 500
-            
-    except Exception as e:
-        logger.error(f"Error in test broker execution: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/broker-execution/test', methods=['POST'])
-def api_test_broker_execution():
-    """Test endpoint to manually trigger broker execution for debugging"""
-    try:
-        data = request.get_json() or {}
-        recorder_id = data.get('recorder_id')
         
         if not recorder_id:
             return jsonify({'success': False, 'error': 'recorder_id required'}), 400
