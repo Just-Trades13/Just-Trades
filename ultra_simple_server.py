@@ -8152,6 +8152,7 @@ def broker_execution_worker():
                     except Exception as refresh_all_err:
                         logger.warning(f"⚠️ Error during token refresh: {refresh_all_err}")
                 
+                logger.info(f"🔧 About to call execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
                 result = execute_trade_simple(
                     recorder_id=recorder_id,
                     action=action,
@@ -8160,6 +8161,8 @@ def broker_execution_worker():
                     tp_ticks=tp_ticks,
                     sl_ticks=sl_ticks if sl_ticks > 0 else 0
                 )
+                
+                logger.info(f"🔧 execute_trade_simple returned: success={result.get('success')}, error={result.get('error')}, accounts_traded={result.get('accounts_traded', 0)}")
                 
                 if result.get('success'):
                     accounts_traded = result.get('accounts_traded', 0)
@@ -8170,8 +8173,9 @@ def broker_execution_worker():
                     task['retry_count'] = 0
                 else:
                     error = result.get('error', 'Unknown error')
-                    logger.warning(f"⚠️ Broker execution attempt {retry_count + 1} failed: {error}")
-                    logger.warning(f"   Recorder ID: {recorder_id}, Action: {action}, Quantity: {quantity}, Ticker: {ticker}")
+                    logger.error(f"❌ Broker execution attempt {retry_count + 1} FAILED: {error}")
+                    logger.error(f"   Recorder ID: {recorder_id}, Action: {action}, Quantity: {quantity}, Ticker: {ticker}")
+                    logger.error(f"   Full result: {result}")
                     
                     # CRITICAL: NEVER GIVE UP - Always retry with exponential backoff
                     logger.info(f"🔄 Will retry in {retry_delay} seconds (exponential backoff)...")
