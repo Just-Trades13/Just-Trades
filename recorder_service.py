@@ -697,7 +697,8 @@ def execute_trade_simple(
         if not trader_rows:
             conn.close()
             result['error'] = 'No trader linked'
-            logger.warning(f"⚠️ No trader linked to recorder {recorder_id}")
+            logger.error(f"❌ No trader linked to recorder {recorder_id}")
+            logger.error(f"   Check: 1) Is there a trader record? 2) Is trader.enabled = true? 3) Is recorder_id correct?")
             return result
         
         # Build list of ALL accounts to trade on from ALL traders
@@ -713,11 +714,18 @@ def execute_trade_simple(
                 try:
                     enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
                     
+                    if not isinstance(enabled_accounts, list) or len(enabled_accounts) == 0:
+                        logger.warning(f"⚠️ Trader {trader_dict.get('id')} has enabled_accounts but it's empty or invalid: {enabled_accounts_raw[:100]}")
+                        continue
+                    
+                    logger.info(f"📋 Processing {len(enabled_accounts)} enabled account(s) for trader {trader_dict.get('id')}")
+                    
                     for acct in enabled_accounts:
                         acct_id = acct.get('account_id')
                         subaccount_id = acct.get('subaccount_id')
                         subaccount_name = acct.get('subaccount_name') or acct.get('account_name')
                         is_demo = acct.get('is_demo', True)
+                        multiplier = float(acct.get('multiplier', 1.0))  # Extract multiplier from account settings
                         
                         # Skip duplicates
                         if subaccount_id in seen_subaccounts:
@@ -729,6 +737,10 @@ def execute_trade_simple(
                         cursor.execute(f'SELECT tradovate_token, username, password FROM accounts WHERE id = {placeholder}', (acct_id,))
                         creds_row = cursor.fetchone()
                         
+                        if not creds_row:
+                            logger.warning(f"⚠️ Account {acct_id} not found in accounts table - skipping {subaccount_name}")
+                            continue
+                        
                         if creds_row:
                             creds = dict(creds_row)
                             traders.append({
@@ -738,9 +750,10 @@ def execute_trade_simple(
                                 'tradovate_token': creds.get('tradovate_token'),
                                 'username': creds.get('username'),
                                 'password': creds.get('password'),
-                                'account_id': acct_id
+                                'account_id': acct_id,
+                                'multiplier': multiplier  # Store multiplier for this account
                             })
-                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id})")
+                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x)")
                 except Exception as e:
                     logger.error(f"❌ Error parsing enabled_accounts: {e}")
             else:
@@ -753,6 +766,17 @@ def execute_trade_simple(
         
         conn.close()
         logger.info(f"📋 Found {len(traders)} account(s) to trade on")
+        
+        # CRITICAL: If no traders found, return error immediately
+        if len(traders) == 0:
+            result['error'] = 'No accounts to trade on - check enabled_accounts or trader.enabled'
+            logger.error(f"❌ No accounts to trade on for recorder {recorder_id}")
+            logger.error(f"   Possible causes:")
+            logger.error(f"   1. No trader linked to recorder {recorder_id}")
+            logger.error(f"   2. Trader.enabled = false")
+            logger.error(f"   3. enabled_accounts is empty or invalid")
+            logger.error(f"   4. No accounts in enabled_accounts match any subaccounts")
+            return result
         
         # Get tick size for this symbol
         symbol_root = ticker[:3].upper() if ticker else 'MNQ'
@@ -767,6 +791,8 @@ def execute_trade_simple(
             """Execute trade for a single account - runs in parallel with others"""
             acct_name = trader.get('subaccount_name', 'Unknown')
             acct_id = trader.get('account_id')
+            account_multiplier = float(trader.get('multiplier', 1.0))  # Get multiplier for this account
+            adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
             
             # NOTE: Don't check is_account_auth_valid upfront - let auth logic handle it
             # The account might work via cached token, API Access, or OAuth fallback
@@ -836,38 +862,116 @@ def execute_trade_simple(
                         auth_method = "OAUTH"
                         logger.info(f"🔑 [{acct_name}] Using OAuth token (scalable - no rate limit)")
                 
-                # PRIORITY 3: API Access - ONLY if no OAuth token (last resort)
+                # PRIORITY 3: Try to refresh OAuth token if expired
+                if not access_token:
+                    oauth_token = trader.get('tradovate_token')
+                    refresh_token = trader.get('tradovate_refresh_token')
+                    
+                    if oauth_token and refresh_token:
+                        logger.info(f"🔄 [{acct_name}] Attempting token refresh...")
+                        try:
+                            # Try to refresh the token
+                            tradovate_temp = TradovateIntegration(demo=is_demo)
+                            await tradovate_temp.__aenter__()
+                            tradovate_temp.access_token = oauth_token
+                            tradovate_temp.refresh_token = refresh_token
+                            
+                            refresh_result = await tradovate_temp.refresh_access_token()
+                            if refresh_result.get('success'):
+                                access_token = refresh_result.get('access_token')
+                                auth_method = "OAUTH_REFRESHED"
+                                # Update token in database
+                                try:
+                                    conn_refresh = get_db_connection()
+                                    cursor_refresh = conn_refresh.cursor()
+                                    placeholder_refresh = '%s' if is_postgres else '?'
+                                    cursor_refresh.execute(f'''
+                                        UPDATE accounts 
+                                        SET tradovate_token = {placeholder_refresh}, 
+                                            token_expires_at = {placeholder_refresh}
+                                        WHERE id = {placeholder_refresh}
+                                    ''', (access_token, refresh_result.get('expires_at'), account_id))
+                                    conn_refresh.commit()
+                                    conn_refresh.close()
+                                    cache_token(account_id, access_token, refresh_result.get('expires_at'))
+                                    logger.info(f"✅ [{acct_name}] Token refreshed successfully")
+                                except Exception as update_err:
+                                    logger.warning(f"⚠️ [{acct_name}] Could not update token in DB: {update_err}")
+                            await tradovate_temp.__aexit__(None, None, None)
+                        except Exception as refresh_err:
+                            logger.warning(f"⚠️ [{acct_name}] Token refresh failed: {refresh_err}")
+                
+                # PRIORITY 4: API Access - ONLY if no OAuth token (last resort)
                 # This can trigger captcha and rate limiting - avoid for scale!
                 if not access_token and username and password:
                     logger.warning(f"⚠️ [{acct_name}] No OAuth token - trying API Access (not scalable)")
                     await wait_for_rate_limit()  # Respect rate limits
                     record_api_call()
                     
-                    api_access = TradovateAPIAccess(demo=is_demo)
-                    login_result = await api_access.login(
-                        username=username, password=password,
-                        db_path=DATABASE_PATH, account_id=account_id
-                    )
-                    if login_result.get('success'):
-                        access_token = login_result['accessToken']
-                        auth_method = "API_ACCESS"
-                        # Cache the token
-                        expiry_str = login_result.get('expirationTime', '')
+                    # Try API Access with retries
+                    for api_attempt in range(3):
                         try:
-                            from dateutil.parser import parse as parse_date
-                            expiry = parse_date(expiry_str)
-                            cache_token(account_id, access_token, expiry, login_result.get('mdAccessToken'))
-                        except:
-                            pass
-                        logger.info(f"✅ [{acct_name}] API Access successful (cached)")
-                    else:
-                        error_msg = login_result.get('error', 'Unknown error')
-                        logger.error(f"❌ [{acct_name}] API Access failed: {error_msg}")
-                        return {'success': False, 'error': f"Auth failed: {error_msg}"}
+                            api_access = TradovateAPIAccess(demo=is_demo)
+                            login_result = await api_access.login(
+                                username=username, password=password,
+                                db_path=DATABASE_PATH, account_id=account_id
+                            )
+                            if login_result.get('success'):
+                                access_token = login_result['accessToken']
+                                auth_method = "API_ACCESS"
+                                # Cache the token
+                                expiry_str = login_result.get('expirationTime', '')
+                                try:
+                                    from dateutil.parser import parse as parse_date
+                                    expiry = parse_date(expiry_str)
+                                    cache_token(account_id, access_token, expiry, login_result.get('mdAccessToken'))
+                                except:
+                                    pass
+                                logger.info(f"✅ [{acct_name}] API Access successful (cached)")
+                                break
+                            else:
+                                error_msg = login_result.get('error', 'Unknown error')
+                                if api_attempt < 2:
+                                    logger.warning(f"⚠️ [{acct_name}] API Access attempt {api_attempt + 1} failed, retrying...")
+                                    await asyncio.sleep(2)
+                                else:
+                                    logger.error(f"❌ [{acct_name}] API Access failed after 3 attempts: {error_msg}")
+                        except Exception as api_err:
+                            if api_attempt < 2:
+                                logger.warning(f"⚠️ [{acct_name}] API Access exception, retrying: {api_err}")
+                                await asyncio.sleep(2)
+                            else:
+                                logger.error(f"❌ [{acct_name}] API Access exception after 3 attempts: {api_err}")
                 
-                # No auth method worked
+                # CRITICAL: If still no access token, try one more time with fresh DB lookup
                 if not access_token:
-                    return {'success': False, 'error': 'No OAuth token or credentials available - please re-authorize'}
+                    logger.warning(f"⚠️ [{acct_name}] All auth methods failed, trying fresh DB lookup...")
+                    try:
+                        conn_fresh = get_db_connection()
+                        cursor_fresh = conn_fresh.cursor()
+                        placeholder_fresh = '%s' if is_postgres else '?'
+                        cursor_fresh.execute(f'''
+                            SELECT tradovate_token, tradovate_refresh_token, username, password
+                            FROM accounts WHERE id = {placeholder_fresh}
+                        ''', (account_id,))
+                        fresh_row = cursor_fresh.fetchone()
+                        conn_fresh.close()
+                        
+                        if fresh_row:
+                            fresh_creds = dict(fresh_row)
+                            fresh_token = fresh_creds.get('tradovate_token')
+                            if fresh_token:
+                                access_token = fresh_token
+                                auth_method = "FRESH_DB_LOOKUP"
+                                logger.info(f"✅ [{acct_name}] Got token from fresh DB lookup")
+                    except Exception as fresh_err:
+                        logger.warning(f"⚠️ [{acct_name}] Fresh DB lookup failed: {fresh_err}")
+                
+                # FINAL FALLBACK: If still no token, return error (will be retried by worker)
+                if not access_token:
+                    error_msg = 'No OAuth token or credentials available - will retry with token refresh'
+                    logger.error(f"❌ [{acct_name}] {error_msg}")
+                    return {'success': False, 'error': error_msg, 'retry_recommended': True}
                 
                 # ============================================================
                 # 🚀 SCALABLE CONNECTIONS - Reuse WebSocket connections when possible
@@ -901,6 +1005,10 @@ def execute_trade_simple(
                     order_action = 'Buy' if action == 'BUY' else 'Sell'
                     record_api_call()  # Track API calls for rate limiting
                     
+                    # Log multiplier application
+                    if account_multiplier != 1.0:
+                        logger.info(f"📊 [{acct_name}] Applying multiplier: {quantity} × {account_multiplier} = {adjusted_quantity} contracts")
+                    
                     # Check existing position first
                     existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
                     has_existing_position = False
@@ -920,7 +1028,7 @@ def execute_trade_simple(
                             account_spec=tradovate_account_spec,
                             symbol=tradovate_symbol,
                             entry_side=order_action,
-                            quantity=quantity,
+                            quantity=adjusted_quantity,
                             profit_target_ticks=tp_ticks,
                             stop_loss_ticks=sl_ticks if sl_ticks > 0 else None,  # Only place SL if configured
                             trailing_stop=False
@@ -974,10 +1082,10 @@ def execute_trade_simple(
                     # STEP 1: Place market order via REST
                     order_data = tradovate.create_market_order(
                         tradovate_account_spec, tradovate_symbol, 
-                        order_action, quantity, tradovate_account_id
+                        order_action, adjusted_quantity, tradovate_account_id
                     )
                     
-                    logger.info(f"📤 [{acct_name}] Placing {order_action} {quantity} {tradovate_symbol} (REST)...")
+                    logger.info(f"📤 [{acct_name}] Placing {order_action} {adjusted_quantity} {tradovate_symbol} (REST)...")
                     order_result = await tradovate.place_order(order_data)
                     
                     if not order_result or not order_result.get('success'):
@@ -2129,6 +2237,7 @@ def execute_live_trade_with_bracket(
                     acct_id = acct.get('account_id')
                     subaccount_id = acct.get('subaccount_id')
                     subaccount_name = acct.get('subaccount_name')
+                    multiplier = float(acct.get('multiplier', 1.0))  # Extract multiplier from account settings
                     
                     # Look up credentials for this account
                     cursor.execute('''
@@ -2150,7 +2259,8 @@ def execute_live_trade_with_bracket(
                                 'md_access_token': account_row['md_access_token'],
                                 'username': account_row['username'],
                                 'password': account_row['password'],
-                                'account_id': account_row['id']
+                                'account_id': account_row['id'],
+                                'multiplier': multiplier  # Store multiplier for this account
                             })
                             logger.info(f"✅ [{idx+1}/{len(enabled_accounts)}] Added: {subaccount_name} (account_id={acct_id})")
                         else:
@@ -2197,6 +2307,8 @@ def execute_live_trade_with_bracket(
             username = trading_account.get('username')
             password = trading_account.get('password')
             account_id = trading_account.get('account_id')
+            account_multiplier = float(trading_account.get('multiplier', 1.0))  # Get multiplier for this account
+            adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
             
             if not tradovate_account_id:
                 logger.warning(f"⚠️ [{acct_idx+1}] Missing account ID - skipping")
@@ -2206,13 +2318,17 @@ def execute_live_trade_with_bracket(
             if not username or not password:
                 logger.warning(f"⚠️ [{acct_idx+1}] No username/password - will try existing token")
             
+            # Log multiplier application
+            if account_multiplier != 1.0:
+                logger.info(f"📊 [{trading_account['subaccount_name']}] Applying multiplier: {quantity} × {account_multiplier} = {adjusted_quantity} contracts")
+            
             # Handle CLOSE action - need to determine position side first
             if action == 'CLOSE':
                 order_action = None
             else:
                 order_action = 'Buy' if action == 'BUY' else 'Sell'
             
-            logger.info(f"📤 [{acct_idx+1}] {action} {quantity} {tradovate_symbol} on {trading_account['subaccount_name']}")
+            logger.info(f"📤 [{acct_idx+1}] {action} {adjusted_quantity} {tradovate_symbol} on {trading_account['subaccount_name']}")
             
             async def execute_simple():
                 # CRITICAL: Use REST API Access for authentication (avoids rate limiting)
@@ -2280,18 +2396,19 @@ def execute_live_trade_with_bracket(
                 
                     # Handle CLOSE action - determine close side from position
                     # CRITICAL: Use local variable to avoid scope issues with outer 'quantity' parameter
-                    trade_quantity = quantity  # Default to parameter value
+                    # NOTE: adjusted_quantity is already calculated above with multiplier applied
+                    trade_quantity = adjusted_quantity  # Use adjusted quantity (with multiplier)
                     if action == 'CLOSE':
                         if existing_net_pos == 0:
                             logger.warning(f"⚠️ CLOSE signal but no position on broker - nothing to close")
                             return {'success': True, 'message': 'No position to close'}
                         # Close LONG = Sell, Close SHORT = Buy
                         current_order_action = 'Sell' if existing_net_pos > 0 else 'Buy'
-                        trade_quantity = abs(existing_net_pos)  # Close entire position
+                        trade_quantity = abs(existing_net_pos)  # Close entire position (multiplier doesn't apply to closes)
                         logger.info(f"🔄 CLOSE: Closing {existing_net_pos} position with {current_order_action} {trade_quantity}")
                     else:
                         current_order_action = 'Buy' if action == 'BUY' else 'Sell'
-                        trade_quantity = quantity  # Use parameter for BUY/SELL
+                        trade_quantity = adjusted_quantity  # Use adjusted quantity (with multiplier) for BUY/SELL
                 
                     logger.info(f"🔍 Checking broker position BEFORE placing {current_order_action} order...")
                 
