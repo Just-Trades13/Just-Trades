@@ -8268,7 +8268,9 @@ def receive_webhook(webhook_token):
     if request.method == 'POST':
         logger.info(f"   POST data length: {len(request.get_data()) if request.get_data() else 0} bytes")
         logger.info(f"   POST JSON: {request.get_json(silent=True)}")
+        return process_webhook_directly(webhook_token)
     
+    # GET: TradingView or browser verification
     if request.method == 'GET':
         # TradingView or browser verification - just confirm webhook exists
         conn = get_db_connection()
