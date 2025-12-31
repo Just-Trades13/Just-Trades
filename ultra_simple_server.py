@@ -8254,14 +8254,21 @@ def restart_broker_execution_worker():
 @app.route('/webhook/fast/<webhook_token>', methods=['POST'])
 def receive_webhook_fast(webhook_token):
     """Fast webhook endpoint - processes directly."""
+    logger.info(f"🌐 FAST WEBHOOK ENDPOINT HIT: /webhook/fast/{webhook_token[:8]}...")
+    logger.info(f"   POST data length: {len(request.get_data()) if request.get_data() else 0} bytes")
+    logger.info(f"   POST JSON: {request.get_json(silent=True)}")
     return process_webhook_directly(webhook_token)
 
 @app.route('/webhook/<webhook_token>', methods=['GET', 'POST'])
 def receive_webhook(webhook_token):
     """Main webhook endpoint - processes directly using DCA logic.
     GET: Returns webhook status (for verification)
-    POST: Processes the actual signal
-    """
+    POST: Processes the actual signal"""
+    logger.info(f"🌐 WEBHOOK ENDPOINT HIT: /webhook/{webhook_token[:8]}... method={request.method}")
+    if request.method == 'POST':
+        logger.info(f"   POST data length: {len(request.get_data()) if request.get_data() else 0} bytes")
+        logger.info(f"   POST JSON: {request.get_json(silent=True)}")
+    
     if request.method == 'GET':
         # TradingView or browser verification - just confirm webhook exists
         conn = get_db_connection()
