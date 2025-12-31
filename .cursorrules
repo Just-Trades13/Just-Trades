@@ -1,6 +1,7 @@
 # ⛔⛔⛔ CURSOR AI RULES - ZERO TOLERANCE ENFORCEMENT ⛔⛔⛔
-# LAST WORKING STATE: Dec 31, 2025 (Tag: WORKING_DEC31_2025_WEBHOOK_FIX)
-# PREVIOUS WORKING STATE: Dec 4, 2025 (Tag: WORKING_DEC4_2025_OAUTH_FIX)
+# LAST WORKING STATE: Jan 1, 2025 (Tag: WORKING_JAN1_2025_STABLE)
+# 🎉 MILESTONE: First successful overnight trading session!
+# PREVIOUS WORKING STATE: Dec 31, 2025 (Tag: WORKING_DEC31_2025_WEBHOOK_FIX)
 # ============================================================
 
 # ============================================================
@@ -123,6 +124,23 @@
 ## - Webhooks return "success" but no broker execution
 ## - total_queued stays at 0
 ## - Users see signals but no trades on broker
+
+## 🚨🚨🚨 CRITICAL: NO RETRIES IN BROKER EXECUTION (Jan 1, 2025) 🚨🚨🚨
+## NEVER add retry logic to the broker_execution_worker
+## Retries cause DUPLICATE TRADES which is very dangerous
+##
+## Broker execution flow:
+## - Signal → Queue Task → Execute ONCE → Success/Fail → Done
+## - If fail: LOG error and MOVE ON (no re-queue)
+##
+## NEVER re-queue failed tasks
+## NEVER add exponential backoff retry loops
+## LOCATION: ultra_simple_server.py → broker_execution_worker()
+##
+## WITHOUT THIS:
+## - Failed tasks retry forever
+## - Eventually succeed and place unexpected trades
+## - Multiple duplicate positions opened
 
 ## 🚨 ABSOLUTE REQUIREMENT: ASK BEFORE MODIFYING
 
@@ -333,5 +351,5 @@ token_endpoints = [
 ---
 
 *Backup: backups/WORKING_STATE_DEC31_2025_WEBHOOK_FIX/*
-*Git tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC31_2025_WEBHOOK_FIX*
-*Last verified: Dec 31, 2025*
+*Git tags: WORKING_DEC3_2025, WORKING_DEC4_2025_OAUTH_FIX, WORKING_DEC31_2025_WEBHOOK_FIX, WORKING_JAN1_2025_STABLE*
+*Last verified: Jan 1, 2025 - First successful overnight trading session!*
