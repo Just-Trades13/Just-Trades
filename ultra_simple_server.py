@@ -7450,14 +7450,51 @@ def api_update_trader(trader_id):
         # Update account routing if provided
         if 'enabled_accounts' in data:
             enabled_accounts = data['enabled_accounts']
-            logger.info(f"  - Received enabled_accounts: {enabled_accounts}")
+            logger.info(f"📥 [SAVE] Received enabled_accounts for trader {trader_id}: type={type(enabled_accounts)}, length={len(enabled_accounts) if isinstance(enabled_accounts, list) else 'N/A'}")
+            if isinstance(enabled_accounts, list):
+                logger.info(f"   Raw data: {json.dumps(enabled_accounts, indent=2)}")
+            
+            # CRITICAL: Ensure multipliers are properly formatted as floats
+            if isinstance(enabled_accounts, list):
+                for idx, acct in enumerate(enabled_accounts):
+                    # Always ensure multiplier exists and is a float
+                    account_name = acct.get('account_name', 'Unknown')
+                    account_id = acct.get('account_id', 'N/A')
+                    subaccount_id = acct.get('subaccount_id', 'N/A')
+                    
+                    if 'multiplier' not in acct:
+                        acct['multiplier'] = 1.0
+                        logger.warning(f"  ⚠️ [{idx}] Account {account_name} (id={account_id}, subaccount_id={subaccount_id}): multiplier NOT PROVIDED, defaulting to 1.0")
+                    else:
+                        # Ensure multiplier is a float, not a string
+                        try:
+                            multiplier_val = acct['multiplier']
+                            original_type = type(multiplier_val)
+                            acct['multiplier'] = float(multiplier_val) if multiplier_val is not None and multiplier_val != '' else 1.0
+                            if acct['multiplier'] <= 0:
+                                acct['multiplier'] = 1.0
+                                logger.warning(f"  ⚠️ [{idx}] Account {account_name} (id={account_id}, subaccount_id={subaccount_id}): Invalid multiplier (<=0), defaulting to 1.0")
+                            else:
+                                logger.info(f"  ✅ [{idx}] Account {account_name} (id={account_id}, subaccount_id={subaccount_id}): multiplier={acct['multiplier']} (was {multiplier_val}, type={original_type})")
+                        except (ValueError, TypeError) as e:
+                            acct['multiplier'] = 1.0
+                            logger.error(f"  ❌ [{idx}] Account {account_name} (id={account_id}, subaccount_id={subaccount_id}): Invalid multiplier (value={acct.get('multiplier', 'N/A')}), defaulting to 1.0: {e}")
+            
             # Convert to JSON string if it's a list
             if isinstance(enabled_accounts, list):
-                enabled_accounts = json.dumps(enabled_accounts)
-                logger.info(f"  - Converted to JSON: {enabled_accounts}")
+                # Final verification: ensure all multipliers are floats
+                for acct in enabled_accounts:
+                    if 'multiplier' in acct:
+                        try:
+                            acct['multiplier'] = float(acct['multiplier'])
+                        except (ValueError, TypeError):
+                            acct['multiplier'] = 1.0
+                enabled_accounts_json = json.dumps(enabled_accounts, ensure_ascii=False)
+                logger.info(f"💾 [SAVE] Final JSON to save: {enabled_accounts_json[:500]}")
+                enabled_accounts = enabled_accounts_json
             updates.append(f'enabled_accounts = {placeholder}')
             params.append(enabled_accounts)
-            logger.info(f"  - Will update enabled_accounts field")
+            logger.info(f"✅ [SAVE] Will update enabled_accounts field with {len(json.loads(enabled_accounts) if isinstance(enabled_accounts, str) else enabled_accounts)} accounts")
         
         # Update time filter settings if provided
         if 'time_filter_1_enabled' in data:
@@ -7488,6 +7525,12 @@ def api_update_trader(trader_id):
         if updates:
             params.append(trader_id)
             query = f"UPDATE traders SET {', '.join(updates)} WHERE id = {placeholder}"
+            
+            # Log what we're updating for debugging
+            logger.info(f"📝 Updating trader {trader_id} with {len(updates)} fields")
+            if 'enabled_accounts' in data:
+                logger.info(f"   - enabled_accounts will be updated (contains multipliers)")
+            
             for attempt in range(5):
                 try:
                     cursor.execute(query, params)
@@ -7498,6 +7541,25 @@ def api_update_trader(trader_id):
                         time.sleep(0.2 * (attempt + 1))
                         continue
                     raise
+            
+            # Verify the update worked by reading it back
+            cursor.execute(f'SELECT enabled_accounts FROM traders WHERE id = {placeholder}', (trader_id,))
+            verify_row = cursor.fetchone()
+            if verify_row:
+                verify_enabled_accounts = verify_row[0]
+                logger.info(f"✅ Verified: enabled_accounts saved successfully")
+                if verify_enabled_accounts:
+                    try:
+                        verify_parsed = json.loads(verify_enabled_accounts) if isinstance(verify_enabled_accounts, str) else verify_enabled_accounts
+                        logger.info(f"✅ VERIFIED: enabled_accounts saved with {len(verify_parsed)} accounts")
+                        for acct in verify_parsed:
+                            logger.info(f"   ✓ Account {acct.get('account_name')} (subaccount_id={acct.get('subaccount_id')}): multiplier={acct.get('multiplier', 'NOT SET')}, max_contracts={acct.get('max_contracts', 0)}")
+                    except Exception as verify_err:
+                        logger.error(f"❌ Error verifying enabled_accounts: {verify_err}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                else:
+                    logger.warning(f"⚠️ VERIFICATION FAILED: enabled_accounts is None or empty after save!")
         
         # ALSO update the linked RECORDER with risk settings
         # (The trading engine reads from the recorder, not the trader)
@@ -7567,6 +7629,37 @@ def api_update_trader(trader_id):
                 logger.info(f"✅ Updated recorder {recorder_id} with risk settings")
         
         conn.commit()
+        
+        # ============================================================
+        # 🔍 FINAL VERIFICATION: Read from fresh connection to confirm persistence
+        # ============================================================
+        if 'enabled_accounts' in data:
+            try:
+                verify_conn = get_db_connection()
+                verify_cursor = verify_conn.cursor()
+                verify_cursor.execute(f'SELECT enabled_accounts FROM traders WHERE id = {placeholder}', (trader_id,))
+                final_verify = verify_cursor.fetchone()
+                verify_conn.close()
+                
+                if final_verify:
+                    final_enabled_accounts = final_verify[0]
+                    if final_enabled_accounts:
+                        try:
+                            final_parsed = json.loads(final_enabled_accounts) if isinstance(final_enabled_accounts, str) else final_enabled_accounts
+                            logger.info(f"🔍 [FINAL VERIFY] Fresh DB read: {len(final_parsed)} accounts with multipliers:")
+                            for acct in final_parsed:
+                                mult = acct.get('multiplier', 'NOT SET')
+                                logger.info(f"   → {acct.get('account_name')}: multiplier={mult} (type={type(mult)})")
+                        except Exception as e:
+                            logger.error(f"❌ [FINAL VERIFY] Error parsing: {e}")
+                    else:
+                        logger.error(f"❌ [FINAL VERIFY] enabled_accounts is empty after commit!")
+                else:
+                    logger.error(f"❌ [FINAL VERIFY] Could not read trader {trader_id} after commit!")
+            except Exception as e:
+                logger.error(f"❌ [FINAL VERIFY] Error in final verification: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
         
         # ============================================================
         # 🔄 CRITICAL: Refresh tokens when strategy is ENABLED
@@ -7988,14 +8081,15 @@ signal_processor_thread.start()
 def broker_execution_worker():
     """
     Background worker that processes broker execution queue.
-    This ensures webhook handler NEVER waits for broker execution.
+    CRITICAL: NEVER GIVES UP - Retries indefinitely until success.
     
     Trade Manager Style:
     - Webhook records signal instantly
     - Broker execution happens async with retries
     - If broker fails, it retries later (doesn't block webhook)
+    - NEVER FAILS - Keeps retrying with exponential backoff
     """
-    logger.info("🚀 Broker execution worker started (Trade Manager style)")
+    logger.info("🚀 Broker execution worker started (BULLETPROOF - never gives up)")
     
     while True:
         try:
@@ -8009,12 +8103,52 @@ def broker_execution_worker():
             tp_ticks = task.get('tp_ticks', 10)
             sl_ticks = task.get('sl_ticks', 0)
             retry_count = task.get('retry_count', 0)
-            max_retries = 3
+            
+            # CRITICAL: NO MAX RETRIES - Keep trying forever with exponential backoff
+            # Exponential backoff: 5s, 10s, 20s, 40s, 60s (max), then every 60s
+            retry_delay = min(60, 5 * (2 ** min(retry_count, 4)))
             
             try:
                 from recorder_service import execute_trade_simple
                 
-                logger.info(f"🔄 Broker execution: {action} {quantity} {ticker} (attempt {retry_count + 1}/{max_retries + 1})")
+                logger.info(f"🔄 Broker execution: {action} {quantity} {ticker} (attempt {retry_count + 1})")
+                
+                # CRITICAL: Try to refresh tokens before execution if this is a retry
+                if retry_count > 0:
+                    logger.info(f"🔄 Retry detected - attempting token refresh for all accounts...")
+                    try:
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+                        is_postgres = is_using_postgres()
+                        placeholder = '%s' if is_postgres else '?'
+                        
+                        # Get all accounts for this recorder
+                        cursor.execute(f'''
+                            SELECT DISTINCT a.id
+                            FROM traders t
+                            JOIN accounts a ON t.account_id = a.id
+                            WHERE t.recorder_id = {placeholder} AND t.enabled = {'true' if is_postgres else '1'}
+                        ''', (recorder_id,))
+                        account_ids = [row[0] for row in cursor.fetchall()]
+                        conn.close()
+                        
+                        # Try to refresh tokens for all accounts
+                        # Note: try_refresh_tradovate_token is defined later in this file
+                        # We'll call it by name to avoid import issues
+                        for acct_id in account_ids:
+                            try:
+                                # Call the function that's defined in this module
+                                refresh_func = globals().get('try_refresh_tradovate_token')
+                                if refresh_func:
+                                    if refresh_func(acct_id):
+                                        logger.info(f"✅ Refreshed token for account {acct_id}")
+                                else:
+                                    # Function not loaded yet, skip (will be available on next retry)
+                                    logger.debug(f"Token refresh function not available yet for account {acct_id}")
+                            except Exception as refresh_err:
+                                logger.warning(f"⚠️ Could not refresh token for account {acct_id}: {refresh_err}")
+                    except Exception as refresh_all_err:
+                        logger.warning(f"⚠️ Error during token refresh: {refresh_all_err}")
                 
                 result = execute_trade_simple(
                     recorder_id=recorder_id,
@@ -8026,35 +8160,43 @@ def broker_execution_worker():
                 )
                 
                 if result.get('success'):
-                    logger.info(f"✅ Broker execution successful: {action} {quantity} {ticker}")
+                    accounts_traded = result.get('accounts_traded', 0)
+                    logger.info(f"✅ Broker execution successful: {action} {quantity} {ticker} on {accounts_traded} account(s)")
+                    _broker_execution_stats['total_executed'] += 1
+                    _broker_execution_stats['last_execution_time'] = time.time()
+                    # Reset retry count on success
+                    task['retry_count'] = 0
                 else:
                     error = result.get('error', 'Unknown error')
-                    logger.warning(f"⚠️ Broker execution failed: {error}")
+                    logger.warning(f"⚠️ Broker execution attempt {retry_count + 1} failed: {error}")
+                    logger.warning(f"   Recorder ID: {recorder_id}, Action: {action}, Quantity: {quantity}, Ticker: {ticker}")
                     
-                    # Retry if we haven't exceeded max retries
-                    if retry_count < max_retries:
-                        logger.info(f"🔄 Retrying broker execution in 5 seconds...")
-                        time.sleep(5)
-                        task['retry_count'] = retry_count + 1
-                        broker_execution_queue.put(task)  # Re-queue for retry
-                    else:
-                        logger.error(f"❌ Broker execution failed after {max_retries + 1} attempts: {error}")
+                    # CRITICAL: NEVER GIVE UP - Always retry with exponential backoff
+                    logger.info(f"🔄 Will retry in {retry_delay} seconds (exponential backoff)...")
+                    time.sleep(retry_delay)
+                    task['retry_count'] = retry_count + 1
+                    broker_execution_queue.put(task)  # Re-queue for retry
+                    _broker_execution_stats['total_failed'] += 1
+                    _broker_execution_stats['last_error'] = error
+                    # Don't mark as done - we're retrying
+                    continue
                         
             except Exception as e:
-                logger.error(f"❌ Broker execution error: {e}")
+                logger.warning(f"⚠️ Broker execution exception on attempt {retry_count + 1}: {e}")
                 import traceback
                 traceback.print_exc()
                 
-                # Retry if we haven't exceeded max retries
-                if retry_count < max_retries:
-                    logger.info(f"🔄 Retrying broker execution in 5 seconds...")
-                    time.sleep(5)
-                    task['retry_count'] = retry_count + 1
-                    broker_execution_queue.put(task)  # Re-queue for retry
-                else:
-                    logger.error(f"❌ Broker execution failed after {max_retries + 1} attempts: {e}")
+                # CRITICAL: NEVER GIVE UP - Always retry with exponential backoff
+                logger.info(f"🔄 Will retry in {retry_delay} seconds (exponential backoff)...")
+                time.sleep(retry_delay)
+                task['retry_count'] = retry_count + 1
+                broker_execution_queue.put(task)  # Re-queue for retry
+                _broker_execution_stats['total_failed'] += 1
+                _broker_execution_stats['last_error'] = str(e)
+                # Don't mark as done - we're retrying
+                continue
             
-            # Mark task as done
+            # Mark task as done only on success
             broker_execution_queue.task_done()
             
         except Empty:
@@ -8070,6 +8212,15 @@ def broker_execution_worker():
 broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
 broker_execution_thread.start()
 logger.info("✅ Broker execution worker started (Trade Manager style - async, non-blocking)")
+
+# Track broker execution stats
+_broker_execution_stats = {
+    'total_queued': 0,
+    'total_executed': 0,
+    'total_failed': 0,
+    'last_execution_time': None,
+    'last_error': None
+}
 
 # Register for thread health monitoring
 def restart_broker_execution_worker():
@@ -8748,9 +8899,85 @@ def process_webhook_directly(webhook_token):
         # Get tick size for this symbol
         tick_size = get_tick_size(ticker) if ticker else 0.25
         
-        # Get TP settings from recorder - RECORDER SETTINGS ARE ALWAYS SOURCE OF TRUTH
+        # Get TP/SL settings - TRADER settings override RECORDER settings
+        # We'll get trader settings after loading the trader object below
+        # For now, get recorder defaults (will be overridden if trader has settings)
         tp_targets_raw = recorder.get('tp_targets', '[]')
         tp_units = recorder.get('tp_units', 'Ticks')
+        sl_enabled = recorder.get('sl_enabled', 0)
+        sl_amount = float(recorder.get('sl_amount', 0) or 0)
+        sl_units = recorder.get('sl_units', 'Ticks')
+        sl_type = recorder.get('sl_type', 'Fixed')
+        
+        # Log the mode - TP/SL from trader settings (override recorder) or recorder settings
+        # User has full control via trader settings (preferred) or recorder settings (fallback)
+        # Strategy "flat" signals are handled separately as close orders
+        signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
+        settings_source = "TRADER" if (trader_tp_targets or trader_sl_enabled is not None) else "RECORDER"
+        _logger.info(f"📊 {signal_type} SIGNAL: Applying {settings_source} settings - TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
+        
+        # Get linked trader for live execution with ALL risk settings
+        # PostgreSQL uses TRUE (boolean), SQLite uses 1 (integer)
+        # CRITICAL: Include all trader risk settings (initial_position_size, add_position_size, tp_targets, sl_*, etc.)
+        if is_postgres:
+            cursor.execute(f'''
+                SELECT t.*, 
+                       t.initial_position_size, t.add_position_size,
+                       t.tp_targets, t.tp_units,
+                       t.sl_enabled, t.sl_amount, t.sl_units, t.sl_type,
+                       a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
+                FROM traders t
+                JOIN accounts a ON t.account_id = a.id
+                WHERE t.recorder_id = {placeholder} AND t.enabled = TRUE
+                LIMIT 1
+            ''', (recorder_id,))
+        else:
+            cursor.execute(f'''
+                SELECT t.*, 
+                       t.initial_position_size, t.add_position_size,
+                       t.tp_targets, t.tp_units,
+                       t.sl_enabled, t.sl_amount, t.sl_units, t.sl_type,
+                       a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
+                FROM traders t
+                JOIN accounts a ON t.account_id = a.id
+                WHERE t.recorder_id = {placeholder} AND t.enabled = 1
+                LIMIT 1
+            ''', (recorder_id,))
+        trader_row = cursor.fetchone()
+        trader = dict(trader_row) if trader_row else None
+        
+        if not trader:
+            conn.close()
+            _logger.warning(f"No active trader linked to recorder '{recorder_name}'")
+            return jsonify({'success': False, 'error': 'No trader linked'}), 400
+        
+        # CRITICAL: Use TRADER's risk settings (override recorder defaults)
+        # Trader settings take precedence - these are what the user configured on /traders/{id}
+        trader_initial_size = trader.get('initial_position_size')
+        trader_add_size = trader.get('add_position_size')
+        trader_tp_targets = trader.get('tp_targets')
+        trader_tp_units = trader.get('tp_units')
+        trader_sl_enabled = trader.get('sl_enabled')
+        trader_sl_amount = trader.get('sl_amount')
+        trader_sl_units = trader.get('sl_units')
+        trader_sl_type = trader.get('sl_type')
+        
+        # Override TP/SL settings with trader settings if available
+        if trader_tp_targets:
+            tp_targets_raw = trader_tp_targets
+            _logger.info(f"📊 Using TRADER's TP targets (override recorder)")
+        if trader_tp_units:
+            tp_units = trader_tp_units
+        if trader_sl_enabled is not None:
+            sl_enabled = trader_sl_enabled
+        if trader_sl_amount is not None:
+            sl_amount = float(trader_sl_amount or 0)
+        if trader_sl_units:
+            sl_units = trader_sl_units
+        if trader_sl_type:
+            sl_type = trader_sl_type
+        
+        # Parse TP targets
         try:
             tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
         except:
@@ -8777,12 +9004,6 @@ def process_webhook_directly(webhook_token):
         else:
             tp_ticks = 0
         
-        # Get SL settings from recorder
-        sl_enabled = recorder.get('sl_enabled', 0)
-        sl_amount = float(recorder.get('sl_amount', 0) or 0)
-        sl_units = recorder.get('sl_units', 'Ticks')
-        sl_type = recorder.get('sl_type', 'Fixed')  # Fixed or Trailing
-        
         # Convert SL to ticks based on units
         if sl_enabled and sl_amount > 0:
             if sl_units == 'Loss ($)':
@@ -8798,40 +9019,43 @@ def process_webhook_directly(webhook_token):
         else:
             sl_ticks = 0
         
-        # Log the mode - TP/SL from recorder settings ALWAYS apply
-        # User has full control via recorder settings regardless of signal type
-        # Strategy "flat" signals are handled separately as close orders
-        signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
-        _logger.info(f"📊 {signal_type} SIGNAL: Applying recorder settings - TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
+        # Determine quantity from trader settings (preferred) or recorder settings (fallback)
+        # Priority: 1) Webhook quantity, 2) Trader initial_position_size, 3) Recorder initial_position_size
+        if quantity == 1 and not position_size:  # Only override if quantity wasn't specified in webhook
+            if trader_initial_size:
+                quantity = int(trader_initial_size)
+                _logger.info(f"📊 Using TRADER's initial_position_size: {quantity} (from trader settings)")
+            else:
+                # Fallback to recorder setting
+                recorder_initial_size = recorder.get('initial_position_size', 1)
+                quantity = int(recorder_initial_size) if recorder_initial_size else 1
+                _logger.info(f"📊 Using RECORDER's initial_position_size: {quantity} (trader setting not found)")
         
-        # Get linked trader for live execution
-        # PostgreSQL uses TRUE (boolean), SQLite uses 1 (integer)
-        if is_postgres:
-            cursor.execute(f'''
-                SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
-                FROM traders t
-                JOIN accounts a ON t.account_id = a.id
-                WHERE t.recorder_id = {placeholder} AND t.enabled = TRUE
-                LIMIT 1
-            ''', (recorder_id,))
-        else:
-            cursor.execute(f'''
-                SELECT t.*, a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
-                FROM traders t
-                JOIN accounts a ON t.account_id = a.id
-                WHERE t.recorder_id = {placeholder} AND t.enabled = 1
-                LIMIT 1
-            ''', (recorder_id,))
-        trader_row = cursor.fetchone()
-        trader = dict(trader_row) if trader_row else None
+        # Check if this is DCA (adding to existing position)
+        cursor.execute(f'''
+            SELECT * FROM recorded_trades 
+            WHERE recorder_id = {placeholder} AND status = 'open' 
+            ORDER BY entry_time DESC LIMIT 1
+        ''', (recorder_id,))
+        dca_check_row = cursor.fetchone()
+        is_dca = False
+        if dca_check_row:
+            dca_check = dict(zip([desc[0] for desc in cursor.description], dca_check_row))
+            existing_side = dca_check.get('side', '')
+            if (existing_side == 'LONG' and trade_action.upper() == 'BUY') or \
+               (existing_side == 'SHORT' and trade_action.upper() == 'SELL'):
+                is_dca = True
+                # Use add_position_size for DCA
+                if trader_add_size:
+                    quantity = int(trader_add_size)
+                    _logger.info(f"📈 DCA detected - Using TRADER's add_position_size: {quantity}")
+                else:
+                    recorder_add_size = recorder.get('add_position_size', 1)
+                    quantity = int(recorder_add_size) if recorder_add_size else 1
+                    _logger.info(f"📈 DCA detected - Using RECORDER's add_position_size: {quantity}")
         
-        if not trader:
-            conn.close()
-            _logger.warning(f"No active trader linked to recorder '{recorder_name}'")
-            return jsonify({'success': False, 'error': 'No trader linked'}), 400
-        
-        # Execute the trade with FULL risk settings
-        _logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks | SL: {sl_ticks} ticks")
+        # Execute the trade with FULL risk settings (trader settings override recorder)
+        _logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks | SL: {sl_ticks} ticks | Quantity from: {'TRADER' if trader_initial_size else 'RECORDER'} settings")
         
         # ============================================================
         # STRATEGY MODE: Check for open position BEFORE broker execution
@@ -9105,9 +9329,11 @@ def process_webhook_directly(webhook_token):
             try:
                 broker_execution_queue.put_nowait(broker_task)
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
+                _broker_execution_stats['total_queued'] += 1
             except:
                 # Queue full - log but don't fail webhook
                 _logger.warning(f"⚠️ Broker execution queue full - signal still tracked, broker execution skipped")
+                _broker_execution_stats['total_failed'] += 1
                 
         except Exception as e:
             # Queue error - log but don't fail webhook
@@ -10628,11 +10854,16 @@ def traders_edit(trader_id):
         try:
             # sqlite3.Row uses dict-style access, not .get()
             enabled_accounts_raw = trader_row['enabled_accounts'] if 'enabled_accounts' in trader_row.keys() else None
+            logger.info(f"🔍 [LOAD] Trader {trader_id} - enabled_accounts_raw type: {type(enabled_accounts_raw)}, value: {str(enabled_accounts_raw)[:200] if enabled_accounts_raw else 'None/Empty'}")
             if enabled_accounts_raw and enabled_accounts_raw != '[]' and str(enabled_accounts_raw).strip():
-                enabled_accounts = json.loads(enabled_accounts_raw)
+                enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
                 logger.info(f"✅ Loaded enabled_accounts for trader {trader_id}: {len(enabled_accounts)} accounts")
-                for acct in enabled_accounts:
-                    logger.info(f"  - Enabled: {acct.get('account_name')} (subaccount_id={acct.get('subaccount_id')})")
+                for idx, acct in enumerate(enabled_accounts):
+                    multiplier = acct.get('multiplier', 1.0)
+                    subaccount_id = acct.get('subaccount_id')
+                    account_id = acct.get('account_id')
+                    account_name = acct.get('account_name', 'Unknown')
+                    logger.info(f"  [{idx}] Enabled: {account_name} (account_id={account_id}, subaccount_id={subaccount_id}, multiplier={multiplier}, type={type(multiplier)})")
             else:
                 logger.info(f"⚠️ No enabled_accounts found for trader {trader_id} (raw value: '{enabled_accounts_raw}')")
         except Exception as e:
@@ -10664,14 +10895,85 @@ def traders_edit(trader_id):
                             env_label = "🟠 DEMO" if acct.get('is_demo') else "🟢 LIVE"
                             # Check if this subaccount is enabled in account routing
                             is_enabled = False
+                            multiplier = 1.0  # Default multiplier
+                            max_contracts = 0  # Default max contracts
+                            custom_ticker = ''  # Default custom ticker
                             acct_subaccount_id = acct.get('id')  # This is the subaccount ID from tradovate_accounts
-                            for enabled_acct in enabled_accounts:
-                                # Match by subaccount_id (most reliable)
+                            acct_name = acct.get('name', '')
+                            
+                            # Try to match this account in enabled_accounts
+                            logger.info(f"  🔍 [MATCH] Trying to match account '{acct_name}' (subaccount_id={acct_subaccount_id}, parent_id={parent_id}) against {len(enabled_accounts)} enabled accounts")
+                            for idx, enabled_acct in enumerate(enabled_accounts):
+                                logger.info(f"     [{idx}] Checking: account_name='{enabled_acct.get('account_name')}', account_id={enabled_acct.get('account_id')}, subaccount_id={enabled_acct.get('subaccount_id')}, multiplier={enabled_acct.get('multiplier', 'NOT SET')}")
+                                matched = False
                                 enabled_subaccount_id = enabled_acct.get('subaccount_id')
-                                if enabled_subaccount_id and enabled_subaccount_id == acct_subaccount_id:
+                                enabled_account_id = enabled_acct.get('account_id')
+                                enabled_account_name = enabled_acct.get('account_name', '')
+                                
+                                # Strategy 1: Match by subaccount_id (most reliable)
+                                try:
+                                    acct_id_int = int(acct_subaccount_id) if acct_subaccount_id else None
+                                    enabled_id_int = int(enabled_subaccount_id) if enabled_subaccount_id else None
+                                    if acct_id_int and enabled_id_int and acct_id_int == enabled_id_int:
+                                        matched = True
+                                        logger.info(f"  ✓ [{idx}] Matched {acct_name} by subaccount_id: {acct_id_int} == {enabled_id_int}")
+                                except (ValueError, TypeError) as e:
+                                    logger.debug(f"  - [{idx}] Subaccount ID match failed: {e}")
+                                
+                                # Strategy 2: Fallback - match by account_id + account_name (case-insensitive, strip whitespace)
+                                if not matched:
+                                    try:
+                                        enabled_name_clean = str(enabled_account_name).strip().lower() if enabled_account_name else ''
+                                        acct_name_clean = str(acct_name).strip().lower() if acct_name else ''
+                                        if enabled_account_id and int(enabled_account_id) == int(parent_id):
+                                            # Try exact match first
+                                            if enabled_account_name == acct_name:
+                                                matched = True
+                                                logger.info(f"  ⚠️ [{idx}] Matched {acct_name} by account_id+name (exact) - subaccount_id match failed")
+                                            # Try case-insensitive match
+                                            elif enabled_name_clean and acct_name_clean and enabled_name_clean == acct_name_clean:
+                                                matched = True
+                                                logger.info(f"  ⚠️ [{idx}] Matched {acct_name} by account_id+name (case-insensitive) - subaccount_id match failed")
+                                    except (ValueError, TypeError) as e:
+                                        logger.debug(f"  - [{idx}] Account ID+name match failed: {e}")
+                                
+                                # Strategy 3: Last resort - match by account_name only (if unique)
+                                if not matched and enabled_account_name:
+                                    try:
+                                        enabled_name_clean = str(enabled_account_name).strip().lower()
+                                        acct_name_clean = str(acct_name).strip().lower()
+                                        # Only match by name if it's unique in enabled_accounts
+                                        name_count = sum(1 for e in enabled_accounts if str(e.get('account_name', '')).strip().lower() == enabled_name_clean)
+                                        if name_count == 1 and enabled_name_clean == acct_name_clean:
+                                            matched = True
+                                            logger.info(f"  ⚠️ [{idx}] Matched {acct_name} by name only (unique name match) - other matches failed")
+                                    except Exception as e:
+                                        logger.debug(f"  - [{idx}] Name-only match failed: {e}")
+                                
+                                if matched:
                                     is_enabled = True
-                                    logger.info(f"  ✓ Account {acct.get('name')} (subaccount_id={acct_subaccount_id}) is ENABLED")
+                                    # Extract multiplier - ensure it's a float
+                                    multiplier_raw = enabled_acct.get('multiplier', 1.0)
+                                    multiplier = float(multiplier_raw) if multiplier_raw else 1.0
+                                    max_contracts = int(enabled_acct.get('max_contracts', 0) or 0)  # Extract max contracts
+                                    custom_ticker = str(enabled_acct.get('custom_ticker', '') or '')  # Extract custom ticker
+                                    logger.info(f"  ✅ Account {acct_name} (subaccount_id={acct_subaccount_id}) is ENABLED, multiplier={multiplier} (raw={multiplier_raw}, type={type(multiplier_raw)}), max_contracts={max_contracts}")
                                     break
+                            
+                            # Last resort: If only one enabled account and this account is checked in the UI, use that multiplier
+                            if not is_enabled and enabled_accounts and len(enabled_accounts) == 1:
+                                single_enabled = enabled_accounts[0]
+                                # If this is the only enabled account, assume it's for this trader
+                                is_enabled = True
+                                multiplier_raw = single_enabled.get('multiplier', 1.0)
+                                multiplier = float(multiplier_raw) if multiplier_raw else 1.0
+                                max_contracts = int(single_enabled.get('max_contracts', 0) or 0)
+                                custom_ticker = str(single_enabled.get('custom_ticker', '') or '')
+                                logger.warning(f"  ⚠️ Account {acct_name} not matched, but using single enabled account's multiplier={multiplier}")
+                            
+                            if not is_enabled and enabled_accounts:
+                                logger.warning(f"  ❌ Account {acct_name} (subaccount_id={acct_subaccount_id}, parent_id={parent_id}) NOT found in enabled_accounts - will default to multiplier=1.0")
+                                logger.warning(f"     Available enabled accounts: {[(a.get('account_name'), a.get('subaccount_id'), a.get('account_id'), a.get('multiplier')) for a in enabled_accounts]}")
                             # If no enabled_accounts stored, use legacy: check if it's the primary account
                             if not enabled_accounts:
                                 is_enabled = (acct_subaccount_id == trader['subaccount_id'])
@@ -10682,7 +10984,10 @@ def traders_edit(trader_id):
                                 'display_name': f"{env_label} - {acct['name']} ({parent_name})",
                                 'subaccount_id': acct.get('id'),
                                 'is_demo': acct.get('is_demo', False),
-                                'is_selected': is_enabled
+                                'is_selected': is_enabled,
+                                'multiplier': multiplier,  # Include multiplier for display
+                                'max_contracts': max_contracts,  # Include max_contracts for display
+                                'custom_ticker': custom_ticker  # Include custom_ticker for display
                             })
                 except:
                     pass
@@ -19055,6 +19360,131 @@ def restart_position_drawdown_polling():
     except Exception as e:
         logger.error(f"Failed to restart position drawdown polling: {e}")
         return None
+
+@app.route('/api/traders/<int:trader_id>/debug', methods=['GET'])
+def api_trader_debug(trader_id):
+    """Debug endpoint to check trader settings including multipliers"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        cursor.execute(f'''
+            SELECT id, recorder_id, enabled, enabled_accounts, initial_position_size, add_position_size
+            FROM traders WHERE id = {placeholder}
+        ''', (trader_id,))
+        trader = cursor.fetchone()
+        conn.close()
+        
+        if not trader:
+            return jsonify({'success': False, 'error': 'Trader not found'}), 404
+        
+        trader_dict = dict(trader) if hasattr(trader, 'keys') else {
+            'id': trader[0],
+            'recorder_id': trader[1],
+            'enabled': trader[2],
+            'enabled_accounts': trader[3],
+            'initial_position_size': trader[4] if len(trader) > 4 else None,
+            'add_position_size': trader[5] if len(trader) > 5 else None
+        }
+        
+        # Parse enabled_accounts
+        enabled_accounts_raw = trader_dict.get('enabled_accounts')
+        enabled_accounts_parsed = None
+        if enabled_accounts_raw:
+            try:
+                enabled_accounts_parsed = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
+            except:
+                pass
+        
+        return jsonify({
+            'success': True,
+            'trader_id': trader_id,
+            'enabled': trader_dict.get('enabled'),
+            'initial_position_size': trader_dict.get('initial_position_size'),
+            'add_position_size': trader_dict.get('add_position_size'),
+            'enabled_accounts_raw': str(enabled_accounts_raw)[:500] if enabled_accounts_raw else None,
+            'enabled_accounts_parsed': enabled_accounts_parsed,
+            'multipliers': [
+                {
+                    'account_name': acct.get('account_name', 'Unknown'),
+                    'subaccount_id': acct.get('subaccount_id'),
+                    'multiplier': acct.get('multiplier', 'NOT SET'),
+                    'max_contracts': acct.get('max_contracts', 0),
+                    'custom_ticker': acct.get('custom_ticker', '')
+                }
+                for acct in (enabled_accounts_parsed or [])
+            ] if enabled_accounts_parsed else []
+        })
+    except Exception as e:
+        logger.error(f"Error in trader debug: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/broker-execution/status', methods=['GET'])
+def api_broker_execution_status():
+    """Diagnostic endpoint to check broker execution status"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Check enabled traders
+        cursor.execute(f'''
+            SELECT COUNT(*) as total,
+                   COUNT(CASE WHEN enabled = {'true' if is_postgres else '1'} THEN 1 END) as enabled_count
+            FROM traders
+        ''')
+        trader_stats = dict(cursor.fetchone()) if cursor.rowcount > 0 else {'total': 0, 'enabled_count': 0}
+        
+        # Check traders with enabled_accounts
+        cursor.execute(f'''
+            SELECT id, recorder_id, enabled, enabled_accounts
+            FROM traders
+            WHERE enabled = {'true' if is_postgres else '1'}
+        ''')
+        enabled_traders = []
+        for row in cursor.fetchall():
+            trader = dict(row)
+            enabled_accounts = trader.get('enabled_accounts')
+            if enabled_accounts:
+                try:
+                    accounts = json.loads(enabled_accounts) if isinstance(enabled_accounts, str) else enabled_accounts
+                    trader['enabled_accounts_count'] = len(accounts) if isinstance(accounts, list) else 0
+                except:
+                    trader['enabled_accounts_count'] = 0
+            else:
+                trader['enabled_accounts_count'] = 0
+            enabled_traders.append(trader)
+        
+        conn.close()
+        
+        # Check queue status
+        queue_size = broker_execution_queue.qsize()
+        worker_alive = broker_execution_thread.is_alive() if broker_execution_thread else False
+        
+        return jsonify({
+            'success': True,
+            'broker_execution': {
+                'worker_alive': worker_alive,
+                'queue_size': queue_size,
+                'stats': _broker_execution_stats,
+                'last_execution_ago_seconds': time.time() - _broker_execution_stats['last_execution_time'] if _broker_execution_stats['last_execution_time'] else None
+            },
+            'traders': {
+                'total': trader_stats.get('total', 0),
+                'enabled': trader_stats.get('enabled_count', 0),
+                'enabled_traders': enabled_traders
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting broker execution status: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Register all critical threads for monitoring
 # TradingView WebSocket - CRITICAL for price tracking

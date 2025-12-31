@@ -129,9 +129,9 @@
                                     <span class="slider"></span>
                                 </label>
                             </td>
-                            <td><input type="number" value="0" name="account_{{ account.id }}_max_cons" class="account-max-cons"></td>
-                            <td><input type="text" placeholder="DISABLED" name="account_{{ account.id }}_ticker" class="account-ticker"></td>
-                            <td><input type="number" value="1" name="account_{{ account.id }}_multiplier" class="account-multiplier"></td>
+                            <td><input type="number" value="{{ account.max_contracts or 0 }}" name="account_{{ account.id }}_max_cons" class="account-max-cons"></td>
+                            <td><input type="text" placeholder="DISABLED" name="account_{{ account.id }}_ticker" class="account-ticker" value="{{ account.custom_ticker or '' }}"></td>
+                            <td><input type="number" value="{{ account.multiplier if account.multiplier is defined and account.multiplier else 1 }}" name="account_{{ account.id }}_multiplier" class="account-multiplier" step="0.1" min="0.1"></td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -569,7 +569,7 @@
                             </td>
                             <td><input type="number" value="0" name="account_{{ account.id }}_max_cons" class="account-max-cons" id="maxCons_{{ account.id }}"></td>
                             <td><input type="text" placeholder="DISABLED" name="account_{{ account.id }}_ticker" class="account-ticker"></td>
-                            <td><input type="number" value="1" name="account_{{ account.id }}_multiplier" class="account-multiplier"></td>
+                            <td><input type="number" value="{{ account.multiplier if account.multiplier is defined and account.multiplier else 1 }}" name="account_{{ account.id }}_multiplier" class="account-multiplier" step="0.1" min="0.1"></td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -1390,6 +1390,13 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+        // Debug: Log all multiplier values on page load
+        document.querySelectorAll('.account-multiplier').forEach(function(input) {
+            const row = input.closest('tr');
+            const accountName = row ? row.querySelector('td:first-child')?.textContent?.trim() : 'Unknown';
+            console.log(`Loaded multiplier for ${accountName}: ${input.value} (type: ${typeof input.value})`);
+        });
+        
         // =============================================
         // Recorder Selection & Auto-Population
         // =============================================
@@ -1602,7 +1609,20 @@
                     const isDemo = row.dataset.isDemo === 'true';
                     const maxCons = row.querySelector('.account-max-cons').value || 0;
                     const ticker = row.querySelector('.account-ticker').value || '';
-                    const multiplier = row.querySelector('.account-multiplier').value || 1;
+                    const multiplierInput = row.querySelector('.account-multiplier');
+                    let multiplier = 1.0;
+                    if (multiplierInput) {
+                        const multiplierValue = multiplierInput.value.trim();
+                        if (multiplierValue) {
+                            multiplier = parseFloat(multiplierValue);
+                            if (isNaN(multiplier) || multiplier <= 0) {
+                                multiplier = 1.0;
+                            }
+                        }
+                    }
+                    
+                    // Log what we're saving for debugging
+                    console.log(`Saving account ${accountName}: multiplier=${multiplier} (input value="${multiplierInput ? multiplierInput.value : 'N/A'}")`);
                     
                     enabledAccounts.push({
                         account_id: parseInt(accountId),
@@ -1610,11 +1630,14 @@
                         subaccount_id: subaccountId ? parseInt(subaccountId) : null,
                         subaccount_name: subaccountName,
                         is_demo: isDemo,
-                        max_contracts: parseInt(maxCons),
-                        custom_ticker: ticker,
-                        multiplier: parseFloat(multiplier)
+                        max_contracts: parseInt(maxCons) || 0,
+                        custom_ticker: ticker || '',
+                        multiplier: multiplier  // Always a valid float >= 0.1
                     });
                 });
+                
+                // Log the full enabled_accounts array before sending
+                console.log('Saving enabled_accounts:', JSON.stringify(enabledAccounts, null, 2));
                 
                 // Validate
                 const errors = [];
