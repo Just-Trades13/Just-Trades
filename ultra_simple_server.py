@@ -8090,11 +8090,13 @@ def broker_execution_worker():
     - NEVER FAILS - Keeps retrying with exponential backoff
     """
     logger.info("🚀 Broker execution worker started (BULLETPROOF - never gives up)")
+    logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
     
     while True:
         try:
             # Get next broker execution task (blocking, but that's OK - we're in background)
             task = broker_execution_queue.get(timeout=1)
+            logger.info(f"🔔 Worker received task from queue: {task.get('action')} {task.get('quantity')} {task.get('ticker')} (recorder_id={task.get('recorder_id')})")
             
             recorder_id = task.get('recorder_id')
             action = task.get('action')
@@ -9329,10 +9331,14 @@ def process_webhook_directly(webhook_token):
             try:
                 broker_execution_queue.put_nowait(broker_task)
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
+                _logger.info(f"   Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
+                _logger.info(f"   Worker alive: {broker_execution_thread.is_alive() if broker_execution_thread else False}")
                 _broker_execution_stats['total_queued'] += 1
-            except:
+            except Exception as queue_err:
                 # Queue full - log but don't fail webhook
                 _logger.warning(f"⚠️ Broker execution queue full - signal still tracked, broker execution skipped")
+                _logger.warning(f"   Queue error: {queue_err}")
+                _logger.warning(f"   Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
                 _broker_execution_stats['total_failed'] += 1
                 
         except Exception as e:
@@ -10920,12 +10926,13 @@ def traders_edit(trader_id):
                                     except (ValueError, TypeError):
                                         pass
                                 
-                                # Strategy 2: Fallback - match by account_id + account_name (EXACT match only, same account_id required)
-                                if not matched and enabled_account_id and parent_id:
+                                # Strategy 2: Fallback - match by account_id + account_name (EXACT match only - no case-insensitive, no trimming)
+                                # This is only used if subaccount_id matching fails
+                                if not matched and enabled_account_id and parent_id and enabled_account_name and acct_name:
                                     try:
-                                        if int(enabled_account_id) == int(parent_id) and enabled_account_name == acct_name:
+                                        if int(enabled_account_id) == int(parent_id) and str(enabled_account_name).strip() == str(acct_name).strip():
                                             matched = True
-                                            logger.info(f"  ✓ [{idx}] Matched '{acct_name}' by account_id+name (account_id={parent_id})")
+                                            logger.info(f"  ✓ [{idx}] Matched '{acct_name}' by account_id+name EXACT (account_id={parent_id}, name='{acct_name}')")
                                     except (ValueError, TypeError):
                                         pass
                                 
@@ -19450,6 +19457,109 @@ def api_broker_execution_status():
         })
     except Exception as e:
         logger.error(f"Error getting broker execution status: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/broker-execution/test', methods=['POST'])
+def api_test_broker_execution():
+    """Test endpoint to manually trigger broker execution for debugging"""
+    try:
+        data = request.get_json() or {}
+        recorder_id = data.get('recorder_id')
+        action = data.get('action', 'BUY')
+        ticker = data.get('ticker', 'MNQ1!')
+        quantity = int(data.get('quantity', 1))
+        tp_ticks = int(data.get('tp_ticks', 10))
+        sl_ticks = int(data.get('sl_ticks', 0))
+        
+        if not recorder_id:
+            return jsonify({'success': False, 'error': 'recorder_id required'}), 400
+        
+        logger.info(f"🧪 TEST: Manually triggering broker execution for recorder {recorder_id}")
+        logger.info(f"   Action: {action}, Ticker: {ticker}, Quantity: {quantity}, TP: {tp_ticks}, SL: {sl_ticks}")
+        
+        # Create test task
+        test_task = {
+            'recorder_id': recorder_id,
+            'action': action,
+            'ticker': ticker,
+            'quantity': quantity,
+            'tp_ticks': tp_ticks,
+            'sl_ticks': sl_ticks,
+            'retry_count': 0
+        }
+        
+        # Try to queue it
+        try:
+            broker_execution_queue.put_nowait(test_task)
+            logger.info(f"✅ TEST: Task queued successfully")
+            return jsonify({
+                'success': True,
+                'message': 'Test task queued',
+                'queue_size': broker_execution_queue.qsize(),
+                'worker_alive': broker_execution_thread.is_alive() if broker_execution_thread else False
+            })
+        except Exception as queue_err:
+            logger.error(f"❌ TEST: Failed to queue task: {queue_err}")
+            return jsonify({
+                'success': False,
+                'error': f'Queue error: {str(queue_err)}',
+                'queue_size': broker_execution_queue.qsize(),
+                'queue_full': broker_execution_queue.full()
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error in test broker execution: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/broker-execution/test', methods=['POST'])
+def api_test_broker_execution():
+    """Test endpoint to manually trigger broker execution for debugging"""
+    try:
+        data = request.get_json() or {}
+        recorder_id = data.get('recorder_id')
+        
+        if not recorder_id:
+            return jsonify({'success': False, 'error': 'recorder_id required'}), 400
+        
+        # Create a test broker task
+        broker_task = {
+            'recorder_id': int(recorder_id),
+            'action': data.get('action', 'BUY'),
+            'ticker': data.get('ticker', 'MNQ'),
+            'quantity': int(data.get('quantity', 1)),
+            'tp_ticks': int(data.get('tp_ticks', 10)),
+            'sl_ticks': int(data.get('sl_ticks', 0)),
+            'retry_count': 0
+        }
+        
+        logger.info(f"🧪 TEST: Manually triggering broker execution: {broker_task}")
+        
+        # Try to queue it
+        try:
+            broker_execution_queue.put_nowait(broker_task)
+            logger.info(f"✅ TEST: Broker task queued successfully")
+            return jsonify({
+                'success': True,
+                'message': 'Broker task queued',
+                'task': broker_task,
+                'queue_size': broker_execution_queue.qsize(),
+                'worker_alive': broker_execution_thread.is_alive() if broker_execution_thread else False
+            })
+        except Exception as queue_err:
+            logger.error(f"❌ TEST: Failed to queue broker task: {queue_err}")
+            return jsonify({
+                'success': False,
+                'error': f'Queue error: {str(queue_err)}',
+                'queue_size': broker_execution_queue.qsize(),
+                'queue_full': broker_execution_queue.qsize() >= broker_execution_queue.maxsize
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error in test broker execution: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
