@@ -8938,7 +8938,7 @@ def process_webhook_directly(webhook_token):
                 SELECT t.*,
                        t.initial_position_size, t.add_position_size,
                        t.tp_targets,
-                       t.sl_enabled, t.sl_amount, t.sl_units, t.sl_type,
+                       t.sl_enabled, t.sl_amount, t.sl_units,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
@@ -8950,7 +8950,7 @@ def process_webhook_directly(webhook_token):
                 SELECT t.*,
                        t.initial_position_size, t.add_position_size,
                        t.tp_targets,
-                       t.sl_enabled, t.sl_amount, t.sl_units, t.sl_type,
+                       t.sl_enabled, t.sl_amount, t.sl_units,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
@@ -8991,8 +8991,7 @@ def process_webhook_directly(webhook_token):
         trader_sl_enabled = trader.get('sl_enabled')
         trader_sl_amount = trader.get('sl_amount')
         trader_sl_units = trader.get('sl_units')
-        trader_sl_type = trader.get('sl_type')
-        
+
         # Log the mode - TP/SL from trader settings (override recorder) or recorder settings
         signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
         settings_source = "TRADER" if (trader_tp_targets or trader_sl_enabled is not None) else "RECORDER"
@@ -9008,9 +9007,7 @@ def process_webhook_directly(webhook_token):
             sl_amount = float(trader_sl_amount or 0)
         if trader_sl_units:
             sl_units = trader_sl_units
-        if trader_sl_type:
-            sl_type = trader_sl_type
-        
+
         # Parse TP targets
         try:
             tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
