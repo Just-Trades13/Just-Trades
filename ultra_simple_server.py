@@ -8935,9 +8935,9 @@ def process_webhook_directly(webhook_token):
         
         if is_postgres:
             cursor.execute(f'''
-                SELECT t.*, 
+                SELECT t.*,
                        t.initial_position_size, t.add_position_size,
-                       t.tp_targets, t.tp_units,
+                       t.tp_targets,
                        t.sl_enabled, t.sl_amount, t.sl_units, t.sl_type,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
@@ -8947,9 +8947,9 @@ def process_webhook_directly(webhook_token):
             ''', (recorder_id,))
         else:
             cursor.execute(f'''
-                SELECT t.*, 
+                SELECT t.*,
                        t.initial_position_size, t.add_position_size,
-                       t.tp_targets, t.tp_units,
+                       t.tp_targets,
                        t.sl_enabled, t.sl_amount, t.sl_units, t.sl_type,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
@@ -8988,7 +8988,6 @@ def process_webhook_directly(webhook_token):
         trader_initial_size = trader.get('initial_position_size')
         trader_add_size = trader.get('add_position_size')
         trader_tp_targets = trader.get('tp_targets')
-        trader_tp_units = trader.get('tp_units')
         trader_sl_enabled = trader.get('sl_enabled')
         trader_sl_amount = trader.get('sl_amount')
         trader_sl_units = trader.get('sl_units')
@@ -9003,8 +9002,6 @@ def process_webhook_directly(webhook_token):
         if trader_tp_targets:
             tp_targets_raw = trader_tp_targets
             _logger.info(f"📊 Using TRADER's TP targets (override recorder)")
-        if trader_tp_units:
-            tp_units = trader_tp_units
         if trader_sl_enabled is not None:
             sl_enabled = trader_sl_enabled
         if trader_sl_amount is not None:
