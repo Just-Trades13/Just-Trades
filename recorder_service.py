@@ -773,7 +773,8 @@ def execute_trade_simple(
             conn = get_db_connection()
             cursor = conn.cursor()
             placeholder = '%s' if is_postgres else '?'
-            cursor.execute(f'SELECT COUNT(*) FROM traders WHERE recorder_id = {placeholder} AND enabled = {'true' if is_postgres else '1'}', (recorder_id,))
+            enabled_value = 'true' if is_postgres else '1'
+            cursor.execute(f'SELECT COUNT(*) FROM traders WHERE recorder_id = {placeholder} AND enabled = {enabled_value}', (recorder_id,))
             enabled_trader_count = cursor.fetchone()[0] if cursor.rowcount > 0 else 0
             cursor.execute(f'SELECT id, enabled, enabled_accounts FROM traders WHERE recorder_id = {placeholder}', (recorder_id,))
             all_traders = cursor.fetchall()
