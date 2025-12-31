@@ -9129,6 +9129,23 @@ def process_webhook_directly(webhook_token):
                     
                     _logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
                     
+                    # CRITICAL: Queue broker close order BEFORE returning
+                    try:
+                        close_task = {
+                            'recorder_id': recorder_id,
+                            'action': 'SELL',  # SELL to close LONG
+                            'ticker': ticker,
+                            'quantity': quantity,
+                            'tp_ticks': 0,  # No TP for close
+                            'sl_ticks': 0,
+                            'retry_count': 0
+                        }
+                        broker_execution_queue.put_nowait(close_task)
+                        _logger.info(f"📤 Broker CLOSE queued: SELL {quantity} {ticker} (closing LONG)")
+                        _broker_execution_stats['total_queued'] += 1
+                    except Exception as queue_err:
+                        _logger.warning(f"⚠️ Could not queue broker close: {queue_err}")
+                    
                     conn.close()
                     return jsonify({
                         'success': True,
@@ -9139,7 +9156,8 @@ def process_webhook_directly(webhook_token):
                         'exit_price': current_price,
                         'pnl': pnl_dollars,
                         'pnl_ticks': pnl_ticks_close,
-                        'exit_reason': 'signal'
+                        'exit_reason': 'signal',
+                        'broker_queued': True
                     })
                 except Exception as close_err:
                     _logger.warning(f"⚠️ Could not close LONG: {close_err}")
@@ -9167,6 +9185,23 @@ def process_webhook_directly(webhook_token):
                     
                     _logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
                     
+                    # CRITICAL: Queue broker close order BEFORE returning
+                    try:
+                        close_task = {
+                            'recorder_id': recorder_id,
+                            'action': 'BUY',  # BUY to close SHORT
+                            'ticker': ticker,
+                            'quantity': quantity,
+                            'tp_ticks': 0,  # No TP for close
+                            'sl_ticks': 0,
+                            'retry_count': 0
+                        }
+                        broker_execution_queue.put_nowait(close_task)
+                        _logger.info(f"📤 Broker CLOSE queued: BUY {quantity} {ticker} (closing SHORT)")
+                        _broker_execution_stats['total_queued'] += 1
+                    except Exception as queue_err:
+                        _logger.warning(f"⚠️ Could not queue broker close: {queue_err}")
+                    
                     conn.close()
                     return jsonify({
                         'success': True,
@@ -9177,7 +9212,8 @@ def process_webhook_directly(webhook_token):
                         'exit_price': current_price,
                         'pnl': pnl_dollars,
                         'pnl_ticks': pnl_ticks_close,
-                        'exit_reason': 'signal'
+                        'exit_reason': 'signal',
+                        'broker_queued': True
                     })
                 except Exception as close_err:
                     _logger.warning(f"⚠️ Could not close SHORT: {close_err}")
