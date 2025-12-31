@@ -8928,13 +8928,6 @@ def process_webhook_directly(webhook_token):
         sl_units = recorder.get('sl_units', 'Ticks')
         sl_type = recorder.get('sl_type', 'Fixed')
         
-        # Log the mode - TP/SL from trader settings (override recorder) or recorder settings
-        # User has full control via trader settings (preferred) or recorder settings (fallback)
-        # Strategy "flat" signals are handled separately as close orders
-        signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
-        settings_source = "TRADER" if (trader_tp_targets or trader_sl_enabled is not None) else "RECORDER"
-        _logger.info(f"📊 {signal_type} SIGNAL: Applying {settings_source} settings - TP={tp_ticks} ticks ({tp_units}), SL={sl_ticks} ticks ({sl_units}), Type={sl_type}")
-        
         # Get linked trader for live execution with ALL risk settings
         # PostgreSQL uses TRUE (boolean), SQLite uses 1 (integer)
         # CRITICAL: Include all trader risk settings (initial_position_size, add_position_size, tp_targets, sl_*, etc.)
@@ -9000,6 +8993,11 @@ def process_webhook_directly(webhook_token):
         trader_sl_amount = trader.get('sl_amount')
         trader_sl_units = trader.get('sl_units')
         trader_sl_type = trader.get('sl_type')
+        
+        # Log the mode - TP/SL from trader settings (override recorder) or recorder settings
+        signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
+        settings_source = "TRADER" if (trader_tp_targets or trader_sl_enabled is not None) else "RECORDER"
+        _logger.info(f"📊 {signal_type} SIGNAL: Will apply {settings_source} settings")
         
         # Override TP/SL settings with trader settings if available
         if trader_tp_targets:
