@@ -8106,8 +8106,17 @@ def broker_execution_worker():
             sl_ticks = task.get('sl_ticks', 0)
             retry_count = task.get('retry_count', 0)
             
-            # CRITICAL: NO MAX RETRIES - Keep trying forever with exponential backoff
-            # Exponential backoff: 5s, 10s, 20s, 40s, 60s (max), then every 60s
+            # MAX RETRIES: Give up after 5 attempts to prevent infinite retry loops
+            MAX_RETRIES = 5
+            if retry_count >= MAX_RETRIES:
+                logger.error(f"❌ GIVING UP on task after {MAX_RETRIES} retries: {action} {quantity} {ticker}")
+                logger.error(f"   Task abandoned to prevent infinite retry loop")
+                _broker_execution_stats['total_failed'] += 1
+                _broker_execution_stats['last_error'] = f'Max retries ({MAX_RETRIES}) exceeded'
+                broker_execution_queue.task_done()
+                continue
+            
+            # Exponential backoff: 5s, 10s, 20s, 40s, 60s (max)
             retry_delay = min(60, 5 * (2 ** min(retry_count, 4)))
             
             try:
@@ -8177,14 +8186,14 @@ def broker_execution_worker():
                     logger.error(f"   Recorder ID: {recorder_id}, Action: {action}, Quantity: {quantity}, Ticker: {ticker}")
                     logger.error(f"   Full result: {result}")
                     
-                    # CRITICAL: NEVER GIVE UP - Always retry with exponential backoff
-                    logger.info(f"🔄 Will retry in {retry_delay} seconds (exponential backoff)...")
+                    # Retry with exponential backoff (up to MAX_RETRIES)
+                    logger.info(f"🔄 Will retry in {retry_delay} seconds (attempt {retry_count + 1}/{MAX_RETRIES})...")
                     time.sleep(retry_delay)
                     task['retry_count'] = retry_count + 1
                     broker_execution_queue.put(task)  # Re-queue for retry
                     _broker_execution_stats['total_failed'] += 1
                     _broker_execution_stats['last_error'] = error
-                    # Don't mark as done - we're retrying
+                    broker_execution_queue.task_done()
                     continue
                         
             except Exception as e:
@@ -8192,14 +8201,14 @@ def broker_execution_worker():
                 import traceback
                 traceback.print_exc()
                 
-                # CRITICAL: NEVER GIVE UP - Always retry with exponential backoff
-                logger.info(f"🔄 Will retry in {retry_delay} seconds (exponential backoff)...")
+                # Retry with exponential backoff (up to MAX_RETRIES)
+                logger.info(f"🔄 Will retry in {retry_delay} seconds (attempt {retry_count + 1}/{MAX_RETRIES})...")
                 time.sleep(retry_delay)
                 task['retry_count'] = retry_count + 1
                 broker_execution_queue.put(task)  # Re-queue for retry
                 _broker_execution_stats['total_failed'] += 1
                 _broker_execution_stats['last_error'] = str(e)
-                # Don't mark as done - we're retrying
+                broker_execution_queue.task_done()
                 continue
             
             # Mark task as done only on success
