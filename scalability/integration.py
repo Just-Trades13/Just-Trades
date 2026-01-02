@@ -242,9 +242,11 @@ def _auto_load_tradovate_accounts(manager, db_connection_func) -> int:
                     logger.debug(f"📡 Skipping account {account_id} - already connected with this token")
                     continue
                 
-                # Get the first subaccount ID to use for this connection
+                # Get the first DEMO subaccount ID to use for this connection
                 # The connection will receive data for ALL subaccounts under this token
+                # We prefer demo subaccounts since they're more commonly used for testing
                 connection_account_id = None
+                connection_is_demo = is_demo  # Default to account environment
                 tradovate_accounts_str = account['tradovate_accounts']
                 
                 if tradovate_accounts_str:
@@ -252,12 +254,23 @@ def _auto_load_tradovate_accounts(manager, db_connection_func) -> int:
                     try:
                         subaccounts = json.loads(tradovate_accounts_str)
                         if isinstance(subaccounts, list) and subaccounts:
-                            # Use the first subaccount ID
-                            first_sub = subaccounts[0]
+                            # Find the first DEMO subaccount, or fall back to first subaccount
+                            demo_subs = [s for s in subaccounts if s.get('is_demo', True)]
+                            if demo_subs:
+                                first_sub = demo_subs[0]
+                                connection_is_demo = True
+                            else:
+                                first_sub = subaccounts[0]
+                                connection_is_demo = first_sub.get('is_demo', True)
+                            
                             connection_account_id = first_sub.get('id') or first_sub.get('accountId')
-                            logger.info(f"📡 Token has {len(subaccounts)} subaccounts, connecting as {connection_account_id}")
+                            sub_name = first_sub.get('name', connection_account_id)
+                            logger.info(f"📡 Token has {len(subaccounts)} subaccounts, connecting as {connection_account_id} ({sub_name}), is_demo={connection_is_demo}")
                     except json.JSONDecodeError:
                         logger.warning(f"Could not parse tradovate_accounts for account {account_id}")
+                
+                # Override is_demo with the specific subaccount's setting
+                is_demo = connection_is_demo
                 
                 if not connection_account_id:
                     connection_account_id = account_id
