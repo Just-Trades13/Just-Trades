@@ -381,39 +381,52 @@ class BrokerWSManager:
         return "wss://api.tradovate.com/v1/websocket"
     
     async def _authenticate(self, conn: AccountConnection) -> bool:
-        """Authenticate WebSocket connection"""
+        """Authenticate WebSocket connection using Tradovate's custom format"""
         try:
-            auth_message = json.dumps({
-                "url": "authorize",
-                "token": conn.access_token
-            })
+            # Tradovate WebSocket uses custom format: "authorize\n{request_id}\n\n{token}"
+            # NOT JSON! This is critical for authentication to work.
+            request_id = 0
+            auth_message = f"authorize\n{request_id}\n\n{conn.access_token}"
             
             await conn.websocket.send(auth_message)
             
             # Wait for auth response
             response = await asyncio.wait_for(conn.websocket.recv(), timeout=10.0)
+            logger.debug(f"Account {conn.account_id} auth response: {response[:200] if response else 'empty'}")
             
-            # Parse response (could be various formats)
-            try:
-                data = json.loads(response)
-                is_ok = (
-                    data.get('ok') or 
-                    data.get('success') or 
-                    data.get('s') == 200 or
-                    (isinstance(data, list) and len(data) > 0)
-                )
-            except:
-                is_ok = 'error' not in str(response).lower()
+            # Tradovate returns "o" for open, then auth response
+            # Successful auth typically contains 'accessToken' or doesn't contain 'error'
+            is_ok = response and 'error' not in response.lower() and 'invalid' not in response.lower()
+            
+            # Also check for explicit success indicators
+            if response:
+                try:
+                    # Sometimes response is JSON after the initial 'o'
+                    if response.startswith('a['):
+                        # Array format: a["json_string"]
+                        inner = response[2:-1]  # Remove a[ and ]
+                        data = json.loads(json.loads(inner))
+                        is_ok = not data.get('s') or data.get('s') == 200
+                    elif response == 'o':
+                        # Just 'o' means connection open, wait for next message
+                        response2 = await asyncio.wait_for(conn.websocket.recv(), timeout=10.0)
+                        logger.debug(f"Account {conn.account_id} auth response2: {response2[:200] if response2 else 'empty'}")
+                        is_ok = response2 and 'error' not in response2.lower()
+                except:
+                    pass
             
             conn.authenticated = is_ok
             
             if is_ok:
-                logger.debug(f"Account {conn.account_id} authenticated")
+                logger.info(f"✅ Account {conn.account_id} authenticated via WebSocket")
             else:
-                logger.error(f"Account {conn.account_id} auth failed: {response[:200]}")
+                logger.error(f"❌ Account {conn.account_id} auth failed: {response[:200] if response else 'no response'}")
             
             return is_ok
             
+        except asyncio.TimeoutError:
+            logger.error(f"Auth timeout for account {conn.account_id}")
+            return False
         except Exception as e:
             logger.error(f"Auth error for account {conn.account_id}: {e}")
             return False
@@ -421,13 +434,10 @@ class BrokerWSManager:
     async def _subscribe_sync(self, conn: AccountConnection) -> bool:
         """Subscribe to user/syncrequest for real-time updates"""
         try:
-            # Tradovate sync request format
-            sync_message = json.dumps({
-                "url": "user/syncrequest",
-                "body": {
-                    "users": [conn.account_id]
-                }
-            })
+            # Tradovate sync request format: "url\nrequest_id\n\njson_body"
+            request_id = 1
+            body = json.dumps({"users": [conn.account_id]})
+            sync_message = f"user/syncrequest\n{request_id}\n\n{body}"
             
             await conn.websocket.send(sync_message)
             
@@ -478,7 +488,56 @@ class BrokerWSManager:
     async def _process_message(self, conn: AccountConnection, raw_message: str):
         """Process a single WebSocket message"""
         try:
-            # Try to parse as JSON
+            # Tradovate WebSocket message formats:
+            # - 'o' = connection open
+            # - 'h' = heartbeat from server
+            # - 'a["json"]' = array with JSON payload
+            # - 'c[code,"reason"]' = close
+            # - Direct JSON for some responses
+            
+            if not raw_message:
+                return
+            
+            # Handle special single-char messages
+            if raw_message == 'o':
+                logger.debug(f"Account {conn.account_id}: connection open")
+                return
+            elif raw_message == 'h':
+                logger.debug(f"Account {conn.account_id}: server heartbeat")
+                return
+            elif raw_message.startswith('c['):
+                logger.warning(f"Account {conn.account_id}: connection closed by server: {raw_message}")
+                conn.connected = False
+                return
+            
+            # Handle array format: a["json_string"]
+            data = None
+            if raw_message.startswith('a['):
+                try:
+                    # Extract inner JSON array, then parse the first element
+                    inner = raw_message[1:]  # Remove 'a' prefix
+                    array = json.loads(inner)
+                    if array and isinstance(array, list):
+                        for item in array:
+                            if isinstance(item, str):
+                                # Parse the JSON string inside
+                                try:
+                                    data = json.loads(item)
+                                    if isinstance(data, dict):
+                                        await self._handle_dict_message(conn, data)
+                                    elif isinstance(data, list):
+                                        for d in data:
+                                            if isinstance(d, dict):
+                                                await self._handle_dict_message(conn, d)
+                                except json.JSONDecodeError:
+                                    logger.debug(f"Non-JSON in array: {item[:100]}")
+                            elif isinstance(item, dict):
+                                await self._handle_dict_message(conn, item)
+                    return
+                except json.JSONDecodeError:
+                    logger.debug(f"Failed to parse array message: {raw_message[:100]}")
+            
+            # Try direct JSON parse
             try:
                 data = json.loads(raw_message)
             except json.JSONDecodeError:
