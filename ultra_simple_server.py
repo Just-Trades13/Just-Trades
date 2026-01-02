@@ -65,6 +65,25 @@ try:
 except ImportError:
     PRODUCTION_DB_AVAILABLE = False
 
+# ============================================================================
+# 100+ USER SCALABILITY MODULE (Feature-flagged, additive)
+# ============================================================================
+# Enable with: export SCALABILITY_UI_PUBLISHER=1
+# See /scalability/ folder for documentation
+try:
+    from scalability.integration import (
+        init_scalability,
+        get_scalability_status,
+        register_scalability_routes,
+        register_scalability_socketio_handlers,
+    )
+    from scalability import FEATURES as SCALABILITY_FEATURES
+    SCALABILITY_MODULE_AVAILABLE = True
+except ImportError as e:
+    SCALABILITY_MODULE_AVAILABLE = False
+    SCALABILITY_FEATURES = {}
+    print(f"ℹ️ Scalability module not loaded (optional): {e}")
+
 # High-performance signal queue for handling hundreds of signals per second
 signal_queue = Queue(maxsize=10000)
 BATCH_SIZE = 50  # Process signals in batches for faster DB writes
@@ -1550,6 +1569,25 @@ except ImportError:
     except ImportError:
         socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True, engineio_logger=True)
         logger.info("SocketIO using threading async mode (fallback)")
+
+# ============================================================================
+# INITIALIZE 100+ USER SCALABILITY MODULE (if available and enabled)
+# ============================================================================
+if SCALABILITY_MODULE_AVAILABLE:
+    try:
+        # Check if any scalability features are enabled
+        any_enabled = any(SCALABILITY_FEATURES.values())
+        if any_enabled:
+            logger.info("🚀 Scalability module detected with enabled features - initializing...")
+            init_result = init_scalability(socketio, get_db_connection, auto_start=True)
+            register_scalability_routes(app)
+            register_scalability_socketio_handlers(socketio)
+            logger.info(f"✅ Scalability module initialized: {init_result.get('components', {})}")
+        else:
+            logger.info("ℹ️ Scalability module available but no features enabled")
+            logger.info("   Enable with: export SCALABILITY_UI_PUBLISHER=1")
+    except Exception as e:
+        logger.warning(f"⚠️ Scalability module initialization failed (non-fatal): {e}")
 
 # ⚠️ SECURITY WARNING: API credentials should be stored in environment variables or secure config
 # These are default credentials - prefer storing in .env file or environment variables
