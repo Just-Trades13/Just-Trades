@@ -499,8 +499,10 @@ class BrokerWSManager:
                             p_ticket = d.get('p-ticket')
                             p_time = d.get('p-time', 5)
                             
-                            logger.warning(f"⏳ Account {conn.account_id} rate limited - waiting {p_time}s before retry")
-                            await asyncio.sleep(p_time)
+                            # Add extra buffer to the wait time to be safe
+                            wait_time = p_time + 5
+                            logger.warning(f"⏳ Account {conn.account_id} rate limited - waiting {wait_time}s before retry (p-time was {p_time})")
+                            await asyncio.sleep(wait_time)
                             continue  # Retry with p-ticket
                             
                         except Exception as e:

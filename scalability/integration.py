@@ -276,6 +276,13 @@ def _auto_load_tradovate_accounts(manager, db_connection_func) -> int:
                     connection_account_id = account_id
                 
                 # Add ONE connection for this token
+                # Stagger connections to avoid rate limits
+                if connections_made > 0:
+                    import time
+                    delay = 10  # 10 second delay between account connections
+                    logger.info(f"⏳ Waiting {delay}s before connecting next account (rate limit protection)")
+                    time.sleep(delay)
+                
                 manager.add_account(
                     account_id=connection_account_id,
                     access_token=token,
