@@ -44,6 +44,10 @@ FEATURES = {
     
     # Event Ledger - append-only event store for audit trail
     'event_ledger_enabled': os.environ.get('SCALABILITY_EVENT_LEDGER', '0') == '1',
+    
+    # Legacy Bridge - emits on existing 'position_update' channel from StateCache
+    # Enables instant PnL updates without changing existing UI code
+    'legacy_bridge_enabled': os.environ.get('SCALABILITY_LEGACY_BRIDGE', '0') == '1',
 }
 
 def enable_feature(feature_name: str) -> bool:
@@ -99,6 +103,7 @@ __all__ = [
     'get_event_ledger',
     'get_order_dispatcher',
     'get_ws_manager',
+    'get_legacy_bridge',
     # Integration
     'init_scalability',
     'get_scalability_status',
@@ -129,6 +134,11 @@ def get_order_dispatcher():
 def get_ws_manager():
     """Get the Broker WS Manager instance (lazy load)"""
     from .broker_ws_manager import get_ws_manager as _get
+    return _get()
+
+def get_legacy_bridge():
+    """Get the Legacy Bridge instance (lazy load)"""
+    from .legacy_bridge import get_legacy_bridge as _get
     return _get()
 
 # Integration shortcuts

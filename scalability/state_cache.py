@@ -198,9 +198,12 @@ class StateCache:
         """Update PnL for an account"""
         with self._lock:
             seq = self._next_sequence()
+            now = time.time()
+            # Inject timestamp into data for freshness checking
+            pnl_data_with_ts = {**pnl_data, '_updated_at': now}
             self._pnl[account_id] = CacheEntry(
-                data=pnl_data,
-                updated_at=time.time(),
+                data=pnl_data_with_ts,
+                updated_at=now,
                 sequence=seq
             )
             self._stats['updates'] += 1

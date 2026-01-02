@@ -135,6 +135,31 @@ def init_scalability(
         elif FEATURES.get('ws_state_manager_enabled'):
             results['components']['ws_state_manager'] = 'ready (not started)'
         
+        # Initialize Legacy Bridge if enabled
+        # This bridges StateCache to the existing 'position_update' SocketIO channel
+        if FEATURES.get('legacy_bridge_enabled'):
+            from .legacy_bridge import init_legacy_bridge, attach_to_publisher
+            from .ui_publisher import get_ui_publisher
+            
+            bridge = init_legacy_bridge(
+                socketio=socketio,
+                state_cache=cache,
+                db_connection_func=db_connection_func
+            )
+            
+            if bridge:
+                # Attach to UIPublisher if it's running
+                publisher = get_ui_publisher()
+                if publisher:
+                    attach_to_publisher(publisher)
+                    results['components']['legacy_bridge'] = 'attached to publisher'
+                    logger.info("✅ Legacy Bridge attached to UI Publisher")
+                else:
+                    results['components']['legacy_bridge'] = 'initialized (publisher not running)'
+                    logger.info("✅ Legacy Bridge initialized (waiting for publisher)")
+            else:
+                results['components']['legacy_bridge'] = 'disabled'
+        
         _initialized = True
         results['initialized'] = True
         
@@ -207,6 +232,13 @@ def get_scalability_status() -> dict:
         status['components']['ws_state_manager'] = manager.get_stats() if manager else None
     except:
         status['components']['ws_state_manager'] = None
+    
+    try:
+        from .legacy_bridge import get_legacy_bridge
+        bridge = get_legacy_bridge()
+        status['components']['legacy_bridge'] = bridge.get_stats() if bridge else None
+    except:
+        status['components']['legacy_bridge'] = None
     
     return status
 
@@ -300,6 +332,17 @@ def register_scalability_routes(app):
                 }), 400
             
             publisher = start_ui_publisher(_socketio)
+            
+            # Attach Legacy Bridge if it exists
+            try:
+                from .legacy_bridge import get_legacy_bridge, attach_to_publisher
+                bridge = get_legacy_bridge()
+                if bridge:
+                    attach_to_publisher(publisher)
+                    logger.info("✅ Legacy Bridge attached to UI Publisher")
+            except Exception as e:
+                logger.debug(f"Legacy Bridge not available: {e}")
+            
             return jsonify({
                 'success': True,
                 'message': 'UI Publisher started',
@@ -394,6 +437,18 @@ def register_scalability_routes(app):
             if not ledger:
                 return jsonify({'error': 'Ledger not initialized'}), 404
             return jsonify(ledger.get_stats())
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/scalability/bridge/stats')
+    def bridge_stats():
+        """Get Legacy Bridge statistics"""
+        try:
+            from .legacy_bridge import get_legacy_bridge
+            bridge = get_legacy_bridge()
+            if not bridge:
+                return jsonify({'error': 'Legacy Bridge not initialized', 'enabled': False}), 404
+            return jsonify(bridge.get_stats())
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     

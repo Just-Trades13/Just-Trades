@@ -18633,6 +18633,72 @@ def fetch_tradovate_pnl_sync():
         # Still in cooldown, return cached data
         return _tradovate_pnl_cache.get('data', {}), _tradovate_pnl_cache.get('positions', [])
     
+    # ========================================================================
+    # SCALABILITY: Use WebSocket data if fresh (skip REST calls entirely)
+    # This saves REST API calls when WebSocket is providing real-time data
+    # ========================================================================
+    if SCALABILITY_MODULE_AVAILABLE and SCALABILITY_FEATURES.get('ws_state_manager_enabled'):
+        try:
+            from scalability import get_state_cache
+            cache = get_state_cache()
+            if cache:
+                cache_stats = cache.get_stats()
+                accounts_tracked = cache_stats.get('accounts_tracked', 0)
+                
+                # Only use cache if we have accounts being tracked via WebSocket
+                if accounts_tracked > 0:
+                    all_snapshot = cache.get_all_accounts_snapshot()
+                    
+                    # Check if ALL tracked accounts have fresh data (< 5 seconds old)
+                    all_fresh = True
+                    fresh_pnl_data = {}
+                    fresh_positions = []
+                    
+                    for acc_id, snapshot in all_snapshot.items():
+                        pnl = snapshot.get('pnl') or {}
+                        updated_at = pnl.get('_updated_at', 0)
+                        
+                        # If any account has stale data (> 5s), fall back to REST
+                        if current_time - updated_at > 5:
+                            all_fresh = False
+                            break
+                        
+                        # Build legacy format from cache
+                        fresh_pnl_data[acc_id] = {
+                            'account_name': pnl.get('account_name', f'Account-{acc_id}'),
+                            'is_demo': pnl.get('is_demo', True),
+                            'user_id': pnl.get('user_id'),
+                            'open_pnl': pnl.get('openPnL', 0) or pnl.get('open_pnl', 0),
+                            'realized_pnl': pnl.get('realizedPnL', 0) or pnl.get('realized_pnl', 0),
+                            'net_liq': pnl.get('netLiq', 0) or pnl.get('net_liq', 0),
+                            'total_cash_value': pnl.get('totalCashValue', 0) or pnl.get('total_cash_value', 0),
+                            'total_pnl': pnl.get('totalPnL', 0) or pnl.get('total_pnl', 0),
+                        }
+                        
+                        # Build positions from cache
+                        for pos in snapshot.get('positions', []):
+                            net_qty = pos.get('netPos', 0) or pos.get('net_quantity', 0)
+                            if net_qty != 0:
+                                fresh_positions.append({
+                                    'account_id': acc_id,
+                                    'account_name': pnl.get('account_name', f'Account-{acc_id}'),
+                                    'is_demo': pnl.get('is_demo', True),
+                                    'user_id': pnl.get('user_id'),
+                                    'contract_id': pos.get('contractId', pos.get('contract_id')),
+                                    'symbol': pos.get('symbol', pos.get('contractName', 'Unknown')),
+                                    'net_quantity': net_qty,
+                                    'avg_price': pos.get('avgPrice', pos.get('avg_price', 0)),
+                                })
+                    
+                    if all_fresh and fresh_pnl_data:
+                        # WebSocket data is fresh - skip REST calls entirely!
+                        logger.debug(f"📡 Using WebSocket cache data ({accounts_tracked} accounts, skipping REST)")
+                        return fresh_pnl_data, fresh_positions
+                    
+        except Exception as e:
+            # If cache check fails, fall through to REST polling
+            logger.debug(f"Scalability cache check failed (using REST): {e}")
+    
     num_accounts = _tradovate_pnl_cache.get('account_count', 2)
     if not isinstance(num_accounts, int) or num_accounts < 1:
         num_accounts = 2
