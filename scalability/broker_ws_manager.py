@@ -456,9 +456,9 @@ class BrokerWSManager:
         """Subscribe to user/syncrequest for real-time updates"""
         try:
             # Tradovate sync request format: "url\nrequest_id\n\njson_body"
-            # user/syncrequest doesn't need a body - it syncs the authenticated user's data
+            # user/syncrequest needs an empty JSON object as body
             request_id = 1
-            sync_message = f"user/syncrequest\n{request_id}\n\n"
+            sync_message = f"user/syncrequest\n{request_id}\n\n{{}}"
             
             await conn.websocket.send(sync_message)
             logger.info(f"📡 Sent sync request for account {conn.account_id}")
