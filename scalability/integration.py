@@ -593,6 +593,25 @@ def register_scalability_routes(app):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
+    @app.route('/api/scalability/ws-manager/reconnect/<int:account_id>', methods=['POST'])
+    def ws_reconnect_account(account_id):
+        """Force reconnect for an account to capture sync response"""
+        try:
+            from .broker_ws_manager import get_ws_manager
+            manager = get_ws_manager()
+            if not manager:
+                return jsonify({'error': 'WS Manager not initialized'}), 404
+            
+            # Remove and re-add the account to force reconnect
+            manager.remove_account(account_id)
+            
+            return jsonify({
+                'success': True,
+                'message': f'Account {account_id} removed, will reconnect automatically if re-added'
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
     logger.info("✅ Scalability API routes registered")
 
 

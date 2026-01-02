@@ -463,16 +463,34 @@ class BrokerWSManager:
             await conn.websocket.send(sync_message)
             logger.info(f"📡 Sent sync request for account {conn.account_id}")
             
-            # Wait for initial sync response
+            # Wait for initial sync responses - Tradovate may send multiple messages
             try:
-                response = await asyncio.wait_for(conn.websocket.recv(), timeout=15.0)
-                logger.info(f"📡 Sync response for account {conn.account_id}: {len(response)} bytes")
+                # Read up to 5 messages to capture all sync data
+                for i in range(5):
+                    try:
+                        response = await asyncio.wait_for(conn.websocket.recv(), timeout=5.0)
+                        logger.info(f"📡 Sync response #{i+1} for account {conn.account_id}: {len(response)} bytes, starts={response[:30] if response else 'empty'}")
+                        
+                        # Capture for debugging
+                        self._capture_debug_message(conn.account_id, f"SYNC_{i+1}: {response}")
+                        
+                        # Skip heartbeats and empty responses
+                        if response in ('h', 'o', ''):
+                            continue
+                        
+                        # Process the sync response which contains initial state
+                        await self._process_sync_response(conn, response)
+                        
+                        # If we got a substantial response, we might be done
+                        if len(response) > 100:
+                            break
+                            
+                    except asyncio.TimeoutError:
+                        logger.debug(f"No more sync messages for account {conn.account_id}")
+                        break
                 
-                # Process the sync response which contains initial state
-                await self._process_sync_response(conn, response)
-                
-            except asyncio.TimeoutError:
-                logger.warning(f"Sync response timeout for account {conn.account_id}")
+            except Exception as e:
+                logger.warning(f"Sync response error for account {conn.account_id}: {e}")
             
             conn.synced = True
             logger.debug(f"Account {conn.account_id} sync subscription complete")
