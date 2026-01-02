@@ -458,44 +458,77 @@ class BrokerWSManager:
             # Tradovate sync request format: "url\nrequest_id\n\njson_body"
             # user/syncrequest needs an empty JSON object as body
             request_id = 1
-            sync_message = f"user/syncrequest\n{request_id}\n\n{{}}"
+            p_ticket = None  # Penalty ticket for retry
+            max_retries = 3
             
-            await conn.websocket.send(sync_message)
-            logger.info(f"📡 Sent sync request for account {conn.account_id}")
-            
-            # Wait for initial sync responses - Tradovate may send multiple messages
-            try:
-                # Read up to 5 messages to capture all sync data
-                for i in range(5):
-                    try:
-                        response = await asyncio.wait_for(conn.websocket.recv(), timeout=5.0)
-                        logger.info(f"📡 Sync response #{i+1} for account {conn.account_id}: {len(response)} bytes, starts={response[:30] if response else 'empty'}")
-                        
-                        # Capture for debugging
-                        self._capture_debug_message(conn.account_id, f"SYNC_{i+1}: {response}")
-                        
-                        # Skip heartbeats and empty responses
-                        if response in ('h', 'o', ''):
-                            continue
-                        
-                        # Process the sync response which contains initial state
-                        await self._process_sync_response(conn, response)
-                        
-                        # If we got a substantial response, we might be done
-                        if len(response) > 100:
-                            break
-                            
-                    except asyncio.TimeoutError:
-                        logger.debug(f"No more sync messages for account {conn.account_id}")
-                        break
+            for attempt in range(max_retries):
+                # Build sync message (include p-ticket if we have one from penalty)
+                if p_ticket:
+                    body = json.dumps({"p-ticket": p_ticket})
+                else:
+                    body = "{}"
                 
-            except Exception as e:
-                logger.warning(f"Sync response error for account {conn.account_id}: {e}")
+                sync_message = f"user/syncrequest\n{request_id}\n\n{body}"
+                
+                await conn.websocket.send(sync_message)
+                logger.info(f"📡 Sent sync request for account {conn.account_id} (attempt {attempt + 1})")
+                
+                # Wait for sync response
+                try:
+                    response = await asyncio.wait_for(conn.websocket.recv(), timeout=10.0)
+                    logger.info(f"📡 Sync response for account {conn.account_id}: {len(response)} bytes")
+                    
+                    # Capture for debugging
+                    self._capture_debug_message(conn.account_id, f"SYNC_{attempt + 1}: {response}")
+                    
+                    # Skip heartbeats
+                    if response in ('h', 'o', ''):
+                        continue
+                    
+                    # Check for penalty response (p-ticket, p-time)
+                    if 'p-ticket' in response and 'p-time' in response:
+                        try:
+                            # Parse the penalty response
+                            if response.startswith('a['):
+                                inner = response[2:-1]  # Remove a[ and ]
+                                data = json.loads(json.loads(inner))
+                            else:
+                                data = json.loads(response)
+                            
+                            d = data.get('d', data)
+                            p_ticket = d.get('p-ticket')
+                            p_time = d.get('p-time', 5)
+                            
+                            logger.warning(f"⏳ Account {conn.account_id} rate limited - waiting {p_time}s before retry")
+                            await asyncio.sleep(p_time)
+                            continue  # Retry with p-ticket
+                            
+                        except Exception as e:
+                            logger.warning(f"Could not parse penalty response: {e}")
+                    
+                    # Process the sync response which contains initial state
+                    await self._process_sync_response(conn, response)
+                    
+                    # Read any additional messages
+                    for i in range(3):
+                        try:
+                            extra = await asyncio.wait_for(conn.websocket.recv(), timeout=2.0)
+                            if extra not in ('h', 'o', ''):
+                                self._capture_debug_message(conn.account_id, f"SYNC_EXTRA_{i}: {extra}")
+                                await self._process_sync_response(conn, extra)
+                        except asyncio.TimeoutError:
+                            break
+                    
+                    # Success!
+                    conn.synced = True
+                    logger.info(f"✅ Account {conn.account_id} sync complete")
+                    return True
+                    
+                except asyncio.TimeoutError:
+                    logger.warning(f"Sync response timeout for account {conn.account_id}")
             
-            conn.synced = True
-            logger.debug(f"Account {conn.account_id} sync subscription complete")
-            
-            return True
+            logger.error(f"❌ Failed to sync account {conn.account_id} after {max_retries} attempts")
+            return False
             
         except Exception as e:
             logger.error(f"Sync subscription error for account {conn.account_id}: {e}")
