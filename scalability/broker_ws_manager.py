@@ -135,7 +135,28 @@ class BrokerWSManager:
             'total_errors': 0,
         }
         
+        # Debug: capture recent raw messages
+        self._debug_messages: List[dict] = []
+        self._debug_max_messages = 50
+        
         logger.info("🔌 BrokerWSManager initialized")
+    
+    def get_debug_messages(self) -> List[dict]:
+        """Get recent raw messages for debugging"""
+        return list(self._debug_messages)
+    
+    def _capture_debug_message(self, account_id: int, message: str):
+        """Capture a message for debugging"""
+        self._debug_messages.append({
+            'account_id': account_id,
+            'timestamp': time.time(),
+            'length': len(message),
+            'preview': message[:500] if message else '',
+            'starts_with': message[:20] if message else '',
+        })
+        # Keep only recent messages
+        if len(self._debug_messages) > self._debug_max_messages:
+            self._debug_messages = self._debug_messages[-self._debug_max_messages:]
     
     def _get_state_cache(self):
         """Lazy load state cache"""
@@ -572,6 +593,9 @@ class BrokerWSManager:
                     conn.last_message_at = time.time()
                     conn.messages_received += 1
                     self._stats['total_messages'] += 1
+                    
+                    # Capture for debugging
+                    self._capture_debug_message(conn.account_id, message)
                     
                     # Process the message
                     await self._process_message(conn, message)

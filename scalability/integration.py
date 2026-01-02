@@ -579,6 +579,20 @@ def register_scalability_routes(app):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
+    @app.route('/api/scalability/ws-manager/debug-messages')
+    def ws_debug_messages():
+        """Get recent raw WebSocket messages for debugging"""
+        try:
+            from .broker_ws_manager import get_ws_manager
+            manager = get_ws_manager()
+            if not manager:
+                return jsonify({'error': 'WS Manager not initialized'}), 404
+            return jsonify({
+                'messages': manager.get_debug_messages()
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
     logger.info("✅ Scalability API routes registered")
 
 
