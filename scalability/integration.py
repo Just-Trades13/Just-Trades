@@ -527,6 +527,46 @@ def register_scalability_routes(app):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
+    @app.route('/api/scalability/ledger/events')
+    def ledger_events():
+        """Get recent events from the ledger (for debugging)"""
+        try:
+            from .event_ledger import get_ledger
+            ledger = get_ledger()
+            if not ledger:
+                return jsonify({'error': 'Ledger not initialized'}), 404
+            
+            # Get query params
+            limit = request.args.get('limit', 20, type=int)
+            account_id = request.args.get('account_id', type=int)
+            entity_type = request.args.get('entity_type', type=str)
+            
+            events = ledger.get_events(
+                account_id=account_id,
+                entity_type=entity_type,
+                limit=limit
+            )
+            
+            # Convert to JSON-serializable format
+            events_list = []
+            for e in events:
+                events_list.append({
+                    'sequence': e.sequence,
+                    'account_id': e.account_id,
+                    'entity_type': e.entity_type,
+                    'event_type': e.event_type,
+                    'entity_id': e.entity_id,
+                    'timestamp': e.timestamp,
+                    'raw_data': e.raw_data,
+                })
+            
+            return jsonify({
+                'count': len(events_list),
+                'events': events_list
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
     @app.route('/api/scalability/bridge/stats')
     def bridge_stats():
         """Get Legacy Bridge statistics"""
