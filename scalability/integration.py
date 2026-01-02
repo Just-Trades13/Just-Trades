@@ -197,14 +197,16 @@ def _auto_load_tradovate_accounts(manager, db_connection_func) -> int:
     """
     Auto-load existing Tradovate accounts from database into the WS Manager.
     
-    This runs on startup to connect WebSocket to all accounts that have valid tokens.
+    IMPORTANT: Tradovate allows ONE WebSocket connection per access token.
+    That single connection receives events for ALL subaccounts under that token.
+    So we connect ONCE per token, using one of the subaccount IDs.
     
     Returns:
-        Number of accounts loaded
+        Number of connections established (one per token)
     """
     import sqlite3
     
-    accounts_loaded = 0
+    connections_made = 0
     
     try:
         conn = db_connection_func()
@@ -224,6 +226,9 @@ def _auto_load_tradovate_accounts(manager, db_connection_func) -> int:
             logger.info("📡 No Tradovate accounts found in database")
             return 0
         
+        # Track tokens we've already connected to avoid duplicates
+        connected_tokens = set()
+        
         for account in all_accounts:
             try:
                 account_id = account['id']
@@ -231,47 +236,54 @@ def _auto_load_tradovate_accounts(manager, db_connection_func) -> int:
                 env = account['environment'] or 'demo'
                 is_demo = (env.lower() == 'demo')
                 
-                # Parse tradovate_accounts to get subaccount IDs
+                # Skip if we already have a connection for this token
+                token_hash = hash(token[:50])  # Use first 50 chars to identify token
+                if token_hash in connected_tokens:
+                    logger.debug(f"📡 Skipping account {account_id} - already connected with this token")
+                    continue
+                
+                # Get the first subaccount ID to use for this connection
+                # The connection will receive data for ALL subaccounts under this token
+                connection_account_id = None
                 tradovate_accounts_str = account['tradovate_accounts']
+                
                 if tradovate_accounts_str:
                     import json
                     try:
                         subaccounts = json.loads(tradovate_accounts_str)
-                        if isinstance(subaccounts, list):
-                            for subaccount in subaccounts:
-                                sub_id = subaccount.get('id') or subaccount.get('accountId')
-                                if sub_id:
-                                    # Add each subaccount to WS Manager
-                                    manager.add_account(
-                                        account_id=sub_id,
-                                        access_token=token,
-                                        is_demo=is_demo
-                                    )
-                                    accounts_loaded += 1
-                                    logger.debug(f"📡 Added subaccount {sub_id} to WS Manager")
+                        if isinstance(subaccounts, list) and subaccounts:
+                            # Use the first subaccount ID
+                            first_sub = subaccounts[0]
+                            connection_account_id = first_sub.get('id') or first_sub.get('accountId')
+                            logger.info(f"📡 Token has {len(subaccounts)} subaccounts, connecting as {connection_account_id}")
                     except json.JSONDecodeError:
                         logger.warning(f"Could not parse tradovate_accounts for account {account_id}")
-                else:
-                    # No subaccounts, add the main account
-                    manager.add_account(
-                        account_id=account_id,
-                        access_token=token,
-                        is_demo=is_demo
-                    )
-                    accounts_loaded += 1
+                
+                if not connection_account_id:
+                    connection_account_id = account_id
+                
+                # Add ONE connection for this token
+                manager.add_account(
+                    account_id=connection_account_id,
+                    access_token=token,
+                    is_demo=is_demo
+                )
+                connected_tokens.add(token_hash)
+                connections_made += 1
+                logger.info(f"📡 Added WebSocket connection for token (account {connection_account_id}, demo={is_demo})")
                     
             except Exception as e:
                 logger.warning(f"Failed to load account {account.get('id')}: {e}")
                 continue
         
-        logger.info(f"📡 Loaded {accounts_loaded} Tradovate accounts to WS Manager")
+        logger.info(f"📡 Established {connections_made} WebSocket connections")
         
     except Exception as e:
         logger.error(f"❌ Error auto-loading Tradovate accounts: {e}")
         import traceback
         logger.debug(traceback.format_exc())
     
-    return accounts_loaded
+    return connections_made
 
 
 def get_scalability_status() -> dict:
