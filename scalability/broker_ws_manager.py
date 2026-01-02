@@ -435,22 +435,125 @@ class BrokerWSManager:
         """Subscribe to user/syncrequest for real-time updates"""
         try:
             # Tradovate sync request format: "url\nrequest_id\n\njson_body"
+            # user/syncrequest doesn't need a body - it syncs the authenticated user's data
             request_id = 1
-            body = json.dumps({"users": [conn.account_id]})
-            sync_message = f"user/syncrequest\n{request_id}\n\n{body}"
+            sync_message = f"user/syncrequest\n{request_id}\n\n"
             
             await conn.websocket.send(sync_message)
+            logger.info(f"📡 Sent sync request for account {conn.account_id}")
             
-            # The sync response may be a large payload with current state
-            # We'll process it in the message handler
+            # Wait for initial sync response
+            try:
+                response = await asyncio.wait_for(conn.websocket.recv(), timeout=15.0)
+                logger.info(f"📡 Sync response for account {conn.account_id}: {len(response)} bytes")
+                
+                # Process the sync response which contains initial state
+                await self._process_sync_response(conn, response)
+                
+            except asyncio.TimeoutError:
+                logger.warning(f"Sync response timeout for account {conn.account_id}")
+            
             conn.synced = True
-            logger.debug(f"Account {conn.account_id} sync subscription sent")
+            logger.debug(f"Account {conn.account_id} sync subscription complete")
             
             return True
             
         except Exception as e:
             logger.error(f"Sync subscription error for account {conn.account_id}: {e}")
             return False
+    
+    async def _process_sync_response(self, conn: AccountConnection, response: str):
+        """Process the initial sync response containing full state"""
+        try:
+            # Sync response format varies - could be:
+            # - a["json_array"] with multiple entities
+            # - Direct JSON with users/accounts/positions/orders
+            
+            if not response:
+                return
+            
+            # Handle 'o' or 'h' messages
+            if response in ('o', 'h'):
+                return
+            
+            # Try to parse the response
+            data = None
+            
+            if response.startswith('a['):
+                # Array format
+                try:
+                    inner = response[1:]  # Remove 'a'
+                    array = json.loads(inner)
+                    for item in array:
+                        if isinstance(item, str):
+                            try:
+                                data = json.loads(item)
+                                await self._process_sync_data(conn, data)
+                            except:
+                                pass
+                        elif isinstance(item, dict):
+                            await self._process_sync_data(conn, item)
+                except json.JSONDecodeError:
+                    pass
+            else:
+                try:
+                    data = json.loads(response)
+                    await self._process_sync_data(conn, data)
+                except json.JSONDecodeError:
+                    logger.debug(f"Non-JSON sync response: {response[:200]}")
+                    
+        except Exception as e:
+            logger.error(f"Error processing sync response: {e}")
+    
+    async def _process_sync_data(self, conn: AccountConnection, data: dict):
+        """Process sync data containing positions/orders/etc"""
+        if not isinstance(data, dict):
+            return
+        
+        cache = self._get_state_cache()
+        ledger = self._get_event_ledger()
+        
+        # Check for different data formats
+        # Format 1: {"d": {"positions": [...], "orders": [...], ...}}
+        # Format 2: {"positions": [...], "orders": [...], ...}
+        # Format 3: {"s": 200, "d": {...}}  (response with status)
+        
+        d = data.get('d', data)  # Use 'd' sub-object if present
+        
+        # Process positions
+        positions = d.get('positions', [])
+        for pos in positions:
+            if isinstance(pos, dict):
+                contract_id = str(pos.get('contractId', pos.get('id', 'unknown')))
+                cache.update_position(conn.account_id, contract_id, pos)
+                ledger.append(conn.account_id, 'position', 'Sync', pos.get('id'), pos)
+                logger.info(f"📊 Synced position: {contract_id} netPos={pos.get('netPos', 0)}")
+        
+        # Process orders
+        orders = d.get('orders', [])
+        for order in orders:
+            if isinstance(order, dict):
+                order_id = order.get('id', order.get('orderId'))
+                if order_id:
+                    cache.update_order(conn.account_id, order_id, order)
+                    ledger.append(conn.account_id, 'order', 'Sync', order_id, order)
+        
+        # Process cash balances
+        cash_balances = d.get('cashBalances', [])
+        for cb in cash_balances:
+            if isinstance(cb, dict) and cb.get('accountId') == conn.account_id:
+                cache.update_pnl(conn.account_id, cb)
+                ledger.append(conn.account_id, 'cashBalance', 'Sync', cb.get('id'), cb)
+                logger.info(f"💰 Synced cashBalance: openPnL={cb.get('openPnL', 0)}")
+        
+        # Process accounts (may contain nested data)
+        accounts = d.get('accounts', [])
+        for acc in accounts:
+            if isinstance(acc, dict):
+                logger.debug(f"📋 Account in sync: {acc.get('id')} - {acc.get('name')}")
+        
+        if positions or orders or cash_balances:
+            logger.info(f"📡 Sync complete for account {conn.account_id}: {len(positions)} positions, {len(orders)} orders, {len(cash_balances)} balances")
     
     # ========================================================================
     # MESSAGE HANDLING
