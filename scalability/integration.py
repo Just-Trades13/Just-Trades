@@ -624,6 +624,53 @@ def register_scalability_routes(app):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
+    @app.route('/api/scalability/accounts-debug')
+    def accounts_debug():
+        """Debug endpoint to see account mappings"""
+        import sqlite3
+        try:
+            if not _db_func:
+                return jsonify({'error': 'DB not available'}), 500
+            
+            conn = _db_func()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, name, tradovate_accounts, environment
+                FROM accounts 
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+            ''')
+            rows = cursor.fetchall()
+            conn.close()
+            
+            result = []
+            for row in rows:
+                account_info = {
+                    'db_id': row['id'],
+                    'name': row['name'],
+                    'environment': row['environment'],
+                    'subaccounts': []
+                }
+                
+                if row['tradovate_accounts']:
+                    import json
+                    try:
+                        subs = json.loads(row['tradovate_accounts'])
+                        for sub in subs:
+                            account_info['subaccounts'].append({
+                                'id': sub.get('id'),
+                                'name': sub.get('name'),
+                                'is_demo': sub.get('is_demo', True)
+                            })
+                    except:
+                        pass
+                
+                result.append(account_info)
+            
+            return jsonify({'accounts': result})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
     logger.info("✅ Scalability API routes registered")
 
 
