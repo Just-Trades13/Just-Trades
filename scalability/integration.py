@@ -132,6 +132,12 @@ def init_scalability(
             manager = start_ws_manager()
             results['components']['ws_state_manager'] = 'started' if manager.is_running() else 'failed'
             logger.info("✅ Broker WS Manager started")
+            
+            # Auto-load existing Tradovate accounts from database
+            if manager and db_connection_func:
+                accounts_loaded = _auto_load_tradovate_accounts(manager, db_connection_func)
+                results['components']['ws_accounts_loaded'] = accounts_loaded
+                logger.info(f"✅ Auto-loaded {accounts_loaded} Tradovate accounts to WS Manager")
         elif FEATURES.get('ws_state_manager_enabled'):
             results['components']['ws_state_manager'] = 'ready (not started)'
         
@@ -185,6 +191,87 @@ def _default_execute_func(task) -> dict:
         'success': False,
         'error': 'Order dispatcher not wired to broker execution'
     }
+
+
+def _auto_load_tradovate_accounts(manager, db_connection_func) -> int:
+    """
+    Auto-load existing Tradovate accounts from database into the WS Manager.
+    
+    This runs on startup to connect WebSocket to all accounts that have valid tokens.
+    
+    Returns:
+        Number of accounts loaded
+    """
+    import sqlite3
+    
+    accounts_loaded = 0
+    
+    try:
+        conn = db_connection_func()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all accounts with valid Tradovate tokens
+        cursor.execute('''
+            SELECT id, name, tradovate_token, tradovate_accounts, environment, user_id
+            FROM accounts 
+            WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+        ''')
+        all_accounts = cursor.fetchall()
+        conn.close()
+        
+        if not all_accounts:
+            logger.info("📡 No Tradovate accounts found in database")
+            return 0
+        
+        for account in all_accounts:
+            try:
+                account_id = account['id']
+                token = account['tradovate_token']
+                env = account['environment'] or 'demo'
+                is_demo = (env.lower() == 'demo')
+                
+                # Parse tradovate_accounts to get subaccount IDs
+                tradovate_accounts_str = account['tradovate_accounts']
+                if tradovate_accounts_str:
+                    import json
+                    try:
+                        subaccounts = json.loads(tradovate_accounts_str)
+                        if isinstance(subaccounts, list):
+                            for subaccount in subaccounts:
+                                sub_id = subaccount.get('id') or subaccount.get('accountId')
+                                if sub_id:
+                                    # Add each subaccount to WS Manager
+                                    manager.add_account(
+                                        account_id=sub_id,
+                                        access_token=token,
+                                        is_demo=is_demo
+                                    )
+                                    accounts_loaded += 1
+                                    logger.debug(f"📡 Added subaccount {sub_id} to WS Manager")
+                    except json.JSONDecodeError:
+                        logger.warning(f"Could not parse tradovate_accounts for account {account_id}")
+                else:
+                    # No subaccounts, add the main account
+                    manager.add_account(
+                        account_id=account_id,
+                        access_token=token,
+                        is_demo=is_demo
+                    )
+                    accounts_loaded += 1
+                    
+            except Exception as e:
+                logger.warning(f"Failed to load account {account.get('id')}: {e}")
+                continue
+        
+        logger.info(f"📡 Loaded {accounts_loaded} Tradovate accounts to WS Manager")
+        
+    except Exception as e:
+        logger.error(f"❌ Error auto-loading Tradovate accounts: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+    
+    return accounts_loaded
 
 
 def get_scalability_status() -> dict:
