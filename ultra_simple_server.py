@@ -467,8 +467,8 @@ def _init_db_once():
             import psycopg2
             _db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
             
-            # Test connection and create tables
-            conn = psycopg2.connect(_db_url)
+            # Test connection and create tables (with timeout to prevent hanging)
+            conn = psycopg2.connect(_db_url, connect_timeout=10)
             conn.close()
             _using_postgres = True
             _init_postgres_tables()
@@ -500,7 +500,8 @@ def get_db_connection():
             import psycopg2
             from psycopg2.extras import RealDictCursor
             
-            conn = psycopg2.connect(_db_url)
+            # Add timeout to prevent health check hanging
+            conn = psycopg2.connect(_db_url, connect_timeout=10)
             conn.cursor_factory = RealDictCursor
             # Ensure clean state - rollback any previous transaction
             try:
@@ -1089,7 +1090,7 @@ def _init_postgres_tables():
     """Initialize ALL PostgreSQL tables to match SQLite schema."""
     import psycopg2
     db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-    conn = psycopg2.connect(db_url)
+    conn = psycopg2.connect(db_url, connect_timeout=10)
     cursor = conn.cursor()
     
     print("📊 Creating PostgreSQL tables (complete schema)...")

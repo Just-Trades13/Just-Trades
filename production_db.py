@@ -406,7 +406,7 @@ def migrate_sqlite_to_postgres(sqlite_path: str, postgres_url: str):
     if postgres_url.startswith('postgres://'):
         postgres_url = postgres_url.replace('postgres://', 'postgresql://', 1)
     
-    pg_conn = psycopg2.connect(postgres_url)
+    pg_conn = psycopg2.connect(postgres_url, connect_timeout=10)
     pg_cursor = pg_conn.cursor()
     
     # Tables to migrate

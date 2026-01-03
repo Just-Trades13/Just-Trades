@@ -23,7 +23,13 @@ def init_postgres():
     db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     
     logger.info("Connecting to PostgreSQL...")
-    conn = psycopg2.connect(db_url)
+    try:
+        # Add connection timeout to prevent hanging forever
+        conn = psycopg2.connect(db_url, connect_timeout=10)
+    except Exception as e:
+        logger.error(f"❌ PostgreSQL connection failed: {e}")
+        logger.info("⚠️ Server will start without database tables - they may be created later")
+        return
     cursor = conn.cursor()
     
     # Create tables
