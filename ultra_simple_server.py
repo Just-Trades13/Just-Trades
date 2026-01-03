@@ -1509,6 +1509,24 @@ app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
 # ============================================================================
+# SIMPLE HEALTH CHECK - Responds immediately, no DB or external checks
+# This ensures Railway health check passes even during slow startup
+# ============================================================================
+@app.route('/ping')
+def ping():
+    """Ultra-simple health check - always returns OK immediately"""
+    return 'OK', 200
+
+@app.route('/health')
+def health_simple():
+    """Simple health check for Railway - no DB queries to avoid timeouts"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'just-trades',
+        'message': 'Server is running'
+    })
+
+# ============================================================================
 # GLOBAL ERROR HANDLER - Catch ALL errors and display them
 # ============================================================================
 @app.errorhandler(500)
@@ -3206,9 +3224,9 @@ def debug_db_config():
         'db_url_internal': _db_url[:50] + '...' if _db_url else None
     })
 
-@app.route('/health')
-def health():
-    """Health check endpoint for load balancers and monitoring."""
+@app.route('/health/detailed')
+def health_detailed():
+    """Detailed health check - includes DB and service checks (slower)."""
     try:
         # Check database connection
         conn = get_db_connection()
