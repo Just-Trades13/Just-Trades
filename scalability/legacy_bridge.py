@@ -92,10 +92,12 @@ class LegacyBridge:
         try:
             conn = self._db_func()
             cursor = conn.cursor()
+            
+            # Query from accounts table - tradovate_accounts is a JSON column
             cursor.execute('''
-                SELECT id, account_name, is_demo, user_id 
-                FROM tradovate_accounts 
-                WHERE access_token IS NOT NULL
+                SELECT id, name, environment, user_id, tradovate_accounts 
+                FROM accounts 
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
             ''')
             rows = cursor.fetchall()
             conn.close()
@@ -103,10 +105,34 @@ class LegacyBridge:
             with self._account_meta_lock:
                 self._account_meta.clear()
                 for row in rows:
-                    self._account_meta[row[0]] = {
-                        'account_name': row[1],
-                        'is_demo': bool(row[2]),
-                        'user_id': row[3],
+                    account_id = row[0]
+                    account_name = row[1]
+                    is_demo = (row[2] or 'demo').lower() == 'demo'
+                    user_id = row[3]
+                    tradovate_accounts_json = row[4]
+                    
+                    # Parse subaccounts from JSON
+                    if tradovate_accounts_json:
+                        try:
+                            import json
+                            subaccounts = json.loads(tradovate_accounts_json)
+                            for sub in subaccounts:
+                                sub_id = sub.get('id') or sub.get('accountId')
+                                if sub_id:
+                                    self._account_meta[sub_id] = {
+                                        'account_name': sub.get('name', account_name),
+                                        'is_demo': sub.get('is_demo', is_demo),
+                                        'user_id': user_id,
+                                        'parent_account_id': account_id,
+                                    }
+                        except json.JSONDecodeError:
+                            pass
+                    
+                    # Also store parent account
+                    self._account_meta[account_id] = {
+                        'account_name': account_name,
+                        'is_demo': is_demo,
+                        'user_id': user_id,
                     }
             
             self._last_meta_refresh = now
@@ -196,8 +222,9 @@ class LegacyBridge:
         
         # Get all accounts with PnL data in cache
         all_snapshot = self._cache.get_all_accounts_snapshot()
+        accounts = all_snapshot.get('accounts', {})
         
-        for acc_id, snapshot in all_snapshot.items():
+        for acc_id, snapshot in accounts.items():
             pnl = snapshot.get('pnl') or {}
             balance = snapshot.get('balance') or {}
             meta = self._get_account_meta(acc_id)
@@ -246,8 +273,9 @@ class LegacyBridge:
         positions_list = []
         
         all_snapshot = self._cache.get_all_accounts_snapshot()
+        accounts = all_snapshot.get('accounts', {})
         
-        for acc_id, snapshot in all_snapshot.items():
+        for acc_id, snapshot in accounts.items():
             positions = snapshot.get('positions', [])
             meta = self._get_account_meta(acc_id)
             

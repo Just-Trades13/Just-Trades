@@ -362,12 +362,14 @@ class BrokerWSManager:
                 return
         
         # Calculate reconnect delay with exponential backoff + jitter
+        # Cap exponent at 10 to prevent overflow (2^10 = 1024 seconds max before _max_reconnect_delay)
         if conn.reconnect_attempts > 0:
+            capped_attempts = min(conn.reconnect_attempts, 10)  # Cap at 2^10 = 1024
             delay = min(
                 self._max_reconnect_delay,
-                (2 ** conn.reconnect_attempts) + random.uniform(0, 1)
+                (2 ** capped_attempts) + random.uniform(0, 1)
             )
-            logger.info(f"Waiting {delay:.1f}s before reconnecting account {account_id}")
+            logger.info(f"Waiting {delay:.1f}s before reconnecting account {account_id} (attempt {conn.reconnect_attempts})")
             await asyncio.sleep(delay)
         
         ws_url = self._get_ws_url(conn.is_demo)
