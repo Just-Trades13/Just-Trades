@@ -33,6 +33,178 @@
             --text-muted: #64748b;
             --sidebar-gradient-start: #ffffff;
             --sidebar-gradient-end: #f1f5f9;
+            --card-bg: #ffffff;
+            --card-bg-alt: #f8fafc;
+            --table-header-bg: #f1f5f9;
+            --input-bg: #ffffff;
+            --shadow-color: rgba(0, 0, 0, 0.08);
+        }
+
+        /* ===== COMPREHENSIVE LIGHT MODE OVERRIDES ===== */
+        
+        /* Main panel background */
+        :root[data-theme="light"] .main-panel {
+            background: radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.05), transparent 55%),
+                        radial-gradient(circle at 85% 10%, rgba(45, 212, 191, 0.03), transparent 45%),
+                        #f8fafc;
+        }
+
+        /* Force dark text on all common elements */
+        :root[data-theme="light"] .main-content,
+        :root[data-theme="light"] .main-content h1,
+        :root[data-theme="light"] .main-content h2,
+        :root[data-theme="light"] .main-content h3,
+        :root[data-theme="light"] .main-content h4,
+        :root[data-theme="light"] .main-content h5,
+        :root[data-theme="light"] .main-content p,
+        :root[data-theme="light"] .main-content span:not(.material-icons),
+        :root[data-theme="light"] .main-content div,
+        :root[data-theme="light"] .main-content td,
+        :root[data-theme="light"] .main-content th,
+        :root[data-theme="light"] .main-content label,
+        :root[data-theme="light"] .main-content li {
+            color: #1e293b;
+        }
+
+        /* Muted text in light mode */
+        :root[data-theme="light"] .text-muted,
+        :root[data-theme="light"] [class*="muted"],
+        :root[data-theme="light"] .breadcrumb-sub,
+        :root[data-theme="light"] small {
+            color: #64748b !important;
+        }
+
+        /* Cards and panels */
+        :root[data-theme="light"] .card,
+        :root[data-theme="light"] [class*="card"],
+        :root[data-theme="light"] [class*="panel"],
+        :root[data-theme="light"] [class*="box"],
+        :root[data-theme="light"] [class*="container"]:not(.wrapper):not(body > div),
+        :root[data-theme="light"] [class*="widget"],
+        :root[data-theme="light"] [class*="tile"] {
+            background: #ffffff !important;
+            border-color: rgba(148, 163, 184, 0.2) !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+        }
+
+        /* Tables */
+        :root[data-theme="light"] table {
+            background: #ffffff;
+        }
+        :root[data-theme="light"] th {
+            background: #f1f5f9 !important;
+            color: #475569 !important;
+            border-color: rgba(148, 163, 184, 0.2) !important;
+        }
+        :root[data-theme="light"] td {
+            border-color: rgba(148, 163, 184, 0.15) !important;
+        }
+        :root[data-theme="light"] tr:hover {
+            background: rgba(148, 163, 184, 0.08) !important;
+        }
+
+        /* Inputs, selects, textareas */
+        :root[data-theme="light"] input,
+        :root[data-theme="light"] select,
+        :root[data-theme="light"] textarea {
+            background: #ffffff !important;
+            color: #1e293b !important;
+            border-color: rgba(148, 163, 184, 0.3) !important;
+        }
+        :root[data-theme="light"] input::placeholder,
+        :root[data-theme="light"] textarea::placeholder {
+            color: #94a3b8 !important;
+        }
+        :root[data-theme="light"] input:focus,
+        :root[data-theme="light"] select:focus,
+        :root[data-theme="light"] textarea:focus {
+            border-color: var(--primary-color) !important;
+            box-shadow: 0 0 0 3px rgba(25, 184, 255, 0.15) !important;
+        }
+
+        /* Buttons - keep primary colors but adjust others */
+        :root[data-theme="light"] button:not(.btn-primary):not(.btn-success):not(.btn-danger):not(.btn-warning):not([class*="btn-"]),
+        :root[data-theme="light"] .btn-secondary,
+        :root[data-theme="light"] .btn-outline {
+            background: #f1f5f9 !important;
+            color: #1e293b !important;
+            border-color: rgba(148, 163, 184, 0.3) !important;
+        }
+        :root[data-theme="light"] button:not(.btn-primary):not(.btn-success):not(.btn-danger):not(.btn-warning):not([class*="btn-"]):hover {
+            background: #e2e8f0 !important;
+        }
+
+        /* Modals and dropdowns */
+        :root[data-theme="light"] .modal-content,
+        :root[data-theme="light"] [class*="modal"],
+        :root[data-theme="light"] [class*="dropdown-menu"],
+        :root[data-theme="light"] [class*="popover"] {
+            background: #ffffff !important;
+            border-color: rgba(148, 163, 184, 0.2) !important;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12) !important;
+        }
+
+        /* Status badges - keep their colors but ensure readability */
+        :root[data-theme="light"] .badge,
+        :root[data-theme="light"] [class*="badge"],
+        :root[data-theme="light"] [class*="status"],
+        :root[data-theme="light"] [class*="tag"] {
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        /* Links */
+        :root[data-theme="light"] a:not([class*="btn"]):not(.nav a) {
+            color: #0284c7;
+        }
+        :root[data-theme="light"] a:not([class*="btn"]):not(.nav a):hover {
+            color: #0369a1;
+        }
+
+        /* Code blocks */
+        :root[data-theme="light"] code,
+        :root[data-theme="light"] pre {
+            background: #f1f5f9 !important;
+            color: #1e293b !important;
+        }
+
+        /* Scrollbars */
+        :root[data-theme="light"] ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        :root[data-theme="light"] ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+        }
+        :root[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Fix specific rgba backgrounds that look dark */
+        :root[data-theme="light"] [style*="rgba(0, 0, 0"],
+        :root[data-theme="light"] [style*="rgba(0,0,0"] {
+            background-color: rgba(148, 163, 184, 0.1) !important;
+        }
+
+        /* Stat cards and metrics */
+        :root[data-theme="light"] [class*="stat"],
+        :root[data-theme="light"] [class*="metric"],
+        :root[data-theme="light"] [class*="kpi"] {
+            background: #ffffff !important;
+        }
+
+        /* Chart containers */
+        :root[data-theme="light"] [class*="chart"] {
+            background: #ffffff !important;
+        }
+
+        /* Sidebar mini icons in light mode */
+        :root[data-theme="light"] .collapse .nav .sidebar-mini-icon {
+            background: rgba(148, 163, 184, 0.2);
+            color: #475569;
+        }
+
+        /* Fix gradients that use dark colors */
+        :root[data-theme="light"] [style*="linear-gradient"][style*="rgba(0"] {
+            filter: brightness(1.5);
         }
 
         /* Smooth transitions for theme switching */
