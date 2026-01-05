@@ -471,6 +471,20 @@
             updateStrategyPnL(data.strategy_id, data.strategy_name, data.pnl);
         });
         
+        // SCALABILITY MODULE: Real-time PnL from WebSocket (via LegacyBridge)
+        // This replaces REST polling with instant WebSocket updates
+        socket.on('position_update', (data) => {
+            console.log('📡 Scalability position_update:', data);
+            if (data.pnl_data) {
+                // Update PnL display directly from WebSocket data
+                updatePnLFromWebSocket(data.pnl_data);
+            }
+            if (data.positions && data.positions.length > 0) {
+                // Update positions display
+                updatePositionsFromWebSocket(data.positions);
+            }
+        });
+        
         // ============================================
         // LIVE POSITION UPDATES - Trade Manager Style
         // Real-time P&L from TradingView price stream
@@ -728,6 +742,65 @@
             }
         }
         
+        // SCALABILITY: Update PnL display from WebSocket data (real-time, no REST polling)
+        function updatePnLFromWebSocket(pnlData) {
+            console.log('📡 Updating PnL from WebSocket:', Object.keys(pnlData).length, 'accounts');
+            
+            // pnlData is keyed by account_id: { account_name, open_pnl, realized_pnl, net_liq, ... }
+            Object.entries(pnlData).forEach(([accountId, data]) => {
+                // Update any UI elements that show this account's PnL
+                const openPnl = data.open_pnl || 0;
+                const realizedPnl = data.realized_pnl || 0;
+                const totalPnl = openPnl + realizedPnl;
+                
+                // Find account row in table (if exists)
+                const accountRow = document.querySelector(`tr[data-account-id="${accountId}"]`);
+                if (accountRow) {
+                    const pnlCell = accountRow.querySelector('.pnl-cell, .pl-cell');
+                    if (pnlCell) {
+                        const pnlFormatted = totalPnl >= 0 ? `+$${totalPnl.toFixed(2)}` : `-$${Math.abs(totalPnl).toFixed(2)}`;
+                        pnlCell.textContent = pnlFormatted;
+                        pnlCell.className = pnlCell.className.replace(/positive|negative/g, '') + (totalPnl >= 0 ? ' positive' : ' negative');
+                    }
+                }
+                
+                // Update summary totals if needed
+                updateTotalPnL();
+            });
+        }
+        
+        // SCALABILITY: Update positions display from WebSocket data
+        function updatePositionsFromWebSocket(positions) {
+            console.log('📡 Updating positions from WebSocket:', positions.length, 'positions');
+            
+            positions.forEach(pos => {
+                // Use existing updatePositionCard if it matches format
+                if (pos.position_id) {
+                    updatePositionCard(pos);
+                }
+            });
+        }
+        
+        // Helper to update total PnL display
+        function updateTotalPnL() {
+            // Sum all visible PnL cells
+            const pnlCells = document.querySelectorAll('.pl-cell, .pnl-cell');
+            let total = 0;
+            pnlCells.forEach(cell => {
+                const text = cell.textContent.replace(/[^0-9.-]/g, '');
+                const val = parseFloat(text) || 0;
+                if (cell.textContent.includes('-')) total -= Math.abs(val);
+                else total += val;
+            });
+            
+            // Update total display if exists
+            const totalEl = document.getElementById('totalPnL');
+            if (totalEl) {
+                totalEl.textContent = total >= 0 ? `+$${total.toFixed(2)}` : `-$${Math.abs(total).toFixed(2)}`;
+                totalEl.className = total >= 0 ? 'positive' : 'negative';
+            }
+        }
+
         function addLogEntry(type, message, time) {
             const logFeed = document.querySelector('.log-feed');
             if (logFeed) {

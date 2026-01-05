@@ -156,4 +156,3 @@ def quick_start(socketio, db_func=None, features=None):
     """Quick start with default features"""
     from .integration import quick_start as _quick
     return _quick(socketio, db_func, features)
-# Deploy trigger Mon Jan  5 00:12:25 CST 2026
