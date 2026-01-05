@@ -15655,74 +15655,75 @@ def api_dashboard_trade_history():
                 where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= DATE('now', '-180 days')")
             elif timeframe == 'year':
                 where_clauses.append("COALESCE(rt.exit_time, rt.created_at) >= DATE('now', '-365 days')")
-            
-            where_sql = ' AND '.join(where_clauses)
-            
-            # Get total count
-            cursor.execute(f'''
-                SELECT COUNT(*) FROM recorded_trades rt WHERE {where_sql}
-        ''', params if params else ())
-            total_count = cursor.fetchone()[0]
-            
-            # Get paginated trades with recorder name
-            offset = (page - 1) * per_page
-            limit_clause = f'LIMIT {ph} OFFSET {ph}'
         
-            cursor.execute(f'''
-                SELECT 
-                    rt.id,
-                    rt.ticker,
-                    rt.side,
-                    rt.action,
-                    rt.entry_price,
-                    rt.exit_price,
-                    rt.quantity,
-                    rt.pnl,
-                    rt.status,
-                    rt.tp_price,
-                    rt.sl_price,
-                    rt.max_adverse,
-                    rt.max_favorable,
-                    rt.created_at,
-                    rt.exit_time,
-                    rt.exit_reason,
-                    r.name as strategy_name
-                FROM recorded_trades rt
-                LEFT JOIN recorders r ON rt.recorder_id = r.id
-                WHERE {where_sql}
-                ORDER BY rt.created_at DESC
-                {limit_clause}
-            ''', (params + [per_page, offset]) if params else [per_page, offset])
+        # Build WHERE clause (FIXED: moved outside if/else block)
+        where_sql = ' AND '.join(where_clauses)
+        
+        # Get total count
+        cursor.execute(f'''
+            SELECT COUNT(*) FROM recorded_trades rt WHERE {where_sql}
+        ''', params if params else ())
+        total_count = cursor.fetchone()[0]
+        
+        # Get paginated trades with recorder name
+        offset = (page - 1) * per_page
+        limit_clause = f'LIMIT {ph} OFFSET {ph}'
+        
+        cursor.execute(f'''
+            SELECT 
+                rt.id,
+                rt.ticker,
+                rt.side,
+                rt.action,
+                rt.entry_price,
+                rt.exit_price,
+                rt.quantity,
+                rt.pnl,
+                rt.status,
+                rt.tp_price,
+                rt.sl_price,
+                rt.max_adverse,
+                rt.max_favorable,
+                rt.created_at,
+                rt.exit_time,
+                rt.exit_reason,
+                r.name as strategy_name
+            FROM recorded_trades rt
+            LEFT JOIN recorders r ON rt.recorder_id = r.id
+            WHERE {where_sql}
+            ORDER BY rt.created_at DESC
+            {limit_clause}
+        ''', (params + [per_page, offset]) if params else [per_page, offset])
+        
+        columns = [desc[0] for desc in cursor.description]
+        for row in cursor.fetchall():
+            trade = dict(zip(columns, row))
             
-            columns = [desc[0] for desc in cursor.description]
-            for row in cursor.fetchall():
-                trade = dict(zip(columns, row))
+            # Determine win/loss status
+            if trade['status'] == 'closed':
+                pnl = trade.get('pnl') or 0
+                trade_status = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'FLAT')
+            else:
+                trade_status = 'OPEN'
             
-                # Determine win/loss status
-                if trade['status'] == 'closed':
-                    pnl = trade.get('pnl') or 0
-                    trade_status = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'FLAT')
-                else:
-                    trade_status = 'OPEN'
-            
-                trades.append({
-                    'id': trade.get('id'),
+            trades.append({
+                'id': trade.get('id'),
                 'open_time': trade.get('created_at'),
-                    'closed_time': trade.get('exit_time'),
-                    'strategy': trade.get('strategy_name') or 'N/A',
-                    'symbol': trade.get('ticker'),
-                    'side': trade.get('side'),
-                    'size': trade.get('quantity', 1),
-                    'entry_price': trade.get('entry_price'),
-                    'exit_price': trade.get('exit_price'),
-                    'profit': trade.get('pnl') or 0,
+                'closed_time': trade.get('exit_time'),
+                'strategy': trade.get('strategy_name') or 'N/A',
+                'symbol': trade.get('ticker'),
+                'side': trade.get('side'),
+                'size': trade.get('quantity', 1),
+                'entry_price': trade.get('entry_price'),
+                'exit_price': trade.get('exit_price'),
+                'profit': trade.get('pnl') or 0,
                 'tp_price': trade.get('tp_price'),
                 'sl_price': trade.get('sl_price'),
                 'drawdown': abs(trade.get('max_adverse') or 0),
                 'max_favorable': trade.get('max_favorable') or 0,
                 'status': trade_status,
                 'exit_reason': trade.get('exit_reason')
-                })
+            })
         
         conn.close()
         
