@@ -138,6 +138,11 @@ def init_scalability(
                 accounts_loaded = _auto_load_tradovate_accounts(manager, db_connection_func)
                 results['components']['ws_accounts_loaded'] = accounts_loaded
                 logger.info(f"✅ Auto-loaded {accounts_loaded} Tradovate accounts to WS Manager")
+                
+                # Start background token refresh task
+                _start_ws_token_refresh_task(manager, db_connection_func)
+                results['components']['ws_token_refresh'] = 'started'
+                logger.info("✅ WS Token refresh task started (every 5 minutes)")
         elif FEATURES.get('ws_state_manager_enabled'):
             results['components']['ws_state_manager'] = 'ready (not started)'
         
@@ -304,6 +309,71 @@ def _auto_load_tradovate_accounts(manager, db_connection_func) -> int:
         logger.debug(traceback.format_exc())
     
     return connections_made
+
+
+def _start_ws_token_refresh_task(manager, db_connection_func):
+    """
+    Start a background task that periodically refreshes tokens from the database
+    into the WebSocket manager. This ensures WS connections use fresh tokens.
+    
+    Runs every 5 minutes to catch any token refreshes that weren't propagated.
+    """
+    import sqlite3
+    
+    def refresh_loop():
+        while True:
+            try:
+                time.sleep(300)  # 5 minutes
+                
+                conn = db_connection_func()
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Get all accounts with valid Tradovate tokens
+                cursor.execute('''
+                    SELECT id, tradovate_token, tradovate_accounts, environment
+                    FROM accounts 
+                    WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+                ''')
+                all_accounts = cursor.fetchall()
+                conn.close()
+                
+                tokens_updated = 0
+                
+                for account in all_accounts:
+                    try:
+                        token = account['tradovate_token']
+                        env = account['environment'] or 'demo'
+                        is_demo = (env.lower() == 'demo')
+                        tradovate_accounts_str = account['tradovate_accounts']
+                        
+                        if tradovate_accounts_str:
+                            import json
+                            subaccounts = json.loads(tradovate_accounts_str)
+                            for sub in subaccounts:
+                                sub_id = sub.get('id') or sub.get('accountId')
+                                if sub_id:
+                                    # Update token in WS manager
+                                    manager.update_token(sub_id, token)
+                                    tokens_updated += 1
+                    except Exception as e:
+                        logger.debug(f"Error updating token for account {account.get('id')}: {e}")
+                        continue
+                
+                if tokens_updated > 0:
+                    logger.info(f"📡 Refreshed {tokens_updated} WS tokens from database")
+                    
+            except Exception as e:
+                logger.error(f"Error in WS token refresh task: {e}")
+    
+    # Start background thread
+    refresh_thread = threading.Thread(
+        target=refresh_loop,
+        daemon=True,
+        name="WS-TokenRefresh"
+    )
+    refresh_thread.start()
+    logger.info("📡 WS Token refresh background task started")
 
 
 def get_scalability_status() -> dict:

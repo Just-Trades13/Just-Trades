@@ -18576,6 +18576,33 @@ def try_refresh_tradovate_token(account_id: int) -> bool:
                         conn.commit()
                         conn.close()
                         logger.info(f"✅ Successfully refreshed token for '{account_name}' via {token_url.split('/')[2]}")
+                        
+                        # UPDATE SCALABILITY WS MANAGER with new token
+                        # This ensures WebSocket connections use the fresh token
+                        if SCALABILITY_MODULE_AVAILABLE:
+                            try:
+                                from scalability import get_ws_manager
+                                ws_manager = get_ws_manager()
+                                if ws_manager:
+                                    # Get all subaccount IDs for this account
+                                    conn2 = get_db_connection()
+                                    conn2.row_factory = sqlite3.Row
+                                    cursor2 = conn2.cursor()
+                                    cursor2.execute('SELECT tradovate_accounts FROM accounts WHERE id = ?', (account_id,))
+                                    row = cursor2.fetchone()
+                                    conn2.close()
+                                    
+                                    if row and row['tradovate_accounts']:
+                                        import json
+                                        subaccounts = json.loads(row['tradovate_accounts'])
+                                        for sub in subaccounts:
+                                            sub_id = sub.get('id') or sub.get('accountId')
+                                            if sub_id:
+                                                ws_manager.update_token(sub_id, new_access_token)
+                                                logger.info(f"📡 Updated WS Manager token for subaccount {sub_id}")
+                            except Exception as ws_err:
+                                logger.debug(f"Could not update WS Manager token: {ws_err}")
+                        
                         return True
                 elif response.status_code == 429:
                     logger.warning(f"⚠️ Rate limited (429) at {token_url.split('/')[2]}, trying next...")
