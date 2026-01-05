@@ -15394,6 +15394,42 @@ def settings():
         return redirect(url_for('login'))
     return render_template('settings.html')
 
+@app.route('/api/user/theme', methods=['GET', 'POST'])
+def api_user_theme():
+    """Get or update user's theme preference (dark/light mode)."""
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        if request.method == 'GET':
+            # Return user's saved theme preference
+            theme = user.settings.get('theme', 'dark')
+            return jsonify({'theme': theme})
+        
+        elif request.method == 'POST':
+            # Update user's theme preference
+            data = request.get_json()
+            theme = data.get('theme', 'dark')  # 'dark' or 'light'
+            
+            if theme not in ['dark', 'light']:
+                return jsonify({'error': 'Invalid theme. Must be "dark" or "light"'}), 400
+            
+            from user_auth import update_user_settings
+            success = update_user_settings(user.id, {'theme': theme})
+            
+            if success:
+                return jsonify({'success': True, 'theme': theme})
+            else:
+                return jsonify({'error': 'Failed to update theme'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error with theme API: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 @app.route('/affiliate')
 def affiliate():
     return render_template('affiliate.html')

@@ -502,6 +502,56 @@ def update_user_password(user_id: int, new_password: str) -> bool:
         conn.close()
 
 
+def update_user_settings(user_id: int, settings: dict) -> bool:
+    """Update user's settings (merges with existing settings)."""
+    import json
+    
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get current settings
+        if db_type == 'postgresql':
+            cursor.execute('SELECT settings_json FROM users WHERE id = %s', (user_id,))
+        else:
+            cursor.execute('SELECT settings_json FROM users WHERE id = ?', (user_id,))
+        
+        row = cursor.fetchone()
+        current_settings = {}
+        if row:
+            settings_json = row[0] if isinstance(row, tuple) else row['settings_json']
+            if settings_json:
+                try:
+                    current_settings = json.loads(settings_json) if isinstance(settings_json, str) else settings_json
+                except:
+                    current_settings = {}
+        
+        # Merge with new settings
+        current_settings.update(settings)
+        new_settings_json = json.dumps(current_settings)
+        
+        # Update database
+        if db_type == 'postgresql':
+            cursor.execute('''
+                UPDATE users SET settings_json = %s, updated_at = NOW() WHERE id = %s
+            ''', (new_settings_json, user_id))
+        else:
+            cursor.execute('''
+                UPDATE users SET settings_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+            ''', (new_settings_json, user_id))
+        
+        conn.commit()
+        logger.info(f"✅ Settings updated for user {user_id}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to update settings: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_all_users() -> list:
     """Get all users (admin function)."""
     conn, db_type = get_auth_db_connection()

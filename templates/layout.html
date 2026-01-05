@@ -24,12 +24,31 @@
             --sidebar-gradient-end: #020617;
         }
 
+        /* Light mode variables */
+        :root[data-theme="light"] {
+            --background-dark: #f8fafc;
+            --background-light: #ffffff;
+            --border-color: rgba(148, 163, 184, 0.25);
+            --text-light: #1e293b;
+            --text-muted: #64748b;
+            --sidebar-gradient-start: #ffffff;
+            --sidebar-gradient-end: #f1f5f9;
+        }
+
+        /* Smooth transitions for theme switching */
+        body, .sidebar, .top-navbar, .main-panel,
+        .nav > li > a, .user-dropdown, .mode-toggle,
+        .time-chip, .user-chip {
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        }
+
         body {
             font-family: 'Poppins', sans-serif;
             background-color: var(--background-dark);
             color: var(--text-light);
             margin: 0;
             -webkit-font-smoothing: antialiased;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
         
         .wrapper { display: flex; }
@@ -51,8 +70,11 @@
             left: 0;
             height: 100%;
             z-index: 1000;
-            border-right: 1px solid rgba(148, 163, 184, 0.08);
+            border-right: 1px solid var(--border-color);
             box-shadow: 20px 0 40px rgba(15, 23, 42, 0.45);
+        }
+        :root[data-theme="light"] .sidebar {
+            box-shadow: 20px 0 40px rgba(0, 0, 0, 0.08);
         }
         .sidebar-wrapper {
             padding: 20px 0;
@@ -62,7 +84,7 @@
         .logo {
             padding: 0 22px 20px 22px;
             text-align: left;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+            border-bottom: 1px solid var(--border-color);
             margin-bottom: 24px;
             display: flex;
             align-items: center;
@@ -96,12 +118,19 @@
             color: var(--text-light);
             background: rgba(148, 163, 184, 0.08);
         }
+        :root[data-theme="light"] .nav > li > a:hover {
+            background: rgba(148, 163, 184, 0.12);
+        }
         .nav > li.active > a,
         .nav > li > a[aria-expanded="true"] {
             color: var(--text-light);
             background: rgba(148, 163, 184, 0.12);
             border-left-color: var(--accent-teal);
             box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.07);
+        }
+        :root[data-theme="light"] .nav > li.active > a,
+        :root[data-theme="light"] .nav > li > a[aria-expanded="true"] {
+            background: rgba(148, 163, 184, 0.18);
         }
         .nav i { font-size: 1rem; color: inherit; }
         .nav .caret { margin-left: auto; font-size: 0.7rem; }
@@ -137,13 +166,16 @@
             align-items: center;
             padding: 18px 32px;
             color: var(--text-light);
-            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            border-bottom: 1px solid var(--border-color);
             background: rgba(8, 12, 24, 0.85);
             -webkit-backdrop-filter: blur(16px);
             backdrop-filter: blur(16px);
             position: sticky;
             top: 0;
             z-index: 900;
+        }
+        :root[data-theme="light"] .top-navbar {
+            background: rgba(255, 255, 255, 0.95);
         }
         .top-navbar .page-title {
             display: flex;
@@ -189,20 +221,31 @@
             font-size: 0.78rem;
             letter-spacing: 0.08em;
         }
+        :root[data-theme="light"] .time-chip {
+            background: rgba(148, 163, 184, 0.18);
+        }
         .mode-toggle {
             width: 40px;
             height: 40px;
             border-radius: 12px;
-            border: 1px solid rgba(148, 163, 184, 0.18);
+            border: 1px solid var(--border-color);
             background: rgba(148, 163, 184, 0.08);
             color: var(--text-light);
             display: inline-flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
+            transition: background 0.2s ease, transform 0.2s ease;
         }
         .mode-toggle:hover {
             background: rgba(148, 163, 184, 0.15);
+            transform: scale(1.05);
+        }
+        :root[data-theme="light"] .mode-toggle {
+            background: rgba(148, 163, 184, 0.15);
+        }
+        :root[data-theme="light"] .mode-toggle:hover {
+            background: rgba(148, 163, 184, 0.25);
         }
         .user-chip {
             display: inline-flex;
@@ -232,7 +275,7 @@
             right: 0;
             min-width: 200px;
             background: rgba(15, 23, 42, 0.98);
-            border: 1px solid rgba(148, 163, 184, 0.2);
+            border: 1px solid var(--border-color);
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
             backdrop-filter: blur(16px);
@@ -243,6 +286,10 @@
             z-index: 1000;
             overflow: hidden;
         }
+        :root[data-theme="light"] .user-dropdown {
+            background: rgba(255, 255, 255, 0.98);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+        }
         .user-dropdown.show {
             opacity: 1;
             visibility: visible;
@@ -250,8 +297,11 @@
         }
         .user-dropdown-header {
             padding: 16px;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            border-bottom: 1px solid var(--border-color);
             background: rgba(25, 184, 255, 0.08);
+        }
+        :root[data-theme="light"] .user-dropdown-header {
+            background: rgba(25, 184, 255, 0.12);
         }
         .user-dropdown-header .user-email {
             font-size: 0.75rem;
@@ -280,13 +330,16 @@
         .user-dropdown-menu li a:hover {
             background: rgba(148, 163, 184, 0.12);
         }
+        :root[data-theme="light"] .user-dropdown-menu li a:hover {
+            background: rgba(148, 163, 184, 0.18);
+        }
         .user-dropdown-menu li a .material-icons {
             font-size: 1.1rem;
             color: var(--text-muted);
         }
         .user-dropdown-menu li.divider {
             height: 1px;
-            background: rgba(148, 163, 184, 0.12);
+            background: var(--border-color);
             margin: 8px 0;
         }
         .user-dropdown-menu li a.logout-link {
@@ -550,8 +603,8 @@
                     <div class="time-chip">
                         <span id="currentTime">--:--:--</span>
                     </div>
-                    <button class="mode-toggle" type="button" aria-label="Toggle theme">
-                        <span class="material-icons">dark_mode</span>
+                    <button class="mode-toggle" type="button" aria-label="Toggle theme" id="themeToggle" onclick="toggleThemeInline();return false;">
+                        <span class="material-icons" id="themeIcon" style="pointer-events: none;">dark_mode</span>
                     </button>
                     <div class="user-dropdown-wrapper">
                         <div class="user-chip" tabindex="0" id="userChip">
@@ -583,7 +636,51 @@
         </div>
     </div>
     <script>
+        // Inline theme toggle function (available immediately)
+        function toggleThemeInline() {
+            var r = document.documentElement;
+            var t = r.getAttribute('data-theme');
+            var n = t === 'light' ? 'dark' : 'light';
+            var i = document.getElementById('themeIcon');
+            if (n === 'light') {
+                r.setAttribute('data-theme', 'light');
+                if (i) i.textContent = 'light_mode';
+            } else {
+                r.removeAttribute('data-theme');
+                if (i) i.textContent = 'dark_mode';
+            }
+            localStorage.setItem('theme', n);
+            fetch('/api/user/theme', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({theme:n})}).catch(function(){});
+        }
+        
         document.addEventListener('DOMContentLoaded', function () {
+            // THEME TOGGLE - Simple and direct
+            function toggleTheme() {
+                var root = document.documentElement;
+                var current = root.getAttribute('data-theme');
+                var newTheme = current === 'light' ? 'dark' : 'light';
+                var icon = document.getElementById('themeIcon');
+                
+                if (newTheme === 'light') {
+                    root.setAttribute('data-theme', 'light');
+                    if (icon) icon.textContent = 'light_mode';
+                } else {
+                    root.removeAttribute('data-theme');
+                    if (icon) icon.textContent = 'dark_mode';
+                }
+                
+                localStorage.setItem('theme', newTheme);
+                fetch('/api/user/theme', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({theme:newTheme})}).catch(function(){});
+            }
+            
+            // Attach theme toggle to button
+            var themeBtn = document.getElementById('themeToggle');
+            if (themeBtn) {
+                themeBtn.onclick = toggleTheme;
+                console.log('Theme toggle button handler attached');
+            } else {
+                console.error('Theme toggle button not found!');
+            }
             // Mobile menu toggle
             const mobileMenuBtn = document.getElementById('mobileMenuBtn');
             const sidebar = document.querySelector('.sidebar');
@@ -674,7 +771,132 @@
                     }
                 });
             }
+
+            // Theme toggle functionality
+            const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = document.getElementById('themeIcon');
+            const root = document.documentElement;
+
+            // Function to apply theme
+            function applyTheme(theme) {
+                console.log('Applying theme:', theme);
+                if (theme === 'light') {
+                    root.setAttribute('data-theme', 'light');
+                    if (themeIcon) themeIcon.textContent = 'light_mode';
+                } else {
+                    root.removeAttribute('data-theme');
+                    if (themeIcon) themeIcon.textContent = 'dark_mode';
+                }
+                // Save to localStorage for immediate persistence
+                localStorage.setItem('theme', theme);
+                console.log('Theme applied, localStorage saved');
+            }
+
+            // Make toggleTheme available globally as fallback
+            window.toggleTheme = function() {
+                const currentTheme = root.getAttribute('data-theme');
+                const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+                console.log('Toggle theme called, switching to:', newTheme);
+                applyTheme(newTheme);
+                saveThemeToServer(newTheme);
+            };
+
+            // Function to save theme to server
+            function saveThemeToServer(theme) {
+                fetch('/api/user/theme', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ theme: theme })
+                }).then(response => {
+                    if (!response.ok && response.status !== 401) {
+                        // Only log if it's not an auth error (401 is expected for guests)
+                        console.warn('Failed to save theme preference to server');
+                    }
+                }).catch(err => {
+                    // Silently fail - localStorage will still work
+                });
+            }
+
+            // Load saved theme on page load
+            function loadTheme() {
+                // First check localStorage (fast, works immediately)
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme) {
+                    applyTheme(savedTheme);
+                } else {
+                    // Default to dark mode
+                    applyTheme('dark');
+                }
+
+                // Then try to load from server (for per-user persistence)
+                // This will override localStorage if user has a saved preference
+                {% if current_user and current_user.is_authenticated %}
+                fetch('/api/user/theme', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                }).then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    // If 401, user is not authenticated, just use localStorage
+                    return null;
+                }).then(data => {
+                    if (data && data.theme) {
+                        applyTheme(data.theme);
+                    }
+                }).catch(err => {
+                    // Silently fail - localStorage theme will be used
+                });
+                {% endif %}
+            }
+
+            // Theme toggle click handler
+            if (themeToggle) {
+                console.log('Theme toggle button found, attaching click handler');
+                themeToggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Theme toggle clicked via event listener!');
+                    toggleThemeNow();
+                });
+            } else {
+                console.error('Theme toggle button not found!');
+            }
+
+            // Load theme on page load
+            loadTheme();
         });
+
+        // Immediate theme toggle setup (runs after DOM is ready)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupThemeToggle);
+        } else {
+            setupThemeToggle();
+        }
+        
+        function setupThemeToggle() {
+            const btn = document.getElementById('themeToggle');
+            const icon = document.getElementById('themeIcon');
+            const root = document.documentElement;
+            
+            if (btn && !btn.hasAttribute('data-listener-attached')) {
+                btn.setAttribute('data-listener-attached', 'true');
+                console.log('Theme toggle button found and handler attached (fallback)');
+                
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Theme button clicked via fallback handler!');
+                    toggleThemeNow();
+                });
+            } else if (!btn) {
+                console.error('Theme toggle button not found in DOM!');
+            }
+        }
     </script>
     {% block scripts %}{% endblock %}
 </body>
