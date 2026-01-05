@@ -16501,54 +16501,45 @@ def record_strategy_pnl(strategy_id, strategy_name, pnl, drawdown=0.0):
         logger.error(f"Error recording strategy P&L: {e}")
 
 def calculate_strategy_pnl(strategy_id):
-    """Calculate current P&L for a strategy from trades database"""
+    """Calculate current P&L for a strategy (recorder) from recorded_trades table
+    
+    FIXED: Now uses recorded_trades table (where webhook signals store trades)
+    instead of the old 'trades' table.
+    
+    strategy_id = recorder_id in our system
+    """
     try:
-        # Try to get P&L from just_trades.db (SQLAlchemy models)
-        try:
-            from app.database import SessionLocal
-            from app.models import Trade, Position
-            
-            db = SessionLocal()
-            
-            # Calculate realized P&L from closed trades
-            closed_trades = db.query(Trade).filter(
-                Trade.strategy_id == strategy_id,
-                Trade.status == 'filled',
-                Trade.closed_at.isnot(None)
-            ).all()
-            
-            realized_pnl = sum(trade.pnl or 0.0 for trade in closed_trades)
-            
-            # Calculate unrealized P&L from open positions
-            positions = db.query(Position).filter(
-                Position.account_id.in_(
-                    db.query(Trade.account_id).filter(Trade.strategy_id == strategy_id).distinct()
-                )
-            ).all()
-            
-            unrealized_pnl = sum(pos.unrealized_pnl or 0.0 for pos in positions)
-            
-            total_pnl = realized_pnl + unrealized_pnl
-            db.close()
-            
-            return total_pnl
-            
-        except ImportError:
-            # Fallback to SQLite direct query
-            conn = get_db_connection()
-            cursor = conn.execute('''
-                SELECT COALESCE(SUM(pnl), 0.0) as total_pnl
-                FROM trades
-                WHERE strategy_id = ? AND status = 'filled'
-            ''', (strategy_id,))
-            result = cursor.fetchone()
-            if result:
-                pnl_val = result.get('total_pnl') if isinstance(result, dict) else result[0]
-                pnl = float(pnl_val) if pnl_val else 0.0
-            else:
-                pnl = 0.0
-            conn.close()
-            return pnl
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Get realized P&L from closed trades in recorded_trades
+        cursor.execute(f'''
+            SELECT COALESCE(SUM(pnl), 0.0) as realized_pnl
+            FROM recorded_trades
+            WHERE recorder_id = {placeholder} AND status = 'closed'
+        ''', (strategy_id,))
+        result = cursor.fetchone()
+        realized_pnl = float(result[0] or 0.0) if result else 0.0
+        
+        # Get unrealized P&L from open positions in recorder_positions
+        # Uses TradingView price data for real-time accuracy
+        cursor.execute(f'''
+            SELECT COALESCE(SUM(unrealized_pnl), 0.0) as unrealized_pnl
+            FROM recorder_positions
+            WHERE recorder_id = {placeholder} AND status = 'open'
+        ''', (strategy_id,))
+        result = cursor.fetchone()
+        unrealized_pnl = float(result[0] or 0.0) if result else 0.0
+        
+        conn.close()
+        
+        total_pnl = realized_pnl + unrealized_pnl
+        logger.debug(f"📊 Strategy {strategy_id} P&L: realized=${realized_pnl:.2f} + unrealized=${unrealized_pnl:.2f} = ${total_pnl:.2f}")
+        
+        return total_pnl
             
     except Exception as e:
         logger.error(f"Error calculating strategy P&L: {e}")
