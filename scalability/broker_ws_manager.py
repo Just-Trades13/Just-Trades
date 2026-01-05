@@ -210,11 +210,36 @@ class BrokerWSManager:
                 logger.info(f"📍 Account {account_id} removed from monitoring")
     
     def update_token(self, account_id: int, access_token: str):
-        """Update access token for an account (after refresh)"""
+        """Update access token for an account (after refresh) and trigger reconnection"""
         with self._accounts_lock:
             if account_id in self._accounts:
-                self._accounts[account_id].access_token = access_token
-                logger.debug(f"Token updated for account {account_id}")
+                conn = self._accounts[account_id]
+                old_token_prefix = conn.access_token[:20] if conn.access_token else 'none'
+                new_token_prefix = access_token[:20] if access_token else 'none'
+                
+                # Check if token actually changed
+                if conn.access_token != access_token:
+                    conn.access_token = access_token
+                    logger.info(f"📡 Token updated for account {account_id} ({old_token_prefix}... → {new_token_prefix}...)")
+                    
+                    # Force reconnection with new token by closing current connection
+                    if conn.websocket and conn.connected:
+                        logger.info(f"🔄 Forcing reconnect for account {account_id} with new token")
+                        conn.connected = False
+                        conn.authenticated = False
+                        conn.synced = False
+                        # The main loop will detect connected=False and reconnect
+                        try:
+                            if self._loop:
+                                asyncio.run_coroutine_threadsafe(
+                                    conn.websocket.close(),
+                                    self._loop
+                                )
+                        except:
+                            pass
+                        conn.websocket = None
+                else:
+                    logger.debug(f"Token for account {account_id} unchanged")
     
     def get_account_ids(self) -> List[int]:
         """Get list of monitored account IDs"""
