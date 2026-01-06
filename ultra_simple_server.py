@@ -1562,6 +1562,20 @@ def _init_postgres_tables():
         )
     ''')
     
+    # Add inverse_signals column to recorders table (Jan 2026 migration)
+    try:
+        cursor.execute("ALTER TABLE recorders ADD COLUMN inverse_signals BOOLEAN DEFAULT FALSE")
+        print("✅ Added inverse_signals column to recorders table")
+    except:
+        pass  # Column already exists
+    
+    # Add inverse_signals column to strategies table (Jan 2026 migration)
+    try:
+        cursor.execute("ALTER TABLE strategies ADD COLUMN inverse_signals BOOLEAN DEFAULT FALSE")
+        print("✅ Added inverse_signals column to strategies table")
+    except:
+        pass  # Column already exists
+    
     conn.commit()
     cursor.close()
     conn.close()
