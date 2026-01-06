@@ -1102,7 +1102,7 @@
     </script>
     {% block scripts %}{% endblock %}
     
-    <!-- Support Chat Bubble -->
+    <!-- Support Chat Bubble - Enhanced for Admin -->
     <div id="supportChatWidget" class="support-chat-widget">
         <!-- Chat Button -->
         <button id="supportChatBtn" class="support-chat-btn" onclick="toggleSupportChat()">
@@ -1110,7 +1110,7 @@
             <span class="unread-badge" id="unreadBadge" style="display:none;">0</span>
         </button>
         
-        <!-- Chat Window -->
+        <!-- User Chat Window -->
         <div id="supportChatWindow" class="support-chat-window" style="display:none;">
             <div class="chat-header">
                 <div class="chat-header-info">
@@ -1135,7 +1135,54 @@
                 </button>
             </div>
         </div>
+        
+        <!-- Admin Support Panel (only visible to admins) -->
+        <div id="adminSupportPanel" class="admin-support-panel" style="display:none;">
+            <div class="admin-panel-header">
+                <div class="admin-panel-title">
+                    <span class="material-icons">support_agent</span>
+                    <span>Support Inbox</span>
+                    <span class="admin-open-count" id="adminOpenCount">0</span>
+                </div>
+                <div class="admin-panel-actions">
+                    <button class="admin-panel-btn" onclick="window.location.href='/admin/support'" title="Open Full Dashboard">
+                        <span class="material-icons">open_in_new</span>
+                    </button>
+                    <button class="admin-panel-btn" onclick="toggleSupportChat()" title="Close">
+                        <span class="material-icons">close</span>
+                    </button>
+                </div>
+            </div>
+            <div class="admin-tickets-list" id="adminTicketsList">
+                <div class="admin-loading">Loading tickets...</div>
+            </div>
+            <!-- Admin Chat View (when ticket selected) -->
+            <div id="adminChatView" class="admin-chat-view" style="display:none;">
+                <div class="admin-chat-header" id="adminChatHeader">
+                    <button class="back-to-list-btn" onclick="showTicketsList()">
+                        <span class="material-icons">arrow_back</span>
+                    </button>
+                    <div class="admin-chat-user">
+                        <span id="adminChatUserName">User</span>
+                        <span id="adminChatTicketId">#0</span>
+                    </div>
+                    <button class="admin-resolve-btn" id="adminResolveBtn" onclick="resolveCurrentTicket()">
+                        <span class="material-icons">check</span>
+                    </button>
+                </div>
+                <div class="admin-chat-messages" id="adminPanelMessages"></div>
+                <div class="admin-chat-reply">
+                    <textarea id="adminPanelReply" placeholder="Type your reply..." rows="1" onkeydown="handleAdminPanelKeydown(event)"></textarea>
+                    <button class="admin-reply-btn" onclick="sendAdminPanelReply()">
+                        <span class="material-icons">send</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
+    
+    <!-- Admin Toast Container -->
+    <div id="adminToastContainer" class="admin-toast-container"></div>
     
     <style>
         /* Support Chat Widget Styles */
@@ -1187,6 +1234,363 @@
             align-items: center;
             justify-content: center;
             padding: 0 6px;
+            animation: badgePulse 2s infinite;
+        }
+        
+        @keyframes badgePulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        /* Admin Support Panel Styles */
+        .admin-support-panel {
+            position: absolute;
+            bottom: 80px;
+            right: 0;
+            width: 400px;
+            height: 560px;
+            background: var(--background-light, #111a2f);
+            border-radius: 16px;
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid var(--border-color, rgba(148, 163, 184, 0.12));
+            animation: slideUp 0.3s ease;
+        }
+        
+        .admin-panel-header {
+            background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .admin-panel-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: white;
+            font-weight: 600;
+            font-size: 15px;
+        }
+        
+        .admin-panel-title .material-icons {
+            font-size: 22px;
+        }
+        
+        .admin-open-count {
+            background: rgba(255,255,255,0.25);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+        
+        .admin-panel-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .admin-panel-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 8px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+            transition: background 0.2s;
+        }
+        
+        .admin-panel-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .admin-panel-btn .material-icons {
+            font-size: 18px;
+        }
+        
+        .admin-tickets-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+        
+        .admin-loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted, #7f8db2);
+        }
+        
+        .admin-ticket-item {
+            padding: 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-bottom: 8px;
+            background: var(--background-dark, #0b1221);
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+        
+        .admin-ticket-item:hover {
+            border-color: var(--border-color, rgba(148, 163, 184, 0.2));
+            transform: translateX(4px);
+        }
+        
+        .admin-ticket-item.has-new {
+            border-left: 3px solid #2dce89;
+        }
+        
+        .admin-ticket-top {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        
+        .admin-ticket-user {
+            font-weight: 600;
+            color: var(--text-light, #f8fafc);
+            font-size: 13px;
+        }
+        
+        .admin-ticket-time {
+            font-size: 11px;
+            color: var(--text-muted, #7f8db2);
+        }
+        
+        .admin-ticket-preview {
+            font-size: 12px;
+            color: var(--text-muted, #7f8db2);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .admin-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted, #7f8db2);
+        }
+        
+        .admin-empty .material-icons {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+        
+        /* Admin Chat View */
+        .admin-chat-view {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--background-light, #111a2f);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .admin-chat-header {
+            background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .back-to-list-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 8px;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+        }
+        
+        .back-to-list-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .admin-chat-user {
+            flex: 1;
+            color: white;
+        }
+        
+        .admin-chat-user span:first-child {
+            font-weight: 600;
+            font-size: 14px;
+            display: block;
+        }
+        
+        .admin-chat-user span:last-child {
+            font-size: 11px;
+            opacity: 0.8;
+        }
+        
+        .admin-resolve-btn {
+            background: rgba(45, 206, 137, 0.3);
+            border: none;
+            border-radius: 8px;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+        }
+        
+        .admin-resolve-btn:hover {
+            background: rgba(45, 206, 137, 0.5);
+        }
+        
+        .admin-chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .admin-msg {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        
+        .admin-msg.from-user {
+            background: var(--background-dark, #0b1221);
+            color: var(--text-light, #f8fafc);
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+        
+        .admin-msg.from-admin {
+            background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .admin-msg-time {
+            font-size: 10px;
+            opacity: 0.6;
+            margin-top: 4px;
+            display: block;
+        }
+        
+        .admin-chat-reply {
+            padding: 12px;
+            border-top: 1px solid var(--border-color, rgba(148, 163, 184, 0.12));
+            display: flex;
+            gap: 10px;
+            background: var(--background-dark, #0b1221);
+        }
+        
+        .admin-chat-reply textarea {
+            flex: 1;
+            background: var(--background-light, #111a2f);
+            border: 1px solid var(--border-color, rgba(148, 163, 184, 0.12));
+            border-radius: 10px;
+            padding: 10px 14px;
+            color: var(--text-light, #f8fafc);
+            font-size: 13px;
+            resize: none;
+            font-family: inherit;
+        }
+        
+        .admin-chat-reply textarea:focus {
+            outline: none;
+            border-color: #f59e0b;
+        }
+        
+        .admin-reply-btn {
+            background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+            border: none;
+            border-radius: 10px;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+            transition: transform 0.2s;
+        }
+        
+        .admin-reply-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        /* Admin Toast */
+        .admin-toast-container {
+            position: fixed;
+            bottom: 100px;
+            right: 100px;
+            z-index: 10001;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .admin-toast {
+            background: var(--background-light, #111a2f);
+            border: 1px solid #f59e0b;
+            border-radius: 12px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            animation: toastSlide 0.3s ease;
+            cursor: pointer;
+            min-width: 280px;
+        }
+        
+        @keyframes toastSlide {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        .admin-toast-icon {
+            color: #f59e0b;
+            font-size: 24px;
+        }
+        
+        .admin-toast-content h4 {
+            margin: 0 0 2px 0;
+            color: var(--text-light, #f8fafc);
+            font-size: 13px;
+        }
+        
+        .admin-toast-content p {
+            margin: 0;
+            color: var(--text-muted, #7f8db2);
+            font-size: 12px;
+        }
+        
+        .admin-toast-close {
+            background: none;
+            border: none;
+            color: var(--text-muted, #7f8db2);
+            cursor: pointer;
+            padding: 4px;
+            margin-left: auto;
+        }
+        
+        .admin-toast-close:hover {
+            color: var(--text-light, #f8fafc);
         }
         
         .support-chat-window {
@@ -1393,41 +1797,313 @@
     </style>
     
     <script>
-        // Support Chat Widget Logic
+        // Support Chat Widget Logic - Enhanced with Admin Support
         let currentTicketId = null;
         let chatOpen = false;
+        let isAdmin = false;
+        let adminTickets = [];
+        let adminSelectedTicket = null;
+        let lastAdminTicketCounts = {};
+        let adminPollInterval = null;
+        
+        // Check if user is admin on load
+        document.addEventListener('DOMContentLoaded', function() {
+            checkIfAdmin();
+        });
+        
+        async function checkIfAdmin() {
+            try {
+                const response = await fetch('/api/support/tickets');
+                if (response.ok) {
+                    const data = await response.json();
+                    // If we get tickets back with message_count, we're likely admin
+                    // Also check for the adminTicketBadge element
+                    if (document.getElementById('adminTicketBadge') && data.tickets && data.tickets.length > 0) {
+                        // Check if any ticket has last_message (admin-only field)
+                        if (data.tickets[0].hasOwnProperty('last_message')) {
+                            isAdmin = true;
+                            adminTickets = data.tickets;
+                            startAdminPolling();
+                            updateAdminBadge();
+                        }
+                    }
+                }
+            } catch (e) { /* not admin or not logged in */ }
+        }
+        
+        function startAdminPolling() {
+            if (adminPollInterval) clearInterval(adminPollInterval);
+            adminPollInterval = setInterval(pollAdminTickets, 5000);
+        }
+        
+        async function pollAdminTickets() {
+            if (!isAdmin) return;
+            
+            try {
+                const response = await fetch('/api/support/tickets');
+                if (!response.ok) return;
+                const data = await response.json();
+                const newTickets = data.tickets || [];
+                
+                // Check for new tickets
+                newTickets.forEach(ticket => {
+                    const oldTicket = adminTickets.find(t => t.id === ticket.id);
+                    const oldCount = lastAdminTicketCounts[ticket.id] || 0;
+                    const newCount = ticket.message_count || 0;
+                    
+                    if (!oldTicket) {
+                        // New ticket!
+                        showAdminToast('New Support Ticket', ticket.user_name || ticket.user_email || 'Anonymous', ticket.id);
+                        playNotificationSound();
+                    } else if (newCount > oldCount && oldCount > 0) {
+                        // New message in existing ticket
+                        showAdminToast('New Message', `From ${ticket.user_name || 'User'} in Ticket #${ticket.id}`, ticket.id);
+                        playNotificationSound();
+                    }
+                    
+                    lastAdminTicketCounts[ticket.id] = newCount;
+                });
+                
+                adminTickets = newTickets;
+                updateAdminBadge();
+                
+                // Update panel if open
+                if (chatOpen && isAdmin) {
+                    renderAdminTicketsList();
+                    if (adminSelectedTicket) {
+                        refreshAdminChatMessages();
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        }
+        
+        function updateAdminBadge() {
+            const badge = document.getElementById('unreadBadge');
+            const menuBadge = document.getElementById('adminTicketBadge');
+            const openCount = adminTickets.filter(t => t.status === 'open').length;
+            
+            if (badge) {
+                if (openCount > 0) {
+                    badge.textContent = openCount;
+                    badge.style.display = 'flex';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+            
+            if (menuBadge) {
+                if (openCount > 0) {
+                    menuBadge.textContent = openCount;
+                    menuBadge.style.display = 'inline-flex';
+                } else {
+                    menuBadge.style.display = 'none';
+                }
+            }
+        }
+        
+        function playNotificationSound() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.frequency.value = 880;
+                oscillator.type = 'sine';
+                gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                oscillator.start(audioCtx.currentTime);
+                oscillator.stop(audioCtx.currentTime + 0.2);
+            } catch (e) { /* ignore */ }
+        }
+        
+        function showAdminToast(title, message, ticketId) {
+            const container = document.getElementById('adminToastContainer');
+            if (!container) return;
+            
+            const toast = document.createElement('div');
+            toast.className = 'admin-toast';
+            toast.innerHTML = `
+                <span class="material-icons admin-toast-icon">chat</span>
+                <div class="admin-toast-content">
+                    <h4>${escapeHtmlChat(title)}</h4>
+                    <p>${escapeHtmlChat(message)}</p>
+                </div>
+                <button class="admin-toast-close" onclick="this.parentElement.remove()">
+                    <span class="material-icons">close</span>
+                </button>
+            `;
+            toast.onclick = (e) => {
+                if (e.target.closest('.admin-toast-close')) return;
+                toast.remove();
+                if (ticketId) {
+                    if (!chatOpen) toggleSupportChat();
+                    setTimeout(() => selectAdminTicket(ticketId), 100);
+                }
+            };
+            container.appendChild(toast);
+            
+            setTimeout(() => toast.remove(), 8000);
+            
+            // Browser notification
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, { body: message, icon: '/static/img/just_trades_logo.png' });
+            }
+        }
         
         function toggleSupportChat() {
-            const window = document.getElementById('supportChatWindow');
+            const userWindow = document.getElementById('supportChatWindow');
+            const adminPanel = document.getElementById('adminSupportPanel');
             const btnIcon = document.getElementById('chatBtnIcon');
             chatOpen = !chatOpen;
             
             if (chatOpen) {
-                window.style.display = 'flex';
                 btnIcon.textContent = 'close';
-                loadChatHistory();
+                if (isAdmin) {
+                    adminPanel.style.display = 'flex';
+                    userWindow.style.display = 'none';
+                    loadAdminTickets();
+                } else {
+                    userWindow.style.display = 'flex';
+                    adminPanel.style.display = 'none';
+                    loadChatHistory();
+                }
             } else {
-                window.style.display = 'none';
+                userWindow.style.display = 'none';
+                adminPanel.style.display = 'none';
                 btnIcon.textContent = 'chat';
             }
         }
         
+        // Admin Functions
+        async function loadAdminTickets() {
+            const listEl = document.getElementById('adminTicketsList');
+            listEl.innerHTML = '<div class="admin-loading">Loading tickets...</div>';
+            
+            try {
+                const response = await fetch('/api/support/tickets');
+                const data = await response.json();
+                adminTickets = data.tickets || [];
+                renderAdminTicketsList();
+            } catch (e) {
+                listEl.innerHTML = '<div class="admin-empty"><span class="material-icons">error</span><p>Error loading tickets</p></div>';
+            }
+        }
+        
+        function renderAdminTicketsList() {
+            const listEl = document.getElementById('adminTicketsList');
+            const countEl = document.getElementById('adminOpenCount');
+            
+            const openTickets = adminTickets.filter(t => t.status === 'open');
+            countEl.textContent = openTickets.length;
+            
+            if (openTickets.length === 0) {
+                listEl.innerHTML = '<div class="admin-empty"><span class="material-icons">inbox</span><p>No open tickets</p></div>';
+                return;
+            }
+            
+            listEl.innerHTML = openTickets.map(ticket => `
+                <div class="admin-ticket-item" onclick="selectAdminTicket(${ticket.id})">
+                    <div class="admin-ticket-top">
+                        <span class="admin-ticket-user">${escapeHtmlChat(ticket.user_name || ticket.user_email || 'Anonymous')}</span>
+                        <span class="admin-ticket-time">${formatTimeChat(ticket.updated_at)}</span>
+                    </div>
+                    <div class="admin-ticket-preview">${escapeHtmlChat(ticket.last_message || 'No messages')}</div>
+                </div>
+            `).join('');
+        }
+        
+        async function selectAdminTicket(ticketId) {
+            adminSelectedTicket = ticketId;
+            const ticket = adminTickets.find(t => t.id === ticketId);
+            
+            document.getElementById('adminTicketsList').style.display = 'none';
+            document.getElementById('adminChatView').style.display = 'flex';
+            document.getElementById('adminChatUserName').textContent = ticket?.user_name || ticket?.user_email || 'Anonymous';
+            document.getElementById('adminChatTicketId').textContent = `Ticket #${ticketId}`;
+            
+            await refreshAdminChatMessages();
+        }
+        
+        async function refreshAdminChatMessages() {
+            if (!adminSelectedTicket) return;
+            
+            try {
+                const response = await fetch(`/api/support/tickets/${adminSelectedTicket}/messages`);
+                const data = await response.json();
+                
+                const container = document.getElementById('adminPanelMessages');
+                container.innerHTML = (data.messages || []).map(msg => `
+                    <div class="admin-msg ${msg.sender_type === 'admin' ? 'from-admin' : 'from-user'}">
+                        ${escapeHtmlChat(msg.message)}
+                        <span class="admin-msg-time">${formatTimeChat(msg.created_at)}</span>
+                    </div>
+                `).join('');
+                
+                container.scrollTop = container.scrollHeight;
+            } catch (e) { /* ignore */ }
+        }
+        
+        function showTicketsList() {
+            adminSelectedTicket = null;
+            document.getElementById('adminChatView').style.display = 'none';
+            document.getElementById('adminTicketsList').style.display = 'block';
+            renderAdminTicketsList();
+        }
+        
+        function handleAdminPanelKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendAdminPanelReply();
+            }
+        }
+        
+        async function sendAdminPanelReply() {
+            const input = document.getElementById('adminPanelReply');
+            const message = input.value.trim();
+            if (!message || !adminSelectedTicket) return;
+            
+            try {
+                const response = await fetch(`/api/support/tickets/${adminSelectedTicket}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                
+                if (response.ok) {
+                    input.value = '';
+                    await refreshAdminChatMessages();
+                    pollAdminTickets(); // Refresh ticket list
+                }
+            } catch (e) { /* ignore */ }
+        }
+        
+        async function resolveCurrentTicket() {
+            if (!adminSelectedTicket) return;
+            
+            try {
+                await fetch(`/api/support/tickets/${adminSelectedTicket}/status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'closed' })
+                });
+                
+                showTicketsList();
+                pollAdminTickets();
+            } catch (e) { /* ignore */ }
+        }
+        
+        // User Functions (non-admin)
         async function loadChatHistory() {
             try {
-                // Check if user has existing tickets
                 const response = await fetch('/api/support/tickets');
-                if (!response.ok) {
-                    console.log('Support tickets API returned:', response.status);
-                    return; // Not logged in or error - that's ok, they can still create new tickets
-                }
+                if (!response.ok) return;
                 const data = await response.json();
                 
                 if (data.tickets && data.tickets.length > 0) {
-                    // Find most recent open ticket or use the most recent one
                     const openTicket = data.tickets.find(t => t.status === 'open');
                     currentTicketId = openTicket ? openTicket.id : data.tickets[0].id;
                     
-                    // Load messages for this ticket
                     const msgResponse = await fetch(`/api/support/tickets/${currentTicketId}/messages`);
                     if (msgResponse.ok) {
                         const msgData = await msgResponse.json();
@@ -1435,15 +2111,10 @@
                             renderMessages(msgData.messages);
                         }
                     } else {
-                        // Ticket might not be accessible (e.g., created when not logged in)
-                        // Reset and let user create new ticket
-                        console.log('Could not load ticket messages, starting fresh');
                         currentTicketId = null;
                     }
                 }
-            } catch (error) {
-                console.error('Error loading chat history:', error);
-            }
+            } catch (e) { /* ignore */ }
         }
         
         function renderMessages(messages) {
@@ -1453,16 +2124,13 @@
             messages.forEach(msg => {
                 const div = document.createElement('div');
                 div.className = `chat-message ${msg.sender_type === 'admin' ? 'admin' : 'user'}`;
-                
-                const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 div.innerHTML = `
-                    ${msg.message}
-                    <span class="msg-time">${time}</span>
+                    ${escapeHtmlChat(msg.message)}
+                    <span class="msg-time">${formatTimeChat(msg.created_at)}</span>
                 `;
                 container.appendChild(div);
             });
             
-            // Scroll to bottom
             container.scrollTop = container.scrollHeight;
         }
         
@@ -1476,7 +2144,6 @@
         async function sendChatMessage() {
             const input = document.getElementById('chatInput');
             const message = input.value.trim();
-            
             if (!message) return;
             
             const sendBtn = document.querySelector('.chat-send-btn');
@@ -1484,103 +2151,77 @@
             
             try {
                 if (!currentTicketId) {
-                    // Create new ticket
                     const response = await fetch('/api/support/tickets', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: message, subject: 'Support Request' })
+                        body: JSON.stringify({ message, subject: 'Support Request' })
                     });
                     const data = await response.json();
-                    
                     if (data.success) {
                         currentTicketId = data.ticket_id;
-                        // Show the message immediately
                         addMessageToChat(message, 'user');
                         input.value = '';
-                    } else {
-                        alert('Error sending message: ' + (data.error || 'Unknown error'));
                     }
                 } else {
-                    // Add to existing ticket
                     const response = await fetch(`/api/support/tickets/${currentTicketId}/messages`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: message })
+                        body: JSON.stringify({ message })
                     });
-                    const data = await response.json();
-                    
-                    if (data.success) {
+                    if (response.ok) {
                         addMessageToChat(message, 'user');
                         input.value = '';
-                    } else {
-                        alert('Error sending message: ' + (data.error || 'Unknown error'));
                     }
                 }
-            } catch (error) {
-                console.error('Error sending message:', error);
-                alert('Error sending message. Please try again.');
-            } finally {
-                sendBtn.disabled = false;
-                input.focus();
-            }
+            } catch (e) { /* ignore */ }
+            finally { sendBtn.disabled = false; }
         }
         
         function addMessageToChat(message, senderType) {
             const container = document.getElementById('chatMessages');
-            
-            // Remove welcome message if present
             const welcome = container.querySelector('.chat-welcome');
             if (welcome) welcome.remove();
             
             const div = document.createElement('div');
             div.className = `chat-message ${senderType === 'admin' ? 'admin' : 'user'}`;
-            
-            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            div.innerHTML = `
-                ${message}
-                <span class="msg-time">${time}</span>
-            `;
+            div.innerHTML = `${escapeHtmlChat(message)}<span class="msg-time">Just now</span>`;
             container.appendChild(div);
             container.scrollTop = container.scrollHeight;
         }
         
-        // Poll for new messages every 10 seconds when chat is open
+        // Poll for user messages
         setInterval(async () => {
-            if (chatOpen && currentTicketId) {
+            if (chatOpen && !isAdmin && currentTicketId) {
                 try {
                     const response = await fetch(`/api/support/tickets/${currentTicketId}/messages`);
                     const data = await response.json();
-                    if (data.messages) {
-                        renderMessages(data.messages);
-                    }
-                } catch (e) { /* ignore polling errors */ }
+                    if (data.messages) renderMessages(data.messages);
+                } catch (e) { /* ignore */ }
             }
         }, 10000);
         
-        // Admin: Check for open support tickets
-        async function checkAdminTickets() {
-            const badge = document.getElementById('adminTicketBadge');
-            if (!badge) return; // Not an admin
-            
-            try {
-                const response = await fetch('/api/support/tickets');
-                const data = await response.json();
-                if (data.tickets) {
-                    const openCount = data.tickets.filter(t => t.status === 'open').length;
-                    if (openCount > 0) {
-                        badge.textContent = openCount;
-                        badge.style.display = 'inline-flex';
-                    } else {
-                        badge.style.display = 'none';
-                    }
-                }
-            } catch (e) { /* ignore */ }
+        // Utility functions
+        function formatTimeChat(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diff = now - date;
+            if (diff < 60000) return 'Just now';
+            if (diff < 3600000) return Math.floor(diff / 60000) + 'm';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + 'h';
+            return date.toLocaleDateString();
         }
         
-        // Check tickets on load and every 30 seconds for admins
-        if (document.getElementById('adminTicketBadge')) {
-            checkAdminTickets();
-            setInterval(checkAdminTickets, 30000);
+        function escapeHtmlChat(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Request notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+            // Will be requested when needed
         }
     </script>
 </body>
