@@ -18463,21 +18463,26 @@ def get_valid_tradovate_token(account_id: int) -> str | None:
             needs_refresh = True
         else:
             try:
-                from datetime import datetime, timedelta
+                from datetime import datetime as dt_class, timedelta
+                import datetime as dt_module
                 
                 # Handle both string and datetime objects (PostgreSQL returns datetime directly)
-                if isinstance(expires_at_str, datetime):
+                # Use multiple checks because isinstance can fail with some DB drivers
+                if isinstance(expires_at_str, (dt_class, dt_module.datetime)):
+                    expires_at = expires_at_str
+                elif hasattr(expires_at_str, 'strftime'):
+                    # Has datetime-like methods - treat as datetime
                     expires_at = expires_at_str
                 elif isinstance(expires_at_str, str):
-                    expires_at = datetime.strptime(expires_at_str, '%Y-%m-%d %H:%M:%S')
+                    expires_at = dt_class.strptime(expires_at_str, '%Y-%m-%d %H:%M:%S')
                 else:
                     # Unknown type - try to convert to string first
-                    expires_at = datetime.strptime(str(expires_at_str), '%Y-%m-%d %H:%M:%S')
+                    expires_at = dt_class.strptime(str(expires_at_str), '%Y-%m-%d %H:%M:%S')
                 
                 # Make both naive for comparison (strip timezone if present)
-                if expires_at.tzinfo is not None:
+                if hasattr(expires_at, 'tzinfo') and expires_at.tzinfo is not None:
                     expires_at = expires_at.replace(tzinfo=None)
-                now = datetime.now()
+                now = dt_class.now()
                 
                 # Refresh if expired or expiring within 15 minutes
                 time_until_expiry = (expires_at - now).total_seconds()
