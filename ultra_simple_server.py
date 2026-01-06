@@ -2746,6 +2746,34 @@ def init_db():
         except:
             pass
     
+    # Add inverse_signals column to recorders table (Jan 2026)
+    if is_postgres:
+        try:
+            cursor.execute("ALTER TABLE recorders ADD COLUMN inverse_signals BOOLEAN DEFAULT FALSE")
+            logger.info("✅ Added inverse_signals column to recorders table (PostgreSQL)")
+        except:
+            pass  # Column already exists
+    else:
+        try:
+            cursor.execute("ALTER TABLE recorders ADD COLUMN inverse_signals INTEGER DEFAULT 0")
+            logger.info("✅ Added inverse_signals column to recorders table (SQLite)")
+        except:
+            pass  # Column already exists
+    
+    # Add inverse_signals column to strategies table (Jan 2026)
+    if is_postgres:
+        try:
+            cursor.execute("ALTER TABLE strategies ADD COLUMN inverse_signals BOOLEAN DEFAULT FALSE")
+            logger.info("✅ Added inverse_signals column to strategies table (PostgreSQL)")
+        except:
+            pass  # Column already exists
+    else:
+        try:
+            cursor.execute("ALTER TABLE strategies ADD COLUMN inverse_signals INTEGER DEFAULT 0")
+            logger.info("✅ Added inverse_signals column to strategies table (SQLite)")
+        except:
+            pass  # Column already exists
+    
     # Add shared strategy columns to existing strategies table (for existing databases)
     try:
         cursor.execute('ALTER TABLE strategies ADD COLUMN is_public INTEGER DEFAULT 0')
