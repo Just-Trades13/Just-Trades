@@ -19981,12 +19981,16 @@ def api_thread_health():
 def support_tickets():
     """Get user's tickets or create a new ticket"""
     try:
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'  # Placeholder for parameterized queries
+        
         if request.method == 'GET':
             # Get tickets for current user (or all for admin)
             user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
             
             conn = get_db_connection()
-            conn.row_factory = sqlite3.Row
+            if not is_postgres:
+                conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
             if user and user.is_admin:
@@ -20002,11 +20006,11 @@ def support_tickets():
                 ''')
             elif user:
                 # User sees only their tickets
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT t.*,
                            (SELECT COUNT(*) FROM support_messages WHERE ticket_id = t.id) as message_count
                     FROM support_tickets t 
-                    WHERE t.user_id = ?
+                    WHERE t.user_id = {ph}
                     ORDER BY t.updated_at DESC
                 ''', (user.id,))
             else:
@@ -20034,18 +20038,32 @@ def support_tickets():
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # Create ticket
-            cursor.execute('''
-                INSERT INTO support_tickets (user_id, user_email, user_name, subject, status)
-                VALUES (?, ?, ?, ?, 'open')
-            ''', (user_id, user_email, user_name, subject))
-            ticket_id = cursor.lastrowid
+            # Create ticket - handle PostgreSQL RETURNING clause
+            if is_postgres:
+                cursor.execute('''
+                    INSERT INTO support_tickets (user_id, user_email, user_name, subject, status)
+                    VALUES (%s, %s, %s, %s, 'open')
+                    RETURNING id
+                ''', (user_id, user_email, user_name, subject))
+                ticket_id = cursor.fetchone()['id'] if is_postgres else cursor.fetchone()[0]
+            else:
+                cursor.execute('''
+                    INSERT INTO support_tickets (user_id, user_email, user_name, subject, status)
+                    VALUES (?, ?, ?, ?, 'open')
+                ''', (user_id, user_email, user_name, subject))
+                ticket_id = cursor.lastrowid
             
             # Add first message
-            cursor.execute('''
-                INSERT INTO support_messages (ticket_id, sender_type, sender_id, sender_name, message)
-                VALUES (?, 'user', ?, ?, ?)
-            ''', (ticket_id, user_id, user_name, message))
+            if is_postgres:
+                cursor.execute('''
+                    INSERT INTO support_messages (ticket_id, sender_type, sender_id, sender_name, message)
+                    VALUES (%s, 'user', %s, %s, %s)
+                ''', (ticket_id, user_id, user_name, message))
+            else:
+                cursor.execute('''
+                    INSERT INTO support_messages (ticket_id, sender_type, sender_id, sender_name, message)
+                    VALUES (?, 'user', ?, ?, ?)
+                ''', (ticket_id, user_id, user_name, message))
             
             conn.commit()
             conn.close()
@@ -20055,34 +20073,45 @@ def support_tickets():
     
     except Exception as e:
         logger.error(f"Error in support_tickets: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/support/tickets/<int:ticket_id>/messages', methods=['GET', 'POST'])
 def ticket_messages(ticket_id):
     """Get or add messages to a ticket"""
     try:
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        
         user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
         
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         # Verify access to ticket
-        cursor.execute('SELECT * FROM support_tickets WHERE id = ?', (ticket_id,))
+        cursor.execute(f'SELECT * FROM support_tickets WHERE id = {ph}', (ticket_id,))
         ticket = cursor.fetchone()
         if not ticket:
             conn.close()
             return jsonify({'error': 'Ticket not found'}), 404
         
         # Check permission (user can only access their own tickets, admin can access all)
-        if user and not user.is_admin and ticket['user_id'] != user.id:
-            conn.close()
-            return jsonify({'error': 'Access denied'}), 403
+        # Allow access if: admin, ticket owner, or ticket was anonymous (user_id is None)
+        ticket_user_id = ticket['user_id']
+        if user and not user.is_admin:
+            # User is logged in but not admin - check ownership
+            if ticket_user_id is not None and ticket_user_id != user.id:
+                conn.close()
+                logger.warning(f"Access denied: user {user.id} tried to access ticket {ticket_id} owned by {ticket_user_id}")
+                return jsonify({'error': 'Access denied'}), 403
         
         if request.method == 'GET':
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT * FROM support_messages 
-                WHERE ticket_id = ? 
+                WHERE ticket_id = {ph} 
                 ORDER BY created_at ASC
             ''', (ticket_id,))
             messages = [dict(row) for row in cursor.fetchall()]
@@ -20110,14 +20139,20 @@ def ticket_messages(ticket_id):
             
             sender_id = user.id if user else None
             
-            cursor.execute('''
-                INSERT INTO support_messages (ticket_id, sender_type, sender_id, sender_name, message)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (ticket_id, sender_type, sender_id, sender_name, message))
+            if is_postgres:
+                cursor.execute('''
+                    INSERT INTO support_messages (ticket_id, sender_type, sender_id, sender_name, message)
+                    VALUES (%s, %s, %s, %s, %s)
+                ''', (ticket_id, sender_type, sender_id, sender_name, message))
+            else:
+                cursor.execute('''
+                    INSERT INTO support_messages (ticket_id, sender_type, sender_id, sender_name, message)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (ticket_id, sender_type, sender_id, sender_name, message))
             
             # Update ticket timestamp
-            cursor.execute('''
-                UPDATE support_tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
+            cursor.execute(f'''
+                UPDATE support_tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = {ph}
             ''', (ticket_id,))
             
             conn.commit()
@@ -20135,6 +20170,9 @@ def ticket_messages(ticket_id):
 def update_ticket_status(ticket_id):
     """Update ticket status (admin only)"""
     try:
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        
         user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
         if not user or not user.is_admin:
             return jsonify({'error': 'Admin access required'}), 403
@@ -20146,16 +20184,16 @@ def update_ticket_status(ticket_id):
         cursor = conn.cursor()
         
         if status == 'closed':
-            cursor.execute('''
+            cursor.execute(f'''
                 UPDATE support_tickets 
-                SET status = ?, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET status = {ph}, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = {ph}
             ''', (status, ticket_id))
         else:
-            cursor.execute('''
+            cursor.execute(f'''
                 UPDATE support_tickets 
-                SET status = ?, closed_at = NULL, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET status = {ph}, closed_at = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE id = {ph}
             ''', (status, ticket_id))
         
         conn.commit()
@@ -20166,6 +20204,8 @@ def update_ticket_status(ticket_id):
     
     except Exception as e:
         logger.error(f"Error updating ticket status: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @app.route('/admin/support')

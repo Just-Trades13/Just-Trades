@@ -1416,6 +1416,10 @@
             try {
                 // Check if user has existing tickets
                 const response = await fetch('/api/support/tickets');
+                if (!response.ok) {
+                    console.log('Support tickets API returned:', response.status);
+                    return; // Not logged in or error - that's ok, they can still create new tickets
+                }
                 const data = await response.json();
                 
                 if (data.tickets && data.tickets.length > 0) {
@@ -1425,10 +1429,16 @@
                     
                     // Load messages for this ticket
                     const msgResponse = await fetch(`/api/support/tickets/${currentTicketId}/messages`);
-                    const msgData = await msgResponse.json();
-                    
-                    if (msgData.messages && msgData.messages.length > 0) {
-                        renderMessages(msgData.messages);
+                    if (msgResponse.ok) {
+                        const msgData = await msgResponse.json();
+                        if (msgData.messages && msgData.messages.length > 0) {
+                            renderMessages(msgData.messages);
+                        }
+                    } else {
+                        // Ticket might not be accessible (e.g., created when not logged in)
+                        // Reset and let user create new ticket
+                        console.log('Could not load ticket messages, starting fresh');
+                        currentTicketId = null;
                     }
                 }
             } catch (error) {
