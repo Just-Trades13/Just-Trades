@@ -780,6 +780,7 @@ def _init_sqlite_tables(conn):
             tp_enabled INTEGER DEFAULT 1,
             trailing_sl INTEGER DEFAULT 0,
             enabled INTEGER DEFAULT 1,
+            inverse_signals INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -972,7 +973,8 @@ def _init_sqlite_tables(conn):
             notes TEXT,
             account_routing TEXT,
             is_public INTEGER DEFAULT 0,
-            created_by_username TEXT
+            created_by_username TEXT,
+            inverse_signals INTEGER DEFAULT 0
         )
     ''')
     
@@ -1227,6 +1229,7 @@ def _init_postgres_tables():
             tp_enabled BOOLEAN DEFAULT TRUE,
             trailing_sl BOOLEAN DEFAULT FALSE,
             enabled BOOLEAN DEFAULT TRUE,
+            inverse_signals BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -1419,7 +1422,8 @@ def _init_postgres_tables():
             notes TEXT,
             account_routing TEXT,
             is_public BOOLEAN DEFAULT FALSE,
-            created_by_username VARCHAR(100)
+            created_by_username VARCHAR(100),
+            inverse_signals BOOLEAN DEFAULT FALSE
         )
     ''')
     
@@ -7187,6 +7191,32 @@ def api_get_recorder_webhook(recorder_id):
         logger.error(f"Error getting webhook for recorder {recorder_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/recorders/<int:recorder_id>/inverse', methods=['POST'])
+def api_set_inverse_signals(recorder_id):
+    """Enable/disable inverse signals for a recorder"""
+    try:
+        data = request.get_json() or {}
+        inverse_enabled = data.get('inverse_signals', 0)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        
+        cursor.execute(f'''
+            UPDATE recorders SET inverse_signals = {ph}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = {ph}
+        ''', (inverse_enabled, recorder_id))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"🔄 Recorder {recorder_id} inverse_signals set to {inverse_enabled}")
+        return jsonify({'success': True, 'inverse_signals': inverse_enabled})
+    except Exception as e:
+        logger.error(f"Error setting inverse signals for recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # ============================================================
 # TRADERS API ENDPOINTS (links recorders to accounts)
 # ============================================================
@@ -8570,6 +8600,20 @@ def process_webhook_directly(webhook_token):
             _logger.warning(f"Invalid action '{action}' for recorder {recorder_name}")
             conn.close()
             return jsonify({'success': False, 'error': f'Invalid action: {action}'}), 400
+        
+        # ============================================================
+        # INVERSE SIGNALS - Flip BUY↔SELL if inverse_signals is enabled
+        # ============================================================
+        inverse_enabled = recorder.get('inverse_signals', 0)
+        if inverse_enabled:
+            original_action_before_inverse = action
+            if action in ['buy', 'long']:
+                action = 'sell'
+                _logger.info(f"🔄 INVERSE: {original_action_before_inverse.upper()} → SELL")
+            elif action in ['sell', 'short']:
+                action = 'buy'
+                _logger.info(f"🔄 INVERSE: {original_action_before_inverse.upper()} → BUY")
+            # Note: 'close' stays as 'close' - we still want to close positions
         
         # STRATEGY MODE: market_position: flat = CLOSE POSITION
         # SMART CLOSE: Validates close makes sense before executing

@@ -395,8 +395,8 @@
                 </div>
                 <div class="toggle-row">
                     <span>Inverse Strat</span>
-                    <label class="switch">
-                        <input type="checkbox">
+                    <label class="switch" title="When enabled, BUY signals become SELL and SELL signals become BUY">
+                        <input type="checkbox" id="inverseSignals" name="inverse_signals" {% if recorder and recorder.inverse_signals %}checked{% endif %} onchange="saveInverseSignals()">
                         <span class="slider"></span>
                     </label>
                 </div>
@@ -1320,6 +1320,41 @@
         } else {
             body.style.display = 'none';
             icon.textContent = 'expand_less';
+        }
+    }
+
+    // =============================================
+    // Inverse Signals Toggle
+    // =============================================
+    
+    async function saveInverseSignals() {
+        const checkbox = document.getElementById('inverseSignals');
+        const inverseEnabled = checkbox.checked ? 1 : 0;
+        const recorderId = {{ recorder.id if recorder else 0 }};
+        
+        if (!recorderId) {
+            console.log('No recorder ID, skipping inverse save');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/recorders/${recorderId}/inverse`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ inverse_signals: inverseEnabled })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                showToast(inverseEnabled ? '🔄 Inverse Signals ENABLED - BUY↔SELL will be swapped' : '✅ Inverse Signals disabled', 'success');
+            } else {
+                showToast('Error saving inverse setting: ' + (data.error || 'Unknown error'), 'error');
+                checkbox.checked = !checkbox.checked; // Revert
+            }
+        } catch (error) {
+            console.error('Error saving inverse signals:', error);
+            showToast('Error saving setting', 'error');
+            checkbox.checked = !checkbox.checked; // Revert
         }
     }
 
