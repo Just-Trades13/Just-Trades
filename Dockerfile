@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir \
     websockets \
     gunicorn
 
-# Copy application code - cache bust: v3
+# Copy application code - cache bust: v4-datetime-fix
 COPY . .
 
 # Create logs directory and initialize database
