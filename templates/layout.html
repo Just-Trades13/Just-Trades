@@ -690,6 +690,27 @@
         .wrapper {
             overflow-x: hidden;
         }
+        
+        /* Admin ticket badge */
+        .admin-ticket-badge {
+            background: #ef4444;
+            color: white;
+            font-size: 11px;
+            font-weight: 600;
+            min-width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 5px;
+            margin-left: 8px;
+        }
+        
+        .support-link {
+            display: flex;
+            align-items: center;
+        }
     </style>
     {% block styles %}{% endblock %}
 </head>
@@ -793,7 +814,16 @@
                             {% endif %}
                             <ul class="user-dropdown-menu">
                                 <li><a href="/settings"><span class="material-icons">settings</span> Settings</a></li>
+                                {% if current_user and current_user.is_admin %}
                                 <li><a href="/admin/users"><span class="material-icons">manage_accounts</span> Manage Users</a></li>
+                                <li>
+                                    <a href="/admin/support" class="support-link">
+                                        <span class="material-icons">support_agent</span> 
+                                        Support Tickets
+                                        <span class="admin-ticket-badge" id="adminTicketBadge" style="display:none;">0</span>
+                                    </a>
+                                </li>
+                                {% endif %}
                                 <li><a href="/accounts"><span class="material-icons">account_balance</span> Broker Accounts</a></li>
                                 <li class="divider"></li>
                                 <li><a href="/logout" class="logout-link"><span class="material-icons">logout</span> Sign Out</a></li>
@@ -1516,6 +1546,32 @@
                 } catch (e) { /* ignore polling errors */ }
             }
         }, 10000);
+        
+        // Admin: Check for open support tickets
+        async function checkAdminTickets() {
+            const badge = document.getElementById('adminTicketBadge');
+            if (!badge) return; // Not an admin
+            
+            try {
+                const response = await fetch('/api/support/tickets');
+                const data = await response.json();
+                if (data.tickets) {
+                    const openCount = data.tickets.filter(t => t.status === 'open').length;
+                    if (openCount > 0) {
+                        badge.textContent = openCount;
+                        badge.style.display = 'inline-flex';
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        }
+        
+        // Check tickets on load and every 30 seconds for admins
+        if (document.getElementById('adminTicketBadge')) {
+            checkAdminTickets();
+            setInterval(checkAdminTickets, 30000);
+        }
     </script>
 </body>
 </html>
