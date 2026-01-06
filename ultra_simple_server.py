@@ -10982,6 +10982,7 @@ def traders_edit(trader_id):
                    r.time_filter_2_enabled as r_time_filter_2_enabled,
                    r.time_filter_2_start as r_time_filter_2_start,
                    r.time_filter_2_stop as r_time_filter_2_stop,
+                   r.inverse_signals as r_inverse_signals,
                    a.name as account_name, a.id as parent_account_id
             FROM traders t
             JOIN recorders r ON t.recorder_id = r.id
@@ -11173,8 +11174,10 @@ def traders_edit(trader_id):
         
         # Build recorder object for webhook templates
         recorder = {
+            'id': trader_row['recorder_id'],
             'name': trader['recorder_name'],
-            'webhook_token': trader_row['webhook_token'] if 'webhook_token' in trader_row.keys() else None
+            'webhook_token': trader_row['webhook_token'] if 'webhook_token' in trader_row.keys() else None,
+            'inverse_signals': bool(trader_row.get('r_inverse_signals') if hasattr(trader_row, 'get') else (trader_row['r_inverse_signals'] if 'r_inverse_signals' in trader_row.keys() else False))
         }
         
         return render_template(
