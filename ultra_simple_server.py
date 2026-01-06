@@ -1082,6 +1082,35 @@ def _init_sqlite_tables(conn):
         )
     ''')
     
+    # Support tickets for chat support system
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS support_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            user_email TEXT,
+            user_name TEXT,
+            subject TEXT,
+            status TEXT DEFAULT 'open',
+            priority TEXT DEFAULT 'normal',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            closed_at TEXT
+        )
+    ''')
+    
+    # Support messages (chat messages within tickets)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS support_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER REFERENCES support_tickets(id),
+            sender_type TEXT NOT NULL,
+            sender_id INTEGER,
+            sender_name TEXT,
+            message TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     conn.commit()
     print("✅ SQLite tables created (complete schema)!")
 
@@ -1497,6 +1526,35 @@ def _init_postgres_tables():
             amount_range TEXT,
             url TEXT,
             inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Support tickets for chat support system
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS support_tickets (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            user_email TEXT,
+            user_name TEXT,
+            subject TEXT,
+            status TEXT DEFAULT 'open',
+            priority TEXT DEFAULT 'normal',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            closed_at TIMESTAMP
+        )
+    ''')
+    
+    # Support messages (chat messages within tickets)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS support_messages (
+            id SERIAL PRIMARY KEY,
+            ticket_id INTEGER REFERENCES support_tickets(id),
+            sender_type TEXT NOT NULL,
+            sender_id INTEGER,
+            sender_name TEXT,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
@@ -19914,6 +19972,210 @@ def api_thread_health():
         'watchdog_active': watchdog_thread.is_alive(),
         'timestamp': datetime.now().isoformat()
     })
+
+# ============================================================================
+# SUPPORT TICKET SYSTEM
+# ============================================================================
+
+@app.route('/api/support/tickets', methods=['GET', 'POST'])
+def support_tickets():
+    """Get user's tickets or create a new ticket"""
+    try:
+        if request.method == 'GET':
+            # Get tickets for current user (or all for admin)
+            user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+            
+            conn = get_db_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            if user and user.is_admin:
+                # Admin sees all tickets
+                cursor.execute('''
+                    SELECT t.*, 
+                           (SELECT COUNT(*) FROM support_messages WHERE ticket_id = t.id) as message_count,
+                           (SELECT message FROM support_messages WHERE ticket_id = t.id ORDER BY created_at DESC LIMIT 1) as last_message
+                    FROM support_tickets t 
+                    ORDER BY 
+                        CASE WHEN t.status = 'open' THEN 0 ELSE 1 END,
+                        t.updated_at DESC
+                ''')
+            elif user:
+                # User sees only their tickets
+                cursor.execute('''
+                    SELECT t.*,
+                           (SELECT COUNT(*) FROM support_messages WHERE ticket_id = t.id) as message_count
+                    FROM support_tickets t 
+                    WHERE t.user_id = ?
+                    ORDER BY t.updated_at DESC
+                ''', (user.id,))
+            else:
+                conn.close()
+                return jsonify({'tickets': []})
+            
+            tickets = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+            return jsonify({'tickets': tickets})
+        
+        elif request.method == 'POST':
+            # Create new ticket
+            data = request.get_json()
+            message = data.get('message', '').strip()
+            subject = data.get('subject', 'Support Request')
+            
+            if not message:
+                return jsonify({'error': 'Message is required'}), 400
+            
+            user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+            user_id = user.id if user else None
+            user_email = user.email if user else data.get('email', 'anonymous')
+            user_name = user.display_name if user else data.get('name', 'Anonymous')
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Create ticket
+            cursor.execute('''
+                INSERT INTO support_tickets (user_id, user_email, user_name, subject, status)
+                VALUES (?, ?, ?, ?, 'open')
+            ''', (user_id, user_email, user_name, subject))
+            ticket_id = cursor.lastrowid
+            
+            # Add first message
+            cursor.execute('''
+                INSERT INTO support_messages (ticket_id, sender_type, sender_id, sender_name, message)
+                VALUES (?, 'user', ?, ?, ?)
+            ''', (ticket_id, user_id, user_name, message))
+            
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"📩 New support ticket #{ticket_id} from {user_email}: {subject}")
+            return jsonify({'success': True, 'ticket_id': ticket_id})
+    
+    except Exception as e:
+        logger.error(f"Error in support_tickets: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/support/tickets/<int:ticket_id>/messages', methods=['GET', 'POST'])
+def ticket_messages(ticket_id):
+    """Get or add messages to a ticket"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Verify access to ticket
+        cursor.execute('SELECT * FROM support_tickets WHERE id = ?', (ticket_id,))
+        ticket = cursor.fetchone()
+        if not ticket:
+            conn.close()
+            return jsonify({'error': 'Ticket not found'}), 404
+        
+        # Check permission (user can only access their own tickets, admin can access all)
+        if user and not user.is_admin and ticket['user_id'] != user.id:
+            conn.close()
+            return jsonify({'error': 'Access denied'}), 403
+        
+        if request.method == 'GET':
+            cursor.execute('''
+                SELECT * FROM support_messages 
+                WHERE ticket_id = ? 
+                ORDER BY created_at ASC
+            ''', (ticket_id,))
+            messages = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+            return jsonify({'messages': messages, 'ticket': dict(ticket)})
+        
+        elif request.method == 'POST':
+            data = request.get_json()
+            message = data.get('message', '').strip()
+            
+            if not message:
+                conn.close()
+                return jsonify({'error': 'Message is required'}), 400
+            
+            # Determine sender type
+            if user and user.is_admin:
+                sender_type = 'admin'
+                sender_name = f"{user.display_name} (Support)"
+            elif user:
+                sender_type = 'user'
+                sender_name = user.display_name
+            else:
+                sender_type = 'user'
+                sender_name = 'Anonymous'
+            
+            sender_id = user.id if user else None
+            
+            cursor.execute('''
+                INSERT INTO support_messages (ticket_id, sender_type, sender_id, sender_name, message)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (ticket_id, sender_type, sender_id, sender_name, message))
+            
+            # Update ticket timestamp
+            cursor.execute('''
+                UPDATE support_tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
+            ''', (ticket_id,))
+            
+            conn.commit()
+            message_id = cursor.lastrowid
+            conn.close()
+            
+            logger.info(f"💬 New message on ticket #{ticket_id} from {sender_name}")
+            return jsonify({'success': True, 'message_id': message_id})
+    
+    except Exception as e:
+        logger.error(f"Error in ticket_messages: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/support/tickets/<int:ticket_id>/status', methods=['POST'])
+def update_ticket_status(ticket_id):
+    """Update ticket status (admin only)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        data = request.get_json()
+        status = data.get('status', 'open')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if status == 'closed':
+            cursor.execute('''
+                UPDATE support_tickets 
+                SET status = ?, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (status, ticket_id))
+        else:
+            cursor.execute('''
+                UPDATE support_tickets 
+                SET status = ?, closed_at = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (status, ticket_id))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"🎫 Ticket #{ticket_id} status changed to {status} by {user.display_name}")
+        return jsonify({'success': True})
+    
+    except Exception as e:
+        logger.error(f"Error updating ticket status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/support')
+def admin_support_page():
+    """Admin support dashboard"""
+    if USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if not user or not user.is_admin:
+            return redirect('/login?next=/admin/support')
+    return render_template('admin_support.html')
 
 # ============================================================================
 
