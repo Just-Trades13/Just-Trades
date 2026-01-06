@@ -5174,6 +5174,11 @@ def connect_account(account_id):
         DEFAULT_CLIENT_SECRET = "7c74576b-20b1-4ea5-a2a0-eaeb11326a95"
 
         client_id = DEFAULT_CLIENT_ID  # Always use 8699
+        
+        # Get environment from query parameter (demo or live)
+        # CRITICAL: Demo accounts require demo OAuth endpoint, live accounts require live OAuth endpoint
+        env = request.args.get('env', 'demo').lower()
+        is_demo = env == 'demo'
 
         # Build redirect URI - check Railway, then ngrok, then localhost
         railway_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
@@ -5195,19 +5200,26 @@ def connect_account(account_id):
                 redirect_uri = 'http://localhost:8082/api/oauth/callback'
                 logger.info(f"Using localhost redirect_uri: {redirect_uri}")
         
-        # Build OAuth URL - Tradovate OAuth endpoint (TradersPost pattern)
-        # TradersPost uses: https://trader.tradovate.com/oauth with scope=All
-        # Use state parameter to pass account_id (OAuth standard)
+        # Build OAuth URL - use correct endpoint based on environment
+        # CRITICAL FIX (Jan 5, 2026): Demo accounts MUST use demo.tradovate.com OAuth
+        # Live accounts use trader.tradovate.com OAuth
+        # A token from one environment CANNOT access accounts from the other!
         from urllib.parse import quote_plus
         encoded_redirect_uri = quote_plus(redirect_uri)
-        encoded_state = quote_plus(str(account_id))  # Pass account_id via state parameter
-        # Try trader.tradovate.com first (TradersPost pattern), fallback to demo
-        oauth_url = f'https://trader.tradovate.com/oauth?response_type=code&client_id={client_id}&redirect_uri={encoded_redirect_uri}&scope=All&state={encoded_state}'
+        # Pass both account_id and environment via state parameter (comma-separated)
+        state_value = f"{account_id},{env}"
+        encoded_state = quote_plus(state_value)
         
-        # Log to verify we're using the correct domain
-        logger.info(f"OAuth URL domain check: {'demo.tradovate.com' if 'demo.tradovate.com' in oauth_url else 'WRONG DOMAIN - ' + oauth_url}")
+        if is_demo:
+            oauth_base = 'https://demo.tradovate.com/oauth'
+            logger.info(f"🔵 Using DEMO OAuth endpoint for account {account_id}")
+        else:
+            oauth_base = 'https://trader.tradovate.com/oauth'
+            logger.info(f"🟢 Using LIVE OAuth endpoint for account {account_id}")
         
-        logger.info(f"Redirecting account {account_id} to OAuth: {oauth_url}")
+        oauth_url = f'{oauth_base}?response_type=code&client_id={client_id}&redirect_uri={encoded_redirect_uri}&scope=All&state={encoded_state}'
+        
+        logger.info(f"Redirecting account {account_id} to OAuth ({env}): {oauth_url}")
         logger.info(f"Redirect URI (decoded): {redirect_uri}")
         return redirect(oauth_url)
     except Exception as e:
@@ -5349,13 +5361,18 @@ def direct_connect_account(account_id):
 def oauth_callback():
     """Handle OAuth callback from Tradovate"""
     try:
-        # Get account_id from state parameter (OAuth standard way to pass data)
-        account_id = request.args.get('state')
-        if not account_id:
-            logger.error("No account_id (state) in OAuth callback")
+        # Get account_id and environment from state parameter (format: "account_id,env")
+        state = request.args.get('state')
+        if not state:
+            logger.error("No state in OAuth callback")
             return redirect(f'/accounts?error=no_account_id')
         
-        account_id = int(account_id)
+        # Parse state - can be "account_id,env" or just "account_id" (legacy)
+        state_parts = state.split(',')
+        account_id = int(state_parts[0])
+        oauth_env = state_parts[1] if len(state_parts) > 1 else 'live'  # Default to live for legacy
+        is_demo_oauth = oauth_env == 'demo'
+        logger.info(f"OAuth callback for account {account_id}, environment: {oauth_env}")
         
         code = request.args.get('code')
         error = request.args.get('error')
@@ -5394,12 +5411,21 @@ def oauth_callback():
                 redirect_uri = 'http://localhost:8082/api/oauth/callback'
         
         # Exchange authorization code for access token
-        # Try LIVE endpoint first (demo often rate-limited), then fallback to DEMO
+        # CRITICAL (Jan 5, 2026): Use the MATCHING endpoint for the OAuth environment!
+        # Demo OAuth code can only be exchanged at demo endpoint, live at live endpoint
         import requests
-        token_endpoints = [
-            'https://live.tradovateapi.com/v1/auth/oauthtoken',
-            'https://demo.tradovateapi.com/v1/auth/oauthtoken'
-        ]
+        if is_demo_oauth:
+            token_endpoints = [
+                'https://demo.tradovateapi.com/v1/auth/oauthtoken',
+                'https://live.tradovateapi.com/v1/auth/oauthtoken'  # Fallback
+            ]
+            logger.info(f"🔵 Using DEMO token endpoint for account {account_id}")
+        else:
+            token_endpoints = [
+                'https://live.tradovateapi.com/v1/auth/oauthtoken',
+                'https://demo.tradovateapi.com/v1/auth/oauthtoken'  # Fallback
+            ]
+            logger.info(f"🟢 Using LIVE token endpoint for account {account_id}")
         token_payload = {
             'grant_type': 'authorization_code',
             'code': code,
@@ -5568,8 +5594,11 @@ def oauth_callback():
                     logger.error(traceback.format_exc())
             
             # Fetch and store Tradovate account + subaccount metadata (TradersPost-style)
+            # CRITICAL: Use the correct API base_url based on which OAuth environment was used
             if access_token:
-                fetch_result = fetch_and_store_tradovate_accounts(account_id, access_token)
+                base_url = "https://demo.tradovateapi.com" if is_demo_oauth else "https://live.tradovateapi.com"
+                logger.info(f"Fetching accounts from {base_url} for account {account_id} ({oauth_env} OAuth)")
+                fetch_result = fetch_and_store_tradovate_accounts(account_id, access_token, base_url)
                 if not fetch_result.get("success"):
                     logger.warning(f"Unable to fetch subaccounts after OAuth for account {account_id}: {fetch_result.get('error')}")
             
