@@ -7394,7 +7394,8 @@ def api_create_trader():
         if USER_AUTH_AVAILABLE and is_logged_in():
             current_user_id = get_current_user_id()
         
-        # Create the trader link
+        # Create the trader link - DEFAULT TO DISABLED (user must explicitly enable)
+        # This prevents accidental live trading on new setups
         if is_postgres:
             cursor.execute('''
                 INSERT INTO traders (
@@ -7402,7 +7403,7 @@ def api_create_trader():
                     initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
                     user_id, enabled_accounts
                 )
-                VALUES (%s, %s, %s, %s, %s, true, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
                   current_user_id, None))
@@ -7412,13 +7413,14 @@ def api_create_trader():
             else:
                 trader_id = None
         else:
+            # SQLite: enabled = 0 (disabled by default)
             cursor.execute('''
                 INSERT INTO traders (
                     recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
                     initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
                     user_id, enabled_accounts
                 )
-                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
                   current_user_id, None))

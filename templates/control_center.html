@@ -171,6 +171,23 @@
     }
     .status-badge.live { background: rgba(16,185,129,0.2); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
     .status-badge.paused { background: rgba(234,179,8,0.15); color: #facc15; border: 1px solid rgba(234,179,8,0.3); }
+    .status-badge.partial { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+    
+    /* Individual account status indicators */
+    .account-status-item { 
+        display: inline-flex; 
+        align-items: center; 
+        gap: 0.25rem; 
+        margin-right: 0.5rem;
+        font-size: 0.75rem;
+        white-space: nowrap;
+    }
+    .strategy-accounts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-top: 0.35rem;
+    }
     
     .switch { position: relative; display: inline-block; width: 44px; height: 22px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 0; height: 0; }
@@ -792,26 +809,39 @@
             }
             
             // Build rows - ONE ROW PER STRATEGY (grouped by recorder, YOUR accounts only)
+            // Show INDIVIDUAL account status (not just strategy-level)
             let html = '';
             strategies.forEach(strategy => {
                 const pnlClass = strategy.pnl >= 0 ? 'positive' : 'negative';
                 const pnlFormatted = strategy.pnl >= 0 ? `+$${strategy.pnl.toFixed(2)}` : `-$${Math.abs(strategy.pnl).toFixed(2)}`;
-                const statusClass = strategy.enabled ? 'live' : 'paused';
-                const statusText = strategy.enabled ? 'LIVE' : 'PAUSED';
                 
-                // List YOUR account names only
-                const accountNames = strategy.traders.map(t => t.subaccount_name || t.account_name).join(', ');
-                const accountCount = strategy.traders.length;
+                // Count enabled vs total traders
+                const enabledCount = strategy.traders.filter(t => t.enabled).length;
+                const totalCount = strategy.traders.length;
+                const allEnabled = enabledCount === totalCount;
+                const noneEnabled = enabledCount === 0;
+                
+                // Strategy-level status based on accounts
+                const statusClass = noneEnabled ? 'paused' : (allEnabled ? 'live' : 'partial');
+                const statusText = noneEnabled ? 'PAUSED' : (allEnabled ? 'LIVE' : `${enabledCount}/${totalCount} LIVE`);
+                
+                // List YOUR accounts with individual status indicators
+                const accountsHtml = strategy.traders.map(t => {
+                    const name = t.subaccount_name || t.account_name;
+                    const isEnabled = t.enabled;
+                    const statusDot = isEnabled ? '🟢' : '🔴';
+                    return `<span class="account-status-item" title="${name}: ${isEnabled ? 'LIVE' : 'PAUSED'}">${statusDot} ${name}</span>`;
+                }).join(' ');
                 
                 html += `
                     <tr data-strategy-id="${strategy.id}">
                         <td class="strategy-cell">
                             <a href="/recorders/${strategy.id}" class="strategy-name">${strategy.name}</a>
-                            <span class="strategy-accounts">${accountCount} account${accountCount !== 1 ? 's' : ''}: ${accountNames}</span>
+                            <div class="strategy-accounts">${accountsHtml}</div>
                         </td>
                         <td class="status-cell">
                             <span class="status-badge ${statusClass}">${statusText}</span>
-                            <label class="switch">
+                            <label class="switch" title="Toggle ALL accounts for this strategy">
                                 <input type="checkbox" ${strategy.enabled ? 'checked' : ''} onchange="toggleStrategy(${strategy.id}, this.checked)">
                                 <span class="slider"></span>
                             </label>
