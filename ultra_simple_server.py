@@ -18464,7 +18464,19 @@ def get_valid_tradovate_token(account_id: int) -> str | None:
         else:
             try:
                 from datetime import datetime, timedelta
-                expires_at = datetime.strptime(expires_at_str, '%Y-%m-%d %H:%M:%S')
+                
+                # Handle both string and datetime objects (PostgreSQL returns datetime directly)
+                if isinstance(expires_at_str, datetime):
+                    expires_at = expires_at_str
+                elif isinstance(expires_at_str, str):
+                    expires_at = datetime.strptime(expires_at_str, '%Y-%m-%d %H:%M:%S')
+                else:
+                    # Unknown type - try to convert to string first
+                    expires_at = datetime.strptime(str(expires_at_str), '%Y-%m-%d %H:%M:%S')
+                
+                # Make both naive for comparison (strip timezone if present)
+                if expires_at.tzinfo is not None:
+                    expires_at = expires_at.replace(tzinfo=None)
                 now = datetime.now()
                 
                 # Refresh if expired or expiring within 15 minutes
