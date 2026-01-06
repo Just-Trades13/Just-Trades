@@ -7628,9 +7628,8 @@ def api_update_trader(trader_id):
         
         # Update enabled status if provided
         if 'enabled' in data:
-            enabled = True if is_postgres else (1 if data['enabled'] else 0)
-            if is_postgres:
-                enabled = data['enabled']
+            # PostgreSQL needs boolean True/False, SQLite needs 1/0
+            enabled = bool(data['enabled']) if is_postgres else (1 if data['enabled'] else 0)
             updates.append(f'enabled = {placeholder}')
             params.append(enabled)
         
