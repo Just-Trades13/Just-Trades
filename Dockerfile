@@ -19,7 +19,10 @@ RUN pip install --no-cache-dir \
     websockets \
     gunicorn
 
-# Copy application code - cache bust: v4-datetime-fix
+# Force rebuild - changing this ENV busts ALL subsequent layer caches
+ENV BUILD_DATE=2026-01-06-0320
+
+# Copy application code
 COPY . .
 
 # Create logs directory and initialize database
