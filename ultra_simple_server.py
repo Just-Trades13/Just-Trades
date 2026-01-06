@@ -20204,6 +20204,54 @@ def update_ticket_status(ticket_id):
         logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/support/tickets/<int:ticket_id>', methods=['DELETE'])
+def delete_ticket(ticket_id):
+    """Delete a support ticket and all its messages (admin only)"""
+    try:
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Delete messages first (foreign key constraint)
+        cursor.execute(f'DELETE FROM support_messages WHERE ticket_id = {ph}', (ticket_id,))
+        # Delete ticket
+        cursor.execute(f'DELETE FROM support_tickets WHERE id = {ph}', (ticket_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"🗑️ Ticket #{ticket_id} deleted by {user.display_name}")
+        return jsonify({'success': True})
+    
+    except Exception as e:
+        logger.error(f"Error deleting ticket: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/support/tickets/count')
+def get_open_ticket_count():
+    """Get count of open tickets (for polling)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'count': 0})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM support_tickets WHERE status = 'open'")
+        result = cursor.fetchone()
+        count = result['cnt'] if isinstance(result, dict) else result[0]
+        conn.close()
+        
+        return jsonify({'count': count})
+    except Exception as e:
+        return jsonify({'count': 0, 'error': str(e)})
+
 @app.route('/admin/support')
 def admin_support_page():
     """Admin support dashboard"""
