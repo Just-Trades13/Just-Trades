@@ -25,3 +25,4 @@ sqlalchemy[asyncio]==2.0.23
 aiohttp==3.9.1
 celery==5.3.4
 
+
