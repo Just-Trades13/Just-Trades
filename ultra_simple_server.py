@@ -7238,12 +7238,18 @@ def api_set_inverse_signals(recorder_id):
     """Enable/disable inverse signals for a recorder"""
     try:
         data = request.get_json() or {}
-        inverse_enabled = data.get('inverse_signals', 0)
+        inverse_raw = data.get('inverse_signals', 0)
         
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         ph = '%s' if is_postgres else '?'
+        
+        # PostgreSQL needs boolean, SQLite needs integer
+        if is_postgres:
+            inverse_enabled = bool(inverse_raw)
+        else:
+            inverse_enabled = 1 if inverse_raw else 0
         
         cursor.execute(f'''
             UPDATE recorders SET inverse_signals = {ph}, updated_at = CURRENT_TIMESTAMP
@@ -10761,7 +10767,8 @@ def traders_list():
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
         
-        # Filter by user_id if logged in - also show traders with NULL user_id (legacy)
+        # Filter by user_id if logged in - show only traders that belong to this user
+        # Either: trader.user_id matches OR account.user_id matches (for legacy traders)
         if user_id:
             if is_postgres:
                 cursor.execute('''
@@ -10771,9 +10778,9 @@ def traders_list():
                     FROM traders t
                     LEFT JOIN recorders r ON t.recorder_id = r.id
                     LEFT JOIN accounts a ON t.account_id = a.id
-                    WHERE t.user_id = %s OR t.user_id IS NULL
+                    WHERE t.user_id = %s OR a.user_id = %s
                     ORDER BY t.created_at DESC
-                ''', (user_id,))
+                ''', (user_id, user_id))
             else:
                 cursor.execute('''
                     SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
@@ -10782,9 +10789,9 @@ def traders_list():
                     FROM traders t
                     LEFT JOIN recorders r ON t.recorder_id = r.id
                     LEFT JOIN accounts a ON t.account_id = a.id
-                    WHERE t.user_id = ? OR t.user_id IS NULL
+                    WHERE t.user_id = ? OR a.user_id = ?
                     ORDER BY t.created_at DESC
-                ''', (user_id,))
+                ''', (user_id, user_id))
         else:
             # Fallback: show all (shouldn't happen if login required)
             cursor.execute('''
