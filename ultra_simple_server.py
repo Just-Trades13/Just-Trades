@@ -5258,22 +5258,18 @@ def connect_account(account_id):
                 redirect_uri = 'http://localhost:8082/api/oauth/callback'
                 logger.info(f"Using localhost redirect_uri: {redirect_uri}")
         
-        # Build OAuth URL - use correct endpoint based on environment
-        # CRITICAL FIX (Jan 5, 2026): Demo accounts MUST use demo.tradovate.com OAuth
-        # Live accounts use trader.tradovate.com OAuth
-        # A token from one environment CANNOT access accounts from the other!
+        # Build OAuth URL
+        # NOTE: OAuth login ALWAYS goes through trader.tradovate.com
+        # The demo vs live distinction happens during TOKEN EXCHANGE, not login
         from urllib.parse import quote_plus
         encoded_redirect_uri = quote_plus(redirect_uri)
         # Pass both account_id and environment via state parameter (comma-separated)
         state_value = f"{account_id},{env}"
         encoded_state = quote_plus(state_value)
         
-        if is_demo:
-            oauth_base = 'https://demo.tradovate.com/oauth'
-            logger.info(f"🔵 Using DEMO OAuth endpoint for account {account_id}")
-        else:
-            oauth_base = 'https://trader.tradovate.com/oauth'
-            logger.info(f"🟢 Using LIVE OAuth endpoint for account {account_id}")
+        # OAuth login is always at trader.tradovate.com - this is Tradovate's unified login
+        oauth_base = 'https://trader.tradovate.com/oauth'
+        logger.info(f"🔑 OAuth login for account {account_id} (will use {env} token endpoint after)")
         
         oauth_url = f'{oauth_base}?response_type=code&client_id={client_id}&redirect_uri={encoded_redirect_uri}&scope=All&state={encoded_state}'
         
