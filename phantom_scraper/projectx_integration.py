@@ -64,12 +64,15 @@ class ProjectXIntegration:
         'topstep': {
             'demo': 'https://api.topstepx.com',
             'live': 'https://api.topstepx.com',
+            'user_api': 'https://api.topstepx.com',  # Password auth endpoint
             'ws_user': 'wss://api.topstepx.com/hubs/user',
             'ws_market': 'wss://api.topstepx.com/hubs/market',
         },
         'default': {
             'demo': 'https://gateway-api-demo.s2f.projectx.com',
             'live': 'https://gateway-api.s2f.projectx.com',
+            'user_api_demo': 'https://userapi-demo.s2f.projectx.com',  # Password auth endpoint
+            'user_api_live': 'https://userapi.s2f.projectx.com',
             'ws_user_demo': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/user',
             'ws_user_live': 'https://gateway-rtc.s2f.projectx.com/hubs/user',
             'ws_market_demo': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/market',
@@ -94,17 +97,20 @@ class ProjectXIntegration:
         if self.prop_firm == 'topstep':
             # TopstepX has unified endpoints
             self.base_url = endpoints['demo']  # Same for demo/live
+            self.user_api_url = endpoints.get('user_api', endpoints['demo'])
             self.ws_user_hub = endpoints['ws_user']
             self.ws_market_hub = endpoints['ws_market']
         else:
             # Other ProjectX firms use standard endpoints
             env = 'demo' if demo else 'live'
             self.base_url = endpoints[env]
+            self.user_api_url = endpoints.get(f'user_api_{env}', 'https://userapi-demo.s2f.projectx.com')
             self.ws_user_hub = endpoints.get(f'ws_user_{env}', endpoints.get('ws_user_demo'))
             self.ws_market_hub = endpoints.get(f'ws_market_{env}', endpoints.get('ws_market_demo'))
         
         logger.info(f"🔧 ProjectX initialized for {prop_firm}, demo={demo}")
         logger.info(f"   Base URL: {self.base_url}")
+        logger.info(f"   User API URL: {self.user_api_url}")
         
         self.session: Optional[aiohttp.ClientSession] = None
         self.session_token: Optional[str] = None
