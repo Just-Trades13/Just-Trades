@@ -3140,12 +3140,24 @@ def public_stats():
         cursor.execute('SELECT COUNT(*) FROM recorded_trades')
         total_trades = cursor.fetchone()[0] or 0
         
-        # Count total users
+        # Count total users - use is_active (works for both SQLite and PostgreSQL)
+        total_users = 0
         if USER_AUTH_AVAILABLE:
-            cursor.execute('SELECT COUNT(*) FROM users WHERE is_active = 1')
-            total_users = cursor.fetchone()[0] or 0
-        else:
-            total_users = 1
+            try:
+                # Try PostgreSQL syntax first
+                if is_using_postgres():
+                    cursor.execute('SELECT COUNT(*) FROM users WHERE is_active = TRUE')
+                else:
+                    cursor.execute('SELECT COUNT(*) FROM users WHERE is_active = 1')
+                total_users = cursor.fetchone()[0] or 0
+            except Exception as user_err:
+                logger.warning(f"User count query error: {user_err}")
+                # Fallback: count all users
+                try:
+                    cursor.execute('SELECT COUNT(*) FROM users')
+                    total_users = cursor.fetchone()[0] or 0
+                except:
+                    total_users = 0
         
         cursor.close()
         conn.close()
