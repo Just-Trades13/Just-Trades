@@ -2466,30 +2466,6 @@
             observer.observe(el);
         });
         
-        // Fetch real stats from API
-        async function loadRealStats() {
-            try {
-                const response = await fetch('/api/public/stats');
-                if (response.ok) {
-                    const data = await response.json();
-                    // Update data attributes with real numbers
-                    const tradesEl = document.getElementById('stat-trades');
-                    const usersEl = document.getElementById('stat-users');
-                    if (tradesEl && data.total_trades !== undefined) {
-                        tradesEl.dataset.count = data.total_trades;
-                    }
-                    if (usersEl && data.total_users !== undefined) {
-                        usersEl.dataset.count = data.total_users;
-                    }
-                }
-            } catch (e) {
-                console.log('Using default stats');
-            }
-        }
-        
-        // Load real stats on page load
-        loadRealStats();
-        
         // Counter animation for stats
         function animateCounter(element, target) {
             let current = 0;
@@ -2515,24 +2491,72 @@
             }, 30);
         }
         
-        // Trigger counter animation when stats section is visible
+        // Track if stats have been animated
+        let statsAnimated = false;
+        
+        // Animate stats after data is loaded
+        function animateAllStats() {
+            if (statsAnimated) return;
+            statsAnimated = true;
+            
+            const statNumbers = document.querySelectorAll('.stats-bar .stat-number');
+            statNumbers.forEach(stat => {
+                const target = parseInt(stat.dataset.count) || 0;
+                if (target > 0) {
+                    animateCounter(stat, target);
+                }
+            });
+        }
+        
+        // Fetch real stats from API then animate
+        async function loadRealStats() {
+            try {
+                const response = await fetch('/api/public/stats');
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Stats loaded:', data);
+                    
+                    // Update data attributes with real numbers
+                    const tradesEl = document.getElementById('stat-trades');
+                    const usersEl = document.getElementById('stat-users');
+                    
+                    if (tradesEl && data.total_trades !== undefined) {
+                        tradesEl.dataset.count = data.total_trades;
+                    }
+                    if (usersEl && data.total_users !== undefined) {
+                        usersEl.dataset.count = data.total_users;
+                    }
+                    
+                    // Check if stats section is already visible, if so animate now
+                    const statsBar = document.querySelector('.stats-bar');
+                    if (statsBar) {
+                        const rect = statsBar.getBoundingClientRect();
+                        const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
+                        if (isVisible) {
+                            animateAllStats();
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log('Stats API error:', e);
+            }
+        }
+        
+        // Load real stats on page load
+        loadRealStats();
+        
+        // Also trigger animation when stats section scrolls into view
         const statsObserver = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
-                    // Small delay to allow API data to load
+                    // Wait a bit for API data, then animate
                     setTimeout(() => {
-                        const statNumbers = entry.target.querySelectorAll('.stat-number');
-                        statNumbers.forEach(stat => {
-                            const target = parseInt(stat.dataset.count) || 0;
-                            if (target > 0) {
-                                animateCounter(stat, target);
-                            }
-                        });
-                    }, 100);
+                        animateAllStats();
+                    }, 500);
                     statsObserver.unobserve(entry.target);
                 }
             });
-        }, { threshold: 0.5 });
+        }, { threshold: 0.3 });
         
         const statsBar = document.querySelector('.stats-bar');
         if (statsBar) {
