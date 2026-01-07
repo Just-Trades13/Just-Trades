@@ -105,7 +105,7 @@ class ProjectXIntegration:
             headers["Authorization"] = f"Bearer {self.session_token}"
         return headers
     
-    async def login_with_password(self, username: str, password: str) -> bool:
+    async def login_with_password(self, username: str, password: str) -> dict:
         """
         Authenticate with ProjectX using username and password (FREE method!).
         
@@ -117,55 +117,85 @@ class ProjectXIntegration:
             password: Your TopstepX/prop firm password
         
         Returns:
-            True if login successful, False otherwise
+            dict with 'success' and 'error' keys for detailed diagnostics
         """
         try:
-            logger.info(f"Attempting ProjectX login (password method) for user: {username}")
+            logger.info(f"🔐 Attempting ProjectX login (password method)")
+            logger.info(f"   Username: {username}")
+            logger.info(f"   Endpoint: {self.user_api_url}/login")
             
             login_data = {
                 "username": username,
                 "password": password
             }
             
-            async with self.session.post(
+            # Try multiple endpoint variations that different firms might use
+            endpoints_to_try = [
                 f"{self.user_api_url}/login",
-                json=login_data,
-                headers={"Content-Type": "application/json"}
-            ) as response:
-                logger.info(f"ProjectX password login response status: {response.status}")
-                
-                if response.status == 200:
-                    data = await response.json()
+                f"{self.user_api_url}/User/login", 
+                f"{self.base_url}/api/Auth/login",
+            ]
+            
+            last_error = "No endpoints succeeded"
+            
+            for endpoint in endpoints_to_try:
+                try:
+                    logger.info(f"   Trying endpoint: {endpoint}")
                     
-                    # Check for success - response format may vary
-                    token = data.get("token") or data.get("accessToken") or data.get("sessionToken")
-                    error_code = data.get("errorCode", 0)
-                    
-                    if token and error_code == 0:
-                        self.session_token = token
-                        self.username = username
-                        self.auth_method = 'password'
-                        # Token valid for 24 hours
-                        self.token_expires = datetime.now() + timedelta(hours=24)
+                    async with self.session.post(
+                        endpoint,
+                        json=login_data,
+                        headers={"Content-Type": "application/json", "Accept": "application/json"}
+                    ) as response:
+                        response_text = await response.text()
+                        logger.info(f"   Response status: {response.status}")
+                        logger.info(f"   Response body: {response_text[:500]}")
                         
-                        logger.info(f"✅ Successfully logged in to ProjectX as {username} (password method)")
-                        logger.info(f"   Token expires: {self.token_expires}")
-                        logger.info(f"   Auth method: FREE (no API subscription needed)")
-                        return True
-                    else:
-                        error_msg = data.get("errorMessage") or data.get("message") or "Unknown error"
-                        logger.error(f"ProjectX password login failed: {error_msg}")
-                        return False
-                else:
-                    error_text = await response.text()
-                    logger.error(f"ProjectX password login HTTP error: {response.status} - {error_text[:200]}")
-                    return False
+                        if response.status == 200:
+                            try:
+                                data = json.loads(response_text)
+                            except:
+                                data = {"raw": response_text}
+                            
+                            # Check for success - response format may vary
+                            token = data.get("token") or data.get("accessToken") or data.get("sessionToken")
+                            error_code = data.get("errorCode", 0)
+                            success = data.get("success", True) if token else False
+                            
+                            if token and error_code == 0 and success != False:
+                                self.session_token = token
+                                self.username = username
+                                self.auth_method = 'password'
+                                self.token_expires = datetime.now() + timedelta(hours=24)
+                                
+                                logger.info(f"✅ Successfully logged in to ProjectX as {username}")
+                                logger.info(f"   Token (first 20 chars): {token[:20]}...")
+                                return {"success": True}
+                            else:
+                                error_msg = data.get("errorMessage") or data.get("message") or data.get("error") or "Auth failed"
+                                last_error = f"Endpoint {endpoint}: {error_msg}"
+                                logger.warning(f"   Auth response error: {error_msg}")
+                        elif response.status == 401:
+                            last_error = f"Invalid credentials (HTTP 401) at {endpoint}"
+                        elif response.status == 404:
+                            last_error = f"Endpoint not found (HTTP 404): {endpoint}"
+                            continue  # Try next endpoint
+                        else:
+                            last_error = f"HTTP {response.status} at {endpoint}: {response_text[:200]}"
+                            
+                except Exception as endpoint_error:
+                    last_error = f"Endpoint {endpoint} error: {str(endpoint_error)}"
+                    logger.warning(f"   Endpoint error: {endpoint_error}")
+                    continue
+            
+            logger.error(f"❌ All password auth endpoints failed. Last error: {last_error}")
+            return {"success": False, "error": last_error}
                     
         except Exception as e:
             logger.error(f"ProjectX password login exception: {e}")
-            return False
+            return {"success": False, "error": f"Exception: {str(e)}"}
     
-    async def login_with_api_key(self, username: str, api_key: str) -> bool:
+    async def login_with_api_key(self, username: str, api_key: str) -> dict:
         """
         Authenticate with ProjectX using username and API key.
         
@@ -177,50 +207,68 @@ class ProjectXIntegration:
             api_key: API key from ProjectX Dashboard (Settings → API → API Key)
         
         Returns:
-            True if login successful, False otherwise
+            dict with 'success' and 'error' keys for detailed diagnostics
         """
         try:
-            logger.info(f"Attempting ProjectX login (API key method) for user: {username}")
+            logger.info(f"🔑 Attempting ProjectX login (API key method)")
+            logger.info(f"   Username: {username}")
+            logger.info(f"   API Key (first 10 chars): {api_key[:10]}...")
+            logger.info(f"   Endpoint: {self.base_url}/api/Auth/loginKey")
             
             login_data = {
                 "userName": username,
                 "apiKey": api_key
             }
             
+            logger.info(f"   Request body: {json.dumps(login_data)[:100]}...")
+            
             async with self.session.post(
                 f"{self.base_url}/api/Auth/loginKey",
                 json=login_data,
-                headers={"Content-Type": "application/json", "Accept": "text/plain"}
+                headers={"Content-Type": "application/json", "Accept": "application/json"}
             ) as response:
-                logger.info(f"ProjectX API key login response status: {response.status}")
+                response_text = await response.text()
+                logger.info(f"   Response status: {response.status}")
+                logger.info(f"   Response body: {response_text[:500]}")
                 
                 if response.status == 200:
-                    data = await response.json()
+                    try:
+                        data = json.loads(response_text)
+                    except:
+                        return {"success": False, "error": f"Invalid JSON response: {response_text[:200]}"}
                     
-                    if data.get("success") and data.get("errorCode") == 0:
-                        self.session_token = data.get("token")
+                    # Check for token - different response formats
+                    token = data.get("token") or data.get("accessToken") or data.get("sessionToken")
+                    error_code = data.get("errorCode", 0)
+                    success = data.get("success", True) if token else False
+                    
+                    if token and error_code == 0 and success != False:
+                        self.session_token = token
                         self.username = username
                         self.auth_method = 'apikey'
-                        # Token valid for 24 hours
                         self.token_expires = datetime.now() + timedelta(hours=24)
                         
-                        logger.info(f"✅ Successfully logged in to ProjectX as {username} (API key method)")
-                        logger.info(f"   Token expires: {self.token_expires}")
-                        return True
+                        logger.info(f"✅ Successfully logged in to ProjectX (API key method)")
+                        logger.info(f"   Token (first 20 chars): {token[:20]}...")
+                        return {"success": True}
                     else:
-                        error_msg = data.get("errorMessage") or "Unknown error"
-                        logger.error(f"ProjectX API key login failed: {error_msg}")
-                        return False
+                        error_msg = data.get("errorMessage") or data.get("message") or data.get("error") or "Unknown error"
+                        logger.error(f"❌ ProjectX API key login failed: {error_msg}")
+                        logger.error(f"   Full response: {data}")
+                        return {"success": False, "error": f"API error: {error_msg}"}
+                elif response.status == 401:
+                    return {"success": False, "error": "Invalid API key or username (HTTP 401). Make sure you're using the API key from Settings → API, not your password."}
+                elif response.status == 403:
+                    return {"success": False, "error": "API access forbidden (HTTP 403). Your API subscription may not be active."}
                 else:
-                    error_text = await response.text()
-                    logger.error(f"ProjectX API key login HTTP error: {response.status} - {error_text[:200]}")
-                    return False
+                    logger.error(f"❌ ProjectX API key login HTTP error: {response.status}")
+                    return {"success": False, "error": f"HTTP {response.status}: {response_text[:200]}"}
                     
         except Exception as e:
             logger.error(f"ProjectX API key login exception: {e}")
-            return False
+            return {"success": False, "error": f"Connection error: {str(e)}"}
     
-    async def login(self, username: str, password: str = None, api_key: str = None) -> bool:
+    async def login(self, username: str, password: str = None, api_key: str = None) -> dict:
         """
         Smart login - tries password auth first (FREE), falls back to API key.
         
@@ -230,23 +278,30 @@ class ProjectXIntegration:
             api_key: API key (for paid subscription method)
         
         Returns:
-            True if login successful, False otherwise
+            dict with 'success', 'error', and 'method' keys
         """
+        errors = []
+        
         # Try password auth first (FREE method like Trade Manager)
         if password:
             logger.info("🔐 Trying FREE password authentication (Trade Manager style)...")
-            if await self.login_with_password(username, password):
-                return True
-            logger.warning("Password auth failed, trying API key if available...")
+            result = await self.login_with_password(username, password)
+            if result.get("success"):
+                return {"success": True, "method": "password"}
+            errors.append(f"Password auth: {result.get('error', 'Failed')}")
+            logger.warning(f"Password auth failed: {result.get('error')}")
         
         # Fall back to API key auth
         if api_key:
             logger.info("🔑 Trying API key authentication...")
-            if await self.login_with_api_key(username, api_key):
-                return True
+            result = await self.login_with_api_key(username, api_key)
+            if result.get("success"):
+                return {"success": True, "method": "apikey"}
+            errors.append(f"API key auth: {result.get('error', 'Failed')}")
         
-        logger.error("All authentication methods failed")
-        return False
+        error_summary = " | ".join(errors) if errors else "No credentials provided"
+        logger.error(f"All authentication methods failed: {error_summary}")
+        return {"success": False, "error": error_summary}
     
     async def validate_session(self) -> bool:
         """

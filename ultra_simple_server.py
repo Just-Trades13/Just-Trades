@@ -45,6 +45,23 @@ except ImportError as e:
     print(f"⚠️ User authentication module not available: {e}")
 
 # ============================================================================
+# SUBSCRIPTION SYSTEM
+# ============================================================================
+try:
+    from subscription_models import (
+        init_subscription_system, get_user_subscription, get_feature_status,
+        check_feature_access, check_limit, get_user_plan_tier, get_all_plans
+    )
+    from whop_integration import (
+        subscription_required, feature_required, link_user_to_whop,
+        create_webhook_handler
+    )
+    SUBSCRIPTION_SYSTEM_AVAILABLE = True
+except ImportError as e:
+    SUBSCRIPTION_SYSTEM_AVAILABLE = False
+    print(f"⚠️ Subscription system not available: {e}")
+
+# ============================================================================
 # SCALABILITY MODULES - PostgreSQL, Async Safety, Redis Caching
 # ============================================================================
 try:
@@ -1647,6 +1664,26 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 if USER_AUTH_AVAILABLE:
     app.context_processor(auth_context_processor)
 
+# Register subscription context processor
+if SUBSCRIPTION_SYSTEM_AVAILABLE:
+    @app.context_processor
+    def subscription_context():
+        """Make subscription status available in all templates."""
+        from flask import session
+        user_id = session.get('user_id')
+        if user_id:
+            try:
+                return {
+                    'subscription_status': get_feature_status(user_id),
+                    'user_plan_tier': get_user_plan_tier(user_id),
+                }
+            except:
+                pass
+        return {
+            'subscription_status': {'has_subscription': False, 'tier': 'none'},
+            'user_plan_tier': 'none',
+        }
+
 # Initialize SocketIO for WebSocket support (like Trade Manager)
 # Use 'eventlet' or 'gevent' if available, otherwise fall back to threading
 try:
@@ -3064,6 +3101,12 @@ def emergency_admin_setup():
         """, 200
     else:
         return "Failed to create admin - username/email may exist", 500
+
+@app.route('/pricing')
+def pricing():
+    """Public pricing page."""
+    return render_template('pricing.html')
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -5314,18 +5357,29 @@ def projectx_connect(account_id):
             is_demo = environment == 'demo'
             async with ProjectXIntegration(demo=is_demo) as projectx:
                 # Try the smart login method (tries password first, then API key)
-                if not await projectx.login(username, password=password, api_key=api_key):
-                    if auth_method == 'password':
-                        return {'success': False, 'error': 'Login failed. Check your username and password.'}
-                    else:
-                        return {'success': False, 'error': 'Login failed. Check your username and API key.'}
+                login_result = await projectx.login(username, password=password, api_key=api_key)
                 
+                if not login_result.get('success'):
+                    # Return the detailed error message from the auth attempt
+                    error_detail = login_result.get('error', 'Unknown authentication error')
+                    return {
+                        'success': False, 
+                        'error': f'Login failed: {error_detail}',
+                        'debug_info': {
+                            'username': username,
+                            'auth_method': auth_method,
+                            'environment': 'demo' if is_demo else 'live',
+                            'password_provided': bool(password),
+                            'api_key_provided': bool(api_key)
+                        }
+                    }
+
                 accounts = await projectx.get_accounts()
                 return {
                     'success': True,
                     'accounts': accounts,
                     'total_accounts': len(accounts),
-                    'auth_method': projectx.auth_method
+                    'auth_method': login_result.get('method', projectx.auth_method)
                 }
         
         # Run async test
@@ -20527,4 +20581,14 @@ if __name__ == '__main__':
     
     logger.info(f"Starting Just.Trades server on 0.0.0.0:{port}")
     logger.info("WebSocket support enabled (like Trade Manager)")
+    
+    # Initialize subscription system
+    if SUBSCRIPTION_SYSTEM_AVAILABLE:
+        try:
+            init_subscription_system()
+            create_webhook_handler(app)
+            logger.info("✅ Subscription system initialized")
+        except Exception as e:
+            logger.warning(f"⚠️ Subscription system init failed: {e}")
+    
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
