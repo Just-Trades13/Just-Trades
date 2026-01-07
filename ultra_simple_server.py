@@ -3054,10 +3054,10 @@ def handle_static_file(filename):
 
 @app.route('/')
 def index():
-    """Root route - redirect to dashboard if logged in, otherwise to login."""
-    if USER_AUTH_AVAILABLE and not is_logged_in():
-        return redirect(url_for('login'))
-    return redirect(url_for('dashboard'))
+    """Root route - redirect to dashboard if logged in, otherwise show landing page."""
+    if USER_AUTH_AVAILABLE and is_logged_in():
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('pricing'))
 
 # ============================================================================
 # USER AUTHENTICATION ROUTES
