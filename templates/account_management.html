@@ -543,7 +543,7 @@
                         </div>
                         <div class="account-actions-inline">
                             <button class="btn-inline btn-refresh-sub" data-account-id="${account.id}">Refresh</button>
-                            <button class="btn-inline btn-reconnect" data-account-id="${account.id}">Reconnect</button>
+                            <button class="btn-inline btn-reconnect" data-account-id="${account.id}" data-broker="${account.broker || 'Tradovate'}">Reconnect</button>
                             <button class="btn-inline btn-apikey" data-account-id="${account.id}">API Key</button>
                             <button class="btn-inline btn-direct-login" data-account-id="${account.id}" style="background: linear-gradient(90deg, #10b981, #059669); color: white; border: none;">Direct Login</button>
                         </div>
@@ -577,7 +577,14 @@
                 document.querySelectorAll('.btn-reconnect').forEach(btn => {
                     btn.addEventListener('click', function(e) {
                         e.stopPropagation();
-                        window.location.href = `/api/accounts/${this.dataset.accountId}/connect`;
+                        const accountId = this.dataset.accountId;
+                        const broker = this.dataset.broker;
+                        // Route to correct auth flow based on broker type
+                        if (broker === 'ProjectX') {
+                            window.location.href = `/accounts/${accountId}/projectx-credentials`;
+                        } else {
+                            window.location.href = `/api/accounts/${accountId}/connect`;
+                        }
                     });
                 });
                 
