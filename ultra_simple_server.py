@@ -3132,32 +3132,24 @@ def public_stats():
     Public API endpoint for platform statistics.
     Returns real counts from the database.
     """
-    debug_info = {}
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        debug_info['db_type'] = 'postgres' if is_using_postgres() else 'sqlite'
         
         # Count total trades executed
         try:
             cursor.execute('SELECT COUNT(*) FROM recorded_trades')
             total_trades = cursor.fetchone()[0] or 0
-        except Exception as e:
+        except:
             total_trades = 0
-            debug_info['trades_error'] = str(e)
         
         # Count total users
         total_users = 0
-        debug_info['user_auth_available'] = USER_AUTH_AVAILABLE
-        
         if USER_AUTH_AVAILABLE:
             try:
-                # Just count all users first
                 cursor.execute('SELECT COUNT(*) FROM users')
                 total_users = cursor.fetchone()[0] or 0
-                debug_info['all_users'] = total_users
-            except Exception as user_err:
-                debug_info['users_error'] = str(user_err)
+            except:
                 total_users = 0
         
         cursor.close()
@@ -3167,8 +3159,7 @@ def public_stats():
             'total_trades': total_trades,
             'total_users': total_users,
             'uptime': 99,
-            'support': '24/7',
-            'debug': debug_info
+            'support': '24/7'
         })
     except Exception as e:
         logger.warning(f"Stats API error: {e}")
@@ -3176,9 +3167,7 @@ def public_stats():
             'total_trades': 0,
             'total_users': 0,
             'uptime': 99,
-            'support': '24/7',
-            'error': str(e),
-            'debug': debug_info
+            'support': '24/7'
         })
         return jsonify({
             'total_trades': 0,
