@@ -6436,14 +6436,29 @@ def delete_strategy(strategy_id):
 
 @app.route('/recorders', methods=['GET'])
 def recorders_list():
-    """Render the recorders list page"""
+    """Render the recorders list page - shows only user's own recorders"""
     # Require login if auth is available
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders ORDER BY id DESC')
+        is_postgres = is_using_postgres()
+        
+        # Get current user ID for filtering - only show THEIR recorders
+        user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user_id = get_current_user_id()
+        
+        if user_id:
+            # Show only recorders created by this user
+            if is_postgres:
+                cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
+            else:
+                cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
+        else:
+            # No user auth - show all (shouldn't happen if login required)
+            cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders ORDER BY id DESC')
         rows = cursor.fetchall()
         recorders = []
         for row in rows:
