@@ -7260,6 +7260,13 @@ def api_set_inverse_signals(recorder_id):
         is_postgres = is_using_postgres()
         ph = '%s' if is_postgres else '?'
         
+        # Get webhook_token so we can clear the cache
+        cursor.execute(f'SELECT webhook_token FROM recorders WHERE id = {ph}', (recorder_id,))
+        row = cursor.fetchone()
+        webhook_token = None
+        if row:
+            webhook_token = row[0] if isinstance(row, tuple) else row.get('webhook_token')
+        
         # PostgreSQL needs boolean, SQLite needs integer
         if is_postgres:
             inverse_enabled = bool(inverse_raw)
@@ -7273,6 +7280,13 @@ def api_set_inverse_signals(recorder_id):
         
         conn.commit()
         conn.close()
+        
+        # CRITICAL: Clear the recorder cache so next webhook uses updated value
+        if webhook_token and webhook_token in recorder_cache:
+            del recorder_cache[webhook_token]
+            if webhook_token in recorder_cache_time:
+                del recorder_cache_time[webhook_token]
+            logger.info(f"🧹 Cleared cache for recorder {recorder_id} (token: {webhook_token[:8]}...)")
         
         logger.info(f"🔄 Recorder {recorder_id} inverse_signals set to {inverse_enabled}")
         return jsonify({'success': True, 'inverse_signals': inverse_enabled})
