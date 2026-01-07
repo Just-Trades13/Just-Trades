@@ -5355,22 +5355,31 @@ def projectx_connect(account_id):
         
         async def test_projectx():
             is_demo = environment == 'demo'
-            async with ProjectXIntegration(demo=is_demo) as projectx:
-                # Try the smart login method (tries password first, then API key)
-                login_result = await projectx.login(username, password=password, api_key=api_key)
+            prop_firm = data.get('prop_firm', 'default')
+            
+            async with ProjectXIntegration(demo=is_demo, prop_firm=prop_firm) as projectx:
+                # API Key is REQUIRED for third-party apps
+                if not api_key:
+                    return {
+                        'success': False,
+                        'error': 'API key is required. Third-party apps cannot use password authentication. Please subscribe to ProjectX API ($14.50/mo) and enter your API key.',
+                        'help': 'Go to your trading platform → Settings → API → Subscribe and generate API key'
+                    }
+                
+                login_result = await projectx.login(username, api_key=api_key)
                 
                 if not login_result.get('success'):
                     # Return the detailed error message from the auth attempt
                     error_detail = login_result.get('error', 'Unknown authentication error')
                     return {
                         'success': False, 
-                        'error': f'Login failed: {error_detail}',
+                        'error': error_detail,
                         'debug_info': {
                             'username': username,
-                            'auth_method': auth_method,
+                            'prop_firm': prop_firm,
                             'environment': 'demo' if is_demo else 'live',
-                            'password_provided': bool(password),
-                            'api_key_provided': bool(api_key)
+                            'api_key_provided': bool(api_key),
+                            'api_key_length': len(api_key) if api_key else 0
                         }
                     }
 
@@ -5379,7 +5388,8 @@ def projectx_connect(account_id):
                     'success': True,
                     'accounts': accounts,
                     'total_accounts': len(accounts),
-                    'auth_method': login_result.get('method', projectx.auth_method)
+                    'auth_method': login_result.get('method', projectx.auth_method),
+                    'prop_firm': prop_firm
                 }
         
         # Run async test

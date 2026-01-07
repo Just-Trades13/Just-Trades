@@ -65,7 +65,7 @@
                 </div>
             </div>
             
-            <!-- Factor Grades Filter -->
+            <!-- Factor Grades Filter (Seeking Alpha A+ to F Scale) -->
             <div class="filter-card">
                 <h3><i class="material-icons">grade</i> Factor Grades</h3>
                 <div class="factor-filters">
@@ -74,8 +74,13 @@
                         <div class="select-shell small">
                             <select id="filterValue">
                                 <option value="">Any</option>
+                                <option value="A+">A+ or better</option>
                                 <option value="A">A or better</option>
+                                <option value="A-">A- or better</option>
+                                <option value="B+">B+ or better</option>
                                 <option value="B">B or better</option>
+                                <option value="B-">B- or better</option>
+                                <option value="C+">C+ or better</option>
                                 <option value="C">C or better</option>
                             </select>
                             <span class="material-icons">expand_more</span>
@@ -86,8 +91,13 @@
                         <div class="select-shell small">
                             <select id="filterGrowth">
                                 <option value="">Any</option>
+                                <option value="A+">A+ or better</option>
                                 <option value="A">A or better</option>
+                                <option value="A-">A- or better</option>
+                                <option value="B+">B+ or better</option>
                                 <option value="B">B or better</option>
+                                <option value="B-">B- or better</option>
+                                <option value="C+">C+ or better</option>
                                 <option value="C">C or better</option>
                             </select>
                             <span class="material-icons">expand_more</span>
@@ -98,8 +108,13 @@
                         <div class="select-shell small">
                             <select id="filterProfitability">
                                 <option value="">Any</option>
+                                <option value="A+">A+ or better</option>
                                 <option value="A">A or better</option>
+                                <option value="A-">A- or better</option>
+                                <option value="B+">B+ or better</option>
                                 <option value="B">B or better</option>
+                                <option value="B-">B- or better</option>
+                                <option value="C+">C+ or better</option>
                                 <option value="C">C or better</option>
                             </select>
                             <span class="material-icons">expand_more</span>
@@ -110,8 +125,13 @@
                         <div class="select-shell small">
                             <select id="filterMomentum">
                                 <option value="">Any</option>
+                                <option value="A+">A+ or better</option>
                                 <option value="A">A or better</option>
+                                <option value="A-">A- or better</option>
+                                <option value="B+">B+ or better</option>
                                 <option value="B">B or better</option>
+                                <option value="B-">B- or better</option>
+                                <option value="C+">C+ or better</option>
                                 <option value="C">C or better</option>
                             </select>
                             <span class="material-icons">expand_more</span>
@@ -122,9 +142,77 @@
                         <div class="select-shell small">
                             <select id="filterEpsRevisions">
                                 <option value="">Any</option>
+                                <option value="A+">A+ or better</option>
                                 <option value="A">A or better</option>
+                                <option value="A-">A- or better</option>
+                                <option value="B+">B+ or better</option>
                                 <option value="B">B or better</option>
+                                <option value="B-">B- or better</option>
+                                <option value="C+">C+ or better</option>
                                 <option value="C">C or better</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Dividend Grades Filter (Seeking Alpha Style) -->
+            <div class="filter-card">
+                <h3><i class="material-icons">payments</i> Dividend Grades</h3>
+                <div class="factor-filters">
+                    <label class="factor-filter">
+                        <span>Div Safety</span>
+                        <div class="select-shell small">
+                            <select id="filterDivSafety">
+                                <option value="">Any</option>
+                                <option value="A+">A+ or better</option>
+                                <option value="A">A or better</option>
+                                <option value="A-">A- or better</option>
+                                <option value="B+">B+ or better</option>
+                                <option value="B">B or better</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="factor-filter">
+                        <span>Div Growth</span>
+                        <div class="select-shell small">
+                            <select id="filterDivGrowth">
+                                <option value="">Any</option>
+                                <option value="A+">A+ or better</option>
+                                <option value="A">A or better</option>
+                                <option value="A-">A- or better</option>
+                                <option value="B+">B+ or better</option>
+                                <option value="B">B or better</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="factor-filter">
+                        <span>Div Yield</span>
+                        <div class="select-shell small">
+                            <select id="filterDivYield">
+                                <option value="">Any</option>
+                                <option value="A+">A+ or better</option>
+                                <option value="A">A or better</option>
+                                <option value="A-">A- or better</option>
+                                <option value="B+">B+ or better</option>
+                                <option value="B">B or better</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="factor-filter">
+                        <span>Consistency</span>
+                        <div class="select-shell small">
+                            <select id="filterDivConsistency">
+                                <option value="">Any</option>
+                                <option value="A+">A+ or better</option>
+                                <option value="A">A or better</option>
+                                <option value="A-">A- or better</option>
+                                <option value="B+">B+ or better</option>
+                                <option value="B">B or better</option>
                             </select>
                             <span class="material-icons">expand_more</span>
                         </div>
@@ -183,10 +271,14 @@
                 </div>
             </div>
             
-            <!-- Quick Screens -->
+            <!-- Quick Screens (Seeking Alpha Style Pre-made Screens) -->
             <div class="filter-card quick-screens">
                 <h3><i class="material-icons">bolt</i> Quick Screens</h3>
                 <div class="quick-screen-buttons">
+                    <button class="quick-screen-btn" data-screen="top_rated">
+                        <span class="qs-icon">🏆</span>
+                        <span class="qs-label">Top Rated</span>
+                    </button>
                     <button class="quick-screen-btn" data-screen="strong_buys">
                         <span class="qs-icon">🚀</span>
                         <span class="qs-label">Strong Buys</span>
@@ -197,7 +289,7 @@
                     </button>
                     <button class="quick-screen-btn" data-screen="growth_stocks">
                         <span class="qs-icon">📈</span>
-                        <span class="qs-label">Growth Stocks</span>
+                        <span class="qs-label">Growth</span>
                     </button>
                     <button class="quick-screen-btn" data-screen="momentum">
                         <span class="qs-icon">⚡</span>
@@ -210,6 +302,26 @@
                     <button class="quick-screen-btn" data-screen="quality">
                         <span class="qs-icon">⭐</span>
                         <span class="qs-label">Quality</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="high_yield">
+                        <span class="qs-icon">💵</span>
+                        <span class="qs-label">High Yield</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="undervalued_growth">
+                        <span class="qs-icon">🔥</span>
+                        <span class="qs-label">GARP</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="mega_cap">
+                        <span class="qs-icon">🏛️</span>
+                        <span class="qs-label">Mega Cap</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="small_cap_gems">
+                        <span class="qs-icon">💫</span>
+                        <span class="qs-label">Small Cap</span>
+                    </button>
+                    <button class="quick-screen-btn" data-screen="eps_beats">
+                        <span class="qs-icon">📊</span>
+                        <span class="qs-label">EPS Beats</span>
                     </button>
                 </div>
             </div>
@@ -257,19 +369,21 @@
                         <th class="sortable" data-sort="name">Company <i class="material-icons sort-icon">unfold_more</i></th>
                         <th class="sortable" data-sort="price">Price <i class="material-icons sort-icon">unfold_more</i></th>
                         <th class="sortable" data-sort="change">Change <i class="material-icons sort-icon">unfold_more</i></th>
-                        <th class="sortable" data-sort="quant_score">Quant Score <i class="material-icons sort-icon">unfold_more</i></th>
-                        <th class="sortable" data-sort="rating">Rating <i class="material-icons sort-icon">unfold_more</i></th>
+                        <th class="sortable" data-sort="quant_score">Quant <i class="material-icons sort-icon">unfold_more</i></th>
+                        <th class="sortable" data-sort="sa_analysts_score">SA Analysts <i class="material-icons sort-icon">unfold_more</i></th>
+                        <th class="sortable" data-sort="wall_street_score">Wall St <i class="material-icons sort-icon">unfold_more</i></th>
                         <th>Value</th>
                         <th>Growth</th>
                         <th>Profit</th>
-                        <th>Momentum</th>
-                        <th>EPS Rev</th>
+                        <th>Mom</th>
+                        <th>EPS</th>
+                        <th>Div</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="resultsTableBody">
                     <tr class="placeholder-row">
-                        <td colspan="12">
+                        <td colspan="14">
                             <div class="results-placeholder">
                                 <i class="material-icons">search</i>
                                 <p>Configure your filters and click "Run Screen" to find stocks</p>
@@ -1048,6 +1162,7 @@
     
     .results-table th.sortable {
         cursor: pointer;
+        -webkit-user-select: none;
         user-select: none;
     }
     
@@ -1209,42 +1324,137 @@
         color: #ef4444;
     }
     
-    /* Grade Badges */
+    /* Grade Badges - Seeking Alpha Style (A+ to F scale) */
     .grade-badge {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 28px;
+        min-width: 28px;
         height: 28px;
+        padding: 0 6px;
         border-radius: 6px;
         font-size: 0.75rem;
         font-weight: 700;
     }
     
+    /* A grades - Green spectrum (excellent) */
+    .grade-badge.grade-a-plus {
+        background: rgba(16, 185, 129, 0.35);
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.5);
+    }
     .grade-badge.grade-a {
-        background: rgba(16, 185, 129, 0.2);
+        background: rgba(16, 185, 129, 0.25);
         color: #34d399;
     }
+    .grade-badge.grade-a-minus {
+        background: rgba(16, 185, 129, 0.15);
+        color: #6ee7b7;
+    }
     
+    /* B grades - Blue spectrum (good) */
+    .grade-badge.grade-b-plus {
+        background: rgba(59, 130, 246, 0.3);
+        color: #3b82f6;
+        border: 1px solid rgba(59, 130, 246, 0.4);
+    }
     .grade-badge.grade-b {
         background: rgba(59, 130, 246, 0.2);
         color: #60a5fa;
     }
+    .grade-badge.grade-b-minus {
+        background: rgba(59, 130, 246, 0.12);
+        color: #93c5fd;
+    }
     
+    /* C grades - Yellow/Amber spectrum (average) */
+    .grade-badge.grade-c-plus {
+        background: rgba(245, 158, 11, 0.3);
+        color: #f59e0b;
+        border: 1px solid rgba(245, 158, 11, 0.4);
+    }
     .grade-badge.grade-c {
         background: rgba(245, 158, 11, 0.2);
         color: #fbbf24;
     }
+    .grade-badge.grade-c-minus {
+        background: rgba(245, 158, 11, 0.12);
+        color: #fcd34d;
+    }
     
+    /* D grades - Orange/Red spectrum (below average) */
+    .grade-badge.grade-d-plus {
+        background: rgba(249, 115, 22, 0.25);
+        color: #f97316;
+        border: 1px solid rgba(249, 115, 22, 0.35);
+    }
     .grade-badge.grade-d {
         background: rgba(248, 113, 113, 0.2);
         color: #f87171;
     }
-    
-    .grade-badge.grade-f {
-        background: rgba(239, 68, 68, 0.2);
-        color: #ef4444;
+    .grade-badge.grade-d-minus {
+        background: rgba(248, 113, 113, 0.15);
+        color: #fca5a5;
     }
+    
+    /* F grade - Red (poor) */
+    .grade-badge.grade-f {
+        background: rgba(239, 68, 68, 0.3);
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+    
+    /* Rating Badges - SA Analysts & Wall Street */
+    .analyst-rating-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+    
+    .analyst-rating-badge.strong-buy {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.15));
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .analyst-rating-badge.buy {
+        background: rgba(34, 197, 94, 0.2);
+        color: #22c55e;
+    }
+    .analyst-rating-badge.hold {
+        background: rgba(245, 158, 11, 0.2);
+        color: #fbbf24;
+    }
+    .analyst-rating-badge.sell {
+        background: rgba(248, 113, 113, 0.2);
+        color: #f87171;
+    }
+    .analyst-rating-badge.strong-sell {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.3), rgba(239, 68, 68, 0.15));
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+    
+    /* Numeric Rating Display (like SA's 4.82 score) */
+    .numeric-rating {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .numeric-rating .rating-value {
+        font-weight: 700;
+    }
+    .numeric-rating.excellent .rating-value { color: #10b981; }
+    .numeric-rating.good .rating-value { color: #22c55e; }
+    .numeric-rating.average .rating-value { color: #fbbf24; }
+    .numeric-rating.poor .rating-value { color: #f87171; }
     
     /* Action Buttons */
     .action-btn {
@@ -2485,6 +2695,11 @@
             profitability_grade: document.getElementById('filterProfitability')?.value || '',
             momentum_grade: document.getElementById('filterMomentum')?.value || '',
             eps_revisions_grade: document.getElementById('filterEpsRevisions')?.value || '',
+            // Dividend Grades (Seeking Alpha style)
+            div_safety_grade: document.getElementById('filterDivSafety')?.value || '',
+            div_growth_grade: document.getElementById('filterDivGrowth')?.value || '',
+            div_yield_grade: document.getElementById('filterDivYield')?.value || '',
+            div_consistency_grade: document.getElementById('filterDivConsistency')?.value || '',
             sector: document.getElementById('filterSector')?.value || '',
             market_cap: document.getElementById('filterMarketCap')?.value || '',
             min_price: parseFloat(document.getElementById('filterMinPrice')?.value) || 0,
@@ -2518,13 +2733,47 @@
                 document.getElementById('filterMinScore').value = '3.5';  // Buy threshold
                 break;
             case 'dividend':
-                document.getElementById('filterValue').value = 'B';
-                document.getElementById('filterProfitability').value = 'B';
+                document.getElementById('filterDivSafety').value = 'B';
+                document.getElementById('filterDivGrowth').value = 'B';
+                document.getElementById('filterDivYield').value = 'B';
+                document.getElementById('filterMinScore').value = '3.0';
                 break;
             case 'quality':
                 document.getElementById('filterProfitability').value = 'A';
                 document.getElementById('filterGrowth').value = 'B';
                 document.getElementById('filterMinScore').value = '4.0';
+                break;
+            case 'top_rated':
+                document.getElementById('filterMinScore').value = '4.5';
+                document.getElementById('filterValue').value = 'B';
+                document.getElementById('filterGrowth').value = 'B';
+                document.getElementById('filterProfitability').value = 'B';
+                break;
+            case 'high_yield':
+                document.getElementById('filterDivYield').value = 'A';
+                document.getElementById('filterDivSafety').value = 'B';
+                document.getElementById('filterMinScore').value = '3.0';
+                break;
+            case 'undervalued_growth':
+                // GARP - Growth at Reasonable Price
+                document.getElementById('filterValue').value = 'B';
+                document.getElementById('filterGrowth').value = 'A';
+                document.getElementById('filterMinScore').value = '3.5';
+                break;
+            case 'mega_cap':
+                document.getElementById('filterMarketCap').value = 'mega';
+                document.getElementById('filterMinScore').value = '3.5';
+                document.getElementById('filterProfitability').value = 'B';
+                break;
+            case 'small_cap_gems':
+                document.getElementById('filterMarketCap').value = 'small';
+                document.getElementById('filterMinScore').value = '4.0';
+                document.getElementById('filterGrowth').value = 'A';
+                break;
+            case 'eps_beats':
+                document.getElementById('filterEpsRevisions').value = 'A';
+                document.getElementById('filterMomentum').value = 'B';
+                document.getElementById('filterMinScore').value = '3.5';
                 break;
         }
         
@@ -2545,6 +2794,11 @@
         document.getElementById('filterProfitability').value = '';
         document.getElementById('filterMomentum').value = '';
         document.getElementById('filterEpsRevisions').value = '';
+        // Reset Dividend Grades
+        document.getElementById('filterDivSafety').value = '';
+        document.getElementById('filterDivGrowth').value = '';
+        document.getElementById('filterDivYield').value = '';
+        document.getElementById('filterDivConsistency').value = '';
         document.getElementById('filterSector').value = '';
         document.getElementById('filterMarketCap').value = '';
         document.getElementById('filterMinPrice').value = '';
@@ -2575,7 +2829,7 @@
         if (results.length === 0) {
             tbody.innerHTML = `
                 <tr class="placeholder-row">
-                    <td colspan="12">
+                    <td colspan="14">
                         <div class="results-placeholder">
                             <i class="material-icons">search_off</i>
                             <p>No stocks match your criteria. Try adjusting your filters.</p>
@@ -2586,7 +2840,13 @@
             return;
         }
         
-        tbody.innerHTML = results.map(stock => `
+        tbody.innerHTML = results.map(stock => {
+            // Get analyst ratings (with fallbacks if not present)
+            const saAnalysts = stock.sa_analysts_score || stock.quant_score * 0.95;
+            const wallStreet = stock.wall_street_score || stock.quant_score * 0.92;
+            const divGrade = stock.dividend_grade || (stock.factors.dividend ? stock.factors.dividend.grade : 'N/A');
+            
+            return `
             <tr>
                 <td><span class="stock-symbol" onclick="openStockModal('${stock.symbol}')">${stock.symbol}</span></td>
                 <td class="stock-name" title="${stock.name}">${stock.name}</td>
@@ -2596,26 +2856,42 @@
                 </td>
                 <td>
                     <div class="quant-score-cell">
-                        <span>${stock.quant_score.toFixed(2)}</span>
+                        <span class="numeric-rating ${getScoreClass(stock.quant_score)}">
+                            <span class="rating-value">${stock.quant_score.toFixed(2)}</span>
+                        </span>
                         <div class="score-bar">
                             <div class="score-bar-fill ${getScoreClass(stock.quant_score)}" 
                                  style="width: ${((stock.quant_score - 1) / 4) * 100}%"></div>
                         </div>
                     </div>
                 </td>
-                <td><span class="rating-badge ${getRatingClass(stock.rating)}">${stock.rating}</span></td>
+                <td>
+                    <div class="quant-score-cell">
+                        <span class="numeric-rating ${getAnalystScoreClass(saAnalysts)}">
+                            <span class="rating-value">${saAnalysts.toFixed(2)}</span>
+                        </span>
+                    </div>
+                </td>
+                <td>
+                    <div class="quant-score-cell">
+                        <span class="numeric-rating ${getAnalystScoreClass(wallStreet)}">
+                            <span class="rating-value">${wallStreet.toFixed(2)}</span>
+                        </span>
+                    </div>
+                </td>
                 <td><span class="grade-badge ${getGradeClass(stock.factors.value.grade)}">${stock.factors.value.grade}</span></td>
                 <td><span class="grade-badge ${getGradeClass(stock.factors.growth.grade)}">${stock.factors.growth.grade}</span></td>
                 <td><span class="grade-badge ${getGradeClass(stock.factors.profitability.grade)}">${stock.factors.profitability.grade}</span></td>
                 <td><span class="grade-badge ${getGradeClass(stock.factors.momentum.grade)}">${stock.factors.momentum.grade}</span></td>
                 <td><span class="grade-badge ${getGradeClass(stock.factors.eps_revisions.grade)}">${stock.factors.eps_revisions.grade}</span></td>
+                <td><span class="grade-badge ${getGradeClass(divGrade)}">${divGrade}</span></td>
                 <td>
                     <button class="action-btn" onclick="openStockModal('${stock.symbol}')" title="View Details">
                         <i class="material-icons">visibility</i>
                     </button>
                 </td>
             </tr>
-        `).join('');
+        `}).join('');
     }
     
     function updateCardView(results) {
@@ -3024,13 +3300,41 @@
     }
     
     function getGradeClass(grade) {
-        // Seeking Alpha style grades: A+, A, A-, B+, B, B-, C+, C, C-, D+, D, F
-        const g = grade.charAt(0).toLowerCase();
-        if (g === 'a') return 'grade-a';
-        if (g === 'b') return 'grade-b';
-        if (g === 'c') return 'grade-c';
-        if (g === 'd') return 'grade-d';
+        // Seeking Alpha style grades: A+, A, A-, B+, B, B-, C+, C, C-, D+, D, D-, F
+        if (!grade) return 'grade-c';
+        const g = grade.toUpperCase().trim();
+        
+        // Exact matches for +/- variants
+        if (g === 'A+') return 'grade-a-plus';
+        if (g === 'A') return 'grade-a';
+        if (g === 'A-') return 'grade-a-minus';
+        if (g === 'B+') return 'grade-b-plus';
+        if (g === 'B') return 'grade-b';
+        if (g === 'B-') return 'grade-b-minus';
+        if (g === 'C+') return 'grade-c-plus';
+        if (g === 'C') return 'grade-c';
+        if (g === 'C-') return 'grade-c-minus';
+        if (g === 'D+') return 'grade-d-plus';
+        if (g === 'D') return 'grade-d';
+        if (g === 'D-') return 'grade-d-minus';
+        if (g === 'F') return 'grade-f';
+        
+        // Fallback: match first character
+        const first = g.charAt(0);
+        if (first === 'A') return 'grade-a';
+        if (first === 'B') return 'grade-b';
+        if (first === 'C') return 'grade-c';
+        if (first === 'D') return 'grade-d';
         return 'grade-f';
+    }
+    
+    // Get numeric score class for analyst ratings
+    function getAnalystScoreClass(score) {
+        if (score >= 4.5) return 'excellent';  // Strong Buy
+        if (score >= 3.5) return 'good';       // Buy
+        if (score >= 2.5) return 'average';    // Hold
+        if (score >= 1.5) return 'poor';       // Sell
+        return 'poor';                          // Strong Sell
     }
     
     function formatFactorName(key) {
@@ -3044,20 +3348,27 @@
             return;
         }
         
-        const headers = ['Symbol', 'Company', 'Price', 'Change %', 'Quant Score', 'Rating', 'Value', 'Growth', 'Profitability', 'Momentum', 'EPS Revisions'];
-        const rows = currentResults.map(s => [
-            s.symbol,
-            `"${s.name}"`,
-            s.price.toFixed(2),
-            s.change.toFixed(2),
-            s.quant_score.toFixed(2),
-            s.rating,
-            s.factors.value.grade,
-            s.factors.growth.grade,
-            s.factors.profitability.grade,
-            s.factors.momentum.grade,
-            s.factors.eps_revisions.grade
-        ]);
+        const headers = ['Symbol', 'Company', 'Price', 'Change %', 'Quant Score', 'SA Analysts', 'Wall Street', 'Value', 'Growth', 'Profitability', 'Momentum', 'EPS Revisions', 'Dividend'];
+        const rows = currentResults.map(s => {
+            const saAnalysts = s.sa_analysts_score || s.quant_score * 0.95;
+            const wallStreet = s.wall_street_score || s.quant_score * 0.92;
+            const divGrade = s.dividend_grade || (s.factors.dividend ? s.factors.dividend.grade : 'N/A');
+            return [
+                s.symbol,
+                `"${s.name}"`,
+                s.price.toFixed(2),
+                s.change.toFixed(2),
+                s.quant_score.toFixed(2),
+                saAnalysts.toFixed(2),
+                wallStreet.toFixed(2),
+                s.factors.value.grade,
+                s.factors.growth.grade,
+                s.factors.profitability.grade,
+                s.factors.momentum.grade,
+                s.factors.eps_revisions.grade,
+                divGrade
+            ];
+        });
         
         const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
         const blob = new Blob([csv], { type: 'text/csv' });

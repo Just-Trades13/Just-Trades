@@ -29,18 +29,17 @@ class ProjectXIntegration:
     """
     ProjectX API Integration for TopstepX and other ProjectX-powered brokers.
     
-    TWO Authentication Methods:
+    IMPORTANT: Third-party apps MUST use API Key authentication!
+    - Password auth is ONLY for platform/website login (Trade Manager is BUILT-IN)
+    - API subscription ($14.50/mo) is REQUIRED for external apps like Just.Trades
+    - Different prop firms use different API endpoints
     
-    1. Username + Password (FREE - like Trade Manager!)
-       - Endpoint: /login on userapi
-       - Uses your TopstepX/prop firm credentials directly
-       - No API subscription required
+    Endpoints by Firm:
+    - TopstepX: https://api.topstepx.com
+    - Other ProjectX firms: https://gateway-api-demo.s2f.projectx.com (demo)
+                           https://gateway-api.s2f.projectx.com (live)
     
-    2. Username + API Key (Requires $14.50/mo subscription)
-       - Endpoint: /api/Auth/loginKey on gateway-api
-       - Requires API key from ProjectX Dashboard
-    
-    Token valid for 24 hours, refresh via /Session/validate
+    Token valid for 24 hours, refresh via /api/Auth/validate
     """
     
     # Order Types (per ProjectX API)
@@ -60,23 +59,52 @@ class ProjectXIntegration:
     STATUS_CANCELLED = 3
     STATUS_REJECTED = 4
     
-    def __init__(self, demo: bool = True):
+    # Prop firm specific endpoints
+    FIRM_ENDPOINTS = {
+        'topstep': {
+            'demo': 'https://api.topstepx.com',
+            'live': 'https://api.topstepx.com',
+            'ws_user': 'wss://api.topstepx.com/hubs/user',
+            'ws_market': 'wss://api.topstepx.com/hubs/market',
+        },
+        'default': {
+            'demo': 'https://gateway-api-demo.s2f.projectx.com',
+            'live': 'https://gateway-api.s2f.projectx.com',
+            'ws_user_demo': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/user',
+            'ws_user_live': 'https://gateway-rtc.s2f.projectx.com/hubs/user',
+            'ws_market_demo': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/market',
+            'ws_market_live': 'https://gateway-rtc.s2f.projectx.com/hubs/market',
+        }
+    }
+    
+    def __init__(self, demo: bool = True, prop_firm: str = 'default'):
         """
         Initialize ProjectX integration.
         
         Args:
             demo: If True, use demo endpoints. If False, use live endpoints.
+            prop_firm: The prop firm identifier (e.g., 'topstep', 'alpha', etc.)
         """
-        if demo:
-            self.base_url = "https://gateway-api-demo.s2f.projectx.com"
-            self.user_api_url = "https://userapi-demo.s2f.projectx.com"  # For username/password auth
-            self.ws_user_hub = "https://gateway-rtc-demo.s2f.projectx.com/hubs/user"
-            self.ws_market_hub = "https://gateway-rtc-demo.s2f.projectx.com/hubs/market"
+        self.is_demo = demo
+        self.prop_firm = prop_firm.lower() if prop_firm else 'default'
+        
+        # Get correct endpoints for this firm
+        endpoints = self.FIRM_ENDPOINTS.get(self.prop_firm, self.FIRM_ENDPOINTS['default'])
+        
+        if self.prop_firm == 'topstep':
+            # TopstepX has unified endpoints
+            self.base_url = endpoints['demo']  # Same for demo/live
+            self.ws_user_hub = endpoints['ws_user']
+            self.ws_market_hub = endpoints['ws_market']
         else:
-            self.base_url = "https://gateway-api.s2f.projectx.com"
-            self.user_api_url = "https://userapi.s2f.projectx.com"  # For username/password auth
-            self.ws_user_hub = "https://gateway-rtc.s2f.projectx.com/hubs/user"
-            self.ws_market_hub = "https://gateway-rtc.s2f.projectx.com/hubs/market"
+            # Other ProjectX firms use standard endpoints
+            env = 'demo' if demo else 'live'
+            self.base_url = endpoints[env]
+            self.ws_user_hub = endpoints.get(f'ws_user_{env}', endpoints.get('ws_user_demo'))
+            self.ws_market_hub = endpoints.get(f'ws_market_{env}', endpoints.get('ws_market_demo'))
+        
+        logger.info(f"🔧 ProjectX initialized for {prop_firm}, demo={demo}")
+        logger.info(f"   Base URL: {self.base_url}")
         
         self.session: Optional[aiohttp.ClientSession] = None
         self.session_token: Optional[str] = None
@@ -84,8 +112,7 @@ class ProjectXIntegration:
         self.username: Optional[str] = None
         self.accounts: List[Dict[str, Any]] = []
         self.contracts_cache: Dict[str, Dict[str, Any]] = {}
-        self.is_demo = demo
-        self.auth_method: Optional[str] = None  # 'password' or 'apikey'
+        self.auth_method: Optional[str] = None
         
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -199,11 +226,11 @@ class ProjectXIntegration:
         """
         Authenticate with ProjectX using username and API key.
         
-        NOTE: This method requires a paid API subscription ($14.50/mo).
-        Consider using login_with_password() instead - it's FREE!
+        This is the ONLY method for third-party apps like Just.Trades.
+        Requires API subscription ($14.50/mo from ProjectX Dashboard).
         
         Args:
-            username: ProjectX Dashboard username
+            username: Your ProjectX Dashboard username (NOT your prop firm email!)
             api_key: API key from ProjectX Dashboard (Settings → API → API Key)
         
         Returns:
@@ -211,97 +238,154 @@ class ProjectXIntegration:
         """
         try:
             logger.info(f"🔑 Attempting ProjectX login (API key method)")
+            logger.info(f"   Prop firm: {self.prop_firm}")
             logger.info(f"   Username: {username}")
-            logger.info(f"   API Key (first 10 chars): {api_key[:10]}...")
-            logger.info(f"   Endpoint: {self.base_url}/api/Auth/loginKey")
+            logger.info(f"   API Key (first 10 chars): {api_key[:10] if len(api_key) >= 10 else api_key}...")
+            logger.info(f"   Base URL: {self.base_url}")
             
             login_data = {
                 "userName": username,
                 "apiKey": api_key
             }
             
-            logger.info(f"   Request body: {json.dumps(login_data)[:100]}...")
-            
-            async with self.session.post(
+            # Try multiple endpoint variations
+            endpoints_to_try = [
                 f"{self.base_url}/api/Auth/loginKey",
-                json=login_data,
-                headers={"Content-Type": "application/json", "Accept": "application/json"}
-            ) as response:
-                response_text = await response.text()
-                logger.info(f"   Response status: {response.status}")
-                logger.info(f"   Response body: {response_text[:500]}")
-                
-                if response.status == 200:
-                    try:
-                        data = json.loads(response_text)
-                    except:
-                        return {"success": False, "error": f"Invalid JSON response: {response_text[:200]}"}
+                f"{self.base_url}/Auth/loginKey",
+                f"{self.base_url}/v1/auth/loginKey",
+            ]
+            
+            # TopstepX might use different endpoint structure
+            if self.prop_firm == 'topstep':
+                endpoints_to_try = [
+                    f"{self.base_url}/api/Auth/loginKey",
+                    f"{self.base_url}/auth/loginKey",
+                    "https://api.topstepx.com/api/Auth/loginKey",
+                ]
+            
+            last_error = "No endpoints succeeded"
+            last_response = ""
+            
+            for endpoint in endpoints_to_try:
+                try:
+                    logger.info(f"   Trying endpoint: {endpoint}")
                     
-                    # Check for token - different response formats
-                    token = data.get("token") or data.get("accessToken") or data.get("sessionToken")
-                    error_code = data.get("errorCode", 0)
-                    success = data.get("success", True) if token else False
-                    
-                    if token and error_code == 0 and success != False:
-                        self.session_token = token
-                        self.username = username
-                        self.auth_method = 'apikey'
-                        self.token_expires = datetime.now() + timedelta(hours=24)
+                    async with self.session.post(
+                        endpoint,
+                        json=login_data,
+                        headers={"Content-Type": "application/json", "Accept": "application/json"}
+                    ) as response:
+                        response_text = await response.text()
+                        logger.info(f"   Response status: {response.status}")
+                        logger.info(f"   Response body: {response_text[:500]}")
+                        last_response = response_text
                         
-                        logger.info(f"✅ Successfully logged in to ProjectX (API key method)")
-                        logger.info(f"   Token (first 20 chars): {token[:20]}...")
-                        return {"success": True}
-                    else:
-                        error_msg = data.get("errorMessage") or data.get("message") or data.get("error") or "Unknown error"
-                        logger.error(f"❌ ProjectX API key login failed: {error_msg}")
-                        logger.error(f"   Full response: {data}")
-                        return {"success": False, "error": f"API error: {error_msg}"}
-                elif response.status == 401:
-                    return {"success": False, "error": "Invalid API key or username (HTTP 401). Make sure you're using the API key from Settings → API, not your password."}
-                elif response.status == 403:
-                    return {"success": False, "error": "API access forbidden (HTTP 403). Your API subscription may not be active."}
-                else:
-                    logger.error(f"❌ ProjectX API key login HTTP error: {response.status}")
-                    return {"success": False, "error": f"HTTP {response.status}: {response_text[:200]}"}
+                        if response.status == 200:
+                            try:
+                                data = json.loads(response_text)
+                            except:
+                                last_error = f"Invalid JSON: {response_text[:100]}"
+                                continue
+                            
+                            # Check for token - different response formats
+                            token = data.get("token") or data.get("accessToken") or data.get("sessionToken")
+                            error_code = data.get("errorCode", 0)
+                            success_flag = data.get("success")
+                            
+                            # Handle explicit success=false
+                            if success_flag == False:
+                                error_msg = data.get("errorMessage") or data.get("message") or "Auth rejected"
+                                last_error = f"API rejected: {error_msg}"
+                                continue
+                            
+                            if token and error_code == 0:
+                                self.session_token = token
+                                self.username = username
+                                self.auth_method = 'apikey'
+                                self.token_expires = datetime.now() + timedelta(hours=24)
+                                
+                                logger.info(f"✅ Successfully logged in to ProjectX (API key method)")
+                                logger.info(f"   Token (first 20 chars): {token[:20]}...")
+                                return {"success": True, "endpoint_used": endpoint}
+                            else:
+                                error_msg = data.get("errorMessage") or data.get("message") or data.get("error") or f"errorCode={error_code}"
+                                last_error = f"Auth failed: {error_msg}"
+                                
+                        elif response.status == 401:
+                            last_error = "Invalid API key or username (HTTP 401)"
+                        elif response.status == 403:
+                            last_error = "API access forbidden (HTTP 403) - subscription may not be active or account not linked"
+                        elif response.status == 404:
+                            last_error = f"Endpoint not found (HTTP 404): {endpoint}"
+                            continue  # Try next endpoint
+                        else:
+                            last_error = f"HTTP {response.status}: {response_text[:100]}"
+                            
+                except Exception as endpoint_error:
+                    last_error = f"Connection error to {endpoint}: {str(endpoint_error)}"
+                    logger.warning(f"   Endpoint error: {endpoint_error}")
+                    continue
+            
+            # All endpoints failed
+            logger.error(f"❌ All API key auth endpoints failed")
+            logger.error(f"   Last error: {last_error}")
+            logger.error(f"   Last response: {last_response[:200]}")
+            
+            # Provide helpful error message
+            help_msg = ""
+            if "401" in last_error:
+                help_msg = "\n\n⚠️ Common fixes:\n1. Make sure you're using your ProjectX Dashboard username (NOT your prop firm email)\n2. Verify the API key was copied correctly\n3. Check that your prop firm account is LINKED in the ProjectX Dashboard"
+            elif "403" in last_error:
+                help_msg = "\n\n⚠️ Your API subscription may not be active, or your trading account isn't linked to the API subscription in the ProjectX Dashboard."
+            
+            return {"success": False, "error": last_error + help_msg, "last_response": last_response[:200]}
                     
         except Exception as e:
             logger.error(f"ProjectX API key login exception: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"success": False, "error": f"Connection error: {str(e)}"}
     
     async def login(self, username: str, password: str = None, api_key: str = None) -> dict:
         """
-        Smart login - tries password auth first (FREE), falls back to API key.
+        Authenticate with ProjectX.
+        
+        IMPORTANT: For third-party apps like Just.Trades, API Key is REQUIRED!
+        Password auth only works for the built-in platform login (Trade Manager).
         
         Args:
-            username: Your username
-            password: Your password (for FREE auth method)
-            api_key: API key (for paid subscription method)
+            username: Your ProjectX Dashboard username (for API key auth)
+            password: NOT SUPPORTED for third-party apps (included for compatibility)
+            api_key: API key from ProjectX Dashboard - REQUIRED!
         
         Returns:
             dict with 'success', 'error', and 'method' keys
         """
-        errors = []
-        
-        # Try password auth first (FREE method like Trade Manager)
-        if password:
-            logger.info("🔐 Trying FREE password authentication (Trade Manager style)...")
-            result = await self.login_with_password(username, password)
-            if result.get("success"):
-                return {"success": True, "method": "password"}
-            errors.append(f"Password auth: {result.get('error', 'Failed')}")
-            logger.warning(f"Password auth failed: {result.get('error')}")
-        
-        # Fall back to API key auth
+        # API Key is the ONLY method for third-party apps
         if api_key:
-            logger.info("🔑 Trying API key authentication...")
+            logger.info("🔑 Authenticating with API key (required for third-party apps)...")
             result = await self.login_with_api_key(username, api_key)
             if result.get("success"):
                 return {"success": True, "method": "apikey"}
-            errors.append(f"API key auth: {result.get('error', 'Failed')}")
+            return result  # Return detailed error
         
-        error_summary = " | ".join(errors) if errors else "No credentials provided"
-        logger.error(f"All authentication methods failed: {error_summary}")
-        return {"success": False, "error": error_summary}
+        # If no API key provided, explain the requirement
+        if password and not api_key:
+            error_msg = (
+                "Password authentication is NOT available for third-party apps. "
+                "Trade Manager works with passwords because it's BUILT INTO the ProjectX platform. "
+                "External apps like Just.Trades REQUIRE an API key subscription ($14.50/mo).\n\n"
+                "To get an API key:\n"
+                "1. Go to your trading platform → Settings → API\n"
+                "2. Click 'Link' to connect to ProjectX Dashboard\n"
+                "3. Subscribe to API access ($14.50/mo)\n"
+                "4. Link your prop firm account in the Dashboard\n"
+                "5. Generate and copy your API key"
+            )
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+        
+        return {"success": False, "error": "API key is required. Please enter your ProjectX API key."}
     
     async def validate_session(self) -> bool:
         """
