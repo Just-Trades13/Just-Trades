@@ -3132,32 +3132,33 @@ def public_stats():
     Public API endpoint for platform statistics.
     Returns real counts from the database.
     """
+    debug_info = {}
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        debug_info['db_type'] = 'postgres' if is_using_postgres() else 'sqlite'
         
         # Count total trades executed
-        cursor.execute('SELECT COUNT(*) FROM recorded_trades')
-        total_trades = cursor.fetchone()[0] or 0
+        try:
+            cursor.execute('SELECT COUNT(*) FROM recorded_trades')
+            total_trades = cursor.fetchone()[0] or 0
+        except Exception as e:
+            total_trades = 0
+            debug_info['trades_error'] = str(e)
         
-        # Count total users - use is_active (works for both SQLite and PostgreSQL)
+        # Count total users
         total_users = 0
+        debug_info['user_auth_available'] = USER_AUTH_AVAILABLE
+        
         if USER_AUTH_AVAILABLE:
             try:
-                # Try PostgreSQL syntax first
-                if is_using_postgres():
-                    cursor.execute('SELECT COUNT(*) FROM users WHERE is_active = TRUE')
-                else:
-                    cursor.execute('SELECT COUNT(*) FROM users WHERE is_active = 1')
+                # Just count all users first
+                cursor.execute('SELECT COUNT(*) FROM users')
                 total_users = cursor.fetchone()[0] or 0
+                debug_info['all_users'] = total_users
             except Exception as user_err:
-                logger.warning(f"User count query error: {user_err}")
-                # Fallback: count all users
-                try:
-                    cursor.execute('SELECT COUNT(*) FROM users')
-                    total_users = cursor.fetchone()[0] or 0
-                except:
-                    total_users = 0
+                debug_info['users_error'] = str(user_err)
+                total_users = 0
         
         cursor.close()
         conn.close()
@@ -3166,10 +3167,19 @@ def public_stats():
             'total_trades': total_trades,
             'total_users': total_users,
             'uptime': 99,
-            'support': '24/7'
+            'support': '24/7',
+            'debug': debug_info
         })
     except Exception as e:
         logger.warning(f"Stats API error: {e}")
+        return jsonify({
+            'total_trades': 0,
+            'total_users': 0,
+            'uptime': 99,
+            'support': '24/7',
+            'error': str(e),
+            'debug': debug_info
+        })
         return jsonify({
             'total_trades': 0,
             'total_users': 0,
