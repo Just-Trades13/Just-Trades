@@ -732,9 +732,9 @@ def execute_trade_simple(
                             continue
                         seen_subaccounts.add(subaccount_id)
                         
-                        # Get credentials from accounts table
+                        # Get credentials from accounts table (includes broker type for routing)
                         placeholder = '%s' if is_postgres else '?'
-                        cursor.execute(f'SELECT tradovate_token, username, password FROM accounts WHERE id = {placeholder}', (acct_id,))
+                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key FROM accounts WHERE id = {placeholder}', (acct_id,))
                         creds_row = cursor.fetchone()
                         
                         if not creds_row:
@@ -743,6 +743,7 @@ def execute_trade_simple(
                         
                         if creds_row:
                             creds = dict(creds_row)
+                            broker_type = creds.get('broker', 'Tradovate')  # Default to Tradovate for existing accounts
                             traders.append({
                                 'subaccount_id': subaccount_id,
                                 'subaccount_name': subaccount_name,
@@ -750,10 +751,12 @@ def execute_trade_simple(
                                 'tradovate_token': creds.get('tradovate_token'),
                                 'username': creds.get('username'),
                                 'password': creds.get('password'),
+                                'api_key': creds.get('api_key'),  # ProjectX API key
+                                'broker': broker_type,  # 'Tradovate' or 'ProjectX'
                                 'account_id': acct_id,
                                 'multiplier': multiplier  # Store multiplier for this account
                             })
-                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x)")
+                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type})")
                 except Exception as e:
                     logger.error(f"❌ Error parsing enabled_accounts: {e}")
             else:
@@ -803,18 +806,126 @@ def execute_trade_simple(
         accounts_traded = 0
         last_result = None
         
+        # ============================================================
+        # ProjectX Trade Execution (Added Jan 2026)
+        # ============================================================
+        async def do_trade_projectx(trader, trader_idx, adjusted_quantity):
+            """Execute trade on ProjectX broker (TopstepX, Apex, etc.)"""
+            from phantom_scraper.projectx_integration import ProjectXIntegration
+            
+            acct_name = trader.get('subaccount_name', 'Unknown')
+            username = trader.get('username')
+            password = trader.get('password')  # FREE auth method (like Trade Manager)
+            api_key = trader.get('api_key')    # Paid API key method
+            is_demo = bool(trader.get('is_demo', True))
+            subaccount_id = trader.get('subaccount_id')  # This is the ProjectX account ID
+            
+            logger.info(f"🚀 [{acct_name}] ProjectX execution: {action} {adjusted_quantity} {ticker}")
+            
+            if not username:
+                logger.error(f"❌ [{acct_name}] ProjectX username missing")
+                return {'success': False, 'error': 'ProjectX username missing'}
+            
+            if not password and not api_key:
+                logger.error(f"❌ [{acct_name}] ProjectX credentials missing (need password or api_key)")
+                return {'success': False, 'error': 'ProjectX credentials missing'}
+            
+            try:
+                async with ProjectXIntegration(demo=is_demo) as projectx:
+                    # Smart authenticate - tries password (FREE) first, then API key
+                    if not await projectx.login(username, password=password, api_key=api_key):
+                        logger.error(f"❌ [{acct_name}] ProjectX authentication failed")
+                        return {'success': False, 'error': 'ProjectX authentication failed'}
+                    
+                    logger.info(f"✅ [{acct_name}] ProjectX authenticated via {projectx.auth_method or 'unknown'} method")
+                    
+                    logger.info(f"✅ [{acct_name}] ProjectX authenticated successfully")
+                    
+                    # Get available contracts to find the contract ID
+                    contracts = await projectx.get_available_contracts()
+                    
+                    # Find the contract matching our ticker
+                    # ProjectX uses contract IDs like "CON.F.US.MNQM5.M25"
+                    contract_id = None
+                    symbol_root = ticker[:3].upper() if ticker else 'MNQ'
+                    
+                    for contract in contracts:
+                        contract_name = contract.get('name', '') or contract.get('symbol', '')
+                        if symbol_root in contract_name.upper():
+                            contract_id = contract.get('id')
+                            logger.info(f"📋 [{acct_name}] Found contract: {contract_name} (ID: {contract_id})")
+                            break
+                    
+                    if not contract_id:
+                        logger.error(f"❌ [{acct_name}] Contract not found for {ticker}")
+                        return {'success': False, 'error': f'Contract not found for {ticker}'}
+                    
+                    # Determine order side
+                    # ProjectX: 0=Buy, 1=Sell
+                    side = "Buy" if action.upper() == "BUY" else "Sell"
+                    
+                    # Place market order WITH TP/SL brackets (ProjectX native support!)
+                    # ProjectX brackets are attached directly to the order - much cleaner than Tradovate
+                    order_data = projectx.create_market_order_with_brackets(
+                        account_id=int(subaccount_id),
+                        contract_id=contract_id,
+                        side=side,
+                        quantity=adjusted_quantity,
+                        tp_ticks=tp_ticks if tp_ticks > 0 else None,
+                        sl_ticks=sl_ticks if sl_ticks > 0 else None
+                    )
+                    
+                    sl_info = f", SL: {sl_ticks}t" if sl_ticks > 0 else ""
+                    logger.info(f"📤 [{acct_name}] Placing ProjectX bracket order: {side} {adjusted_quantity}, TP: {tp_ticks}t{sl_info}")
+                    order_result = await projectx.place_order(order_data)
+                    
+                    if order_result and order_result.get('success'):
+                        order_id = order_result.get('orderId')
+                        logger.info(f"✅ [{acct_name}] ProjectX bracket order placed: ID={order_id}")
+                        logger.info(f"   TP/SL brackets attached automatically by ProjectX (OCO)")
+                        
+                        return {
+                            'success': True,
+                            'order_id': order_id,
+                            'broker': 'ProjectX',
+                            'account': acct_name,
+                            'tp_ticks': tp_ticks,
+                            'sl_ticks': sl_ticks
+                        }
+                    else:
+                        error = order_result.get('error', 'Unknown error') if order_result else 'No response'
+                        logger.error(f"❌ [{acct_name}] ProjectX order failed: {error}")
+                        return {'success': False, 'error': error}
+                        
+            except Exception as e:
+                logger.error(f"❌ [{acct_name}] ProjectX execution error: {e}")
+                import traceback
+                traceback.print_exc()
+                return {'success': False, 'error': str(e)}
+        
+        # ============================================================
+        # Tradovate Trade Execution (Original)
+        # ============================================================
         async def do_trade_for_account(trader, trader_idx):
             """Execute trade for a single account - runs in parallel with others"""
             acct_name = trader.get('subaccount_name', 'Unknown')
             acct_id = trader.get('account_id')
             account_multiplier = float(trader.get('multiplier', 1.0))  # Get multiplier for this account
             adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
+            broker_type = trader.get('broker', 'Tradovate')  # Default to Tradovate
             
             # NOTE: Don't check is_account_auth_valid upfront - let auth logic handle it
             # The account might work via cached token, API Access, or OAuth fallback
             # If ALL methods fail, auth logic will return the appropriate error
             
-            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name}")
+            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type})")
+            
+            # ============================================================
+            # BROKER ROUTING - ProjectX vs Tradovate (Added Jan 2026)
+            # ============================================================
+            if broker_type == 'ProjectX':
+                return await do_trade_projectx(trader, trader_idx, adjusted_quantity)
+            # Default: Continue with Tradovate execution below
             
             tradovate_account_id = trader['subaccount_id']
             tradovate_account_spec = trader['subaccount_name']

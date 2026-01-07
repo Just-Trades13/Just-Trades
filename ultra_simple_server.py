@@ -5268,6 +5268,130 @@ def store_credentials(account_id):
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ============================================================
+# ProjectX / TopstepX Routes (Added Jan 2026)
+# ============================================================
+
+@app.route('/accounts/<int:account_id>/projectx-credentials')
+def projectx_credentials(account_id):
+    """Render ProjectX credentials collection page"""
+    return render_template('projectx_credentials.html', account_id=account_id)
+
+@app.route('/api/accounts/<int:account_id>/projectx-connect', methods=['POST'])
+def projectx_connect(account_id):
+    """Test and store ProjectX credentials (supports both password and API key auth)"""
+    try:
+        data = request.get_json()
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip() if data.get('password') else None
+        api_key = data.get('api_key', '').strip() if data.get('api_key') else None
+        auth_method = data.get('auth_method', 'password')  # 'password' (FREE) or 'apikey'
+        environment = data.get('environment', 'demo')
+        
+        if not username:
+            return jsonify({
+                'success': False,
+                'error': 'Username is required'
+            }), 400
+        
+        if auth_method == 'password' and not password:
+            return jsonify({
+                'success': False,
+                'error': 'Password is required for password authentication'
+            }), 400
+        
+        if auth_method == 'apikey' and not api_key:
+            return jsonify({
+                'success': False,
+                'error': 'API key is required for API key authentication'
+            }), 400
+        
+        # Test connection with ProjectX
+        import asyncio
+        from phantom_scraper.projectx_integration import ProjectXIntegration
+        
+        async def test_projectx():
+            is_demo = environment == 'demo'
+            async with ProjectXIntegration(demo=is_demo) as projectx:
+                # Try the smart login method (tries password first, then API key)
+                if not await projectx.login(username, password=password, api_key=api_key):
+                    if auth_method == 'password':
+                        return {'success': False, 'error': 'Login failed. Check your username and password.'}
+                    else:
+                        return {'success': False, 'error': 'Login failed. Check your username and API key.'}
+                
+                accounts = await projectx.get_accounts()
+                return {
+                    'success': True,
+                    'accounts': accounts,
+                    'total_accounts': len(accounts),
+                    'auth_method': projectx.auth_method
+                }
+        
+        # Run async test
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(test_projectx())
+        finally:
+            loop.close()
+        
+        if not result.get('success'):
+            return jsonify(result), 400
+        
+        # Store credentials in database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Store password OR api_key based on auth method
+        if auth_method == 'password':
+            cursor.execute("""
+                UPDATE accounts 
+                SET broker = 'ProjectX',
+                    username = ?, 
+                    password = ?,
+                    api_key = NULL,
+                    environment = ?,
+                    is_connected = 1
+                WHERE id = ?
+            """, (username, password, environment, account_id))
+        else:
+            cursor.execute("""
+                UPDATE accounts 
+                SET broker = 'ProjectX',
+                    username = ?, 
+                    password = NULL,
+                    api_key = ?,
+                    environment = ?,
+                    is_connected = 1
+                WHERE id = ?
+            """, (username, api_key, environment, account_id))
+        
+        conn.commit()
+        conn.close()
+        
+        auth_desc = "FREE (password)" if auth_method == 'password' else "API key"
+        logger.info(f"✅ ProjectX credentials stored for account {account_id} ({auth_desc})")
+        
+        return jsonify({
+            'success': True,
+            'message': f'ProjectX connected successfully ({auth_desc})',
+            'accounts': result.get('accounts', []),
+            'total_accounts': result.get('total_accounts', 0),
+            'auth_method': auth_method,
+            'redirect_url': '/accounts'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error connecting ProjectX: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============================================================
+# End ProjectX Routes
+# ============================================================
+
 @app.route('/api/accounts/<int:account_id>/connect')
 def connect_account(account_id):
     """Redirect to Tradovate OAuth connection"""

@@ -132,11 +132,11 @@
         },
         {
             id: 'projectx',
-            name: 'Project X',
-            description: 'Advanced trading platform',
+            name: 'ProjectX / TopstepX',
+            description: 'TopstepX, Apex, and other prop firms',
             icon: 'rocket_launch',
-            status: 'coming-soon',
-            comingSoon: true
+            status: 'available',
+            comingSoon: false
         },
         {
             id: 'rithmic',
@@ -220,6 +220,9 @@
                     // For Tradovate, collect credentials first (optional, for mdAccessToken)
                     // Then proceed to OAuth
                     window.location.href = `/accounts/${accountId}/credentials`;
+                } else if (brokerId === 'projectx') {
+                    // For ProjectX/TopstepX, collect API key credentials
+                    window.location.href = `/accounts/${accountId}/projectx-credentials`;
                 } else {
                     // For other brokers, redirect to their specific connection page
                     alert(`${brokerName} connection flow coming soon!`);
