@@ -350,42 +350,43 @@ class ProjectXIntegration:
         """
         Authenticate with ProjectX.
         
-        IMPORTANT: For third-party apps like Just.Trades, API Key is REQUIRED!
-        Password auth only works for the built-in platform login (Trade Manager).
+        Two authentication methods available:
+        1. Password auth (FREE) - Uses userapi /login endpoint
+        2. API Key auth ($14.50/mo) - Uses gateway-api /loginKey endpoint
         
         Args:
-            username: Your ProjectX Dashboard username (for API key auth)
-            password: NOT SUPPORTED for third-party apps (included for compatibility)
-            api_key: API key from ProjectX Dashboard - REQUIRED!
+            username: Your username (prop firm email for password, Dashboard username for API key)
+            password: Your prop firm password (for FREE auth)
+            api_key: API key from ProjectX Dashboard (for paid auth)
         
         Returns:
             dict with 'success', 'error', and 'method' keys
         """
-        # API Key is the ONLY method for third-party apps
+        errors = []
+        
+        # Try password auth first (FREE method)
+        if password:
+            logger.info("🔐 Trying password authentication (FREE method)...")
+            result = await self.login_with_password(username, password)
+            if result.get("success"):
+                return {"success": True, "method": "password"}
+            errors.append(f"Password: {result.get('error', 'Failed')}")
+            logger.warning(f"Password auth failed: {result.get('error')}")
+        
+        # Try API key auth as fallback
         if api_key:
-            logger.info("🔑 Authenticating with API key (required for third-party apps)...")
+            logger.info("🔑 Trying API key authentication...")
             result = await self.login_with_api_key(username, api_key)
             if result.get("success"):
                 return {"success": True, "method": "apikey"}
-            return result  # Return detailed error
+            errors.append(f"API Key: {result.get('error', 'Failed')}")
         
-        # If no API key provided, explain the requirement
-        if password and not api_key:
-            error_msg = (
-                "Password authentication is NOT available for third-party apps. "
-                "Trade Manager works with passwords because it's BUILT INTO the ProjectX platform. "
-                "External apps like Just.Trades REQUIRE an API key subscription ($14.50/mo).\n\n"
-                "To get an API key:\n"
-                "1. Go to your trading platform → Settings → API\n"
-                "2. Click 'Link' to connect to ProjectX Dashboard\n"
-                "3. Subscribe to API access ($14.50/mo)\n"
-                "4. Link your prop firm account in the Dashboard\n"
-                "5. Generate and copy your API key"
-            )
-            logger.error(error_msg)
-            return {"success": False, "error": error_msg}
+        # Both failed or no credentials provided
+        if not password and not api_key:
+            return {"success": False, "error": "Please provide either password or API key"}
         
-        return {"success": False, "error": "API key is required. Please enter your ProjectX API key."}
+        error_summary = " | ".join(errors)
+        return {"success": False, "error": error_summary}
     
     async def validate_session(self) -> bool:
         """

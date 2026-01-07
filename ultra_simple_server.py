@@ -5358,15 +5358,15 @@ def projectx_connect(account_id):
             prop_firm = data.get('prop_firm', 'default')
             
             async with ProjectXIntegration(demo=is_demo, prop_firm=prop_firm) as projectx:
-                # API Key is REQUIRED for third-party apps
-                if not api_key:
+                # Need either password or API key
+                if not password and not api_key:
                     return {
                         'success': False,
-                        'error': 'API key is required. Third-party apps cannot use password authentication. Please subscribe to ProjectX API ($14.50/mo) and enter your API key.',
-                        'help': 'Go to your trading platform → Settings → API → Subscribe and generate API key'
+                        'error': 'Please provide either password (FREE) or API key ($14.50/mo subscription)',
                     }
                 
-                login_result = await projectx.login(username, api_key=api_key)
+                # Try authentication with provided credentials
+                login_result = await projectx.login(username, password=password, api_key=api_key)
                 
                 if not login_result.get('success'):
                     # Return the detailed error message from the auth attempt
@@ -5378,8 +5378,9 @@ def projectx_connect(account_id):
                             'username': username,
                             'prop_firm': prop_firm,
                             'environment': 'demo' if is_demo else 'live',
+                            'auth_method': auth_method,
+                            'password_provided': bool(password),
                             'api_key_provided': bool(api_key),
-                            'api_key_length': len(api_key) if api_key else 0
                         }
                     }
 
