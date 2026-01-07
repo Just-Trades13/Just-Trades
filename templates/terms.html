@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service - Just.Trades.</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #19b8ff;
+            --accent-teal: #2dd4bf;
+            --background-dark: #0b1221;
+            --background-light: #111a2f;
+            --background-card: #0f172a;
+            --border-color: rgba(148, 163, 184, 0.12);
+            --text-light: #f8fafc;
+            --text-muted: #7f8db2;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: var(--background-dark);
+            color: var(--text-light);
+            line-height: 1.8;
+        }
+        
+        .header {
+            padding: 20px 60px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(11, 18, 33, 0.95);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+        
+        .logo img {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+        }
+        
+        .logo span {
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            color: var(--text-light);
+        }
+        
+        .back-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+        
+        .back-link:hover {
+            color: var(--accent-teal);
+        }
+        
+        .content {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 60px 40px 100px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, var(--text-light), var(--accent-teal));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .last-updated {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 40px;
+        }
+        
+        h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-top: 40px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-top: 24px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+        
+        ul, ol {
+            color: var(--text-muted);
+            margin-left: 24px;
+            margin-bottom: 16px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        .highlight-box {
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--primary-color);
+            padding: 20px 24px;
+            border-radius: 8px;
+            margin: 24px 0;
+        }
+        
+        .highlight-box p {
+            margin-bottom: 0;
+        }
+        
+        .warning-box {
+            background: rgba(245, 54, 92, 0.1);
+            border: 1px solid rgba(245, 54, 92, 0.3);
+            border-left: 4px solid #f5365c;
+            padding: 20px 24px;
+            border-radius: 8px;
+            margin: 24px 0;
+        }
+        
+        .warning-box p {
+            color: #f8fafc;
+            margin-bottom: 0;
+        }
+        
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            color: var(--accent-teal);
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 40px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+        
+        @media (max-width: 768px) {
+            .header { padding: 16px 20px; }
+            .content { padding: 40px 20px 80px; }
+            h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <a href="/pricing" class="logo">
+            <img src="{{ url_for('static', filename='img/just_trades_logo.png') }}" alt="Just.Trades.">
+            <span>JUST.TRADES.</span>
+        </a>
+        <a href="/pricing" class="back-link">
+            <span class="material-icons">arrow_back</span>
+            Back to Home
+        </a>
+    </header>
+    
+    <main class="content">
+        <h1>Terms of Service</h1>
+        <p class="last-updated">Last Updated: January 7, 2026</p>
+        
+        <div class="highlight-box">
+            <p><strong>Important:</strong> By using Just.Trades., you agree to these Terms of Service. Please read them carefully before using our platform.</p>
+        </div>
+        
+        <h2>1. Acceptance of Terms</h2>
+        <p>By accessing or using the Just.Trades. platform ("Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, you may not use the Service.</p>
+        <p>These Terms constitute a legally binding agreement between you and Just.Trades. ("Company", "we", "us", or "our").</p>
+        
+        <h2>2. Description of Service</h2>
+        <p>Just.Trades. provides an automated trading platform that allows users to:</p>
+        <ul>
+            <li>Connect third-party brokerage accounts</li>
+            <li>Execute automated trading strategies</li>
+            <li>Access trading signals and analysis tools</li>
+            <li>Manage multiple trading accounts from a single dashboard</li>
+            <li>Access educational content and community features (Discord)</li>
+        </ul>
+        
+        <h2>3. Eligibility</h2>
+        <p>To use our Service, you must:</p>
+        <ul>
+            <li>Be at least 18 years of age (or the age of majority in your jurisdiction)</li>
+            <li>Have the legal capacity to enter into a binding agreement</li>
+            <li>Not be prohibited from using financial services under applicable laws</li>
+            <li>Reside in a jurisdiction where the use of our Service is permitted</li>
+        </ul>
+        
+        <h2>4. Account Registration</h2>
+        <h3>4.1 Account Creation</h3>
+        <p>You must create an account to access most features of the Service. You agree to:</p>
+        <ul>
+            <li>Provide accurate, current, and complete registration information</li>
+            <li>Maintain and update your information to keep it accurate</li>
+            <li>Keep your login credentials secure and confidential</li>
+            <li>Notify us immediately of any unauthorized access to your account</li>
+        </ul>
+        
+        <h3>4.2 Account Responsibility</h3>
+        <p>You are solely responsible for all activities that occur under your account. We are not liable for any loss or damage arising from your failure to maintain the security of your account.</p>
+        
+        <h2>5. Subscription and Payment</h2>
+        <h3>5.1 Subscription Plans</h3>
+        <p>We offer various subscription plans with different features and pricing. Details of current plans are available on our pricing page.</p>
+        
+        <h3>5.2 Billing</h3>
+        <ul>
+            <li>Subscriptions are billed in advance on a monthly basis</li>
+            <li>Payment is processed through our third-party payment provider (Whop)</li>
+            <li>You authorize us to charge your payment method for all fees incurred</li>
+        </ul>
+        
+        <h3>5.3 Free Trials</h3>
+        <p>We may offer free trial periods. At the end of a trial, your subscription will automatically convert to a paid subscription unless you cancel before the trial ends.</p>
+        
+        <h3>5.4 Cancellation</h3>
+        <ul>
+            <li>You may cancel your subscription at any time through your account settings or by contacting support</li>
+            <li>Cancellation takes effect at the end of your current billing period</li>
+            <li>No refunds are provided for partial billing periods</li>
+        </ul>
+        
+        <h3>5.5 Refund Policy</h3>
+        <p>Due to the nature of digital services, all sales are final. We do not offer refunds except where required by law or at our sole discretion for extenuating circumstances.</p>
+        
+        <h2>6. Brokerage Connections</h2>
+        <h3>6.1 Third-Party Brokers</h3>
+        <p>Our Service allows you to connect accounts from third-party brokers (e.g., Tradovate, TopStep, ProjectX). You acknowledge that:</p>
+        <ul>
+            <li>We are not affiliated with these brokers</li>
+            <li>Your relationship with your broker is governed by their terms</li>
+            <li>We are not responsible for broker actions, outages, or errors</li>
+        </ul>
+        
+        <h3>6.2 OAuth Authentication</h3>
+        <p>We use OAuth authentication to connect to your broker accounts. This means:</p>
+        <ul>
+            <li>We never see or store your broker password</li>
+            <li>We receive limited API access tokens with specific permissions</li>
+            <li>You can revoke our access at any time through your broker's settings</li>
+        </ul>
+        
+        <h2>7. Trading Risks</h2>
+        <div class="warning-box">
+            <p><strong>⚠️ WARNING:</strong> Trading futures and other financial instruments involves substantial risk of loss and is not suitable for all investors. Past performance is not indicative of future results. You should carefully consider whether trading is appropriate for you in light of your financial condition.</p>
+        </div>
+        
+        <h3>7.1 No Guarantee of Profits</h3>
+        <p>We make no representations or guarantees regarding:</p>
+        <ul>
+            <li>Trading profits or returns</li>
+            <li>Performance of any strategy or signal</li>
+            <li>Accuracy of any analysis or recommendation</li>
+        </ul>
+        
+        <h3>7.2 Your Responsibility</h3>
+        <p>You are solely responsible for:</p>
+        <ul>
+            <li>All trading decisions made using our Service</li>
+            <li>Understanding the risks involved in trading</li>
+            <li>Ensuring compliance with applicable laws and regulations</li>
+            <li>Any losses incurred through the use of our Service</li>
+        </ul>
+        
+        <p>Please read our full <a href="/risk-disclosure">Risk Disclosure</a> for more information.</p>
+        
+        <h2>8. Prohibited Uses</h2>
+        <p>You agree not to:</p>
+        <ul>
+            <li>Use the Service for any illegal purpose</li>
+            <li>Attempt to gain unauthorized access to our systems</li>
+            <li>Interfere with or disrupt the Service</li>
+            <li>Reverse engineer or decompile any part of the Service</li>
+            <li>Share your account credentials with others</li>
+            <li>Resell or redistribute the Service without authorization</li>
+            <li>Use automated means to access the Service (except as intended)</li>
+            <li>Violate any applicable laws or regulations</li>
+        </ul>
+        
+        <h2>9. Intellectual Property</h2>
+        <h3>9.1 Our Property</h3>
+        <p>The Service, including all content, features, and functionality, is owned by Just.Trades. and is protected by copyright, trademark, and other intellectual property laws.</p>
+        
+        <h3>9.2 Limited License</h3>
+        <p>We grant you a limited, non-exclusive, non-transferable license to access and use the Service for your personal, non-commercial trading purposes.</p>
+        
+        <h2>10. Disclaimer of Warranties</h2>
+        <p>THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO:</p>
+        <ul>
+            <li>Merchantability</li>
+            <li>Fitness for a particular purpose</li>
+            <li>Non-infringement</li>
+            <li>Accuracy or reliability of results</li>
+            <li>Uninterrupted or error-free operation</li>
+        </ul>
+        
+        <h2>11. Limitation of Liability</h2>
+        <p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, JUST.TRADES. SHALL NOT BE LIABLE FOR:</p>
+        <ul>
+            <li>Any indirect, incidental, special, consequential, or punitive damages</li>
+            <li>Any loss of profits, revenue, data, or business opportunities</li>
+            <li>Any trading losses or damages arising from use of the Service</li>
+            <li>Any damages resulting from broker actions, outages, or errors</li>
+        </ul>
+        <p>Our total liability shall not exceed the amount you paid us in the 12 months preceding the claim.</p>
+        
+        <h2>12. Indemnification</h2>
+        <p>You agree to indemnify and hold harmless Just.Trades., its officers, directors, employees, and agents from any claims, damages, losses, liabilities, and expenses arising from:</p>
+        <ul>
+            <li>Your use of the Service</li>
+            <li>Your violation of these Terms</li>
+            <li>Your violation of any third-party rights</li>
+            <li>Your trading activities</li>
+        </ul>
+        
+        <h2>13. Termination</h2>
+        <p>We may suspend or terminate your access to the Service at any time, with or without cause, with or without notice. Upon termination:</p>
+        <ul>
+            <li>Your right to use the Service will immediately cease</li>
+            <li>We may delete your account and data</li>
+            <li>Provisions that should survive termination will remain in effect</li>
+        </ul>
+        
+        <h2>14. Changes to Terms</h2>
+        <p>We reserve the right to modify these Terms at any time. We will notify you of material changes by:</p>
+        <ul>
+            <li>Posting the updated Terms on our website</li>
+            <li>Sending you an email notification</li>
+            <li>Displaying a notice within the Service</li>
+        </ul>
+        <p>Your continued use of the Service after changes constitutes acceptance of the new Terms.</p>
+        
+        <h2>15. Governing Law</h2>
+        <p>These Terms shall be governed by and construed in accordance with the laws of the State of Delaware, United States, without regard to its conflict of law provisions.</p>
+        
+        <h2>16. Dispute Resolution</h2>
+        <p>Any disputes arising from these Terms or your use of the Service shall be resolved through binding arbitration in accordance with the rules of the American Arbitration Association. You waive the right to participate in a class action lawsuit.</p>
+        
+        <h2>17. Severability</h2>
+        <p>If any provision of these Terms is found to be unenforceable, the remaining provisions will continue in full force and effect.</p>
+        
+        <h2>18. Contact Information</h2>
+        <p>If you have any questions about these Terms, please contact us at:</p>
+        <ul>
+            <li>Email: legal@just.trades</li>
+            <li>Support: Through the in-app chat system</li>
+        </ul>
+        
+        <div class="highlight-box">
+            <p>By using Just.Trades., you acknowledge that you have read, understood, and agree to be bound by these Terms of Service.</p>
+        </div>
+    </main>
+    
+    <footer class="footer">
+        <p>&copy; 2026 Just.Trades. All rights reserved.</p>
+        <p><a href="/terms">Terms of Service</a> | <a href="/privacy">Privacy Policy</a> | <a href="/risk-disclosure">Risk Disclosure</a></p>
+    </footer>
+</body>
+</html>

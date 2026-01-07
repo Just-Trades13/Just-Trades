@@ -3108,6 +3108,64 @@ def pricing():
     return render_template('pricing.html')
 
 
+@app.route('/terms')
+def terms():
+    """Terms of Service page."""
+    return render_template('terms.html')
+
+
+@app.route('/privacy')
+def privacy():
+    """Privacy Policy page."""
+    return render_template('privacy.html')
+
+
+@app.route('/risk-disclosure')
+def risk_disclosure():
+    """Risk Disclosure page."""
+    return render_template('risk_disclosure.html')
+
+
+@app.route('/api/public/stats')
+def public_stats():
+    """
+    Public API endpoint for platform statistics.
+    Returns real counts from the database.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Count total trades executed
+        cursor.execute('SELECT COUNT(*) FROM recorded_trades')
+        total_trades = cursor.fetchone()[0] or 0
+        
+        # Count total users
+        if USER_AUTH_AVAILABLE:
+            cursor.execute('SELECT COUNT(*) FROM users WHERE is_active = 1')
+            total_users = cursor.fetchone()[0] or 0
+        else:
+            total_users = 1
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'total_trades': total_trades,
+            'total_users': total_users,
+            'uptime': 99,
+            'support': '24/7'
+        })
+    except Exception as e:
+        logger.warning(f"Stats API error: {e}")
+        return jsonify({
+            'total_trades': 0,
+            'total_users': 0,
+            'uptime': 99,
+            'support': '24/7'
+        })
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page and handler."""

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk Disclosure - Just.Trades.</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #19b8ff;
+            --accent-teal: #2dd4bf;
+            --red: #f5365c;
+            --orange: #fb923c;
+            --background-dark: #0b1221;
+            --background-light: #111a2f;
+            --background-card: #0f172a;
+            --border-color: rgba(148, 163, 184, 0.12);
+            --text-light: #f8fafc;
+            --text-muted: #7f8db2;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: var(--background-dark);
+            color: var(--text-light);
+            line-height: 1.8;
+        }
+        
+        .header {
+            padding: 20px 60px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(11, 18, 33, 0.95);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+        
+        .logo img {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+        }
+        
+        .logo span {
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            color: var(--text-light);
+        }
+        
+        .back-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+        
+        .back-link:hover {
+            color: var(--accent-teal);
+        }
+        
+        .content {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 60px 40px 100px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, var(--text-light), var(--red));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .last-updated {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 40px;
+        }
+        
+        h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: var(--orange);
+            margin-top: 40px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-top: 24px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+        
+        ul, ol {
+            color: var(--text-muted);
+            margin-left: 24px;
+            margin-bottom: 16px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        .warning-banner {
+            background: linear-gradient(135deg, rgba(245, 54, 92, 0.2), rgba(251, 146, 60, 0.2));
+            border: 2px solid var(--red);
+            padding: 30px;
+            border-radius: 12px;
+            margin: 30px 0;
+            text-align: center;
+        }
+        
+        .warning-banner .icon {
+            font-size: 48px;
+            color: var(--red);
+            margin-bottom: 16px;
+        }
+        
+        .warning-banner h2 {
+            color: var(--red);
+            border: none;
+            margin: 0 0 16px 0;
+            padding: 0;
+            font-size: 1.5rem;
+        }
+        
+        .warning-banner p {
+            color: var(--text-light);
+            font-size: 1.1rem;
+            margin-bottom: 0;
+        }
+        
+        .risk-box {
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--red);
+            padding: 20px 24px;
+            border-radius: 8px;
+            margin: 24px 0;
+        }
+        
+        .risk-box p {
+            margin-bottom: 0;
+        }
+        
+        .highlight-box {
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--primary-color);
+            padding: 20px 24px;
+            border-radius: 8px;
+            margin: 24px 0;
+        }
+        
+        .highlight-box p {
+            margin-bottom: 0;
+        }
+        
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .stat-box {
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            padding: 24px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .stat-box .number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--red);
+            margin-bottom: 8px;
+        }
+        
+        .stat-box .label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            color: var(--accent-teal);
+        }
+        
+        .acknowledgment-section {
+            background: linear-gradient(135deg, rgba(25, 184, 255, 0.1), rgba(45, 212, 191, 0.1));
+            border: 1px solid var(--primary-color);
+            padding: 30px;
+            border-radius: 12px;
+            margin-top: 50px;
+        }
+        
+        .acknowledgment-section h2 {
+            color: var(--primary-color);
+            border: none;
+            margin-top: 0;
+        }
+        
+        .acknowledgment-section ul {
+            margin-bottom: 0;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 40px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+        
+        @media (max-width: 768px) {
+            .header { padding: 16px 20px; }
+            .content { padding: 40px 20px 80px; }
+            h1 { font-size: 2rem; }
+            .stat-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <a href="/pricing" class="logo">
+            <img src="{{ url_for('static', filename='img/just_trades_logo.png') }}" alt="Just.Trades.">
+            <span>JUST.TRADES.</span>
+        </a>
+        <a href="/pricing" class="back-link">
+            <span class="material-icons">arrow_back</span>
+            Back to Home
+        </a>
+    </header>
+    
+    <main class="content">
+        <h1>Risk Disclosure Statement</h1>
+        <p class="last-updated">Last Updated: January 7, 2026</p>
+        
+        <div class="warning-banner">
+            <div class="icon">⚠️</div>
+            <h2>IMPORTANT RISK WARNING</h2>
+            <p>Trading futures, options, and other financial derivatives involves substantial risk of loss and is not suitable for all investors. You could lose more than your initial investment. Please read this entire document carefully before using our platform.</p>
+        </div>
+        
+        <h2>1. General Risk Warning</h2>
+        <p>The risk of loss in trading futures, options, and other derivative products can be substantial. Before trading, you should carefully consider:</p>
+        <ul>
+            <li>Your financial situation and whether you can afford to lose money</li>
+            <li>Your investment objectives</li>
+            <li>Your level of experience with trading and financial markets</li>
+            <li>Whether you fully understand the nature and risks of the products</li>
+        </ul>
+        
+        <div class="risk-box">
+            <p><strong>You should not trade with money you cannot afford to lose.</strong> There is no guarantee of profits, and you may lose some or all of your invested capital.</p>
+        </div>
+        
+        <h2>2. Futures Trading Risks</h2>
+        <p>Futures trading carries specific risks that you should understand:</p>
+        
+        <h3>2.1 Leverage Risk</h3>
+        <p>Futures are highly leveraged instruments. A small market movement can result in large losses (or gains) relative to your initial margin deposit. You may be required to deposit additional funds on short notice to maintain your position, or your position may be liquidated at a loss.</p>
+        
+        <h3>2.2 Market Volatility</h3>
+        <p>Futures markets can be extremely volatile. Prices can move rapidly and unpredictably due to:</p>
+        <ul>
+            <li>Economic news and data releases</li>
+            <li>Geopolitical events</li>
+            <li>Market sentiment changes</li>
+            <li>Technical factors and algorithmic trading</li>
+            <li>Liquidity conditions</li>
+        </ul>
+        
+        <h3>2.3 Gap Risk</h3>
+        <p>Markets may "gap" - opening at a significantly different price than the previous close. This can result in losses exceeding your stop-loss orders.</p>
+        
+        <h3>2.4 Liquidity Risk</h3>
+        <p>In certain market conditions, it may be difficult or impossible to execute trades at desired prices, or to close out positions.</p>
+        
+        <h2>3. Industry Statistics</h2>
+        <p>The following statistics highlight the risks involved in trading:</p>
+        
+        <div class="stat-grid">
+            <div class="stat-box">
+                <div class="number">70-80%</div>
+                <div class="label">of retail traders lose money</div>
+            </div>
+            <div class="stat-box">
+                <div class="number">90%</div>
+                <div class="label">of day traders quit within 1 year</div>
+            </div>
+            <div class="stat-box">
+                <div class="number">80%</div>
+                <div class="label">of algorithmic strategies fail</div>
+            </div>
+        </div>
+        
+        <p>These statistics are industry estimates and may vary. They are provided to illustrate that trading is difficult and most participants do not achieve consistent profitability.</p>
+        
+        <h2>4. Automated Trading Risks</h2>
+        <p>Using automated trading systems, including Just.Trades., involves additional specific risks:</p>
+        
+        <h3>4.1 System Failures</h3>
+        <ul>
+            <li><strong>Software Bugs:</strong> No software is perfect. Bugs may cause unintended trades or prevent intended trades.</li>
+            <li><strong>Connectivity Issues:</strong> Internet outages, broker API failures, or server problems may prevent trade execution or cause delays.</li>
+            <li><strong>Hardware Failures:</strong> Server or infrastructure failures may disrupt trading operations.</li>
+        </ul>
+        
+        <h3>4.2 Strategy Risks</h3>
+        <ul>
+            <li><strong>Past Performance:</strong> Past performance of any strategy is not indicative of future results.</li>
+            <li><strong>Market Regime Changes:</strong> A strategy that worked in the past may fail in different market conditions.</li>
+            <li><strong>Overfitting:</strong> Strategies may be optimized for historical data but fail in live trading.</li>
+            <li><strong>Slippage:</strong> Actual execution prices may differ from expected prices, affecting profitability.</li>
+        </ul>
+        
+        <h3>4.3 Monitoring Requirements</h3>
+        <p>Even with automated trading, you should:</p>
+        <ul>
+            <li>Regularly monitor your positions and account</li>
+            <li>Verify that the system is operating correctly</li>
+            <li>Be prepared to intervene manually if necessary</li>
+            <li>Not assume the system will always work as expected</li>
+        </ul>
+        
+        <div class="risk-box">
+            <p><strong>We do not guarantee</strong> that our platform will be available 100% of the time, that trades will always execute successfully, or that any strategy will be profitable.</p>
+        </div>
+        
+        <h2>5. Third-Party Risks</h2>
+        <h3>5.1 Broker Risks</h3>
+        <p>Your funds are held at third-party brokers, not with Just.Trades. Risks include:</p>
+        <ul>
+            <li>Broker insolvency or financial difficulties</li>
+            <li>Broker system outages or errors</li>
+            <li>Changes to broker terms, fees, or margin requirements</li>
+            <li>Broker regulatory actions or restrictions</li>
+        </ul>
+        
+        <h3>5.2 Prop Firm Risks</h3>
+        <p>If using prop trading firms (e.g., TopStep, ProjectX), additional risks include:</p>
+        <ul>
+            <li>Prop firm rule changes or account termination</li>
+            <li>Evaluation failure and loss of fees paid</li>
+            <li>Payout delays or disputes</li>
+            <li>Prop firm business failure</li>
+        </ul>
+        
+        <h2>6. Financial Risks</h2>
+        <h3>6.1 Loss of Capital</h3>
+        <p>You may lose some or all of your trading capital. In extreme cases with leveraged products, you may lose more than your initial deposit.</p>
+        
+        <h3>6.2 Subscription Costs</h3>
+        <p>Subscription fees for Just.Trades. are non-refundable and represent a cost regardless of your trading results.</p>
+        
+        <h3>6.3 Hidden Costs</h3>
+        <p>Trading involves various costs that affect profitability:</p>
+        <ul>
+            <li>Broker commissions and fees</li>
+            <li>Exchange fees</li>
+            <li>Data fees</li>
+            <li>Slippage costs</li>
+            <li>Financing/overnight costs</li>
+        </ul>
+        
+        <h2>7. No Guarantees or Promises</h2>
+        <p>Just.Trades. makes no representations or warranties regarding:</p>
+        <ul>
+            <li>Future profits or returns</li>
+            <li>Accuracy of any trading signals or analysis</li>
+            <li>Performance of any strategy or system</li>
+            <li>Suitability of our platform for your needs</li>
+            <li>Availability or uptime of our services</li>
+        </ul>
+        
+        <div class="risk-box">
+            <p><strong>Any statements about past performance, backtesting results, or hypothetical returns are not guarantees of future results.</strong> Actual trading results may differ materially from historical or projected performance.</p>
+        </div>
+        
+        <h2>8. Regulatory Considerations</h2>
+        <p>Trading regulations vary by jurisdiction. You are responsible for:</p>
+        <ul>
+            <li>Ensuring trading is legal in your jurisdiction</li>
+            <li>Complying with all applicable laws and regulations</li>
+            <li>Reporting income and paying taxes on trading profits</li>
+            <li>Understanding the regulatory protections available to you</li>
+        </ul>
+        
+        <h2>9. Recommendations</h2>
+        <p>Before using Just.Trades. or trading any financial products, we strongly recommend:</p>
+        <ul>
+            <li><strong>Education:</strong> Learn about trading, risk management, and the specific products you intend to trade</li>
+            <li><strong>Paper Trading:</strong> Practice with simulated trading before risking real money</li>
+            <li><strong>Risk Management:</strong> Never risk more than you can afford to lose on any single trade or in total</li>
+            <li><strong>Professional Advice:</strong> Consult with a qualified financial advisor</li>
+            <li><strong>Start Small:</strong> Begin with small position sizes and scale up gradually</li>
+            <li><strong>Diversification:</strong> Don't put all your capital in one strategy or market</li>
+        </ul>
+        
+        <div class="acknowledgment-section">
+            <h2>10. Acknowledgment</h2>
+            <p>By using Just.Trades., you acknowledge and confirm that:</p>
+            <ul>
+                <li>You have read and understood this Risk Disclosure Statement</li>
+                <li>You understand the risks involved in trading futures and other financial products</li>
+                <li>You are trading with money you can afford to lose</li>
+                <li>You will not hold Just.Trades. responsible for any trading losses</li>
+                <li>You understand that past performance does not guarantee future results</li>
+                <li>You are solely responsible for your trading decisions</li>
+                <li>You meet the eligibility requirements to use our service</li>
+                <li>You will comply with all applicable laws and regulations</li>
+            </ul>
+        </div>
+        
+        <h2>11. Contact Information</h2>
+        <p>If you have questions about this Risk Disclosure or the risks involved in trading, please contact us:</p>
+        <ul>
+            <li><strong>Email:</strong> risk@just.trades</li>
+            <li><strong>Support:</strong> Through the in-app chat system</li>
+        </ul>
+        
+        <div class="highlight-box">
+            <p><strong>Remember:</strong> Only trade with money you can afford to lose. If you do not fully understand these risks, you should not use this platform or trade financial products.</p>
+        </div>
+    </main>
+    
+    <footer class="footer">
+        <p>&copy; 2026 Just.Trades. All rights reserved.</p>
+        <p><a href="/terms">Terms of Service</a> | <a href="/privacy">Privacy Policy</a> | <a href="/risk-disclosure">Risk Disclosure</a></p>
+    </footer>
+</body>
+</html>
