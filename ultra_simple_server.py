@@ -8666,16 +8666,21 @@ def process_webhook_directly(webhook_token):
         # ============================================================
         # INVERSE SIGNALS - Flip BUY↔SELL if inverse_signals is enabled
         # ============================================================
-        inverse_enabled = recorder.get('inverse_signals', 0)
-        if inverse_enabled:
+        inverse_enabled = recorder.get('inverse_signals', False)
+        _logger.info(f"📊 Recorder '{recorder_name}' inverse_signals={inverse_enabled} (type={type(inverse_enabled).__name__})")
+        
+        # Ensure we handle both boolean True and integer 1
+        if inverse_enabled and inverse_enabled not in [0, False, '0', 'false', 'False']:
             original_action_before_inverse = action
             if action in ['buy', 'long']:
                 action = 'sell'
-                _logger.info(f"🔄 INVERSE: {original_action_before_inverse.upper()} → SELL")
+                _logger.info(f"🔄 INVERSE ACTIVE: {original_action_before_inverse.upper()} → SELL for '{recorder_name}'")
             elif action in ['sell', 'short']:
                 action = 'buy'
-                _logger.info(f"🔄 INVERSE: {original_action_before_inverse.upper()} → BUY")
+                _logger.info(f"🔄 INVERSE ACTIVE: {original_action_before_inverse.upper()} → BUY for '{recorder_name}'")
             # Note: 'close' stays as 'close' - we still want to close positions
+        else:
+            _logger.info(f"📊 INVERSE NOT ACTIVE for '{recorder_name}' - proceeding with original action: {action}")
         
         # STRATEGY MODE: market_position: flat = CLOSE POSITION
         # SMART CLOSE: Validates close makes sense before executing
