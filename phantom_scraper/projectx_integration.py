@@ -162,11 +162,13 @@ class ProjectXIntegration:
                 "password": password
             }
             
-            # Try multiple endpoint variations that different firms might use
+            # Password auth uses userapi endpoint, NOT gateway-api
+            # Note: userapi-demo works for both demo AND live/funded accounts
+            # The "demo" in the URL refers to the API environment, not the account type
             endpoints_to_try = [
-                f"{self.user_api_url}/login",
-                f"{self.user_api_url}/User/login", 
-                f"{self.base_url}/api/Auth/login",
+                "https://userapi-demo.s2f.projectx.com/login",  # Primary - works for all accounts
+                "https://userapi.s2f.projectx.com/login",  # Live API (may not always be available)
+                f"{self.user_api_url}/login",  # Firm-specific if different
             ]
             
             last_error = "No endpoints succeeded"
