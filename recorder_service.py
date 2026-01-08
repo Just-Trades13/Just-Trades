@@ -47,6 +47,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, Dict, List, Set, Any, Tuple
 from flask import Flask, request, jsonify, render_template
+from async_utils import run_async  # Safe async execution - avoids "Event loop is closed" errors
 
 # ============================================================================
 # Configuration
@@ -1417,7 +1418,7 @@ def execute_trade_simple(
             return all_results
         
         try:
-            all_results = asyncio.run(run_all_trades())
+            all_results = run_async(run_all_trades())
             for acct_result in all_results:
                 if isinstance(acct_result, Exception):
                     logger.error(f"❌ Trade exception: {acct_result}")
@@ -1831,7 +1832,7 @@ def sync_position_with_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                         result['synced'] = True
                         logger.info(f"✅ Created database record for orphaned position: {broker_side} {broker_qty_abs} @ {broker_price}")
         
-        asyncio.run(sync())
+        run_async(sync())
         conn.close()
         
     except Exception as e:
@@ -1983,7 +1984,7 @@ def cancel_old_tp_orders_for_symbol(recorder_id: int, ticker: str) -> None:
             # Execute with lock held
             with exit_lock:
                 logger.info(f"🔒 [CANCEL-OLD-TP] Acquired exit lock for {tradovate_account_id}:{symbol_root}")
-                asyncio.run(cancel_tp())
+                run_async(cancel_tp())
                 logger.info(f"🔓 [CANCEL-OLD-TP] Released exit lock for {tradovate_account_id}:{symbol_root}")
             
         except Exception as e:
@@ -2065,8 +2066,8 @@ def check_broker_position_exists(recorder_id: int, ticker: str) -> bool:
                 
                 logger.info(f"📊 Broker has NO position for {tradovate_symbol}")
                 return False
-        
-        return asyncio.run(check_position())
+
+        return run_async(check_position())
         
     except Exception as e:
         logger.warning(f"Error checking broker position: {e}")
@@ -2146,8 +2147,8 @@ def get_broker_position_for_recorder(recorder_id: int, ticker: str) -> Dict[str,
                 
                 logger.info(f"📊 Broker has NO position for {tradovate_symbol}")
                 return {'quantity': 0}
-        
-        return asyncio.run(get_position())
+
+        return run_async(get_position())
         
     except Exception as e:
         logger.warning(f"Error getting broker position: {e}")
@@ -2958,7 +2959,7 @@ def execute_live_trade_with_bracket(
                     }
             
             # Execute for this account
-            exec_result = asyncio.run(execute_simple())
+            exec_result = run_async(execute_simple())
             all_results.append(exec_result)
             
             if exec_result.get('success'):
@@ -3289,7 +3290,7 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
         # Execute with lock held
         with exit_lock:
             logger.info(f"🔒 [DCA-TP] Acquired exit lock for {tradovate_account_id}:{symbol_root}")
-            res = asyncio.run(do_bulletproof_tp_update())
+            res = run_async(do_bulletproof_tp_update())
             logger.info(f"🔓 [DCA-TP] Released exit lock for {tradovate_account_id}:{symbol_root}")
         
         result['success'] = res.get('success', False)
@@ -3455,8 +3456,8 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                     if pos.get('symbol', '').startswith(tradovate_symbol[:3]):
                         return pos
                 return None
-        
-        broker_pos = asyncio.run(fetch_position())
+
+        broker_pos = run_async(fetch_position())
         
         if broker_pos:
             result['broker_position'] = broker_pos
@@ -4287,8 +4288,8 @@ def reconcile_positions_with_broker():
                             
                 except Exception as e:
                     logger.error(f"Error reconciling position for {db_pos.get('ticker', 'unknown')}: {e}")
-        
-        asyncio.run(check_all_positions())
+
+        run_async(check_all_positions())
         
     except Exception as e:
         logger.error(f"Error in position reconciliation: {e}")
@@ -4825,7 +4826,7 @@ def start_tradingview_websocket():
         return
     
     def run():
-        asyncio.run(connect_tradingview_websocket())
+        run_async(connect_tradingview_websocket())
     
     _tradingview_ws_thread = threading.Thread(target=run, daemon=True)
     _tradingview_ws_thread.start()
@@ -5996,7 +5997,7 @@ def receive_webhook(webhook_token):
                                 
                                 return {'success': False, 'error': 'No position found to close'}
                         
-                        broker_result = asyncio.run(liquidate())
+                        broker_result = run_async(liquidate())
                         broker_closed = broker_result.get('success', False)
                 
                 if open_trade['side'] == 'LONG':
