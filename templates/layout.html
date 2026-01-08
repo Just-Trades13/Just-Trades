@@ -521,6 +521,83 @@
             color: #f87171;
         }
 
+        /* Announcement Banner */
+        .announcement-banner {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-bottom: 1px solid rgba(59, 130, 246, 0.3);
+            animation: slideDown 0.3s ease;
+        }
+        
+        @keyframes slideDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .announcement-banner.type-critical {
+            background: linear-gradient(135deg, #991b1b, #dc2626);
+        }
+        
+        .announcement-banner.type-warning {
+            background: linear-gradient(135deg, #92400e, #f59e0b);
+        }
+        
+        .announcement-banner.type-success {
+            background: linear-gradient(135deg, #166534, #22c55e);
+        }
+        
+        .announcement-banner.type-info {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+        }
+        
+        .announcement-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            max-width: 1200px;
+            width: 100%;
+        }
+        
+        .announcement-icon {
+            font-size: 22px;
+            color: white;
+            opacity: 0.9;
+        }
+        
+        .announcement-text {
+            flex: 1;
+            color: white;
+            font-size: 0.9rem;
+        }
+        
+        .announcement-text strong {
+            margin-right: 8px;
+        }
+        
+        .announcement-dismiss {
+            background: rgba(255, 255, 255, 0.15);
+            border: none;
+            border-radius: 6px;
+            padding: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        
+        .announcement-dismiss:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+        
+        .announcement-dismiss .material-icons {
+            color: white;
+            font-size: 18px;
+        }
+
         /* Main Content */
         .main-content { padding: 30px; }
 
@@ -832,6 +909,21 @@
                     </div>
                 </div>
             </nav>
+            
+            <!-- Announcement Banner -->
+            <div id="announcementBanner" class="announcement-banner" style="display: none;">
+                <div class="announcement-content">
+                    <span class="announcement-icon material-icons">campaign</span>
+                    <div class="announcement-text">
+                        <strong id="announcementTitle"></strong>
+                        <span id="announcementMessage"></span>
+                    </div>
+                    <button class="announcement-dismiss" onclick="dismissAnnouncement()" title="Dismiss">
+                        <span class="material-icons">close</span>
+                    </button>
+                </div>
+            </div>
+            
             <div class="main-content">
                 {% block content %}{% endblock %}
             </div>
@@ -1099,6 +1191,79 @@
                 console.error('Theme toggle button not found in DOM!');
             }
         }
+        
+        // ========== ANNOUNCEMENT BANNER ==========
+        let currentAnnouncementIndex = 0;
+        let announcements = [];
+        let dismissedAnnouncements = JSON.parse(sessionStorage.getItem('dismissedAnnouncements') || '[]');
+        
+        async function loadAnnouncements() {
+            try {
+                const response = await fetch('/api/announcements/active');
+                if (response.ok) {
+                    const data = await response.json();
+                    // Filter out dismissed announcements
+                    announcements = (data.announcements || []).filter(a => !dismissedAnnouncements.includes(a.id));
+                    if (announcements.length > 0) {
+                        showAnnouncement(0);
+                    }
+                }
+            } catch (e) {
+                console.log('Could not load announcements');
+            }
+        }
+        
+        function showAnnouncement(index) {
+            if (index >= announcements.length) return;
+            
+            const ann = announcements[index];
+            const banner = document.getElementById('announcementBanner');
+            const title = document.getElementById('announcementTitle');
+            const message = document.getElementById('announcementMessage');
+            const icon = banner.querySelector('.announcement-icon');
+            
+            if (banner && title && message) {
+                title.textContent = ann.title;
+                message.textContent = ann.message;
+                
+                // Set type class for color
+                banner.className = 'announcement-banner type-' + (ann.type || 'info');
+                
+                // Set appropriate icon
+                const icons = {
+                    'critical': 'error',
+                    'warning': 'warning',
+                    'success': 'check_circle',
+                    'info': 'campaign'
+                };
+                if (icon) icon.textContent = icons[ann.type] || 'campaign';
+                
+                banner.style.display = 'block';
+                banner.dataset.announcementId = ann.id;
+            }
+        }
+        
+        function dismissAnnouncement() {
+            const banner = document.getElementById('announcementBanner');
+            const annId = parseInt(banner.dataset.announcementId);
+            
+            // Add to dismissed list
+            if (annId && !dismissedAnnouncements.includes(annId)) {
+                dismissedAnnouncements.push(annId);
+                sessionStorage.setItem('dismissedAnnouncements', JSON.stringify(dismissedAnnouncements));
+            }
+            
+            // Show next announcement or hide banner
+            currentAnnouncementIndex++;
+            if (currentAnnouncementIndex < announcements.length) {
+                showAnnouncement(currentAnnouncementIndex);
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+        
+        // Load announcements on page load
+        document.addEventListener('DOMContentLoaded', loadAnnouncements);
     </script>
     {% block scripts %}{% endblock %}
     

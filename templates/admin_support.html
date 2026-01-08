@@ -5,6 +5,52 @@
 {% block page_title %}SUPPORT DASHBOARD{% endblock %}
 
 {% block content %}
+<!-- Announcements Management Panel -->
+<div class="announcements-admin-panel">
+    <div class="panel-header-bar" onclick="toggleAnnouncementsPanel()">
+        <div class="header-left">
+            <span class="material-icons">campaign</span>
+            <h3>Announcements / Bulletins</h3>
+            <span class="announcement-count" id="announcementCount">0</span>
+        </div>
+        <span class="material-icons expand-icon" id="announcementsExpandIcon">expand_more</span>
+    </div>
+    <div class="announcements-content" id="announcementsContent" style="display: none;">
+        <div class="new-announcement-form">
+            <div class="form-row">
+                <input type="text" id="annTitle" placeholder="Announcement Title" class="ann-input">
+                <select id="annType" class="ann-select">
+                    <option value="info">ℹ️ Info (Blue)</option>
+                    <option value="success">✅ Success (Green)</option>
+                    <option value="warning">⚠️ Warning (Yellow)</option>
+                    <option value="critical">🚨 Critical (Red)</option>
+                </select>
+            </div>
+            <textarea id="annMessage" placeholder="Announcement message..." class="ann-textarea"></textarea>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Expires (optional)</label>
+                    <input type="datetime-local" id="annExpires" class="ann-input">
+                </div>
+                <div class="form-group">
+                    <label>Priority</label>
+                    <select id="annPriority" class="ann-select">
+                        <option value="0">Normal</option>
+                        <option value="1">High</option>
+                        <option value="2">Urgent</option>
+                    </select>
+                </div>
+                <button class="btn-create-announcement" onclick="createAnnouncement()">
+                    <span class="material-icons">add</span> Post Announcement
+                </button>
+            </div>
+        </div>
+        <div class="announcements-list" id="announcementsList">
+            <div class="loading-text">Loading announcements...</div>
+        </div>
+    </div>
+</div>
+
 <div class="support-dashboard">
     <!-- Tickets List Panel -->
     <div class="tickets-panel">
@@ -55,6 +101,235 @@
 
 {% block styles %}
 <style>
+    /* Announcements Admin Panel */
+    .announcements-admin-panel {
+        background: var(--background-light);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+    
+    .panel-header-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        background: var(--background-dark);
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .panel-header-bar:hover {
+        background: rgba(25, 184, 255, 0.08);
+    }
+    
+    .header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .header-left h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    
+    .header-left .material-icons {
+        color: var(--primary-color);
+    }
+    
+    .announcement-count {
+        background: var(--primary-color);
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    
+    .expand-icon {
+        transition: transform 0.3s;
+    }
+    
+    .expand-icon.expanded {
+        transform: rotate(180deg);
+    }
+    
+    .announcements-content {
+        padding: 20px;
+        border-top: 1px solid var(--border-color);
+    }
+    
+    .new-announcement-form {
+        background: var(--background-dark);
+        padding: 16px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    
+    .form-row {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+    
+    .form-row:last-child {
+        margin-bottom: 0;
+    }
+    
+    .form-group {
+        flex: 1;
+    }
+    
+    .form-group label {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+    }
+    
+    .ann-input, .ann-select, .ann-textarea {
+        background: var(--background-light);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 10px 14px;
+        color: var(--text-light);
+        font-size: 0.9rem;
+        font-family: inherit;
+        width: 100%;
+    }
+    
+    .ann-input:focus, .ann-select:focus, .ann-textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+    
+    .ann-textarea {
+        resize: vertical;
+        min-height: 60px;
+    }
+    
+    .btn-create-announcement {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+        white-space: nowrap;
+    }
+    
+    .btn-create-announcement:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(25, 184, 255, 0.3);
+    }
+    
+    .announcements-list {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .announcement-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+        background: var(--background-dark);
+        border-radius: 10px;
+        margin-bottom: 10px;
+        border-left: 4px solid var(--primary-color);
+    }
+    
+    .announcement-item.type-critical {
+        border-left-color: #dc2626;
+    }
+    
+    .announcement-item.type-warning {
+        border-left-color: #f59e0b;
+    }
+    
+    .announcement-item.type-success {
+        border-left-color: #22c55e;
+    }
+    
+    .announcement-item.type-info {
+        border-left-color: #3b82f6;
+    }
+    
+    .announcement-item.inactive {
+        opacity: 0.5;
+    }
+    
+    .ann-info {
+        flex: 1;
+    }
+    
+    .ann-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+    
+    .ann-message {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+    
+    .ann-meta {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        margin-top: 6px;
+    }
+    
+    .ann-actions {
+        display: flex;
+        gap: 8px;
+    }
+    
+    .ann-action-btn {
+        background: rgba(148, 163, 184, 0.1);
+        border: none;
+        border-radius: 6px;
+        padding: 6px;
+        cursor: pointer;
+        color: var(--text-muted);
+        transition: all 0.2s;
+    }
+    
+    .ann-action-btn:hover {
+        background: rgba(148, 163, 184, 0.2);
+        color: var(--text-light);
+    }
+    
+    .ann-action-btn.delete:hover {
+        background: rgba(220, 38, 38, 0.2);
+        color: #f87171;
+    }
+    
+    .loading-text {
+        text-align: center;
+        color: var(--text-muted);
+        padding: 20px;
+    }
+    
+    .no-announcements {
+        text-align: center;
+        color: var(--text-muted);
+        padding: 30px;
+    }
+    
+    .no-announcements .material-icons {
+        font-size: 48px;
+        opacity: 0.3;
+        margin-bottom: 10px;
+    }
+
     .support-dashboard {
         display: grid;
         grid-template-columns: 400px 1fr;
@@ -617,6 +892,158 @@
 
 {% block scripts %}
 <script>
+    // ========== ANNOUNCEMENTS MANAGEMENT ==========
+    let adminAnnouncements = [];
+    
+    function toggleAnnouncementsPanel() {
+        const content = document.getElementById('announcementsContent');
+        const icon = document.getElementById('announcementsExpandIcon');
+        
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            icon.classList.add('expanded');
+            loadAdminAnnouncements();
+        } else {
+            content.style.display = 'none';
+            icon.classList.remove('expanded');
+        }
+    }
+    
+    async function loadAdminAnnouncements() {
+        try {
+            const response = await fetch('/api/admin/announcements');
+            if (response.ok) {
+                const data = await response.json();
+                adminAnnouncements = data.announcements || [];
+                renderAnnouncementsList();
+                document.getElementById('announcementCount').textContent = adminAnnouncements.length;
+            }
+        } catch (e) {
+            console.error('Error loading announcements:', e);
+        }
+    }
+    
+    function renderAnnouncementsList() {
+        const container = document.getElementById('announcementsList');
+        
+        if (adminAnnouncements.length === 0) {
+            container.innerHTML = `
+                <div class="no-announcements">
+                    <span class="material-icons">campaign</span>
+                    <p>No announcements yet</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = adminAnnouncements.map(ann => `
+            <div class="announcement-item type-${ann.type} ${ann.is_active ? '' : 'inactive'}">
+                <div class="ann-info">
+                    <div class="ann-title">${escapeHtml(ann.title)}</div>
+                    <div class="ann-message">${escapeHtml(ann.message)}</div>
+                    <div class="ann-meta">
+                        Created: ${formatDate(ann.created_at)}
+                        ${ann.expires_at ? ' • Expires: ' + formatDate(ann.expires_at) : ''}
+                        • Status: ${ann.is_active ? '🟢 Active' : '⚫ Inactive'}
+                    </div>
+                </div>
+                <div class="ann-actions">
+                    <button class="ann-action-btn" onclick="toggleAnnouncement(${ann.id})" title="${ann.is_active ? 'Deactivate' : 'Activate'}">
+                        <span class="material-icons">${ann.is_active ? 'visibility_off' : 'visibility'}</span>
+                    </button>
+                    <button class="ann-action-btn delete" onclick="deleteAnnouncement(${ann.id})" title="Delete">
+                        <span class="material-icons">delete</span>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    async function createAnnouncement() {
+        const title = document.getElementById('annTitle').value.trim();
+        const message = document.getElementById('annMessage').value.trim();
+        const type = document.getElementById('annType').value;
+        const expires = document.getElementById('annExpires').value;
+        const priority = parseInt(document.getElementById('annPriority').value);
+        
+        if (!title || !message) {
+            alert('Please enter a title and message');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/admin/announcements', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title,
+                    message,
+                    type,
+                    expires_at: expires || null,
+                    priority
+                })
+            });
+            
+            if (response.ok) {
+                // Clear form
+                document.getElementById('annTitle').value = '';
+                document.getElementById('annMessage').value = '';
+                document.getElementById('annExpires').value = '';
+                document.getElementById('annType').value = 'info';
+                document.getElementById('annPriority').value = '0';
+                
+                // Reload list
+                loadAdminAnnouncements();
+            } else {
+                const data = await response.json();
+                alert('Error: ' + (data.error || 'Failed to create announcement'));
+            }
+        } catch (e) {
+            alert('Error creating announcement');
+        }
+    }
+    
+    async function toggleAnnouncement(id) {
+        try {
+            const response = await fetch(`/api/admin/announcements/${id}/toggle`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                loadAdminAnnouncements();
+            }
+        } catch (e) {
+            alert('Error toggling announcement');
+        }
+    }
+    
+    async function deleteAnnouncement(id) {
+        if (!confirm('Are you sure you want to delete this announcement?')) return;
+        
+        try {
+            const response = await fetch(`/api/admin/announcements/${id}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                loadAdminAnnouncements();
+            }
+        } catch (e) {
+            alert('Error deleting announcement');
+        }
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function formatDate(dateStr) {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    }
+    
+    // ========== SUPPORT TICKETS ==========
     let tickets = [];
     let currentFilter = 'all';
     let selectedTicketId = null;
@@ -624,7 +1051,7 @@
     let lastTicketCount = 0;
     let lastMessageCounts = {};
     let notificationsEnabled = false;
-    
+
     document.addEventListener('DOMContentLoaded', function() {
         loadTickets();
         // Poll every 5 seconds for faster updates

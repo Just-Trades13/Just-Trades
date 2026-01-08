@@ -715,6 +715,21 @@ def _init_sqlite_tables(conn):
         )
     ''')
     
+    # Announcements/Bulletins table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS announcements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            type TEXT DEFAULT 'info',
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER REFERENCES users(id),
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            expires_at TEXT,
+            priority INTEGER DEFAULT 0
+        )
+    ''')
+    
     # Accounts table - full schema
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS accounts (
@@ -1161,6 +1176,21 @@ def _init_postgres_tables():
             is_admin BOOLEAN DEFAULT FALSE,
             is_active BOOLEAN DEFAULT TRUE,
             settings_json TEXT DEFAULT '{}'
+        )
+    ''')
+    
+    # Announcements/Bulletins table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS announcements (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            type VARCHAR(20) DEFAULT 'info',
+            is_active BOOLEAN DEFAULT TRUE,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            priority INTEGER DEFAULT 0
         )
     ''')
     
@@ -3416,6 +3446,233 @@ def admin_delete_user(user_id):
     finally:
         cursor.close()
         conn.close()
+
+
+# ============================================================================
+# ADMIN ANNOUNCEMENTS/BULLETINS
+# ============================================================================
+
+@app.route('/api/announcements/active')
+def get_active_announcements():
+    """Get all active announcements for display to users."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('''
+                SELECT id, title, message, type, priority, created_at
+                FROM announcements 
+                WHERE is_active = TRUE 
+                AND (expires_at IS NULL OR expires_at > NOW())
+                ORDER BY priority DESC, created_at DESC
+            ''')
+        else:
+            cursor.execute('''
+                SELECT id, title, message, type, priority, created_at
+                FROM announcements 
+                WHERE is_active = 1 
+                AND (expires_at IS NULL OR expires_at > datetime('now'))
+                ORDER BY priority DESC, created_at DESC
+            ''')
+        
+        rows = cursor.fetchall()
+        announcements = []
+        for row in rows:
+            announcements.append({
+                'id': row[0],
+                'title': row[1],
+                'message': row[2],
+                'type': row[3] or 'info',
+                'priority': row[4] or 0,
+                'created_at': str(row[5]) if row[5] else None
+            })
+        
+        cursor.close()
+        conn.close()
+        return jsonify({'announcements': announcements})
+    except Exception as e:
+        logger.warning(f"Error fetching announcements: {e}")
+        return jsonify({'announcements': []})
+
+
+@app.route('/api/admin/announcements')
+@login_required
+def admin_get_announcements():
+    """Admin: Get all announcements."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, title, message, type, is_active, created_by, created_at, expires_at, priority
+            FROM announcements 
+            ORDER BY created_at DESC
+        ''')
+        rows = cursor.fetchall()
+        announcements = []
+        for row in rows:
+            announcements.append({
+                'id': row[0],
+                'title': row[1],
+                'message': row[2],
+                'type': row[3] or 'info',
+                'is_active': bool(row[4]),
+                'created_by': row[5],
+                'created_at': str(row[6]) if row[6] else None,
+                'expires_at': str(row[7]) if row[7] else None,
+                'priority': row[8] or 0
+            })
+        cursor.close()
+        conn.close()
+        return jsonify({'announcements': announcements})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/announcements', methods=['POST'])
+@login_required
+def admin_create_announcement():
+    """Admin: Create a new announcement."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    data = request.json
+    title = data.get('title', '').strip()
+    message = data.get('message', '').strip()
+    ann_type = data.get('type', 'info')
+    expires_at = data.get('expires_at')
+    priority = data.get('priority', 0)
+    
+    if not title or not message:
+        return jsonify({'error': 'Title and message are required'}), 400
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('''
+                INSERT INTO announcements (title, message, type, created_by, expires_at, priority)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (title, message, ann_type, user.id, expires_at, priority))
+            new_id = cursor.fetchone()[0]
+        else:
+            cursor.execute('''
+                INSERT INTO announcements (title, message, type, created_by, expires_at, priority)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (title, message, ann_type, user.id, expires_at, priority))
+            new_id = cursor.lastrowid
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Admin {user.username} created announcement: {title}")
+        return jsonify({'success': True, 'id': new_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/announcements/<int:ann_id>', methods=['PUT'])
+@login_required
+def admin_update_announcement(ann_id):
+    """Admin: Update an announcement."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    data = request.json
+    title = data.get('title', '').strip()
+    message = data.get('message', '').strip()
+    ann_type = data.get('type', 'info')
+    is_active = data.get('is_active', True)
+    expires_at = data.get('expires_at')
+    priority = data.get('priority', 0)
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('''
+                UPDATE announcements 
+                SET title = %s, message = %s, type = %s, is_active = %s, expires_at = %s, priority = %s
+                WHERE id = %s
+            ''', (title, message, ann_type, is_active, expires_at, priority, ann_id))
+        else:
+            cursor.execute('''
+                UPDATE announcements 
+                SET title = ?, message = ?, type = ?, is_active = ?, expires_at = ?, priority = ?
+                WHERE id = ?
+            ''', (title, message, ann_type, 1 if is_active else 0, expires_at, priority, ann_id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Admin {user.username} updated announcement {ann_id}")
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/announcements/<int:ann_id>', methods=['DELETE'])
+@login_required
+def admin_delete_announcement(ann_id):
+    """Admin: Delete an announcement."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('DELETE FROM announcements WHERE id = %s', (ann_id,))
+        else:
+            cursor.execute('DELETE FROM announcements WHERE id = ?', (ann_id,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Admin {user.username} deleted announcement {ann_id}")
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/announcements/<int:ann_id>/toggle', methods=['POST'])
+@login_required
+def admin_toggle_announcement(ann_id):
+    """Admin: Toggle announcement active status."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('UPDATE announcements SET is_active = NOT is_active WHERE id = %s', (ann_id,))
+        else:
+            cursor.execute('UPDATE announcements SET is_active = 1 - is_active WHERE id = ?', (ann_id,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/debug-db-config')
