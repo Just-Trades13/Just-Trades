@@ -3452,6 +3452,52 @@ def admin_delete_user(user_id):
 # ADMIN ANNOUNCEMENTS/BULLETINS
 # ============================================================================
 
+def ensure_announcements_table():
+    """Ensure the announcements table exists (for migrations)."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS announcements (
+                    id SERIAL PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    message TEXT NOT NULL,
+                    type VARCHAR(20) DEFAULT 'info',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_by INTEGER REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP,
+                    priority INTEGER DEFAULT 0
+                )
+            ''')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS announcements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    type TEXT DEFAULT 'info',
+                    is_active INTEGER DEFAULT 1,
+                    created_by INTEGER REFERENCES users(id),
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TEXT,
+                    priority INTEGER DEFAULT 0
+                )
+            ''')
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+    except Exception as e:
+        logger.warning(f"Error ensuring announcements table: {e}")
+        return False
+
+# Ensure table exists on startup
+ensure_announcements_table()
+
 @app.route('/api/announcements/active')
 def get_active_announcements():
     """Get all active announcements for display to users."""
