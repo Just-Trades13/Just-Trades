@@ -1393,7 +1393,7 @@ class TradovateIntegration:
             "symbol": symbol,
             "orderQty": int(quantity),
             "price": float(price),
-            "timeInForce": "Day",
+            "timeInForce": "GTC",  # CRITICAL: GTC so TP orders persist across sessions
             "isAutomated": True
         }
         if account_id is not None:
@@ -1411,7 +1411,7 @@ class TradovateIntegration:
             "symbol": symbol,
             "orderQty": int(quantity),
             "stopPrice": float(stop_price),
-            "timeInForce": "Day",
+            "timeInForce": "GTC",  # CRITICAL: GTC so SL orders persist across sessions
             "isAutomated": True
         }
         if account_id is not None:
@@ -1438,7 +1438,7 @@ class TradovateIntegration:
             "symbol": symbol,
             "orderQty": int(quantity),
             "pegDifference": float(offset),
-            "timeInForce": "Day",
+            "timeInForce": "GTC",  # CRITICAL: GTC so trailing stops persist
             "isAutomated": True
         }
         
