@@ -5829,6 +5829,107 @@ def projectx_connect(account_id):
 # End ProjectX Routes
 # ============================================================
 
+# ============================================================
+# WEBULL ROUTES
+# ============================================================
+
+@app.route('/accounts/<int:account_id>/webull-credentials')
+def webull_credentials(account_id):
+    """Render Webull credentials collection page"""
+    return render_template('webull_credentials.html', account_id=account_id)
+
+@app.route('/api/accounts/<int:account_id>/webull-connect', methods=['POST'])
+def webull_connect(account_id):
+    """Test and store Webull credentials"""
+    try:
+        data = request.get_json()
+        app_key = data.get('app_key', '').strip()
+        app_secret = data.get('app_secret', '').strip()
+
+        if not app_key or not app_secret:
+            return jsonify({
+                'success': False,
+                'error': 'App Key and App Secret are required'
+            }), 400
+
+        # Test connection with Webull
+        import asyncio
+        from phantom_scraper.webull_integration import WebullIntegration
+
+        async def test_webull():
+            async with WebullIntegration(app_key, app_secret) as webull:
+                login_result = await webull.login()
+                
+                if not login_result.get('success'):
+                    return {
+                        'success': False,
+                        'error': login_result.get('error', 'Authentication failed'),
+                    }
+
+                accounts = await webull.get_accounts()
+                return {
+                    'success': True,
+                    'accounts': accounts,
+                    'total_accounts': len(accounts),
+                }
+
+        # Run async test
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(test_webull())
+        finally:
+            loop.close()
+        
+        if not result.get('success'):
+            return jsonify(result), 400
+        
+        # Store credentials in database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute("""
+                UPDATE accounts 
+                SET broker = 'Webull',
+                    username = %s, 
+                    api_key = %s,
+                    is_connected = TRUE
+                WHERE id = %s
+            """, (app_key, app_secret, account_id))
+        else:
+            cursor.execute("""
+                UPDATE accounts 
+                SET broker = 'Webull',
+                    username = ?, 
+                    api_key = ?,
+                    is_connected = 1
+                WHERE id = ?
+            """, (app_key, app_secret, account_id))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Webull credentials stored for account {account_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Webull connected successfully',
+            'accounts': result.get('accounts', []),
+            'total_accounts': result.get('total_accounts', 0),
+            'redirect_url': '/accounts'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error connecting Webull: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============================================================
+# End Webull Routes
+# ============================================================
+
 @app.route('/api/accounts/<int:account_id>/connect')
 def connect_account(account_id):
     """Redirect to Tradovate OAuth connection"""

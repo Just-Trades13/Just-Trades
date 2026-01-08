@@ -139,6 +139,14 @@
             comingSoon: false
         },
         {
+            id: 'webull',
+            name: 'Webull',
+            description: 'Stocks, ETFs, Options, Futures, Crypto',
+            icon: 'account_balance',
+            status: 'available',
+            comingSoon: false
+        },
+        {
             id: 'rithmic',
             name: 'Rithmic',
             description: 'Professional trading infrastructure',
@@ -223,6 +231,9 @@
                 } else if (brokerId === 'projectx') {
                     // For ProjectX/TopstepX, collect API key credentials
                     window.location.href = `/accounts/${accountId}/projectx-credentials`;
+                } else if (brokerId === 'webull') {
+                    // For Webull, collect App Key and App Secret
+                    window.location.href = `/accounts/${accountId}/webull-credentials`;
                 } else {
                     // For other brokers, redirect to their specific connection page
                     alert(`${brokerName} connection flow coming soon!`);
