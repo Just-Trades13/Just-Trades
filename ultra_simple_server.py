@@ -9980,24 +9980,23 @@ def process_webhook_directly(webhook_token):
             
             _logger.info(f"🔍 STRATEGY CHECK: Found open {open_side} trade #{strategy_open_trade['id']}, trade_action={trade_action}")
             
-            # STALENESS CHECK: If trade is older than 10 minutes, it might be a ghost record
-            # Don't auto-close on broker - just clean up DB
-            from datetime import datetime, timedelta
-            trade_entry_time = strategy_open_trade.get('entry_time')
-            is_stale_trade = False
-            if trade_entry_time:
-                try:
-                    if isinstance(trade_entry_time, str):
-                        trade_entry_time = datetime.fromisoformat(trade_entry_time.replace('Z', '+00:00'))
-                    trade_age_minutes = (datetime.now(trade_entry_time.tzinfo) - trade_entry_time).total_seconds() / 60 if trade_entry_time.tzinfo else (datetime.now() - trade_entry_time).total_seconds() / 60
-                    if trade_age_minutes > 10:  # More than 10 minutes old
-                        is_stale_trade = True
-                        _logger.warning(f"⚠️ STALE TRADE DETECTED: Trade #{strategy_open_trade['id']} is {trade_age_minutes:.1f} minutes old - will NOT send broker close")
-                except Exception as e:
-                    _logger.warning(f"⚠️ Could not check trade staleness: {e}")
+            # =============================================================================
+            # AUTO-CLOSE DISABLED (Jan 9 2026)
+            # This was causing "instant open/close" because:
+            # 1. Stale DB records would trigger false closes when opposite signal arrives
+            # 2. Even with staleness check, timing issues caused problems
+            # 
+            # NOW: System will NOT auto-close on opposite signals
+            # Positions only close via: TP/SL, explicit CLOSE action, or manual UI
+            # =============================================================================
+            _logger.info(f"⏭️ SKIP: Auto-close disabled - not closing {open_side} trade #{strategy_open_trade['id']} on {trade_action} signal")
+            _logger.info(f"⏭️ Continuing to process {trade_action} as DCA/size-in instead")
+            # Don't return - let the trade continue processing as a normal signal
+            # This allows DCA/sizing into positions
             
+            # OLD CODE - DISABLED:
             # SELL signal when in LONG = just exit (don't open SHORT)
-            if trade_action.upper() == 'SELL' and open_side == 'LONG':
+            if False and trade_action.upper() == 'SELL' and open_side == 'LONG':
                 _logger.info(f"📊 SELL closes LONG - exiting position only")
                 try:
                     tick_size_close = get_tick_size(ticker) if ticker else 0.25
@@ -10057,7 +10056,8 @@ def process_webhook_directly(webhook_token):
                     _logger.warning(f"⚠️ Could not close LONG: {close_err}")
             
             # BUY signal when in SHORT = just exit (don't open LONG)
-            elif trade_action.upper() == 'BUY' and open_side == 'SHORT':
+            # DISABLED - see above
+            elif False and trade_action.upper() == 'BUY' and open_side == 'SHORT':
                 _logger.info(f"📊 BUY closes SHORT - exiting position only")
                 try:
                     tick_size_close = get_tick_size(ticker) if ticker else 0.25
