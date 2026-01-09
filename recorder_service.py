@@ -702,6 +702,12 @@ def execute_trade_simple(
             logger.error(f"   Check: 1) Is there a trader record? 2) Is trader.enabled = true? 3) Is recorder_id correct?")
             return result
         
+        # Get recorder settings to check avg_down_enabled
+        cursor.execute(f'SELECT avg_down_enabled FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        recorder_row = cursor.fetchone()
+        avg_down_enabled = bool(recorder_row['avg_down_enabled']) if recorder_row else False
+        logger.info(f"📊 Recorder {recorder_id}: avg_down_enabled = {avg_down_enabled}")
+        
         # Build list of ALL accounts to trade on from ALL traders
         traders = []
         seen_subaccounts = set()  # Prevent duplicates
@@ -1140,11 +1146,29 @@ def execute_trade_simple(
                     # Check existing position first
                     existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
                     has_existing_position = False
+                    existing_position_side = None
+                    existing_position_qty = 0
                     for pos in existing_positions:
                         pos_symbol = str(pos.get('symbol', '')).upper()
-                        if symbol_root in pos_symbol and pos.get('netPos', 0) != 0:
+                        net_pos = pos.get('netPos', 0)
+                        if symbol_root in pos_symbol and net_pos != 0:
                             has_existing_position = True
+                            existing_position_side = 'LONG' if net_pos > 0 else 'SHORT'
+                            existing_position_qty = abs(net_pos)
                             break
+                    
+                    # CRITICAL: If avg_down is DISABLED and we already have a position in SAME direction, SKIP
+                    if has_existing_position and not avg_down_enabled:
+                        # Check if signal is in same direction as existing position
+                        signal_side = 'LONG' if action == 'BUY' else 'SHORT'
+                        if signal_side == existing_position_side:
+                            logger.warning(f"⚠️ [{acct_name}] SKIPPING - Already {existing_position_side} {existing_position_qty} and avg_down_enabled=False")
+                            return {
+                                'success': False,
+                                'error': f'Already have {existing_position_side} position and averaging down is disabled',
+                                'acct_name': acct_name,
+                                'skipped': True
+                            }
                     
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
