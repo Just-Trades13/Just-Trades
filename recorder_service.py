@@ -1296,6 +1296,8 @@ def execute_trade_simple(
                             tp_order_id = existing_tp_id
                             logger.info(f"✅ [{acct_name}] TP MODIFIED @ {tp_price}")
                         else:
+                            error_msg = modify_result.get('error', 'Unknown error') if modify_result else 'No response'
+                            logger.warning(f"⚠️ [{acct_name}] TP MODIFY FAILED: {error_msg} - will place new TP")
                             existing_tp_id = None
                     
                     if not existing_tp_id:
@@ -1319,10 +1321,23 @@ def execute_trade_simple(
                             "timeInForce": "GTC",
                             "isAutomated": True
                         }
-                        tp_result = await tradovate.place_order(tp_order_data)
-                        if tp_result and tp_result.get('success'):
-                            tp_order_id = tp_result.get('orderId') or tp_result.get('id')
-                            logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price}")
+                        
+                        # Try to place TP with retry on failure
+                        tp_result = None
+                        for tp_attempt in range(3):
+                            tp_result = await tradovate.place_order(tp_order_data)
+                            if tp_result and tp_result.get('success'):
+                                tp_order_id = tp_result.get('orderId') or tp_result.get('id')
+                                logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price} (order_id: {tp_order_id})")
+                                break
+                            else:
+                                error_msg = tp_result.get('error', 'Unknown error') if tp_result else 'No response'
+                                logger.warning(f"⚠️ [{acct_name}] TP placement attempt {tp_attempt+1}/3 failed: {error_msg}")
+                                if tp_attempt < 2:
+                                    await asyncio.sleep(1)  # Wait 1 second before retry
+                        
+                        if not tp_order_id:
+                            logger.error(f"❌ [{acct_name}] FAILED to place TP after 3 attempts! Position at {broker_avg} has NO TP PROTECTION!")
                     
                     # STEP 5: Place SL order if configured (sl_ticks > 0)
                     sl_price = None
