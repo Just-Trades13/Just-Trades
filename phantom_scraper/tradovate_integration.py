@@ -1266,7 +1266,15 @@ class TradovateIntegration:
                 if response.status == 200:
                     try:
                         data = json.loads(response_text)
-                        logger.info(f"✅ Modified order {order_id} successfully")
+                        # CRITICAL: Check for error in response body (Tradovate returns 200 with errors!)
+                        if 'errorText' in data or 'error' in data:
+                            error_msg = data.get('errorText') or data.get('error') or 'Unknown error'
+                            logger.error(f"❌ Modify order {order_id} REJECTED by Tradovate: {error_msg}")
+                            logger.error(f"❌ Full response: {data}")
+                            return {'success': False, 'error': error_msg, 'data': data}
+                        
+                        # Log the actual response to verify modification
+                        logger.info(f"✅ Modified order {order_id} - Response: {data}")
                         return {'success': True, 'data': data, 'orderId': order_id}
                     except:
                         logger.info(f"✅ Modified order {order_id} (no JSON response)")
