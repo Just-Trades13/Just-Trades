@@ -153,6 +153,19 @@
                         </label>
                         <div class="separator"></div>
                         <div class="toggle-row">
+                            <span>Auto Break-Even</span>
+                            <label class="switch">
+                                <input type="checkbox" id="break_even_enabled" {{ 'checked' if recorder and recorder.break_even_enabled else '' }}>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <label class="form-field">
+                            <span>Break-Even Trigger (ticks)</span>
+                            <input type="number" id="break_even_ticks" value="{{ recorder.break_even_ticks if recorder and recorder.break_even_ticks else 10 }}" min="1" step="1">
+                            <small>Move SL to entry after X ticks profit</small>
+                        </label>
+                        <div class="separator"></div>
+                        <div class="toggle-row">
                             <span>Averaging Down</span>
                             <label class="switch">
                                 <input type="checkbox" id="avg_down_enabled" {{ 'checked' if recorder and recorder.avg_down_enabled else '' }}>
@@ -975,6 +988,8 @@
             sl_amount: parseFloat(document.getElementById('sl_amount').value) || 0,
             sl_units: document.getElementById('sl_units').value,
             sl_type: document.getElementById('sl_type').value,
+            break_even_enabled: document.getElementById('break_even_enabled').checked,
+            break_even_ticks: parseInt(document.getElementById('break_even_ticks').value) || 10,
             avg_down_enabled: document.getElementById('avg_down_enabled').checked,
             avg_down_amount: parseInt(document.getElementById('avg_down_amount').value) || 0,
             avg_down_point: parseFloat(document.getElementById('avg_down_point').value) || 0,

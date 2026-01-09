@@ -233,6 +233,19 @@
                 </label>
                 <div class="separator"></div>
                 <div class="toggle-row">
+                    <span>Auto Break-Even</span>
+                    <label class="switch">
+                        <input type="checkbox" id="breakEvenEnabled" name="break_even_enabled" {% if trader.break_even_enabled %}checked{% endif %}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Break-Even Trigger (ticks)</span>
+                    <input type="number" id="breakEvenTicks" name="break_even_ticks" value="{{ trader.break_even_ticks or 10 }}" min="1" step="1">
+                    <small>Move SL to entry after X ticks profit</small>
+                </label>
+                <div class="separator"></div>
+                <div class="toggle-row">
                     <span>Averaging Down (DCA)</span>
                     <label class="switch">
                         <input type="checkbox" id="avgDownEnabled" name="avg_down_enabled" {% if trader.avg_down_enabled %}checked{% endif %}>
@@ -668,6 +681,19 @@
                         </select>
                         <span class="material-icons">expand_more</span>
                     </div>
+                </label>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Auto Break-Even</span>
+                    <label class="switch">
+                        <input type="checkbox" id="createBreakEvenEnabled" name="break_even_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Break-Even Trigger (ticks)</span>
+                    <input type="number" id="createBreakEvenTicks" name="break_even_ticks" value="10" min="1" step="1">
+                    <small>Move SL to entry after X ticks profit</small>
                 </label>
                 <div class="separator"></div>
                 <div class="toggle-row">
@@ -1519,6 +1545,13 @@
             
             const slType = document.getElementById('createSlType');
             if (slType && recorder.sl_type) slType.value = recorder.sl_type;
+            
+            // Populate Break-Even Settings
+            const breakEvenEnabled = document.getElementById('createBreakEvenEnabled');
+            if (breakEvenEnabled) breakEvenEnabled.checked = recorder.break_even_enabled ? true : false;
+            
+            const breakEvenTicks = document.getElementById('createBreakEvenTicks');
+            if (breakEvenTicks) breakEvenTicks.value = recorder.break_even_ticks || 10;
             
             // Populate DCA/Averaging Down Settings
             const avgDownEnabled = document.getElementById('createAvgDownEnabled');

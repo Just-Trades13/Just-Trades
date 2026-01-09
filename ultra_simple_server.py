@@ -784,6 +784,8 @@ def _init_sqlite_tables(conn):
             sl_amount REAL DEFAULT 0,
             sl_units TEXT DEFAULT 'Ticks',
             sl_type TEXT DEFAULT 'Fixed',
+            break_even_enabled INTEGER DEFAULT 0,
+            break_even_ticks INTEGER DEFAULT 10,
             avg_down_enabled INTEGER DEFAULT 0,
             avg_down_amount INTEGER DEFAULT 1,
             avg_down_point REAL DEFAULT 0,
@@ -1248,6 +1250,8 @@ def _init_postgres_tables():
             sl_amount REAL DEFAULT 0,
             sl_units TEXT DEFAULT 'Ticks',
             sl_type TEXT DEFAULT 'Fixed',
+            break_even_enabled BOOLEAN DEFAULT FALSE,
+            break_even_ticks INTEGER DEFAULT 10,
             avg_down_enabled BOOLEAN DEFAULT FALSE,
             avg_down_amount INTEGER DEFAULT 1,
             avg_down_point REAL DEFAULT 0,
@@ -7383,6 +7387,8 @@ def api_get_recorder(recorder_id):
             'sl_amount': 0,
             'sl_units': 'Ticks',
             'sl_type': 'Fixed',
+            'break_even_enabled': False,
+            'break_even_ticks': 10,
             'avg_down_enabled': False,
             'avg_down_amount': 1,
             'avg_down_point': 10,
@@ -8515,6 +8521,14 @@ def api_update_trader(trader_id):
                 recorder_updates.append(f'sl_type = {placeholder}')
                 recorder_params.append(data['sl_type'])
             
+            if 'break_even_enabled' in data:
+                recorder_updates.append(f'break_even_enabled = {placeholder}')
+                recorder_params.append(bool(data['break_even_enabled']) if is_postgres else (1 if data['break_even_enabled'] else 0))
+            
+            if 'break_even_ticks' in data:
+                recorder_updates.append(f'break_even_ticks = {placeholder}')
+                recorder_params.append(int(data['break_even_ticks']))
+            
             if 'avg_down_enabled' in data:
                 recorder_updates.append(f'avg_down_enabled = {placeholder}')
                 recorder_params.append(bool(data['avg_down_enabled']) if is_postgres else (1 if data['avg_down_enabled'] else 0))
@@ -9014,6 +9028,10 @@ def broker_execution_worker():
             quantity = task.get('quantity')
             tp_ticks = task.get('tp_ticks', 10)
             sl_ticks = task.get('sl_ticks', 0)
+            break_even_enabled = task.get('break_even_enabled', False)
+            break_even_ticks = task.get('break_even_ticks', 10)
+            entry_price = task.get('entry_price', 0)
+            is_long = task.get('is_long', True)
             
             # NO RETRIES - Try once, if fail log and move on
             # Retries can cause duplicate trades which is dangerous
@@ -9040,6 +9058,26 @@ def broker_execution_worker():
                     logger.info(f"✅ Broker execution successful: {action} {quantity} {ticker} on {accounts_traded} account(s)")
                     _broker_execution_stats['total_executed'] += 1
                     _broker_execution_stats['last_execution_time'] = time.time()
+                    
+                    # Register break-even monitor if enabled
+                    if break_even_enabled and break_even_ticks > 0 and entry_price > 0:
+                        try:
+                            # Get account IDs from result for break-even monitoring
+                            executed_accounts = result.get('executed_accounts', [])
+                            for acct_info in executed_accounts:
+                                acct_id = acct_info.get('subaccount_id') or acct_info.get('account_id')
+                                if acct_id:
+                                    register_break_even_monitor(
+                                        account_id=acct_id,
+                                        symbol=ticker,
+                                        entry_price=entry_price,
+                                        is_long=is_long,
+                                        activation_ticks=break_even_ticks,
+                                        sl_order_id=None  # Will be set when SL is placed
+                                    )
+                                    logger.info(f"📊 Break-even monitor registered: {ticker} @ {entry_price}, trigger={break_even_ticks} ticks")
+                        except Exception as be_err:
+                            logger.warning(f"⚠️ Could not register break-even monitor: {be_err}")
                 else:
                     error = result.get('error', 'Unknown error')
                     logger.error(f"❌ Broker execution FAILED: {error}")
@@ -9801,6 +9839,8 @@ def process_webhook_directly(webhook_token):
         sl_amount = float(recorder.get('sl_amount', 0) or 0)
         sl_units = recorder.get('sl_units', 'Ticks')
         sl_type = recorder.get('sl_type', 'Fixed')
+        break_even_enabled = recorder.get('break_even_enabled', 0)
+        break_even_ticks = int(recorder.get('break_even_ticks', 10) or 10)
         
         # Get linked trader for live execution with ALL risk settings
         # PostgreSQL uses TRUE (boolean), SQLite uses 1 (integer)
@@ -10288,6 +10328,10 @@ def process_webhook_directly(webhook_token):
                 'quantity': quantity,
                 'tp_ticks': tp_ticks,
                 'sl_ticks': sl_ticks if sl_ticks > 0 else 0,
+                'break_even_enabled': break_even_enabled,
+                'break_even_ticks': break_even_ticks,
+                'entry_price': current_price,
+                'is_long': trade_side == 'LONG',
                 'retry_count': 0
             }
             
