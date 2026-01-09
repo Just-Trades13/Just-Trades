@@ -1273,6 +1273,33 @@ class TradovateIntegration:
                             logger.error(f"❌ Full response: {data}")
                             return {'success': False, 'error': error_msg, 'data': data}
                         
+                        # CRITICAL: Check if response only contains 'commandId' 
+                        # This means command was QUEUED but NOT necessarily applied
+                        if 'commandId' in data and len(data) == 1:
+                            logger.warning(f"⚠️ Modify order {order_id} returned only commandId: {data}")
+                            logger.warning(f"⚠️ This may indicate the order no longer exists or cannot be modified")
+                            # Verify by fetching the order
+                            try:
+                                verify_order = await self.get_order_item(order_id)
+                                if verify_order:
+                                    actual_price = verify_order.get('price')
+                                    actual_qty = verify_order.get('orderQty')
+                                    expected_price = new_price
+                                    expected_qty = new_qty
+                                    if actual_price != expected_price or actual_qty != expected_qty:
+                                        logger.error(f"❌ VERIFICATION FAILED! Order {order_id} NOT modified!")
+                                        logger.error(f"   Expected: price={expected_price}, qty={expected_qty}")
+                                        logger.error(f"   Actual: price={actual_price}, qty={actual_qty}")
+                                        logger.error(f"   Order status: {verify_order.get('ordStatus')}")
+                                        return {'success': False, 'error': 'Modification not applied', 'data': verify_order}
+                                    else:
+                                        logger.info(f"✅ VERIFIED: Order {order_id} modified successfully")
+                                else:
+                                    logger.error(f"❌ Order {order_id} not found after modify attempt!")
+                                    return {'success': False, 'error': 'Order not found after modification'}
+                            except Exception as ve:
+                                logger.warning(f"⚠️ Could not verify modification: {ve}")
+                        
                         # Log the actual response to verify modification
                         logger.info(f"✅ Modified order {order_id} - Response: {data}")
                         return {'success': True, 'data': data, 'orderId': order_id}
