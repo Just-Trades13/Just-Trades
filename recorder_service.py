@@ -1157,18 +1157,32 @@ def execute_trade_simple(
                             existing_position_qty = abs(net_pos)
                             break
                     
-                    # CRITICAL: If avg_down is DISABLED and we already have a position in SAME direction, SKIP
-                    if has_existing_position and not avg_down_enabled:
-                        # Check if signal is in same direction as existing position
+                    # CRITICAL POSITION CHECKS
+                    if has_existing_position:
                         signal_side = 'LONG' if action == 'BUY' else 'SHORT'
-                        if signal_side == existing_position_side:
-                            logger.warning(f"⚠️ [{acct_name}] SKIPPING - Already {existing_position_side} {existing_position_qty} and avg_down_enabled=False")
-                            return {
-                                'success': False,
-                                'error': f'Already have {existing_position_side} position and averaging down is disabled',
-                                'acct_name': acct_name,
-                                'skipped': True
-                            }
+                        
+                        if avg_down_enabled:
+                            # DCA MODE: Only allow SAME direction (to add), IGNORE opposite signals
+                            if signal_side != existing_position_side:
+                                logger.warning(f"⚠️ [{acct_name}] DCA SKIP - Already {existing_position_side} {existing_position_qty}, ignoring opposite {signal_side} signal")
+                                return {
+                                    'success': False,
+                                    'error': f'DCA mode: ignoring {signal_side} signal while in {existing_position_side} position',
+                                    'acct_name': acct_name,
+                                    'skipped': True
+                                }
+                            # Same direction = allow DCA to add to position
+                            logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty}")
+                        else:
+                            # NON-DCA MODE: Skip SAME direction (no stacking), allow opposite (close/flip)
+                            if signal_side == existing_position_side:
+                                logger.warning(f"⚠️ [{acct_name}] SKIPPING - Already {existing_position_side} {existing_position_qty} and avg_down_enabled=False")
+                                return {
+                                    'success': False,
+                                    'error': f'Already have {existing_position_side} position and averaging down is disabled',
+                                    'acct_name': acct_name,
+                                    'skipped': True
+                                }
                     
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
