@@ -9980,6 +9980,22 @@ def process_webhook_directly(webhook_token):
             
             _logger.info(f"🔍 STRATEGY CHECK: Found open {open_side} trade #{strategy_open_trade['id']}, trade_action={trade_action}")
             
+            # STALENESS CHECK: If trade is older than 10 minutes, it might be a ghost record
+            # Don't auto-close on broker - just clean up DB
+            from datetime import datetime, timedelta
+            trade_entry_time = strategy_open_trade.get('entry_time')
+            is_stale_trade = False
+            if trade_entry_time:
+                try:
+                    if isinstance(trade_entry_time, str):
+                        trade_entry_time = datetime.fromisoformat(trade_entry_time.replace('Z', '+00:00'))
+                    trade_age_minutes = (datetime.now(trade_entry_time.tzinfo) - trade_entry_time).total_seconds() / 60 if trade_entry_time.tzinfo else (datetime.now() - trade_entry_time).total_seconds() / 60
+                    if trade_age_minutes > 10:  # More than 10 minutes old
+                        is_stale_trade = True
+                        _logger.warning(f"⚠️ STALE TRADE DETECTED: Trade #{strategy_open_trade['id']} is {trade_age_minutes:.1f} minutes old - will NOT send broker close")
+                except Exception as e:
+                    _logger.warning(f"⚠️ Could not check trade staleness: {e}")
+            
             # SELL signal when in LONG = just exit (don't open SHORT)
             if trade_action.upper() == 'SELL' and open_side == 'LONG':
                 _logger.info(f"📊 SELL closes LONG - exiting position only")
@@ -10003,22 +10019,26 @@ def process_webhook_directly(webhook_token):
                     
                     _logger.info(f"✅ LONG closed by SELL: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
                     
-                    # CRITICAL: Queue broker close order BEFORE returning
-                    try:
-                        close_task = {
-                            'recorder_id': recorder_id,
-                            'action': 'SELL',  # SELL to close LONG
-                            'ticker': ticker,
-                            'quantity': quantity,
-                            'tp_ticks': 0,  # No TP for close
-                            'sl_ticks': 0,
-                            'retry_count': 0
-                        }
-                        broker_execution_queue.put_nowait(close_task)
-                        _logger.info(f"📤 Broker CLOSE queued: SELL {quantity} {ticker} (closing LONG)")
-                        _broker_execution_stats['total_queued'] += 1
-                    except Exception as queue_err:
-                        _logger.warning(f"⚠️ Could not queue broker close: {queue_err}")
+                    # CRITICAL: Only queue broker close if trade is NOT stale
+                    # Stale trades are just DB cleanup - broker may not have the position
+                    if not is_stale_trade:
+                        try:
+                            close_task = {
+                                'recorder_id': recorder_id,
+                                'action': 'SELL',  # SELL to close LONG
+                                'ticker': ticker,
+                                'quantity': quantity,
+                                'tp_ticks': 0,  # No TP for close
+                                'sl_ticks': 0,
+                                'retry_count': 0
+                            }
+                            broker_execution_queue.put_nowait(close_task)
+                            _logger.info(f"📤 Broker CLOSE queued: SELL {quantity} {ticker} (closing LONG)")
+                            _broker_execution_stats['total_queued'] += 1
+                        except Exception as queue_err:
+                            _logger.warning(f"⚠️ Could not queue broker close: {queue_err}")
+                    else:
+                        _logger.info(f"🧹 STALE: Cleaned up DB record only - NO broker order sent")
                     
                     conn.close()
                     return jsonify({
@@ -10059,22 +10079,26 @@ def process_webhook_directly(webhook_token):
                     
                     _logger.info(f"✅ SHORT closed by BUY: #{strategy_open_trade['id']} | Exit: {current_price} | PnL: ${pnl_dollars:.2f}")
                     
-                    # CRITICAL: Queue broker close order BEFORE returning
-                    try:
-                        close_task = {
-                            'recorder_id': recorder_id,
-                            'action': 'BUY',  # BUY to close SHORT
-                            'ticker': ticker,
-                            'quantity': quantity,
-                            'tp_ticks': 0,  # No TP for close
-                            'sl_ticks': 0,
-                            'retry_count': 0
-                        }
-                        broker_execution_queue.put_nowait(close_task)
-                        _logger.info(f"📤 Broker CLOSE queued: BUY {quantity} {ticker} (closing SHORT)")
-                        _broker_execution_stats['total_queued'] += 1
-                    except Exception as queue_err:
-                        _logger.warning(f"⚠️ Could not queue broker close: {queue_err}")
+                    # CRITICAL: Only queue broker close if trade is NOT stale
+                    # Stale trades are just DB cleanup - broker may not have the position
+                    if not is_stale_trade:
+                        try:
+                            close_task = {
+                                'recorder_id': recorder_id,
+                                'action': 'BUY',  # BUY to close SHORT
+                                'ticker': ticker,
+                                'quantity': quantity,
+                                'tp_ticks': 0,  # No TP for close
+                                'sl_ticks': 0,
+                                'retry_count': 0
+                            }
+                            broker_execution_queue.put_nowait(close_task)
+                            _logger.info(f"📤 Broker CLOSE queued: BUY {quantity} {ticker} (closing SHORT)")
+                            _broker_execution_stats['total_queued'] += 1
+                        except Exception as queue_err:
+                            _logger.warning(f"⚠️ Could not queue broker close: {queue_err}")
+                    else:
+                        _logger.info(f"🧹 STALE: Cleaned up DB record only - NO broker order sent")
                     
                     conn.close()
                     return jsonify({
