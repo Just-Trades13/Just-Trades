@@ -3452,6 +3452,142 @@ def admin_delete_user(user_id):
         conn.close()
 
 
+@app.route('/admin/users/<int:user_id>/get', methods=['GET'])
+def admin_get_user(user_id):
+    """Admin endpoint to get user data for editing."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    current = get_current_user()
+    if not current or not current.is_admin:
+        return jsonify({'success': False, 'error': 'Not authorized'}), 403
+    
+    from user_auth import get_auth_db_connection
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if db_type == 'postgresql':
+            cursor.execute('SELECT id, username, email, display_name, is_admin, is_active, is_approved FROM users WHERE id = %s', (user_id,))
+        else:
+            cursor.execute('SELECT id, username, email, display_name, is_admin, is_active, is_approved FROM users WHERE id = ?', (user_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+        
+        # Convert row to dict
+        if hasattr(row, 'keys'):
+            user_data = dict(row)
+        else:
+            user_data = {
+                'id': row[0],
+                'username': row[1],
+                'email': row[2],
+                'display_name': row[3],
+                'is_admin': bool(row[4]),
+                'is_active': bool(row[5]),
+                'is_approved': bool(row[6])
+            }
+        
+        return jsonify({'success': True, 'user': user_data})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/admin/users/<int:user_id>/edit', methods=['POST'])
+def admin_edit_user(user_id):
+    """Admin endpoint to update a user."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    current = get_current_user()
+    if not current or not current.is_admin:
+        return jsonify({'success': False, 'error': 'Not authorized'}), 403
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'No data provided'}), 400
+    
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip()
+    display_name = data.get('display_name', '').strip()
+    password = data.get('password', '').strip()
+    is_admin = data.get('is_admin', False)
+    is_approved = data.get('is_approved', False)
+    is_active = data.get('is_active', True)
+    
+    if not username or not email:
+        return jsonify({'success': False, 'error': 'Username and email are required'}), 400
+    
+    from user_auth import get_auth_db_connection
+    import hashlib
+    
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check for duplicate username/email (excluding current user)
+        if db_type == 'postgresql':
+            cursor.execute('SELECT id FROM users WHERE (username = %s OR email = %s) AND id != %s', (username, email, user_id))
+        else:
+            cursor.execute('SELECT id FROM users WHERE (username = ? OR email = ?) AND id != ?', (username, email, user_id))
+        
+        if cursor.fetchone():
+            return jsonify({'success': False, 'error': 'Username or email already exists'}), 400
+        
+        # Build update query
+        if password:
+            # Hash the new password
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            if db_type == 'postgresql':
+                cursor.execute('''
+                    UPDATE users SET username = %s, email = %s, display_name = %s, 
+                    password_hash = %s, is_admin = %s, is_approved = %s, is_active = %s
+                    WHERE id = %s
+                ''', (username, email, display_name or username, password_hash, is_admin, is_approved, is_active, user_id))
+            else:
+                cursor.execute('''
+                    UPDATE users SET username = ?, email = ?, display_name = ?, 
+                    password_hash = ?, is_admin = ?, is_approved = ?, is_active = ?
+                    WHERE id = ?
+                ''', (username, email, display_name or username, password_hash, is_admin, is_approved, is_active, user_id))
+        else:
+            # Update without changing password
+            if db_type == 'postgresql':
+                cursor.execute('''
+                    UPDATE users SET username = %s, email = %s, display_name = %s,
+                    is_admin = %s, is_approved = %s, is_active = %s
+                    WHERE id = %s
+                ''', (username, email, display_name or username, is_admin, is_approved, is_active, user_id))
+            else:
+                cursor.execute('''
+                    UPDATE users SET username = ?, email = ?, display_name = ?,
+                    is_admin = ?, is_approved = ?, is_active = ?
+                    WHERE id = ?
+                ''', (username, email, display_name or username, is_admin, is_approved, is_active, user_id))
+        
+        conn.commit()
+        logger.info(f"✅ Admin updated user {user_id}: {username} (admin={is_admin}, approved={is_approved}, active={is_active})")
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"❌ Failed to update user {user_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ============================================================================
 # ADMIN ANNOUNCEMENTS/BULLETINS
 # ============================================================================

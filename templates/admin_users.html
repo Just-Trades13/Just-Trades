@@ -671,6 +671,60 @@
     </div>
 </div>
 
+<!-- Edit User Modal -->
+<div class="modal-overlay" id="editUserModal">
+    <div class="modal">
+        <h3>
+            <span class="material-icons">edit</span>
+            Edit User
+        </h3>
+        <form id="editUserForm">
+            <input type="hidden" id="edit_user_id" name="user_id">
+            <div class="form-group">
+                <label for="edit_username">Username</label>
+                <input type="text" id="edit_username" name="username" required minlength="3">
+            </div>
+            <div class="form-group">
+                <label for="edit_email">Email</label>
+                <input type="email" id="edit_email" name="email" required>
+            </div>
+            <div class="form-group">
+                <label for="edit_display_name">Display Name</label>
+                <input type="text" id="edit_display_name" name="display_name" placeholder="Optional display name">
+            </div>
+            <div class="form-group">
+                <label for="edit_password">New Password (leave blank to keep current)</label>
+                <input type="password" id="edit_password" name="password" minlength="6" placeholder="Leave blank to keep current password">
+            </div>
+            <div class="form-group">
+                <label for="edit_is_admin">Role</label>
+                <select id="edit_is_admin" name="is_admin">
+                    <option value="0">Regular User</option>
+                    <option value="1">Administrator</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="edit_is_approved">Approval Status</label>
+                <select id="edit_is_approved" name="is_approved">
+                    <option value="0">Pending Approval</option>
+                    <option value="1">Approved</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="edit_is_active">Account Status</label>
+                <select id="edit_is_active" name="is_active">
+                    <option value="1">Active</option>
+                    <option value="0">Inactive (Disabled)</option>
+                </select>
+            </div>
+            <div class="modal-buttons">
+                <button type="button" class="btn-cancel" onclick="hideEditUserModal()">Cancel</button>
+                <button type="submit" class="btn-submit">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 function showAddUserModal() {
     document.getElementById('addUserModal').classList.add('show');
@@ -680,10 +734,74 @@ function hideAddUserModal() {
     document.getElementById('addUserModal').classList.remove('show');
 }
 
-function editUser(userId) {
-    // TODO: Implement edit user modal
-    alert('Edit user ' + userId + ' - Coming soon!');
+function showEditUserModal() {
+    document.getElementById('editUserModal').classList.add('show');
 }
+
+function hideEditUserModal() {
+    document.getElementById('editUserModal').classList.remove('show');
+}
+
+function editUser(userId) {
+    // Fetch user data and populate the edit modal
+    fetch('/admin/users/' + userId + '/get')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const user = data.user;
+                document.getElementById('edit_user_id').value = user.id;
+                document.getElementById('edit_username').value = user.username;
+                document.getElementById('edit_email').value = user.email;
+                document.getElementById('edit_display_name').value = user.display_name || '';
+                document.getElementById('edit_password').value = '';
+                document.getElementById('edit_is_admin').value = user.is_admin ? '1' : '0';
+                document.getElementById('edit_is_approved').value = user.is_approved ? '1' : '0';
+                document.getElementById('edit_is_active').value = user.is_active ? '1' : '0';
+                showEditUserModal();
+            } else {
+                alert('Error loading user: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('Error loading user: ' + error);
+        });
+}
+
+// Handle edit form submission
+document.getElementById('editUserForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const userId = document.getElementById('edit_user_id').value;
+    const formData = {
+        username: document.getElementById('edit_username').value,
+        email: document.getElementById('edit_email').value,
+        display_name: document.getElementById('edit_display_name').value,
+        password: document.getElementById('edit_password').value,
+        is_admin: document.getElementById('edit_is_admin').value === '1',
+        is_approved: document.getElementById('edit_is_approved').value === '1',
+        is_active: document.getElementById('edit_is_active').value === '1'
+    };
+    
+    fetch('/admin/users/' + userId + '/edit', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            hideEditUserModal();
+            location.reload();
+        } else {
+            alert('Error updating user: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error updating user: ' + error);
+    });
+});
 
 function approveUser(userId, username) {
     if (confirm('Approve user "' + username + '"? They will be able to log in and use the system.')) {
@@ -746,13 +864,20 @@ function deleteUser(userId, username) {
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         hideAddUserModal();
+        hideEditUserModal();
     }
 });
 
-// Close modal on background click
+// Close modals on background click
 document.getElementById('addUserModal').addEventListener('click', function(e) {
     if (e.target === this) {
         hideAddUserModal();
+    }
+});
+
+document.getElementById('editUserModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideEditUserModal();
     }
 });
 </script>

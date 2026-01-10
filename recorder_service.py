@@ -1183,6 +1183,16 @@ def execute_trade_simple(
                                     'acct_name': acct_name,
                                     'skipped': True
                                 }
+                            else:
+                                # CRITICAL FIX (Jan 9, 2026): Opposite signal = CLOSE ONLY
+                                # Use existing position qty instead of configured qty
+                                # This prevents accidentally flipping to a huge opposite position
+                                # Example: LONG 2, SELL signal with 10x multiplier would place SELL 10
+                                #          That closes 2 LONG and opens 8 SHORT - BAD!
+                                # Fix: Use existing_position_qty (2) so it only closes, doesn't flip
+                                logger.info(f"🔄 [{acct_name}] CLOSE ONLY - Opposite {signal_side} signal while {existing_position_side} {existing_position_qty}")
+                                logger.info(f"   Adjusting quantity from {adjusted_quantity} to {existing_position_qty} (close exact position size)")
+                                adjusted_quantity = existing_position_qty
                     
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
