@@ -16474,6 +16474,203 @@ def settings():
         return redirect(url_for('login'))
     return render_template('settings.html')
 
+
+# ============================================================================
+# COMMUNITY CHAT - Public chat room for all users
+# ============================================================================
+
+# Store for tracking online users (in-memory, resets on server restart)
+_chat_online_users = {}  # user_id -> last_heartbeat_time
+
+def ensure_chat_table():
+    """Ensure the chat_messages table exists."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    username VARCHAR(100) NOT NULL,
+                    display_name VARCHAR(100),
+                    is_admin BOOLEAN DEFAULT FALSE,
+                    message TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            # Index for faster queries
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at DESC)')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    username TEXT NOT NULL,
+                    display_name TEXT,
+                    is_admin INTEGER DEFAULT 0,
+                    message TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at DESC)')
+        
+        conn.commit()
+        logger.info("✅ Chat messages table ready")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error creating chat table: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+# Initialize chat table on startup
+ensure_chat_table()
+
+
+@app.route('/chat')
+def chat_page():
+    """Community chat page."""
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
+    return render_template('chat.html')
+
+
+@app.route('/api/chat/messages', methods=['GET'])
+def get_chat_messages():
+    """Get chat messages, optionally after a certain ID."""
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    after_id = request.args.get('after', 0, type=int)
+    limit = request.args.get('limit', 100, type=int)
+    limit = min(limit, 500)  # Cap at 500 messages
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        placeholder = '%s' if is_using_postgres() else '?'
+        
+        if after_id > 0:
+            cursor.execute(f'''
+                SELECT id, user_id, username, display_name, is_admin, message, created_at 
+                FROM chat_messages 
+                WHERE id > {placeholder}
+                ORDER BY id ASC
+                LIMIT {placeholder}
+            ''', (after_id, limit))
+        else:
+            # Get last N messages
+            cursor.execute(f'''
+                SELECT id, user_id, username, display_name, is_admin, message, created_at 
+                FROM chat_messages 
+                ORDER BY id DESC
+                LIMIT {placeholder}
+            ''', (limit,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        messages = []
+        for row in rows:
+            if hasattr(row, 'keys'):
+                msg = dict(row)
+            else:
+                msg = {
+                    'id': row[0],
+                    'user_id': row[1],
+                    'username': row[2],
+                    'display_name': row[3],
+                    'is_admin': bool(row[4]),
+                    'message': row[5],
+                    'created_at': str(row[6])
+                }
+            messages.append(msg)
+        
+        # Reverse if we fetched in DESC order (initial load)
+        if after_id == 0:
+            messages.reverse()
+        
+        # Count online users (heartbeat within last 60 seconds)
+        now = time.time()
+        online_count = sum(1 for ts in _chat_online_users.values() if now - ts < 60)
+        
+        return jsonify({
+            'success': True,
+            'messages': messages,
+            'online_count': max(online_count, 1)  # At least 1 (current user)
+        })
+    except Exception as e:
+        logger.error(f"Error getting chat messages: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/chat/send', methods=['POST'])
+def send_chat_message():
+    """Send a chat message."""
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 401
+    
+    data = request.get_json()
+    message = data.get('message', '').strip() if data else ''
+    
+    if not message:
+        return jsonify({'success': False, 'error': 'Message is required'}), 400
+    
+    if len(message) > 5000:
+        return jsonify({'success': False, 'error': 'Message too long (max 5000 characters)'}), 400
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        placeholder = '%s' if is_using_postgres() else '?'
+        
+        cursor.execute(f'''
+            INSERT INTO chat_messages (user_id, username, display_name, is_admin, message)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        ''', (user.id, user.username, user.display_name, user.is_admin, message))
+        
+        conn.commit()
+        
+        # Get the inserted message ID
+        if is_using_postgres():
+            cursor.execute('SELECT lastval()')
+            message_id = cursor.fetchone()[0]
+        else:
+            message_id = cursor.lastrowid
+        
+        conn.close()
+        
+        logger.info(f"💬 Chat message from {user.username}: {message[:50]}...")
+        
+        return jsonify({
+            'success': True,
+            'message_id': message_id
+        })
+    except Exception as e:
+        logger.error(f"Error sending chat message: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/chat/heartbeat', methods=['POST'])
+def chat_heartbeat():
+    """Update user's online status."""
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return jsonify({'success': False}), 401
+    
+    user = get_current_user()
+    if user:
+        _chat_online_users[user.id] = time.time()
+    
+    return jsonify({'success': True})
+
+
 @app.route('/api/user/theme', methods=['GET', 'POST'])
 def api_user_theme():
     """Get or update user's theme preference (dark/light mode)."""
