@@ -39,6 +39,11 @@ class TradovateIntegration:
         self.subaccounts = []
         self.contract_cache: Dict[int, Optional[str]] = {}
         
+        # 🚀 WEBSOCKET ORDERS CONFIG (Added Jan 12, 2025)
+        # Set to False to disable WebSocket orders and use REST only
+        # WebSocket bypasses REST rate limits (80/min) for scalability
+        self.use_websocket_orders = True
+        
         # ========================================================
         # CRITICAL: TradingView Routing Mode Detection
         # ========================================================
@@ -869,6 +874,257 @@ class TradovateIntegration:
         except Exception as e:
             logger.error(f"Error placing order: {e}")
             return {'success': False, 'error': str(e)}
+    
+    # ============================================================================
+    # 🚀 WEBSOCKET ORDER EXECUTION (Scalable - No REST Rate Limits)
+    # ============================================================================
+    # Added: Jan 12, 2025
+    # Purpose: Place ALL orders via WebSocket to bypass REST API rate limits
+    # Fallback: If WebSocket fails, automatically uses REST API
+    # Config: Set self.use_websocket_orders = False to disable
+    # REVERT: git checkout WORKING_JAN12_2025_PRE_WEBSOCKET -- phantom_scraper/tradovate_integration.py
+    # ============================================================================
+    
+    async def place_order_websocket(self, order_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Place an order via WebSocket (bypasses REST rate limits).
+        
+        Same parameters as place_order() for drop-in compatibility.
+        Returns same format as place_order() so it can be used interchangeably.
+        
+        Args:
+            order_data: Dict with accountId, accountSpec, action, symbol, orderQty, orderType, etc.
+        
+        Returns:
+            Dict with 'success', 'orderId', etc. - same format as REST place_order()
+            Returns None if WebSocket unavailable (signals caller to use REST fallback)
+        """
+        try:
+            # Ensure WebSocket is connected
+            if not await self._ensure_websocket_connected():
+                logger.warning("⚠️ [WS] WebSocket not available for order, will use REST fallback")
+                return None  # Signal to caller to use REST fallback
+            
+            # Build WebSocket message for order/placeOrder
+            # Format: {"n": "order/placeOrder", "o": {order_data}}
+            ws_message = {
+                "n": "order/placeOrder",
+                "o": order_data
+            }
+            
+            logger.info(f"📤 [WS] Placing order: {order_data.get('action')} {order_data.get('orderQty')} {order_data.get('symbol')}")
+            
+            # Send via WebSocket
+            message_json = json.dumps(ws_message)
+            await self.websocket.send(message_json)
+            
+            # Wait for response with timeout
+            try:
+                response = await asyncio.wait_for(self.websocket.recv(), timeout=30.0)
+                result = json.loads(response)
+                
+                logger.debug(f"📥 [WS] Order response: {result}")
+                
+                # Parse response - Tradovate WebSocket responses can vary in format
+                if isinstance(result, dict):
+                    # Check for success indicators
+                    order_id = result.get('orderId') or result.get('id') or result.get('d', {}).get('orderId')
+                    
+                    if order_id:
+                        logger.info(f"✅ [WS] Order placed successfully: orderId={order_id}")
+                        return {
+                            'success': True,
+                            'orderId': order_id,
+                            'data': result,
+                            'via': 'websocket'
+                        }
+                    
+                    # Check for error
+                    error_msg = result.get('errorText') or result.get('error') or (result.get('s') == 'error')
+                    if error_msg and error_msg is not True:
+                        logger.warning(f"⚠️ [WS] Order failed: {error_msg}")
+                        return {
+                            'success': False,
+                            'error': str(error_msg),
+                            'via': 'websocket'
+                        }
+                    
+                    # Check for 's': 'error' format
+                    if result.get('s') == 'error':
+                        error_detail = result.get('d') or result
+                        logger.warning(f"⚠️ [WS] Order rejected: {error_detail}")
+                        return {
+                            'success': False,
+                            'error': str(error_detail),
+                            'via': 'websocket'
+                        }
+                    
+                    # Ambiguous response - might be success with different format
+                    if result.get('s') == 'ok' or result.get('ok'):
+                        logger.info(f"✅ [WS] Order accepted (response: {result})")
+                        return {
+                            'success': True,
+                            'data': result,
+                            'via': 'websocket'
+                        }
+                
+                # If we can't parse definitively, return None to trigger REST fallback
+                logger.warning(f"⚠️ [WS] Ambiguous response format, using REST fallback: {result}")
+                return None
+                
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ [WS] Order timeout after 30s, using REST fallback")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"⚠️ [WS] Order exception ({e}), using REST fallback")
+            self.ws_connected = False  # Mark connection as dead for reconnect
+            return None
+
+    async def place_order_smart(self, order_data: Dict[str, Any], use_websocket: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        Smart order placement: WebSocket first, REST fallback.
+        
+        This is the recommended method for placing orders at scale. It:
+        1. Tries WebSocket first (fast, no rate limits)
+        2. Falls back to REST if WebSocket fails (reliable, proven)
+        
+        Same interface as place_order() for drop-in replacement.
+        
+        Args:
+            order_data: Order parameters (same as place_order)
+            use_websocket: Set False to skip WebSocket and use REST directly
+        
+        Returns:
+            Order result dict with 'success', 'orderId', 'via' (websocket/rest)
+        """
+        # Check if WebSocket orders are enabled
+        if use_websocket and getattr(self, 'use_websocket_orders', True):
+            # Try WebSocket first
+            ws_result = await self.place_order_websocket(order_data)
+            
+            if ws_result is not None:
+                # WebSocket gave a definitive result (success or failure)
+                if ws_result.get('success'):
+                    logger.info(f"✅ Order placed via WebSocket (fast path, no rate limit)")
+                    return ws_result
+                else:
+                    # WebSocket returned an error - don't retry via REST
+                    # (the order was received but rejected by broker - retrying would be duplicate)
+                    logger.warning(f"❌ Order rejected via WebSocket: {ws_result.get('error')}")
+                    return ws_result
+            
+            # WebSocket returned None - connection issue, try REST
+            logger.info("🔄 WebSocket unavailable, falling back to REST API...")
+        
+        # Fallback to REST (proven, reliable - the current working code)
+        rest_result = await self.place_order(order_data)
+        if rest_result:
+            rest_result['via'] = 'rest'
+        return rest_result
+
+    async def modify_order_smart(self, order_id: int, order_data: Dict[str, Any], use_websocket: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        Smart order modification: WebSocket first, REST fallback.
+        
+        Args:
+            order_id: The order ID to modify
+            order_data: Modified order parameters
+            use_websocket: Set False to skip WebSocket
+        
+        Returns:
+            Modification result dict
+        """
+        if use_websocket and getattr(self, 'use_websocket_orders', True):
+            try:
+                if not await self._ensure_websocket_connected():
+                    logger.warning("⚠️ [WS] WebSocket not available for modify, using REST")
+                else:
+                    # Build modify message
+                    modify_data = {**order_data, 'orderId': order_id}
+                    ws_message = {
+                        "n": "order/modifyOrder",
+                        "o": modify_data
+                    }
+                    
+                    logger.info(f"📤 [WS] Modifying order {order_id}")
+                    await self.websocket.send(json.dumps(ws_message))
+                    
+                    response = await asyncio.wait_for(self.websocket.recv(), timeout=30.0)
+                    result = json.loads(response)
+                    
+                    if isinstance(result, dict):
+                        if result.get('orderId') or result.get('s') == 'ok' or result.get('ok'):
+                            logger.info(f"✅ [WS] Order {order_id} modified successfully")
+                            return {'success': True, 'data': result, 'via': 'websocket'}
+                        elif result.get('s') == 'error' or result.get('error'):
+                            error = result.get('d') or result.get('error') or result
+                            logger.warning(f"⚠️ [WS] Modify failed: {error}")
+                            return {'success': False, 'error': str(error), 'via': 'websocket'}
+                    
+                    logger.warning(f"⚠️ [WS] Ambiguous modify response, using REST: {result}")
+            except Exception as e:
+                logger.warning(f"⚠️ [WS] Modify exception ({e}), using REST")
+                self.ws_connected = False
+        
+        # Fallback to REST - extract parameters from order_data
+        rest_result = await self.modify_order(
+            order_id=order_id,
+            new_price=order_data.get('price'),
+            new_qty=order_data.get('orderQty'),
+            stop_price=order_data.get('stopPrice'),
+            order_type=order_data.get('orderType'),
+            time_in_force=order_data.get('timeInForce'),
+            is_automated=order_data.get('isAutomated', True)
+        )
+        if rest_result:
+            rest_result['via'] = 'rest'
+        return rest_result
+
+    async def cancel_order_smart(self, order_id: int, use_websocket: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        Smart order cancellation: WebSocket first, REST fallback.
+        
+        Args:
+            order_id: The order ID to cancel
+            use_websocket: Set False to skip WebSocket
+        
+        Returns:
+            Cancellation result dict
+        """
+        if use_websocket and getattr(self, 'use_websocket_orders', True):
+            try:
+                if not await self._ensure_websocket_connected():
+                    logger.warning("⚠️ [WS] WebSocket not available for cancel, using REST")
+                else:
+                    ws_message = {
+                        "n": "order/cancelOrder",
+                        "o": {"orderId": order_id}
+                    }
+                    
+                    logger.info(f"📤 [WS] Cancelling order {order_id}")
+                    await self.websocket.send(json.dumps(ws_message))
+                    
+                    response = await asyncio.wait_for(self.websocket.recv(), timeout=30.0)
+                    result = json.loads(response)
+                    
+                    if isinstance(result, dict):
+                        if result.get('s') == 'ok' or result.get('ok') or result.get('orderId'):
+                            logger.info(f"✅ [WS] Order {order_id} cancelled successfully")
+                            return {'success': True, 'data': result, 'via': 'websocket'}
+                        elif result.get('s') == 'error' or result.get('error'):
+                            error = result.get('d') or result.get('error') or result
+                            logger.warning(f"⚠️ [WS] Cancel failed: {error}")
+                            return {'success': False, 'error': str(error), 'via': 'websocket'}
+                    
+                    logger.warning(f"⚠️ [WS] Ambiguous cancel response, using REST: {result}")
+            except Exception as e:
+                logger.warning(f"⚠️ [WS] Cancel exception ({e}), using REST")
+                self.ws_connected = False
+        
+        # Fallback to REST - cancel_order returns bool, convert to dict
+        rest_success = await self.cancel_order(order_id)
+        return {'success': rest_success, 'via': 'rest'}
     
     async def get_fills(self, account_id: Optional[int] = None, order_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get fills for an account or specific order"""
