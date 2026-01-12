@@ -22,6 +22,7 @@ import json
 import re
 import time
 import threading
+import secrets
 import requests
 from typing import Optional
 from queue import Queue, Empty
@@ -3420,10 +3421,83 @@ def admin_users():
         
         users_online[u.id] = is_online
     
+    # Get pending username changes
+    pending_username_changes = []
+    try:
+        from user_auth import get_auth_db_connection
+        auth_conn, auth_db_type = get_auth_db_connection()
+        auth_cursor = auth_conn.cursor()
+        
+        # Ensure table exists
+        if auth_db_type == 'postgresql':
+            auth_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pending_username_changes (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    old_username VARCHAR(100) NOT NULL,
+                    new_username VARCHAR(100) NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_by INTEGER,
+                    reviewed_at TIMESTAMP
+                )
+            ''')
+        else:
+            auth_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pending_username_changes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    old_username TEXT NOT NULL,
+                    new_username TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_by INTEGER,
+                    reviewed_at TIMESTAMP
+                )
+            ''')
+        auth_conn.commit()
+        
+        # Get pending changes
+        if auth_db_type == 'postgresql':
+            auth_cursor.execute('''
+                SELECT puc.*, u.email
+                FROM pending_username_changes puc
+                JOIN users u ON puc.user_id = u.id
+                WHERE puc.status = 'pending'
+                ORDER BY puc.created_at DESC
+            ''')
+        else:
+            auth_cursor.execute('''
+                SELECT puc.*, u.email
+                FROM pending_username_changes puc
+                JOIN users u ON puc.user_id = u.id
+                WHERE puc.status = 'pending'
+                ORDER BY puc.created_at DESC
+            ''')
+        
+        rows = auth_cursor.fetchall()
+        for row in rows:
+            if hasattr(row, 'keys'):
+                pending_username_changes.append(dict(row))
+            else:
+                pending_username_changes.append({
+                    'id': row[0], 'user_id': row[1], 'old_username': row[2],
+                    'new_username': row[3], 'status': row[4], 'created_at': row[5],
+                    'email': row[6] if len(row) > 6 else ''
+                })
+    except Exception as e:
+        logger.error(f"❌ Error loading pending username changes: {e}")
+    finally:
+        if 'auth_cursor' in locals():
+            auth_cursor.close()
+        if 'auth_conn' in locals():
+            auth_conn.close()
+    
     return render_template('admin_users.html', 
                          users=users, 
                          users_online=users_online,
-                         pending_count=pending_count)
+                         pending_count=pending_count,
+                         pending_username_changes=pending_username_changes)
 
 
 @app.route('/admin/users/approve/<int:user_id>', methods=['POST'])
@@ -3792,6 +3866,210 @@ def admin_set_user_subscription(user_id):
     except Exception as e:
         logger.error(f"❌ Failed to set subscription for user {user_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/username-changes', methods=['GET'])
+def admin_username_changes():
+    """Admin page showing pending username change requests."""
+    if not USER_AUTH_AVAILABLE:
+        flash('Authentication system not available.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    
+    user = get_current_user()
+    if not user or not user.is_admin:
+        flash('You do not have permission to access this page.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        
+        # Ensure table exists
+        if db_type == 'postgresql':
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pending_username_changes (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    old_username VARCHAR(100) NOT NULL,
+                    new_username VARCHAR(100) NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_by INTEGER,
+                    reviewed_at TIMESTAMP
+                )
+            ''')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pending_username_changes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    old_username TEXT NOT NULL,
+                    new_username TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_by INTEGER,
+                    reviewed_at TIMESTAMP
+                )
+            ''')
+        conn.commit()
+        
+        # Get pending username changes
+        if db_type == 'postgresql':
+            cursor.execute('''
+                SELECT puc.*, u.email, u.display_name
+                FROM pending_username_changes puc
+                JOIN users u ON puc.user_id = u.id
+                WHERE puc.status = 'pending'
+                ORDER BY puc.created_at DESC
+            ''')
+        else:
+            cursor.execute('''
+                SELECT puc.*, u.email, u.display_name
+                FROM pending_username_changes puc
+                JOIN users u ON puc.user_id = u.id
+                WHERE puc.status = 'pending'
+                ORDER BY puc.created_at DESC
+            ''')
+        
+        rows = cursor.fetchall()
+        pending_changes = []
+        for row in rows:
+            if hasattr(row, 'keys'):
+                pending_changes.append(dict(row))
+            else:
+                pending_changes.append({
+                    'id': row[0],
+                    'user_id': row[1],
+                    'old_username': row[2],
+                    'new_username': row[3],
+                    'status': row[4],
+                    'created_at': row[5],
+                    'email': row[6] if len(row) > 6 else '',
+                    'display_name': row[7] if len(row) > 7 else ''
+                })
+        
+        # For now, redirect to admin_users which now shows pending changes
+        return redirect(url_for('admin_users'))
+    except Exception as e:
+        logger.error(f"❌ Error loading username changes: {e}")
+        flash(f'Error loading username changes: {e}', 'error')
+        return redirect(url_for('admin_users'))
+
+
+@app.route('/admin/username-changes/<int:change_id>/approve', methods=['POST'])
+def admin_approve_username_change(change_id):
+    """Approve a pending username change."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    current = get_current_user()
+    if not current or not current.is_admin:
+        return jsonify({'success': False, 'error': 'Not authorized'}), 403
+    
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        
+        # Get the pending change
+        if db_type == 'postgresql':
+            cursor.execute('SELECT * FROM pending_username_changes WHERE id = %s AND status = %s', (change_id, 'pending'))
+        else:
+            cursor.execute('SELECT * FROM pending_username_changes WHERE id = ? AND status = ?', (change_id, 'pending'))
+        
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'error': 'Username change request not found'}), 404
+        
+        change_data = dict(row) if hasattr(row, 'keys') else {
+            'id': row[0], 'user_id': row[1], 'old_username': row[2], 'new_username': row[3]
+        }
+        
+        # Check if new username already exists
+        if db_type == 'postgresql':
+            cursor.execute('SELECT id FROM users WHERE username = %s', (change_data['new_username'],))
+        else:
+            cursor.execute('SELECT id FROM users WHERE username = ?', (change_data['new_username'],))
+        
+        if cursor.fetchone():
+            return jsonify({'success': False, 'error': 'Username already exists'}), 400
+        
+        # Update username and mark as approved
+        if db_type == 'postgresql':
+            cursor.execute('UPDATE users SET username = %s WHERE id = %s', (change_data['new_username'], change_data['user_id']))
+            cursor.execute('''
+                UPDATE pending_username_changes 
+                SET status = %s, reviewed_by = %s, reviewed_at = NOW()
+                WHERE id = %s
+            ''', ('approved', current.id, change_id))
+        else:
+            cursor.execute('UPDATE users SET username = ? WHERE id = ?', (change_data['new_username'], change_data['user_id']))
+            cursor.execute('''
+                UPDATE pending_username_changes 
+                SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', ('approved', current.id, change_id))
+        
+        conn.commit()
+        logger.info(f"✅ Admin approved username change: user {change_data['user_id']} ({change_data['old_username']} -> {change_data['new_username']})")
+        return jsonify({'success': True, 'message': 'Username change approved'})
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"❌ Error approving username change: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/admin/username-changes/<int:change_id>/reject', methods=['POST'])
+def admin_reject_username_change(change_id):
+    """Reject a pending username change."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    current = get_current_user()
+    if not current or not current.is_admin:
+        return jsonify({'success': False, 'error': 'Not authorized'}), 403
+    
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        
+        if db_type == 'postgresql':
+            cursor.execute('''
+                UPDATE pending_username_changes 
+                SET status = %s, reviewed_by = %s, reviewed_at = NOW()
+                WHERE id = %s AND status = %s
+            ''', ('rejected', current.id, change_id, 'pending'))
+        else:
+            cursor.execute('''
+                UPDATE pending_username_changes 
+                SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = ?
+            ''', ('rejected', current.id, change_id, 'pending'))
+        
+        conn.commit()
+        logger.info(f"✅ Admin rejected username change request {change_id}")
+        return jsonify({'success': True, 'message': 'Username change rejected'})
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"❌ Failed to reject username change: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @app.route('/admin/subscriptions')
@@ -16892,7 +17170,347 @@ def settings():
     # Require login if auth is available
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
-    return render_template('settings.html')
+    
+    # Get current user data for settings page
+    user = None
+    discord_linked = False
+    discord_dms_enabled = False
+    if USER_AUTH_AVAILABLE and is_logged_in():
+        user = get_current_user()
+        if user:
+            from user_auth import get_auth_db_connection
+            conn, db_type = get_auth_db_connection()
+            cursor = conn.cursor()
+            try:
+                if db_type == 'postgresql':
+                    cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user.id,))
+                else:
+                    cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user.id,))
+                row = cursor.fetchone()
+                if row:
+                    discord_linked = bool(row['discord_user_id'] if hasattr(row, 'keys') else row[0])
+                    discord_dms_enabled = bool(row['discord_dms_enabled'] if hasattr(row, 'keys') else row[1])
+            except:
+                pass
+            finally:
+                cursor.close()
+                conn.close()
+    
+    return render_template('settings.html',
+                          user=user,
+                          discord_linked=discord_linked,
+                          discord_dms_enabled=discord_dms_enabled)
+
+
+# ============================================================================
+# SETTINGS API ROUTES
+# ============================================================================
+
+@app.route('/api/settings/password', methods=['POST'])
+def api_change_password():
+    """Change user password."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth system not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    data = request.get_json()
+    new_password = data.get('password', '').strip()
+    confirm_password = data.get('confirm_password', '').strip()
+    
+    if not new_password or len(new_password) < 6:
+        return jsonify({'success': False, 'error': 'Password must be at least 6 characters'}), 400
+    
+    if new_password != confirm_password:
+        return jsonify({'success': False, 'error': 'Passwords do not match'}), 400
+    
+    from user_auth import update_user_password
+    if update_user_password(user.id, new_password):
+        return jsonify({'success': True, 'message': 'Password changed successfully'})
+    else:
+        return jsonify({'success': False, 'error': 'Failed to update password'}), 500
+
+
+@app.route('/api/settings/username', methods=['POST'])
+def api_request_username_change():
+    """Request username change (submits for admin approval)."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth system not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    data = request.get_json()
+    new_username = data.get('username', '').strip().lower()
+    
+    if not new_username or len(new_username) < 3:
+        return jsonify({'success': False, 'error': 'Username must be at least 3 characters'}), 400
+    
+    if new_username == user.username:
+        return jsonify({'success': False, 'error': 'New username must be different'}), 400
+    
+    # Check if username already exists
+    from user_auth import get_auth_db_connection
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if username already exists in users table
+        if db_type == 'postgresql':
+            cursor.execute('SELECT id FROM users WHERE username = %s AND id != %s', (new_username, user.id))
+        else:
+            cursor.execute('SELECT id FROM users WHERE username = ? AND id != ?', (new_username, user.id))
+        
+        if cursor.fetchone():
+            return jsonify({'success': False, 'error': 'Username already exists'}), 400
+        
+        # Check if username is already pending
+        # Ensure pending_username_changes table exists first
+        if db_type == 'postgresql':
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pending_username_changes (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    old_username VARCHAR(100) NOT NULL,
+                    new_username VARCHAR(100) NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_by INTEGER,
+                    reviewed_at TIMESTAMP
+                )
+            ''')
+            cursor.execute('SELECT id FROM pending_username_changes WHERE new_username = %s AND status = %s', (new_username, 'pending'))
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pending_username_changes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    old_username TEXT NOT NULL,
+                    new_username TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_by INTEGER,
+                    reviewed_at TIMESTAMP
+                )
+            ''')
+            cursor.execute('SELECT id FROM pending_username_changes WHERE new_username = ? AND status = ?', (new_username, 'pending'))
+        
+        if cursor.fetchone():
+            return jsonify({'success': False, 'error': 'Username change already pending'}), 400
+        
+        # Create pending request
+        if db_type == 'postgresql':
+            cursor.execute('''
+                INSERT INTO pending_username_changes (user_id, old_username, new_username, status)
+                VALUES (%s, %s, %s, 'pending')
+            ''', (user.id, user.username, new_username))
+        else:
+            cursor.execute('''
+                INSERT INTO pending_username_changes (user_id, old_username, new_username, status)
+                VALUES (?, ?, ?, 'pending')
+            ''', (user.id, user.username, new_username))
+        
+        conn.commit()
+        logger.info(f"✅ Username change requested: user {user.id} ({user.username} -> {new_username})")
+        return jsonify({'success': True, 'message': 'Username change request submitted. An admin will review it soon.'})
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"❌ Failed to request username change: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/api/settings/discord/toggle', methods=['POST'])
+def api_toggle_discord_dms():
+    """Toggle Discord DM notifications."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth system not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    from user_auth import get_auth_db_connection
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get current state
+        if db_type == 'postgresql':
+            cursor.execute('SELECT discord_dms_enabled FROM users WHERE id = %s', (user.id,))
+        else:
+            cursor.execute('SELECT discord_dms_enabled FROM users WHERE id = ?', (user.id,))
+        row = cursor.fetchone()
+        current_state = bool(row['discord_dms_enabled'] if hasattr(row, 'keys') else row[0]) if row else False
+        
+        # Toggle
+        new_state = not current_state
+        if db_type == 'postgresql':
+            cursor.execute('UPDATE users SET discord_dms_enabled = %s WHERE id = %s', (new_state, user.id))
+        else:
+            cursor.execute('UPDATE users SET discord_dms_enabled = ? WHERE id = ?', (1 if new_state else 0, user.id))
+        
+        conn.commit()
+        return jsonify({'success': True, 'enabled': new_state, 'message': 'Discord notifications ' + ('enabled' if new_state else 'disabled')})
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"❌ Failed to toggle Discord DMs: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/api/settings/discord/link', methods=['GET'])
+def api_discord_oauth_start():
+    """Initiate Discord OAuth flow."""
+    if not USER_AUTH_AVAILABLE:
+        flash('Authentication system not available.', 'error')
+        return redirect(url_for('settings'))
+    
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    
+    # Discord OAuth URL
+    import os
+    from urllib.parse import urlencode
+    discord_client_id = os.environ.get('DISCORD_CLIENT_ID', '')
+    discord_redirect_uri = os.environ.get('DISCORD_REDIRECT_URI', request.url_root.rstrip('/') + '/api/settings/discord/callback')
+    
+    if not discord_client_id:
+        flash('Discord OAuth is not configured. Please contact an administrator.', 'error')
+        return redirect(url_for('settings'))
+    
+    # Store state in session
+    import secrets
+    state = secrets.token_urlsafe(32)
+    session['discord_oauth_state'] = state
+    
+    oauth_params = {
+        'client_id': discord_client_id,
+        'redirect_uri': discord_redirect_uri,
+        'response_type': 'code',
+        'scope': 'identify',
+        'state': state
+    }
+    
+    oauth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(oauth_params)}"
+    return redirect(oauth_url)
+
+
+@app.route('/api/settings/discord/callback', methods=['GET'])
+def api_discord_oauth_callback():
+    """Discord OAuth callback."""
+    if not USER_AUTH_AVAILABLE:
+        flash('Authentication system not available.', 'error')
+        return redirect(url_for('settings'))
+    
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('settings'))
+    
+    code = request.args.get('code')
+    state = request.args.get('state')
+    error = request.args.get('error')
+    
+    if error:
+        flash(f'Discord authorization failed: {error}', 'error')
+        return redirect(url_for('settings'))
+    
+    if not code or state != session.get('discord_oauth_state'):
+        flash('Invalid Discord authorization.', 'error')
+        return redirect(url_for('settings'))
+    
+    # Exchange code for token
+    import os
+    import requests
+    discord_client_id = os.environ.get('DISCORD_CLIENT_ID', '')
+    discord_client_secret = os.environ.get('DISCORD_CLIENT_SECRET', '')
+    discord_redirect_uri = os.environ.get('DISCORD_REDIRECT_URI', request.url_root.rstrip('/') + '/api/settings/discord/callback')
+    
+    if not discord_client_id or not discord_client_secret:
+        flash('Discord OAuth is not configured. Please contact an administrator.', 'error')
+        return redirect(url_for('settings'))
+    
+    try:
+        # Exchange code for access token
+        token_data = {
+            'client_id': discord_client_id,
+            'client_secret': discord_client_secret,
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': discord_redirect_uri
+        }
+        
+        token_response = requests.post('https://discord.com/api/oauth2/token', data=token_data)
+        if token_response.status_code != 200:
+            flash('Failed to exchange Discord authorization code.', 'error')
+            return redirect(url_for('settings'))
+        
+        token_json = token_response.json()
+        access_token = token_json.get('access_token')
+        
+        # Get user info
+        user_response = requests.get('https://discord.com/api/users/@me', headers={
+            'Authorization': f'Bearer {access_token}'
+        })
+        if user_response.status_code != 200:
+            flash('Failed to get Discord user information.', 'error')
+            return redirect(url_for('settings'))
+        
+        discord_user_info = user_response.json()
+        discord_user_id = discord_user_info.get('id')
+        
+        # Store in database
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            if db_type == 'postgresql':
+                cursor.execute('''
+                    UPDATE users SET discord_user_id = %s, discord_access_token = %s
+                    WHERE id = %s
+                ''', (discord_user_id, access_token, user.id))
+            else:
+                cursor.execute('''
+                    UPDATE users SET discord_user_id = ?, discord_access_token = ?
+                    WHERE id = ?
+                ''', (discord_user_id, access_token, user.id))
+            conn.commit()
+            flash('Discord account linked successfully!', 'success')
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Failed to link Discord: {e}")
+            flash('Failed to link Discord account.', 'error')
+        finally:
+            cursor.close()
+            conn.close()
+        
+        # Clear state
+        session.pop('discord_oauth_state', None)
+        return redirect(url_for('settings'))
+    except Exception as e:
+        logger.error(f"❌ Discord OAuth error: {e}")
+        flash('Discord authorization failed.', 'error')
+        return redirect(url_for('settings'))
 
 
 # ============================================================================

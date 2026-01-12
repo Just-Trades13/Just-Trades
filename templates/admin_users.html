@@ -576,6 +576,56 @@
     </div>
 </div>
 
+{% if pending_username_changes %}
+<!-- Pending Username Changes Section -->
+<div class="pending-changes-section" style="background: rgba(255, 193, 7, 0.05); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 16px; padding: 24px; margin-bottom: 30px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="font-size: 1.3rem; font-weight: 600; color: var(--text-light); display: flex; align-items: center; gap: 10px;">
+            <span class="material-icons" style="color: #ffc107;">pending_actions</span>
+            Pending Username Changes ({{ pending_username_changes|length }})
+        </h2>
+    </div>
+    <table class="users-table" style="margin: 0;">
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>Current Username</th>
+                <th>Requested Username</th>
+                <th>Requested</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for change in pending_username_changes %}
+            <tr>
+                <td>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <span style="font-weight: 600; color: var(--text-light);">ID: {{ change.user_id }}</span>
+                        <span style="font-size: 0.85rem; color: var(--text-muted);">{{ change.email or 'N/A' }}</span>
+                    </div>
+                </td>
+                <td style="color: var(--text-light);">{{ change.old_username }}</td>
+                <td style="color: var(--primary-color); font-weight: 600;">{{ change.new_username }}</td>
+                <td style="color: var(--text-muted); font-size: 0.85rem;">
+                    {% if change.created_at %}{{ change.created_at|format_datetime }}{% else %}N/A{% endif %}
+                </td>
+                <td>
+                    <div class="action-buttons">
+                        <button class="btn-action btn-approve" onclick="approveUsernameChange({{ change.id }}, '{{ change.old_username }}', '{{ change.new_username }}')" title="Approve">
+                            <span class="material-icons">check_circle</span>
+                        </button>
+                        <button class="btn-action btn-reject" onclick="rejectUsernameChange({{ change.id }}, '{{ change.old_username }}', '{{ change.new_username }}')" title="Reject">
+                            <span class="material-icons">cancel</span>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
 <div class="users-table-container">
     {% if users %}
     <table class="users-table">
@@ -1044,6 +1094,45 @@ document.getElementById('editUserModal').addEventListener('click', function(e) {
         hideEditUserModal();
     }
 });
+
+// Username change approval
+function approveUsernameChange(changeId, oldUsername, newUsername) {
+    if (confirm(`Approve username change: "${oldUsername}" → "${newUsername}"?`)) {
+        fetch('/admin/username-changes/' + changeId + '/approve', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Failed to approve username change'));
+            }
+        })
+        .catch(error => {
+            alert('Error: ' + error);
+        });
+    }
+}
+
+function rejectUsernameChange(changeId, oldUsername, newUsername) {
+    if (confirm(`Reject username change request: "${oldUsername}" → "${newUsername}"?`)) {
+        fetch('/admin/username-changes/' + changeId + '/reject', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Failed to reject username change'));
+            }
+        })
+        .catch(error => {
+            alert('Error: ' + error);
+        });
+    }
+}
 </script>
 {% endblock %}
 
