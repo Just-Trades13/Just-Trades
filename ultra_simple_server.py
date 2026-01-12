@@ -3379,26 +3379,44 @@ def admin_users():
     users = get_all_users()
     pending_count = len([u for u in users if not u.is_approved and not u.is_admin])
     
-    # Calculate online/offline status for each user (online if logged in within last 30 minutes)
+    # Calculate online/offline status for each user (online if logged in within last 2 hours)
+    # Note: Using 2 hours since last_login only updates on login, not continuously
     users_online = {}
     now = datetime.now()
-    online_threshold = timedelta(minutes=30)
+    online_threshold = timedelta(hours=2)  # Extended to 2 hours since last_login only updates on login
     
     for u in users:
         is_online = False
         if u.last_login and u.is_active:
             try:
-                # Parse last_login timestamp
-                if 'T' in u.last_login:
-                    last_login_dt = datetime.fromisoformat(u.last_login.replace('Z', '+00:00').split('+')[0])
+                last_login_str = str(u.last_login).strip()
+                
+                # Parse last_login timestamp - handle different formats
+                if 'T' in last_login_str:
+                    # ISO format: '2025-01-12T14:30:00' or '2025-01-12T14:30:00.123456'
+                    clean_str = last_login_str.split('+')[0].split('Z')[0]  # Remove timezone
+                    if '.' in clean_str:
+                        clean_str = clean_str.split('.')[0]  # Remove microseconds
+                    try:
+                        last_login_dt = datetime.strptime(clean_str, '%Y-%m-%dT%H:%M:%S')
+                    except:
+                        last_login_dt = datetime.fromisoformat(clean_str)
                 else:
-                    last_login_dt = datetime.strptime(u.last_login.split('.')[0], '%Y-%m-%d %H:%M:%S')
+                    # SQLite format: '2025-01-12 14:30:00' or '2025-01-12 14:30:00.123456'
+                    clean_str = last_login_str.split('.')[0]  # Remove microseconds if present
+                    last_login_dt = datetime.strptime(clean_str, '%Y-%m-%d %H:%M:%S')
+                
+                # Remove timezone info if present for comparison
+                if hasattr(last_login_dt, 'tzinfo') and last_login_dt.tzinfo:
+                    last_login_dt = last_login_dt.replace(tzinfo=None)
                 
                 # Check if within threshold
-                time_diff = now - last_login_dt.replace(tzinfo=None) if hasattr(last_login_dt, 'tzinfo') and last_login_dt.tzinfo else now - last_login_dt
-                is_online = time_diff < online_threshold
-            except:
-                pass
+                time_diff = now - last_login_dt
+                is_online = time_diff < online_threshold and time_diff.total_seconds() >= 0
+            except Exception as e:
+                # Log parse errors for debugging
+                logger.debug(f"Error parsing last_login for user {u.id} ({u.username}): {e}, value: {u.last_login}")
+                is_online = False
         
         users_online[u.id] = is_online
     
