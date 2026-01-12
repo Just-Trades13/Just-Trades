@@ -17210,34 +17210,55 @@ def api_dashboard_metrics():
         timeframe = request.args.get('timeframe', 'all')
         
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
+        is_postgres = is_using_postgres()
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Build filters
+        # Build filters - use correct placeholder for DB type
+        ph = '%s' if is_postgres else '?'
         where_clauses = ["status = 'closed'"]
         params = []
         
         if strategy_id:
-            where_clauses.append('recorder_id = ?')
+            where_clauses.append(f'recorder_id = {ph}')
             params.append(int(strategy_id))
         
         if symbol:
-            where_clauses.append('ticker = ?')
+            where_clauses.append(f'ticker = {ph}')
             params.append(symbol)
         
-        # Timeframe filter
+        # Timeframe filter - PostgreSQL compatible
         if timeframe == 'today':
-            where_clauses.append("DATE(exit_time) = DATE('now')")
+            if is_postgres:
+                where_clauses.append("DATE(exit_time) = CURRENT_DATE")
+            else:
+                where_clauses.append("DATE(exit_time) = DATE('now')")
         elif timeframe == 'week':
-            where_clauses.append("exit_time >= DATE('now', '-7 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '7 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-7 days')")
         elif timeframe == 'month':
-            where_clauses.append("exit_time >= DATE('now', '-30 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '30 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-30 days')")
         elif timeframe == '3months':
-            where_clauses.append("exit_time >= DATE('now', '-90 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '90 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-90 days')")
         elif timeframe == '6months':
-            where_clauses.append("exit_time >= DATE('now', '-180 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '180 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-180 days')")
         elif timeframe == 'year':
-            where_clauses.append("exit_time >= DATE('now', '-365 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '365 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-365 days')")
         
         where_sql = ' AND '.join(where_clauses)
         
@@ -17361,34 +17382,55 @@ def api_dashboard_calendar_data():
         timeframe = request.args.get('timeframe', 'month')
         
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
+        is_postgres = is_using_postgres()
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Build filters
+        # Build filters - use correct placeholder for DB type
+        ph = '%s' if is_postgres else '?'
         where_clauses = ["status = 'closed'"]
         params = []
         
         if strategy_id:
-            where_clauses.append('recorder_id = ?')
+            where_clauses.append(f'recorder_id = {ph}')
             params.append(int(strategy_id))
         
         if symbol:
-            where_clauses.append('ticker = ?')
+            where_clauses.append(f'ticker = {ph}')
             params.append(symbol)
         
-        # Timeframe filter
+        # Timeframe filter - PostgreSQL compatible
         if timeframe == 'today':
-            where_clauses.append("DATE(exit_time) = DATE('now')")
+            if is_postgres:
+                where_clauses.append("DATE(exit_time) = CURRENT_DATE")
+            else:
+                where_clauses.append("DATE(exit_time) = DATE('now')")
         elif timeframe == 'week':
-            where_clauses.append("exit_time >= DATE('now', '-7 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '7 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-7 days')")
         elif timeframe == 'month':
-            where_clauses.append("exit_time >= DATE('now', '-30 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '30 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-30 days')")
         elif timeframe == '3months':
-            where_clauses.append("exit_time >= DATE('now', '-90 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '90 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-90 days')")
         elif timeframe == '6months':
-            where_clauses.append("exit_time >= DATE('now', '-180 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '180 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-180 days')")
         elif timeframe == 'year':
-            where_clauses.append("exit_time >= DATE('now', '-365 days')")
+            if is_postgres:
+                where_clauses.append("exit_time >= CURRENT_DATE - INTERVAL '365 days'")
+            else:
+                where_clauses.append("exit_time >= DATE('now', '-365 days')")
         
         where_sql = ' AND '.join(where_clauses)
         
