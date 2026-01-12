@@ -1358,9 +1358,30 @@ def execute_trade_simple(
                                 logger.warning(f"⚠️ [{acct_name}] TP MODIFY FAILED: {error_msg} - will place new")
                                 existing_tp_id = None  # Fall through to place new
                     
-                    # Place new TP if needed (1 API call)
+                    # Place new TP if needed
                     if not tp_order_id:
-                        logger.info(f"📊 [{acct_name}] PLACING NEW TP @ {tp_price} (1 API call)")
+                        # CRITICAL: Cancel ALL existing TP orders on broker before placing new!
+                        # This prevents duplicates (especially after bracket orders where strategy ID != order ID)
+                        logger.info(f"🗑️ [{acct_name}] Checking for existing TPs on broker before placing new...")
+                        try:
+                            all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                            for order in (all_orders or []):
+                                order_status = str(order.get('ordStatus', '')).upper()
+                                order_action_check = order.get('action', '')
+                                order_id_check = order.get('id')
+                                
+                                # Cancel any working TP orders (same action as our TP)
+                                if order_status in ['WORKING', 'NEW', 'PENDINGNEW'] and order_action_check == tp_action and order_id_check:
+                                    logger.info(f"🗑️ [{acct_name}] Cancelling existing TP {order_id_check} @ {order.get('price')} before placing new")
+                                    try:
+                                        await tradovate.cancel_order(int(order_id_check))
+                                        await asyncio.sleep(0.1)
+                                    except Exception as cancel_err:
+                                        logger.warning(f"⚠️ [{acct_name}] Could not cancel order {order_id_check}: {cancel_err}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ [{acct_name}] Could not check/cancel existing orders: {e}")
+                        
+                        logger.info(f"📊 [{acct_name}] PLACING NEW TP @ {tp_price}")
                         tp_order_data = {
                             "accountId": tradovate_account_id,
                             "accountSpec": tradovate_account_spec,
