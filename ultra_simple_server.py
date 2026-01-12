@@ -3374,9 +3374,38 @@ def admin_users():
         return redirect(url_for('dashboard'))
     
     from user_auth import get_all_users, get_pending_users
+    from datetime import datetime, timedelta
+    
     users = get_all_users()
     pending_count = len([u for u in users if not u.is_approved and not u.is_admin])
-    return render_template('admin_users.html', users=users, pending_count=pending_count)
+    
+    # Calculate online/offline status for each user (online if logged in within last 30 minutes)
+    users_online = {}
+    now = datetime.now()
+    online_threshold = timedelta(minutes=30)
+    
+    for u in users:
+        is_online = False
+        if u.last_login and u.is_active:
+            try:
+                # Parse last_login timestamp
+                if 'T' in u.last_login:
+                    last_login_dt = datetime.fromisoformat(u.last_login.replace('Z', '+00:00').split('+')[0])
+                else:
+                    last_login_dt = datetime.strptime(u.last_login.split('.')[0], '%Y-%m-%d %H:%M:%S')
+                
+                # Check if within threshold
+                time_diff = now - last_login_dt.replace(tzinfo=None) if hasattr(last_login_dt, 'tzinfo') and last_login_dt.tzinfo else now - last_login_dt
+                is_online = time_diff < online_threshold
+            except:
+                pass
+        
+        users_online[u.id] = is_online
+    
+    return render_template('admin_users.html', 
+                         users=users, 
+                         users_online=users_online,
+                         pending_count=pending_count)
 
 
 @app.route('/admin/users/approve/<int:user_id>', methods=['POST'])

@@ -152,6 +152,18 @@
         border: 1px solid rgba(148, 163, 184, 0.3);
     }
     
+    .badge-online {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    
+    .badge-offline {
+        background: rgba(148, 163, 184, 0.15);
+        color: var(--text-muted);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+    }
+    
     .badge-pending {
         background: rgba(255, 193, 7, 0.15);
         color: #ffc107;
@@ -615,10 +627,16 @@
                         <span class="material-icons" style="font-size:14px">hourglass_empty</span>
                         Pending
                     </span>
-                    {% elif user.is_active %}
-                    <span class="badge badge-active">Active</span>
+                    {% elif users_online.get(user.id, False) %}
+                    <span class="badge badge-online">
+                        <span class="material-icons" style="font-size:14px">circle</span>
+                        Online
+                    </span>
                     {% else %}
-                    <span class="badge badge-inactive">Inactive</span>
+                    <span class="badge badge-offline">
+                        <span class="material-icons" style="font-size:14px">circle</span>
+                        Offline
+                    </span>
                     {% endif %}
                 </td>
                 <td style="color: var(--text-muted); font-size: 0.85rem;">
