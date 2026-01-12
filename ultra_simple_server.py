@@ -1707,15 +1707,21 @@ if SUBSCRIPTION_SYSTEM_AVAILABLE:
         user_id = session.get('user_id')
         if user_id:
             try:
+                from subscription_models import get_user_subscription
+                platform_sub = get_user_subscription(user_id, plan_type='platform')
                 return {
                     'subscription_status': get_feature_status(user_id),
                     'user_plan_tier': get_user_plan_tier(user_id),
+                    'has_platform_subscription': platform_sub is not None,
+                    'platform_subscription': platform_sub,
                 }
             except:
                 pass
         return {
             'subscription_status': {'has_subscription': False, 'tier': 'none'},
             'user_plan_tier': 'none',
+            'has_platform_subscription': False,
+            'platform_subscription': None,
         }
 
 # Initialize SocketIO for WebSocket support (like Trade Manager)
@@ -3589,6 +3595,178 @@ def admin_edit_user(user_id):
 
 
 # ============================================================================
+# ADMIN SUBSCRIPTION MANAGEMENT
+# ============================================================================
+
+@app.route('/admin/users/<int:user_id>/subscription', methods=['GET'])
+def admin_get_user_subscription(user_id):
+    """Admin endpoint to get a user's current subscription."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    current = get_current_user()
+    if not current or not current.is_admin:
+        return jsonify({'success': False, 'error': 'Not authorized'}), 403
+    
+    if not SUBSCRIPTION_SYSTEM_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Subscription system not available'}), 400
+    
+    try:
+        from subscription_models import get_user_subscription, get_user_plan_tier, get_all_plans
+        
+        platform_sub = get_user_subscription(user_id, plan_type='platform')
+        discord_sub = get_user_subscription(user_id, plan_type='discord')
+        tier = get_user_plan_tier(user_id)
+        all_plans = get_all_plans()
+        
+        return jsonify({
+            'success': True,
+            'platform_subscription': platform_sub,
+            'discord_subscription': discord_sub,
+            'tier': tier,
+            'available_plans': all_plans
+        })
+    except Exception as e:
+        logger.error(f"❌ Failed to get subscription for user {user_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/users/<int:user_id>/subscription', methods=['POST'])
+def admin_set_user_subscription(user_id):
+    """Admin endpoint to set/change a user's subscription tier."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    current = get_current_user()
+    if not current or not current.is_admin:
+        return jsonify({'success': False, 'error': 'Not authorized'}), 403
+    
+    if not SUBSCRIPTION_SYSTEM_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Subscription system not available'}), 400
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'No data provided'}), 400
+    
+    plan_slug = data.get('plan_slug', '').strip()
+    action = data.get('action', 'set')  # 'set' or 'cancel'
+    
+    try:
+        from subscription_models import (
+            create_subscription, cancel_subscription, get_plan_by_slug,
+            get_user_subscription
+        )
+        
+        if action == 'cancel':
+            # Cancel all subscriptions for this user
+            success = cancel_subscription(user_id=user_id)
+            if success:
+                logger.info(f"✅ Admin cancelled subscription for user {user_id}")
+                return jsonify({'success': True, 'message': 'Subscription cancelled'})
+            else:
+                return jsonify({'success': False, 'error': 'No active subscription to cancel'}), 400
+        
+        elif action == 'set':
+            if not plan_slug:
+                return jsonify({'success': False, 'error': 'plan_slug is required'}), 400
+            
+            # Verify plan exists
+            plan = get_plan_by_slug(plan_slug)
+            if not plan:
+                return jsonify({'success': False, 'error': f'Invalid plan: {plan_slug}'}), 400
+            
+            # Cancel existing subscription of same type first
+            existing = get_user_subscription(user_id, plan_type=plan['plan_type'])
+            if existing:
+                cancel_subscription(user_id=user_id)
+            
+            # Create new subscription (admin-granted, no Whop needed)
+            sub_id = create_subscription(
+                user_id=user_id,
+                plan_slug=plan_slug,
+                whop_membership_id=f"admin_granted_{user_id}_{plan_slug}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                trial_days=0
+            )
+            
+            if sub_id:
+                logger.info(f"✅ Admin set subscription for user {user_id}: {plan_slug}")
+                return jsonify({
+                    'success': True, 
+                    'message': f'Subscription set to {plan["name"]}',
+                    'subscription_id': sub_id
+                })
+            else:
+                return jsonify({'success': False, 'error': 'Failed to create subscription'}), 500
+        
+        else:
+            return jsonify({'success': False, 'error': f'Invalid action: {action}'}), 400
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to set subscription for user {user_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/subscriptions')
+def admin_subscriptions():
+    """Admin page showing all user subscriptions."""
+    if not USER_AUTH_AVAILABLE:
+        flash('Authentication system not available.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    
+    user = get_current_user()
+    if not user or not user.is_admin:
+        flash('You do not have permission to access this page.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    if not SUBSCRIPTION_SYSTEM_AVAILABLE:
+        flash('Subscription system not available.', 'error')
+        return redirect(url_for('admin_users'))
+    
+    try:
+        from subscription_models import get_all_plans
+        from user_auth import get_all_users
+        
+        users = get_all_users()
+        plans = get_all_plans()
+        
+        # Get subscription info for each user
+        from subscription_models import get_user_subscription, get_user_plan_tier
+        users_with_subs = []
+        for u in users:
+            user_data = {
+                'id': u.id,
+                'username': u.username,
+                'email': u.email,
+                'display_name': u.display_name,
+                'is_admin': u.is_admin,
+                'platform_sub': get_user_subscription(u.id, plan_type='platform'),
+                'discord_sub': get_user_subscription(u.id, plan_type='discord'),
+                'tier': get_user_plan_tier(u.id)
+            }
+            users_with_subs.append(user_data)
+        
+        return render_template('admin_users.html', 
+                             users=users, 
+                             users_with_subs=users_with_subs,
+                             plans=plans,
+                             pending_count=len([u for u in users if not u.is_approved and not u.is_admin]),
+                             show_subscriptions=True)
+    except Exception as e:
+        logger.error(f"❌ Error loading admin subscriptions: {e}")
+        flash(f'Error loading subscriptions: {e}', 'error')
+        return redirect(url_for('admin_users'))
+
+
+# ============================================================================
 # ADMIN ANNOUNCEMENTS/BULLETINS
 # ============================================================================
 
@@ -4629,7 +4807,26 @@ def dashboard():
     # Require login if auth is available
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
-    return render_template('dashboard.html')
+    
+    # Check if user has platform subscription (not just Discord)
+    has_platform_subscription = True
+    user_tier = 'none'
+    platform_subscription = None
+    if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if user:
+            from subscription_models import get_user_subscription, get_user_plan_tier
+            platform_subscription = get_user_subscription(user.id, plan_type='platform')
+            has_platform_subscription = platform_subscription is not None
+            user_tier = get_user_plan_tier(user.id)
+            # Admins always have access
+            if user.is_admin:
+                has_platform_subscription = True
+    
+    return render_template('dashboard.html',
+                          has_platform_subscription=has_platform_subscription,
+                          user_tier=user_tier,
+                          platform_subscription=platform_subscription)
 
 # =============================================================================
 # INSIDER SIGNALS ROUTES (Added Dec 8, 2025)
@@ -5127,7 +5324,23 @@ def insider_signals():
     """Render the Insider Signals tab"""
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
-    return render_template('insider_signals.html')
+    
+    # Check subscription access
+    has_access = True
+    user_tier = 'none'
+    if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if user:
+            from subscription_models import check_feature_access, get_user_plan_tier
+            has_access = check_feature_access(user.id, 'insider_signals')
+            user_tier = get_user_plan_tier(user.id)
+            # Admins always have access
+            if user.is_admin:
+                has_access = True
+    
+    return render_template('insider_signals.html', 
+                          feature_access=has_access,
+                          user_tier=user_tier)
 
 @app.route('/api/insiders/status')
 def api_insiders_status():
@@ -7296,12 +7509,32 @@ def recorders_list():
                 logger.warning(f"Error processing recorder row: {row_err}")
                 continue
         conn.close()
-        return render_template('recorders_list.html', recorders=recorders)
+        
+        # Check platform subscription
+        has_platform_subscription = True
+        user_tier = 'none'
+        if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
+            user = get_current_user()
+            if user:
+                from subscription_models import get_user_subscription, get_user_plan_tier
+                platform_sub = get_user_subscription(user.id, plan_type='platform')
+                has_platform_subscription = platform_sub is not None
+                user_tier = get_user_plan_tier(user.id)
+                if user.is_admin:
+                    has_platform_subscription = True
+        
+        return render_template('recorders_list.html', 
+                              recorders=recorders,
+                              has_platform_subscription=has_platform_subscription,
+                              user_tier=user_tier)
     except Exception as e:
         logger.error(f"Error loading recorders list: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return render_template('recorders_list.html', recorders=[])
+        return render_template('recorders_list.html', 
+                              recorders=[],
+                              has_platform_subscription=False,
+                              user_tier='none')
 
 @app.route('/recorders/new')
 def recorders_new():
@@ -12258,19 +12491,57 @@ def control_center():
         
         conn.close()
         
-        return render_template('control_center.html', live_rows=live_rows, logs=logs)
+        # Check platform subscription
+        has_platform_subscription = True
+        user_tier = 'none'
+        if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
+            user = get_current_user()
+            if user:
+                from subscription_models import get_user_subscription, get_user_plan_tier
+                platform_sub = get_user_subscription(user.id, plan_type='platform')
+                has_platform_subscription = platform_sub is not None
+                user_tier = get_user_plan_tier(user.id)
+                if user.is_admin:
+                    has_platform_subscription = True
+        
+        return render_template('control_center.html', 
+                              live_rows=live_rows, 
+                              logs=logs,
+                              has_platform_subscription=has_platform_subscription,
+                              user_tier=user_tier)
     except Exception as e:
         logger.error(f"Error loading control center: {e}")
-        return render_template('control_center.html', live_rows=[], logs=[])
+        return render_template('control_center.html', 
+                              live_rows=[], 
+                              logs=[],
+                              has_platform_subscription=False,
+                              user_tier='none')
 
 @app.route('/manual-trader')
 def manual_trader_page():
     # Require login if auth is available
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
+    
+    # Check platform subscription
+    has_platform_subscription = True
+    user_tier = 'none'
+    if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if user:
+            from subscription_models import get_user_subscription, get_user_plan_tier
+            platform_sub = get_user_subscription(user.id, plan_type='platform')
+            has_platform_subscription = platform_sub is not None
+            user_tier = get_user_plan_tier(user.id)
+            if user.is_admin:
+                has_platform_subscription = True
+    
     # Pass current user ID for filtering live positions
     current_user_id = get_current_user_id() if USER_AUTH_AVAILABLE else None
-    return render_template('manual_copy_trader.html', current_user_id=current_user_id)
+    return render_template('manual_copy_trader.html', 
+                          current_user_id=current_user_id,
+                          has_platform_subscription=has_platform_subscription,
+                          user_tier=user_tier)
 
 
 # ============================================================================
@@ -12283,7 +12554,23 @@ def quant_screener_page():
     # Require login if auth is available
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
-    return render_template('quant_screener.html')
+    
+    # Check subscription access
+    has_access = True
+    user_tier = 'none'
+    if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if user:
+            from subscription_models import check_feature_access, get_user_plan_tier
+            has_access = check_feature_access(user.id, 'quant_screener')
+            user_tier = get_user_plan_tier(user.id)
+            # Admins always have access
+            if user.is_admin:
+                has_access = True
+    
+    return render_template('quant_screener.html',
+                          feature_access=has_access,
+                          user_tier=user_tier)
 
 
 @app.route('/api/quant-screener/screen', methods=['POST'])

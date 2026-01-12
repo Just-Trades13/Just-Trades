@@ -164,6 +164,31 @@
         50% { opacity: 0.7; }
     }
     
+    /* Subscription tier badges */
+    .badge-tier-none {
+        background: rgba(148, 163, 184, 0.15);
+        color: var(--text-muted);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+    }
+    
+    .badge-tier-basic {
+        background: rgba(25, 184, 255, 0.15);
+        color: var(--primary-color);
+        border: 1px solid rgba(25, 184, 255, 0.3);
+    }
+    
+    .badge-tier-premium {
+        background: rgba(168, 85, 247, 0.15);
+        color: #a855f7;
+        border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+    
+    .badge-tier-elite {
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(245, 158, 11, 0.15));
+        color: #f59e0b;
+        border: 1px solid rgba(251, 191, 36, 0.4);
+    }
+    
     .pending-row {
         background: rgba(255, 193, 7, 0.05);
     }
@@ -546,6 +571,7 @@
             <tr>
                 <th>User</th>
                 <th>Role</th>
+                <th>Subscription</th>
                 <th>Status</th>
                 <th>Created</th>
                 <th>Last Login</th>
@@ -576,6 +602,12 @@
                         User
                     </span>
                     {% endif %}
+                </td>
+                <td>
+                    <span class="badge badge-tier-none" id="tier-badge-{{ user.id }}" data-user-id="{{ user.id }}">
+                        <span class="material-icons" style="font-size:14px">hourglass_empty</span>
+                        Loading...
+                    </span>
                 </td>
                 <td>
                     {% if not user.is_approved and not user.is_admin %}
@@ -717,6 +749,21 @@
                     <option value="0">Inactive (Disabled)</option>
                 </select>
             </div>
+            <div class="form-group" style="border-top: 1px solid var(--border-color); padding-top: 20px; margin-top: 10px;">
+                <label for="edit_subscription" style="color: var(--accent-teal);">
+                    <span class="material-icons" style="font-size:16px; vertical-align:middle;">card_membership</span>
+                    Platform Subscription Tier
+                </label>
+                <select id="edit_subscription" name="subscription">
+                    <option value="none">No Subscription</option>
+                    <option value="platform_basic">Basic ($200/mo) - 5 accounts</option>
+                    <option value="platform_premium">Premium ($500/mo) - 100 accounts, Screener, Signals</option>
+                    <option value="platform_elite">Elite ($1000/mo) - Unlimited, API, Priority Support</option>
+                </select>
+                <small style="color: var(--text-muted); display: block; margin-top: 6px;">
+                    Admin-granted subscriptions bypass payment verification.
+                </small>
+            </div>
             <div class="modal-buttons">
                 <button type="button" class="btn-cancel" onclick="hideEditUserModal()">Cancel</button>
                 <button type="submit" class="btn-submit">Save Changes</button>
@@ -726,6 +773,52 @@
 </div>
 
 <script>
+// Tier display configuration
+const tierConfig = {
+    'none': { icon: 'block', label: 'None', class: 'badge-tier-none' },
+    'basic': { icon: 'star_border', label: 'Basic', class: 'badge-tier-basic' },
+    'premium': { icon: 'star_half', label: 'Premium', class: 'badge-tier-premium' },
+    'elite': { icon: 'star', label: 'Elite', class: 'badge-tier-elite' }
+};
+
+// Load all user subscriptions on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadAllUserSubscriptions();
+});
+
+function loadAllUserSubscriptions() {
+    const badges = document.querySelectorAll('[id^="tier-badge-"]');
+    badges.forEach(badge => {
+        const userId = badge.dataset.userId;
+        loadUserSubscription(userId);
+    });
+}
+
+function loadUserSubscription(userId) {
+    const badge = document.getElementById('tier-badge-' + userId);
+    if (!badge) return;
+    
+    fetch('/admin/users/' + userId + '/subscription')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateTierBadge(badge, data.tier);
+            } else {
+                updateTierBadge(badge, 'none');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading subscription for user ' + userId + ':', error);
+            updateTierBadge(badge, 'none');
+        });
+}
+
+function updateTierBadge(badge, tier) {
+    const config = tierConfig[tier] || tierConfig['none'];
+    badge.className = 'badge ' + config.class;
+    badge.innerHTML = '<span class="material-icons" style="font-size:14px">' + config.icon + '</span> ' + config.label;
+}
+
 function showAddUserModal() {
     document.getElementById('addUserModal').classList.add('show');
 }
@@ -757,6 +850,10 @@ function editUser(userId) {
                 document.getElementById('edit_is_admin').value = user.is_admin ? '1' : '0';
                 document.getElementById('edit_is_approved').value = user.is_approved ? '1' : '0';
                 document.getElementById('edit_is_active').value = user.is_active ? '1' : '0';
+                
+                // Load subscription info
+                loadUserSubscriptionForEdit(userId);
+                
                 showEditUserModal();
             } else {
                 alert('Error loading user: ' + data.error);
@@ -764,6 +861,22 @@ function editUser(userId) {
         })
         .catch(error => {
             alert('Error loading user: ' + error);
+        });
+}
+
+function loadUserSubscriptionForEdit(userId) {
+    const select = document.getElementById('edit_subscription');
+    select.value = 'none'; // Default
+    
+    fetch('/admin/users/' + userId + '/subscription')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.platform_subscription) {
+                select.value = data.platform_subscription.plan_slug || 'none';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading subscription:', error);
         });
 }
 
@@ -782,6 +895,9 @@ document.getElementById('editUserForm').addEventListener('submit', function(e) {
         is_active: document.getElementById('edit_is_active').value === '1'
     };
     
+    const subscription = document.getElementById('edit_subscription').value;
+    
+    // First update user info
     fetch('/admin/users/' + userId + '/edit', {
         method: 'POST',
         headers: {
@@ -792,16 +908,38 @@ document.getElementById('editUserForm').addEventListener('submit', function(e) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            hideEditUserModal();
-            location.reload();
+            // Now update subscription
+            return updateUserSubscription(userId, subscription);
         } else {
-            alert('Error updating user: ' + data.error);
+            throw new Error(data.error);
         }
+    })
+    .then(() => {
+        hideEditUserModal();
+        location.reload();
     })
     .catch(error => {
         alert('Error updating user: ' + error);
     });
 });
+
+function updateUserSubscription(userId, planSlug) {
+    if (planSlug === 'none') {
+        // Cancel subscription
+        return fetch('/admin/users/' + userId + '/subscription', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'cancel' })
+        }).then(r => r.json());
+    } else {
+        // Set subscription
+        return fetch('/admin/users/' + userId + '/subscription', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'set', plan_slug: planSlug })
+        }).then(r => r.json());
+    }
+}
 
 function approveUser(userId, username) {
     if (confirm('Approve user "' + username + '"? They will be able to log in and use the system.')) {

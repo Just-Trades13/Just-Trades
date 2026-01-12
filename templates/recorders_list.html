@@ -2,6 +2,146 @@
 {% block title %}My Recorders - Just.Trades.{% endblock %}
 {% block page_title %}MY RECORDERS{% endblock %}
 {% block content %}
+
+{% if not has_platform_subscription %}
+<!-- Platform Access Required Overlay -->
+<div class="upgrade-overlay">
+    <div class="upgrade-card">
+        <div class="upgrade-icon">
+            <span class="material-icons">lock</span>
+        </div>
+        <h2>Platform Access Required</h2>
+        <p>You need a <strong>Platform subscription</strong> to create and manage recorders. Discord subscriptions provide community access only.</p>
+        <div class="upgrade-features">
+            <div class="feature-item"><span class="material-icons">check_circle</span> Create unlimited recorders</div>
+            <div class="feature-item"><span class="material-icons">check_circle</span> Track trading strategies</div>
+            <div class="feature-item"><span class="material-icons">check_circle</span> Monitor live positions</div>
+            <div class="feature-item"><span class="material-icons">check_circle</span> Automated trade execution</div>
+        </div>
+        <div class="upgrade-buttons">
+            <a href="/pricing" class="btn-upgrade">
+                <span class="material-icons">rocket_launch</span>
+                View Pricing Plans
+            </a>
+            <a href="/dashboard" class="btn-back">
+                <span class="material-icons">arrow_back</span>
+                Back to Dashboard
+            </a>
+        </div>
+        <p class="current-tier">Your current plan: <strong>{% if subscription_status.tier == 'none' %}None{% else %}Discord Only{% endif %}</strong></p>
+    </div>
+</div>
+<style>
+    .upgrade-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.95);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 20px;
+    }
+    .upgrade-card {
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98));
+        border: 1px solid rgba(25, 184, 255, 0.3);
+        border-radius: 24px;
+        padding: 48px;
+        max-width: 520px;
+        text-align: center;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .upgrade-icon {
+        width: 80px;
+        height: 80px;
+        background: linear-gradient(135deg, rgba(25, 184, 255, 0.2), rgba(15, 136, 204, 0.1));
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 24px;
+    }
+    .upgrade-icon .material-icons {
+        font-size: 40px;
+        color: var(--primary-color);
+    }
+    .upgrade-card h2 {
+        font-size: 1.5rem;
+        margin-bottom: 12px;
+        color: var(--text-light);
+    }
+    .upgrade-card > p {
+        color: var(--text-muted);
+        margin-bottom: 24px;
+        line-height: 1.6;
+    }
+    .upgrade-features {
+        text-align: left;
+        margin-bottom: 32px;
+        padding: 20px;
+        background: rgba(148, 163, 184, 0.05);
+        border-radius: 12px;
+    }
+    .feature-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 0;
+        color: var(--text-light);
+        font-size: 0.9rem;
+    }
+    .feature-item .material-icons {
+        color: #22c55e;
+        font-size: 20px;
+    }
+    .upgrade-buttons {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    .btn-upgrade {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 28px;
+        background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+        color: white;
+        border-radius: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+    .btn-upgrade:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(25, 184, 255, 0.4);
+    }
+    .btn-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 28px;
+        background: rgba(148, 163, 184, 0.15);
+        color: var(--text-light);
+        border-radius: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+    .btn-back:hover {
+        background: rgba(148, 163, 184, 0.25);
+    }
+    .current-tier {
+        margin-top: 24px;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+</style>
+{% endif %}
+
 <div class="recorder-list">
     <section class="list-header">
         <input type="text" id="search-input" placeholder="Search strategy..." oninput="handleSearch()">
