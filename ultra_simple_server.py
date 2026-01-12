@@ -7236,6 +7236,12 @@ def delete_strategy(strategy_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/my-recorders', methods=['GET'])
+def my_recorders_redirect():
+    """Redirect /my-recorders to /recorders for backwards compatibility"""
+    return redirect(url_for('recorders_list'))
+
+
 @app.route('/recorders', methods=['GET'])
 def recorders_list():
     """Render the recorders list page - shows only user's own recorders"""
