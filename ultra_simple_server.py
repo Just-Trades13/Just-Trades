@@ -9219,6 +9219,40 @@ def broker_execution_worker():
                     logger.error(f"❌ Broker execution FAILED: {error}")
                     logger.error(f"   Recorder ID: {recorder_id}, Action: {action}, Quantity: {quantity}, Ticker: {ticker}")
                     logger.error(f"   Full result: {result}")
+                    
+                    # Enhanced diagnostics for common failures
+                    if 'No accounts to trade on' in error or 'No trader linked' in error:
+                        logger.error(f"   🔍 DIAGNOSTIC: Checking trader configuration for recorder {recorder_id}...")
+                        try:
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            is_postgres = is_using_postgres()
+                            placeholder = '%s' if is_postgres else '?'
+                            enabled_value = 'true' if is_postgres else '1'
+                            
+                            # Check traders
+                            cursor.execute(f'''
+                                SELECT t.id, t.enabled, t.enabled_accounts, t.recorder_id
+                                FROM traders t
+                                WHERE t.recorder_id = {placeholder}
+                            ''', (recorder_id,))
+                            traders = cursor.fetchall()
+                            logger.error(f"   🔍 Found {len(traders)} trader(s) linked to recorder {recorder_id}")
+                            for trader_row in traders:
+                                trader = dict(trader_row) if hasattr(trader_row, 'keys') else {
+                                    'id': trader_row[0],
+                                    'enabled': trader_row[1],
+                                    'enabled_accounts': trader_row[2],
+                                    'recorder_id': trader_row[3]
+                                }
+                                enabled_accts = trader.get('enabled_accounts')
+                                enabled_accts_str = str(enabled_accts)[:200] if enabled_accts else 'None'
+                                logger.error(f"   🔍 Trader {trader.get('id')}: enabled={trader.get('enabled')}, enabled_accounts={enabled_accts_str}")
+                            
+                            conn.close()
+                        except Exception as diag_err:
+                            logger.error(f"   ⚠️ Could not run diagnostics: {diag_err}")
+                    
                     logger.error(f"   ⚠️ NO RETRY - task abandoned to prevent duplicate trades")
                     _broker_execution_stats['total_failed'] += 1
                     _broker_execution_stats['last_error'] = error
@@ -9236,6 +9270,10 @@ def broker_execution_worker():
             
         except Empty:
             # Timeout - no tasks, continue loop
+            # Log health status every 60 seconds
+            if int(time.time()) % 60 == 0:
+                queue_size = broker_execution_queue.qsize()
+                logger.debug(f"💓 Broker execution worker alive: queue_size={queue_size}, stats={_broker_execution_stats}")
             continue
         except Exception as e:
             logger.error(f"Broker execution worker error: {e}")
@@ -9247,10 +9285,17 @@ def broker_execution_worker():
 logger.info("🔧 Creating broker execution worker thread...")
 broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
 broker_execution_thread.start()
-logger.info("✅ Broker execution worker thread started (Trade Manager style - async, non-blocking)")
-logger.info(f"   Thread name: {broker_execution_thread.name}")
-logger.info(f"   Thread alive: {broker_execution_thread.is_alive()}")
-logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
+
+# Verify worker started successfully
+time.sleep(0.5)  # Give thread time to start
+if not broker_execution_thread.is_alive():
+    logger.error("❌ CRITICAL: Broker execution worker thread failed to start!")
+    logger.error("   This means broker orders will be queued but NEVER executed!")
+else:
+    logger.info("✅ Broker execution worker thread started (Trade Manager style - async, non-blocking)")
+    logger.info(f"   Thread name: {broker_execution_thread.name}")
+    logger.info(f"   Thread alive: {broker_execution_thread.is_alive()}")
+    logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
 
 # Track broker execution stats
 _broker_execution_stats = {
