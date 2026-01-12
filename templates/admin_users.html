@@ -622,10 +622,18 @@
                     {% endif %}
                 </td>
                 <td style="color: var(--text-muted); font-size: 0.85rem;">
-                    {{ user.created_at if user.created_at else 'N/A' }}
+                    {% if user.created_at %}
+                        {{ user.created_at|format_datetime }}
+                    {% else %}
+                        N/A
+                    {% endif %}
                 </td>
                 <td style="color: var(--text-muted); font-size: 0.85rem;">
-                    {{ user.last_login if user.last_login else 'Never' }}
+                    {% if user.last_login %}
+                        {{ user.last_login|format_datetime }}
+                    {% else %}
+                        <span style="opacity: 0.6;">Never</span>
+                    {% endif %}
                 </td>
                 <td>
                     <div class="action-buttons">

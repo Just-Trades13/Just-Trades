@@ -1698,6 +1698,41 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 if USER_AUTH_AVAILABLE:
     app.context_processor(auth_context_processor)
 
+# Template filter for date formatting
+@app.template_filter('format_datetime')
+def format_datetime_filter(value):
+    """Format datetime string for display."""
+    if not value:
+        return None
+    try:
+        from datetime import datetime
+        # Handle different date formats (SQLite TEXT, PostgreSQL TIMESTAMP)
+        value_str = str(value).strip()
+        
+        # Try ISO format first (PostgreSQL with T separator)
+        if 'T' in value_str:
+            # Remove timezone if present for parsing
+            clean_value = value_str.split('+')[0].split('-')[0] if '+' in value_str or value_str.count('-') > 2 else value_str
+            clean_value = clean_value.replace('Z', '').strip()
+            try:
+                dt = datetime.fromisoformat(clean_value)
+            except:
+                # Fallback: try parsing without microseconds
+                dt = datetime.strptime(clean_value.split('.')[0], '%Y-%m-%dT%H:%M:%S')
+        else:
+            # SQLite format: 'YYYY-MM-DD HH:MM:SS' or 'YYYY-MM-DD'
+            clean_value = value_str.split('.')[0]  # Remove microseconds if present
+            if len(clean_value) > 10:  # Has time component
+                dt = datetime.strptime(clean_value, '%Y-%m-%d %H:%M:%S')
+            else:  # Date only
+                dt = datetime.strptime(clean_value, '%Y-%m-%d')
+                return dt.strftime('%b %d, %Y')
+        
+        return dt.strftime('%b %d, %Y %I:%M %p')
+    except Exception as e:
+        # Return simplified version if parsing fails
+        return str(value).split('T')[0] if 'T' in str(value) else str(value).split(' ')[0]
+
 # Register subscription context processor
 if SUBSCRIPTION_SYSTEM_AVAILABLE:
     @app.context_processor

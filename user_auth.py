@@ -225,7 +225,8 @@ class User:
     """User model for authentication."""
     
     def __init__(self, id: int, username: str, email: str, display_name: str = None,
-                 is_admin: bool = False, is_active: bool = True, is_approved: bool = False, settings: dict = None):
+                 is_admin: bool = False, is_active: bool = True, is_approved: bool = False, 
+                 settings: dict = None, created_at: str = None, last_login: str = None):
         self.id = id
         self.username = username
         self.email = email
@@ -234,6 +235,8 @@ class User:
         self.is_active = is_active
         self.is_approved = is_approved
         self.settings = settings or {}
+        self.created_at = created_at
+        self.last_login = last_login
     
     @property
     def is_authenticated(self):
@@ -267,7 +270,9 @@ class User:
             is_admin=bool(data.get('is_admin', 0)),
             is_active=bool(data.get('is_active', 1)),
             is_approved=bool(data.get('is_approved', 0)),
-            settings=settings
+            settings=settings,
+            created_at=data.get('created_at'),
+            last_login=data.get('last_login')
         )
     
     def to_dict(self) -> dict:
