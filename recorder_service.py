@@ -1355,23 +1355,26 @@ def execute_trade_simple(
                     
                     logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price} (rounded to tick)")
                     
-                    # MARKETABILITY CHECK: Get current price to ensure TP won't execute immediately
-                    # If TP is on the "wrong side" of market, Tradovate will REJECT it
+                    # MARKETABILITY CHECK: ONLY adjust if TP would execute IMMEDIATELY
+                    # Don't over-adjust - only fix if TP is on WRONG SIDE of market
                     try:
                         current_market = get_price_from_tradingview_api(ticker)
                         if current_market:
-                            min_distance = 2 * tick_size  # Minimum 2 ticks from market
                             if broker_side == 'LONG':
-                                # TP must be ABOVE current price for LONG
-                                if tp_price <= current_market + min_distance:
-                                    adjusted_tp = clamp_price(current_market + min_distance + tick_size, tick_size)
-                                    logger.warning(f"⚠️ [{acct_name}] TP {tp_price} too close to market {current_market} - adjusting to {adjusted_tp}")
+                                # LONG TP (Sell) must be ABOVE market to be a limit order
+                                # ONLY adjust if TP is AT or BELOW market (would fill immediately)
+                                if tp_price <= current_market:
+                                    # TP is through market - adjust to 2 ticks above current
+                                    adjusted_tp = clamp_price(current_market + (2 * tick_size), tick_size)
+                                    logger.warning(f"⚠️ [{acct_name}] TP {tp_price} <= market {current_market} - adjusting to {adjusted_tp}")
                                     tp_price = adjusted_tp
                             else:
-                                # TP must be BELOW current price for SHORT
-                                if tp_price >= current_market - min_distance:
-                                    adjusted_tp = clamp_price(current_market - min_distance - tick_size, tick_size)
-                                    logger.warning(f"⚠️ [{acct_name}] TP {tp_price} too close to market {current_market} - adjusting to {adjusted_tp}")
+                                # SHORT TP (Buy) must be BELOW market to be a limit order
+                                # ONLY adjust if TP is AT or ABOVE market (would fill immediately)
+                                if tp_price >= current_market:
+                                    # TP is through market - adjust to 2 ticks below current
+                                    adjusted_tp = clamp_price(current_market - (2 * tick_size), tick_size)
+                                    logger.warning(f"⚠️ [{acct_name}] TP {tp_price} >= market {current_market} - adjusting to {adjusted_tp}")
                                     tp_price = adjusted_tp
                     except Exception as market_err:
                         logger.debug(f"[{acct_name}] Could not check market price: {market_err}")
