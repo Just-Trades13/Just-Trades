@@ -13713,15 +13713,35 @@ def traders_new_debug():
 @app.route('/traders/new')
 def traders_new():
     """Create new trader page - select recorder and accounts"""
+    # CRITICAL SECURITY: Require login - never show accounts without authentication
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        return redirect(url_for('login'))
+    
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         
-        # Get current user for filtering
+        # Get current user for filtering - REQUIRED
         user_id = None
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
+        
+        # SECURITY: If no user_id, show nothing (require login)
+        if not user_id:
+            logger.warning("traders_new: No user_id - redirecting or showing empty list")
+            conn.close()
+            if USER_AUTH_AVAILABLE:
+                return redirect(url_for('login'))
+            # If auth not available, show empty accounts list (legacy mode)
+            return render_template(
+                'traders.html',
+                mode='builder',
+                header_title='Create New Trader',
+                header_cta='Create Trader',
+                recorders=[],
+                accounts=[]
+            )
         
         # Get recorders for the dropdown:
         # Show ALL recorders - they're public by default unless is_private is set
@@ -13737,17 +13757,12 @@ def traders_new():
             else:
                 recorders.append({'id': row[0], 'name': row[1], 'strategy_type': row[2] if len(row) > 2 else 'Futures'})
         
-        # Get accounts with their tradovate subaccounts - STRICT: only user's own accounts
-        if user_id:
-            if is_postgres:
-                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true AND user_id = %s', (user_id,))
-            else:
-                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1 AND user_id = ?', (user_id,))
+        # CRITICAL SECURITY: Get accounts with their tradovate subaccounts - ONLY user's own accounts
+        # NEVER show accounts without user_id filter
+        if is_postgres:
+            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true AND user_id = %s', (user_id,))
         else:
-            if is_postgres:
-                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
-            else:
-                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
+            cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1 AND user_id = ?', (user_id,))
         accounts = []
         for row in cursor.fetchall():
             # Handle both dict-style and tuple-style rows
@@ -13959,17 +13974,16 @@ def traders_edit(trader_id):
             logger.warning(traceback.format_exc())
             enabled_accounts = []
         
-        # Get all accounts with subaccounts for the routing table (only user's accounts)
-        if current_user_id:
+        # CRITICAL SECURITY: Get all accounts with subaccounts for the routing table - ONLY user's accounts
+        # NEVER show accounts without user_id filter
+        if not current_user_id:
+            logger.warning(f"traders_edit: No current_user_id for trader {trader_id} - showing empty accounts list")
+            accounts = []
+        else:
             if is_postgres:
                 cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true AND user_id = %s', (current_user_id,))
             else:
                 cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1 AND user_id = ?', (current_user_id,))
-        else:
-            if is_postgres:
-                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = true')
-            else:
-                cursor.execute('SELECT id, name, tradovate_accounts FROM accounts WHERE enabled = 1')
         accounts = []
         for row in cursor.fetchall():
             parent_id = row['id']
