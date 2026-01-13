@@ -84,118 +84,114 @@
                 <a class="panel-help" href="#">Help</a>
             </header>
             <div class="panel-body">
-                <div class="tp-sl-grid">
-                    <div class="tp-settings">
-                        <h3>Take Profit Targets</h3>
-                        <div class="form-two">
-                            <label class="form-field">
-                                <span>TP Units</span>
-                                <div class="select-shell">
-                                    <select id="tp_units">
-                                        <option value="Ticks" {{ 'selected' if not recorder or recorder.tp_units == 'Ticks' else '' }}>Ticks</option>
-                                        <option value="Points" {{ 'selected' if recorder and recorder.tp_units == 'Points' else '' }}>Points</option>
-                                        <option value="Percent" {{ 'selected' if recorder and recorder.tp_units == 'Percent' else '' }}>Percent</option>
-                                    </select>
-                                    <span class="material-icons">expand_more</span>
-                                </div>
-                            </label>
-                            <label class="form-field">
-                                <span>Trim Units</span>
-                                <div class="select-shell">
-                                    <select id="trim_units">
-                                        <option value="Contracts" {{ 'selected' if not recorder or recorder.trim_units == 'Contracts' else '' }}>Contracts</option>
-                                        <option value="Percent" {{ 'selected' if recorder and recorder.trim_units == 'Percent' else '' }}>Percent</option>
-                                    </select>
-                                    <span class="material-icons">expand_more</span>
-                                </div>
-                            </label>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>TP Units</span>
+                        <div class="select-shell">
+                            <select id="tp_units">
+                                <option value="Ticks" {{ 'selected' if not recorder or recorder.tp_units == 'Ticks' else '' }}>Ticks</option>
+                                <option value="Points" {{ 'selected' if recorder and recorder.tp_units == 'Points' else '' }}>Points</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
                         </div>
-                        <button class="btn btn-outline btn-small" type="button" onclick="addTpTarget()">+ Add TP</button>
-                        <div id="tp-targets-container">
-                            <!-- TP targets will be rendered here -->
+                    </label>
+                    <label class="form-field">
+                        <span>Trim Units</span>
+                        <div class="select-shell">
+                            <select id="trim_units">
+                                <option value="Contracts" {{ 'selected' if not recorder or recorder.trim_units == 'Contracts' else '' }}>Contracts</option>
+                                <option value="Percent" {{ 'selected' if recorder and recorder.trim_units == 'Percent' else '' }}>Percent</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
                         </div>
-                    </div>
-                    <div class="sl-settings">
-                        <div class="toggle-row">
-                            <span>Stop Loss</span>
-                            <label class="switch">
-                                <input type="checkbox" id="sl_enabled" {{ 'checked' if recorder and recorder.sl_enabled else '' }}>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                        <div class="form-two">
-                            <label class="form-field">
-                                <span>Stop Loss Amount</span>
-                                <input type="number" id="sl_amount" value="{{ recorder.sl_amount if recorder and recorder.sl_amount else 0 }}" step="0.01" min="0">
-                                <small>0 = no stop loss</small>
-                            </label>
-                            <label class="form-field">
-                                <span>SL Units</span>
-                                <div class="select-shell">
-                                    <select id="sl_units">
-                                        <option value="Ticks" {{ 'selected' if not recorder or recorder.sl_units == 'Ticks' else '' }}>Ticks</option>
-                                        <option value="Loss" {{ 'selected' if recorder and recorder.sl_units == 'Loss' else '' }}>Loss ($)</option>
-                                        <option value="Percent" {{ 'selected' if recorder and recorder.sl_units == 'Percent' else '' }}>Percent</option>
-                                    </select>
-                                    <span class="material-icons">expand_more</span>
-                                </div>
-                            </label>
-                        </div>
-                        <label class="form-field">
-                            <span>SL Type</span>
-                            <div class="select-shell">
-                                <select id="sl_type">
-                                    <option value="Fixed" {{ 'selected' if not recorder or recorder.sl_type == 'Fixed' else '' }}>Fixed</option>
-                                    <option value="Trail" {{ 'selected' if recorder and recorder.sl_type == 'Trail' else '' }}>Trailing</option>
-                                </select>
-                                <span class="material-icons">expand_more</span>
-                            </div>
-                        </label>
-                        <div class="separator"></div>
-                        <div class="toggle-row">
-                            <span>Auto Break-Even</span>
-                            <label class="switch">
-                                <input type="checkbox" id="break_even_enabled" {{ 'checked' if recorder and recorder.break_even_enabled else '' }}>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                        <label class="form-field">
-                            <span>Break-Even Trigger (ticks)</span>
-                            <input type="number" id="break_even_ticks" value="{{ recorder.break_even_ticks if recorder and recorder.break_even_ticks else 10 }}" min="1" step="1">
-                            <small>Move SL to entry after X ticks profit</small>
-                        </label>
-                        <div class="separator"></div>
-                        <div class="toggle-row">
-                            <span>Averaging Down</span>
-                            <label class="switch">
-                                <input type="checkbox" id="avg_down_enabled" {{ 'checked' if recorder and recorder.avg_down_enabled else '' }}>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                        <div class="form-two">
-                            <label class="form-field">
-                                <span>Average Down Amount</span>
-                                <input type="number" id="avg_down_amount" value="{{ recorder.avg_down_amount if recorder and recorder.avg_down_amount else 0 }}" min="0">
-                                <small>0 = no averaging down</small>
-                            </label>
-                            <label class="form-field">
-                                <span>Average Down Point</span>
-                                <input type="number" id="avg_down_point" value="{{ recorder.avg_down_point if recorder and recorder.avg_down_point else 0 }}" step="0.01" min="0">
-                                <small>0 = disabled</small>
-                            </label>
-                        </div>
-                        <label class="form-field">
-                            <span>Avg Down Unit</span>
-                            <div class="select-shell">
-                                <select id="avg_down_units">
-                                    <option value="Ticks" {{ 'selected' if not recorder or recorder.avg_down_units == 'Ticks' else '' }}>Ticks</option>
-                                    <option value="Points" {{ 'selected' if recorder and recorder.avg_down_units == 'Points' else '' }}>Points</option>
-                                </select>
-                                <span class="material-icons">expand_more</span>
-                            </div>
-                        </label>
-                    </div>
+                    </label>
                 </div>
+                <div class="tp-row">
+                    <span class="tp-pill">TP #1</span>
+                    <label class="form-field">
+                        <span>TP Value (Ticks)</span>
+                        <input type="number" id="tp_value" value="{{ recorder.tp_targets[0].value if recorder and recorder.tp_targets and recorder.tp_targets[0] else 5 }}" min="0">
+                    </label>
+                    <label class="form-field">
+                        <span>Trim %</span>
+                        <input type="number" id="tp_trim" value="{{ recorder.tp_targets[0].trim if recorder and recorder.tp_targets and recorder.tp_targets[0] else 100 }}" min="0" max="100">
+                    </label>
+                </div>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Stop Loss</span>
+                    <label class="switch">
+                        <input type="checkbox" id="sl_enabled" {{ 'checked' if recorder and recorder.sl_enabled else '' }}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Stop Loss Amount</span>
+                        <input type="number" id="sl_amount" value="{{ recorder.sl_amount if recorder and recorder.sl_amount else 0 }}" min="0" step="0.25">
+                    </label>
+                    <label class="form-field">
+                        <span>SL Units</span>
+                        <div class="select-shell">
+                            <select id="sl_units">
+                                <option value="Ticks" {{ 'selected' if not recorder or recorder.sl_units == 'Ticks' else '' }}>Ticks</option>
+                                <option value="Points" {{ 'selected' if recorder and recorder.sl_units == 'Points' else '' }}>Points</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>SL Type</span>
+                    <div class="select-shell">
+                        <select id="sl_type">
+                            <option value="Fixed" {{ 'selected' if not recorder or recorder.sl_type == 'Fixed' else '' }}>Fixed</option>
+                            <option value="Trail" {{ 'selected' if recorder and recorder.sl_type == 'Trail' else '' }}>Trail</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Auto Break-Even</span>
+                    <label class="switch">
+                        <input type="checkbox" id="break_even_enabled" {{ 'checked' if recorder and recorder.break_even_enabled else '' }}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Break-Even Trigger (ticks)</span>
+                    <input type="number" id="break_even_ticks" value="{{ recorder.break_even_ticks if recorder and recorder.break_even_ticks else 10 }}" min="1" step="1">
+                    <small>Move SL to entry after X ticks profit</small>
+                </label>
+                <div class="separator"></div>
+                <div class="toggle-row">
+                    <span>Averaging Down (DCA)</span>
+                    <label class="switch">
+                        <input type="checkbox" id="avg_down_enabled" {{ 'checked' if recorder and recorder.avg_down_enabled else '' }}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Average Down Amount (contracts)</span>
+                        <input type="number" id="avg_down_amount" value="{{ recorder.avg_down_amount if recorder and recorder.avg_down_amount else 1 }}" min="1">
+                    </label>
+                    <label class="form-field">
+                        <span>Average Down Point (ticks against)</span>
+                        <input type="number" id="avg_down_point" value="{{ recorder.avg_down_point if recorder and recorder.avg_down_point else 10 }}" min="0" step="0.25">
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Avg Down Unit</span>
+                    <div class="select-shell">
+                        <select id="avg_down_units">
+                            <option value="Ticks" {{ 'selected' if not recorder or recorder.avg_down_units == 'Ticks' else '' }}>Ticks</option>
+                            <option value="Points" {{ 'selected' if recorder and recorder.avg_down_units == 'Points' else '' }}>Points</option>
+                        </select>
+                        <span class="material-icons">expand_more</span>
+                    </div>
+                </label>
             </div>
         </section>
 
@@ -208,26 +204,46 @@
             <div class="panel-body">
                 <div class="form-two">
                     <label class="form-field">
-                        <span>Signal Delay</span>
-                        <input type="number" id="add_delay" value="{{ recorder.add_delay if recorder else 0 }}" min="0">
-                        <small>Execute every Nth signal (0 or 1 = all, 2 = every other, etc.)</small>
+                        <span>Ticker</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>ALL</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                    <label class="form-field">
+                        <span>Timeframe</span>
+                        <div class="select-shell">
+                            <select>
+                                <option>ALL</option>
+                            </select>
+                            <span class="material-icons">expand_more</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Add Delay</span>
+                        <input type="number" id="add_delay" value="{{ recorder.add_delay if recorder else 1 }}" min="0">
+                        <small>Currently disabled</small>
                     </label>
                     <label class="form-field">
                         <span>Max Contracts Per Trade</span>
                         <input type="number" id="max_contracts_per_trade" value="{{ recorder.max_contracts_per_trade if recorder else 0 }}" min="0">
-                        <small>0 = unlimited</small>
+                        <small>Unlimited contracts (no limit)</small>
                     </label>
                 </div>
                 <label class="form-field">
                     <span>Option Premium Filter</span>
                     <input type="number" id="option_premium_filter" value="{{ recorder.option_premium_filter if recorder else 0 }}" step="0.01" min="0">
-                    <small>Minimum premium threshold (0 = disabled)</small>
+                    <small>Currently disabled</small>
                 </label>
                 <label class="form-field">
                     <span>Direction Filter</span>
                     <div class="select-shell">
                         <select id="direction_filter">
-                            <option value="">All Directions</option>
+                            <option value="">Select a strategy...</option>
                             <option value="Long" {{ 'selected' if recorder and recorder.direction_filter == 'Long' else '' }}>Long Only</option>
                             <option value="Short" {{ 'selected' if recorder and recorder.direction_filter == 'Short' else '' }}>Short Only</option>
                         </select>
@@ -235,7 +251,7 @@
                     </div>
                 </label>
                 <div class="time-filters">
-                    <div class="time-block">
+                    <div class="time-block" id="time_filter_1_block">
                         <div class="toggle-row" style="margin-bottom: 0.75rem;">
                             <h4 style="margin: 0;">Time Filter #1</h4>
                             <label class="switch">
@@ -247,16 +263,14 @@
                             <label class="form-field">
                                 <span>Start #1</span>
                                 <input type="text" id="time_filter_1_start" value="{{ recorder.time_filter_1_start if recorder else '' }}" placeholder="e.g. 8:45 AM">
-                                <small>Leave empty = no filter</small>
                             </label>
                             <label class="form-field">
                                 <span>Stop #1</span>
-                                <input type="text" id="time_filter_1_stop" value="{{ recorder.time_filter_1_stop if recorder else '' }}" placeholder="e.g. 1:45 PM">
-                                <small>Leave empty = no filter</small>
+                                <input type="text" id="time_filter_1_stop" value="{{ recorder.time_filter_1_stop if recorder else '' }}" placeholder="e.g. 3:00 PM">
                             </label>
                         </div>
                     </div>
-                    <div class="time-block">
+                    <div class="time-block" id="time_filter_2_block">
                         <div class="toggle-row" style="margin-bottom: 0.75rem;">
                             <h4 style="margin: 0;">Time Filter #2</h4>
                             <label class="switch">
@@ -267,17 +281,19 @@
                         <div class="time-grid" id="time_filter_2_fields">
                             <label class="form-field">
                                 <span>Start #2</span>
-                                <input type="text" id="time_filter_2_start" value="{{ recorder.time_filter_2_start if recorder else '' }}" placeholder="e.g. 12:30 PM">
-                                <small>Leave empty = no filter</small>
+                                <input type="text" id="time_filter_2_start" value="{{ recorder.time_filter_2_start if recorder else '' }}" placeholder="e.g. 6:00 PM">
                             </label>
                             <label class="form-field">
                                 <span>Stop #2</span>
-                                <input type="text" id="time_filter_2_stop" value="{{ recorder.time_filter_2_stop if recorder else '' }}" placeholder="e.g. 3:15 PM">
-                                <small>Leave empty = no filter</small>
+                                <input type="text" id="time_filter_2_stop" value="{{ recorder.time_filter_2_stop if recorder else '' }}" placeholder="e.g. 11:00 PM">
                             </label>
                         </div>
                     </div>
                 </div>
+                <small style="color: #64748b; margin-top: 0.5rem; display: block;">
+                    <span class="material-icons" style="font-size: 0.9rem; vertical-align: middle;">info</span>
+                    Set custom time filters for this recorder. Leave empty to use no time filter.
+                </small>
             </div>
         </section>
 
