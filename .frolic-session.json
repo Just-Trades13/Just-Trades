@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-01-13T07:47:41.759Z",
+  "timestamp": "2026-01-13T07:59:05.351Z",
   "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
-  "eventCount": 981,
+  "eventCount": 990,
   "events": [
     {
       "timestamp": "2026-01-07T17:09:43.722Z",
@@ -17603,11 +17603,161 @@
           "wasTruncated": false
         }
       ]
+    },
+    {
+      "timestamp": "2026-01-13T07:49:25.012Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_open",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1229,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:49:25.390Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:49:40.985Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1254,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 0,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 2424,
+          "rangeLength": 1305,
+          "lineCountDelta": 50,
+          "likelyAI": false,
+          "changeText": "        if (!recorderId) {\n            console.log('loadWebhookInfo: No recorderId');\n            return;\n        }\n        \n        console.log('loadWebhookInfo: Fetching webhook for recorder', recorderId);\n        fetch(`/api/recorders/${recorderId}/webhook`)\n            .then(res => {\n                if (!res.ok) {\n                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);\n                }\n                return res.json();\n            })\n            .then(data => {\n                console.log('loadWebhookInfo: Received data', data);\n                if (data.success) {\n                    const webhookUrl = document.getElementById('webhook-url');\n                    if (webhookUrl) {\n                        webhookUrl.value = data.webhook_url || '';\n                        console.log('Set webhook URL:', data.webhook_url);\n                    } else {\n                        console.warn('webhook-url element not found');\n                    }\n                    \n                    // Toggle Alert = BUY alert (user creates separate BUY and SELL alerts)\n                    const toggle = document.getElementById('alert-toggle');\n                    if (toggle && data.alerts) {\n                        toggle.textContent = data.alerts.indicator_buy || '';\n                        console.log('Set BUY alert');\n                    } else {\n                        console.warn('alert-toggle element not found or no alerts data');\n                    }\n                    \n                    // TM Sizing = SELL alert\n                    const tm = document.getElementById('alert-tm');\n                    if (tm && data.alerts) {\n                        tm.textContent = data.alerts.indicator_sell || '';\n                        console.log('Set SELL alert');\n                    } else {\n                        console.warn('alert-tm element not found or no alerts data');\n                    }\n                    \n                    // TV Sizing = Strate...[TRUNCATED]",
+          "wasTruncated": true
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T07:49:41.680Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:50:00.351Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1260,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 0,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 277,
+          "rangeLength": 0,
+          "lineCountDelta": 6,
+          "likelyAI": true,
+          "changeText": "                    // Ensure webhook body is visible\n                    const webhookBody = document.getElementById('webhook-body');\n                    if (webhookBody) {\n                        webhookBody.style.display = 'grid';\n                    }\n                    \n",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T07:50:01.068Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:50:20.376Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:59:04.915Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_open",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1261,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:59:05.351Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
     }
   ],
   "metadata": {
     "version": "1.3.0",
     "trigger": "smart-backup",
-    "memoryUsage": 1402790
+    "memoryUsage": 1414398
   }
 }

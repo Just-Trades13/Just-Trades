@@ -890,6 +890,8 @@
     let tpTargets = {{ recorder.tp_targets | tojson if recorder and recorder.tp_targets else '[]' }};
 
     document.addEventListener('DOMContentLoaded', function () {
+        console.log('DOMContentLoaded: Starting initialization, recorderId:', recorderId);
+        
         // Initialize panel toggles
         document.querySelectorAll('[data-panel]').forEach(function (panel) {
             var toggle = panel.querySelector('.panel-toggle');
@@ -910,12 +912,13 @@
         // Render TP targets
         renderTpTargets();
 
-        // Load webhook info if editing (with small delay to ensure DOM is ready)
-        if (isEditMode) {
-            // Use setTimeout to ensure webhook section is rendered
+        // Load webhook info if webhook section exists (with small delay to ensure DOM is ready)
+        const webhookSection = document.querySelector('.webhook-card');
+        if (webhookSection && recorderId) {
+            // Use setTimeout to ensure webhook section is fully rendered
             setTimeout(() => {
                 loadWebhookInfo();
-            }, 100);
+            }, 200);
         }
         
         // Time filter toggle functionality
@@ -1115,6 +1118,13 @@
     let newRecorderId = null;
 
     function loadWebhookInfo() {
+        // Check if webhook section exists
+        const webhookSection = document.querySelector('.webhook-card');
+        if (!webhookSection) {
+            console.log('loadWebhookInfo: Webhook section not found');
+            return;
+        }
+        
         if (!recorderId) {
             console.log('loadWebhookInfo: No recorderId');
             return;
@@ -1147,29 +1157,41 @@
                     
                     // Toggle Alert = BUY alert (user creates separate BUY and SELL alerts)
                     const toggle = document.getElementById('alert-toggle');
-                    if (toggle && data.alerts) {
-                        toggle.textContent = data.alerts.indicator_buy || '';
-                        console.log('Set BUY alert');
+                    if (toggle && data.alerts && data.alerts.indicator_buy) {
+                        toggle.textContent = data.alerts.indicator_buy;
+                        console.log('Set BUY alert:', data.alerts.indicator_buy.substring(0, 50));
                     } else {
-                        console.warn('alert-toggle element not found or no alerts data');
+                        console.warn('alert-toggle not found or missing data:', {
+                            element: !!toggle,
+                            alerts: !!data.alerts,
+                            indicator_buy: data.alerts?.indicator_buy
+                        });
                     }
                     
                     // TM Sizing = SELL alert
                     const tm = document.getElementById('alert-tm');
-                    if (tm && data.alerts) {
-                        tm.textContent = data.alerts.indicator_sell || '';
-                        console.log('Set SELL alert');
+                    if (tm && data.alerts && data.alerts.indicator_sell) {
+                        tm.textContent = data.alerts.indicator_sell;
+                        console.log('Set SELL alert:', data.alerts.indicator_sell.substring(0, 50));
                     } else {
-                        console.warn('alert-tm element not found or no alerts data');
+                        console.warn('alert-tm not found or missing data:', {
+                            element: !!tm,
+                            alerts: !!data.alerts,
+                            indicator_sell: data.alerts?.indicator_sell
+                        });
                     }
                     
                     // TV Sizing = Strategy alert (for Pine Script strategies)
                     const tv = document.getElementById('alert-tv');
-                    if (tv && data.alerts) {
-                        tv.textContent = data.alerts.strategy_message || '';
-                        console.log('Set strategy alert');
+                    if (tv && data.alerts && data.alerts.strategy_message) {
+                        tv.textContent = data.alerts.strategy_message;
+                        console.log('Set strategy alert:', data.alerts.strategy_message.substring(0, 50));
                     } else {
-                        console.warn('alert-tv element not found or no alerts data');
+                        console.warn('alert-tv not found or missing data:', {
+                            element: !!tv,
+                            alerts: !!data.alerts,
+                            strategy_message: data.alerts?.strategy_message
+                        });
                     }
                 } else {
                     console.error('Webhook API error:', data.error);
