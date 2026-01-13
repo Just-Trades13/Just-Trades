@@ -4569,7 +4569,13 @@ def reconcile_positions_with_broker():
                                         # Calculate correct TP based on broker avg price
                                         is_long = db_side == 'LONG'
                                         tick_size = 0.25  # MNQ tick size
-                                        tp_ticks = 5  # Default TP distance
+                                        tp_ticks = 10  # Default TP distance (was 5, should be 10!)
+                                        
+                                        # CRITICAL: Validate broker_avg before calculating TP!
+                                        if not broker_avg or broker_avg < 100:
+                                            logger.error(f"❌ SYNC FIX: Cannot calculate TP - broker_avg is {broker_avg} (invalid)")
+                                            logger.error(f"   Skipping TP placement to prevent wrong order")
+                                            continue  # Skip this position
                                         
                                         # Get TP ticks from recorder settings
                                         conn_tp = get_db_connection()
@@ -4597,6 +4603,13 @@ def reconcile_positions_with_broker():
                                         else:
                                             new_tp_price = broker_avg - (tp_ticks * tick_size)
                                             tp_action = 'Buy'
+                                        
+                                        # SANITY CHECK: TP price must be reasonable
+                                        if new_tp_price < 100:
+                                            logger.error(f"❌ SYNC FIX: Calculated TP {new_tp_price} is invalid - skipping")
+                                            continue
+                                        
+                                        logger.info(f"🎯 SYNC FIX: TP = {broker_avg} {'+'if is_long else '-'} ({tp_ticks} × {tick_size}) = {new_tp_price}")
                                         
                                         # Place the TP order
                                         try:
