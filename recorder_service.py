@@ -3683,8 +3683,8 @@ def execute_live_trades(recorder_id: int, action: str, ticker: str, quantity: in
                 sl_ticks = int(rec.get('sl_amount', 10))
     except Exception as e:
         logger.warning(f"Could not get TP/SL settings: {e}")
-        tp_ticks = 5  # Default
-        sl_ticks = 10
+        tp_ticks = 10  # Default 10 ticks
+        sl_ticks = 0  # No SL by default
     
     # Call the new broker-first function
     result = execute_live_trade_with_bracket(
@@ -3820,9 +3820,9 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                                     tp_ticks = 10
                             except:
                                 tp_ticks = 10
-                            sl_amount = rec.get('sl_amount', 10) if rec.get('sl_enabled') else 0
+                            sl_amount = rec.get('sl_amount', 0) if rec.get('sl_enabled') else 0
                         else:
-                            tp_ticks = 5
+                            tp_ticks = 10  # Default 10 ticks
                             sl_amount = 0
                         
                         # Get tick size for symbol

@@ -10898,7 +10898,8 @@ def broker_execution_worker():
                 from recorder_service import execute_trade_simple
                 
                 logger.info(f"📤 Broker execution: {action} {quantity} {ticker}")
-                logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
+                logger.info(f"🎯 TP={tp_ticks} ticks | SL={sl_ticks} ticks")
+                logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}, tp_ticks={tp_ticks}")
                 
                 result = execute_trade_simple(
                     recorder_id=recorder_id,
@@ -12342,8 +12343,8 @@ def process_webhook_directly(webhook_token):
             try:
                 broker_execution_queue.put_nowait(broker_task)
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
+                _logger.info(f"   ✅ TP={tp_ticks} ticks, SL={sl_ticks} ticks")
                 _logger.info(f"   ✅ Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
-                _logger.info(f"   ✅ Worker alive: {broker_execution_thread.is_alive() if broker_execution_thread else False}")
                 _logger.info(f"   ✅ Task details: recorder_id={recorder_id}, action={trade_action}, quantity={quantity}, ticker={ticker}")
                 _broker_execution_stats['total_queued'] += 1
             except Exception as queue_err:
