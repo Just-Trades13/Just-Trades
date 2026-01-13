@@ -17291,22 +17291,18 @@ def api_control_center_stats():
                     ORDER BY r.name
                 ''', (current_user_id, current_user_id))
         else:
-            # No user auth, show all recorders
-            cursor.execute('''
-                SELECT 
-                    r.id,
-                    r.name,
-                    r.symbol,
-                    r.recording_enabled,
-                    r.signal_count,
-                    COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
-                    COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
-                    (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
-                FROM recorders r
-                LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
-                GROUP BY r.id
-                ORDER BY r.name
-            ''')
+            # CRITICAL: Require authentication - don't show everyone's data!
+            conn.close()
+            logger.warning("⚠️ control-center/stats called without user authentication - returning empty")
+            return jsonify({
+                'success': True,
+                'recorders': [],
+                'total_pnl': 0,
+                'open_pnl': 0,
+                'today_pnl': 0,
+                'active_recorders': 0,
+                'message': 'Login required to view data'
+            })
         
         recorder_rows = cursor.fetchall()
         
@@ -17682,12 +17678,10 @@ def api_control_center_toggle_all():
             
             logger.info(f"📊 User {user_id} toggled: {recorder_count} recorders, {trader_count} traders")
         else:
-            # Fallback for non-authenticated access (legacy behavior, but log warning)
-            logger.warning("⚠️ toggle-all called without user authentication - updating ALL recorders")
-            cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder}', (enabled_value,))
-            recorder_count = cursor.rowcount
-            cursor.execute(f'UPDATE traders SET enabled = {placeholder}', (enabled_value,))
-            trader_count = cursor.rowcount
+            # CRITICAL: Require authentication - don't update everyone's data!
+            conn.close()
+            logger.warning("⚠️ toggle-all called without user authentication - REJECTED")
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
         
         conn.commit()
         conn.close()
@@ -17814,15 +17808,28 @@ def api_toggle_my_traders(recorder_id):
         
         # Update traders for this recorder belonging to CURRENT USER ONLY
         if current_user_id:
-            cursor.execute(f'''
-                UPDATE traders SET enabled = {placeholder} 
-                WHERE recorder_id = {placeholder} AND user_id = {placeholder}
-            ''', (enabled_value, recorder_id, current_user_id))
+            # CRITICAL: Only update traders where user_id matches OR account belongs to user
+            # This handles cases where user_id might be null on trader but account belongs to user
+            if is_postgres:
+                cursor.execute(f'''
+                    UPDATE traders SET enabled = {placeholder}
+                    WHERE recorder_id = {placeholder} AND (
+                        user_id = {placeholder} OR 
+                        account_id IN (SELECT id FROM accounts WHERE user_id = {placeholder})
+                    )
+                ''', (enabled_value, recorder_id, current_user_id, current_user_id))
+            else:
+                cursor.execute(f'''
+                    UPDATE traders SET enabled = {placeholder}
+                    WHERE recorder_id = {placeholder} AND (
+                        user_id = {placeholder} OR 
+                        account_id IN (SELECT id FROM accounts WHERE user_id = {placeholder})
+                    )
+                ''', (enabled_value, recorder_id, current_user_id, current_user_id))
         else:
-            # No user auth, update all traders for this recorder
-            cursor.execute(f'''
-                UPDATE traders SET enabled = {placeholder} WHERE recorder_id = {placeholder}
-            ''', (enabled_value, recorder_id))
+            # No user auth - REJECT the request, don't update everyone's traders!
+            conn.close()
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
         
         updated_count = cursor.rowcount
         
