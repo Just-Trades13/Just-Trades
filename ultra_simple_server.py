@@ -11889,27 +11889,24 @@ def process_webhook_directly(webhook_token):
         except:
             tp_targets = []
         
-        # Get TP value and convert to ticks based on units
-        # Frontend saves as 'gain_ticks', check all variants
+        # Get TP value - CRITICAL: 'gain_ticks' is ALREADY in ticks, do NOT convert!
+        # Frontend saves as 'gain_ticks' which means the value IS the number of ticks
+        # Previous bug: was converting gain_ticks again based on tp_units, causing insane values
         if tp_targets and len(tp_targets) > 0:
-            tp_value = float(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
+            # gain_ticks is the PRIMARY field and is ALREADY in ticks
+            tp_ticks = int(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
+            _logger.info(f"📊 TP from tp_targets: gain_ticks={tp_ticks}")
         else:
-            tp_value = 10
+            tp_ticks = 10  # Default 10 ticks
+            _logger.info(f"📊 TP default: {tp_ticks} ticks")
         
-        # Convert TP to ticks based on units
-        if tp_value > 0:
-            if tp_units == 'Points':
-                # Points = dollar value per contract. Convert to ticks.
-                tick_value = get_tick_value(ticker) if ticker else 0.50
-                tp_ticks = int(tp_value / tick_value) if tick_value else int(tp_value / tick_size)
-            elif tp_units == 'Percent':
-                # Percent of entry price
-                tp_ticks = int((current_price * (tp_value / 100)) / tick_size) if current_price and tick_size else 0
-            else:
-                # Ticks (default)
-                tp_ticks = int(tp_value)
-        else:
-            tp_ticks = 0
+        # Sanity check: TP ticks should be reasonable (1-500 range for futures)
+        if tp_ticks > 500:
+            _logger.warning(f"⚠️ TP ticks {tp_ticks} seems too high - capping at 100")
+            tp_ticks = 100
+        elif tp_ticks < 1:
+            _logger.warning(f"⚠️ TP ticks {tp_ticks} seems too low - using default 10")
+            tp_ticks = 10
         
         # Convert SL to ticks based on units
         if sl_enabled and sl_amount > 0:
