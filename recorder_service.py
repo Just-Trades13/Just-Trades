@@ -1197,16 +1197,51 @@ def execute_trade_simple(
                     
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
-                    # BUT: Skip bracket orders if risk_config has trail or break_even (not supported by bracket orders)
+                    # NOW SUPPORTS: Native break-even and autoTrail (trailing-after-profit) via Tradovate API
                     use_bracket_order = (
                         not has_existing_position and 
-                        tp_ticks and tp_ticks > 0 and
-                        not (risk_config and (risk_config.get('trail') or risk_config.get('break_even')))
+                        tp_ticks and tp_ticks > 0
                     )
                     
                     if use_bracket_order:
+                        # Extract native break-even and autoTrail settings from risk_config
+                        break_even_ticks = None
+                        auto_trail = None
+                        trailing_stop_bool = False
+                        
+                        if risk_config:
+                            # Break-even: { activation_ticks: X }
+                            break_even_cfg = risk_config.get('break_even')
+                            if break_even_cfg and break_even_cfg.get('activation_ticks'):
+                                break_even_ticks = break_even_cfg.get('activation_ticks')
+                                logger.info(f"📊 [{acct_name}] Native break-even: {break_even_ticks} ticks")
+                            
+                            # Trailing: { offset_ticks: X, activation_ticks: Y }
+                            trail_cfg = risk_config.get('trail')
+                            if trail_cfg:
+                                offset_ticks = trail_cfg.get('offset_ticks')
+                                activation_ticks = trail_cfg.get('activation_ticks')
+                                
+                                # If activation_ticks exists and is different from offset_ticks, it's trail-after-profit
+                                # If they're the same (or only offset_ticks exists), it's immediate trailing
+                                if offset_ticks and activation_ticks and activation_ticks != offset_ticks:
+                                    # Trail-after-profit: Use autoTrail (starts trailing after profit threshold)
+                                    auto_trail = {
+                                        'stopLoss': offset_ticks,  # Trailing distance
+                                        'trigger': activation_ticks,  # Profit threshold to start trailing
+                                        'freq': tick_size * 0.25  # Update frequency (0.25 tick size)
+                                    }
+                                    logger.info(f"📊 [{acct_name}] Native autoTrail: distance={offset_ticks} ticks, trigger={activation_ticks} ticks")
+                                elif offset_ticks:
+                                    # Immediate trailing: Use trailingStop boolean (starts trailing immediately)
+                                    trailing_stop_bool = True
+                                    logger.info(f"📊 [{acct_name}] Immediate trailing stop: {offset_ticks} ticks")
+                        
                         sl_log = f" + SL: {sl_ticks} ticks" if sl_ticks > 0 else ""
-                        logger.info(f"📤 [{acct_name}] Using BRACKET ORDER (WebSocket) - Entry + TP{sl_log} in one call")
+                        be_log = f" + BE: {break_even_ticks} ticks" if break_even_ticks else ""
+                        trail_log = f" + Trail" if auto_trail or trailing_stop_bool else ""
+                        logger.info(f"📤 [{acct_name}] Using NATIVE BRACKET ORDER (WebSocket) - Entry + TP{sl_log}{be_log}{trail_log} in one call")
+                        
                         bracket_result = await tradovate.place_bracket_order(
                             account_id=tradovate_account_id,
                             account_spec=tradovate_account_spec,
@@ -1215,7 +1250,9 @@ def execute_trade_simple(
                             quantity=adjusted_quantity,
                             profit_target_ticks=tp_ticks,
                             stop_loss_ticks=sl_ticks if sl_ticks > 0 else None,  # Only place SL if configured
-                            trailing_stop=False
+                            trailing_stop=trailing_stop_bool,  # Immediate trailing (boolean)
+                            break_even_ticks=break_even_ticks,  # Native break-even
+                            auto_trail=auto_trail  # Native trailing-after-profit
                         )
                         
                         if bracket_result and bracket_result.get('success'):
