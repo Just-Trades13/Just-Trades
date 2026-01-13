@@ -181,11 +181,19 @@ def get_discord_enabled_users(user_id: int = None) -> list:
     Returns:
         List of dicts with user_id and discord_user_id
     """
+    conn = None
+    cursor = None
     try:
         if USER_AUTH_AVAILABLE:
             from user_auth import get_auth_db_connection
             conn, db_type = get_auth_db_connection()
             cursor = conn.cursor()
+            
+            # Rollback any failed transactions (PostgreSQL specific issue)
+            try:
+                conn.rollback()
+            except:
+                pass
             
             if user_id:
                 if db_type == 'postgresql':
@@ -211,12 +219,24 @@ def get_discord_enabled_users(user_id: int = None) -> list:
                     ''')
             
             rows = cursor.fetchall()
-            cursor.close()
-            conn.close()
-            
-            return [{'user_id': row[0], 'discord_user_id': row[1]} for row in rows]
+            result = [{'user_id': row[0], 'discord_user_id': row[1]} for row in rows]
+            logger.info(f"🔔 Discord users query returned {len(result)} users")
+            return result
     except Exception as e:
         logger.error(f"❌ Error getting Discord users: {e}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
     return []
 
 
