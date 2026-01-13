@@ -23911,6 +23911,284 @@ def api_recorder_execution_status(recorder_id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/debug/recorder-accounts/<int:recorder_id>', methods=['GET'])
+def api_debug_recorder_accounts(recorder_id):
+    """
+    DIAGNOSTIC ENDPOINT: Shows exactly which accounts will receive trades for a recorder.
+    This helps debug why certain accounts aren't getting trades.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        enabled_value = 'true' if is_postgres else '1'
+        
+        # Get recorder info
+        cursor.execute(f'SELECT id, name, webhook_token, recording_enabled FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        recorder = cursor.fetchone()
+        if not recorder:
+            conn.close()
+            return jsonify({'success': False, 'error': f'Recorder {recorder_id} not found'}), 404
+        recorder = dict(recorder)
+        
+        # Get ALL traders linked to this recorder (enabled or not)
+        cursor.execute(f'''
+            SELECT t.id, t.enabled, t.subaccount_id, t.subaccount_name, t.enabled_accounts, t.user_id,
+                   a.id as account_id, a.name as account_name, a.environment
+            FROM traders t
+            LEFT JOIN accounts a ON t.account_id = a.id
+            WHERE t.recorder_id = {placeholder}
+            ORDER BY t.id
+        ''', (recorder_id,))
+        traders_raw = cursor.fetchall()
+        
+        traders_info = []
+        all_accounts_to_trade = []
+        
+        for trader_row in traders_raw:
+            trader = dict(trader_row)
+            trader_info = {
+                'trader_id': trader.get('id'),
+                'enabled': bool(trader.get('enabled')),
+                'primary_account': {
+                    'account_id': trader.get('account_id'),
+                    'account_name': trader.get('account_name'),
+                    'environment': trader.get('environment'),
+                    'subaccount_id': trader.get('subaccount_id'),
+                    'subaccount_name': trader.get('subaccount_name')
+                },
+                'enabled_accounts_raw': trader.get('enabled_accounts'),
+                'enabled_accounts_parsed': [],
+                'will_trade_on': [],
+                'issues': []
+            }
+            
+            # Parse enabled_accounts if present
+            enabled_accounts_raw = trader.get('enabled_accounts')
+            if enabled_accounts_raw and enabled_accounts_raw not in ['[]', 'null', None]:
+                try:
+                    enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
+                    if isinstance(enabled_accounts, list):
+                        trader_info['enabled_accounts_parsed'] = enabled_accounts
+                        if trader.get('enabled'):
+                            for acct in enabled_accounts:
+                                acct_detail = {
+                                    'subaccount_id': acct.get('subaccount_id'),
+                                    'subaccount_name': acct.get('subaccount_name') or acct.get('account_name'),
+                                    'account_id': acct.get('account_id'),
+                                    'multiplier': acct.get('multiplier', 1.0),
+                                    'is_demo': acct.get('is_demo')
+                                }
+                                trader_info['will_trade_on'].append(acct_detail)
+                                all_accounts_to_trade.append(acct_detail)
+                except Exception as e:
+                    trader_info['issues'].append(f"Error parsing enabled_accounts: {e}")
+            else:
+                # No enabled_accounts - check if subaccount_id is set (legacy mode)
+                subaccount_id = trader.get('subaccount_id')
+                if subaccount_id and trader.get('enabled'):
+                    acct_detail = {
+                        'subaccount_id': subaccount_id,
+                        'subaccount_name': trader.get('subaccount_name'),
+                        'account_id': trader.get('account_id'),
+                        'is_demo': trader.get('environment') == 'demo',
+                        'source': 'legacy (subaccount_id)'
+                    }
+                    trader_info['will_trade_on'].append(acct_detail)
+                    all_accounts_to_trade.append(acct_detail)
+                elif trader.get('enabled'):
+                    trader_info['issues'].append("NO ACCOUNTS CONFIGURED! enabled_accounts is empty AND subaccount_id is NULL")
+            
+            if not trader.get('enabled'):
+                trader_info['issues'].append("Trader is DISABLED")
+            
+            traders_info.append(trader_info)
+        
+        conn.close()
+        
+        # Summary
+        total_traders = len(traders_info)
+        enabled_traders = sum(1 for t in traders_info if t['enabled'])
+        total_accounts_to_trade = len(all_accounts_to_trade)
+        live_accounts = [a for a in all_accounts_to_trade if a.get('is_demo') == False]
+        demo_accounts = [a for a in all_accounts_to_trade if a.get('is_demo') == True]
+        
+        return jsonify({
+            'success': True,
+            'recorder': {
+                'id': recorder.get('id'),
+                'name': recorder.get('name'),
+                'recording_enabled': bool(recorder.get('recording_enabled'))
+            },
+            'summary': {
+                'total_traders': total_traders,
+                'enabled_traders': enabled_traders,
+                'total_accounts_to_trade': total_accounts_to_trade,
+                'live_accounts_count': len(live_accounts),
+                'demo_accounts_count': len(demo_accounts)
+            },
+            'traders': traders_info,
+            'all_accounts_that_will_trade': all_accounts_to_trade,
+            'live_accounts': live_accounts,
+            'demo_accounts': demo_accounts
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/debug/add-account-to-trader', methods=['POST'])
+def api_debug_add_account_to_trader():
+    """
+    QUICK FIX: Add an account to a trader's enabled_accounts.
+    Use this when an account isn't receiving trades because it's not in the enabled_accounts list.
+    
+    Required params:
+    - trader_id: The trader to update
+    - account_id: The account ID to add
+    - subaccount_id: The Tradovate subaccount ID (e.g., 1393592)
+    - subaccount_name: Display name
+    """
+    try:
+        data = request.get_json()
+        trader_id = data.get('trader_id')
+        account_id = data.get('account_id')
+        subaccount_id = data.get('subaccount_id')
+        subaccount_name = data.get('subaccount_name', '')
+        multiplier = float(data.get('multiplier', 1.0))
+        is_demo = data.get('is_demo', False)
+        
+        if not trader_id or not account_id or not subaccount_id:
+            return jsonify({'success': False, 'error': 'trader_id, account_id, and subaccount_id are required'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Get current enabled_accounts
+        cursor.execute(f'SELECT enabled_accounts FROM traders WHERE id = {placeholder}', (trader_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': f'Trader {trader_id} not found'}), 404
+        
+        # Parse existing enabled_accounts
+        enabled_accounts_raw = row[0]
+        if enabled_accounts_raw and enabled_accounts_raw not in ['[]', 'null', None]:
+            try:
+                enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
+                if not isinstance(enabled_accounts, list):
+                    enabled_accounts = []
+            except:
+                enabled_accounts = []
+        else:
+            enabled_accounts = []
+        
+        # Check if account already exists
+        for acct in enabled_accounts:
+            if str(acct.get('subaccount_id')) == str(subaccount_id):
+                conn.close()
+                return jsonify({
+                    'success': True,
+                    'message': f'Account {subaccount_id} already in enabled_accounts',
+                    'enabled_accounts': enabled_accounts
+                })
+        
+        # Add the new account
+        new_account = {
+            'account_id': account_id,
+            'subaccount_id': subaccount_id,
+            'subaccount_name': subaccount_name,
+            'multiplier': multiplier,
+            'is_demo': is_demo,
+            'max_contracts': 0  # No limit
+        }
+        enabled_accounts.append(new_account)
+        
+        # Save back
+        enabled_accounts_json = json.dumps(enabled_accounts)
+        cursor.execute(f'UPDATE traders SET enabled_accounts = {placeholder} WHERE id = {placeholder}', 
+                      (enabled_accounts_json, trader_id))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Added account {subaccount_name} ({subaccount_id}) to trader {trader_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Added account {subaccount_name} ({subaccount_id}) to trader {trader_id}',
+            'enabled_accounts': enabled_accounts
+        })
+        
+    except Exception as e:
+        logger.error(f"Error adding account to trader: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/debug/fix-tp/<int:recorder_id>', methods=['POST'])
+def api_debug_fix_tp(recorder_id):
+    """
+    FIX BAD TP: Recalculate and fix the TP for an existing position.
+    Use this when an account has a bad TP (e.g., TP @ $2.50 instead of correct price).
+    
+    This will:
+    1. Get the current broker position (to get the correct avg entry price)
+    2. Recalculate the TP based on strategy settings
+    3. Cancel the old bad TP order
+    4. Place the new correct TP order
+    """
+    try:
+        data = request.get_json() or {}
+        ticker = data.get('ticker', 'MNQ1!')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Get recorder info
+        cursor.execute(f'SELECT id, name, ticker FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        recorder = cursor.fetchone()
+        if not recorder:
+            conn.close()
+            return jsonify({'success': False, 'error': f'Recorder {recorder_id} not found'}), 404
+        recorder = dict(recorder)
+        ticker = ticker or recorder.get('ticker', 'MNQ1!')
+        
+        conn.close()
+        
+        # Call sync_position_from_broker which will recalculate and fix the TP
+        from recorder_service import sync_position_from_broker
+        
+        logger.info(f"🔧 FIX-TP: Triggering position sync for recorder {recorder_id} ({recorder.get('name')}) on {ticker}")
+        
+        result = sync_position_from_broker(recorder_id, ticker)
+        
+        if result.get('success'):
+            return jsonify({
+                'success': True,
+                'message': f"TP fixed for recorder {recorder.get('name')}",
+                'broker_position': result.get('broker_position'),
+                'db_updated': result.get('db_updated', False)
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Unknown error'),
+                'broker_position': result.get('broker_position')
+            })
+        
+    except Exception as e:
+        logger.error(f"Error fixing TP: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/broker-execution/test', methods=['POST'])
 def api_test_broker_execution():
     """Test endpoint to manually trigger broker execution for debugging"""

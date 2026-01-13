@@ -713,6 +713,15 @@ def execute_trade_simple(
         traders = []
         seen_subaccounts = set()  # Prevent duplicates
         
+        # DIAGNOSTIC: Log all traders found for this recorder
+        logger.info(f"🔍 DIAGNOSTIC: Found {len(trader_rows)} trader(s) for recorder {recorder_id}")
+        for idx, tr in enumerate(trader_rows):
+            tr_dict = dict(tr)
+            ea_raw = tr_dict.get('enabled_accounts', '')
+            ea_preview = (ea_raw[:100] + '...') if ea_raw and len(str(ea_raw)) > 100 else ea_raw
+            logger.info(f"   [{idx+1}] Trader ID={tr_dict.get('id')}, subaccount_id={tr_dict.get('subaccount_id')}, subaccount_name={tr_dict.get('subaccount_name')}")
+            logger.info(f"       enabled_accounts preview: {ea_preview}")
+        
         for trader_row in trader_rows:
             trader_dict = dict(trader_row)
             enabled_accounts_raw = trader_dict.get('enabled_accounts')
@@ -797,9 +806,22 @@ def execute_trade_simple(
                     traders.append(trader_dict)
                     env_label = "DEMO" if is_demo_from_db else "LIVE"
                     logger.info(f"  ✅ Added trader: {trader_dict.get('subaccount_name')} (ID: {subaccount_id}, Env: {env_label})")
+                else:
+                    # THIS IS THE PROBLEM CASE - trader enabled but no accounts configured!
+                    logger.warning(f"⚠️ TRADER {trader_dict.get('id')} HAS NO ACCOUNTS TO TRADE ON!")
+                    logger.warning(f"   - enabled_accounts: {enabled_accounts_raw}")
+                    logger.warning(f"   - subaccount_id: {subaccount_id}")
+                    logger.warning(f"   - FIX: Go to Strategies/My Traders and add accounts to this trader!")
         
         conn.close()
         logger.info(f"📋 Found {len(traders)} account(s) to trade on")
+        # Log final list of accounts that will receive trades
+        for idx, t in enumerate(traders):
+            subacct = t.get('subaccount_id') or t.get('subaccount_name')
+            acct_name = t.get('subaccount_name') or t.get('account_name') or 'Unknown'
+            is_demo = t.get('is_demo', True)
+            env = 'DEMO' if is_demo else 'LIVE'
+            logger.info(f"   [{idx+1}] Will trade on: {acct_name} (subaccount_id={subacct}, env={env})")
         
         # CRITICAL: If no traders found, return error immediately
         if len(traders) == 0:
@@ -1343,6 +1365,35 @@ def execute_trade_simple(
                     
                     # STEP 3: Calculate TP price and ROUND TO TICK SIZE
                     # CRITICAL: Tradovate rejects orders with prices not aligned to tick increments!
+                    
+                    # CRITICAL FIX: If broker_avg is 0/None/invalid, we CANNOT calculate TP!
+                    # This happens when position fetch fails - would result in TP @ $2.50 instead of real price
+                    if not broker_avg or broker_avg <= 0:
+                        logger.error(f"❌ [{acct_name}] CANNOT CALCULATE TP: broker_avg is {broker_avg} (invalid)")
+                        logger.error(f"   Position fetch may have failed. Will try to use current market price instead.")
+                        # Last resort: use current market price as entry estimate
+                        try:
+                            market_price = get_price_from_tradingview_api(ticker)
+                            if market_price and market_price > 100:  # Sanity check for futures prices
+                                broker_avg = market_price
+                                logger.warning(f"⚠️ [{acct_name}] Using market price {market_price} as entry estimate")
+                            else:
+                                logger.error(f"❌ [{acct_name}] Market price {market_price} also invalid - SKIPPING TP PLACEMENT")
+                                # Return success for order, but note TP was skipped
+                                return {
+                                    'success': True, 
+                                    'broker_avg': None, 
+                                    'error': 'Could not determine entry price for TP calculation',
+                                    'tp_skipped': True
+                                }
+                        except Exception as market_err:
+                            logger.error(f"❌ [{acct_name}] Could not get market price: {market_err} - SKIPPING TP")
+                            return {
+                                'success': True,
+                                'error': 'Position fetch failed, could not calculate TP',
+                                'tp_skipped': True
+                            }
+                    
                     if broker_side == 'LONG':
                         tp_price = broker_avg + (tp_ticks * tick_size)
                         tp_action = 'Sell'
@@ -1352,6 +1403,17 @@ def execute_trade_simple(
                     
                     # Round TP price to tick size (prevents rejection due to invalid price)
                     tp_price = clamp_price(tp_price, tick_size)
+                    
+                    # SANITY CHECK: TP price should be reasonable (not $2.50 or negative)
+                    if tp_price < 100:  # Futures prices should be way higher than $100
+                        logger.error(f"❌ [{acct_name}] INSANE TP PRICE: {tp_price} - this is wrong!")
+                        logger.error(f"   broker_avg={broker_avg}, tp_ticks={tp_ticks}, tick_size={tick_size}")
+                        logger.error(f"   SKIPPING TP PLACEMENT to prevent wrong order")
+                        return {
+                            'success': True,
+                            'error': f'Calculated TP price {tp_price} is invalid',
+                            'tp_skipped': True
+                        }
                     
                     logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price} (rounded to tick)")
                     
@@ -3769,12 +3831,23 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                         
                         # Recalculate TP/SL based on broker's avg price
                         # (inline calculation since calculate_tp_sl_prices is defined in webhook handler)
-                        if broker_side == 'LONG':
+                        
+                        # SANITY CHECK: broker_avg must be valid (not 0, None, or unreasonably low)
+                        if not broker_avg or broker_avg < 100:
+                            logger.error(f"❌ SYNC: broker_avg is invalid ({broker_avg}) - skipping TP calculation")
+                            new_tp = None
+                            new_sl = None
+                        elif broker_side == 'LONG':
                             new_tp = broker_avg + (tp_ticks * tick_size) if tp_ticks else None
                             new_sl = broker_avg - (sl_amount * tick_size) if sl_amount else None
                         else:  # SHORT
                             new_tp = broker_avg - (tp_ticks * tick_size) if tp_ticks else None
                             new_sl = broker_avg + (sl_amount * tick_size) if sl_amount else None
+                        
+                        # Additional sanity check: TP price should be reasonable
+                        if new_tp and new_tp < 100:
+                            logger.error(f"❌ SYNC: Calculated TP {new_tp} is invalid - skipping")
+                            new_tp = None
                         
                         # Update DB to match broker
                         cursor.execute('''
