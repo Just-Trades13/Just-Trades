@@ -2880,7 +2880,12 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
             trail_order_id = trail_result.get('orderId') or trail_result.get('data', {}).get('orderId')
             logger.info(f"✅ Trailing Stop placed: Order ID={trail_order_id}")
             
-            # If we placed a trailing stop AND an SL, register them for OCO
+            # CRITICAL: Register trailing stop with TP for OCO (one cancels the other)
+            if tp_order_id and trail_order_id:
+                register_oco_pair(tp_order_id, trail_order_id, account_id, symbol_upper)
+                logger.info(f"🔗 Trailing Stop and TP registered as OCO: Trail={trail_order_id} <-> TP={tp_order_id}")
+            
+            # If we placed a trailing stop AND a fixed SL, register them for OCO (they're alternatives)
             if sl_order_id and trail_order_id:
                 # The trailing stop and fixed SL are alternatives - register as OCO
                 register_oco_pair(trail_order_id, sl_order_id, account_id, symbol_upper)
