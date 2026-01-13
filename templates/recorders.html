@@ -80,7 +80,7 @@
         <!-- SLTP Settings Panel -->
         <section class="card-panel" data-panel>
             <header>
-                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> SLTP Settings</button>
+                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> Stop Loss / Take Profit Settings</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
             <div class="panel-body">
@@ -202,10 +202,10 @@
         <!-- Filter Settings Panel -->
         <section class="card-panel" data-panel>
             <header>
-                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> Filter Settings</button>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> <span class="toggle-text">Show</span> Filter Settings (Optional)</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
-            <div class="panel-body">
+            <div class="panel-body collapsed-body">
                 <div class="form-two">
                     <label class="form-field">
                         <span>Signal Delay</span>
@@ -284,10 +284,10 @@
         <!-- Execution Controls Panel -->
         <section class="card-panel" data-panel>
             <header>
-                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> Execution Controls</button>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> <span class="toggle-text">Show</span> Execution Controls (Optional)</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
-            <div class="panel-body">
+            <div class="panel-body collapsed-body">
                 <div class="form-two">
                     <label class="form-field">
                         <span>Signal Cooldown (seconds)</span>
@@ -321,10 +321,10 @@
         <!-- Miscellaneous Settings Panel -->
         <section class="card-panel" data-panel>
             <header>
-                <button class="panel-toggle" type="button"><span class="material-icons">remove</span> <span class="toggle-text">Hide</span> Miscellaneous Settings</button>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> <span class="toggle-text">Show</span> Miscellaneous Settings (Optional)</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
-            <div class="panel-body">
+            <div class="panel-body collapsed-body">
                 <label class="form-field">
                     <span>Notes</span>
                     <textarea id="notes" rows="3" placeholder="Add any additional context for this recorder...">{{ recorder.notes if recorder else '' }}</textarea>
