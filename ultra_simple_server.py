@@ -11799,7 +11799,7 @@ def process_webhook_directly(webhook_token):
             cursor.execute(f'''
                 SELECT t.*,
                        t.initial_position_size, t.add_position_size,
-                       t.tp_targets, t.tp_units,
+                       t.tp_targets,
                        t.sl_enabled, t.sl_amount, t.sl_units,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
@@ -11811,7 +11811,7 @@ def process_webhook_directly(webhook_token):
             cursor.execute(f'''
                 SELECT t.*,
                        t.initial_position_size, t.add_position_size,
-                       t.tp_targets, t.tp_units,
+                       t.tp_targets,
                        t.sl_enabled, t.sl_amount, t.sl_units,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
