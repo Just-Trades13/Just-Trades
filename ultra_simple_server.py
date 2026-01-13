@@ -10370,80 +10370,10 @@ def api_update_trader(trader_id):
                 else:
                     logger.warning(f"⚠️ VERIFICATION FAILED: enabled_accounts is None or empty after save!")
         
-        # ALSO update the linked RECORDER with risk settings
-        # (The trading engine reads from the recorder, not the trader)
-        cursor.execute(f'SELECT recorder_id FROM traders WHERE id = {placeholder}', (trader_id,))
-        recorder_row = cursor.fetchone()
-        if recorder_row:
-            recorder_id = recorder_row[0]
-            recorder_updates = []
-            recorder_params = []
-            
-            if 'initial_position_size' in data:
-                recorder_updates.append(f'initial_position_size = {placeholder}')
-                recorder_params.append(int(data['initial_position_size']))
-            
-            if 'add_position_size' in data:
-                recorder_updates.append(f'add_position_size = {placeholder}')
-                recorder_params.append(int(data['add_position_size']))
-            
-            if 'tp_targets' in data:
-                tp_targets = data['tp_targets']
-                if isinstance(tp_targets, list):
-                    tp_targets = json.dumps(tp_targets)
-                recorder_updates.append(f'tp_targets = {placeholder}')
-                recorder_params.append(tp_targets)
-            
-            if 'tp_units' in data:
-                recorder_updates.append(f'tp_units = {placeholder}')
-                recorder_params.append(data['tp_units'])
-            
-            if 'sl_enabled' in data:
-                recorder_updates.append(f'sl_enabled = {placeholder}')
-                recorder_params.append(bool(data['sl_enabled']) if is_postgres else (1 if data['sl_enabled'] else 0))
-            
-            if 'sl_amount' in data:
-                recorder_updates.append(f'sl_amount = {placeholder}')
-                recorder_params.append(float(data['sl_amount']))
-            
-            if 'sl_units' in data:
-                recorder_updates.append(f'sl_units = {placeholder}')
-                recorder_params.append(data['sl_units'])
-            
-            if 'sl_type' in data:
-                recorder_updates.append(f'sl_type = {placeholder}')
-                recorder_params.append(data['sl_type'])
-            
-            if 'break_even_enabled' in data:
-                recorder_updates.append(f'break_even_enabled = {placeholder}')
-                recorder_params.append(bool(data['break_even_enabled']) if is_postgres else (1 if data['break_even_enabled'] else 0))
-            
-            if 'break_even_ticks' in data:
-                recorder_updates.append(f'break_even_ticks = {placeholder}')
-                recorder_params.append(int(data['break_even_ticks']))
-            
-            if 'avg_down_enabled' in data:
-                recorder_updates.append(f'avg_down_enabled = {placeholder}')
-                recorder_params.append(bool(data['avg_down_enabled']) if is_postgres else (1 if data['avg_down_enabled'] else 0))
-            
-            if 'avg_down_amount' in data:
-                recorder_updates.append(f'avg_down_amount = {placeholder}')
-                recorder_params.append(int(data['avg_down_amount']))
-            
-            if 'avg_down_point' in data:
-                recorder_updates.append(f'avg_down_point = {placeholder}')
-                recorder_params.append(float(data['avg_down_point']))
-            
-            if 'avg_down_units' in data:
-                recorder_updates.append(f'avg_down_units = {placeholder}')
-                recorder_params.append(data['avg_down_units'])
-            
-            if recorder_updates:
-                recorder_params.append(recorder_id)
-                timestamp_fn = 'NOW()' if is_postgres else "datetime('now')"
-                recorder_query = f"UPDATE recorders SET {', '.join(recorder_updates)}, updated_at = {timestamp_fn} WHERE id = {placeholder}"
-                cursor.execute(recorder_query, recorder_params)
-                logger.info(f"✅ Updated recorder {recorder_id} with risk settings")
+        # CRITICAL: DO NOT update the recorder table when updating a trader!
+        # The recorder is the baseline/master settings and should NEVER be changed by trader edits.
+        # Traders inherit from the recorder but can override settings in the traders table.
+        # Only update the traders table, NOT the recorders table.
         
         conn.commit()
         
