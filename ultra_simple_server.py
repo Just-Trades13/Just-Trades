@@ -11879,8 +11879,11 @@ def process_webhook_directly(webhook_token):
         # SIMPLE TP LOGIC - no conversion, just use the value as ticks
         tp_ticks = 10  # Default 10 ticks
         if tp_targets and len(tp_targets) > 0:
-            tp_ticks = int(tp_targets[0].get('value') or tp_targets[0].get('ticks') or 10)
-        _logger.info(f"📊 TP: {tp_ticks} ticks")
+            first_tp = tp_targets[0]
+            _logger.info(f"📊 DEBUG tp_targets[0]: {first_tp}")
+            _logger.info(f"📊 DEBUG tp_targets_raw: {tp_targets_raw[:200] if tp_targets_raw else 'None'}")
+            tp_ticks = int(first_tp.get('value') or first_tp.get('ticks') or 10)
+        _logger.info(f"📊 TP: {tp_ticks} ticks (will be {tp_ticks * 0.25} points for MNQ)")
         
         # Convert SL to ticks based on units
         if sl_enabled and sl_amount > 0:
