@@ -1345,6 +1345,28 @@ def execute_trade_simple(
                     
                     logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
                     
+                    # MARKETABILITY CHECK: Get current price to ensure TP won't execute immediately
+                    # If TP is on the "wrong side" of market, Tradovate will REJECT it
+                    try:
+                        from recorder_service import get_price_from_tradingview_api
+                        current_market = get_price_from_tradingview_api(ticker)
+                        if current_market:
+                            min_distance = 2 * tick_size  # Minimum 2 ticks from market
+                            if broker_side == 'LONG':
+                                # TP must be ABOVE current price for LONG
+                                if tp_price <= current_market + min_distance:
+                                    adjusted_tp = current_market + min_distance + tick_size
+                                    logger.warning(f"⚠️ [{acct_name}] TP {tp_price} too close to market {current_market} - adjusting to {adjusted_tp}")
+                                    tp_price = adjusted_tp
+                            else:
+                                # TP must be BELOW current price for SHORT
+                                if tp_price >= current_market - min_distance:
+                                    adjusted_tp = current_market - min_distance - tick_size
+                                    logger.warning(f"⚠️ [{acct_name}] TP {tp_price} too close to market {current_market} - adjusting to {adjusted_tp}")
+                                    tp_price = adjusted_tp
+                    except Exception as market_err:
+                        logger.debug(f"[{acct_name}] Could not check market price: {market_err}")
+                    
                     # STEP 4: Find existing TP or place new - OPTIMIZED for minimum API calls
                     tp_order_id = None
                     existing_tp_id = None
@@ -1441,7 +1463,35 @@ def execute_trade_simple(
                                 break
                             else:
                                 error_msg = tp_result.get('error', 'Unknown error') if tp_result else 'No response'
+                                full_response = tp_result if tp_result else {}
                                 logger.warning(f"⚠️ [{acct_name}] TP placement attempt {tp_attempt+1}/{max_attempts} failed: {error_msg}")
+                                logger.warning(f"   Full response: {full_response}")
+                                logger.warning(f"   TP order data: action={tp_action}, price={tp_price}, qty={broker_qty}, symbol={tradovate_symbol}")
+                                
+                                # Check for specific rejection reasons and handle them
+                                error_lower = str(error_msg).lower()
+                                if 'marketab' in error_lower or 'wrong side' in error_lower or 'would trade' in error_lower:
+                                    # TP price is through the market - need to adjust
+                                    logger.warning(f"   ⚠️ TP rejected due to marketability - price may have moved past TP")
+                                    # Try to get fresh market price and recalculate
+                                    try:
+                                        fresh_price = get_price_from_tradingview_api(ticker)
+                                        if fresh_price:
+                                            if broker_side == 'LONG':
+                                                new_tp = fresh_price + (3 * tick_size)  # 3 ticks above current
+                                            else:
+                                                new_tp = fresh_price - (3 * tick_size)  # 3 ticks below current
+                                            logger.info(f"   🔄 Adjusting TP from {tp_price} to {new_tp} (market now @ {fresh_price})")
+                                            tp_price = new_tp
+                                            tp_order_data['price'] = tp_price
+                                    except:
+                                        pass
+                                elif 'token' in error_lower or '401' in error_lower or 'unauthorized' in error_lower:
+                                    logger.error(f"   ❌ Token/auth issue - cannot place TP for this account")
+                                    break  # Don't retry auth errors
+                                elif 'margin' in error_lower or 'risk' in error_lower:
+                                    logger.error(f"   ❌ Margin/risk rejection - account may have insufficient funds")
+                                    break  # Don't retry margin errors
                                 
                                 # Exponential backoff: 1s, 2s, 4s, 8s, etc. (max 10s)
                                 wait_time = min(2 ** tp_attempt, 10)
