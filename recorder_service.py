@@ -1335,7 +1335,8 @@ def execute_trade_simple(
                             else:
                                 broker_avg = 0  # Will trigger TP placement to skip if still 0
                     
-                    # STEP 3: Calculate TP price
+                    # STEP 3: Calculate TP price and ROUND TO TICK SIZE
+                    # CRITICAL: Tradovate rejects orders with prices not aligned to tick increments!
                     if broker_side == 'LONG':
                         tp_price = broker_avg + (tp_ticks * tick_size)
                         tp_action = 'Sell'
@@ -1343,25 +1344,27 @@ def execute_trade_simple(
                         tp_price = broker_avg - (tp_ticks * tick_size)
                         tp_action = 'Buy'
                     
-                    logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
+                    # Round TP price to tick size (prevents rejection due to invalid price)
+                    tp_price = clamp_price(tp_price, tick_size)
+                    
+                    logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price} (rounded to tick)")
                     
                     # MARKETABILITY CHECK: Get current price to ensure TP won't execute immediately
                     # If TP is on the "wrong side" of market, Tradovate will REJECT it
                     try:
-                        from recorder_service import get_price_from_tradingview_api
                         current_market = get_price_from_tradingview_api(ticker)
                         if current_market:
                             min_distance = 2 * tick_size  # Minimum 2 ticks from market
                             if broker_side == 'LONG':
                                 # TP must be ABOVE current price for LONG
                                 if tp_price <= current_market + min_distance:
-                                    adjusted_tp = current_market + min_distance + tick_size
+                                    adjusted_tp = clamp_price(current_market + min_distance + tick_size, tick_size)
                                     logger.warning(f"⚠️ [{acct_name}] TP {tp_price} too close to market {current_market} - adjusting to {adjusted_tp}")
                                     tp_price = adjusted_tp
                             else:
                                 # TP must be BELOW current price for SHORT
                                 if tp_price >= current_market - min_distance:
-                                    adjusted_tp = current_market - min_distance - tick_size
+                                    adjusted_tp = clamp_price(current_market - min_distance - tick_size, tick_size)
                                     logger.warning(f"⚠️ [{acct_name}] TP {tp_price} too close to market {current_market} - adjusting to {adjusted_tp}")
                                     tp_price = adjusted_tp
                     except Exception as market_err:
@@ -1470,17 +1473,17 @@ def execute_trade_simple(
                                 
                                 # Check for specific rejection reasons and handle them
                                 error_lower = str(error_msg).lower()
-                                if 'marketab' in error_lower or 'wrong side' in error_lower or 'would trade' in error_lower:
+                                if 'marketab' in error_lower or 'wrong side' in error_lower or 'would trade' in error_lower or 'limit' in error_lower:
                                     # TP price is through the market - need to adjust
-                                    logger.warning(f"   ⚠️ TP rejected due to marketability - price may have moved past TP")
+                                    logger.warning(f"   ⚠️ TP rejected due to marketability/price issue - adjusting")
                                     # Try to get fresh market price and recalculate
                                     try:
                                         fresh_price = get_price_from_tradingview_api(ticker)
                                         if fresh_price:
                                             if broker_side == 'LONG':
-                                                new_tp = fresh_price + (3 * tick_size)  # 3 ticks above current
+                                                new_tp = clamp_price(fresh_price + (3 * tick_size), tick_size)  # 3 ticks above current
                                             else:
-                                                new_tp = fresh_price - (3 * tick_size)  # 3 ticks below current
+                                                new_tp = clamp_price(fresh_price - (3 * tick_size), tick_size)  # 3 ticks below current
                                             logger.info(f"   🔄 Adjusting TP from {tp_price} to {new_tp} (market now @ {fresh_price})")
                                             tp_price = new_tp
                                             tp_order_data['price'] = tp_price
@@ -1837,11 +1840,24 @@ def get_tick_value(ticker: str) -> float:
 
 
 def clamp_price(price: float, tick_size: float) -> float:
-    """Round price to nearest tick"""
+    """
+    Round price to nearest tick increment.
+    Tradovate REJECTS orders with prices not aligned to tick size!
+    
+    Example: For MNQ (tick_size=0.25), price 21500.33 → 21500.25
+    """
     if price is None:
         return None
-    decimals = max(3, len(str(tick_size).split('.')[-1]))
-    return round(price, decimals)
+    if tick_size <= 0:
+        return price
+    
+    # Round to nearest tick increment
+    ticks = round(price / tick_size)
+    rounded_price = ticks * tick_size
+    
+    # Also ensure proper decimal places (prevent floating point issues)
+    decimals = max(2, len(str(tick_size).split('.')[-1]) if '.' in str(tick_size) else 0)
+    return round(rounded_price, decimals)
 
 
 def calculate_pnl(entry_price: float, exit_price: float, side: str, quantity: int, ticker: str) -> Tuple[float, float]:
