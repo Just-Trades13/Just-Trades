@@ -18110,11 +18110,11 @@ def api_toggle_discord_dms():
 def api_discord_status():
     """Get Discord notification status for current user."""
     if not USER_AUTH_AVAILABLE or not is_logged_in():
-        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED})
+        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': 'not_logged_in'})
     
     user = get_current_user()
     if not user:
-        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED})
+        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': 'no_user'})
     
     try:
         from user_auth import get_auth_db_connection
@@ -18131,17 +18131,25 @@ def api_discord_status():
         conn.close()
         
         if row:
-            discord_linked = bool(row[0])
-            dms_enabled = bool(row[1])
+            discord_user_id = row[0] if isinstance(row, tuple) else row.get('discord_user_id')
+            dms_enabled_raw = row[1] if isinstance(row, tuple) else row.get('discord_dms_enabled')
+            discord_linked = bool(discord_user_id)
+            dms_enabled = bool(dms_enabled_raw)
             return jsonify({
                 'linked': discord_linked,
                 'enabled': dms_enabled,
-                'bot_configured': DISCORD_NOTIFICATIONS_ENABLED
+                'bot_configured': DISCORD_NOTIFICATIONS_ENABLED,
+                'debug': {
+                    'user_id': user.id,
+                    'discord_user_id': discord_user_id,
+                    'dms_enabled_raw': dms_enabled_raw
+                }
             })
     except Exception as e:
         logger.error(f"Error checking Discord status: {e}")
+        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': f'error: {str(e)}'})
     
-    return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED})
+    return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': 'no_row'})
 
 
 @app.route('/api/settings/discord/test', methods=['POST'])
