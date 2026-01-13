@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-01-13T02:09:49.584Z",
+  "timestamp": "2026-01-13T02:38:21.932Z",
   "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
-  "eventCount": 724,
+  "eventCount": 740,
   "events": [
     {
       "timestamp": "2026-01-04T01:45:27.744Z",
@@ -12940,11 +12940,319 @@
           "wasTruncated": false
         }
       ]
+    },
+    {
+      "timestamp": "2026-01-13T02:09:51.168Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 24138,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 24139,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 526,
+          "rangeLength": 624,
+          "lineCountDelta": 12,
+          "likelyAI": false,
+          "changeText": "                # Send notification for new trade to ALL users linked to recorder\n                try:\n                    notify_trade_execution(\n                        action=trade_side,\n                        symbol=ticker,\n                        quantity=quantity,\n                        price=current_price,\n                        recorder_name=recorder_name,\n                        tp_price=tp_price,\n                        sl_price=sl_price,\n                        recorder_id=recorder_id\n                    )\n",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T02:09:51.859Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T02:09:51.859Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "debugging_session_end",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T02:10:01.410Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 24137,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 24137,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 701,
+          "rangeLength": 733,
+          "lineCountDelta": 13,
+          "likelyAI": false,
+          "changeText": "                    action_word = 'TP' if hit_type == 'tp' else 'SL'\n                    notify_tp_sl_hit(\n                        order_type=action_word,\n                        symbol=ticker,\n                        quantity=trade['quantity'],\n                        price=exit_price,\n                        pnl=pnl,\n                        recorder_name=trade.get('recorder_name'),\n                        entry_price=entry_price,\n                        side=side,\n                        recorder_id=trade['recorder_id']  # Notify ALL users linked to this recorder\n                    )\n                    logger.info(f\"🔔 Sent {action_word} notification for recorder {trade['recorder_id']}\")\n",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T02:10:10.973Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T02:10:36.214Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T02:10:36.569Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 24137,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 24136,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T02:10:36.571Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 24137,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 0,
+          "rangeLength": 0,
+          "lineCountDelta": 0,
+          "likelyAI": false,
+          "changeText": "",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T02:34:58.682Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 24136,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 24136,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 553,
+          "rangeLength": 602,
+          "lineCountDelta": 10,
+          "likelyAI": false,
+          "changeText": "            'break_even_ticks': 'break_even_ticks',  # FIXED: Was missing!\n            'avg_down_amount': 'avg_down_amount',\n            'avg_down_point': 'avg_down_point',\n            'avg_down_units': 'avg_down_units',\n            'add_delay': 'add_delay',\n            'max_contracts_per_trade': 'max_contracts_per_trade',\n            'option_premium_filter': 'option_premium_filter',\n            'direction_filter': 'direction_filter',\n            'time_filter_1_start': 'time_filter_1_start',\n            'time_filter_1_stop': 'time_filter_1_stop',\n",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T02:34:59.812Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T02:34:59.812Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "debugging_session_end",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T02:35:12.711Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 24135,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 24135,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 574,
+          "rangeLength": 1075,
+          "lineCountDelta": 14,
+          "likelyAI": false,
+          "changeText": "        boolean_fields = [\n            'sl_enabled',\n            'break_even_enabled',  # FIXED: Was missing!\n            'avg_down_enabled',\n            'auto_flat_after_cutoff',\n            'recording_enabled',\n            'is_private',\n            'time_filter_1_enabled',  # FIXED: Was missing!\n            'time_filter_2_enabled',  # FIXED: Was missing!\n        ]\n        for bf in boolean_fields:\n            if bf in data:\n                fields.append(f'{bf} = {placeholder}')\n                values.append(bool(data[bf]) if is_postgres else (1 if data[bf] else 0))\n",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T02:35:25.290Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T02:36:09.004Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 24184,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 24134,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 5158,
+          "rangeLength": 3199,
+          "lineCountDelta": 130,
+          "likelyAI": false,
+          "changeText": "    \"\"\"Create a new recorder with ALL form fields\"\"\"\n    try:\n        data = request.get_json()\n        if not data:\n            return jsonify({'success': False, 'error': 'No data provided'}), 400\n        \n        name = data.get('name', '').strip()\n        if not name:\n            return jsonify({'success': False, 'error': 'Strategy name is required'}), 400\n        \n        # Generate webhook token\n        import secrets\n        webhook_token = secrets.token_urlsafe(16)\n        \n        conn = get_db_connection()\n        cursor = conn.cursor()\n        is_postgres = is_using_postgres()\n        ph = '%s' if is_postgres else '?'\n        \n        # Serialize TP targets\n        tp_targets = json.dumps(data.get('tp_targets', []))\n        \n        # Get current user_id for data isolation\n        current_user_id = None\n        if USER_AUTH_AVAILABLE and is_logged_in():\n            current_user_id = get_current_user_id()\n        \n        # Helper to convert boolean for DB\n        def to_bool(val, default=False):\n            if val is None:\n                return default\n            if is_postgres:\n                return bool(val)\n            return 1 if val else 0\n        \n        # Build full INSERT with ALL fields\n        insert_sql = f'''\n            INSERT INTO recorders (\n                name, strategy_type, symbol, enabled, webhook_token, user_id, is_private,\n                initial_position_size, add_position_size,\n                tp_units, trim_units, tp_targets, tp_enabled,\n                sl_enabled, sl_amount, sl_units, sl_type, trailing_sl,\n                break_even_enabled, break_even_ticks,\n                avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,\n                add_delay, max_contracts_per_trade, option_premium_filter, direction_filter,\n                time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,\n                time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,\n                signal_cooldown, max_s...[TRUNCATED]",
+          "wasTruncated": true
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T02:36:20.431Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T02:38:21.931Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 24249,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 24183,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 2885,
+          "rangeLength": 0,
+          "lineCountDelta": 65,
+          "likelyAI": true,
+          "changeText": "        # SL Type (Fixed/Trailing)\n        if 'sl_type' in data:\n            updates.append(f'sl_type = {placeholder}')\n            params.append(data['sl_type'])\n        \n        # Break-Even settings\n        if 'break_even_enabled' in data:\n            updates.append(f'break_even_enabled = {placeholder}')\n            params.append(bool(data['break_even_enabled']) if is_postgres else (1 if data['break_even_enabled'] else 0))\n        \n        if 'break_even_ticks' in data:\n            updates.append(f'break_even_ticks = {placeholder}')\n            params.append(int(data['break_even_ticks']))\n        \n        # Averaging Down settings\n        if 'avg_down_enabled' in data:\n            updates.append(f'avg_down_enabled = {placeholder}')\n            params.append(bool(data['avg_down_enabled']) if is_postgres else (1 if data['avg_down_enabled'] else 0))\n        \n        if 'avg_down_amount' in data:\n            updates.append(f'avg_down_amount = {placeholder}')\n            params.append(int(data['avg_down_amount']))\n        \n        if 'avg_down_point' in data:\n            updates.append(f'avg_down_point = {placeholder}')\n            params.append(float(data['avg_down_point']))\n        \n        if 'avg_down_units' in data:\n            updates.append(f'avg_down_units = {placeholder}')\n            params.append(data['avg_down_units'])\n        \n        # TP/Trim units\n        if 'tp_units' in data:\n            updates.append(f'tp_units = {placeholder}')\n            params.append(data['tp_units'])\n        \n        if 'trim_units' in data:\n            updates.append(f'trim_units = {placeholder}')\n            params.append(data['trim_units'])\n        \n        # Time filter settings\n        if 'time_filter_1_enabled' in data:\n            updates.append(f'time_filter_1_enabled = {placeholder}')\n            params.append(bool(data['time_filter_1_enabled']) if is_postgres else (1 if data['time_filter_1_enabled'] else 0))\n        \n        if 'time_filter_1_start' in data:\n        ...[TRUNCATED]",
+          "wasTruncated": true
+        }
+      ]
     }
   ],
   "metadata": {
     "version": "1.3.0",
     "trigger": "smart-backup",
-    "memoryUsage": 1056734
+    "memoryUsage": 1082992
   }
 }

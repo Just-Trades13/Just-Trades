@@ -3456,6 +3456,24 @@ def init_db():
     except:
         pass
     
+    # Add sl_type, break-even, avg-down, tp/trim units to traders (Jan 2026 fix)
+    columns_for_traders = [
+        ('sl_type', 'TEXT DEFAULT "Fixed"'),
+        ('break_even_enabled', 'INTEGER DEFAULT 0' if not is_postgres else 'BOOLEAN DEFAULT FALSE'),
+        ('break_even_ticks', 'INTEGER DEFAULT 10'),
+        ('avg_down_enabled', 'INTEGER DEFAULT 0' if not is_postgres else 'BOOLEAN DEFAULT FALSE'),
+        ('avg_down_amount', 'INTEGER DEFAULT 0'),
+        ('avg_down_point', 'REAL DEFAULT 0'),
+        ('avg_down_units', 'TEXT DEFAULT "Ticks"'),
+        ('tp_units', 'TEXT DEFAULT "Ticks"'),
+        ('trim_units', 'TEXT DEFAULT "Contracts"'),
+    ]
+    for col_name, col_type in columns_for_traders:
+        try:
+            cursor.execute(f'ALTER TABLE traders ADD COLUMN {col_name} {col_type}')
+        except:
+            pass  # Column already exists
+    
     # Add time filter columns to traders table (Dec 2025)
     if is_postgres:
         try:
@@ -9089,7 +9107,7 @@ def api_get_recorder(recorder_id):
 
 @app.route('/api/recorders', methods=['POST'])
 def api_create_recorder():
-    """Create a new recorder"""
+    """Create a new recorder with ALL form fields"""
     try:
         data = request.get_json()
         if not data:
@@ -9106,6 +9124,7 @@ def api_create_recorder():
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
         
         # Serialize TP targets
         tp_targets = json.dumps(data.get('tp_targets', []))
@@ -9115,61 +9134,109 @@ def api_create_recorder():
         if USER_AUTH_AVAILABLE and is_logged_in():
             current_user_id = get_current_user_id()
         
+        # Helper to convert boolean for DB
+        def to_bool(val, default=False):
+            if val is None:
+                return default
+            if is_postgres:
+                return bool(val)
+            return 1 if val else 0
+        
+        # Build full INSERT with ALL fields
+        insert_sql = f'''
+            INSERT INTO recorders (
+                name, strategy_type, symbol, enabled, webhook_token, user_id, is_private,
+                initial_position_size, add_position_size,
+                tp_units, trim_units, tp_targets, tp_enabled,
+                sl_enabled, sl_amount, sl_units, sl_type, trailing_sl,
+                break_even_enabled, break_even_ticks,
+                avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
+                add_delay, max_contracts_per_trade, option_premium_filter, direction_filter,
+                time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
+                time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
+                signal_cooldown, max_signals_per_session, max_daily_loss, auto_flat_after_cutoff,
+                notes, recording_enabled
+            ) VALUES (
+                {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph},
+                {ph}, {ph},
+                {ph}, {ph}, {ph}, {ph},
+                {ph}, {ph}, {ph}, {ph}, {ph},
+                {ph}, {ph},
+                {ph}, {ph}, {ph}, {ph},
+                {ph}, {ph}, {ph}, {ph},
+                {ph}, {ph}, {ph},
+                {ph}, {ph}, {ph},
+                {ph}, {ph}, {ph}, {ph},
+                {ph}, {ph}
+            )'''
+        
         if is_postgres:
-            cursor.execute('''
-                INSERT INTO recorders (
-                    name, enabled, webhook_token, ticker, position_size,
-                    tp_enabled, tp_targets, sl_enabled, sl_amount, trailing_sl,
-                    account_id, user_id, is_private
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-            ''', (
-                name,
-                True,
-                webhook_token,
-                data.get('symbol') or data.get('ticker'),
-                data.get('position_size', data.get('initial_position_size', 1)),
-                data.get('tp_enabled', True),
-                tp_targets,
-                data.get('sl_enabled', False),
-                data.get('sl_amount', 0),
-                data.get('trailing_sl', False),
-                data.get('account_id'),
-                current_user_id,
-                data.get('is_private', False)
-            ))
+            insert_sql += ' RETURNING id'
+        
+        values = [
+            name,
+            data.get('strategy_type', 'Futures'),
+            data.get('symbol') or data.get('ticker'),
+            to_bool(True),  # enabled
+            webhook_token,
+            current_user_id,
+            to_bool(data.get('is_private', False)),
+            # Positional
+            data.get('initial_position_size', 0),
+            data.get('add_position_size', 0),
+            # TP
+            data.get('tp_units', 'Ticks'),
+            data.get('trim_units', 'Contracts'),
+            tp_targets,
+            to_bool(True),  # tp_enabled
+            # SL
+            to_bool(data.get('sl_enabled', False)),
+            data.get('sl_amount', 0),
+            data.get('sl_units', 'Ticks'),
+            data.get('sl_type', 'Fixed'),
+            to_bool(data.get('trailing_sl', False)),
+            # Break-Even
+            to_bool(data.get('break_even_enabled', False)),
+            data.get('break_even_ticks', 10),
+            # Avg Down
+            to_bool(data.get('avg_down_enabled', False)),
+            data.get('avg_down_amount', 0),
+            data.get('avg_down_point', 0),
+            data.get('avg_down_units', 'Ticks'),
+            # Filters
+            data.get('add_delay', 0),
+            data.get('max_contracts_per_trade', 0),
+            data.get('option_premium_filter', 0),
+            data.get('direction_filter') or None,
+            # Time Filters
+            to_bool(data.get('time_filter_1_enabled', False)),
+            data.get('time_filter_1_start', ''),
+            data.get('time_filter_1_stop', ''),
+            to_bool(data.get('time_filter_2_enabled', False)),
+            data.get('time_filter_2_start', ''),
+            data.get('time_filter_2_stop', ''),
+            # Execution
+            data.get('signal_cooldown', 0),
+            data.get('max_signals_per_session', 0),
+            data.get('max_daily_loss', 0),
+            to_bool(data.get('auto_flat_after_cutoff', False)),
+            # Misc
+            data.get('notes', ''),
+            to_bool(data.get('recording_enabled', True)),
+        ]
+        
+        cursor.execute(insert_sql, values)
+        
+        if is_postgres:
             result = cursor.fetchone()
-            if result:
-                recorder_id = result.get('id') if isinstance(result, dict) else result[0]
-            else:
-                recorder_id = None
+            recorder_id = result.get('id') if isinstance(result, dict) else result[0] if result else None
         else:
-            cursor.execute('''
-                INSERT INTO recorders (
-                    name, enabled, webhook_token, ticker, position_size,
-                    tp_enabled, tp_targets, sl_enabled, sl_amount, trailing_sl,
-                    account_id, user_id, is_private
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                name,
-                1,
-                webhook_token,
-                data.get('symbol') or data.get('ticker'),
-                data.get('position_size', data.get('initial_position_size', 1)),
-                1 if data.get('tp_enabled', True) else 0,
-                tp_targets,
-                1 if data.get('sl_enabled', False) else 0,
-                data.get('sl_amount', 0),
-                1 if data.get('trailing_sl', False) else 0,
-                data.get('account_id'),
-                current_user_id,
-                1 if data.get('is_private', False) else 0
-            ))
             recorder_id = cursor.lastrowid
         
         conn.commit()
         conn.close()
         
-        logger.info(f"Created recorder: {name} (ID: {recorder_id})")
+        logger.info(f"Created recorder: {name} (ID: {recorder_id}) with ALL settings")
         
         return jsonify({
             'success': True,
@@ -9221,6 +9288,7 @@ def api_update_recorder(recorder_id):
             'sl_amount': 'sl_amount',
             'sl_units': 'sl_units',
             'sl_type': 'sl_type',
+            'break_even_ticks': 'break_even_ticks',  # FIXED: Was missing!
             'avg_down_amount': 'avg_down_amount',
             'avg_down_point': 'avg_down_point',
             'avg_down_units': 'avg_down_units',
@@ -9228,10 +9296,8 @@ def api_update_recorder(recorder_id):
             'max_contracts_per_trade': 'max_contracts_per_trade',
             'option_premium_filter': 'option_premium_filter',
             'direction_filter': 'direction_filter',
-            'time_filter_1_enabled': 'time_filter_1_enabled',
             'time_filter_1_start': 'time_filter_1_start',
             'time_filter_1_stop': 'time_filter_1_stop',
-            'time_filter_2_enabled': 'time_filter_2_enabled',
             'time_filter_2_start': 'time_filter_2_start',
             'time_filter_2_stop': 'time_filter_2_stop',
             'signal_cooldown': 'signal_cooldown',
@@ -9246,21 +9312,20 @@ def api_update_recorder(recorder_id):
                 values.append(data[key])
         
         # Handle boolean fields - PostgreSQL needs True/False, SQLite needs 1/0
-        if 'sl_enabled' in data:
-            fields.append(f'sl_enabled = {placeholder}')
-            values.append(bool(data['sl_enabled']) if is_postgres else (1 if data['sl_enabled'] else 0))
-        if 'avg_down_enabled' in data:
-            fields.append(f'avg_down_enabled = {placeholder}')
-            values.append(bool(data['avg_down_enabled']) if is_postgres else (1 if data['avg_down_enabled'] else 0))
-        if 'auto_flat_after_cutoff' in data:
-            fields.append(f'auto_flat_after_cutoff = {placeholder}')
-            values.append(bool(data['auto_flat_after_cutoff']) if is_postgres else (1 if data['auto_flat_after_cutoff'] else 0))
-        if 'recording_enabled' in data:
-            fields.append(f'recording_enabled = {placeholder}')
-            values.append(bool(data['recording_enabled']) if is_postgres else (1 if data['recording_enabled'] else 0))
-        if 'is_private' in data:
-            fields.append(f'is_private = {placeholder}')
-            values.append(bool(data['is_private']) if is_postgres else (1 if data['is_private'] else 0))
+        boolean_fields = [
+            'sl_enabled',
+            'break_even_enabled',  # FIXED: Was missing!
+            'avg_down_enabled',
+            'auto_flat_after_cutoff',
+            'recording_enabled',
+            'is_private',
+            'time_filter_1_enabled',  # FIXED: Was missing!
+            'time_filter_2_enabled',  # FIXED: Was missing!
+        ]
+        for bf in boolean_fields:
+            if bf in data:
+                fields.append(f'{bf} = {placeholder}')
+                values.append(bool(data[bf]) if is_postgres else (1 if data[bf] else 0))
         
         # Handle TP targets JSON
         if 'tp_targets' in data:
@@ -10034,6 +10099,71 @@ def api_update_trader(trader_id):
         if 'sl_units' in data:
             updates.append(f'sl_units = {placeholder}')
             params.append(data['sl_units'])
+        
+        # SL Type (Fixed/Trailing)
+        if 'sl_type' in data:
+            updates.append(f'sl_type = {placeholder}')
+            params.append(data['sl_type'])
+        
+        # Break-Even settings
+        if 'break_even_enabled' in data:
+            updates.append(f'break_even_enabled = {placeholder}')
+            params.append(bool(data['break_even_enabled']) if is_postgres else (1 if data['break_even_enabled'] else 0))
+        
+        if 'break_even_ticks' in data:
+            updates.append(f'break_even_ticks = {placeholder}')
+            params.append(int(data['break_even_ticks']))
+        
+        # Averaging Down settings
+        if 'avg_down_enabled' in data:
+            updates.append(f'avg_down_enabled = {placeholder}')
+            params.append(bool(data['avg_down_enabled']) if is_postgres else (1 if data['avg_down_enabled'] else 0))
+        
+        if 'avg_down_amount' in data:
+            updates.append(f'avg_down_amount = {placeholder}')
+            params.append(int(data['avg_down_amount']))
+        
+        if 'avg_down_point' in data:
+            updates.append(f'avg_down_point = {placeholder}')
+            params.append(float(data['avg_down_point']))
+        
+        if 'avg_down_units' in data:
+            updates.append(f'avg_down_units = {placeholder}')
+            params.append(data['avg_down_units'])
+        
+        # TP/Trim units
+        if 'tp_units' in data:
+            updates.append(f'tp_units = {placeholder}')
+            params.append(data['tp_units'])
+        
+        if 'trim_units' in data:
+            updates.append(f'trim_units = {placeholder}')
+            params.append(data['trim_units'])
+        
+        # Time filter settings
+        if 'time_filter_1_enabled' in data:
+            updates.append(f'time_filter_1_enabled = {placeholder}')
+            params.append(bool(data['time_filter_1_enabled']) if is_postgres else (1 if data['time_filter_1_enabled'] else 0))
+        
+        if 'time_filter_1_start' in data:
+            updates.append(f'time_filter_1_start = {placeholder}')
+            params.append(data['time_filter_1_start'])
+        
+        if 'time_filter_1_stop' in data:
+            updates.append(f'time_filter_1_stop = {placeholder}')
+            params.append(data['time_filter_1_stop'])
+        
+        if 'time_filter_2_enabled' in data:
+            updates.append(f'time_filter_2_enabled = {placeholder}')
+            params.append(bool(data['time_filter_2_enabled']) if is_postgres else (1 if data['time_filter_2_enabled'] else 0))
+        
+        if 'time_filter_2_start' in data:
+            updates.append(f'time_filter_2_start = {placeholder}')
+            params.append(data['time_filter_2_start'])
+        
+        if 'time_filter_2_stop' in data:
+            updates.append(f'time_filter_2_stop = {placeholder}')
+            params.append(data['time_filter_2_stop'])
         
         if 'max_daily_loss' in data:
             updates.append(f'max_daily_loss = {placeholder}')
