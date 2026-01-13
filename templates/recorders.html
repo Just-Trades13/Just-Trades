@@ -337,7 +337,7 @@
         <!-- Miscellaneous Settings Panel -->
         <section class="card-panel collapsed" data-panel>
             <header>
-                <button class="panel-toggle" type="button"><span class="material-icons">add</span> <span class="toggle-text">Show</span> Miscellaneous Settings (Optional)</button>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> <span class="toggle-text">Show</span> Miscellaneous Settings</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
             <div class="panel-body">
@@ -345,25 +345,19 @@
                     <span>Notes</span>
                     <textarea id="notes" rows="3" placeholder="Add any additional context for this recorder...">{{ recorder.notes if recorder else '' }}</textarea>
                 </label>
-                <div class="switch-row">
+                <div class="toggle-row">
+                    <span>Recording Enabled</span>
                     <label class="switch">
                         <input type="checkbox" id="recording_enabled" {{ 'checked' if not recorder or recorder.recording_enabled else '' }}>
                         <span class="slider"></span>
                     </label>
-                    <div>
-                        <h3>Recording Enabled</h3>
-                        <p>Allow this recorder to capture trading signals and positions.</p>
-                    </div>
                 </div>
-                <div class="switch-row">
+                <div class="toggle-row">
+                    <span>Make Private</span>
                     <label class="switch">
                         <input type="checkbox" id="is_private" {{ 'checked' if recorder and recorder.is_private else '' }}>
                         <span class="slider"></span>
                     </label>
-                    <div>
-                        <h3>Make Private</h3>
-                        <p>Only you can see and use this recorder. Uncheck to make it available to all users.</p>
-                    </div>
                 </div>
             </div>
         </section>
