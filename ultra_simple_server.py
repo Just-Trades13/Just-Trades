@@ -223,7 +223,7 @@ def get_discord_enabled_users(user_id: int = None) -> list:
 def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int, 
                            price: float, recorder_name: str = None, pnl: float = None):
     """
-    Send trade execution notification to user via Discord.
+    Send trade execution notification to user via Discord AND push notification.
     
     Args:
         user_id: Database user ID
@@ -234,27 +234,36 @@ def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int
         recorder_name: Name of the recorder/strategy
         pnl: Realized P&L (for closing trades)
     """
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return
-    
-    users = get_discord_enabled_users(user_id)
-    if not users:
-        return
-    
     # Build message
     emoji = "🟢" if action.upper() == "BUY" else "🔴"
     action_word = "BOUGHT" if action.upper() == "BUY" else "SOLD"
     
-    message = f"{emoji} **{action_word} {quantity} {symbol}** @ ${price:,.2f}"
+    # Discord message (with markdown)
+    discord_message = f"{emoji} **{action_word} {quantity} {symbol}** @ ${price:,.2f}"
     if recorder_name:
-        message += f"\n📊 Strategy: {recorder_name}"
+        discord_message += f"\n📊 Strategy: {recorder_name}"
     if pnl is not None:
         pnl_emoji = "💰" if pnl >= 0 else "📉"
-        message += f"\n{pnl_emoji} P&L: ${pnl:,.2f}"
-    message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
+        discord_message += f"\n{pnl_emoji} P&L: ${pnl:,.2f}"
+    discord_message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
     
-    for user in users:
-        send_discord_dm(user['discord_user_id'], message)
+    # Push notification (plain text)
+    push_title = f"{emoji} {action_word} {quantity} {symbol}"
+    push_body = f"@ ${price:,.2f}"
+    if recorder_name:
+        push_body += f" • {recorder_name}"
+    if pnl is not None:
+        push_body += f" • P&L: ${pnl:,.2f}"
+    
+    # Send Discord DM
+    if DISCORD_NOTIFICATIONS_ENABLED:
+        users = get_discord_enabled_users(user_id)
+        for user in users:
+            send_discord_dm(user['discord_user_id'], discord_message)
+    
+    # Send Push Notification
+    if PUSH_NOTIFICATIONS_ENABLED:
+        send_push_notification(user_id, push_title, push_body, url='/dashboard')
 
 
 def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int, 
@@ -297,7 +306,7 @@ def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int,
 
 def notify_error(user_id: int, error_type: str, error_message: str, details: str = None):
     """
-    Send error notification to user.
+    Send error notification to user via Discord AND push notification.
     
     Args:
         user_id: Database user ID
@@ -305,21 +314,28 @@ def notify_error(user_id: int, error_type: str, error_message: str, details: str
         error_message: Brief error description
         details: Optional additional details
     """
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return
-    
-    users = get_discord_enabled_users(user_id)
-    if not users:
-        return
-    
-    message = f"⚠️ **{error_type}**\n"
-    message += f"❌ {error_message}"
+    # Discord message
+    discord_message = f"⚠️ **{error_type}**\n"
+    discord_message += f"❌ {error_message}"
     if details:
-        message += f"\n📝 {details}"
-    message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
+        discord_message += f"\n📝 {details}"
+    discord_message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
     
-    for user in users:
-        send_discord_dm(user['discord_user_id'], message)
+    # Push notification
+    push_title = f"⚠️ {error_type}"
+    push_body = error_message
+    if details:
+        push_body += f" - {details[:50]}"
+    
+    # Send Discord DM
+    if DISCORD_NOTIFICATIONS_ENABLED:
+        users = get_discord_enabled_users(user_id)
+        for user in users:
+            send_discord_dm(user['discord_user_id'], discord_message)
+    
+    # Send Push Notification
+    if PUSH_NOTIFICATIONS_ENABLED:
+        send_push_notification(user_id, push_title, push_body, url='/recorders_list')
 
 
 def notify_daily_summary(user_id: int, total_trades: int, winners: int, losers: int,
@@ -394,6 +410,171 @@ def broadcast_announcement(title: str, message: str, announcement_type: str = 'i
     
     logger.info(f"📢 Broadcast sent to {sent_count}/{len(users)} Discord users")
     return sent_count
+
+
+# ============================================================================
+# PUSH NOTIFICATION SERVICE (Browser Push)
+# ============================================================================
+# Requires: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY environment variables
+# Generate with: from py_vapid import Vapid; v = Vapid(); v.generate_keys()
+
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', 'mailto:admin@justtrades.com')
+
+PUSH_NOTIFICATIONS_ENABLED = bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY)
+
+if PUSH_NOTIFICATIONS_ENABLED:
+    print("✅ Push notifications enabled")
+else:
+    print("ℹ️ Push notifications disabled (set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY to enable)")
+
+
+def send_push_notification(user_id: int, title: str, body: str, url: str = None, tag: str = None) -> int:
+    """
+    Send push notification to all subscribed devices for a user.
+    
+    Args:
+        user_id: Database user ID
+        title: Notification title
+        body: Notification body text
+        url: URL to open when clicked (optional)
+        tag: Notification tag for grouping (optional)
+    
+    Returns:
+        Number of notifications sent successfully
+    """
+    if not PUSH_NOTIFICATIONS_ENABLED:
+        return 0
+    
+    try:
+        from pywebpush import webpush, WebPushException
+        import json
+        
+        # Get user's push subscriptions
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('''
+                SELECT subscription_json FROM push_subscriptions 
+                WHERE user_id = %s AND active = TRUE
+            ''', (user_id,))
+        else:
+            cursor.execute('''
+                SELECT subscription_json FROM push_subscriptions 
+                WHERE user_id = ? AND active = 1
+            ''', (user_id,))
+        
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not rows:
+            return 0
+        
+        payload = json.dumps({
+            'title': title,
+            'body': body,
+            'icon': '/static/img/just_trades_logo.png',
+            'badge': '/static/img/just_trades_logo.png',
+            'tag': tag or 'just-trades',
+            'data': {'url': url or '/dashboard'}
+        })
+        
+        sent_count = 0
+        for row in rows:
+            try:
+                subscription_json = row[0] if isinstance(row, tuple) else row.get('subscription_json')
+                subscription_info = json.loads(subscription_json) if isinstance(subscription_json, str) else subscription_json
+                
+                webpush(
+                    subscription_info=subscription_info,
+                    data=payload,
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={'sub': VAPID_CLAIMS_EMAIL}
+                )
+                sent_count += 1
+            except WebPushException as e:
+                logger.warning(f"⚠️ Push notification failed: {e}")
+                # If subscription is invalid, mark it as inactive
+                if e.response and e.response.status_code in [404, 410]:
+                    try:
+                        mark_push_subscription_inactive(subscription_json)
+                    except:
+                        pass
+            except Exception as e:
+                logger.warning(f"⚠️ Push notification error: {e}")
+        
+        return sent_count
+    except ImportError:
+        logger.warning("⚠️ pywebpush not installed - push notifications disabled")
+        return 0
+    except Exception as e:
+        logger.error(f"❌ Push notification error: {e}")
+        return 0
+
+
+def mark_push_subscription_inactive(subscription_json: str):
+    """Mark a push subscription as inactive (expired/unsubscribed)."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('UPDATE push_subscriptions SET active = FALSE WHERE subscription_json = %s', (subscription_json,))
+        else:
+            cursor.execute('UPDATE push_subscriptions SET active = 0 WHERE subscription_json = ?', (subscription_json,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error marking subscription inactive: {e}")
+
+
+def get_push_enabled_users(user_id: int = None) -> list:
+    """Get users who have push notifications enabled."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if user_id:
+            if is_using_postgres():
+                cursor.execute('''
+                    SELECT DISTINCT user_id FROM push_subscriptions 
+                    WHERE user_id = %s AND active = TRUE
+                ''', (user_id,))
+            else:
+                cursor.execute('''
+                    SELECT DISTINCT user_id FROM push_subscriptions 
+                    WHERE user_id = ? AND active = 1
+                ''', (user_id,))
+        else:
+            if is_using_postgres():
+                cursor.execute('SELECT DISTINCT user_id FROM push_subscriptions WHERE active = TRUE')
+            else:
+                cursor.execute('SELECT DISTINCT user_id FROM push_subscriptions WHERE active = 1')
+        
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return [row[0] for row in rows]
+    except Exception as e:
+        logger.error(f"Error getting push users: {e}")
+        return []
+
+
+def notify_via_push(user_id: int, title: str, body: str, url: str = None):
+    """
+    Send push notification to a user (convenience wrapper).
+    Also sends Discord DM if enabled.
+    """
+    sent = 0
+    if PUSH_NOTIFICATIONS_ENABLED:
+        sent = send_push_notification(user_id, title, body, url)
+    return sent
 
 
 # High-performance signal queue for handling hundreds of signals per second
@@ -4469,6 +4650,54 @@ def ensure_announcements_table():
 
 # Ensure table exists on startup
 ensure_announcements_table()
+
+
+def ensure_push_subscriptions_table():
+    """Ensure the push_subscriptions table exists."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS push_subscriptions (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    subscription_json TEXT NOT NULL,
+                    endpoint TEXT NOT NULL,
+                    active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    user_agent TEXT,
+                    UNIQUE(user_id, endpoint)
+                )
+            ''')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS push_subscriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    subscription_json TEXT NOT NULL,
+                    endpoint TEXT NOT NULL,
+                    active INTEGER DEFAULT 1,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    user_agent TEXT,
+                    UNIQUE(user_id, endpoint)
+                )
+            ''')
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info("✅ Push subscriptions table ready")
+        return True
+    except Exception as e:
+        logger.warning(f"Error ensuring push_subscriptions table: {e}")
+        return False
+
+ensure_push_subscriptions_table()
+
 
 @app.route('/api/announcements/active')
 def get_active_announcements():
@@ -17967,6 +18196,177 @@ def api_test_discord_notification():
         return jsonify({'success': True, 'message': 'Test notification sent! Check your Discord DMs.'})
     else:
         return jsonify({'success': False, 'error': 'Failed to send DM. Make sure your Discord DMs are open (not blocked).'}), 500
+
+
+# ============================================================================
+# PUSH NOTIFICATION SETTINGS ROUTES
+# ============================================================================
+
+@app.route('/api/push/vapid-public-key', methods=['GET'])
+def api_get_vapid_public_key():
+    """Get the VAPID public key for push notification subscription."""
+    if not PUSH_NOTIFICATIONS_ENABLED:
+        return jsonify({'error': 'Push notifications not configured'}), 400
+    return jsonify({'publicKey': VAPID_PUBLIC_KEY})
+
+
+@app.route('/api/push/subscribe', methods=['POST'])
+def api_push_subscribe():
+    """Subscribe to push notifications."""
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    if not PUSH_NOTIFICATIONS_ENABLED:
+        return jsonify({'success': False, 'error': 'Push notifications not configured on server'}), 400
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    data = request.json
+    subscription = data.get('subscription')
+    
+    if not subscription or not subscription.get('endpoint'):
+        return jsonify({'success': False, 'error': 'Invalid subscription data'}), 400
+    
+    import json
+    subscription_json = json.dumps(subscription)
+    endpoint = subscription.get('endpoint')
+    user_agent = request.headers.get('User-Agent', '')[:500]
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if subscription already exists
+        if is_using_postgres():
+            cursor.execute('''
+                INSERT INTO push_subscriptions (user_id, subscription_json, endpoint, user_agent, active)
+                VALUES (%s, %s, %s, %s, TRUE)
+                ON CONFLICT (user_id, endpoint) 
+                DO UPDATE SET subscription_json = EXCLUDED.subscription_json, active = TRUE, updated_at = NOW()
+            ''', (user.id, subscription_json, endpoint, user_agent))
+        else:
+            cursor.execute('''
+                INSERT OR REPLACE INTO push_subscriptions (user_id, subscription_json, endpoint, user_agent, active)
+                VALUES (?, ?, ?, ?, 1)
+            ''', (user.id, subscription_json, endpoint, user_agent))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"✅ Push subscription created for user {user.id}")
+        return jsonify({'success': True, 'message': 'Push notifications enabled'})
+    except Exception as e:
+        logger.error(f"❌ Failed to create push subscription: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+def api_push_unsubscribe():
+    """Unsubscribe from push notifications."""
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    data = request.json
+    endpoint = data.get('endpoint')
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if endpoint:
+            # Remove specific subscription
+            if is_using_postgres():
+                cursor.execute('DELETE FROM push_subscriptions WHERE user_id = %s AND endpoint = %s', (user.id, endpoint))
+            else:
+                cursor.execute('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?', (user.id, endpoint))
+        else:
+            # Remove all subscriptions for user
+            if is_using_postgres():
+                cursor.execute('DELETE FROM push_subscriptions WHERE user_id = %s', (user.id,))
+            else:
+                cursor.execute('DELETE FROM push_subscriptions WHERE user_id = ?', (user.id,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"✅ Push subscription removed for user {user.id}")
+        return jsonify({'success': True, 'message': 'Push notifications disabled'})
+    except Exception as e:
+        logger.error(f"❌ Failed to remove push subscription: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/push/status', methods=['GET'])
+def api_push_status():
+    """Get push notification status for current user."""
+    status = {
+        'configured': PUSH_NOTIFICATIONS_ENABLED,
+        'subscribed': False,
+        'subscription_count': 0
+    }
+    
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify(status)
+    
+    user = get_current_user()
+    if not user:
+        return jsonify(status)
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('SELECT COUNT(*) FROM push_subscriptions WHERE user_id = %s AND active = TRUE', (user.id,))
+        else:
+            cursor.execute('SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ? AND active = 1', (user.id,))
+        
+        row = cursor.fetchone()
+        count = row[0] if row else 0
+        
+        cursor.close()
+        conn.close()
+        
+        status['subscribed'] = count > 0
+        status['subscription_count'] = count
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error checking push status: {e}")
+        return jsonify(status)
+
+
+@app.route('/api/push/test', methods=['POST'])
+def api_test_push_notification():
+    """Send a test push notification to the current user."""
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    if not PUSH_NOTIFICATIONS_ENABLED:
+        return jsonify({'success': False, 'error': 'Push notifications not configured on server'}), 400
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    sent = send_push_notification(
+        user_id=user.id,
+        title='🧪 Test Notification',
+        body='This is a test push notification from Just.Trades!',
+        url='/settings'
+    )
+    
+    if sent > 0:
+        return jsonify({'success': True, 'message': f'Test notification sent to {sent} device(s)!'})
+    else:
+        return jsonify({'success': False, 'error': 'No push subscriptions found. Enable notifications first.'}), 400
 
 
 @app.route('/api/settings/discord/link', methods=['GET'])
