@@ -17391,7 +17391,10 @@ def api_discord_oauth_start():
     discord_client_id = os.environ.get('DISCORD_CLIENT_ID', '')
     discord_redirect_uri = os.environ.get('DISCORD_REDIRECT_URI', request.url_root.rstrip('/') + '/api/settings/discord/callback')
     
+    logger.info(f"🔗 Discord OAuth: client_id exists={bool(discord_client_id)}, redirect_uri={discord_redirect_uri}")
+    
     if not discord_client_id:
+        logger.warning("⚠️ DISCORD_CLIENT_ID environment variable not set")
         flash('Discord OAuth is not configured. Please contact an administrator.', 'error')
         return redirect(url_for('settings'))
     
