@@ -1115,26 +1115,35 @@
         if (!recorderId) return;
         
         fetch(`/api/recorders/${recorderId}/webhook`)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                }
+                return res.json();
+            })
             .then(data => {
                 if (data.success) {
                     const webhookUrl = document.getElementById('webhook-url');
-                    if (webhookUrl) webhookUrl.value = data.webhook_url;
+                    if (webhookUrl) webhookUrl.value = data.webhook_url || '';
                     
                     // Toggle Alert = BUY alert (user creates separate BUY and SELL alerts)
                     const toggle = document.getElementById('alert-toggle');
-                    if (toggle) toggle.textContent = data.alerts.indicator_buy;
+                    if (toggle && data.alerts) toggle.textContent = data.alerts.indicator_buy || '';
                     
                     // TM Sizing = SELL alert
                     const tm = document.getElementById('alert-tm');
-                    if (tm) tm.textContent = data.alerts.indicator_sell;
+                    if (tm && data.alerts) tm.textContent = data.alerts.indicator_sell || '';
                     
                     // TV Sizing = Strategy alert (for Pine Script strategies)
                     const tv = document.getElementById('alert-tv');
-                    if (tv) tv.textContent = data.alerts.strategy_message;
+                    if (tv && data.alerts) tv.textContent = data.alerts.strategy_message || '';
+                } else {
+                    console.error('Webhook API error:', data.error);
                 }
             })
-            .catch(console.error);
+            .catch(err => {
+                console.error('Failed to load webhook info:', err);
+            });
     }
 
     function showWebhookModalForNew(recId, recName) {

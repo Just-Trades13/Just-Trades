@@ -9673,32 +9673,47 @@ def api_get_recorder_webhook(recorder_id):
     """Get webhook details for a recorder"""
     try:
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute('SELECT name, webhook_token FROM recorders WHERE id = ?', (recorder_id,))
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        if is_postgres:
+            cursor = conn.cursor()
+        else:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+        
+        cursor.execute(f'SELECT name, webhook_token FROM recorders WHERE id = {placeholder}', (recorder_id,))
         row = cursor.fetchone()
         conn.close()
         
         if not row:
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
         
+        # Handle both SQLite Row and PostgreSQL tuple
+        if is_postgres:
+            name = row[0]
+            webhook_token = row[1]
+        else:
+            name = row['name']
+            webhook_token = row['webhook_token']
+        
         # Build webhook URL - ALWAYS use HTTPS for TradingView webhooks
         base_url = request.host_url.rstrip('/')
         # Force HTTPS (Railway uses edge proxy that may report HTTP internally)
         if base_url.startswith('http://'):
             base_url = base_url.replace('http://', 'https://', 1)
-        webhook_url = f"{base_url}/webhook/{row['webhook_token']}"
+        webhook_url = f"{base_url}/webhook/{webhook_token}"
         
         # Simple indicator alert message (user specifies buy or sell)
         indicator_buy_message = json.dumps({
-            "recorder": row['name'],
+            "recorder": name,
             "action": "buy",
             "ticker": "{{ticker}}",
             "price": "{{close}}"
         }, indent=2)
         
         indicator_sell_message = json.dumps({
-            "recorder": row['name'],
+            "recorder": name,
             "action": "sell",
             "ticker": "{{ticker}}",
             "price": "{{close}}"
@@ -9706,7 +9721,7 @@ def api_get_recorder_webhook(recorder_id):
         
         # Pine Script strategy alert message (action auto-filled by TradingView)
         strategy_message = json.dumps({
-            "recorder": row['name'],
+            "recorder": name,
             "action": "{{strategy.order.action}}",
             "ticker": "{{ticker}}",
             "price": "{{close}}",
@@ -9718,7 +9733,7 @@ def api_get_recorder_webhook(recorder_id):
         return jsonify({
             'success': True,
             'webhook_url': webhook_url,
-            'name': row['name'],
+            'name': name,
             'alerts': {
                 'indicator_buy': indicator_buy_message,
                 'indicator_sell': indicator_sell_message,
