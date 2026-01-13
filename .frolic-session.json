@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-01-13T01:21:09.433Z",
+  "timestamp": "2026-01-13T01:29:45.963Z",
   "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
-  "eventCount": 656,
+  "eventCount": 670,
   "events": [
     {
       "timestamp": "2026-01-04T01:45:27.744Z",
@@ -11628,11 +11628,279 @@
       "cursorPosition": null,
       "selectionLength": 0,
       "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T01:21:21.144Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T01:21:22.582Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 23763,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 23762,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T01:21:22.583Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 23763,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 0,
+          "rangeLength": 0,
+          "lineCountDelta": 0,
+          "likelyAI": false,
+          "changeText": "",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T01:21:38.253Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 23783,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 23762,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 2132,
+          "rangeLength": 1564,
+          "lineCountDelta": 56,
+          "likelyAI": false,
+          "changeText": "    conn = None\n    cursor = None\n    try:\n        if USER_AUTH_AVAILABLE:\n            from user_auth import get_auth_db_connection\n            conn, db_type = get_auth_db_connection()\n            cursor = conn.cursor()\n            \n            # Rollback any failed transactions (PostgreSQL specific issue)\n            try:\n                conn.rollback()\n            except:\n                pass\n            \n            if user_id:\n                if db_type == 'postgresql':\n                    cursor.execute('''\n                        SELECT id, discord_user_id FROM users \n                        WHERE id = %s AND discord_user_id IS NOT NULL AND discord_dms_enabled = TRUE\n                    ''', (user_id,))\n                else:\n                    cursor.execute('''\n                        SELECT id, discord_user_id FROM users \n                        WHERE id = ? AND discord_user_id IS NOT NULL AND discord_dms_enabled = 1\n                    ''', (user_id,))\n            else:\n                if db_type == 'postgresql':\n                    cursor.execute('''\n                        SELECT id, discord_user_id FROM users \n                        WHERE discord_user_id IS NOT NULL AND discord_dms_enabled = TRUE\n                    ''')\n                else:\n                    cursor.execute('''\n                        SELECT id, discord_user_id FROM users \n                        WHERE discord_user_id IS NOT NULL AND discord_dms_enabled = 1\n                    ''')\n            \n            rows = cursor.fetchall()\n            result = [{'user_id': row[0], 'discord_user_id': row[1]} for row in rows]\n            logger.info(f\"🔔 Discord users query returned {len(result)} users\")\n            return result\n    except Exception as e:\n        logger.error(f\"❌ Error getting Discord users: {e}\")\n        import traceback\n        logger.error(f\"❌ Traceback: {traceback.format_exc()}\")\n    finally:\n        if cursor:\n            try:\n                cursor.close()\n            e...[TRUNCATED]",
+          "wasTruncated": true
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T01:21:46.162Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T01:21:59.929Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T01:22:00.292Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 23783,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 23782,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T01:22:00.294Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 23783,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 0,
+          "rangeLength": 0,
+          "lineCountDelta": 0,
+          "likelyAI": false,
+          "changeText": "",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T01:28:48.187Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 23808,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 23782,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 2664,
+          "rangeLength": 1289,
+          "lineCountDelta": 56,
+          "likelyAI": false,
+          "changeText": "    \"\"\"Enable or disable all recorders AND their traders FOR THE CURRENT USER ONLY\"\"\"\n    try:\n        # Get current user - only toggle THEIR recorders\n        current_user = None\n        user_id = None\n        if USER_AUTH_AVAILABLE and is_logged_in():\n            current_user = get_current_user()\n            if current_user:\n                user_id = current_user.id\n        \n        data = request.get_json() or {}\n        enabled = data.get('enabled', False)\n        \n        conn = get_db_connection()\n        cursor = conn.cursor()\n        is_postgres = is_using_postgres()\n        placeholder = '%s' if is_postgres else '?'\n        \n        # PostgreSQL needs boolean True/False, SQLite needs 1/0\n        enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)\n        \n        if user_id:\n            # Only update recorders belonging to this user\n            cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder} WHERE user_id = {placeholder}', (enabled_value, user_id))\n            recorder_count = cursor.rowcount\n            \n            # Get recorder IDs for this user\n            cursor.execute(f'SELECT id FROM recorders WHERE user_id = {placeholder}', (user_id,))\n            user_recorder_ids = [row[0] for row in cursor.fetchall()]\n            \n            # Only update traders linked to this user's recorders\n            trader_count = 0\n            if user_recorder_ids:\n                placeholders = ', '.join([placeholder] * len(user_recorder_ids))\n                cursor.execute(f'UPDATE traders SET enabled = {placeholder} WHERE recorder_id IN ({placeholders})', [enabled_value] + user_recorder_ids)\n                trader_count = cursor.rowcount\n            \n            logger.info(f\"📊 User {user_id} toggled: {recorder_count} recorders, {trader_count} traders\")\n        else:\n            # Fallback for non-authenticated access (legacy behavior, but log warning)\n            logger.warning(\"⚠️ toggle-all called without user authenti...[TRUNCATED]",
+          "wasTruncated": true
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T01:28:57.144Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T01:29:04.681Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 23826,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 23807,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 2475,
+          "rangeLength": 1542,
+          "lineCountDelta": 56,
+          "likelyAI": false,
+          "changeText": "    Only the owner of the recorder (or admin) can toggle it.\n    \"\"\"\n    try:\n        # Get current user\n        current_user = None\n        user_id = None\n        is_admin = False\n        if USER_AUTH_AVAILABLE and is_logged_in():\n            current_user = get_current_user()\n            if current_user:\n                user_id = current_user.id\n                is_admin = getattr(current_user, 'is_admin', False)\n        \n        data = request.get_json() or {}\n        enabled = data.get('enabled', False)\n        \n        conn = get_db_connection()\n        cursor = conn.cursor()\n        is_postgres = is_using_postgres()\n        placeholder = '%s' if is_postgres else '?'\n        \n        # Check recorder exists AND belongs to user (unless admin)\n        cursor.execute(f'SELECT id, name, user_id FROM recorders WHERE id = {placeholder}', (recorder_id,))\n        recorder = cursor.fetchone()\n        if not recorder:\n            conn.close()\n            return jsonify({'success': False, 'error': 'Recorder not found'}), 404\n        \n        recorder_name = recorder[1] if isinstance(recorder, tuple) else recorder['name']\n        recorder_owner = recorder[2] if isinstance(recorder, tuple) else recorder.get('user_id')\n        \n        # Check ownership (unless admin)\n        if user_id and not is_admin and recorder_owner and recorder_owner != user_id:\n            conn.close()\n            logger.warning(f\"⚠️ User {user_id} tried to toggle recorder {recorder_id} owned by {recorder_owner}\")\n            return jsonify({'success': False, 'error': 'You do not own this recorder'}), 403\n        \n        # PostgreSQL needs boolean True/False, SQLite needs 1/0\n        enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)\n        \n        # Update all traders for this recorder\n        cursor.execute(f'''\n            UPDATE traders SET enabled = {placeholder} WHERE recorder_id = {placeholder}\n        ''', (enabled_value, recorder_id))\n        updated_count = cursor.rowc...[TRUNCATED]",
+          "wasTruncated": true
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T01:29:11.981Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T01:29:36.160Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "python",
+      "lineCount": 23877,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 23825,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 3964,
+          "rangeLength": 1600,
+          "lineCountDelta": 96,
+          "likelyAI": false,
+          "changeText": "        # Get current user for filtering\n        current_user = None\n        user_id = None\n        is_admin = False\n        if USER_AUTH_AVAILABLE:\n            current_user = get_current_user()\n            if current_user:\n                user_id = current_user.id\n                is_admin = getattr(current_user, 'is_admin', False)\n        \n        conn = get_db_connection()\n        cursor = conn.cursor()\n        is_postgres = is_using_postgres()\n        placeholder = '%s' if is_postgres else '?'\n        \n        # Get recorders with their PnL - FILTERED BY USER (admins see all)\n        if user_id and not is_admin:\n            cursor.execute(f'''\n                SELECT \n                    r.id,\n                    r.name,\n                    r.symbol,\n                    r.recording_enabled,\n                    COALESCE(SUM(CASE WHEN rt.status = 'closed' THEN rt.pnl ELSE 0 END), 0) as total_pnl,\n                    COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,\n                    COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades\n                FROM recorders r\n                LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id\n                WHERE r.user_id = {placeholder}\n                GROUP BY r.id\n                ORDER BY r.name\n            ''', (user_id,))\n        else:\n            # Admin or no user - show all\n            cursor.execute('''\n                SELECT \n                    r.id,\n                    r.name,\n                    r.symbol,\n                    r.recording_enabled,\n                    COALESCE(SUM(CASE WHEN rt.status = 'closed' THEN rt.pnl ELSE 0 END), 0) as total_pnl,\n                    COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,\n                    COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades\n                FROM recorders r\n                LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id\n                GROUP BY r.id\n                ORDER BY r.name\n   ...[TRUNCATED]",
+          "wasTruncated": true
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T01:29:45.963Z",
+      "sessionId": "4d5688ac-2642-48d7-b626-464478c6ee6b",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/ultra_simple_server.py",
+      "relativePath": "ultra_simple_server.py",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
     }
   ],
   "metadata": {
     "version": "1.3.0",
     "trigger": "smart-backup",
-    "memoryUsage": 939008
+    "memoryUsage": 967004
   }
 }

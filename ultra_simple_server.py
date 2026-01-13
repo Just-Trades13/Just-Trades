@@ -13618,59 +13618,116 @@ def control_center():
     if USER_AUTH_AVAILABLE and not is_logged_in():
         return redirect(url_for('login'))
     try:
-        conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        # Get current user for filtering
+        current_user = None
+        user_id = None
+        is_admin = False
+        if USER_AUTH_AVAILABLE:
+            current_user = get_current_user()
+            if current_user:
+                user_id = current_user.id
+                is_admin = getattr(current_user, 'is_admin', False)
         
-        # Get all recorders with their PnL
-        cursor.execute('''
-            SELECT 
-                r.id,
-                r.name,
-                r.symbol,
-                r.recording_enabled,
-                COALESCE(SUM(CASE WHEN rt.status = 'closed' THEN rt.pnl ELSE 0 END), 0) as total_pnl,
-                COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
-                COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades
-            FROM recorders r
-            LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
-            GROUP BY r.id
-            ORDER BY r.name
-        ''')
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        # Get recorders with their PnL - FILTERED BY USER (admins see all)
+        if user_id and not is_admin:
+            cursor.execute(f'''
+                SELECT 
+                    r.id,
+                    r.name,
+                    r.symbol,
+                    r.recording_enabled,
+                    COALESCE(SUM(CASE WHEN rt.status = 'closed' THEN rt.pnl ELSE 0 END), 0) as total_pnl,
+                    COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
+                    COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades
+                FROM recorders r
+                LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
+                WHERE r.user_id = {placeholder}
+                GROUP BY r.id
+                ORDER BY r.name
+            ''', (user_id,))
+        else:
+            # Admin or no user - show all
+            cursor.execute('''
+                SELECT 
+                    r.id,
+                    r.name,
+                    r.symbol,
+                    r.recording_enabled,
+                    COALESCE(SUM(CASE WHEN rt.status = 'closed' THEN rt.pnl ELSE 0 END), 0) as total_pnl,
+                    COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
+                    COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades
+                FROM recorders r
+                LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
+                GROUP BY r.id
+                ORDER BY r.name
+            ''')
         
         live_rows = []
         for row in cursor.fetchall():
+            row_id = row[0] if isinstance(row, tuple) else row['id']
+            row_name = row[1] if isinstance(row, tuple) else row['name']
+            row_symbol = row[2] if isinstance(row, tuple) else row['symbol']
+            row_enabled = row[3] if isinstance(row, tuple) else row['recording_enabled']
+            row_pnl = row[4] if isinstance(row, tuple) else row['total_pnl']
+            row_open = row[5] if isinstance(row, tuple) else row['open_trades']
+            row_closed = row[6] if isinstance(row, tuple) else row['closed_trades']
             live_rows.append({
-                'id': row['id'],
-                'name': row['name'],
-                'symbol': row['symbol'] or '',
-                'enabled': bool(row['recording_enabled']),
-                'pnl': row['total_pnl'] or 0,
-                'open_trades': row['open_trades'] or 0,
-                'closed_trades': row['closed_trades'] or 0
+                'id': row_id,
+                'name': row_name,
+                'symbol': row_symbol or '',
+                'enabled': bool(row_enabled),
+                'pnl': row_pnl or 0,
+                'open_trades': row_open or 0,
+                'closed_trades': row_closed or 0
             })
         
-        # Get recent signals as logs
-        cursor.execute('''
-            SELECT 
-                rs.action,
-                rs.ticker,
-                rs.price,
-                rs.created_at,
-                r.name as recorder_name
-            FROM recorded_signals rs
-            JOIN recorders r ON rs.recorder_id = r.id
-            ORDER BY rs.created_at DESC
-            LIMIT 20
-        ''')
+        # Get recent signals as logs - FILTERED BY USER
+        if user_id and not is_admin:
+            cursor.execute(f'''
+                SELECT 
+                    rs.action,
+                    rs.ticker,
+                    rs.price,
+                    rs.created_at,
+                    r.name as recorder_name
+                FROM recorded_signals rs
+                JOIN recorders r ON rs.recorder_id = r.id
+                WHERE r.user_id = {placeholder}
+                ORDER BY rs.created_at DESC
+                LIMIT 20
+            ''', (user_id,))
+        else:
+            cursor.execute('''
+                SELECT 
+                    rs.action,
+                    rs.ticker,
+                    rs.price,
+                    rs.created_at,
+                    r.name as recorder_name
+                FROM recorded_signals rs
+                JOIN recorders r ON rs.recorder_id = r.id
+                ORDER BY rs.created_at DESC
+                LIMIT 20
+            ''')
         
         logs = []
         for row in cursor.fetchall():
-            log_type = 'open' if row['action'] in ['BUY', 'LONG'] else 'close'
+            action = row[0] if isinstance(row, tuple) else row['action']
+            ticker = row[1] if isinstance(row, tuple) else row['ticker']
+            price = row[2] if isinstance(row, tuple) else row['price']
+            created_at = row[3] if isinstance(row, tuple) else row['created_at']
+            recorder_name = row[4] if isinstance(row, tuple) else row['recorder_name']
+            
+            log_type = 'open' if action in ['BUY', 'LONG'] else 'close'
             logs.append({
                 'type': log_type,
-                'message': f"{row['recorder_name']}: {row['action']} {row['ticker']} @ {row['price']}",
-                'time': row['created_at']
+                'message': f"{recorder_name}: {action} {ticker} @ {price}",
+                'time': created_at
             })
         
         conn.close()
@@ -17178,8 +17235,16 @@ def api_control_center_clear_all():
 
 @app.route('/api/control-center/toggle-all', methods=['POST'])
 def api_control_center_toggle_all():
-    """Enable or disable all recorders AND their traders"""
+    """Enable or disable all recorders AND their traders FOR THE CURRENT USER ONLY"""
     try:
+        # Get current user - only toggle THEIR recorders
+        current_user = None
+        user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user = get_current_user()
+            if current_user:
+                user_id = current_user.id
+        
         data = request.get_json() or {}
         enabled = data.get('enabled', False)
         
@@ -17191,24 +17256,41 @@ def api_control_center_toggle_all():
         # PostgreSQL needs boolean True/False, SQLite needs 1/0
         enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
         
-        # Update all recorders
-        cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder}', (enabled_value,))
-        recorder_count = cursor.rowcount
-        
-        # ALSO update all traders - this is what actually blocks webhook signals
-        cursor.execute(f'UPDATE traders SET enabled = {placeholder}', (enabled_value,))
-        trader_count = cursor.rowcount
+        if user_id:
+            # Only update recorders belonging to this user
+            cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder} WHERE user_id = {placeholder}', (enabled_value, user_id))
+            recorder_count = cursor.rowcount
+            
+            # Get recorder IDs for this user
+            cursor.execute(f'SELECT id FROM recorders WHERE user_id = {placeholder}', (user_id,))
+            user_recorder_ids = [row[0] for row in cursor.fetchall()]
+            
+            # Only update traders linked to this user's recorders
+            trader_count = 0
+            if user_recorder_ids:
+                placeholders = ', '.join([placeholder] * len(user_recorder_ids))
+                cursor.execute(f'UPDATE traders SET enabled = {placeholder} WHERE recorder_id IN ({placeholders})', [enabled_value] + user_recorder_ids)
+                trader_count = cursor.rowcount
+            
+            logger.info(f"📊 User {user_id} toggled: {recorder_count} recorders, {trader_count} traders")
+        else:
+            # Fallback for non-authenticated access (legacy behavior, but log warning)
+            logger.warning("⚠️ toggle-all called without user authentication - updating ALL recorders")
+            cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder}', (enabled_value,))
+            recorder_count = cursor.rowcount
+            cursor.execute(f'UPDATE traders SET enabled = {placeholder}', (enabled_value,))
+            trader_count = cursor.rowcount
         
         conn.commit()
         conn.close()
         
         action = 'enabled' if enabled else 'disabled'
-        logger.info(f"📊 {action.upper()} all {recorder_count} recorders and {trader_count} traders")
         
         return jsonify({
             'success': True,
             'message': f'{recorder_count} recorder(s) and {trader_count} trader(s) {action}',
-            'updated_count': trader_count
+            'updated_count': trader_count,
+            'user_id': user_id
         })
         
     except Exception as e:
@@ -17220,8 +17302,19 @@ def api_control_center_toggle_all():
 def api_toggle_recorder_traders(recorder_id):
     """Enable or disable all traders linked to a specific recorder.
     This is what the Control Center slider should call to block webhook signals.
+    Only the owner of the recorder (or admin) can toggle it.
     """
     try:
+        # Get current user
+        current_user = None
+        user_id = None
+        is_admin = False
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user = get_current_user()
+            if current_user:
+                user_id = current_user.id
+                is_admin = getattr(current_user, 'is_admin', False)
+        
         data = request.get_json() or {}
         enabled = data.get('enabled', False)
         
@@ -17230,14 +17323,21 @@ def api_toggle_recorder_traders(recorder_id):
         is_postgres = is_using_postgres()
         placeholder = '%s' if is_postgres else '?'
         
-        # Check recorder exists
-        cursor.execute(f'SELECT id, name FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        # Check recorder exists AND belongs to user (unless admin)
+        cursor.execute(f'SELECT id, name, user_id FROM recorders WHERE id = {placeholder}', (recorder_id,))
         recorder = cursor.fetchone()
         if not recorder:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
         
         recorder_name = recorder[1] if isinstance(recorder, tuple) else recorder['name']
+        recorder_owner = recorder[2] if isinstance(recorder, tuple) else recorder.get('user_id')
+        
+        # Check ownership (unless admin)
+        if user_id and not is_admin and recorder_owner and recorder_owner != user_id:
+            conn.close()
+            logger.warning(f"⚠️ User {user_id} tried to toggle recorder {recorder_id} owned by {recorder_owner}")
+            return jsonify({'success': False, 'error': 'You do not own this recorder'}), 403
         
         # PostgreSQL needs boolean True/False, SQLite needs 1/0
         enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
@@ -17257,7 +17357,7 @@ def api_toggle_recorder_traders(recorder_id):
         conn.close()
         
         action = 'enabled' if enabled else 'disabled'
-        logger.info(f"📊 {action.upper()} {updated_count} trader(s) for recorder '{recorder_name}'")
+        logger.info(f"📊 User {user_id} {action.upper()} {updated_count} trader(s) for recorder '{recorder_name}'")
         
         return jsonify({
             'success': True,
