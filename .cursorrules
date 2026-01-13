@@ -335,6 +335,70 @@ This codebase has been BROKEN MULTIPLE TIMES by AI making unauthorized changes.
 
 ---
 
+## 🐘 POSTGRESQL COMPATIBILITY - MANDATORY RULES (Jan 12, 2026)
+
+This app runs on **Railway with PostgreSQL**. SQLite is only for local dev.
+**EVERY SQL query must work on BOTH databases.**
+
+### 🚨 SQL PLACEHOLDER SYNTAX
+```python
+# CORRECT - Check database type first:
+is_postgres = is_using_postgres()
+placeholder = '%s' if is_postgres else '?'
+cursor.execute(f'SELECT * FROM table WHERE id = {placeholder}', (value,))
+```
+**NEVER:** Use `?` directly in queries - it breaks PostgreSQL!
+
+### 🚨 BOOLEAN VALUES
+```python
+# PostgreSQL: TRUE / FALSE (keywords)
+# SQLite: 1 / 0 (integers)
+
+# CORRECT:
+enabled_value = 'TRUE' if is_postgres else '1'
+cursor.execute(f'WHERE enabled = {enabled_value}')
+
+# OR for parameters:
+enabled_param = True if is_postgres else 1
+```
+
+### 🚨 STRING DEFAULTS IN ALTER TABLE
+```python
+# PostgreSQL needs SINGLE quotes for string defaults
+# SQLite accepts double quotes
+
+# WRONG (breaks PostgreSQL):
+cursor.execute('ALTER TABLE t ADD COLUMN name TEXT DEFAULT "value"')
+
+# CORRECT:
+if is_postgres:
+    cursor.execute("ALTER TABLE t ADD COLUMN name TEXT DEFAULT 'value'")
+else:
+    cursor.execute('ALTER TABLE t ADD COLUMN name TEXT DEFAULT "value"')
+```
+
+### 🚨 COLUMN EXISTENCE - CHECK BEFORE SELECTING
+```python
+# NEVER select a column that might not exist!
+# If you add a column in one place, it might not exist in prod yet.
+
+# WRONG - Will break if column doesn't exist:
+cursor.execute('SELECT t.*, t.new_column FROM traders t')
+
+# CORRECT - Only select columns you KNOW exist:
+cursor.execute('SELECT t.id, t.name, t.enabled FROM traders t')
+```
+
+### 🚨 TESTING SQL CHANGES
+Before deploying ANY SQL change:
+1. Check if the query works on PostgreSQL syntax
+2. Check if all columns in SELECT exist in the table
+3. Check placeholder syntax (%s vs ?)
+4. Check boolean values (TRUE vs 1)
+5. Check string defaults in ALTER TABLE
+
+---
+
 ## 🔐 CRITICAL CODE - NEVER MODIFY WITHOUT UNDERSTANDING
 
 ### OAuth Token Exchange (ultra_simple_server.py ~line 1338)
