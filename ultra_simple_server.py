@@ -9761,15 +9761,33 @@ def api_set_inverse_signals(recorder_id):
 
 @app.route('/api/traders', methods=['GET'])
 def api_get_traders():
-    """Get all traders (recorder-account links) with joined data and risk settings"""
+    """Get all traders (recorder-account links) with joined data and risk settings
+    
+    CRITICAL: Only returns traders where:
+    1. trader.user_id matches current user, OR
+    2. account.user_id matches current user
+    
+    This ensures users only see their own traders/accounts.
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         
         # Filter by user_id if logged in - ONLY show current user's traders
+        # STRICT: Only show traders where EITHER:
+        # 1. trader.user_id matches (trader was created by this user), OR
+        # 2. account.user_id matches AND trader.user_id is NULL (legacy traders)
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
+            logger.info(f"📊 /api/traders called by user_id={user_id}")
+            
+            if not user_id:
+                # No user ID - return empty to prevent showing all traders
+                logger.warning("⚠️ /api/traders: user logged in but user_id is None - returning empty")
+                conn.close()
+                return jsonify({'success': True, 'traders': [], 'message': 'User ID not found'})
+            
             if is_postgres:
                 cursor.execute('''
                     SELECT 
@@ -9790,7 +9808,7 @@ def api_get_traders():
                     FROM traders t
                     LEFT JOIN recorders r ON t.recorder_id = r.id
                     LEFT JOIN accounts a ON t.account_id = a.id
-                    WHERE t.user_id = %s OR a.user_id = %s
+                    WHERE t.user_id = %s OR (t.user_id IS NULL AND a.user_id = %s)
                     ORDER BY t.created_at DESC
                 ''', (user_id, user_id))
             else:
@@ -9821,60 +9839,15 @@ def api_get_traders():
                     FROM traders t
                     JOIN recorders r ON t.recorder_id = r.id
                     JOIN accounts a ON t.account_id = a.id
-                    WHERE t.user_id = ? OR a.user_id = ?
+                    WHERE t.user_id = ? OR (t.user_id IS NULL AND a.user_id = ?)
                     ORDER BY t.created_at DESC
                 ''', (user_id, user_id))
         else:
-            if is_postgres:
-                cursor.execute('''
-                    SELECT 
-                        t.id,
-                        t.recorder_id,
-                        t.account_id,
-                        t.subaccount_id,
-                        t.subaccount_name,
-                        t.is_demo,
-                        t.enabled,
-                        t.created_at,
-                        t.max_contracts as trader_position_size,
-                        r.name as recorder_name,
-                        r.ticker as symbol,
-                        a.name as account_name,
-                        a.broker
-                    FROM traders t
-                    LEFT JOIN recorders r ON t.recorder_id = r.id
-                    LEFT JOIN accounts a ON t.account_id = a.id
-                    ORDER BY t.created_at DESC
-                ''')
-            else:
-                cursor.execute('''
-                    SELECT 
-                        t.id,
-                        t.recorder_id,
-                        t.account_id,
-                        t.subaccount_id,
-                        t.subaccount_name,
-                        t.is_demo,
-                        t.enabled,
-                        t.created_at,
-                        t.initial_position_size as trader_position_size,
-                        t.add_position_size as trader_add_position_size,
-                        t.tp_targets as trader_tp_targets,
-                        t.sl_enabled as trader_sl_enabled,
-                        t.sl_amount as trader_sl_amount,
-                        t.sl_units as trader_sl_units,
-                        t.max_daily_loss as trader_max_daily_loss,
-                        r.name as recorder_name,
-                        r.strategy_type,
-                        r.initial_position_size as recorder_position_size,
-                        r.symbol,
-                        a.name as account_name,
-                        a.broker
-                    FROM traders t
-                    JOIN recorders r ON t.recorder_id = r.id
-                    JOIN accounts a ON t.account_id = a.id
-                    ORDER BY t.created_at DESC
-                ''')
+            # SECURITY: No authentication = no data
+            # Don't show everyone's traders to unauthenticated users!
+            logger.warning("⚠️ /api/traders called without authentication - returning empty")
+            conn.close()
+            return jsonify({'success': True, 'traders': [], 'message': 'Authentication required'})
         
         rows = cursor.fetchall()
         traders = []
