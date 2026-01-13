@@ -234,6 +234,8 @@ def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int
         recorder_name: Name of the recorder/strategy
         pnl: Realized P&L (for closing trades)
     """
+    logger.info(f"🔔 notify_trade_execution called: user_id={user_id}, action={action}, symbol={symbol}, qty={quantity}")
+    
     # Build message
     emoji = "🟢" if action.upper() == "BUY" else "🔴"
     action_word = "BOUGHT" if action.upper() == "BUY" else "SOLD"
@@ -256,14 +258,23 @@ def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int
         push_body += f" • P&L: ${pnl:,.2f}"
     
     # Send Discord DM
+    logger.info(f"🔔 DISCORD_NOTIFICATIONS_ENABLED={DISCORD_NOTIFICATIONS_ENABLED}")
     if DISCORD_NOTIFICATIONS_ENABLED:
         users = get_discord_enabled_users(user_id)
+        logger.info(f"🔔 get_discord_enabled_users returned: {users}")
+        if not users:
+            logger.warning(f"⚠️ No Discord-enabled users found for user_id={user_id}")
         for user in users:
-            send_discord_dm(user['discord_user_id'], discord_message)
+            logger.info(f"🔔 Sending Discord DM to: {user['discord_user_id']}")
+            result = send_discord_dm(user['discord_user_id'], discord_message)
+            logger.info(f"🔔 Discord DM result: {result}")
+    else:
+        logger.warning("⚠️ Discord notifications disabled (no DISCORD_BOT_TOKEN)")
     
     # Send Push Notification
     if PUSH_NOTIFICATIONS_ENABLED:
-        send_push_notification(user_id, push_title, push_body, url='/dashboard')
+        push_result = send_push_notification(user_id, push_title, push_body, url='/dashboard')
+        logger.info(f"🔔 Push notification result: {push_result}")
 
 
 def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int, 
