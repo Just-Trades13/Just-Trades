@@ -374,12 +374,48 @@
             </div>
         </section>
 
-        <section class="card-panel" data-panel>
+        <section class="card-panel collapsed" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Execution Controls (Optional)</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Signal Cooldown (seconds)</span>
+                        <input type="number" id="signalCooldown" name="signal_cooldown" value="{{ trader.signal_cooldown or 0 }}" min="0">
+                        <small>0 = no cooldown (process all signals)</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Max Signals Per Session</span>
+                        <input type="number" id="maxSignalsPerSession" name="max_signals_per_session" value="{{ trader.max_signals_per_session or 0 }}" min="0">
+                        <small>0 = unlimited signals</small>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Max Daily Loss ($)</span>
+                    <input type="number" id="maxDailyLoss" name="max_daily_loss" value="{{ trader.max_daily_loss or 0 }}" step="0.01" min="0">
+                    <small>0 = no limit</small>
+                </label>
+                <div class="switch-row">
+                    <label class="switch">
+                        <input type="checkbox" id="autoFlatAfterCutoff" name="auto_flat_after_cutoff" {% if trader.auto_flat_after_cutoff %}checked{% endif %}>
+                        <span class="slider"></span>
+                    </label>
+                    <div>
+                        <h3>Enable Auto Flat After Cutoff</h3>
+                        <p>Automatically close open positions and disable signals after the session end time.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card-panel collapsed" data-panel>
             <header>
                 <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Miscellaneous Settings</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
-            <div class="panel-body collapsed-body">
+            <div class="panel-body">
                 <label class="form-field">
                     <span>Nickname</span>
                     <input type="text" placeholder="Example nickname">
@@ -885,12 +921,48 @@
             </div>
         </section>
 
-        <section class="card-panel" data-panel>
+        <section class="card-panel collapsed" data-panel>
+            <header>
+                <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Execution Controls (Optional)</button>
+                <a class="panel-help" href="#">Help</a>
+            </header>
+            <div class="panel-body">
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Signal Cooldown (seconds)</span>
+                        <input type="number" id="createSignalCooldown" name="signal_cooldown" value="0" min="0">
+                        <small>0 = no cooldown (process all signals)</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Max Signals Per Session</span>
+                        <input type="number" id="createMaxSignalsPerSession" name="max_signals_per_session" value="0" min="0">
+                        <small>0 = unlimited signals</small>
+                    </label>
+                </div>
+                <label class="form-field">
+                    <span>Max Daily Loss ($)</span>
+                    <input type="number" id="createMaxDailyLoss" name="max_daily_loss" value="0" step="0.01" min="0">
+                    <small>0 = no limit</small>
+                </label>
+                <div class="switch-row">
+                    <label class="switch">
+                        <input type="checkbox" id="createAutoFlatAfterCutoff" name="auto_flat_after_cutoff">
+                        <span class="slider"></span>
+                    </label>
+                    <div>
+                        <h3>Enable Auto Flat After Cutoff</h3>
+                        <p>Automatically close open positions and disable signals after the session end time.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card-panel collapsed" data-panel>
             <header>
                 <button class="panel-toggle" type="button"><span class="material-icons">add</span> Show Miscellaneous Settings</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
-            <div class="panel-body collapsed-body">
+            <div class="panel-body">
                 <label class="form-field">
                     <span>Nickname</span>
                     <input type="text" placeholder="Example nickname">
