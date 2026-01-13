@@ -5009,6 +5009,68 @@ def admin_set_recorder_user(recorder_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/admin/discord/check/<int:user_id>', methods=['GET'])
+@login_required
+def admin_check_discord_status(user_id):
+    """Admin: Check Discord status for a specific user."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        
+        if db_type == 'postgresql':
+            cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user_id,))
+        else:
+            cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user_id,))
+        
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if row:
+            return jsonify({
+                'user_id': row[0],
+                'username': row[1],
+                'discord_user_id': row[2],
+                'discord_dms_enabled': row[3],
+                'notifications_would_work': bool(row[2]) and bool(row[3])
+            })
+        return jsonify({'error': 'User not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/discord/enable/<int:user_id>', methods=['POST'])
+@login_required
+def admin_enable_discord_for_user(user_id):
+    """Admin: Force enable Discord DMs for a specific user."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        
+        if db_type == 'postgresql':
+            cursor.execute('UPDATE users SET discord_dms_enabled = TRUE WHERE id = %s', (user_id,))
+        else:
+            cursor.execute('UPDATE users SET discord_dms_enabled = 1 WHERE id = ?', (user_id,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': f'Discord DMs enabled for user {user_id}'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/admin/recorders/fix-all', methods=['POST'])
 @login_required  
 def admin_fix_all_recorder_user_ids():
