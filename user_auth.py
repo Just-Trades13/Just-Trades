@@ -374,15 +374,17 @@ def get_user_by_id(user_id: int) -> Optional[User]:
 
 
 def get_user_by_username(username: str) -> Optional[User]:
-    """Get user by username."""
+    """Get user by username (case-insensitive)."""
     conn, db_type = get_auth_db_connection()
     cursor = conn.cursor()
     
     try:
+        username_lower = username.strip().lower()
         if db_type == 'postgresql':
-            cursor.execute('SELECT * FROM users WHERE username = %s', (username.lower(),))
+            # Case-insensitive match
+            cursor.execute('SELECT * FROM users WHERE LOWER(username) = %s', (username_lower,))
         else:
-            cursor.execute('SELECT * FROM users WHERE username = ?', (username.lower(),))
+            cursor.execute('SELECT * FROM users WHERE LOWER(username) = ?', (username_lower,))
         
         row = cursor.fetchone()
         return User.from_row(row)
@@ -392,15 +394,17 @@ def get_user_by_username(username: str) -> Optional[User]:
 
 
 def get_user_by_email(email: str) -> Optional[User]:
-    """Get user by email."""
+    """Get user by email (case-insensitive)."""
     conn, db_type = get_auth_db_connection()
     cursor = conn.cursor()
     
     try:
+        email_lower = email.strip().lower()
         if db_type == 'postgresql':
-            cursor.execute('SELECT * FROM users WHERE email = %s', (email.lower(),))
+            # Case-insensitive match to handle mixed-case emails in DB
+            cursor.execute('SELECT * FROM users WHERE LOWER(email) = %s', (email_lower,))
         else:
-            cursor.execute('SELECT * FROM users WHERE email = ?', (email.lower(),))
+            cursor.execute('SELECT * FROM users WHERE LOWER(email) = ?', (email_lower,))
         
         row = cursor.fetchone()
         return User.from_row(row)
@@ -424,23 +428,25 @@ def authenticate_user(username_or_email: str, password: str) -> Optional[User]:
     cursor = conn.cursor()
     
     try:
-        # Try to find user by username or email
-        login_value = username_or_email.lower()
+        # Try to find user by username or email (case-insensitive)
+        login_value = username_or_email.strip().lower()
         
         if db_type == 'postgresql':
+            # Use LOWER() for case-insensitive matching (handles mixed-case emails in DB)
             cursor.execute('''
                 SELECT * FROM users 
-                WHERE (username = %s OR email = %s) AND is_active = TRUE
+                WHERE (LOWER(username) = %s OR LOWER(email) = %s) AND is_active = TRUE
             ''', (login_value, login_value))
         else:
+            # SQLite LOWER() for consistency
             cursor.execute('''
                 SELECT * FROM users 
-                WHERE (username = ? OR email = ?) AND is_active = 1
+                WHERE (LOWER(username) = ? OR LOWER(email) = ?) AND is_active = 1
             ''', (login_value, login_value))
         
         row = cursor.fetchone()
         if not row:
-            logger.warning(f"Login failed: User not found - {username_or_email}")
+            logger.warning(f"Login failed: User not found - '{username_or_email}' (searched for '{login_value}')")
             return None
         
         # Check if user is approved (admins are always approved)
