@@ -4233,34 +4233,85 @@ def admin_create_user():
 
 @app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
 def admin_delete_user(user_id):
-    """Admin endpoint to delete a user."""
+    """Admin endpoint to delete a user and ALL related data."""
     if not USER_AUTH_AVAILABLE:
         return jsonify({'success': False, 'error': 'Auth not available'}), 400
-    
+
     if not is_logged_in():
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
-    
+
     current = get_current_user()
     if not current or not current.is_admin:
         return jsonify({'success': False, 'error': 'Not authorized'}), 403
-    
+
     # Don't allow deleting yourself
     if user_id == current.id:
         return jsonify({'success': False, 'error': 'Cannot delete your own account'}), 400
+
+    deleted_counts = {}
     
+    # Step 1: Delete from app database (accounts, traders, recorders, etc.)
+    try:
+        app_conn = get_db_connection()
+        app_cursor = app_conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        
+        # Delete traders for this user
+        app_cursor.execute(f'DELETE FROM traders WHERE user_id = {ph}', (user_id,))
+        deleted_counts['traders'] = app_cursor.rowcount
+        
+        # Delete recorders for this user
+        app_cursor.execute(f'DELETE FROM recorders WHERE user_id = {ph}', (user_id,))
+        deleted_counts['recorders'] = app_cursor.rowcount
+        
+        # Delete accounts for this user
+        app_cursor.execute(f'DELETE FROM accounts WHERE user_id = {ph}', (user_id,))
+        deleted_counts['accounts'] = app_cursor.rowcount
+        
+        # Delete push subscriptions for this user
+        try:
+            app_cursor.execute(f'DELETE FROM push_subscriptions WHERE user_id = {ph}', (user_id,))
+            deleted_counts['push_subscriptions'] = app_cursor.rowcount
+        except:
+            pass  # Table may not exist
+        
+        # Delete pending username changes for this user
+        try:
+            app_cursor.execute(f'DELETE FROM pending_username_changes WHERE user_id = {ph}', (user_id,))
+            deleted_counts['pending_username_changes'] = app_cursor.rowcount
+        except:
+            pass  # Table may not exist
+        
+        app_conn.commit()
+        app_cursor.close()
+        app_conn.close()
+        
+        logger.info(f"✅ Deleted user {user_id} related data: {deleted_counts}")
+    except Exception as e:
+        logger.error(f"❌ Error deleting user {user_id} app data: {e}")
+        return jsonify({'success': False, 'error': f'Failed to delete user data: {str(e)}'}), 500
+    
+    # Step 2: Delete the user from auth database
     from user_auth import get_auth_db_connection
     conn, db_type = get_auth_db_connection()
     cursor = conn.cursor()
-    
+
     try:
         if db_type == 'postgresql':
             cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
         else:
             cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
         conn.commit()
-        return jsonify({'success': True})
+        
+        logger.info(f"✅ Deleted user {user_id} from users table")
+        return jsonify({
+            'success': True,
+            'deleted': deleted_counts
+        })
     except Exception as e:
         conn.rollback()
+        logger.error(f"❌ Error deleting user {user_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         cursor.close()
