@@ -11808,7 +11808,7 @@ def process_webhook_directly(webhook_token):
             cursor.execute(f'''
                 SELECT t.*,
                        t.initial_position_size, t.add_position_size,
-                       t.tp_targets,
+                       t.tp_targets, t.tp_units,
                        t.sl_enabled, t.sl_amount, t.sl_units,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
@@ -11820,7 +11820,7 @@ def process_webhook_directly(webhook_token):
             cursor.execute(f'''
                 SELECT t.*,
                        t.initial_position_size, t.add_position_size,
-                       t.tp_targets,
+                       t.tp_targets, t.tp_units,
                        t.sl_enabled, t.sl_amount, t.sl_units,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
@@ -11859,6 +11859,7 @@ def process_webhook_directly(webhook_token):
         trader_initial_size = trader.get('initial_position_size')
         trader_add_size = trader.get('add_position_size')
         trader_tp_targets = trader.get('tp_targets')
+        trader_tp_units = trader.get('tp_units')  # CRITICAL: Also get trader's tp_units!
         trader_sl_enabled = trader.get('sl_enabled')
         trader_sl_amount = trader.get('sl_amount')
         trader_sl_units = trader.get('sl_units')
@@ -11867,11 +11868,16 @@ def process_webhook_directly(webhook_token):
         signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
         settings_source = "TRADER" if (trader_tp_targets or trader_sl_enabled is not None) else "RECORDER"
         _logger.info(f"📊 {signal_type} SIGNAL: Will apply {settings_source} settings")
-        
+
         # Override TP/SL settings with trader settings if available
+        # CRITICAL: When using trader's tp_targets, ALSO use trader's tp_units!
         if trader_tp_targets:
             tp_targets_raw = trader_tp_targets
-            _logger.info(f"📊 Using TRADER's TP targets (override recorder)")
+            if trader_tp_units:
+                tp_units = trader_tp_units
+                _logger.info(f"📊 Using TRADER's TP targets AND tp_units={tp_units} (override recorder)")
+            else:
+                _logger.info(f"📊 Using TRADER's TP targets (override recorder), keeping recorder tp_units={tp_units}")
         if trader_sl_enabled is not None:
             sl_enabled = trader_sl_enabled
         if trader_sl_amount is not None:
@@ -23924,6 +23930,74 @@ def api_recorder_execution_status(recorder_id):
         })
     except Exception as e:
         logger.error(f"Error getting recorder execution status: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/debug/recorder-tp/<int:recorder_id>', methods=['GET'])
+def api_debug_recorder_tp(recorder_id):
+    """
+    DIAGNOSTIC ENDPOINT: Shows exact TP settings for a recorder.
+    Use this to debug why TP is wrong.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        
+        cursor.execute(f'SELECT name, tp_targets, tp_units, symbol FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+        
+        row = dict(row) if hasattr(row, 'keys') else {'name': row[0], 'tp_targets': row[1], 'tp_units': row[2], 'symbol': row[3]}
+        
+        # Parse tp_targets
+        tp_targets_raw = row.get('tp_targets', '[]')
+        try:
+            tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
+        except:
+            tp_targets = []
+        
+        tp_units = row.get('tp_units', 'Ticks')
+        ticker = row.get('symbol', 'MNQ')
+        tick_size = get_tick_size(ticker) if ticker else 0.25
+        
+        # Calculate what tp_ticks would be
+        tp_ticks = 10
+        if tp_targets and len(tp_targets) > 0:
+            first_tp = tp_targets[0]
+            gain_ticks_val = first_tp.get('gain_ticks')
+            ticks_val = first_tp.get('ticks')
+            value_val = first_tp.get('value')
+            
+            tp_value = float(gain_ticks_val or ticks_val or value_val or 10)
+            
+            if tp_units == 'Points':
+                tp_ticks = int(tp_value / tick_size)
+            else:
+                tp_ticks = int(tp_value)
+        
+        tp_points = tp_ticks * tick_size
+        
+        return jsonify({
+            'success': True,
+            'recorder_name': row.get('name'),
+            'symbol': ticker,
+            'tick_size': tick_size,
+            'tp_targets_raw': tp_targets_raw,
+            'tp_targets_parsed': tp_targets,
+            'tp_units': tp_units,
+            'first_tp_fields': tp_targets[0] if tp_targets else None,
+            'calculated_tp_ticks': tp_ticks,
+            'calculated_tp_points': tp_points,
+            'explanation': f'TP will be {tp_ticks} ticks = {tp_points} points away from entry'
+        })
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
