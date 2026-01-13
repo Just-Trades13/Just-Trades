@@ -280,6 +280,12 @@ class EventLedger:
             
         except Exception as e:
             logger.error(f"Failed to persist event: {e}")
+            # CRITICAL: Rollback failed transaction to prevent cascading failures
+            # Without this, all subsequent DB commands fail with "transaction aborted"
+            try:
+                self._db.rollback()
+            except:
+                pass
     
     def _trim_old_events(self):
         """Remove oldest events to stay under limit"""
