@@ -3611,9 +3611,10 @@ def execute_live_trades(recorder_id: int, action: str, ticker: str, quantity: in
             try:
                 tp_targets = json.loads(tp_targets_json) if tp_targets_json else []
                 if tp_targets and len(tp_targets) > 0:
-                    tp_ticks = int(tp_targets[0].get('ticks', 5))
+                    # Frontend saves as 'gain_ticks', but check all variants for compatibility
+                    tp_ticks = int(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
             except:
-                tp_ticks = 5  # Default
+                tp_ticks = 10  # Default 10 ticks
             
             # Get SL
             if rec.get('sl_enabled'):
@@ -3750,9 +3751,13 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                             rec = dict(rec)
                             try:
                                 tp_targets = json.loads(rec.get('tp_targets', '[]'))
-                                tp_ticks = int(tp_targets[0].get('value', 5)) if tp_targets else 5
+                                if tp_targets and len(tp_targets) > 0:
+                                    # Frontend saves as 'gain_ticks', but check all variants
+                                    tp_ticks = int(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
+                                else:
+                                    tp_ticks = 10
                             except:
-                                tp_ticks = 5
+                                tp_ticks = 10
                             sl_amount = rec.get('sl_amount', 10) if rec.get('sl_enabled') else 0
                         else:
                             tp_ticks = 5
@@ -4505,9 +4510,10 @@ def reconcile_positions_with_broker():
                                                 import json
                                                 tp_config = json.loads(rec_row['tp_targets'])
                                                 if isinstance(tp_config, list) and len(tp_config) > 0:
-                                                    tp_ticks = tp_config[0].get('ticks', 5)
+                                                    # Frontend saves as 'gain_ticks', but check all variants
+                                                    tp_ticks = tp_config[0].get('gain_ticks') or tp_config[0].get('ticks') or tp_config[0].get('value') or 10
                                                 elif isinstance(tp_config, dict):
-                                                    tp_ticks = tp_config.get('ticks', 5)
+                                                    tp_ticks = tp_config.get('gain_ticks') or tp_config.get('ticks') or tp_config.get('value') or 10
                                             except:
                                                 pass
                                         
@@ -6067,9 +6073,13 @@ def receive_webhook(webhook_token):
             tp_targets_raw = recorder.get('tp_targets', '[]')
             try:
                 tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
-                tp_ticks = tp_targets[0].get('value', 0) if tp_targets else 0
+                if tp_targets and len(tp_targets) > 0:
+                    # Frontend saves as 'gain_ticks', but check all variants
+                    tp_ticks = tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10
+                else:
+                    tp_ticks = 10
             except:
-                tp_ticks = 0
+                tp_ticks = 10
         
         logger.info(f"📊 Recorder TP/SL config: tp_ticks={tp_ticks}, sl_ticks={sl_amount}, sl_enabled={sl_enabled}")
         

@@ -5901,7 +5901,8 @@ def sync_positions_to_broker():
                             try:
                                 tp_targets = json.loads(tv_pos.get('tp_targets', '[]'))
                                 if tp_targets and len(tp_targets) > 0:
-                                    tp_ticks = tp_targets[0].get('ticks', 10)
+                                    # Frontend saves as 'gain_ticks', check all variants
+                                    tp_ticks = tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10
                             except:
                                 pass
                             
@@ -11889,10 +11890,11 @@ def process_webhook_directly(webhook_token):
             tp_targets = []
         
         # Get TP value and convert to ticks based on units
+        # Frontend saves as 'gain_ticks', check all variants
         if tp_targets and len(tp_targets) > 0:
-            tp_value = float(tp_targets[0].get('value', 0) or 0)
+            tp_value = float(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
         else:
-            tp_value = 0
+            tp_value = 10
         
         # Convert TP to ticks based on units
         if tp_value > 0:
@@ -12626,7 +12628,11 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
             tp_targets = []
         
         # Get first TP target (primary)
-        tp_ticks = tp_targets[0].get('value', 0) if tp_targets else 0
+        # Frontend saves as 'gain_ticks', check all variants
+        if tp_targets and len(tp_targets) > 0:
+            tp_ticks = tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10
+        else:
+            tp_ticks = 10
         
         # Determine tick size and tick value for PnL calculation
         tick_size = get_tick_size(ticker) if ticker else 0.25
@@ -13829,8 +13835,9 @@ def traders_edit(trader_id):
             if tp_targets_raw:
                 tp_targets = json.loads(tp_targets_raw)
                 if tp_targets and len(tp_targets) > 0:
-                    tp_value = tp_targets[0].get('value', 0)
-                    tp_trim = tp_targets[0].get('trim', 100)
+                    # Frontend saves as 'gain_ticks', check all variants
+                    tp_value = tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10
+                    tp_trim = tp_targets[0].get('trim_percent') or tp_targets[0].get('trim') or 100
         except:
             tp_targets = []
         
