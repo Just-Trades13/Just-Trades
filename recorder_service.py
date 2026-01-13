@@ -1294,19 +1294,25 @@ def execute_trade_simple(
                     order_id = order_result.get('orderId') or order_result.get('id')
                     logger.info(f"✅ [{acct_name}] Market order placed: {order_id}")
                     
-                    # STEP 2: Get position info - OPTIMIZED (1 call max, use order result first)
-                    # OPTIMIZATION: Check if order result has fill info (saves API call!)
-                    broker_avg = order_result.get('avgFillPrice') or order_result.get('price')
+                    # STEP 2: Get position info
+                    # CRITICAL FOR DCA: Must get position.netPrice (average), NOT order fill price!
+                    # For new entries, fill price = avg price (OK to use order result)
+                    # For DCA, fill price != avg price (must fetch position)
+                    broker_avg = None
                     broker_qty = adjusted_quantity
                     broker_side = 'LONG' if order_action == 'Buy' else 'SHORT'
                     contract_id = None
                     
-                    # If order result has fill price, use it directly (no API call needed!)
-                    if broker_avg:
-                        logger.info(f"📊 [{acct_name}] Using fill price from order result: {broker_side} {broker_qty} @ {broker_avg} (0 extra API calls!)")
-                    else:
-                        # Only fetch position if we don't have fill price
-                        # OPTIMIZATION: Single call with 1 second wait (not 10 calls!)
+                    # For NEW entries (no DCA), we can use fill price as average
+                    if not has_existing_position:
+                        broker_avg = order_result.get('avgFillPrice') or order_result.get('price')
+                        if broker_avg:
+                            logger.info(f"📊 [{acct_name}] NEW ENTRY: Using fill price {broker_avg} (0 extra API calls)")
+                    
+                    # For DCA or if no fill price, MUST fetch position to get correct average
+                    if not broker_avg or has_existing_position:
+                        dca_label = "DCA" if has_existing_position else "NEW"
+                        logger.info(f"📊 [{acct_name}] {dca_label}: Fetching position for AVERAGE price...")
                         await asyncio.sleep(1.0)  # Give order time to fill
                         positions = await tradovate.get_positions(account_id=tradovate_account_id)
                         
@@ -1319,7 +1325,7 @@ def execute_trade_simple(
                                     broker_qty = abs(net_pos)
                                     broker_side = 'LONG' if net_pos > 0 else 'SHORT'
                                     contract_id = pos.get('contractId')
-                                    logger.info(f"📊 [{acct_name}] POSITION: {broker_side} {broker_qty} @ {broker_avg} (1 API call)")
+                                    logger.info(f"📊 [{acct_name}] {dca_label} POSITION: {broker_side} {broker_qty} @ avg {broker_avg}")
                                     break
                         
                         if not broker_avg:
