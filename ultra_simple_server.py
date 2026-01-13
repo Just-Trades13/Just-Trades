@@ -29,6 +29,16 @@ from queue import Queue, Empty
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
 from flask_socketio import SocketIO, emit
 from datetime import datetime, timedelta
+try:
+    from zoneinfo import ZoneInfo
+    CHICAGO_TZ = ZoneInfo('America/Chicago')
+except ImportError:
+    import pytz
+    CHICAGO_TZ = pytz.timezone('America/Chicago')
+
+def get_chicago_time():
+    """Get current time in Chicago timezone."""
+    return datetime.now(CHICAGO_TZ)
 
 # ============================================================================
 # USER AUTHENTICATION MODULE
@@ -348,7 +358,7 @@ def notify_trade_execution(user_id: int = None, action: str = None, symbol: str 
         "fields": fields,
         "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
         "footer": {"text": "Just.Trades Notification"},
-        "timestamp": datetime.now().isoformat()
+        "timestamp": get_chicago_time().isoformat()
     }
     
     # Push notification (plain text)
@@ -429,7 +439,7 @@ def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = 
         "fields": fields,
         "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
         "footer": {"text": f"Just.Trades • {'Take Profit' if is_tp else 'Stop Loss'}"},
-        "timestamp": datetime.now().isoformat()
+        "timestamp": get_chicago_time().isoformat()
     }
     
     # Push notification (plain text)
@@ -479,7 +489,7 @@ def notify_error(user_id: int, error_type: str, error_message: str, details: str
     discord_message += f"❌ {error_message}"
     if details:
         discord_message += f"\n📝 {details}"
-    discord_message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
+    discord_message += f"\n⏰ {get_chicago_time().strftime('%I:%M:%S %p CT')}"
     
     # Push notification
     push_title = f"⚠️ {error_type}"
@@ -532,7 +542,7 @@ def notify_daily_summary(user_id: int, total_trades: int, winners: int, losers: 
     if worst_trade is not None:
         message += f"💔 Worst Trade: ${worst_trade:,.2f}\n"
     message += f"━━━━━━━━━━━━━━━━━━━━\n"
-    message += f"📅 {datetime.now().strftime('%B %d, %Y')}"
+    message += f"📅 {get_chicago_time().strftime('%B %d, %Y')}"
     
     for user in users:
         send_discord_dm(user['discord_user_id'], message)
@@ -2337,7 +2347,7 @@ if USER_AUTH_AVAILABLE:
 # Template filter for date formatting
 @app.template_filter('format_datetime')
 def format_datetime_filter(value):
-    """Format datetime string for display."""
+    """Format datetime string for display in Chicago time."""
     if not value:
         return None
     try:
@@ -2364,7 +2374,15 @@ def format_datetime_filter(value):
                 dt = datetime.strptime(clean_value, '%Y-%m-%d')
                 return dt.strftime('%b %d, %Y')
         
-        return dt.strftime('%b %d, %Y %I:%M %p')
+        # Convert to Chicago time for display
+        if dt.tzinfo is None:
+            # Assume UTC if no timezone, convert to Chicago
+            dt = dt.replace(tzinfo=ZoneInfo('UTC') if 'ZoneInfo' in dir() else pytz.UTC)
+        try:
+            dt_chicago = dt.astimezone(CHICAGO_TZ)
+            return dt_chicago.strftime('%b %d, %Y %I:%M %p CT')
+        except:
+            return dt.strftime('%b %d, %Y %I:%M %p')
     except Exception as e:
         # Return simplified version if parsing fails
         return str(value).split('T')[0] if 'T' in str(value) else str(value).split(' ')[0]
@@ -11502,9 +11520,8 @@ def process_webhook_directly(webhook_token):
         # 🛡️ RISK MANAGEMENT FILTERS - Check ALL before executing
         # ============================================================
         
-        # Get current time (US Eastern for market hours - UTC-5 in winter, UTC-4 in summer)
-        # Use simple UTC offset since pytz may not be available
-        now = datetime.now()  # Local time is fine for time window checks
+        # Get current time in Chicago timezone (Central Time)
+        now = get_chicago_time()
         
         # --- FILTER 1: Direction Filter ---
         direction_filter = recorder.get('direction_filter', '')
