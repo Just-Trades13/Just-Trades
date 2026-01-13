@@ -219,7 +219,13 @@ def get_discord_enabled_users(user_id: int = None) -> list:
                     ''')
             
             rows = cursor.fetchall()
-            result = [{'user_id': row[0], 'discord_user_id': row[1]} for row in rows]
+            result = []
+            for row in rows:
+                # Handle both tuple (SQLite) and dict-like (PostgreSQL RealDictRow) rows
+                if isinstance(row, tuple):
+                    result.append({'user_id': row[0], 'discord_user_id': row[1]})
+                else:
+                    result.append({'user_id': row['id'], 'discord_user_id': row['discord_user_id']})
             logger.info(f"🔔 Discord users query returned {len(result)} users")
             return result
     except Exception as e:
