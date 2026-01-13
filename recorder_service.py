@@ -3299,7 +3299,7 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
         cursor.execute('''
             SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
                    a.tradovate_token, a.tradovate_refresh_token, a.md_access_token,
-                   a.username, a.password, a.id as account_id
+                   a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = ? AND t.enabled = 1
@@ -3316,7 +3316,9 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
         trader = dict(trader)
         tradovate_account_id = trader.get('subaccount_id')
         tradovate_account_spec = trader.get('subaccount_name')
-        is_demo = bool(trader.get('is_demo'))
+        # CRITICAL: Use account's environment as source of truth for demo vs live
+        env = (trader.get('environment') or 'demo').lower()
+        is_demo = env != 'live'
         access_token = trader.get('tradovate_token')
         username = trader.get('username')
         password = trader.get('password')
