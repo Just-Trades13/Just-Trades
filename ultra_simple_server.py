@@ -17802,26 +17802,51 @@ def api_test_discord_notification():
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
     
     if not DISCORD_NOTIFICATIONS_ENABLED:
-        return jsonify({'success': False, 'error': 'Discord bot not configured. Contact admin.'}), 400
+        return jsonify({'success': False, 'error': 'Discord bot not configured. Set DISCORD_BOT_TOKEN in Railway.'}), 400
     
     user = get_current_user()
     if not user:
         return jsonify({'success': False, 'error': 'User not found'}), 404
     
-    # Get user's Discord ID
-    users = get_discord_enabled_users(user.id)
-    if not users:
-        return jsonify({'success': False, 'error': 'Discord not linked or notifications disabled'}), 400
+    # Get user's Discord ID directly (don't require DMs enabled for test)
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        
+        if db_type == 'postgresql':
+            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user.id,))
+        else:
+            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user.id,))
+        
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not row:
+            return jsonify({'success': False, 'error': 'User not found in database'}), 404
+        
+        discord_user_id = row[0] if isinstance(row, tuple) else row.get('discord_user_id')
+        dms_enabled = row[1] if isinstance(row, tuple) else row.get('discord_dms_enabled')
+        
+        logger.info(f"🔍 Discord test: user_id={user.id}, discord_user_id={discord_user_id}, dms_enabled={dms_enabled}")
+        
+        if not discord_user_id:
+            return jsonify({'success': False, 'error': 'Discord not linked. Click "Link Discord" first.'}), 400
+        
+    except Exception as e:
+        logger.error(f"❌ Error checking Discord status: {e}")
+        return jsonify({'success': False, 'error': f'Database error: {str(e)}'}), 500
     
     # Send test message
     test_message = "🧪 **Test Notification**\n\nThis is a test message from Just.Trades!\n\nIf you see this, Discord notifications are working correctly. ✅"
     
-    success = send_discord_dm(users[0]['discord_user_id'], test_message)
+    success = send_discord_dm(discord_user_id, test_message)
     
     if success:
         return jsonify({'success': True, 'message': 'Test notification sent! Check your Discord DMs.'})
     else:
-        return jsonify({'success': False, 'error': 'Failed to send test message. Make sure DMs are open.'}), 500
+        return jsonify({'success': False, 'error': 'Failed to send DM. Make sure your Discord DMs are open (not blocked).'}), 500
 
 
 @app.route('/api/settings/discord/link', methods=['GET'])
