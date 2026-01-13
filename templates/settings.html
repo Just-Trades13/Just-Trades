@@ -36,7 +36,10 @@
                 </p>
             </div>
             {% if discord_linked %}
-            <span class="status-dot connected">Linked</span>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span class="status-dot connected">Linked</span>
+                <button class="btn btn-primary" onclick="testDiscordNotification()" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;">Test DM</button>
+            </div>
             {% else %}
             <a href="/api/settings/discord/link" class="btn btn-primary" style="text-decoration: none; padding: 0.5rem 1rem; font-size: 0.85rem;">Link Discord</a>
             {% endif %}
@@ -239,6 +242,25 @@
         .catch(error => {
             alert('Error: ' + error);
             btn.disabled = false;
+        });
+    }
+
+    // Test Discord notification
+    function testDiscordNotification() {
+        fetch('/api/settings/discord/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ ' + data.message);
+            } else {
+                alert('❌ ' + (data.error || 'Failed to send test notification'));
+            }
+        })
+        .catch(error => {
+            alert('Error: ' + error);
         });
     }
 

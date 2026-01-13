@@ -102,6 +102,300 @@ except ImportError as e:
     SCALABILITY_FEATURES = {}
     print(f"ℹ️ Scalability module not loaded (optional): {e}")
 
+# ============================================================================
+# DISCORD NOTIFICATION SERVICE
+# ============================================================================
+# Requires: DISCORD_BOT_TOKEN environment variable
+# Bot must be in same server as users OR have DM permissions
+
+DISCORD_BOT_TOKEN = os.environ.get('DISCORD_BOT_TOKEN', '')
+DISCORD_NOTIFICATIONS_ENABLED = bool(DISCORD_BOT_TOKEN)
+
+if DISCORD_NOTIFICATIONS_ENABLED:
+    print("✅ Discord notifications enabled")
+else:
+    print("ℹ️ Discord notifications disabled (set DISCORD_BOT_TOKEN to enable)")
+
+def send_discord_dm(discord_user_id: str, message: str, embed: dict = None) -> bool:
+    """
+    Send a direct message to a Discord user via bot.
+    
+    Args:
+        discord_user_id: The Discord user ID to send to
+        message: Text message content
+        embed: Optional rich embed dict
+    
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    if not DISCORD_BOT_TOKEN or not discord_user_id:
+        return False
+    
+    try:
+        # Create DM channel with user
+        create_dm_url = "https://discord.com/api/v10/users/@me/channels"
+        headers = {
+            "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        dm_response = requests.post(create_dm_url, headers=headers, json={
+            "recipient_id": discord_user_id
+        }, timeout=10)
+        
+        if dm_response.status_code != 200:
+            logger.warning(f"⚠️ Failed to create DM channel: {dm_response.status_code}")
+            return False
+        
+        channel_id = dm_response.json().get('id')
+        if not channel_id:
+            return False
+        
+        # Send message to DM channel
+        send_url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+        payload = {"content": message}
+        if embed:
+            payload["embeds"] = [embed]
+        
+        send_response = requests.post(send_url, headers=headers, json=payload, timeout=10)
+        
+        if send_response.status_code in [200, 201]:
+            logger.info(f"✅ Discord DM sent to user {discord_user_id}")
+            return True
+        else:
+            logger.warning(f"⚠️ Failed to send Discord DM: {send_response.status_code}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Discord DM error: {e}")
+        return False
+
+
+def get_discord_enabled_users(user_id: int = None) -> list:
+    """
+    Get users who have Discord linked and DMs enabled.
+    
+    Args:
+        user_id: Optional specific user ID to check
+    
+    Returns:
+        List of dicts with user_id and discord_user_id
+    """
+    try:
+        if USER_AUTH_AVAILABLE:
+            from user_auth import get_auth_db_connection
+            conn, db_type = get_auth_db_connection()
+            cursor = conn.cursor()
+            
+            if user_id:
+                if db_type == 'postgresql':
+                    cursor.execute('''
+                        SELECT id, discord_user_id FROM users 
+                        WHERE id = %s AND discord_user_id IS NOT NULL AND discord_dms_enabled = TRUE
+                    ''', (user_id,))
+                else:
+                    cursor.execute('''
+                        SELECT id, discord_user_id FROM users 
+                        WHERE id = ? AND discord_user_id IS NOT NULL AND discord_dms_enabled = 1
+                    ''', (user_id,))
+            else:
+                if db_type == 'postgresql':
+                    cursor.execute('''
+                        SELECT id, discord_user_id FROM users 
+                        WHERE discord_user_id IS NOT NULL AND discord_dms_enabled = TRUE
+                    ''')
+                else:
+                    cursor.execute('''
+                        SELECT id, discord_user_id FROM users 
+                        WHERE discord_user_id IS NOT NULL AND discord_dms_enabled = 1
+                    ''')
+            
+            rows = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            
+            return [{'user_id': row[0], 'discord_user_id': row[1]} for row in rows]
+    except Exception as e:
+        logger.error(f"❌ Error getting Discord users: {e}")
+    return []
+
+
+def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int, 
+                           price: float, recorder_name: str = None, pnl: float = None):
+    """
+    Send trade execution notification to user via Discord.
+    
+    Args:
+        user_id: Database user ID
+        action: 'BUY' or 'SELL'
+        symbol: Trading symbol (e.g., 'MNQH5')
+        quantity: Number of contracts
+        price: Execution price
+        recorder_name: Name of the recorder/strategy
+        pnl: Realized P&L (for closing trades)
+    """
+    if not DISCORD_NOTIFICATIONS_ENABLED:
+        return
+    
+    users = get_discord_enabled_users(user_id)
+    if not users:
+        return
+    
+    # Build message
+    emoji = "🟢" if action.upper() == "BUY" else "🔴"
+    action_word = "BOUGHT" if action.upper() == "BUY" else "SOLD"
+    
+    message = f"{emoji} **{action_word} {quantity} {symbol}** @ ${price:,.2f}"
+    if recorder_name:
+        message += f"\n📊 Strategy: {recorder_name}"
+    if pnl is not None:
+        pnl_emoji = "💰" if pnl >= 0 else "📉"
+        message += f"\n{pnl_emoji} P&L: ${pnl:,.2f}"
+    message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
+    
+    for user in users:
+        send_discord_dm(user['discord_user_id'], message)
+
+
+def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int, 
+                     price: float, pnl: float = None):
+    """
+    Send TP/SL hit notification.
+    
+    Args:
+        user_id: Database user ID
+        order_type: 'TP' or 'SL'
+        symbol: Trading symbol
+        quantity: Contracts closed
+        price: Fill price
+        pnl: Realized P&L
+    """
+    if not DISCORD_NOTIFICATIONS_ENABLED:
+        return
+    
+    users = get_discord_enabled_users(user_id)
+    if not users:
+        return
+    
+    if order_type.upper() == 'TP':
+        emoji = "🎯"
+        title = "Take Profit Hit!"
+    else:
+        emoji = "🛑"
+        title = "Stop Loss Triggered"
+    
+    message = f"{emoji} **{title}**\n"
+    message += f"📊 {symbol} - {quantity} contracts @ ${price:,.2f}"
+    if pnl is not None:
+        pnl_emoji = "💰" if pnl >= 0 else "📉"
+        message += f"\n{pnl_emoji} Realized P&L: ${pnl:,.2f}"
+    message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
+    
+    for user in users:
+        send_discord_dm(user['discord_user_id'], message)
+
+
+def notify_error(user_id: int, error_type: str, error_message: str, details: str = None):
+    """
+    Send error notification to user.
+    
+    Args:
+        user_id: Database user ID
+        error_type: Type of error (e.g., 'Connection Lost', 'Webhook Failed')
+        error_message: Brief error description
+        details: Optional additional details
+    """
+    if not DISCORD_NOTIFICATIONS_ENABLED:
+        return
+    
+    users = get_discord_enabled_users(user_id)
+    if not users:
+        return
+    
+    message = f"⚠️ **{error_type}**\n"
+    message += f"❌ {error_message}"
+    if details:
+        message += f"\n📝 {details}"
+    message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
+    
+    for user in users:
+        send_discord_dm(user['discord_user_id'], message)
+
+
+def notify_daily_summary(user_id: int, total_trades: int, winners: int, losers: int,
+                         total_pnl: float, best_trade: float = None, worst_trade: float = None):
+    """
+    Send daily P&L summary to user.
+    
+    Args:
+        user_id: Database user ID
+        total_trades: Number of trades today
+        winners: Number of winning trades
+        losers: Number of losing trades
+        total_pnl: Total realized P&L
+        best_trade: Best single trade P&L
+        worst_trade: Worst single trade P&L
+    """
+    if not DISCORD_NOTIFICATIONS_ENABLED:
+        return
+    
+    users = get_discord_enabled_users(user_id)
+    if not users:
+        return
+    
+    pnl_emoji = "📈" if total_pnl >= 0 else "📉"
+    win_rate = (winners / total_trades * 100) if total_trades > 0 else 0
+    
+    message = f"📊 **Daily Trading Summary**\n"
+    message += f"━━━━━━━━━━━━━━━━━━━━\n"
+    message += f"{pnl_emoji} **Total P&L: ${total_pnl:,.2f}**\n"
+    message += f"📈 Trades: {total_trades} ({winners}W / {losers}L)\n"
+    message += f"🎯 Win Rate: {win_rate:.1f}%\n"
+    if best_trade is not None:
+        message += f"🏆 Best Trade: ${best_trade:,.2f}\n"
+    if worst_trade is not None:
+        message += f"💔 Worst Trade: ${worst_trade:,.2f}\n"
+    message += f"━━━━━━━━━━━━━━━━━━━━\n"
+    message += f"📅 {datetime.now().strftime('%B %d, %Y')}"
+    
+    for user in users:
+        send_discord_dm(user['discord_user_id'], message)
+
+
+def broadcast_announcement(title: str, message: str, announcement_type: str = 'info'):
+    """
+    Broadcast announcement to ALL users with Discord linked and DMs enabled.
+    
+    Args:
+        title: Announcement title
+        message: Announcement content
+        announcement_type: 'info', 'success', 'warning', 'critical'
+    """
+    if not DISCORD_NOTIFICATIONS_ENABLED:
+        return 0
+    
+    type_emojis = {
+        'info': 'ℹ️',
+        'success': '✅',
+        'warning': '⚠️',
+        'critical': '🚨'
+    }
+    
+    emoji = type_emojis.get(announcement_type, 'ℹ️')
+    
+    full_message = f"{emoji} **{title}**\n\n{message}\n\n— Just.Trades Team"
+    
+    users = get_discord_enabled_users()
+    sent_count = 0
+    
+    for user in users:
+        if send_discord_dm(user['discord_user_id'], full_message):
+            sent_count += 1
+    
+    logger.info(f"📢 Broadcast sent to {sent_count}/{len(users)} Discord users")
+    return sent_count
+
+
 # High-performance signal queue for handling hundreds of signals per second
 signal_queue = Queue(maxsize=10000)
 BATCH_SIZE = 50  # Process signals in batches for faster DB writes
@@ -4296,11 +4590,48 @@ def admin_create_announcement():
         conn.commit()
         cursor.close()
         conn.close()
-        
+
         logger.info(f"Admin {user.username} created announcement: {title}")
-        return jsonify({'success': True, 'id': new_id})
+        
+        # Optional: Broadcast to Discord users
+        broadcast_discord = data.get('broadcast_discord', False)
+        discord_sent = 0
+        if broadcast_discord and DISCORD_NOTIFICATIONS_ENABLED:
+            discord_sent = broadcast_announcement(title, message, ann_type)
+            logger.info(f"📢 Discord broadcast sent to {discord_sent} users")
+        
+        return jsonify({'success': True, 'id': new_id, 'discord_sent': discord_sent})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/discord/broadcast', methods=['POST'])
+@login_required
+def admin_discord_broadcast():
+    """Admin: Send a Discord DM broadcast to all users with Discord linked."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    if not DISCORD_NOTIFICATIONS_ENABLED:
+        return jsonify({'error': 'Discord notifications not configured. Set DISCORD_BOT_TOKEN environment variable.'}), 400
+    
+    data = request.json
+    title = data.get('title', '').strip()
+    message = data.get('message', '').strip()
+    ann_type = data.get('type', 'info')
+    
+    if not title or not message:
+        return jsonify({'error': 'Title and message are required'}), 400
+    
+    sent_count = broadcast_announcement(title, message, ann_type)
+    logger.info(f"Admin {user.username} sent Discord broadcast: {title} (sent to {sent_count} users)")
+    
+    return jsonify({
+        'success': True,
+        'sent_count': sent_count,
+        'message': f'Broadcast sent to {sent_count} Discord users'
+    })
 
 
 @app.route('/api/admin/announcements/<int:ann_id>', methods=['PUT'])
@@ -9794,6 +10125,33 @@ def broker_execution_worker():
                     _broker_execution_stats['total_executed'] += 1
                     _broker_execution_stats['last_execution_time'] = time.time()
                     
+                    # Discord notification for successful trade
+                    try:
+                        if DISCORD_NOTIFICATIONS_ENABLED:
+                            # Get user_id from recorder
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            if is_using_postgres():
+                                cursor.execute('SELECT user_id, name FROM recorders WHERE id = %s', (recorder_id,))
+                            else:
+                                cursor.execute('SELECT user_id, name FROM recorders WHERE id = ?', (recorder_id,))
+                            rec_row = cursor.fetchone()
+                            conn.close()
+                            if rec_row:
+                                rec_user_id = rec_row[0] if isinstance(rec_row, tuple) else rec_row.get('user_id')
+                                rec_name = rec_row[1] if isinstance(rec_row, tuple) else rec_row.get('name')
+                                if rec_user_id:
+                                    notify_trade_execution(
+                                        user_id=rec_user_id,
+                                        action=action,
+                                        symbol=ticker,
+                                        quantity=quantity,
+                                        price=entry_price if entry_price else 0,
+                                        recorder_name=rec_name
+                                    )
+                    except Exception as notif_err:
+                        logger.warning(f"⚠️ Discord notification failed: {notif_err}")
+                    
                     # Register break-even monitor if enabled
                     if break_even_enabled and break_even_ticks > 0 and entry_price > 0:
                         try:
@@ -9855,6 +10213,30 @@ def broker_execution_worker():
                     logger.error(f"   ⚠️ NO RETRY - task abandoned to prevent duplicate trades")
                     _broker_execution_stats['total_failed'] += 1
                     _broker_execution_stats['last_error'] = error
+                    
+                    # Discord notification for failed trade
+                    try:
+                        if DISCORD_NOTIFICATIONS_ENABLED:
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            if is_using_postgres():
+                                cursor.execute('SELECT user_id, name FROM recorders WHERE id = %s', (recorder_id,))
+                            else:
+                                cursor.execute('SELECT user_id, name FROM recorders WHERE id = ?', (recorder_id,))
+                            rec_row = cursor.fetchone()
+                            conn.close()
+                            if rec_row:
+                                rec_user_id = rec_row[0] if isinstance(rec_row, tuple) else rec_row.get('user_id')
+                                rec_name = rec_row[1] if isinstance(rec_row, tuple) else rec_row.get('name')
+                                if rec_user_id:
+                                    notify_error(
+                                        user_id=rec_user_id,
+                                        error_type="Trade Execution Failed",
+                                        error_message=f"{action} {quantity} {ticker} failed",
+                                        details=f"Strategy: {rec_name}. Error: {error[:100]}"
+                                    )
+                    except Exception as notif_err:
+                        logger.warning(f"⚠️ Discord error notification failed: {notif_err}")
                         
             except Exception as e:
                 logger.error(f"❌ Broker execution exception: {e}")
@@ -17375,6 +17757,73 @@ def api_toggle_discord_dms():
         conn.close()
 
 
+@app.route('/api/settings/discord/status', methods=['GET'])
+def api_discord_status():
+    """Get Discord notification status for current user."""
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED})
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED})
+    
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        
+        if db_type == 'postgresql':
+            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user.id,))
+        else:
+            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user.id,))
+        
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if row:
+            discord_linked = bool(row[0])
+            dms_enabled = bool(row[1])
+            return jsonify({
+                'linked': discord_linked,
+                'enabled': dms_enabled,
+                'bot_configured': DISCORD_NOTIFICATIONS_ENABLED
+            })
+    except Exception as e:
+        logger.error(f"Error checking Discord status: {e}")
+    
+    return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED})
+
+
+@app.route('/api/settings/discord/test', methods=['POST'])
+def api_test_discord_notification():
+    """Send a test Discord notification to the current user."""
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    if not DISCORD_NOTIFICATIONS_ENABLED:
+        return jsonify({'success': False, 'error': 'Discord bot not configured. Contact admin.'}), 400
+    
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    # Get user's Discord ID
+    users = get_discord_enabled_users(user.id)
+    if not users:
+        return jsonify({'success': False, 'error': 'Discord not linked or notifications disabled'}), 400
+    
+    # Send test message
+    test_message = "🧪 **Test Notification**\n\nThis is a test message from Just.Trades!\n\nIf you see this, Discord notifications are working correctly. ✅"
+    
+    success = send_discord_dm(users[0]['discord_user_id'], test_message)
+    
+    if success:
+        return jsonify({'success': True, 'message': 'Test notification sent! Check your Discord DMs.'})
+    else:
+        return jsonify({'success': False, 'error': 'Failed to send test message. Make sure DMs are open.'}), 500
+
+
 @app.route('/api/settings/discord/link', methods=['GET'])
 def api_discord_oauth_start():
     """Initiate Discord OAuth flow."""
@@ -21631,6 +22080,131 @@ pnl_recording_thread.start()
 token_refresh_thread = threading.Thread(target=proactive_token_refresh, daemon=True)
 token_refresh_thread.start()
 logger.info("✅ Proactive token refresh thread started (refreshes tokens before expiration)")
+
+# ============================================================================
+# DAILY P&L SUMMARY - Discord notifications at market close
+# ============================================================================
+
+_daily_summary_sent_today = False
+
+def daily_pnl_summary_worker():
+    """
+    Background worker that sends daily P&L summaries to Discord users.
+    Runs once per day around market close (4:15 PM ET).
+    """
+    global _daily_summary_sent_today
+    
+    logger.info("📊 Daily P&L Summary worker started")
+    
+    while True:
+        try:
+            from datetime import datetime
+            import pytz
+            
+            # Get current time in Eastern
+            eastern = pytz.timezone('America/New_York')
+            now = datetime.now(eastern)
+            
+            # Reset flag at midnight
+            if now.hour == 0 and now.minute < 5:
+                _daily_summary_sent_today = False
+            
+            # Send summaries at 4:15 PM ET (after market close)
+            if now.hour == 16 and 15 <= now.minute < 20 and not _daily_summary_sent_today:
+                if DISCORD_NOTIFICATIONS_ENABLED:
+                    logger.info("📊 Sending daily P&L summaries to Discord users...")
+                    send_daily_summaries()
+                    _daily_summary_sent_today = True
+            
+            time.sleep(60)  # Check every minute
+        except Exception as e:
+            logger.error(f"Daily P&L summary worker error: {e}")
+            time.sleep(60)
+
+
+def send_daily_summaries():
+    """Calculate and send daily P&L summaries to all Discord-enabled users."""
+    try:
+        users = get_discord_enabled_users()
+        if not users:
+            return
+        
+        from datetime import datetime, timedelta
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        for user_data in users:
+            user_id = user_data['user_id']
+            
+            try:
+                # Get today's closed trades for this user
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                
+                if is_using_postgres():
+                    cursor.execute('''
+                        SELECT rt.pnl, rt.closed_at
+                        FROM recorded_trades rt
+                        JOIN recorders r ON rt.recorder_id = r.id
+                        WHERE r.user_id = %s 
+                        AND rt.status = 'closed'
+                        AND rt.closed_at >= %s
+                    ''', (user_id, today_start.isoformat()))
+                else:
+                    cursor.execute('''
+                        SELECT rt.pnl, rt.closed_at
+                        FROM recorded_trades rt
+                        JOIN recorders r ON rt.recorder_id = r.id
+                        WHERE r.user_id = ? 
+                        AND rt.status = 'closed'
+                        AND rt.closed_at >= ?
+                    ''', (user_id, today_start.isoformat()))
+                
+                rows = cursor.fetchall()
+                conn.close()
+                
+                if not rows:
+                    continue  # No trades today, skip
+                
+                # Calculate stats
+                pnls = []
+                for row in rows:
+                    pnl = row[0] if isinstance(row, tuple) else row.get('pnl')
+                    if pnl is not None:
+                        pnls.append(float(pnl))
+                
+                if not pnls:
+                    continue
+                
+                total_trades = len(pnls)
+                winners = sum(1 for p in pnls if p > 0)
+                losers = sum(1 for p in pnls if p < 0)
+                total_pnl = sum(pnls)
+                best_trade = max(pnls) if pnls else None
+                worst_trade = min(pnls) if pnls else None
+                
+                # Send summary
+                notify_daily_summary(
+                    user_id=user_id,
+                    total_trades=total_trades,
+                    winners=winners,
+                    losers=losers,
+                    total_pnl=total_pnl,
+                    best_trade=best_trade,
+                    worst_trade=worst_trade
+                )
+                
+            except Exception as user_err:
+                logger.warning(f"Error sending summary to user {user_id}: {user_err}")
+                
+    except Exception as e:
+        logger.error(f"Error in send_daily_summaries: {e}")
+
+
+# Start daily P&L summary worker
+if DISCORD_NOTIFICATIONS_ENABLED:
+    daily_summary_thread = threading.Thread(target=daily_pnl_summary_worker, daemon=True)
+    daily_summary_thread.start()
+    logger.info("📊 Daily P&L Summary worker started (sends at 4:15 PM ET)")
 
 # ============================================================================
 # Auto-Flat After Cutoff - Automatically closes positions after trading window
