@@ -5081,14 +5081,63 @@ def admin_check_discord_status(user_id):
         conn.close()
         
         if row:
+            # Handle both tuple and dict-like rows
+            if isinstance(row, tuple):
+                uid, uname, discord_id, dms_enabled = row
+            else:
+                uid = row['id']
+                uname = row['username']
+                discord_id = row['discord_user_id']
+                dms_enabled = row['discord_dms_enabled']
             return jsonify({
-                'user_id': row[0],
-                'username': row[1],
-                'discord_user_id': row[2],
-                'discord_dms_enabled': row[3],
-                'notifications_would_work': bool(row[2]) and bool(row[3])
+                'user_id': uid,
+                'username': uname,
+                'discord_user_id': discord_id,
+                'discord_dms_enabled': dms_enabled,
+                'notifications_would_work': bool(discord_id) and bool(dms_enabled)
             })
         return jsonify({'error': 'User not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/discord/all-users', methods=['GET'])
+@login_required
+def admin_list_all_discord_status():
+    """Admin: List Discord status for ALL users."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users ORDER BY id')
+        
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        users = []
+        for row in rows:
+            if isinstance(row, tuple):
+                uid, uname, discord_id, dms_enabled = row
+            else:
+                uid = row['id']
+                uname = row['username']
+                discord_id = row['discord_user_id']
+                dms_enabled = row['discord_dms_enabled']
+            users.append({
+                'user_id': uid,
+                'username': uname,
+                'discord_linked': bool(discord_id),
+                'dms_enabled': bool(dms_enabled),
+                'notifications_work': bool(discord_id) and bool(dms_enabled)
+            })
+        
+        return jsonify({'users': users, 'total': len(users)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
