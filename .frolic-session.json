@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-01-13T07:08:54.671Z",
+  "timestamp": "2026-01-13T07:15:57.448Z",
   "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
-  "eventCount": 939,
+  "eventCount": 950,
   "events": [
     {
       "timestamp": "2026-01-07T17:09:43.722Z",
@@ -16871,11 +16871,225 @@
       "cursorPosition": null,
       "selectionLength": 0,
       "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:08:59.602Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1207,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 0,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 306,
+          "rangeLength": 283,
+          "lineCountDelta": 4,
+          "likelyAI": false,
+          "changeText": "                <button class=\"panel-toggle\" type=\"button\"><span class=\"material-icons\">add</span> <span class=\"toggle-text\">Show</span> Execution Controls (Optional)</button>\n                <a class=\"panel-help\" href=\"#\">Help</a>\n            </header>\n            <div class=\"panel-body collapsed-body\">\n",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T07:09:00.401Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:09:10.036Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1207,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 0,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 310,
+          "rangeLength": 287,
+          "lineCountDelta": 4,
+          "likelyAI": false,
+          "changeText": "                <button class=\"panel-toggle\" type=\"button\"><span class=\"material-icons\">add</span> <span class=\"toggle-text\">Show</span> Miscellaneous Settings (Optional)</button>\n                <a class=\"panel-help\" href=\"#\">Help</a>\n            </header>\n            <div class=\"panel-body collapsed-body\">\n",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T07:09:10.832Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:09:20.269Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1207,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 0,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 182,
+          "rangeLength": 163,
+          "lineCountDelta": 1,
+          "likelyAI": false,
+          "changeText": "                <button class=\"panel-toggle\" type=\"button\"><span class=\"material-icons\">remove</span> <span class=\"toggle-text\">Hide</span> Stop Loss / Take Profit Settings</button>\n",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T07:09:21.088Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:14:58.736Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:15:49.754Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_open",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1207,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:15:50.082Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "diagnostic_change",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "unknown",
+      "lineCount": 0,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": null,
+      "selectionLength": 0,
+      "changes": []
+    },
+    {
+      "timestamp": "2026-01-13T07:15:56.919Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1207,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 0,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 370,
+          "rangeLength": 375,
+          "lineCountDelta": 6,
+          "likelyAI": false,
+          "changeText": "        <section class=\"card-panel collapsed\" data-panel>\n            <header>\n                <button class=\"panel-toggle\" type=\"button\"><span class=\"material-icons\">add</span> <span class=\"toggle-text\">Show</span> Execution Controls (Optional)</button>\n                <a class=\"panel-help\" href=\"#\">Help</a>\n            </header>\n            <div class=\"panel-body\">\n",
+          "wasTruncated": false
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-01-13T07:15:57.434Z",
+      "sessionId": "08cfffd9-276b-4cd5-be16-bb0853938973",
+      "eventType": "file_edit",
+      "file": "/Users/mylesjadwin/Trading Projects/templates/recorders.html",
+      "relativePath": "templates/recorders.html",
+      "language": "html",
+      "lineCount": 1207,
+      "isDirty": false,
+      "isUntitled": false,
+      "cursorPosition": {
+        "line": 0,
+        "character": 0
+      },
+      "selectionLength": 0,
+      "changes": [
+        {
+          "textLength": 374,
+          "rangeLength": 379,
+          "lineCountDelta": 6,
+          "likelyAI": false,
+          "changeText": "        <section class=\"card-panel collapsed\" data-panel>\n            <header>\n                <button class=\"panel-toggle\" type=\"button\"><span class=\"material-icons\">add</span> <span class=\"toggle-text\">Show</span> Miscellaneous Settings (Optional)</button>\n                <a class=\"panel-help\" href=\"#\">Help</a>\n            </header>\n            <div class=\"panel-body\">\n",
+          "wasTruncated": false
+        }
+      ]
     }
   ],
   "metadata": {
     "version": "1.3.0",
     "trigger": "smart-backup",
-    "memoryUsage": 1353240
+    "memoryUsage": 1365616
   }
 }

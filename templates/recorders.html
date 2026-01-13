@@ -200,12 +200,12 @@
         </section>
 
         <!-- Filter Settings Panel -->
-        <section class="card-panel" data-panel>
+        <section class="card-panel collapsed" data-panel>
             <header>
                 <button class="panel-toggle" type="button"><span class="material-icons">add</span> <span class="toggle-text">Show</span> Filter Settings (Optional)</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
-            <div class="panel-body collapsed-body">
+            <div class="panel-body">
                 <div class="form-two">
                     <label class="form-field">
                         <span>Signal Delay</span>
@@ -282,12 +282,12 @@
         </section>
 
         <!-- Execution Controls Panel -->
-        <section class="card-panel" data-panel>
+        <section class="card-panel collapsed" data-panel>
             <header>
                 <button class="panel-toggle" type="button"><span class="material-icons">add</span> <span class="toggle-text">Show</span> Execution Controls (Optional)</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
-            <div class="panel-body collapsed-body">
+            <div class="panel-body">
                 <div class="form-two">
                     <label class="form-field">
                         <span>Signal Cooldown (seconds)</span>
@@ -319,12 +319,12 @@
         </section>
 
         <!-- Miscellaneous Settings Panel -->
-        <section class="card-panel" data-panel>
+        <section class="card-panel collapsed" data-panel>
             <header>
                 <button class="panel-toggle" type="button"><span class="material-icons">add</span> <span class="toggle-text">Show</span> Miscellaneous Settings (Optional)</button>
                 <a class="panel-help" href="#">Help</a>
             </header>
-            <div class="panel-body collapsed-body">
+            <div class="panel-body">
                 <label class="form-field">
                     <span>Notes</span>
                     <textarea id="notes" rows="3" placeholder="Add any additional context for this recorder...">{{ recorder.notes if recorder else '' }}</textarea>
