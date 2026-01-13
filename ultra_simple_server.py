@@ -10272,31 +10272,6 @@ def api_update_trader(trader_id):
             params.append(enabled_accounts)
             logger.info(f"✅ [SAVE] Will update enabled_accounts field with {len(json.loads(enabled_accounts) if isinstance(enabled_accounts, str) else enabled_accounts)} accounts")
         
-        # Update time filter settings if provided
-        if 'time_filter_1_enabled' in data:
-            updates.append(f'time_filter_1_enabled = {placeholder}')
-            params.append(bool(data['time_filter_1_enabled']) if is_postgres else (1 if data['time_filter_1_enabled'] else 0))
-        
-        if 'time_filter_1_start' in data:
-            updates.append(f'time_filter_1_start = {placeholder}')
-            params.append(data['time_filter_1_start'] or '')
-        
-        if 'time_filter_1_stop' in data:
-            updates.append(f'time_filter_1_stop = {placeholder}')
-            params.append(data['time_filter_1_stop'] or '')
-        
-        if 'time_filter_2_enabled' in data:
-            updates.append(f'time_filter_2_enabled = {placeholder}')
-            params.append(bool(data['time_filter_2_enabled']) if is_postgres else (1 if data['time_filter_2_enabled'] else 0))
-        
-        if 'time_filter_2_start' in data:
-            updates.append(f'time_filter_2_start = {placeholder}')
-            params.append(data['time_filter_2_start'] or '')
-        
-        if 'time_filter_2_stop' in data:
-            updates.append(f'time_filter_2_stop = {placeholder}')
-            params.append(data['time_filter_2_stop'] or '')
-        
         # Execute update if there are fields to update (with retry for db locks)
         if updates:
             params.append(trader_id)
