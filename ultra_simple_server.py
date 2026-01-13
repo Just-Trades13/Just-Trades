@@ -5896,13 +5896,21 @@ def sync_positions_to_broker():
                             # Actually execute the catch-up order
                             logger.info(f"🔄 POSITION SYNC: {action_needed} {qty_needed} {ticker} for {trader['name']}")
                             
-                            # Get TP settings from recorder
+                            # Get TP settings from recorder - convert based on tp_units
                             tp_ticks = 10  # default
                             try:
                                 tp_targets = json.loads(tv_pos.get('tp_targets', '[]'))
+                                tp_units = tv_pos.get('tp_units', 'Ticks')
                                 if tp_targets and len(tp_targets) > 0:
-                                    # Frontend saves as 'gain_ticks', check all variants
-                                    tp_ticks = tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10
+                                    tp_value = float(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
+                                    # Convert to ticks based on tp_units
+                                    if tp_units == 'Points':
+                                        tick_size = get_tick_size(ticker) if ticker else 0.25
+                                        tp_ticks = int(tp_value / tick_size) if tick_size > 0 else int(tp_value * 4)
+                                    elif tp_units == 'Percent':
+                                        tp_ticks = 10  # Default for percent in sync (no price context)
+                                    else:
+                                        tp_ticks = int(tp_value)
                             except:
                                 pass
                             
@@ -11863,19 +11871,39 @@ def process_webhook_directly(webhook_token):
         except:
             tp_targets = []
         
-        # Get TP value - CRITICAL: 'gain_ticks' is ALREADY in ticks, do NOT convert!
-        # Frontend saves as 'gain_ticks' which means the value IS the number of ticks
-        # Previous bug: was converting gain_ticks again based on tp_units, causing insane values
+        # Get TP value and convert to TICKS based on tp_units
+        # IMPORTANT: 'value' field is in whatever unit tp_units specifies!
+        # - tp_units = "Ticks" → value is already in ticks, use directly
+        # - tp_units = "Points" → value is in points, convert: ticks = value / tick_size
+        # - tp_units = "Percent" → value is % of price, convert accordingly
+        tp_ticks = 10  # Default
         if tp_targets and len(tp_targets) > 0:
-            # gain_ticks is the PRIMARY field and is ALREADY in ticks
-            tp_ticks = int(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
-            _logger.info(f"📊 TP from tp_targets: gain_ticks={tp_ticks}")
+            # Get the raw value (could be in ticks, points, or percent based on tp_units)
+            tp_value = float(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
+            _logger.info(f"📊 TP value from tp_targets: {tp_value}, tp_units: {tp_units}")
+            
+            # Convert to TICKS based on tp_units
+            if tp_units == 'Points':
+                # Points = dollar move. Convert to ticks: ticks = points / tick_size
+                # Example: 10 points / 0.25 tick_size = 40 ticks for MNQ
+                tp_ticks = int(tp_value / tick_size) if tick_size > 0 else int(tp_value * 4)
+                _logger.info(f"📊 TP conversion: {tp_value} Points → {tp_ticks} ticks (tick_size={tick_size})")
+            elif tp_units == 'Percent':
+                # Percent of entry price. Convert to ticks: ticks = (price * pct / 100) / tick_size
+                if current_price and tick_size > 0:
+                    tp_ticks = int((current_price * (tp_value / 100)) / tick_size)
+                else:
+                    tp_ticks = 10  # Fallback
+                _logger.info(f"📊 TP conversion: {tp_value}% of ${current_price} → {tp_ticks} ticks")
+            else:
+                # Ticks (default) - use value directly
+                tp_ticks = int(tp_value)
+                _logger.info(f"📊 TP: {tp_ticks} ticks (already in ticks)")
         else:
-            tp_ticks = 10  # Default 10 ticks
-            _logger.info(f"📊 TP default: {tp_ticks} ticks")
+            _logger.info(f"📊 TP default: {tp_ticks} ticks (no tp_targets)")
         
-        # Sanity check: TP ticks should be reasonable (1-500 range for futures)
-        if tp_ticks > 500:
+        # Sanity check: TP ticks should be reasonable (1-200 range for futures)
+        if tp_ticks > 200:
             _logger.warning(f"⚠️ TP ticks {tp_ticks} seems too high - capping at 100")
             tp_ticks = 100
         elif tp_ticks < 1:
@@ -12598,15 +12626,19 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         except:
             tp_targets = []
         
-        # Get first TP target (primary)
-        # Frontend saves as 'gain_ticks', check all variants
+        # Get first TP target (primary) - convert based on tp_units
+        tp_units = recorder.get('tp_units', 'Ticks')
+        tick_size = get_tick_size(ticker) if ticker else 0.25
+        
         if tp_targets and len(tp_targets) > 0:
-            tp_ticks = tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10
+            tp_value = float(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
+            # Convert to ticks based on tp_units
+            if tp_units == 'Points':
+                tp_ticks = int(tp_value / tick_size) if tick_size > 0 else int(tp_value * 4)
+            else:
+                tp_ticks = int(tp_value)  # Ticks or default
         else:
             tp_ticks = 10
-        
-        # Determine tick size and tick value for PnL calculation
-        tick_size = get_tick_size(ticker) if ticker else 0.25
         tick_value = get_tick_value(ticker) if ticker else 0.50
         
         # Check for existing open trade for this recorder
