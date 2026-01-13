@@ -3672,15 +3672,8 @@ def execute_live_trades(recorder_id: int, action: str, ticker: str, quantity: in
             tp_targets_json = rec.get('tp_targets', '[]')
             try:
                 tp_targets = json.loads(tp_targets_json) if tp_targets_json else []
-                tp_units = rec.get('tp_units', 'Ticks')
                 if tp_targets and len(tp_targets) > 0:
-                    tp_value = float(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
-                    # Convert to ticks based on tp_units
-                    tick_size = TICK_SIZES.get(extract_symbol_root(ticker), 0.25)
-                    if tp_units == 'Points':
-                        tp_ticks = int(tp_value / tick_size) if tick_size > 0 else int(tp_value * 4)
-                    else:
-                        tp_ticks = int(tp_value)
+                    tp_ticks = int(tp_targets[0].get('value') or tp_targets[0].get('ticks') or 10)
             except:
                 tp_ticks = 10  # Default 10 ticks
             
@@ -3812,22 +3805,15 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                     if db_qty != broker_qty or abs(db_entry - broker_avg) > 0.01:
                         logger.warning(f"⚠️ MISMATCH: DB={db_qty}@{db_entry:.2f} vs Broker={broker_qty}@{broker_avg:.2f}")
                         
-                        # Get TP/SL settings to recalculate (include tp_units!)
-                        cursor.execute('SELECT tp_targets, tp_units, sl_amount, sl_enabled FROM recorders WHERE id = ?', (recorder_id,))
+                        # Get TP/SL settings to recalculate - SIMPLE
+                        cursor.execute('SELECT tp_targets, sl_amount, sl_enabled FROM recorders WHERE id = ?', (recorder_id,))
                         rec = cursor.fetchone()
                         if rec:
                             rec = dict(rec)
                             try:
                                 tp_targets = json.loads(rec.get('tp_targets', '[]'))
-                                tp_units = rec.get('tp_units', 'Ticks')
-                                tick_size = TICK_SIZES.get(root, 0.25)
                                 if tp_targets and len(tp_targets) > 0:
-                                    tp_value = float(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
-                                    # Convert to ticks based on tp_units
-                                    if tp_units == 'Points':
-                                        tp_ticks = int(tp_value / tick_size) if tick_size > 0 else int(tp_value * 4)
-                                    else:
-                                        tp_ticks = int(tp_value)
+                                    tp_ticks = int(tp_targets[0].get('value') or tp_targets[0].get('ticks') or 10)
                                 else:
                                     tp_ticks = 10
                             except:
@@ -4589,10 +4575,10 @@ def reconcile_positions_with_broker():
                                             logger.error(f"   Skipping TP placement to prevent wrong order")
                                             continue  # Skip this position
                                         
-                                        # Get TP ticks from recorder settings (with tp_units conversion!)
+                                        # Get TP ticks from recorder settings - SIMPLE
                                         conn_tp = get_db_connection()
                                         cursor_tp = conn_tp.cursor()
-                                        cursor_tp.execute('SELECT tp_targets, tp_units FROM recorders WHERE id = ?', (recorder_id,))
+                                        cursor_tp.execute('SELECT tp_targets FROM recorders WHERE id = ?', (recorder_id,))
                                         rec_row = cursor_tp.fetchone()
                                         conn_tp.close()
                                         
@@ -4600,20 +4586,10 @@ def reconcile_positions_with_broker():
                                             try:
                                                 import json
                                                 tp_config = json.loads(rec_row['tp_targets'])
-                                                tp_units = rec_row.get('tp_units', 'Ticks') if hasattr(rec_row, 'get') else 'Ticks'
                                                 if isinstance(tp_config, list) and len(tp_config) > 0:
-                                                    tp_value = float(tp_config[0].get('gain_ticks') or tp_config[0].get('ticks') or tp_config[0].get('value') or 10)
-                                                    # Convert to ticks based on tp_units
-                                                    if tp_units == 'Points':
-                                                        tp_ticks = int(tp_value / tick_size) if tick_size > 0 else int(tp_value * 4)
-                                                    else:
-                                                        tp_ticks = int(tp_value)
+                                                    tp_ticks = int(tp_config[0].get('value') or tp_config[0].get('ticks') or 10)
                                                 elif isinstance(tp_config, dict):
-                                                    tp_value = float(tp_config.get('gain_ticks') or tp_config.get('ticks') or tp_config.get('value') or 10)
-                                                    if tp_units == 'Points':
-                                                        tp_ticks = int(tp_value / tick_size) if tick_size > 0 else int(tp_value * 4)
-                                                    else:
-                                                        tp_ticks = int(tp_value)
+                                                    tp_ticks = int(tp_config.get('value') or tp_config.get('ticks') or 10)
                                             except:
                                                 pass
                                         
@@ -6173,29 +6149,22 @@ def receive_webhook(webhook_token):
         sl_enabled = recorder.get('sl_enabled', 0)
         sl_amount = recorder.get('sl_ticks', 0) or recorder.get('sl_amount', 0) or 0
         
-        # Determine tick size FIRST (needed for tp_units conversion)
-        tick_size = get_tick_size(ticker) if ticker else 0.25
-        
-        # Get TP ticks - with tp_units conversion!
+        # Get TP ticks - SIMPLE, no conversion
         tp_ticks = recorder.get('tp_ticks', 0) or 0
         if not tp_ticks:
             # Fallback: Parse TP targets (JSON array) if direct column is empty
             tp_targets_raw = recorder.get('tp_targets', '[]')
-            tp_units = recorder.get('tp_units', 'Ticks')
             try:
                 tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
                 if tp_targets and len(tp_targets) > 0:
-                    tp_value = float(tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10)
-                    # Convert to ticks based on tp_units
-                    if tp_units == 'Points':
-                        tp_ticks = int(tp_value / tick_size) if tick_size > 0 else int(tp_value * 4)
-                        logger.info(f"📊 TP conversion: {tp_value} Points → {tp_ticks} ticks")
-                    else:
-                        tp_ticks = int(tp_value)
+                    tp_ticks = int(tp_targets[0].get('value') or tp_targets[0].get('ticks') or 10)
                 else:
                     tp_ticks = 10
             except:
                 tp_ticks = 10
+        
+        # Determine tick size and tick value for PnL calculation
+        tick_size = get_tick_size(ticker) if ticker else 0.25
         
         logger.info(f"📊 Recorder TP/SL config: tp_ticks={tp_ticks}, sl_ticks={sl_amount}, sl_enabled={sl_enabled}")
         tick_value = get_tick_value(ticker) if ticker else 0.50
