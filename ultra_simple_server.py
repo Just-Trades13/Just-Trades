@@ -12421,7 +12421,7 @@ def process_webhook_directly(webhook_token):
         
         # Stop loss (fixed or trailing)
         if sl_enabled and sl_ticks > 0:
-            if sl_type == 'Trailing':
+            if sl_type == 'Trailing' or sl_type == 'Trail':
                 # Trailing stop: use sl_amount as offset_ticks
                 risk_config['trail'] = {
                     'activation_ticks': sl_ticks,  # Can activate immediately
@@ -13910,6 +13910,8 @@ def traders_edit(trader_id):
                    r.sl_amount as r_sl_amount,
                    r.sl_units as r_sl_units,
                    r.sl_type as r_sl_type,
+                   r.break_even_enabled as r_break_even_enabled,
+                   r.break_even_ticks as r_break_even_ticks,
                    r.avg_down_enabled as r_avg_down_enabled,
                    r.avg_down_amount as r_avg_down_amount,
                    r.avg_down_point as r_avg_down_point,
@@ -13980,7 +13982,10 @@ def traders_edit(trader_id):
         'sl_enabled': bool(trader_row['r_sl_enabled']),
         'sl_amount': trader_row['r_sl_amount'] or 0,
         'sl_units': trader_row['r_sl_units'] or 'Ticks',
-        'sl_type': trader_row['r_sl_type'] or 'Fixed',
+        'sl_type': trader_row.get('sl_type') or trader_row['r_sl_type'] or 'Fixed',  # Trader setting overrides recorder
+        # Break-Even settings (trader setting overrides recorder)
+        'break_even_enabled': bool(trader_row.get('break_even_enabled') if trader_row.get('break_even_enabled') is not None else trader_row.get('r_break_even_enabled')),
+        'break_even_ticks': int(trader_row.get('break_even_ticks') if trader_row.get('break_even_ticks') is not None else (trader_row.get('r_break_even_ticks') or 10)),
         # DCA/Averaging Down settings from recorder
         'avg_down_enabled': bool(trader_row['r_avg_down_enabled']),
         'avg_down_amount': trader_row['r_avg_down_amount'] or 1,

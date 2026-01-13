@@ -226,7 +226,7 @@
                     <div class="select-shell">
                         <select id="slType" name="sl_type">
                             <option value="Fixed" {% if trader.sl_type == 'Fixed' %}selected{% endif %}>Fixed</option>
-                            <option value="Trail" {% if trader.sl_type == 'Trail' %}selected{% endif %}>Trail</option>
+                            <option value="Trailing" {% if trader.sl_type == 'Trailing' or trader.sl_type == 'Trail' %}selected{% endif %}>Trailing</option>
                         </select>
                         <span class="material-icons">expand_more</span>
                     </div>
@@ -1818,6 +1818,8 @@
                         const slAmount = parseFloat(document.getElementById('slAmount')?.value) || 0;
                         const slUnits = document.getElementById('slUnits')?.value || 'Ticks';
                         const slType = document.getElementById('slType')?.value || 'Fixed';
+                        const breakEvenEnabled = document.getElementById('breakEvenEnabled')?.checked ? 1 : 0;
+                        const breakEvenTicks = parseInt(document.getElementById('breakEvenTicks')?.value) || 10;
                         const avgDownEnabled = document.getElementById('avgDownEnabled')?.checked ? 1 : 0;
                         const avgDownAmount = parseInt(document.getElementById('avgDownAmount')?.value) || 1;
                         const avgDownPoint = parseFloat(document.getElementById('avgDownPoint')?.value) || 10;
@@ -1862,6 +1864,8 @@
                                 sl_amount: slAmount,
                                 sl_units: slUnits,
                                 sl_type: slType,
+                                break_even_enabled: breakEvenEnabled,
+                                break_even_ticks: breakEvenTicks,
                                 avg_down_enabled: avgDownEnabled,
                                 avg_down_amount: avgDownAmount,
                                 avg_down_point: avgDownPoint,
