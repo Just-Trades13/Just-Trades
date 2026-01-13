@@ -910,9 +910,12 @@
         // Render TP targets
         renderTpTargets();
 
-        // Load webhook info if editing
+        // Load webhook info if editing (with small delay to ensure DOM is ready)
         if (isEditMode) {
-            loadWebhookInfo();
+            // Use setTimeout to ensure webhook section is rendered
+            setTimeout(() => {
+                loadWebhookInfo();
+            }, 100);
         }
         
         // Time filter toggle functionality
@@ -1112,8 +1115,12 @@
     let newRecorderId = null;
 
     function loadWebhookInfo() {
-        if (!recorderId) return;
+        if (!recorderId) {
+            console.log('loadWebhookInfo: No recorderId');
+            return;
+        }
         
+        console.log('loadWebhookInfo: Fetching webhook for recorder', recorderId);
         fetch(`/api/recorders/${recorderId}/webhook`)
             .then(res => {
                 if (!res.ok) {
@@ -1122,21 +1129,48 @@
                 return res.json();
             })
             .then(data => {
+                console.log('loadWebhookInfo: Received data', data);
                 if (data.success) {
+                    // Ensure webhook body is visible
+                    const webhookBody = document.getElementById('webhook-body');
+                    if (webhookBody) {
+                        webhookBody.style.display = 'grid';
+                    }
+                    
                     const webhookUrl = document.getElementById('webhook-url');
-                    if (webhookUrl) webhookUrl.value = data.webhook_url || '';
+                    if (webhookUrl) {
+                        webhookUrl.value = data.webhook_url || '';
+                        console.log('Set webhook URL:', data.webhook_url);
+                    } else {
+                        console.warn('webhook-url element not found');
+                    }
                     
                     // Toggle Alert = BUY alert (user creates separate BUY and SELL alerts)
                     const toggle = document.getElementById('alert-toggle');
-                    if (toggle && data.alerts) toggle.textContent = data.alerts.indicator_buy || '';
+                    if (toggle && data.alerts) {
+                        toggle.textContent = data.alerts.indicator_buy || '';
+                        console.log('Set BUY alert');
+                    } else {
+                        console.warn('alert-toggle element not found or no alerts data');
+                    }
                     
                     // TM Sizing = SELL alert
                     const tm = document.getElementById('alert-tm');
-                    if (tm && data.alerts) tm.textContent = data.alerts.indicator_sell || '';
+                    if (tm && data.alerts) {
+                        tm.textContent = data.alerts.indicator_sell || '';
+                        console.log('Set SELL alert');
+                    } else {
+                        console.warn('alert-tm element not found or no alerts data');
+                    }
                     
                     // TV Sizing = Strategy alert (for Pine Script strategies)
                     const tv = document.getElementById('alert-tv');
-                    if (tv && data.alerts) tv.textContent = data.alerts.strategy_message || '';
+                    if (tv && data.alerts) {
+                        tv.textContent = data.alerts.strategy_message || '';
+                        console.log('Set strategy alert');
+                    } else {
+                        console.warn('alert-tv element not found or no alerts data');
+                    }
                 } else {
                     console.error('Webhook API error:', data.error);
                 }
