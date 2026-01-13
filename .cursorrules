@@ -399,6 +399,61 @@ Before deploying ANY SQL change:
 
 ---
 
+## 🛑 MULTI-USER & PRODUCTION RULES (Jan 12, 2026 Disaster)
+
+On Jan 12, 2026, AI made "improvements" that broke the entire platform for all users.
+**These rules exist to prevent that from EVER happening again.**
+
+### 🚨 RULE 1: DON'T OVERCOMPLICATE WORKING CODE
+```
+If code is WORKING → DO NOT "improve" it
+If code is SIMPLE → DO NOT add "flexibility"
+If code handles ONE case → DO NOT generalize for hypothetical cases
+```
+**What happened:** TP calculation was simple (read value, use as ticks). AI added
+conversion logic for tp_units that broke everything. KEEP IT SIMPLE.
+
+### 🚨 RULE 2: CONSIDER MULTI-USER IMPACT
+Before ANY change, ask:
+- "Will this work if user_id is NULL?" (legacy data)
+- "Will this work for LIVE accounts, not just DEMO?"
+- "Will this work for ALL users, not just the one testing?"
+
+**What happened:** Added strict `WHERE user_id = X` filtering. Users with NULL 
+user_id got filtered out = no trades. Always handle NULL cases.
+
+### 🚨 RULE 3: ONE FIX AT A TIME, THEN VERIFY
+```
+1. Make ONE small change
+2. Deploy and wait for Railway
+3. User tests with REAL signal
+4. Confirm working BEFORE next change
+```
+**What happened:** AI made 15+ "fixes" in rapid succession. Each fix broke 
+something else. User couldn't keep up. Platform was unusable for hours.
+
+### 🚨 RULE 4: DEMO vs LIVE IS CRITICAL
+```python
+# LIVE accounts → live.tradovateapi.com
+# DEMO accounts → demo.tradovateapi.com
+
+# Source of truth: accounts.environment column
+# NOT the is_demo flag in enabled_accounts JSON (can be stale)
+```
+**What happened:** Live account orders went to demo endpoint = rejected.
+
+### 🚨 RULE 5: IF IT'S WORKING, STOP TOUCHING IT
+When user says "it's working now":
+- STOP making changes
+- DO NOT "clean up" or "optimize"
+- DO NOT add "improvements"
+- Just leave it alone
+
+**What happened:** User said "6 good signals, all working" after a revert.
+The working code was SIMPLER than all the "fixes" AI had attempted.
+
+---
+
 ## 🔐 CRITICAL CODE - NEVER MODIFY WITHOUT UNDERSTANDING
 
 ### OAuth Token Exchange (ultra_simple_server.py ~line 1338)
