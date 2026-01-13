@@ -3457,31 +3457,17 @@ def init_db():
         pass
     
     # Add sl_type, break-even, avg-down, tp/trim units to traders (Jan 2026 fix)
-    # CRITICAL: PostgreSQL needs single quotes for string defaults, SQLite uses double quotes
-    if is_postgres:
-        columns_for_traders = [
-            ('sl_type', "TEXT DEFAULT 'Fixed'"),
-            ('break_even_enabled', 'BOOLEAN DEFAULT FALSE'),
-            ('break_even_ticks', 'INTEGER DEFAULT 10'),
-            ('avg_down_enabled', 'BOOLEAN DEFAULT FALSE'),
-            ('avg_down_amount', 'INTEGER DEFAULT 0'),
-            ('avg_down_point', 'REAL DEFAULT 0'),
-            ('avg_down_units', "TEXT DEFAULT 'Ticks'"),
-            ('tp_units', "TEXT DEFAULT 'Ticks'"),
-            ('trim_units', "TEXT DEFAULT 'Contracts'"),
-        ]
-    else:
-        columns_for_traders = [
-            ('sl_type', 'TEXT DEFAULT "Fixed"'),
-            ('break_even_enabled', 'INTEGER DEFAULT 0'),
-            ('break_even_ticks', 'INTEGER DEFAULT 10'),
-            ('avg_down_enabled', 'INTEGER DEFAULT 0'),
-            ('avg_down_amount', 'INTEGER DEFAULT 0'),
-            ('avg_down_point', 'REAL DEFAULT 0'),
-            ('avg_down_units', 'TEXT DEFAULT "Ticks"'),
-            ('tp_units', 'TEXT DEFAULT "Ticks"'),
-            ('trim_units', 'TEXT DEFAULT "Contracts"'),
-        ]
+    columns_for_traders = [
+        ('sl_type', 'TEXT DEFAULT "Fixed"'),
+        ('break_even_enabled', 'INTEGER DEFAULT 0' if not is_postgres else 'BOOLEAN DEFAULT FALSE'),
+        ('break_even_ticks', 'INTEGER DEFAULT 10'),
+        ('avg_down_enabled', 'INTEGER DEFAULT 0' if not is_postgres else 'BOOLEAN DEFAULT FALSE'),
+        ('avg_down_amount', 'INTEGER DEFAULT 0'),
+        ('avg_down_point', 'REAL DEFAULT 0'),
+        ('avg_down_units', 'TEXT DEFAULT "Ticks"'),
+        ('tp_units', 'TEXT DEFAULT "Ticks"'),
+        ('trim_units', 'TEXT DEFAULT "Contracts"'),
+    ]
     for col_name, col_type in columns_for_traders:
         try:
             cursor.execute(f'ALTER TABLE traders ADD COLUMN {col_name} {col_type}')
@@ -4247,85 +4233,34 @@ def admin_create_user():
 
 @app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
 def admin_delete_user(user_id):
-    """Admin endpoint to delete a user and ALL related data."""
+    """Admin endpoint to delete a user."""
     if not USER_AUTH_AVAILABLE:
         return jsonify({'success': False, 'error': 'Auth not available'}), 400
-
+    
     if not is_logged_in():
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
-
+    
     current = get_current_user()
     if not current or not current.is_admin:
         return jsonify({'success': False, 'error': 'Not authorized'}), 403
-
+    
     # Don't allow deleting yourself
     if user_id == current.id:
         return jsonify({'success': False, 'error': 'Cannot delete your own account'}), 400
-
-    deleted_counts = {}
     
-    # Step 1: Delete from app database (accounts, traders, recorders, etc.)
-    try:
-        app_conn = get_db_connection()
-        app_cursor = app_conn.cursor()
-        is_postgres = is_using_postgres()
-        ph = '%s' if is_postgres else '?'
-        
-        # Delete traders for this user
-        app_cursor.execute(f'DELETE FROM traders WHERE user_id = {ph}', (user_id,))
-        deleted_counts['traders'] = app_cursor.rowcount
-        
-        # Delete recorders for this user
-        app_cursor.execute(f'DELETE FROM recorders WHERE user_id = {ph}', (user_id,))
-        deleted_counts['recorders'] = app_cursor.rowcount
-        
-        # Delete accounts for this user
-        app_cursor.execute(f'DELETE FROM accounts WHERE user_id = {ph}', (user_id,))
-        deleted_counts['accounts'] = app_cursor.rowcount
-        
-        # Delete push subscriptions for this user
-        try:
-            app_cursor.execute(f'DELETE FROM push_subscriptions WHERE user_id = {ph}', (user_id,))
-            deleted_counts['push_subscriptions'] = app_cursor.rowcount
-        except:
-            pass  # Table may not exist
-        
-        # Delete pending username changes for this user
-        try:
-            app_cursor.execute(f'DELETE FROM pending_username_changes WHERE user_id = {ph}', (user_id,))
-            deleted_counts['pending_username_changes'] = app_cursor.rowcount
-        except:
-            pass  # Table may not exist
-        
-        app_conn.commit()
-        app_cursor.close()
-        app_conn.close()
-        
-        logger.info(f"✅ Deleted user {user_id} related data: {deleted_counts}")
-    except Exception as e:
-        logger.error(f"❌ Error deleting user {user_id} app data: {e}")
-        return jsonify({'success': False, 'error': f'Failed to delete user data: {str(e)}'}), 500
-    
-    # Step 2: Delete the user from auth database
     from user_auth import get_auth_db_connection
     conn, db_type = get_auth_db_connection()
     cursor = conn.cursor()
-
+    
     try:
         if db_type == 'postgresql':
             cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
         else:
             cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
         conn.commit()
-        
-        logger.info(f"✅ Deleted user {user_id} from users table")
-        return jsonify({
-            'success': True,
-            'deleted': deleted_counts
-        })
+        return jsonify({'success': True})
     except Exception as e:
         conn.rollback()
-        logger.error(f"❌ Error deleting user {user_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         cursor.close()
@@ -5910,12 +5845,12 @@ def sync_positions_to_broker():
                             # Actually execute the catch-up order
                             logger.info(f"🔄 POSITION SYNC: {action_needed} {qty_needed} {ticker} for {trader['name']}")
                             
-                            # Get TP settings from recorder - SIMPLE, no conversion
+                            # Get TP settings from recorder
                             tp_ticks = 10  # default
                             try:
                                 tp_targets = json.loads(tv_pos.get('tp_targets', '[]'))
                                 if tp_targets and len(tp_targets) > 0:
-                                    tp_ticks = int(tp_targets[0].get('value') or tp_targets[0].get('ticks') or 10)
+                                    tp_ticks = tp_targets[0].get('ticks', 10)
                             except:
                                 pass
                             
@@ -9774,33 +9709,15 @@ def api_set_inverse_signals(recorder_id):
 
 @app.route('/api/traders', methods=['GET'])
 def api_get_traders():
-    """Get all traders (recorder-account links) with joined data and risk settings
-    
-    CRITICAL: Only returns traders where:
-    1. trader.user_id matches current user, OR
-    2. account.user_id matches current user
-    
-    This ensures users only see their own traders/accounts.
-    """
+    """Get all traders (recorder-account links) with joined data and risk settings"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         
         # Filter by user_id if logged in - ONLY show current user's traders
-        # STRICT: Only show traders where EITHER:
-        # 1. trader.user_id matches (trader was created by this user), OR
-        # 2. account.user_id matches AND trader.user_id is NULL (legacy traders)
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
-            logger.info(f"📊 /api/traders called by user_id={user_id}")
-            
-            if not user_id:
-                # No user ID - return empty to prevent showing all traders
-                logger.warning("⚠️ /api/traders: user logged in but user_id is None - returning empty")
-                conn.close()
-                return jsonify({'success': True, 'traders': [], 'message': 'User ID not found'})
-            
             if is_postgres:
                 cursor.execute('''
                     SELECT 
@@ -9821,7 +9738,7 @@ def api_get_traders():
                     FROM traders t
                     LEFT JOIN recorders r ON t.recorder_id = r.id
                     LEFT JOIN accounts a ON t.account_id = a.id
-                    WHERE t.user_id = %s OR (t.user_id IS NULL AND a.user_id = %s)
+                    WHERE t.user_id = %s OR a.user_id = %s
                     ORDER BY t.created_at DESC
                 ''', (user_id, user_id))
             else:
@@ -9852,15 +9769,60 @@ def api_get_traders():
                     FROM traders t
                     JOIN recorders r ON t.recorder_id = r.id
                     JOIN accounts a ON t.account_id = a.id
-                    WHERE t.user_id = ? OR (t.user_id IS NULL AND a.user_id = ?)
+                    WHERE t.user_id = ? OR a.user_id = ?
                     ORDER BY t.created_at DESC
                 ''', (user_id, user_id))
         else:
-            # SECURITY: No authentication = no data
-            # Don't show everyone's traders to unauthenticated users!
-            logger.warning("⚠️ /api/traders called without authentication - returning empty")
-            conn.close()
-            return jsonify({'success': True, 'traders': [], 'message': 'Authentication required'})
+            if is_postgres:
+                cursor.execute('''
+                    SELECT 
+                        t.id,
+                        t.recorder_id,
+                        t.account_id,
+                        t.subaccount_id,
+                        t.subaccount_name,
+                        t.is_demo,
+                        t.enabled,
+                        t.created_at,
+                        t.max_contracts as trader_position_size,
+                        r.name as recorder_name,
+                        r.ticker as symbol,
+                        a.name as account_name,
+                        a.broker
+                    FROM traders t
+                    LEFT JOIN recorders r ON t.recorder_id = r.id
+                    LEFT JOIN accounts a ON t.account_id = a.id
+                    ORDER BY t.created_at DESC
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT 
+                        t.id,
+                        t.recorder_id,
+                        t.account_id,
+                        t.subaccount_id,
+                        t.subaccount_name,
+                        t.is_demo,
+                        t.enabled,
+                        t.created_at,
+                        t.initial_position_size as trader_position_size,
+                        t.add_position_size as trader_add_position_size,
+                        t.tp_targets as trader_tp_targets,
+                        t.sl_enabled as trader_sl_enabled,
+                        t.sl_amount as trader_sl_amount,
+                        t.sl_units as trader_sl_units,
+                        t.max_daily_loss as trader_max_daily_loss,
+                        r.name as recorder_name,
+                        r.strategy_type,
+                        r.initial_position_size as recorder_position_size,
+                        r.symbol,
+                        a.name as account_name,
+                        a.broker
+                    FROM traders t
+                    JOIN recorders r ON t.recorder_id = r.id
+                    JOIN accounts a ON t.account_id = a.id
+                    ORDER BY t.created_at DESC
+                ''')
         
         rows = cursor.fetchall()
         traders = []
@@ -10884,8 +10846,7 @@ def broker_execution_worker():
                 from recorder_service import execute_trade_simple
                 
                 logger.info(f"📤 Broker execution: {action} {quantity} {ticker}")
-                logger.info(f"🎯 TP={tp_ticks} ticks | SL={sl_ticks} ticks")
-                logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}, tp_ticks={tp_ticks}")
+                logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
                 
                 result = execute_trade_simple(
                     recorder_id=recorder_id,
@@ -11858,7 +11819,7 @@ def process_webhook_directly(webhook_token):
         signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
         settings_source = "TRADER" if (trader_tp_targets or trader_sl_enabled is not None) else "RECORDER"
         _logger.info(f"📊 {signal_type} SIGNAL: Will apply {settings_source} settings")
-
+        
         # Override TP/SL settings with trader settings if available
         if trader_tp_targets:
             tp_targets_raw = trader_tp_targets
@@ -11870,20 +11831,32 @@ def process_webhook_directly(webhook_token):
         if trader_sl_units:
             sl_units = trader_sl_units
 
-        # Parse TP targets - SIMPLE: just read the value and use it as ticks
+        # Parse TP targets
         try:
             tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
         except:
             tp_targets = []
         
-        # SIMPLE TP LOGIC - no conversion, just use the value as ticks
-        tp_ticks = 10  # Default 10 ticks
+        # Get TP value and convert to ticks based on units
         if tp_targets and len(tp_targets) > 0:
-            first_tp = tp_targets[0]
-            _logger.info(f"📊 DEBUG tp_targets[0]: {first_tp}")
-            _logger.info(f"📊 DEBUG tp_targets_raw: {tp_targets_raw[:200] if tp_targets_raw else 'None'}")
-            tp_ticks = int(first_tp.get('value') or first_tp.get('ticks') or 10)
-        _logger.info(f"📊 TP: {tp_ticks} ticks (will be {tp_ticks * 0.25} points for MNQ)")
+            tp_value = float(tp_targets[0].get('value', 0) or 0)
+        else:
+            tp_value = 0
+        
+        # Convert TP to ticks based on units
+        if tp_value > 0:
+            if tp_units == 'Points':
+                # Points = dollar value per contract. Convert to ticks.
+                tick_value = get_tick_value(ticker) if ticker else 0.50
+                tp_ticks = int(tp_value / tick_value) if tick_value else int(tp_value / tick_size)
+            elif tp_units == 'Percent':
+                # Percent of entry price
+                tp_ticks = int((current_price * (tp_value / 100)) / tick_size) if current_price and tick_size else 0
+            else:
+                # Ticks (default)
+                tp_ticks = int(tp_value)
+        else:
+            tp_ticks = 0
         
         # Convert SL to ticks based on units
         if sl_enabled and sl_amount > 0:
@@ -12319,8 +12292,8 @@ def process_webhook_directly(webhook_token):
             try:
                 broker_execution_queue.put_nowait(broker_task)
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
-                _logger.info(f"   ✅ TP={tp_ticks} ticks, SL={sl_ticks} ticks")
                 _logger.info(f"   ✅ Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
+                _logger.info(f"   ✅ Worker alive: {broker_execution_thread.is_alive() if broker_execution_thread else False}")
                 _logger.info(f"   ✅ Task details: recorder_id={recorder_id}, action={trade_action}, quantity={quantity}, ticker={ticker}")
                 _broker_execution_stats['total_queued'] += 1
             except Exception as queue_err:
@@ -12601,13 +12574,11 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         except:
             tp_targets = []
         
-        # Get first TP target (primary) - SIMPLE, no conversion
-        tick_size = get_tick_size(ticker) if ticker else 0.25
+        # Get first TP target (primary)
+        tp_ticks = tp_targets[0].get('value', 0) if tp_targets else 0
         
-        if tp_targets and len(tp_targets) > 0:
-            tp_ticks = int(tp_targets[0].get('value') or tp_targets[0].get('ticks') or 10)
-        else:
-            tp_ticks = 10
+        # Determine tick size and tick value for PnL calculation
+        tick_size = get_tick_size(ticker) if ticker else 0.25
         tick_value = get_tick_value(ticker) if ticker else 0.50
         
         # Check for existing open trade for this recorder
@@ -13807,9 +13778,8 @@ def traders_edit(trader_id):
             if tp_targets_raw:
                 tp_targets = json.loads(tp_targets_raw)
                 if tp_targets and len(tp_targets) > 0:
-                    # Frontend saves as 'gain_ticks', check all variants
-                    tp_value = tp_targets[0].get('gain_ticks') or tp_targets[0].get('ticks') or tp_targets[0].get('value') or 10
-                    tp_trim = tp_targets[0].get('trim_percent') or tp_targets[0].get('trim') or 100
+                    tp_value = tp_targets[0].get('value', 0)
+                    tp_trim = tp_targets[0].get('trim', 100)
         except:
             tp_targets = []
         
@@ -17263,18 +17233,22 @@ def api_control_center_stats():
                     ORDER BY r.name
                 ''', (current_user_id, current_user_id))
         else:
-            # CRITICAL: Require authentication - don't show everyone's data!
-            conn.close()
-            logger.warning("⚠️ control-center/stats called without user authentication - returning empty")
-            return jsonify({
-                'success': True,
-                'recorders': [],
-                'total_pnl': 0,
-                'open_pnl': 0,
-                'today_pnl': 0,
-                'active_recorders': 0,
-                'message': 'Login required to view data'
-            })
+            # No user auth, show all recorders
+            cursor.execute('''
+                SELECT 
+                    r.id,
+                    r.name,
+                    r.symbol,
+                    r.recording_enabled,
+                    r.signal_count,
+                    COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
+                    COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
+                    (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
+                FROM recorders r
+                LEFT JOIN recorded_trades rt ON r.id = rt.recorder_id
+                GROUP BY r.id
+                ORDER BY r.name
+            ''')
         
         recorder_rows = cursor.fetchall()
         
@@ -17650,10 +17624,12 @@ def api_control_center_toggle_all():
             
             logger.info(f"📊 User {user_id} toggled: {recorder_count} recorders, {trader_count} traders")
         else:
-            # CRITICAL: Require authentication - don't update everyone's data!
-            conn.close()
-            logger.warning("⚠️ toggle-all called without user authentication - REJECTED")
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+            # Fallback for non-authenticated access (legacy behavior, but log warning)
+            logger.warning("⚠️ toggle-all called without user authentication - updating ALL recorders")
+            cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder}', (enabled_value,))
+            recorder_count = cursor.rowcount
+            cursor.execute(f'UPDATE traders SET enabled = {placeholder}', (enabled_value,))
+            trader_count = cursor.rowcount
         
         conn.commit()
         conn.close()
@@ -17780,28 +17756,15 @@ def api_toggle_my_traders(recorder_id):
         
         # Update traders for this recorder belonging to CURRENT USER ONLY
         if current_user_id:
-            # CRITICAL: Only update traders where user_id matches OR account belongs to user
-            # This handles cases where user_id might be null on trader but account belongs to user
-            if is_postgres:
-                cursor.execute(f'''
-                    UPDATE traders SET enabled = {placeholder}
-                    WHERE recorder_id = {placeholder} AND (
-                        user_id = {placeholder} OR 
-                        account_id IN (SELECT id FROM accounts WHERE user_id = {placeholder})
-                    )
-                ''', (enabled_value, recorder_id, current_user_id, current_user_id))
-            else:
-                cursor.execute(f'''
-                    UPDATE traders SET enabled = {placeholder}
-                    WHERE recorder_id = {placeholder} AND (
-                        user_id = {placeholder} OR 
-                        account_id IN (SELECT id FROM accounts WHERE user_id = {placeholder})
-                    )
-                ''', (enabled_value, recorder_id, current_user_id, current_user_id))
+            cursor.execute(f'''
+                UPDATE traders SET enabled = {placeholder} 
+                WHERE recorder_id = {placeholder} AND user_id = {placeholder}
+            ''', (enabled_value, recorder_id, current_user_id))
         else:
-            # No user auth - REJECT the request, don't update everyone's traders!
-            conn.close()
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+            # No user auth, update all traders for this recorder
+            cursor.execute(f'''
+                UPDATE traders SET enabled = {placeholder} WHERE recorder_id = {placeholder}
+            ''', (enabled_value, recorder_id))
         
         updated_count = cursor.rowcount
         
@@ -23879,352 +23842,6 @@ def api_recorder_execution_status(recorder_id):
         })
     except Exception as e:
         logger.error(f"Error getting recorder execution status: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/debug/recorder-tp/<int:recorder_id>', methods=['GET'])
-def api_debug_recorder_tp(recorder_id):
-    """
-    DIAGNOSTIC ENDPOINT: Shows exact TP settings for a recorder.
-    Use this to debug why TP is wrong.
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        placeholder = '%s' if is_postgres else '?'
-        
-        cursor.execute(f'SELECT name, tp_targets, tp_units, symbol FROM recorders WHERE id = {placeholder}', (recorder_id,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if not row:
-            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
-        row = dict(row) if hasattr(row, 'keys') else {'name': row[0], 'tp_targets': row[1], 'tp_units': row[2], 'symbol': row[3]}
-        
-        # Parse tp_targets
-        tp_targets_raw = row.get('tp_targets', '[]')
-        try:
-            tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
-        except:
-            tp_targets = []
-        
-        tp_units = row.get('tp_units', 'Ticks')
-        ticker = row.get('symbol', 'MNQ')
-        tick_size = get_tick_size(ticker) if ticker else 0.25
-        
-        # Calculate what tp_ticks would be
-        tp_ticks = 10
-        if tp_targets and len(tp_targets) > 0:
-            first_tp = tp_targets[0]
-            gain_ticks_val = first_tp.get('gain_ticks')
-            ticks_val = first_tp.get('ticks')
-            value_val = first_tp.get('value')
-            
-            tp_value = float(gain_ticks_val or ticks_val or value_val or 10)
-            
-            if tp_units == 'Points':
-                tp_ticks = int(tp_value / tick_size)
-            else:
-                tp_ticks = int(tp_value)
-        
-        tp_points = tp_ticks * tick_size
-        
-        return jsonify({
-            'success': True,
-            'recorder_name': row.get('name'),
-            'symbol': ticker,
-            'tick_size': tick_size,
-            'tp_targets_raw': tp_targets_raw,
-            'tp_targets_parsed': tp_targets,
-            'tp_units': tp_units,
-            'first_tp_fields': tp_targets[0] if tp_targets else None,
-            'calculated_tp_ticks': tp_ticks,
-            'calculated_tp_points': tp_points,
-            'explanation': f'TP will be {tp_ticks} ticks = {tp_points} points away from entry'
-        })
-    except Exception as e:
-        logger.error(f"Error in debug endpoint: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/debug/recorder-accounts/<int:recorder_id>', methods=['GET'])
-def api_debug_recorder_accounts(recorder_id):
-    """
-    DIAGNOSTIC ENDPOINT: Shows exactly which accounts will receive trades for a recorder.
-    This helps debug why certain accounts aren't getting trades.
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        placeholder = '%s' if is_postgres else '?'
-        enabled_value = 'true' if is_postgres else '1'
-        
-        # Get recorder info
-        cursor.execute(f'SELECT id, name, webhook_token, recording_enabled FROM recorders WHERE id = {placeholder}', (recorder_id,))
-        recorder = cursor.fetchone()
-        if not recorder:
-            conn.close()
-            return jsonify({'success': False, 'error': f'Recorder {recorder_id} not found'}), 404
-        recorder = dict(recorder)
-        
-        # Get ALL traders linked to this recorder (enabled or not)
-        cursor.execute(f'''
-            SELECT t.id, t.enabled, t.subaccount_id, t.subaccount_name, t.enabled_accounts, t.user_id,
-                   a.id as account_id, a.name as account_name, a.environment
-            FROM traders t
-            LEFT JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = {placeholder}
-            ORDER BY t.id
-        ''', (recorder_id,))
-        traders_raw = cursor.fetchall()
-        
-        traders_info = []
-        all_accounts_to_trade = []
-        
-        for trader_row in traders_raw:
-            trader = dict(trader_row)
-            trader_info = {
-                'trader_id': trader.get('id'),
-                'enabled': bool(trader.get('enabled')),
-                'primary_account': {
-                    'account_id': trader.get('account_id'),
-                    'account_name': trader.get('account_name'),
-                    'environment': trader.get('environment'),
-                    'subaccount_id': trader.get('subaccount_id'),
-                    'subaccount_name': trader.get('subaccount_name')
-                },
-                'enabled_accounts_raw': trader.get('enabled_accounts'),
-                'enabled_accounts_parsed': [],
-                'will_trade_on': [],
-                'issues': []
-            }
-            
-            # Parse enabled_accounts if present
-            enabled_accounts_raw = trader.get('enabled_accounts')
-            if enabled_accounts_raw and enabled_accounts_raw not in ['[]', 'null', None]:
-                try:
-                    enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
-                    if isinstance(enabled_accounts, list):
-                        trader_info['enabled_accounts_parsed'] = enabled_accounts
-                        if trader.get('enabled'):
-                            for acct in enabled_accounts:
-                                acct_detail = {
-                                    'subaccount_id': acct.get('subaccount_id'),
-                                    'subaccount_name': acct.get('subaccount_name') or acct.get('account_name'),
-                                    'account_id': acct.get('account_id'),
-                                    'multiplier': acct.get('multiplier', 1.0),
-                                    'is_demo': acct.get('is_demo')
-                                }
-                                trader_info['will_trade_on'].append(acct_detail)
-                                all_accounts_to_trade.append(acct_detail)
-                except Exception as e:
-                    trader_info['issues'].append(f"Error parsing enabled_accounts: {e}")
-            else:
-                # No enabled_accounts - check if subaccount_id is set (legacy mode)
-                subaccount_id = trader.get('subaccount_id')
-                if subaccount_id and trader.get('enabled'):
-                    acct_detail = {
-                        'subaccount_id': subaccount_id,
-                        'subaccount_name': trader.get('subaccount_name'),
-                        'account_id': trader.get('account_id'),
-                        'is_demo': trader.get('environment') == 'demo',
-                        'source': 'legacy (subaccount_id)'
-                    }
-                    trader_info['will_trade_on'].append(acct_detail)
-                    all_accounts_to_trade.append(acct_detail)
-                elif trader.get('enabled'):
-                    trader_info['issues'].append("NO ACCOUNTS CONFIGURED! enabled_accounts is empty AND subaccount_id is NULL")
-            
-            if not trader.get('enabled'):
-                trader_info['issues'].append("Trader is DISABLED")
-            
-            traders_info.append(trader_info)
-        
-        conn.close()
-        
-        # Summary
-        total_traders = len(traders_info)
-        enabled_traders = sum(1 for t in traders_info if t['enabled'])
-        total_accounts_to_trade = len(all_accounts_to_trade)
-        live_accounts = [a for a in all_accounts_to_trade if a.get('is_demo') == False]
-        demo_accounts = [a for a in all_accounts_to_trade if a.get('is_demo') == True]
-        
-        return jsonify({
-            'success': True,
-            'recorder': {
-                'id': recorder.get('id'),
-                'name': recorder.get('name'),
-                'recording_enabled': bool(recorder.get('recording_enabled'))
-            },
-            'summary': {
-                'total_traders': total_traders,
-                'enabled_traders': enabled_traders,
-                'total_accounts_to_trade': total_accounts_to_trade,
-                'live_accounts_count': len(live_accounts),
-                'demo_accounts_count': len(demo_accounts)
-            },
-            'traders': traders_info,
-            'all_accounts_that_will_trade': all_accounts_to_trade,
-            'live_accounts': live_accounts,
-            'demo_accounts': demo_accounts
-        })
-        
-    except Exception as e:
-        logger.error(f"Error in debug endpoint: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/debug/add-account-to-trader', methods=['POST'])
-def api_debug_add_account_to_trader():
-    """
-    QUICK FIX: Add an account to a trader's enabled_accounts.
-    Use this when an account isn't receiving trades because it's not in the enabled_accounts list.
-    
-    Required params:
-    - trader_id: The trader to update
-    - account_id: The account ID to add
-    - subaccount_id: The Tradovate subaccount ID (e.g., 1393592)
-    - subaccount_name: Display name
-    """
-    try:
-        data = request.get_json()
-        trader_id = data.get('trader_id')
-        account_id = data.get('account_id')
-        subaccount_id = data.get('subaccount_id')
-        subaccount_name = data.get('subaccount_name', '')
-        multiplier = float(data.get('multiplier', 1.0))
-        is_demo = data.get('is_demo', False)
-        
-        if not trader_id or not account_id or not subaccount_id:
-            return jsonify({'success': False, 'error': 'trader_id, account_id, and subaccount_id are required'}), 400
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        placeholder = '%s' if is_postgres else '?'
-        
-        # Get current enabled_accounts
-        cursor.execute(f'SELECT enabled_accounts FROM traders WHERE id = {placeholder}', (trader_id,))
-        row = cursor.fetchone()
-        if not row:
-            conn.close()
-            return jsonify({'success': False, 'error': f'Trader {trader_id} not found'}), 404
-        
-        # Parse existing enabled_accounts
-        enabled_accounts_raw = row[0]
-        if enabled_accounts_raw and enabled_accounts_raw not in ['[]', 'null', None]:
-            try:
-                enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
-                if not isinstance(enabled_accounts, list):
-                    enabled_accounts = []
-            except:
-                enabled_accounts = []
-        else:
-            enabled_accounts = []
-        
-        # Check if account already exists
-        for acct in enabled_accounts:
-            if str(acct.get('subaccount_id')) == str(subaccount_id):
-                conn.close()
-                return jsonify({
-                    'success': True,
-                    'message': f'Account {subaccount_id} already in enabled_accounts',
-                    'enabled_accounts': enabled_accounts
-                })
-        
-        # Add the new account
-        new_account = {
-            'account_id': account_id,
-            'subaccount_id': subaccount_id,
-            'subaccount_name': subaccount_name,
-            'multiplier': multiplier,
-            'is_demo': is_demo,
-            'max_contracts': 0  # No limit
-        }
-        enabled_accounts.append(new_account)
-        
-        # Save back
-        enabled_accounts_json = json.dumps(enabled_accounts)
-        cursor.execute(f'UPDATE traders SET enabled_accounts = {placeholder} WHERE id = {placeholder}', 
-                      (enabled_accounts_json, trader_id))
-        conn.commit()
-        conn.close()
-        
-        logger.info(f"✅ Added account {subaccount_name} ({subaccount_id}) to trader {trader_id}")
-        
-        return jsonify({
-            'success': True,
-            'message': f'Added account {subaccount_name} ({subaccount_id}) to trader {trader_id}',
-            'enabled_accounts': enabled_accounts
-        })
-        
-    except Exception as e:
-        logger.error(f"Error adding account to trader: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/debug/fix-tp/<int:recorder_id>', methods=['POST'])
-def api_debug_fix_tp(recorder_id):
-    """
-    FIX BAD TP: Recalculate and fix the TP for an existing position.
-    Use this when an account has a bad TP (e.g., TP @ $2.50 instead of correct price).
-    
-    This will:
-    1. Get the current broker position (to get the correct avg entry price)
-    2. Recalculate the TP based on strategy settings
-    3. Cancel the old bad TP order
-    4. Place the new correct TP order
-    """
-    try:
-        data = request.get_json() or {}
-        ticker = data.get('ticker', 'MNQ1!')
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        placeholder = '%s' if is_postgres else '?'
-        
-        # Get recorder info
-        cursor.execute(f'SELECT id, name, ticker FROM recorders WHERE id = {placeholder}', (recorder_id,))
-        recorder = cursor.fetchone()
-        if not recorder:
-            conn.close()
-            return jsonify({'success': False, 'error': f'Recorder {recorder_id} not found'}), 404
-        recorder = dict(recorder)
-        ticker = ticker or recorder.get('ticker', 'MNQ1!')
-        
-        conn.close()
-        
-        # Call sync_position_from_broker which will recalculate and fix the TP
-        from recorder_service import sync_position_from_broker
-        
-        logger.info(f"🔧 FIX-TP: Triggering position sync for recorder {recorder_id} ({recorder.get('name')}) on {ticker}")
-        
-        result = sync_position_from_broker(recorder_id, ticker)
-        
-        if result.get('success'):
-            return jsonify({
-                'success': True,
-                'message': f"TP fixed for recorder {recorder.get('name')}",
-                'broker_position': result.get('broker_position'),
-                'db_updated': result.get('db_updated', False)
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': result.get('error', 'Unknown error'),
-                'broker_position': result.get('broker_position')
-            })
-        
-    except Exception as e:
-        logger.error(f"Error fixing TP: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500

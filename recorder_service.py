@@ -686,10 +686,9 @@ def execute_trade_simple(
         placeholder = '%s' if is_postgres else '?'
         
         # Get ALL traders linked to this recorder (multi-user support)
-        # CRITICAL: Get environment from accounts table - this is the SOURCE OF TRUTH for demo/live!
         cursor.execute(f'''
             SELECT t.id, t.enabled_accounts, t.subaccount_id, t.subaccount_name, t.is_demo,
-                   a.tradovate_token, a.username, a.password, a.id as account_id, a.environment
+                   a.tradovate_token, a.username, a.password, a.id as account_id
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = {placeholder} AND t.enabled = {'true' if is_postgres else '1'}
@@ -713,15 +712,6 @@ def execute_trade_simple(
         traders = []
         seen_subaccounts = set()  # Prevent duplicates
         
-        # DIAGNOSTIC: Log all traders found for this recorder
-        logger.info(f"🔍 DIAGNOSTIC: Found {len(trader_rows)} trader(s) for recorder {recorder_id}")
-        for idx, tr in enumerate(trader_rows):
-            tr_dict = dict(tr)
-            ea_raw = tr_dict.get('enabled_accounts', '')
-            ea_preview = (ea_raw[:100] + '...') if ea_raw and len(str(ea_raw)) > 100 else ea_raw
-            logger.info(f"   [{idx+1}] Trader ID={tr_dict.get('id')}, subaccount_id={tr_dict.get('subaccount_id')}, subaccount_name={tr_dict.get('subaccount_name')}")
-            logger.info(f"       enabled_accounts preview: {ea_preview}")
-        
         for trader_row in trader_rows:
             trader_dict = dict(trader_row)
             enabled_accounts_raw = trader_dict.get('enabled_accounts')
@@ -741,6 +731,7 @@ def execute_trade_simple(
                         acct_id = acct.get('account_id')
                         subaccount_id = acct.get('subaccount_id')
                         subaccount_name = acct.get('subaccount_name') or acct.get('account_name')
+                        is_demo = acct.get('is_demo', True)
                         multiplier = float(acct.get('multiplier', 1.0))  # Extract multiplier from account settings
                         
                         # Skip duplicates
@@ -748,11 +739,9 @@ def execute_trade_simple(
                             continue
                         seen_subaccounts.add(subaccount_id)
                         
-                        # Get credentials AND environment from accounts table
-                        # CRITICAL: Use environment from DB, NOT from enabled_accounts JSON
-                        # The JSON may be stale or missing is_demo field (causing live accounts to use demo API!)
+                        # Get credentials from accounts table (includes broker type for routing)
                         placeholder = '%s' if is_postgres else '?'
-                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment FROM accounts WHERE id = {placeholder}', (acct_id,))
+                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key FROM accounts WHERE id = {placeholder}', (acct_id,))
                         creds_row = cursor.fetchone()
                         
                         if not creds_row:
@@ -762,21 +751,10 @@ def execute_trade_simple(
                         if creds_row:
                             creds = dict(creds_row)
                             broker_type = creds.get('broker', 'Tradovate')  # Default to Tradovate for existing accounts
-                            
-                            # CRITICAL FIX: Get is_demo from DB environment, NOT from JSON!
-                            # The JSON may have stale/missing is_demo, causing live accounts to use demo API
-                            db_environment = creds.get('environment', 'demo')  # Get from DB
-                            is_demo_from_db = (db_environment == 'demo')
-                            
-                            # Log if there's a mismatch (helps debug future issues)
-                            json_is_demo = acct.get('is_demo')
-                            if json_is_demo is not None and json_is_demo != is_demo_from_db:
-                                logger.warning(f"⚠️ is_demo mismatch for {subaccount_name}: JSON={json_is_demo}, DB={is_demo_from_db} (using DB value)")
-                            
                             traders.append({
                                 'subaccount_id': subaccount_id,
                                 'subaccount_name': subaccount_name,
-                                'is_demo': is_demo_from_db,  # Use DB value, not JSON!
+                                'is_demo': is_demo,
                                 'tradovate_token': creds.get('tradovate_token'),
                                 'username': creds.get('username'),
                                 'password': creds.get('password'),
@@ -785,8 +763,7 @@ def execute_trade_simple(
                                 'account_id': acct_id,
                                 'multiplier': multiplier  # Store multiplier for this account
                             })
-                            env_label = "DEMO" if is_demo_from_db else "LIVE"
-                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type}, Env: {env_label})")
+                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type})")
                 except Exception as e:
                     logger.error(f"❌ Error parsing enabled_accounts: {e}")
             else:
@@ -794,34 +771,11 @@ def execute_trade_simple(
                 subaccount_id = trader_dict.get('subaccount_id')
                 if subaccount_id and subaccount_id not in seen_subaccounts:
                     seen_subaccounts.add(subaccount_id)
-                    
-                    # CRITICAL FIX: Use environment from accounts table, not traders.is_demo
-                    # The traders.is_demo field may be stale or incorrectly set
-                    db_environment = trader_dict.get('environment', 'demo')
-                    is_demo_from_db = (db_environment == 'demo')
-                    
-                    # Override is_demo with DB value
-                    trader_dict['is_demo'] = is_demo_from_db
-                    
                     traders.append(trader_dict)
-                    env_label = "DEMO" if is_demo_from_db else "LIVE"
-                    logger.info(f"  ✅ Added trader: {trader_dict.get('subaccount_name')} (ID: {subaccount_id}, Env: {env_label})")
-                else:
-                    # THIS IS THE PROBLEM CASE - trader enabled but no accounts configured!
-                    logger.warning(f"⚠️ TRADER {trader_dict.get('id')} HAS NO ACCOUNTS TO TRADE ON!")
-                    logger.warning(f"   - enabled_accounts: {enabled_accounts_raw}")
-                    logger.warning(f"   - subaccount_id: {subaccount_id}")
-                    logger.warning(f"   - FIX: Go to Strategies/My Traders and add accounts to this trader!")
+                    logger.info(f"  ✅ Added trader: {trader_dict.get('subaccount_name')} (ID: {subaccount_id})")
         
         conn.close()
         logger.info(f"📋 Found {len(traders)} account(s) to trade on")
-        # Log final list of accounts that will receive trades
-        for idx, t in enumerate(traders):
-            subacct = t.get('subaccount_id') or t.get('subaccount_name')
-            acct_name = t.get('subaccount_name') or t.get('account_name') or 'Unknown'
-            is_demo = t.get('is_demo', True)
-            env = 'DEMO' if is_demo else 'LIVE'
-            logger.info(f"   [{idx+1}] Will trade on: {acct_name} (subaccount_id={subacct}, env={env})")
         
         # CRITICAL: If no traders found, return error immediately
         if len(traders) == 0:
@@ -971,10 +925,7 @@ def execute_trade_simple(
             # The account might work via cached token, API Access, or OAuth fallback
             # If ALL methods fail, auth logic will return the appropriate error
             
-            # CRITICAL: Get is_demo from trader dict - this was populated from accounts.environment
-            is_demo = trader.get('is_demo', True)  # Default to True for safety (prevents live trades on error)
-            env_label = "DEMO" if is_demo else "🟢 LIVE"
-            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type}, Environment: {env_label})")
+            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type})")
             
             # ============================================================
             # BROKER ROUTING - ProjectX vs Tradovate (Added Jan 2026)
@@ -1170,21 +1121,18 @@ def execute_trade_simple(
                     pooled_conn = await get_pooled_connection(tradovate_account_id, is_demo, access_token)
                     if pooled_conn:
                         tradovate = pooled_conn
-                        api_endpoint = "demo.tradovateapi.com" if is_demo else "live.tradovateapi.com"
-                        logger.debug(f"⚡ [{acct_name}] Using POOLED WebSocket connection (API: {api_endpoint})")
+                        logger.debug(f"⚡ [{acct_name}] Using POOLED WebSocket connection")
                     else:
                         # Create new connection (will be closed after trade)
                         tradovate = TradovateIntegration(demo=is_demo)
                         await tradovate.__aenter__()
                         tradovate.access_token = access_token
-                        # Log the actual endpoint being used
-                        logger.info(f"🔌 [{acct_name}] Created new Tradovate connection → {tradovate.base_url}")
+                        logger.debug(f"🔌 [{acct_name}] Created new connection")
                 except Exception as pool_err:
                     logger.warning(f"⚠️ [{acct_name}] Pool error, creating new connection: {pool_err}")
                     tradovate = TradovateIntegration(demo=is_demo)
                     await tradovate.__aenter__()
                     tradovate.access_token = access_token
-                    logger.info(f"🔌 [{acct_name}] Fallback Tradovate connection → {tradovate.base_url}")
                 
                 try:
                     # STEP 0: Check if this is a new entry or DCA (adding to position)
@@ -1316,25 +1264,19 @@ def execute_trade_simple(
                     order_id = order_result.get('orderId') or order_result.get('id')
                     logger.info(f"✅ [{acct_name}] Market order placed: {order_id}")
                     
-                    # STEP 2: Get position info
-                    # CRITICAL FOR DCA: Must get position.netPrice (average), NOT order fill price!
-                    # For new entries, fill price = avg price (OK to use order result)
-                    # For DCA, fill price != avg price (must fetch position)
-                    broker_avg = None
+                    # STEP 2: Get position info - OPTIMIZED (1 call max, use order result first)
+                    # OPTIMIZATION: Check if order result has fill info (saves API call!)
+                    broker_avg = order_result.get('avgFillPrice') or order_result.get('price')
                     broker_qty = adjusted_quantity
                     broker_side = 'LONG' if order_action == 'Buy' else 'SHORT'
                     contract_id = None
                     
-                    # For NEW entries (no DCA), we can use fill price as average
-                    if not has_existing_position:
-                        broker_avg = order_result.get('avgFillPrice') or order_result.get('price')
-                        if broker_avg:
-                            logger.info(f"📊 [{acct_name}] NEW ENTRY: Using fill price {broker_avg} (0 extra API calls)")
-                    
-                    # For DCA or if no fill price, MUST fetch position to get correct average
-                    if not broker_avg or has_existing_position:
-                        dca_label = "DCA" if has_existing_position else "NEW"
-                        logger.info(f"📊 [{acct_name}] {dca_label}: Fetching position for AVERAGE price...")
+                    # If order result has fill price, use it directly (no API call needed!)
+                    if broker_avg:
+                        logger.info(f"📊 [{acct_name}] Using fill price from order result: {broker_side} {broker_qty} @ {broker_avg} (0 extra API calls!)")
+                    else:
+                        # Only fetch position if we don't have fill price
+                        # OPTIMIZATION: Single call with 1 second wait (not 10 calls!)
                         await asyncio.sleep(1.0)  # Give order time to fill
                         positions = await tradovate.get_positions(account_id=tradovate_account_id)
                         
@@ -1347,7 +1289,7 @@ def execute_trade_simple(
                                     broker_qty = abs(net_pos)
                                     broker_side = 'LONG' if net_pos > 0 else 'SHORT'
                                     contract_id = pos.get('contractId')
-                                    logger.info(f"📊 [{acct_name}] {dca_label} POSITION: {broker_side} {broker_qty} @ avg {broker_avg}")
+                                    logger.info(f"📊 [{acct_name}] POSITION: {broker_side} {broker_qty} @ {broker_avg} (1 API call)")
                                     break
                         
                         if not broker_avg:
@@ -1363,37 +1305,7 @@ def execute_trade_simple(
                             else:
                                 broker_avg = 0  # Will trigger TP placement to skip if still 0
                     
-                    # STEP 3: Calculate TP price and ROUND TO TICK SIZE
-                    # CRITICAL: Tradovate rejects orders with prices not aligned to tick increments!
-                    
-                    # CRITICAL FIX: If broker_avg is 0/None/invalid, we CANNOT calculate TP!
-                    # This happens when position fetch fails - would result in TP @ $2.50 instead of real price
-                    if not broker_avg or broker_avg <= 0:
-                        logger.error(f"❌ [{acct_name}] CANNOT CALCULATE TP: broker_avg is {broker_avg} (invalid)")
-                        logger.error(f"   Position fetch may have failed. Will try to use current market price instead.")
-                        # Last resort: use current market price as entry estimate
-                        try:
-                            market_price = get_price_from_tradingview_api(ticker)
-                            if market_price and market_price > 100:  # Sanity check for futures prices
-                                broker_avg = market_price
-                                logger.warning(f"⚠️ [{acct_name}] Using market price {market_price} as entry estimate")
-                            else:
-                                logger.error(f"❌ [{acct_name}] Market price {market_price} also invalid - SKIPPING TP PLACEMENT")
-                                # Return success for order, but note TP was skipped
-                                return {
-                                    'success': True, 
-                                    'broker_avg': None, 
-                                    'error': 'Could not determine entry price for TP calculation',
-                                    'tp_skipped': True
-                                }
-                        except Exception as market_err:
-                            logger.error(f"❌ [{acct_name}] Could not get market price: {market_err} - SKIPPING TP")
-                            return {
-                                'success': True,
-                                'error': 'Position fetch failed, could not calculate TP',
-                                'tp_skipped': True
-                            }
-                    
+                    # STEP 3: Calculate TP price
                     if broker_side == 'LONG':
                         tp_price = broker_avg + (tp_ticks * tick_size)
                         tp_action = 'Sell'
@@ -1401,45 +1313,7 @@ def execute_trade_simple(
                         tp_price = broker_avg - (tp_ticks * tick_size)
                         tp_action = 'Buy'
                     
-                    # Round TP price to tick size (prevents rejection due to invalid price)
-                    tp_price = clamp_price(tp_price, tick_size)
-                    
-                    # SANITY CHECK: TP price should be reasonable (not $2.50 or negative)
-                    if tp_price < 100:  # Futures prices should be way higher than $100
-                        logger.error(f"❌ [{acct_name}] INSANE TP PRICE: {tp_price} - this is wrong!")
-                        logger.error(f"   broker_avg={broker_avg}, tp_ticks={tp_ticks}, tick_size={tick_size}")
-                        logger.error(f"   SKIPPING TP PLACEMENT to prevent wrong order")
-                        return {
-                            'success': True,
-                            'error': f'Calculated TP price {tp_price} is invalid',
-                            'tp_skipped': True
-                        }
-                    
-                    logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price} (rounded to tick)")
-                    
-                    # MARKETABILITY CHECK: ONLY adjust if TP would execute IMMEDIATELY
-                    # Don't over-adjust - only fix if TP is on WRONG SIDE of market
-                    try:
-                        current_market = get_price_from_tradingview_api(ticker)
-                        if current_market:
-                            if broker_side == 'LONG':
-                                # LONG TP (Sell) must be ABOVE market to be a limit order
-                                # ONLY adjust if TP is AT or BELOW market (would fill immediately)
-                                if tp_price <= current_market:
-                                    # TP is through market - adjust to 2 ticks above current
-                                    adjusted_tp = clamp_price(current_market + (2 * tick_size), tick_size)
-                                    logger.warning(f"⚠️ [{acct_name}] TP {tp_price} <= market {current_market} - adjusting to {adjusted_tp}")
-                                    tp_price = adjusted_tp
-                            else:
-                                # SHORT TP (Buy) must be BELOW market to be a limit order
-                                # ONLY adjust if TP is AT or ABOVE market (would fill immediately)
-                                if tp_price >= current_market:
-                                    # TP is through market - adjust to 2 ticks below current
-                                    adjusted_tp = clamp_price(current_market - (2 * tick_size), tick_size)
-                                    logger.warning(f"⚠️ [{acct_name}] TP {tp_price} >= market {current_market} - adjusting to {adjusted_tp}")
-                                    tp_price = adjusted_tp
-                    except Exception as market_err:
-                        logger.debug(f"[{acct_name}] Could not check market price: {market_err}")
+                    logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
                     
                     # STEP 4: Find existing TP or place new - OPTIMIZED for minimum API calls
                     tp_order_id = None
@@ -1537,35 +1411,7 @@ def execute_trade_simple(
                                 break
                             else:
                                 error_msg = tp_result.get('error', 'Unknown error') if tp_result else 'No response'
-                                full_response = tp_result if tp_result else {}
                                 logger.warning(f"⚠️ [{acct_name}] TP placement attempt {tp_attempt+1}/{max_attempts} failed: {error_msg}")
-                                logger.warning(f"   Full response: {full_response}")
-                                logger.warning(f"   TP order data: action={tp_action}, price={tp_price}, qty={broker_qty}, symbol={tradovate_symbol}")
-                                
-                                # Check for specific rejection reasons and handle them
-                                error_lower = str(error_msg).lower()
-                                if 'marketab' in error_lower or 'wrong side' in error_lower or 'would trade' in error_lower or 'limit' in error_lower:
-                                    # TP price is through the market - need to adjust
-                                    logger.warning(f"   ⚠️ TP rejected due to marketability/price issue - adjusting")
-                                    # Try to get fresh market price and recalculate
-                                    try:
-                                        fresh_price = get_price_from_tradingview_api(ticker)
-                                        if fresh_price:
-                                            if broker_side == 'LONG':
-                                                new_tp = clamp_price(fresh_price + (3 * tick_size), tick_size)  # 3 ticks above current
-                                            else:
-                                                new_tp = clamp_price(fresh_price - (3 * tick_size), tick_size)  # 3 ticks below current
-                                            logger.info(f"   🔄 Adjusting TP from {tp_price} to {new_tp} (market now @ {fresh_price})")
-                                            tp_price = new_tp
-                                            tp_order_data['price'] = tp_price
-                                    except:
-                                        pass
-                                elif 'token' in error_lower or '401' in error_lower or 'unauthorized' in error_lower:
-                                    logger.error(f"   ❌ Token/auth issue - cannot place TP for this account")
-                                    break  # Don't retry auth errors
-                                elif 'margin' in error_lower or 'risk' in error_lower:
-                                    logger.error(f"   ❌ Margin/risk rejection - account may have insufficient funds")
-                                    break  # Don't retry margin errors
                                 
                                 # Exponential backoff: 1s, 2s, 4s, 8s, etc. (max 10s)
                                 wait_time = min(2 ** tp_attempt, 10)
@@ -1911,24 +1757,11 @@ def get_tick_value(ticker: str) -> float:
 
 
 def clamp_price(price: float, tick_size: float) -> float:
-    """
-    Round price to nearest tick increment.
-    Tradovate REJECTS orders with prices not aligned to tick size!
-    
-    Example: For MNQ (tick_size=0.25), price 21500.33 → 21500.25
-    """
+    """Round price to nearest tick"""
     if price is None:
         return None
-    if tick_size <= 0:
-        return price
-    
-    # Round to nearest tick increment
-    ticks = round(price / tick_size)
-    rounded_price = ticks * tick_size
-    
-    # Also ensure proper decimal places (prevent floating point issues)
-    decimals = max(2, len(str(tick_size).split('.')[-1]) if '.' in str(tick_size) else 0)
-    return round(rounded_price, decimals)
+    decimals = max(3, len(str(tick_size).split('.')[-1]))
+    return round(price, decimals)
 
 
 def calculate_pnl(entry_price: float, exit_price: float, side: str, quantity: int, ticker: str) -> Tuple[float, float]:
@@ -3673,17 +3506,17 @@ def execute_live_trades(recorder_id: int, action: str, ticker: str, quantity: in
             try:
                 tp_targets = json.loads(tp_targets_json) if tp_targets_json else []
                 if tp_targets and len(tp_targets) > 0:
-                    tp_ticks = int(tp_targets[0].get('value') or tp_targets[0].get('ticks') or 10)
+                    tp_ticks = int(tp_targets[0].get('ticks', 5))
             except:
-                tp_ticks = 10  # Default 10 ticks
+                tp_ticks = 5  # Default
             
             # Get SL
             if rec.get('sl_enabled'):
                 sl_ticks = int(rec.get('sl_amount', 10))
     except Exception as e:
         logger.warning(f"Could not get TP/SL settings: {e}")
-        tp_ticks = 10  # Default 10 ticks
-        sl_ticks = 0  # No SL by default
+        tp_ticks = 5  # Default
+        sl_ticks = 10
     
     # Call the new broker-first function
     result = execute_live_trade_with_bracket(
@@ -3805,22 +3638,19 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                     if db_qty != broker_qty or abs(db_entry - broker_avg) > 0.01:
                         logger.warning(f"⚠️ MISMATCH: DB={db_qty}@{db_entry:.2f} vs Broker={broker_qty}@{broker_avg:.2f}")
                         
-                        # Get TP/SL settings to recalculate - SIMPLE
+                        # Get TP/SL settings to recalculate
                         cursor.execute('SELECT tp_targets, sl_amount, sl_enabled FROM recorders WHERE id = ?', (recorder_id,))
                         rec = cursor.fetchone()
                         if rec:
                             rec = dict(rec)
                             try:
                                 tp_targets = json.loads(rec.get('tp_targets', '[]'))
-                                if tp_targets and len(tp_targets) > 0:
-                                    tp_ticks = int(tp_targets[0].get('value') or tp_targets[0].get('ticks') or 10)
-                                else:
-                                    tp_ticks = 10
+                                tp_ticks = int(tp_targets[0].get('value', 5)) if tp_targets else 5
                             except:
-                                tp_ticks = 10
-                            sl_amount = rec.get('sl_amount', 0) if rec.get('sl_enabled') else 0
+                                tp_ticks = 5
+                            sl_amount = rec.get('sl_amount', 10) if rec.get('sl_enabled') else 0
                         else:
-                            tp_ticks = 10  # Default 10 ticks
+                            tp_ticks = 5
                             sl_amount = 0
                         
                         # Get tick size for symbol
@@ -3829,23 +3659,12 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                         
                         # Recalculate TP/SL based on broker's avg price
                         # (inline calculation since calculate_tp_sl_prices is defined in webhook handler)
-                        
-                        # SANITY CHECK: broker_avg must be valid (not 0, None, or unreasonably low)
-                        if not broker_avg or broker_avg < 100:
-                            logger.error(f"❌ SYNC: broker_avg is invalid ({broker_avg}) - skipping TP calculation")
-                            new_tp = None
-                            new_sl = None
-                        elif broker_side == 'LONG':
+                        if broker_side == 'LONG':
                             new_tp = broker_avg + (tp_ticks * tick_size) if tp_ticks else None
                             new_sl = broker_avg - (sl_amount * tick_size) if sl_amount else None
                         else:  # SHORT
                             new_tp = broker_avg - (tp_ticks * tick_size) if tp_ticks else None
                             new_sl = broker_avg + (sl_amount * tick_size) if sl_amount else None
-                        
-                        # Additional sanity check: TP price should be reasonable
-                        if new_tp and new_tp < 100:
-                            logger.error(f"❌ SYNC: Calculated TP {new_tp} is invalid - skipping")
-                            new_tp = None
                         
                         # Update DB to match broker
                         cursor.execute('''
@@ -4306,10 +4125,9 @@ def reconcile_positions_with_broker():
         cursor = conn.cursor()
         
         # Get all open positions from database
-        # CRITICAL: Get environment from accounts table - this is the SOURCE OF TRUTH for demo/live!
         cursor.execute('''
             SELECT rp.*, r.name as recorder_name, t.subaccount_id, t.is_demo,
-                   a.tradovate_token, a.username, a.password, a.id as account_id, a.environment
+                   a.tradovate_token, a.username, a.password, a.id as account_id
             FROM recorder_positions rp
             JOIN recorders r ON rp.recorder_id = r.id
             JOIN traders t ON t.recorder_id = r.id AND t.enabled = 1
@@ -4338,18 +4156,12 @@ def reconcile_positions_with_broker():
                     ticker = db_pos['ticker']
                     db_qty = db_pos['total_quantity']
                     db_avg = db_pos['avg_entry_price']
+                    is_demo = bool(db_pos['is_demo'])
                     account_id = db_pos['account_id']
                     username = db_pos['username']
                     password = db_pos['password']
                     access_token = db_pos['tradovate_token']
                     subaccount_id = db_pos['subaccount_id']
-                    
-                    # CRITICAL FIX: Use environment from accounts table, not traders.is_demo
-                    # traders.is_demo may be stale or incorrectly set
-                    db_environment = db_pos.get('environment', 'demo')
-                    is_demo = (db_environment == 'demo')
-                    env_label = "DEMO" if is_demo else "LIVE"
-                    logger.debug(f"🔄 Reconciling {ticker} (Env: {env_label})")
                     
                     # Authenticate
                     api_access = TradovateAPIAccess(demo=is_demo)
@@ -4567,15 +4379,9 @@ def reconcile_positions_with_broker():
                                         # Calculate correct TP based on broker avg price
                                         is_long = db_side == 'LONG'
                                         tick_size = 0.25  # MNQ tick size
-                                        tp_ticks = 10  # Default TP distance (was 5, should be 10!)
+                                        tp_ticks = 5  # Default TP distance
                                         
-                                        # CRITICAL: Validate broker_avg before calculating TP!
-                                        if not broker_avg or broker_avg < 100:
-                                            logger.error(f"❌ SYNC FIX: Cannot calculate TP - broker_avg is {broker_avg} (invalid)")
-                                            logger.error(f"   Skipping TP placement to prevent wrong order")
-                                            continue  # Skip this position
-                                        
-                                        # Get TP ticks from recorder settings - SIMPLE
+                                        # Get TP ticks from recorder settings
                                         conn_tp = get_db_connection()
                                         cursor_tp = conn_tp.cursor()
                                         cursor_tp.execute('SELECT tp_targets FROM recorders WHERE id = ?', (recorder_id,))
@@ -4587,9 +4393,9 @@ def reconcile_positions_with_broker():
                                                 import json
                                                 tp_config = json.loads(rec_row['tp_targets'])
                                                 if isinstance(tp_config, list) and len(tp_config) > 0:
-                                                    tp_ticks = int(tp_config[0].get('value') or tp_config[0].get('ticks') or 10)
+                                                    tp_ticks = tp_config[0].get('ticks', 5)
                                                 elif isinstance(tp_config, dict):
-                                                    tp_ticks = int(tp_config.get('value') or tp_config.get('ticks') or 10)
+                                                    tp_ticks = tp_config.get('ticks', 5)
                                             except:
                                                 pass
                                         
@@ -4600,13 +4406,6 @@ def reconcile_positions_with_broker():
                                         else:
                                             new_tp_price = broker_avg - (tp_ticks * tick_size)
                                             tp_action = 'Buy'
-                                        
-                                        # SANITY CHECK: TP price must be reasonable
-                                        if new_tp_price < 100:
-                                            logger.error(f"❌ SYNC FIX: Calculated TP {new_tp_price} is invalid - skipping")
-                                            continue
-                                        
-                                        logger.info(f"🎯 SYNC FIX: TP = {broker_avg} {'+'if is_long else '-'} ({tp_ticks} × {tick_size}) = {new_tp_price}")
                                         
                                         # Place the TP order
                                         try:
@@ -6149,24 +5948,21 @@ def receive_webhook(webhook_token):
         sl_enabled = recorder.get('sl_enabled', 0)
         sl_amount = recorder.get('sl_ticks', 0) or recorder.get('sl_amount', 0) or 0
         
-        # Get TP ticks - SIMPLE, no conversion
+        # Get TP ticks - first try direct column, then tp_targets JSON
         tp_ticks = recorder.get('tp_ticks', 0) or 0
         if not tp_ticks:
             # Fallback: Parse TP targets (JSON array) if direct column is empty
             tp_targets_raw = recorder.get('tp_targets', '[]')
             try:
                 tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
-                if tp_targets and len(tp_targets) > 0:
-                    tp_ticks = int(tp_targets[0].get('value') or tp_targets[0].get('ticks') or 10)
-                else:
-                    tp_ticks = 10
+                tp_ticks = tp_targets[0].get('value', 0) if tp_targets else 0
             except:
-                tp_ticks = 10
+                tp_ticks = 0
+        
+        logger.info(f"📊 Recorder TP/SL config: tp_ticks={tp_ticks}, sl_ticks={sl_amount}, sl_enabled={sl_enabled}")
         
         # Determine tick size and tick value for PnL calculation
         tick_size = get_tick_size(ticker) if ticker else 0.25
-        
-        logger.info(f"📊 Recorder TP/SL config: tp_ticks={tp_ticks}, sl_ticks={sl_amount}, sl_enabled={sl_enabled}")
         tick_value = get_tick_value(ticker) if ticker else 0.50
         
         # Check for existing open trade for this recorder
