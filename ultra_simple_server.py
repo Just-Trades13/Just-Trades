@@ -247,43 +247,73 @@ def get_discord_enabled_users(user_id: int = None) -> list:
 
 
 def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int, 
-                           price: float, recorder_name: str = None, pnl: float = None):
+                           price: float, recorder_name: str = None, pnl: float = None,
+                           tp_price: float = None, sl_price: float = None):
     """
     Send trade execution notification to user via Discord AND push notification.
     
     Args:
         user_id: Database user ID
-        action: 'BUY' or 'SELL'
+        action: 'BUY', 'SELL', 'LONG', 'SHORT', 'DCA LONG', 'DCA SHORT'
         symbol: Trading symbol (e.g., 'MNQH5')
         quantity: Number of contracts
         price: Execution price
         recorder_name: Name of the recorder/strategy
         pnl: Realized P&L (for closing trades)
+        tp_price: Take profit price (optional)
+        sl_price: Stop loss price (optional)
     """
     logger.info(f"🔔 notify_trade_execution called: user_id={user_id}, action={action}, symbol={symbol}, qty={quantity}")
     
-    # Build message
-    emoji = "🟢" if action.upper() == "BUY" else "🔴"
-    action_word = "BOUGHT" if action.upper() == "BUY" else "SOLD"
+    # Determine if this is a DCA, open, or close
+    action_upper = action.upper()
+    is_dca = 'DCA' in action_upper
+    is_long = 'BUY' in action_upper or 'LONG' in action_upper
+    is_close = pnl is not None
     
-    # Discord message (with markdown)
-    discord_message = f"{emoji} **{action_word} {quantity} {symbol}** @ ${price:,.2f}"
-    if recorder_name:
-        discord_message += f"\n📊 Strategy: {recorder_name}"
-    if pnl is not None:
-        pnl_emoji = "💰" if pnl >= 0 else "📉"
-        discord_message += f"\n{pnl_emoji} P&L: ${pnl:,.2f}"
-    discord_message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
+    # Build Discord embed
+    if is_close:
+        # Closing trade
+        embed_color = 0x00FF00 if pnl >= 0 else 0xFF0000  # Green if profit, red if loss
+        title = f"{recorder_name or 'Trade'} {symbol}"
+        description = f"{symbol} Closed a {'LONG' if is_long else 'SHORT'}"
+        fields = [
+            {"name": "Close Price", "value": f"{price:,.2f}", "inline": True},
+            {"name": "Realized Profit", "value": f"${pnl:,.2f}", "inline": True},
+            {"name": "Drawdown", "value": "$0.00", "inline": True}
+        ]
+    else:
+        # Opening trade
+        embed_color = 0x00FF00 if is_long else 0xFF0000  # Green for long, red for short
+        action_text = "DCA" if is_dca else "Opened"
+        side_text = "LONG" if is_long else "SHORT"
+        title = f"{recorder_name or 'Trade'} {symbol}"
+        description = f"{symbol} {action_text} a {side_text}"
+        fields = [
+            {"name": "Open Price", "value": f"{price:,.2f}", "inline": True},
+            {"name": "Current Pos", "value": f"{quantity}", "inline": True},
+            {"name": "First TP", "value": f"{tp_price:,.2f}" if tp_price else "None", "inline": True},
+            {"name": "Stoploss", "value": f"{sl_price:,.2f}" if sl_price else "0.00", "inline": False}
+        ]
+    
+    embed = {
+        "title": title,
+        "description": description,
+        "color": embed_color,
+        "fields": fields,
+        "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
+        "footer": {"text": "Just.Trades Notification"},
+        "timestamp": datetime.now().isoformat()
+    }
     
     # Push notification (plain text)
-    push_title = f"{emoji} {action_word} {quantity} {symbol}"
-    push_body = f"@ ${price:,.2f}"
-    if recorder_name:
-        push_body += f" • {recorder_name}"
-    if pnl is not None:
-        push_body += f" • P&L: ${pnl:,.2f}"
+    push_title = f"{'📈' if is_long else '📉'} {recorder_name or 'Trade'}"
+    if is_close:
+        push_body = f"Closed {symbol} @ {price:,.2f} • P&L: ${pnl:,.2f}"
+    else:
+        push_body = f"{'DCA' if is_dca else 'Opened'} {'LONG' if is_long else 'SHORT'} {symbol} @ {price:,.2f}"
     
-    # Send Discord DM
+    # Send Discord DM with embed
     logger.info(f"🔔 DISCORD_NOTIFICATIONS_ENABLED={DISCORD_NOTIFICATIONS_ENABLED}")
     if DISCORD_NOTIFICATIONS_ENABLED:
         users = get_discord_enabled_users(user_id)
@@ -292,7 +322,7 @@ def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int
             logger.warning(f"⚠️ No Discord-enabled users found for user_id={user_id}")
         for user in users:
             logger.info(f"🔔 Sending Discord DM to: {user['discord_user_id']}")
-            result = send_discord_dm(user['discord_user_id'], discord_message)
+            result = send_discord_dm(user['discord_user_id'], "", embed)
             logger.info(f"🔔 Discord DM result: {result}")
     else:
         logger.warning("⚠️ Discord notifications disabled (no DISCORD_BOT_TOKEN)")
@@ -304,7 +334,8 @@ def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int
 
 
 def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int, 
-                     price: float, pnl: float = None):
+                     price: float, pnl: float = None, recorder_name: str = None,
+                     entry_price: float = None, side: str = None):
     """
     Send TP/SL hit notification via Discord AND push notification.
     
@@ -313,38 +344,49 @@ def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int,
         order_type: 'TP' or 'SL'
         symbol: Trading symbol
         quantity: Contracts closed
-        price: Fill price
+        price: Fill price (exit price)
         pnl: Realized P&L
+        recorder_name: Name of the recorder/strategy
+        entry_price: Original entry price
+        side: 'LONG' or 'SHORT'
     """
     logger.info(f"🔔 notify_tp_sl_hit called: user_id={user_id}, type={order_type}, symbol={symbol}, pnl={pnl}")
     
-    if order_type.upper() == 'TP':
-        emoji = "🎯"
-        title = "Take Profit Hit!"
-    else:
-        emoji = "🛑"
-        title = "Stop Loss Triggered"
+    is_tp = order_type.upper() == 'TP'
     
-    # Discord message (with markdown)
-    discord_message = f"{emoji} **{title}**\n"
-    discord_message += f"📊 {symbol} - {quantity} contracts @ ${price:,.2f}"
-    if pnl is not None:
-        pnl_emoji = "💰" if pnl >= 0 else "📉"
-        discord_message += f"\n{pnl_emoji} Realized P&L: ${pnl:,.2f}"
-    discord_message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
+    # Build Discord embed
+    embed_color = 0x00FF00 if (pnl and pnl >= 0) else 0xFF0000
+    title = f"{recorder_name or 'Trade'} {symbol}"
+    description = f"{symbol} Closed a {side or 'POSITION'}"
+    
+    fields = [
+        {"name": "Close Price", "value": f"{price:,.2f}", "inline": True},
+        {"name": "Realized Profit", "value": f"${pnl:,.2f}" if pnl else "$0.00", "inline": True},
+        {"name": "Drawdown", "value": "$0.00", "inline": True}
+    ]
+    
+    embed = {
+        "title": title,
+        "description": description,
+        "color": embed_color,
+        "fields": fields,
+        "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
+        "footer": {"text": f"Just.Trades • {'Take Profit' if is_tp else 'Stop Loss'}"},
+        "timestamp": datetime.now().isoformat()
+    }
     
     # Push notification (plain text)
-    push_title = f"{emoji} {title}"
-    push_body = f"{symbol} x{quantity} @ ${price:,.2f}"
+    push_title = f"{'🎯' if is_tp else '🛑'} {'TP' if is_tp else 'SL'} Hit"
+    push_body = f"{symbol} @ {price:,.2f}"
     if pnl is not None:
         push_body += f" • P&L: ${pnl:,.2f}"
     
-    # Send Discord DM
+    # Send Discord DM with embed
     if DISCORD_NOTIFICATIONS_ENABLED:
         users = get_discord_enabled_users(user_id)
         logger.info(f"🔔 Discord users for TP/SL notification: {users}")
         for user in users:
-            result = send_discord_dm(user['discord_user_id'], discord_message)
+            result = send_discord_dm(user['discord_user_id'], "", embed)
             logger.info(f"🔔 Discord DM result: {result}")
     
     # Send Push Notification
@@ -11913,7 +11955,9 @@ def process_webhook_directly(webhook_token):
                                 symbol=ticker,
                                 quantity=quantity,
                                 price=current_price,
-                                recorder_name=recorder_name
+                                recorder_name=recorder_name,
+                                tp_price=tp_price,
+                                sl_price=sl_price
                             )
                     except Exception as notif_err:
                         _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
@@ -11944,7 +11988,9 @@ def process_webhook_directly(webhook_token):
                                 symbol=ticker,
                                 quantity=quantity,
                                 price=current_price,
-                                recorder_name=recorder_name
+                                recorder_name=recorder_name,
+                                tp_price=tp_price,
+                                sl_price=sl_price
                             )
                     except Exception as notif_err:
                         _logger.warning(f"⚠️ Could not send DCA notification: {notif_err}")
@@ -11972,7 +12018,9 @@ def process_webhook_directly(webhook_token):
                             symbol=ticker,
                             quantity=quantity,
                             price=current_price,
-                            recorder_name=recorder_name
+                            recorder_name=recorder_name,
+                            tp_price=tp_price,
+                            sl_price=sl_price
                         )
                 except Exception as notif_err:
                     _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
@@ -20768,7 +20816,10 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
                             symbol=ticker,
                             quantity=trade['quantity'],
                             price=exit_price,
-                            pnl=pnl
+                            pnl=pnl,
+                            recorder_name=trade.get('recorder_name'),
+                            entry_price=entry_price,
+                            side=side
                         )
                         logger.info(f"🔔 Sent {action_word} notification to user {recorder_user_id}")
                 except Exception as e:
