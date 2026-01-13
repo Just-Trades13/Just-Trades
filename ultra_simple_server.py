@@ -300,7 +300,7 @@ def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int
 def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int, 
                      price: float, pnl: float = None):
     """
-    Send TP/SL hit notification.
+    Send TP/SL hit notification via Discord AND push notification.
     
     Args:
         user_id: Database user ID
@@ -310,12 +310,7 @@ def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int,
         price: Fill price
         pnl: Realized P&L
     """
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return
-    
-    users = get_discord_enabled_users(user_id)
-    if not users:
-        return
+    logger.info(f"🔔 notify_tp_sl_hit called: user_id={user_id}, type={order_type}, symbol={symbol}, pnl={pnl}")
     
     if order_type.upper() == 'TP':
         emoji = "🎯"
@@ -324,15 +319,32 @@ def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int,
         emoji = "🛑"
         title = "Stop Loss Triggered"
     
-    message = f"{emoji} **{title}**\n"
-    message += f"📊 {symbol} - {quantity} contracts @ ${price:,.2f}"
+    # Discord message (with markdown)
+    discord_message = f"{emoji} **{title}**\n"
+    discord_message += f"📊 {symbol} - {quantity} contracts @ ${price:,.2f}"
     if pnl is not None:
         pnl_emoji = "💰" if pnl >= 0 else "📉"
-        message += f"\n{pnl_emoji} Realized P&L: ${pnl:,.2f}"
-    message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
+        discord_message += f"\n{pnl_emoji} Realized P&L: ${pnl:,.2f}"
+    discord_message += f"\n⏰ {datetime.now().strftime('%I:%M:%S %p')}"
     
-    for user in users:
-        send_discord_dm(user['discord_user_id'], message)
+    # Push notification (plain text)
+    push_title = f"{emoji} {title}"
+    push_body = f"{symbol} x{quantity} @ ${price:,.2f}"
+    if pnl is not None:
+        push_body += f" • P&L: ${pnl:,.2f}"
+    
+    # Send Discord DM
+    if DISCORD_NOTIFICATIONS_ENABLED:
+        users = get_discord_enabled_users(user_id)
+        logger.info(f"🔔 Discord users for TP/SL notification: {users}")
+        for user in users:
+            result = send_discord_dm(user['discord_user_id'], discord_message)
+            logger.info(f"🔔 Discord DM result: {result}")
+    
+    # Send Push Notification
+    if PUSH_NOTIFICATIONS_ENABLED:
+        push_result = send_push_notification(user_id, push_title, push_body, url='/dashboard')
+        logger.info(f"🔔 Push notification result: {push_result}")
 
 
 def notify_error(user_id: int, error_type: str, error_message: str, details: str = None):
@@ -20629,6 +20641,38 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
                     })
                 except Exception as e:
                     logger.warning(f"Could not emit WebSocket update: {e}")
+                
+                # Send Discord/Push notification for TP/SL hit
+                try:
+                    # Get user_id from recorder
+                    recorder_user_id = trade.get('user_id')
+                    if not recorder_user_id:
+                        # Look it up
+                        rec_conn = get_db_connection()
+                        rec_cursor = rec_conn.cursor()
+                        if is_using_postgres():
+                            rec_cursor.execute('SELECT user_id FROM recorders WHERE id = %s', (trade['recorder_id'],))
+                        else:
+                            rec_cursor.execute('SELECT user_id FROM recorders WHERE id = ?', (trade['recorder_id'],))
+                        rec_row = rec_cursor.fetchone()
+                        rec_cursor.close()
+                        rec_conn.close()
+                        if rec_row:
+                            recorder_user_id = rec_row[0]
+                    
+                    if recorder_user_id:
+                        action_word = 'TP' if hit_type == 'tp' else 'SL'
+                        notify_tp_sl_hit(
+                            user_id=recorder_user_id,
+                            order_type=action_word,
+                            symbol=ticker,
+                            quantity=trade['quantity'],
+                            price=exit_price,
+                            pnl=pnl
+                        )
+                        logger.info(f"🔔 Sent {action_word} notification to user {recorder_user_id}")
+                except Exception as e:
+                    logger.warning(f"Could not send TP/SL notification: {e}")
         
         conn.close()
         
