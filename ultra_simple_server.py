@@ -4704,6 +4704,116 @@ def admin_delete_announcement(ann_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/admin/recorders/fix-user-ids', methods=['GET'])
+@login_required
+def admin_fix_recorder_user_ids_check():
+    """Admin: Check which recorders are missing user_ids."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('SELECT id, name, user_id FROM recorders ORDER BY id')
+        else:
+            cursor.execute('SELECT id, name, user_id FROM recorders ORDER BY id')
+        
+        rows = cursor.fetchall()
+        recorders = []
+        missing_user_id = []
+        for row in rows:
+            rec = {
+                'id': row[0],
+                'name': row[1],
+                'user_id': row[2]
+            }
+            recorders.append(rec)
+            if not rec['user_id']:
+                missing_user_id.append(rec)
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'total_recorders': len(recorders),
+            'missing_user_id': len(missing_user_id),
+            'recorders': recorders,
+            'needs_fix': missing_user_id
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/recorders/<int:recorder_id>/set-user', methods=['POST'])
+@login_required
+def admin_set_recorder_user(recorder_id):
+    """Admin: Set user_id for a recorder."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    data = request.json
+    target_user_id = data.get('user_id')
+    
+    if not target_user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('UPDATE recorders SET user_id = %s WHERE id = %s', (target_user_id, recorder_id))
+        else:
+            cursor.execute('UPDATE recorders SET user_id = ? WHERE id = ?', (target_user_id, recorder_id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Admin set recorder {recorder_id} user_id to {target_user_id}")
+        return jsonify({'success': True, 'message': f'Recorder {recorder_id} assigned to user {target_user_id}'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/recorders/fix-all', methods=['POST'])
+@login_required  
+def admin_fix_all_recorder_user_ids():
+    """Admin: Assign all recorders without user_id to a specific user."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    data = request.json
+    target_user_id = data.get('user_id')
+    
+    if not target_user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if is_using_postgres():
+            cursor.execute('UPDATE recorders SET user_id = %s WHERE user_id IS NULL', (target_user_id,))
+        else:
+            cursor.execute('UPDATE recorders SET user_id = ? WHERE user_id IS NULL', (target_user_id,))
+        
+        affected = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Admin fixed {affected} recorders, assigned to user {target_user_id}")
+        return jsonify({'success': True, 'fixed_count': affected, 'message': f'Assigned {affected} recorders to user {target_user_id}'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/admin/announcements/<int:ann_id>/toggle', methods=['POST'])
 @login_required
 def admin_toggle_announcement(ann_id):
