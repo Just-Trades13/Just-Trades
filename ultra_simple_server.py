@@ -11847,6 +11847,21 @@ def process_webhook_directly(webhook_token):
                         recorded_trade_id = trade_cursor.fetchone()[0]
                     
                     _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
+                    
+                    # Send notification for flip (closed + new)
+                    try:
+                        rec_user_id = recorder.get('user_id')
+                        if rec_user_id:
+                            notify_trade_execution(
+                                user_id=rec_user_id,
+                                action=trade_side,
+                                symbol=ticker,
+                                quantity=quantity,
+                                price=current_price,
+                                recorder_name=recorder_name
+                            )
+                    except Exception as notif_err:
+                        _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
                 else:
                     # SAME SIDE: DCA - Add to existing position!
                     _logger.info(f"📈 DCA: Adding {quantity} to existing {existing_side} position")
@@ -11863,6 +11878,21 @@ def process_webhook_directly(webhook_token):
                         recorded_trade_id = trade_cursor.fetchone()[0]
                     
                     _logger.info(f"📈 DCA {trade_side} +{quantity} @ {current_price} | Total trades open: counting...")
+                    
+                    # Send notification for DCA
+                    try:
+                        rec_user_id = recorder.get('user_id')
+                        if rec_user_id:
+                            notify_trade_execution(
+                                user_id=rec_user_id,
+                                action=f"DCA {trade_side}",
+                                symbol=ticker,
+                                quantity=quantity,
+                                price=current_price,
+                                recorder_name=recorder_name
+                            )
+                    except Exception as notif_err:
+                        _logger.warning(f"⚠️ Could not send DCA notification: {notif_err}")
             else:
                 # NO EXISTING POSITION: Open new trade
                 trade_cursor.execute(f'''
@@ -11876,6 +11906,21 @@ def process_webhook_directly(webhook_token):
                     recorded_trade_id = trade_cursor.fetchone()[0]
                 
                 _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
+                
+                # Send notification for new trade
+                try:
+                    rec_user_id = recorder.get('user_id')
+                    if rec_user_id:
+                        notify_trade_execution(
+                            user_id=rec_user_id,
+                            action=trade_side,
+                            symbol=ticker,
+                            quantity=quantity,
+                            price=current_price,
+                            recorder_name=recorder_name
+                        )
+                except Exception as notif_err:
+                    _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
             
             # Also update recorder_positions for aggregate tracking
             trade_cursor.execute(f'''
