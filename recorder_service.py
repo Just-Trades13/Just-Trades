@@ -645,7 +645,8 @@ def execute_trade_simple(
     ticker: str,
     quantity: int,
     tp_ticks: int = 10,
-    sl_ticks: int = 0  # 0 = no SL (TradingView strategy may handle it)
+    sl_ticks: int = 0,  # 0 = no SL (TradingView strategy may handle it)
+    risk_config: dict = None  # NEW: Full risk_config for trailing stop/break-even
 ) -> Dict[str, Any]:
     """
     SIMPLE TRADE EXECUTION WITH TP/SL - Executes on ALL linked accounts.
@@ -1196,7 +1197,14 @@ def execute_trade_simple(
                     
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
-                    if not has_existing_position and tp_ticks and tp_ticks > 0:
+                    # BUT: Skip bracket orders if risk_config has trail or break_even (not supported by bracket orders)
+                    use_bracket_order = (
+                        not has_existing_position and 
+                        tp_ticks and tp_ticks > 0 and
+                        not (risk_config and (risk_config.get('trail') or risk_config.get('break_even')))
+                    )
+                    
+                    if use_bracket_order:
                         sl_log = f" + SL: {sl_ticks} ticks" if sl_ticks > 0 else ""
                         logger.info(f"📤 [{acct_name}] Using BRACKET ORDER (WebSocket) - Entry + TP{sl_log} in one call")
                         bracket_result = await tradovate.place_bracket_order(
@@ -1241,7 +1249,8 @@ def execute_trade_simple(
                                 'sl_price': sl_price,
                                 'sl_order_id': strategy_id if sl_ticks > 0 else None,
                                 'acct_name': acct_name,
-                                'method': 'BRACKET_WS'  # 1 API call for entry + TP!
+                                'method': 'BRACKET_WS',  # 1 API call for entry + TP!
+                                'subaccount_id': tradovate_account_id  # For break-even monitoring
                             }
                         else:
                             # Bracket order failed - fall back to REST
@@ -1263,6 +1272,30 @@ def execute_trade_simple(
                     
                     order_id = order_result.get('orderId') or order_result.get('id')
                     logger.info(f"✅ [{acct_name}] Market order placed: {order_id}")
+                    
+                    # STEP 1.5: If risk_config has trail or break_even, use apply_risk_orders
+                    # This handles trailing stops and break-even which bracket orders don't support
+                    if risk_config and (risk_config.get('trail') or risk_config.get('break_even')):
+                        logger.info(f"📊 [{acct_name}] Using apply_risk_orders for advanced risk management (trailing stop/break-even)")
+                        try:
+                            # Import apply_risk_orders from ultra_simple_server
+                            import sys
+                            import os
+                            # Get the directory of ultra_simple_server.py
+                            current_dir = os.path.dirname(os.path.abspath(__file__))
+                            parent_dir = os.path.dirname(current_dir)
+                            if parent_dir not in sys.path:
+                                sys.path.insert(0, parent_dir)
+                            
+                            # We need to call apply_risk_orders after getting position fill
+                            # Store it for later use
+                            use_apply_risk_orders = True
+                            logger.info(f"📊 [{acct_name}] Will use apply_risk_orders after position fill")
+                        except Exception as import_err:
+                            logger.warning(f"⚠️ [{acct_name}] Could not import apply_risk_orders: {import_err}")
+                            use_apply_risk_orders = False
+                    else:
+                        use_apply_risk_orders = False
                     
                     # STEP 2: Get position info - OPTIMIZED (1 call max, use order result first)
                     # OPTIMIZATION: Check if order result has fill info (saves API call!)
@@ -1305,7 +1338,51 @@ def execute_trade_simple(
                             else:
                                 broker_avg = 0  # Will trigger TP placement to skip if still 0
                     
-                    # STEP 3: Calculate TP price
+                    # STEP 2.5: Use apply_risk_orders if risk_config has trail or break_even
+                    if use_apply_risk_orders and risk_config and broker_avg:
+                        logger.info(f"📊 [{acct_name}] Calling apply_risk_orders for advanced risk management")
+                        try:
+                            # Import apply_risk_orders - it's in ultra_simple_server.py
+                            # We need to import it dynamically since it's in a different file
+                            from ultra_simple_server import apply_risk_orders
+                            
+                            # Call apply_risk_orders (it will handle TP, SL, trailing stop, break-even)
+                            await apply_risk_orders(
+                                tradovate=tradovate,
+                                account_spec=tradovate_account_spec,
+                                account_id=tradovate_account_id,
+                                symbol=tradovate_symbol,
+                                entry_side=order_action,
+                                quantity=adjusted_quantity,
+                                risk_config=risk_config
+                            )
+                            logger.info(f"✅ [{acct_name}] apply_risk_orders completed (trailing stop/break-even configured)")
+                            
+                            # Skip manual TP/SL placement since apply_risk_orders handled it
+                            return {
+                                'success': True,
+                                'broker_avg': broker_avg,
+                                'broker_qty': broker_qty,
+                                'broker_side': broker_side,
+                                'tp_price': None,  # Will be set by apply_risk_orders
+                                'tp_order_id': None,
+                                'sl_price': None,  # Will be set by apply_risk_orders
+                                'sl_order_id': None,
+                                'acct_name': acct_name,
+                                'method': 'REST_WITH_RISK_ORDERS',
+                                'subaccount_id': tradovate_account_id,  # For break-even monitoring
+                                'account_spec': tradovate_account_spec  # For break-even monitoring
+                            }
+                        except ImportError as import_err:
+                            logger.warning(f"⚠️ [{acct_name}] Could not import apply_risk_orders: {import_err}")
+                            logger.warning(f"   Falling back to manual TP/SL placement")
+                            use_apply_risk_orders = False  # Fall back to manual
+                        except Exception as apply_err:
+                            logger.error(f"❌ [{acct_name}] apply_risk_orders failed: {apply_err}")
+                            logger.warning(f"   Falling back to manual TP/SL placement")
+                            use_apply_risk_orders = False  # Fall back to manual
+                    
+                    # STEP 3: Calculate TP price (only if not using apply_risk_orders)
                     if broker_side == 'LONG':
                         tp_price = broker_avg + (tp_ticks * tick_size)
                         tp_action = 'Sell'
@@ -1461,6 +1538,36 @@ def execute_trade_simple(
                             logger.info(f"✅ [{acct_name}] SL PLACED @ {sl_price}")
                         else:
                             logger.warning(f"⚠️ [{acct_name}] SL order failed: {sl_result}")
+                    
+                    # CRITICAL: Register TP/SL as OCO pair so one cancels the other when filled
+                    if tp_order_id and sl_order_id:
+                        try:
+                            # Import register_oco_pair from ultra_simple_server
+                            import sys
+                            import os
+                            current_dir = os.path.dirname(os.path.abspath(__file__))
+                            parent_dir = os.path.dirname(current_dir)
+                            if parent_dir not in sys.path:
+                                sys.path.insert(0, parent_dir)
+                            
+                            from ultra_simple_server import register_oco_pair
+                            register_oco_pair(
+                                tp_order_id=int(tp_order_id),
+                                sl_order_id=int(sl_order_id),
+                                account_id=tradovate_account_id,
+                                symbol=tradovate_symbol.upper()
+                            )
+                            logger.info(f"🔗 [{acct_name}] OCO pair registered: TP={tp_order_id} <-> SL={sl_order_id}")
+                        except ImportError as import_err:
+                            logger.warning(f"⚠️ [{acct_name}] Could not import register_oco_pair: {import_err}")
+                            logger.warning(f"   TP/SL orders will NOT cancel each other automatically!")
+                        except Exception as oco_err:
+                            logger.warning(f"⚠️ [{acct_name}] Could not register OCO pair: {oco_err}")
+                            logger.warning(f"   TP/SL orders will NOT cancel each other automatically!")
+                    elif tp_order_id:
+                        logger.info(f"📊 [{acct_name}] TP placed but no SL - skipping OCO registration")
+                    elif sl_order_id:
+                        logger.info(f"📊 [{acct_name}] SL placed but no TP - skipping OCO registration")
                     
                     return {
                         'success': True,

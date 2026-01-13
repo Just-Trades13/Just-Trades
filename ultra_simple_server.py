@@ -2820,6 +2820,26 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
                 register_oco_pair(tp_order_id, sl_order_id, account_id, symbol_upper)
         else:
             logger.warning(f"⚠️ OCO exit failed, orders may have been placed individually: {result}")
+            # Fallback: Place orders individually and register as OCO pair
+            # This ensures OCO behavior even if Tradovate's OCO strategy fails
+            if tp_price:
+                logger.info(f"📊 Placing TP individually @ {tp_price}, Qty: {quantity}")
+                tp_order_data = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, quantity, tp_price, account_id)
+                tp_result = await tradovate.place_order(tp_order_data)
+                if tp_result and tp_result.get('success'):
+                    tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
+            
+            if sl_price:
+                logger.info(f"📊 Placing SL individually @ {sl_price}, Qty: {quantity}")
+                sl_order_data = tradovate.create_stop_order(account_spec, symbol_upper, exit_action, quantity, sl_price, account_id)
+                sl_result = await tradovate.place_order(sl_order_data)
+                if sl_result and sl_result.get('success'):
+                    sl_order_id = sl_result.get('orderId') or sl_result.get('data', {}).get('orderId')
+            
+            # Register as OCO pair if both were placed
+            if tp_order_id and sl_order_id:
+                register_oco_pair(tp_order_id, sl_order_id, account_id, symbol_upper)
+                logger.info(f"🔗 OCO pair registered (fallback): TP={tp_order_id} <-> SL={sl_order_id}")
     
     # If only TP (no SL)
     elif tp_price:
@@ -10900,6 +10920,8 @@ def broker_execution_worker():
             break_even_ticks = task.get('break_even_ticks', 10)
             entry_price = task.get('entry_price', 0)
             is_long = task.get('is_long', True)
+            risk_config = task.get('risk_config', {})  # NEW: Get risk_config for trailing stop/break-even
+            sl_type = task.get('sl_type', 'Fixed')  # NEW: Get sl_type
             
             # NO RETRIES - Try once, if fail log and move on
             # Retries can cause duplicate trades which is dangerous
@@ -10909,6 +10931,8 @@ def broker_execution_worker():
                 
                 logger.info(f"📤 Broker execution: {action} {quantity} {ticker}")
                 logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
+                if risk_config:
+                    logger.info(f"📊 Risk config: {risk_config}")
                 
                 result = execute_trade_simple(
                     recorder_id=recorder_id,
@@ -10916,7 +10940,8 @@ def broker_execution_worker():
                     ticker=ticker,
                     quantity=quantity,
                     tp_ticks=tp_ticks,
-                    sl_ticks=sl_ticks if sl_ticks > 0 else 0
+                    sl_ticks=sl_ticks if sl_ticks > 0 else 0,
+                    risk_config=risk_config  # NEW: Pass risk_config for trailing stop/break-even
                 )
                 
                 logger.info(f"🔧 execute_trade_simple returned: success={result.get('success')}, error={result.get('error')}, accounts_traded={result.get('accounts_traded', 0)}")
@@ -10964,22 +10989,56 @@ def broker_execution_worker():
                     # Register break-even monitor if enabled
                     if break_even_enabled and break_even_ticks > 0 and entry_price > 0:
                         try:
-                            # Get account IDs from result for break-even monitoring
-                            executed_accounts = result.get('executed_accounts', [])
-                            for acct_info in executed_accounts:
-                                acct_id = acct_info.get('subaccount_id') or acct_info.get('account_id')
-                                if acct_id:
-                                    register_break_even_monitor(
-                                        account_id=acct_id,
-                                        symbol=ticker,
-                                        entry_price=entry_price,
-                                        is_long=is_long,
-                                        activation_ticks=break_even_ticks,
-                                        sl_order_id=None  # Will be set when SL is placed
-                                    )
-                                    logger.info(f"📊 Break-even monitor registered: {ticker} @ {entry_price}, trigger={break_even_ticks} ticks")
+                            # Get account info from result for break-even monitoring
+                            # Result can have subaccount_id directly or in executed_accounts list
+                            subaccount_id = result.get('subaccount_id')
+                            account_spec = result.get('account_spec')
+                            broker_avg = result.get('broker_avg') or entry_price
+                            
+                            # If we have subaccount_id directly, use it
+                            if subaccount_id:
+                                # Get tick size for break-even calculation
+                                from recorder_service import get_tick_size
+                                tick_size_val = get_tick_size(ticker) if ticker else 0.25
+                                
+                                register_break_even_monitor(
+                                    account_id=int(subaccount_id),
+                                    symbol=ticker.upper(),
+                                    entry_price=float(broker_avg),  # Use actual fill price from broker
+                                    is_long=is_long,
+                                    activation_ticks=break_even_ticks,
+                                    tick_size=tick_size_val,
+                                    sl_order_id=None,  # Will be found by monitor when it moves SL
+                                    quantity=quantity,
+                                    account_spec=account_spec or str(subaccount_id)
+                                )
+                                logger.info(f"📊 Break-even monitor registered: {ticker} @ {broker_avg}, trigger={break_even_ticks} ticks")
+                            else:
+                                # Fallback: try executed_accounts list
+                                executed_accounts = result.get('executed_accounts', [])
+                                for acct_info in executed_accounts:
+                                    acct_id = acct_info.get('subaccount_id') or acct_info.get('account_id')
+                                    if acct_id:
+                                        from recorder_service import get_tick_size
+                                        tick_size_val = get_tick_size(ticker) if ticker else 0.25
+                                        broker_avg_val = acct_info.get('broker_avg') or entry_price
+                                        
+                                        register_break_even_monitor(
+                                            account_id=int(acct_id),
+                                            symbol=ticker.upper(),
+                                            entry_price=float(broker_avg_val),
+                                            is_long=is_long,
+                                            activation_ticks=break_even_ticks,
+                                            tick_size=tick_size_val,
+                                            sl_order_id=None,
+                                            quantity=quantity,
+                                            account_spec=acct_info.get('account_spec') or str(acct_id)
+                                        )
+                                        logger.info(f"📊 Break-even monitor registered: {ticker} @ {broker_avg_val}, trigger={break_even_ticks} ticks")
                         except Exception as be_err:
                             logger.warning(f"⚠️ Could not register break-even monitor: {be_err}")
+                            import traceback
+                            logger.warning(traceback.format_exc())
                 else:
                     error = result.get('error', 'Unknown error')
                     logger.error(f"❌ Broker execution FAILED: {error}")
@@ -11813,6 +11872,8 @@ def process_webhook_directly(webhook_token):
         break_even_ticks = int(recorder.get('break_even_ticks', 10) or 10)
         
         # Get linked trader for live execution with ALL risk settings
+        # Also get trader's sl_type if available (trader settings override recorder)
+        trader_sl_type = None
         # PostgreSQL uses TRUE (boolean), SQLite uses 1 (integer)
         # CRITICAL: Include all trader risk settings (initial_position_size, add_position_size, tp_targets, sl_*, etc.)
         _logger.info(f"🔍 Looking for trader linked to recorder_id={recorder_id} (recorder_name='{recorder_name}')")
@@ -11891,6 +11952,21 @@ def process_webhook_directly(webhook_token):
             sl_amount = float(trader_sl_amount or 0)
         if trader_sl_units:
             sl_units = trader_sl_units
+        
+        # Get trader's sl_type if available (check trader object)
+        if trader:
+            trader_sl_type = trader.get('sl_type')
+            if trader_sl_type:
+                sl_type = trader_sl_type
+                _logger.info(f"📊 Using TRADER's sl_type: {sl_type} (override recorder)")
+        
+        # Get trader's break-even settings if available
+        trader_break_even_enabled = trader.get('break_even_enabled') if trader else None
+        trader_break_even_ticks = trader.get('break_even_ticks') if trader else None
+        if trader_break_even_enabled is not None:
+            break_even_enabled = trader_break_even_enabled
+        if trader_break_even_ticks is not None:
+            break_even_ticks = int(trader_break_even_ticks or 10)
 
         # Parse TP targets
         try:
@@ -12333,7 +12409,40 @@ def process_webhook_directly(webhook_token):
             import traceback
             traceback.print_exc()
         
-        # STEP 2: Queue broker execution (Trade Manager style - async, non-blocking)
+        # STEP 2: Build risk_config for apply_risk_orders (includes trailing stop and break-even)
+        risk_config = {}
+        
+        # Take profit
+        if tp_ticks and tp_ticks > 0:
+            risk_config['take_profit'] = [{
+                'gain_ticks': tp_ticks,
+                'trim_percent': 100
+            }]
+        
+        # Stop loss (fixed or trailing)
+        if sl_enabled and sl_ticks > 0:
+            if sl_type == 'Trailing':
+                # Trailing stop: use sl_amount as offset_ticks
+                risk_config['trail'] = {
+                    'activation_ticks': sl_ticks,  # Can activate immediately
+                    'offset_ticks': sl_ticks  # Trail offset = SL distance
+                }
+                _logger.info(f"📊 Trailing stop configured: offset={sl_ticks} ticks")
+            else:
+                # Fixed stop loss
+                risk_config['stop_loss'] = {
+                    'type': 'fixed',
+                    'loss_ticks': sl_ticks
+                }
+        
+        # Break-even
+        if break_even_enabled and break_even_ticks > 0:
+            risk_config['break_even'] = {
+                'activation_ticks': break_even_ticks
+            }
+            _logger.info(f"📊 Break-even configured: activation={break_even_ticks} ticks")
+        
+        # STEP 3: Queue broker execution (Trade Manager style - async, non-blocking)
         # Webhook returns immediately, broker execution happens in background
         try:
             broker_task = {
@@ -12347,6 +12456,8 @@ def process_webhook_directly(webhook_token):
                 'break_even_ticks': break_even_ticks,
                 'entry_price': current_price,
                 'is_long': trade_side == 'LONG',
+                'risk_config': risk_config,  # NEW: Pass full risk_config for trailing stop/break-even
+                'sl_type': sl_type,  # NEW: Pass sl_type for trailing stop detection
                 'retry_count': 0
             }
             
