@@ -5125,6 +5125,46 @@ def admin_delete_announcement(ann_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/admin/fix-columns', methods=['GET', 'POST'])
+def admin_fix_columns():
+    """Fix missing columns in traders table - no auth required for emergency fix."""
+    results = []
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        
+        # All columns that might be missing
+        columns_to_add = [
+            ('sl_type', "TEXT DEFAULT 'Fixed'"),
+            ('avg_down_units', "TEXT DEFAULT 'Ticks'"),
+            ('tp_units', "TEXT DEFAULT 'Ticks'"),
+            ('trim_units', "TEXT DEFAULT 'Contracts'"),
+            ('break_even_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+            ('break_even_ticks', 'INTEGER DEFAULT 10'),
+            ('avg_down_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+            ('avg_down_amount', 'INTEGER DEFAULT 0'),
+            ('avg_down_point', 'REAL DEFAULT 0'),
+        ]
+        
+        for col_name, col_type in columns_to_add:
+            try:
+                cursor.execute(f'ALTER TABLE traders ADD COLUMN {col_name} {col_type}')
+                conn.commit()
+                results.append(f"✅ Added {col_name}")
+            except Exception as col_err:
+                if 'already exists' in str(col_err).lower() or 'duplicate column' in str(col_err).lower():
+                    results.append(f"⏭️ {col_name} already exists")
+                else:
+                    results.append(f"❌ {col_name}: {str(col_err)}")
+        
+        cursor.close()
+        conn.close()
+        return jsonify({'success': True, 'results': results})
+    except Exception as e:
+        return jsonify({'error': str(e), 'results': results}), 500
+
+
 @app.route('/api/admin/recorders/fix-user-ids', methods=['GET'])
 @login_required
 def admin_fix_recorder_user_ids_check():
