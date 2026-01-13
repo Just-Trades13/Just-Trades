@@ -10127,6 +10127,7 @@ def broker_execution_worker():
                     
                     # Discord notification for successful trade
                     try:
+                        logger.info(f"🔔 Discord notification check: DISCORD_NOTIFICATIONS_ENABLED={DISCORD_NOTIFICATIONS_ENABLED}")
                         if DISCORD_NOTIFICATIONS_ENABLED:
                             # Get user_id from recorder
                             conn = get_db_connection()
@@ -10137,10 +10138,13 @@ def broker_execution_worker():
                                 cursor.execute('SELECT user_id, name FROM recorders WHERE id = ?', (recorder_id,))
                             rec_row = cursor.fetchone()
                             conn.close()
+                            logger.info(f"🔔 Recorder lookup: recorder_id={recorder_id}, rec_row={rec_row}")
                             if rec_row:
                                 rec_user_id = rec_row[0] if isinstance(rec_row, tuple) else rec_row.get('user_id')
                                 rec_name = rec_row[1] if isinstance(rec_row, tuple) else rec_row.get('name')
+                                logger.info(f"🔔 Recorder data: user_id={rec_user_id}, name={rec_name}")
                                 if rec_user_id:
+                                    logger.info(f"🔔 Sending Discord notification for trade: {action} {quantity} {ticker}")
                                     notify_trade_execution(
                                         user_id=rec_user_id,
                                         action=action,
@@ -10149,6 +10153,12 @@ def broker_execution_worker():
                                         price=entry_price if entry_price else 0,
                                         recorder_name=rec_name
                                     )
+                                else:
+                                    logger.warning(f"⚠️ Recorder {recorder_id} has no user_id - cannot send Discord notification")
+                            else:
+                                logger.warning(f"⚠️ Recorder {recorder_id} not found in database")
+                        else:
+                            logger.info(f"🔔 Discord notifications disabled (no DISCORD_BOT_TOKEN)")
                     except Exception as notif_err:
                         logger.warning(f"⚠️ Discord notification failed: {notif_err}")
                     
