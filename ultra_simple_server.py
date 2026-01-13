@@ -3457,18 +3457,32 @@ def init_db():
         pass
     
     # Add sl_type, break-even, avg-down, tp/trim units to traders (Jan 2026 fix)
-    columns_for_traders = [
-        ('sl_type', 'TEXT DEFAULT "Fixed"'),
-        ('break_even_enabled', 'INTEGER DEFAULT 0' if not is_postgres else 'BOOLEAN DEFAULT FALSE'),
+    # PostgreSQL needs single quotes for string defaults, SQLite uses double quotes
+    if is_postgres:
+        text_columns = [
+            ('sl_type', "TEXT DEFAULT 'Fixed'"),
+            ('avg_down_units', "TEXT DEFAULT 'Ticks'"),
+            ('tp_units', "TEXT DEFAULT 'Ticks'"),
+            ('trim_units', "TEXT DEFAULT 'Contracts'"),
+        ]
+    else:
+        text_columns = [
+            ('sl_type', 'TEXT DEFAULT "Fixed"'),
+            ('avg_down_units', 'TEXT DEFAULT "Ticks"'),
+            ('tp_units', 'TEXT DEFAULT "Ticks"'),
+            ('trim_units', 'TEXT DEFAULT "Contracts"'),
+        ]
+    
+    # Non-text columns (same syntax for both)
+    other_columns = [
+        ('break_even_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
         ('break_even_ticks', 'INTEGER DEFAULT 10'),
-        ('avg_down_enabled', 'INTEGER DEFAULT 0' if not is_postgres else 'BOOLEAN DEFAULT FALSE'),
+        ('avg_down_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
         ('avg_down_amount', 'INTEGER DEFAULT 0'),
         ('avg_down_point', 'REAL DEFAULT 0'),
-        ('avg_down_units', 'TEXT DEFAULT "Ticks"'),
-        ('tp_units', 'TEXT DEFAULT "Ticks"'),
-        ('trim_units', 'TEXT DEFAULT "Contracts"'),
     ]
-    for col_name, col_type in columns_for_traders:
+    
+    for col_name, col_type in text_columns + other_columns:
         try:
             cursor.execute(f'ALTER TABLE traders ADD COLUMN {col_name} {col_type}')
         except:
