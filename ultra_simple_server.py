@@ -246,9 +246,54 @@ def get_discord_enabled_users(user_id: int = None) -> list:
     return []
 
 
-def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int, 
-                           price: float, recorder_name: str = None, pnl: float = None,
-                           tp_price: float = None, sl_price: float = None):
+def get_users_for_recorder_notifications(recorder_id: int) -> list:
+    """
+    Get all users who should receive notifications for a recorder.
+    This includes the recorder owner AND anyone with traders linked to the recorder.
+    
+    Args:
+        recorder_id: The recorder ID
+    
+    Returns:
+        List of unique user_ids who should be notified
+    """
+    user_ids = set()
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        
+        # Get recorder owner
+        cursor.execute(f'SELECT user_id FROM recorders WHERE id = {ph}', (recorder_id,))
+        row = cursor.fetchone()
+        if row:
+            owner_id = row[0] if isinstance(row, tuple) else row.get('user_id')
+            if owner_id:
+                user_ids.add(owner_id)
+        
+        # Get all users with traders linked to this recorder
+        cursor.execute(f'SELECT DISTINCT user_id FROM traders WHERE recorder_id = {ph} AND user_id IS NOT NULL', (recorder_id,))
+        rows = cursor.fetchall()
+        for row in rows:
+            uid = row[0] if isinstance(row, tuple) else row.get('user_id')
+            if uid:
+                user_ids.add(uid)
+        
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"🔔 Users for recorder {recorder_id} notifications: {list(user_ids)}")
+        return list(user_ids)
+    except Exception as e:
+        logger.error(f"❌ Error getting users for recorder notifications: {e}")
+        return []
+
+
+def notify_trade_execution(user_id: int = None, action: str = None, symbol: str = None, quantity: int = None, 
+                           price: float = None, recorder_name: str = None, pnl: float = None,
+                           tp_price: float = None, sl_price: float = None, recorder_id: int = None):
     """
     Send trade execution notification to user via Discord AND push notification.
     
@@ -313,34 +358,45 @@ def notify_trade_execution(user_id: int, action: str, symbol: str, quantity: int
     else:
         push_body = f"{'DCA' if is_dca else 'Opened'} {'LONG' if is_long else 'SHORT'} {symbol} @ {price:,.2f}"
     
-    # Send Discord DM with embed
+    # Get all users to notify
+    # If recorder_id provided, notify ALL users linked to the recorder (not just owner)
+    if recorder_id:
+        user_ids_to_notify = get_users_for_recorder_notifications(recorder_id)
+    elif user_id:
+        user_ids_to_notify = [user_id]
+    else:
+        user_ids_to_notify = []
+    
+    logger.info(f"🔔 Users to notify: {user_ids_to_notify}")
+    
+    # Send Discord DM with embed to ALL users
     logger.info(f"🔔 DISCORD_NOTIFICATIONS_ENABLED={DISCORD_NOTIFICATIONS_ENABLED}")
     if DISCORD_NOTIFICATIONS_ENABLED:
-        users = get_discord_enabled_users(user_id)
-        logger.info(f"🔔 get_discord_enabled_users returned: {users}")
-        if not users:
-            logger.warning(f"⚠️ No Discord-enabled users found for user_id={user_id}")
-        for user in users:
-            logger.info(f"🔔 Sending Discord DM to: {user['discord_user_id']}")
-            result = send_discord_dm(user['discord_user_id'], "", embed)
-            logger.info(f"🔔 Discord DM result: {result}")
+        for uid in user_ids_to_notify:
+            users = get_discord_enabled_users(uid)
+            logger.info(f"🔔 Discord users for user_id {uid}: {users}")
+            for user in users:
+                logger.info(f"🔔 Sending Discord DM to: {user['discord_user_id']}")
+                result = send_discord_dm(user['discord_user_id'], "", embed)
+                logger.info(f"🔔 Discord DM result: {result}")
     else:
         logger.warning("⚠️ Discord notifications disabled (no DISCORD_BOT_TOKEN)")
     
-    # Send Push Notification
+    # Send Push Notification to ALL users
     if PUSH_NOTIFICATIONS_ENABLED:
-        push_result = send_push_notification(user_id, push_title, push_body, url='/dashboard')
+        for uid in user_ids_to_notify:
+            push_result = send_push_notification(uid, push_title, push_body, url='/dashboard')
         logger.info(f"🔔 Push notification result: {push_result}")
 
 
-def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int, 
-                     price: float, pnl: float = None, recorder_name: str = None,
-                     entry_price: float = None, side: str = None):
+def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = None, quantity: int = None, 
+                     price: float = None, pnl: float = None, recorder_name: str = None,
+                     entry_price: float = None, side: str = None, recorder_id: int = None):
     """
     Send TP/SL hit notification via Discord AND push notification.
     
     Args:
-        user_id: Database user ID
+        user_id: Database user ID (deprecated, use recorder_id instead)
         order_type: 'TP' or 'SL'
         symbol: Trading symbol
         quantity: Contracts closed
@@ -349,8 +405,9 @@ def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int,
         recorder_name: Name of the recorder/strategy
         entry_price: Original entry price
         side: 'LONG' or 'SHORT'
+        recorder_id: Recorder ID - will notify ALL users linked to this recorder
     """
-    logger.info(f"🔔 notify_tp_sl_hit called: user_id={user_id}, type={order_type}, symbol={symbol}, pnl={pnl}")
+    logger.info(f"🔔 notify_tp_sl_hit called: user_id={user_id}, recorder_id={recorder_id}, type={order_type}, symbol={symbol}, pnl={pnl}")
     
     is_tp = order_type.upper() == 'TP'
     
@@ -381,18 +438,30 @@ def notify_tp_sl_hit(user_id: int, order_type: str, symbol: str, quantity: int,
     if pnl is not None:
         push_body += f" • P&L: ${pnl:,.2f}"
     
-    # Send Discord DM with embed
-    if DISCORD_NOTIFICATIONS_ENABLED:
-        users = get_discord_enabled_users(user_id)
-        logger.info(f"🔔 Discord users for TP/SL notification: {users}")
-        for user in users:
-            result = send_discord_dm(user['discord_user_id'], "", embed)
-            logger.info(f"🔔 Discord DM result: {result}")
+    # Get all users to notify
+    if recorder_id:
+        user_ids_to_notify = get_users_for_recorder_notifications(recorder_id)
+    elif user_id:
+        user_ids_to_notify = [user_id]
+    else:
+        user_ids_to_notify = []
     
-    # Send Push Notification
+    logger.info(f"🔔 Users to notify for TP/SL: {user_ids_to_notify}")
+    
+    # Send Discord DM with embed to ALL users
+    if DISCORD_NOTIFICATIONS_ENABLED:
+        for uid in user_ids_to_notify:
+            users = get_discord_enabled_users(uid)
+            logger.info(f"🔔 Discord users for user_id {uid}: {users}")
+            for user in users:
+                result = send_discord_dm(user['discord_user_id'], "", embed)
+                logger.info(f"🔔 Discord DM result: {result}")
+    
+    # Send Push Notification to ALL users
     if PUSH_NOTIFICATIONS_ENABLED:
-        push_result = send_push_notification(user_id, push_title, push_body, url='/dashboard')
-        logger.info(f"🔔 Push notification result: {push_result}")
+        for uid in user_ids_to_notify:
+            push_result = send_push_notification(uid, push_title, push_body, url='/dashboard')
+            logger.info(f"🔔 Push notification result for user {uid}: {push_result}")
 
 
 def notify_error(user_id: int, error_type: str, error_message: str, details: str = None):
@@ -10684,18 +10753,15 @@ def broker_execution_worker():
                                 rec_user_id = rec_row[0] if isinstance(rec_row, tuple) else rec_row.get('user_id')
                                 rec_name = rec_row[1] if isinstance(rec_row, tuple) else rec_row.get('name')
                                 logger.info(f"🔔 Recorder data: user_id={rec_user_id}, name={rec_name}")
-                                if rec_user_id:
-                                    logger.info(f"🔔 Sending Discord notification for trade: {action} {quantity} {ticker}")
-                                    notify_trade_execution(
-                                        user_id=rec_user_id,
-                                        action=action,
-                                        symbol=ticker,
-                                        quantity=quantity,
-                                        price=entry_price if entry_price else 0,
-                                        recorder_name=rec_name
-                                    )
-                                else:
-                                    logger.warning(f"⚠️ Recorder {recorder_id} has no user_id - cannot send Discord notification")
+                                logger.info(f"🔔 Sending Discord notification for trade: {action} {quantity} {ticker}")
+                                notify_trade_execution(
+                                    action=action,
+                                    symbol=ticker,
+                                    quantity=quantity,
+                                    price=entry_price if entry_price else 0,
+                                    recorder_name=rec_name,
+                                    recorder_id=recorder_id  # Notify ALL users linked to this recorder
+                                )
                             else:
                                 logger.warning(f"⚠️ Recorder {recorder_id} not found in database")
                         else:
@@ -11945,20 +12011,18 @@ def process_webhook_directly(webhook_token):
                     
                     _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
                     
-                    # Send notification for flip (closed + new)
+                    # Send notification for flip (closed + new) to ALL users linked to recorder
                     try:
-                        rec_user_id = recorder.get('user_id')
-                        if rec_user_id:
-                            notify_trade_execution(
-                                user_id=rec_user_id,
-                                action=trade_side,
-                                symbol=ticker,
-                                quantity=quantity,
-                                price=current_price,
-                                recorder_name=recorder_name,
-                                tp_price=tp_price,
-                                sl_price=sl_price
-                            )
+                        notify_trade_execution(
+                            action=trade_side,
+                            symbol=ticker,
+                            quantity=quantity,
+                            price=current_price,
+                            recorder_name=recorder_name,
+                            tp_price=tp_price,
+                            sl_price=sl_price,
+                            recorder_id=recorder_id
+                        )
                     except Exception as notif_err:
                         _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
                 else:
@@ -11978,20 +12042,18 @@ def process_webhook_directly(webhook_token):
                     
                     _logger.info(f"📈 DCA {trade_side} +{quantity} @ {current_price} | Total trades open: counting...")
                     
-                    # Send notification for DCA
+                    # Send notification for DCA to ALL users linked to recorder
                     try:
-                        rec_user_id = recorder.get('user_id')
-                        if rec_user_id:
-                            notify_trade_execution(
-                                user_id=rec_user_id,
-                                action=f"DCA {trade_side}",
-                                symbol=ticker,
-                                quantity=quantity,
-                                price=current_price,
-                                recorder_name=recorder_name,
-                                tp_price=tp_price,
-                                sl_price=sl_price
-                            )
+                        notify_trade_execution(
+                            action=f"DCA {trade_side}",
+                            symbol=ticker,
+                            quantity=quantity,
+                            price=current_price,
+                            recorder_name=recorder_name,
+                            tp_price=tp_price,
+                            sl_price=sl_price,
+                            recorder_id=recorder_id
+                        )
                     except Exception as notif_err:
                         _logger.warning(f"⚠️ Could not send DCA notification: {notif_err}")
             else:
@@ -12008,20 +12070,18 @@ def process_webhook_directly(webhook_token):
                 
                 _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
                 
-                # Send notification for new trade
+                # Send notification for new trade to ALL users linked to recorder
                 try:
-                    rec_user_id = recorder.get('user_id')
-                    if rec_user_id:
-                        notify_trade_execution(
-                            user_id=rec_user_id,
-                            action=trade_side,
-                            symbol=ticker,
-                            quantity=quantity,
-                            price=current_price,
-                            recorder_name=recorder_name,
-                            tp_price=tp_price,
-                            sl_price=sl_price
-                        )
+                    notify_trade_execution(
+                        action=trade_side,
+                        symbol=ticker,
+                        quantity=quantity,
+                        price=current_price,
+                        recorder_name=recorder_name,
+                        tp_price=tp_price,
+                        sl_price=sl_price,
+                        recorder_id=recorder_id
+                    )
                 except Exception as notif_err:
                     _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
             
@@ -20808,20 +20868,19 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
                         if rec_row:
                             recorder_user_id = rec_row[0]
                     
-                    if recorder_user_id:
-                        action_word = 'TP' if hit_type == 'tp' else 'SL'
-                        notify_tp_sl_hit(
-                            user_id=recorder_user_id,
-                            order_type=action_word,
-                            symbol=ticker,
-                            quantity=trade['quantity'],
-                            price=exit_price,
-                            pnl=pnl,
-                            recorder_name=trade.get('recorder_name'),
-                            entry_price=entry_price,
-                            side=side
-                        )
-                        logger.info(f"🔔 Sent {action_word} notification to user {recorder_user_id}")
+                    action_word = 'TP' if hit_type == 'tp' else 'SL'
+                    notify_tp_sl_hit(
+                        order_type=action_word,
+                        symbol=ticker,
+                        quantity=trade['quantity'],
+                        price=exit_price,
+                        pnl=pnl,
+                        recorder_name=trade.get('recorder_name'),
+                        entry_price=entry_price,
+                        side=side,
+                        recorder_id=trade['recorder_id']  # Notify ALL users linked to this recorder
+                    )
+                    logger.info(f"🔔 Sent {action_word} notification for recorder {trade['recorder_id']}")
                 except Exception as e:
                     logger.warning(f"Could not send TP/SL notification: {e}")
         
