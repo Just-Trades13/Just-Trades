@@ -686,9 +686,10 @@ def execute_trade_simple(
         placeholder = '%s' if is_postgres else '?'
         
         # Get ALL traders linked to this recorder (multi-user support)
+        # CRITICAL: Get environment from accounts table - this is the SOURCE OF TRUTH for demo/live!
         cursor.execute(f'''
             SELECT t.id, t.enabled_accounts, t.subaccount_id, t.subaccount_name, t.is_demo,
-                   a.tradovate_token, a.username, a.password, a.id as account_id
+                   a.tradovate_token, a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = {placeholder} AND t.enabled = {'true' if is_postgres else '1'}
@@ -731,7 +732,6 @@ def execute_trade_simple(
                         acct_id = acct.get('account_id')
                         subaccount_id = acct.get('subaccount_id')
                         subaccount_name = acct.get('subaccount_name') or acct.get('account_name')
-                        is_demo = acct.get('is_demo', True)
                         multiplier = float(acct.get('multiplier', 1.0))  # Extract multiplier from account settings
                         
                         # Skip duplicates
@@ -739,9 +739,11 @@ def execute_trade_simple(
                             continue
                         seen_subaccounts.add(subaccount_id)
                         
-                        # Get credentials from accounts table (includes broker type for routing)
+                        # Get credentials AND environment from accounts table
+                        # CRITICAL: Use environment from DB, NOT from enabled_accounts JSON
+                        # The JSON may be stale or missing is_demo field (causing live accounts to use demo API!)
                         placeholder = '%s' if is_postgres else '?'
-                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key FROM accounts WHERE id = {placeholder}', (acct_id,))
+                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment FROM accounts WHERE id = {placeholder}', (acct_id,))
                         creds_row = cursor.fetchone()
                         
                         if not creds_row:
@@ -751,10 +753,21 @@ def execute_trade_simple(
                         if creds_row:
                             creds = dict(creds_row)
                             broker_type = creds.get('broker', 'Tradovate')  # Default to Tradovate for existing accounts
+                            
+                            # CRITICAL FIX: Get is_demo from DB environment, NOT from JSON!
+                            # The JSON may have stale/missing is_demo, causing live accounts to use demo API
+                            db_environment = creds.get('environment', 'demo')  # Get from DB
+                            is_demo_from_db = (db_environment == 'demo')
+                            
+                            # Log if there's a mismatch (helps debug future issues)
+                            json_is_demo = acct.get('is_demo')
+                            if json_is_demo is not None and json_is_demo != is_demo_from_db:
+                                logger.warning(f"⚠️ is_demo mismatch for {subaccount_name}: JSON={json_is_demo}, DB={is_demo_from_db} (using DB value)")
+                            
                             traders.append({
                                 'subaccount_id': subaccount_id,
                                 'subaccount_name': subaccount_name,
-                                'is_demo': is_demo,
+                                'is_demo': is_demo_from_db,  # Use DB value, not JSON!
                                 'tradovate_token': creds.get('tradovate_token'),
                                 'username': creds.get('username'),
                                 'password': creds.get('password'),
@@ -763,7 +776,8 @@ def execute_trade_simple(
                                 'account_id': acct_id,
                                 'multiplier': multiplier  # Store multiplier for this account
                             })
-                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type})")
+                            env_label = "DEMO" if is_demo_from_db else "LIVE"
+                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type}, Env: {env_label})")
                 except Exception as e:
                     logger.error(f"❌ Error parsing enabled_accounts: {e}")
             else:
@@ -771,8 +785,18 @@ def execute_trade_simple(
                 subaccount_id = trader_dict.get('subaccount_id')
                 if subaccount_id and subaccount_id not in seen_subaccounts:
                     seen_subaccounts.add(subaccount_id)
+                    
+                    # CRITICAL FIX: Use environment from accounts table, not traders.is_demo
+                    # The traders.is_demo field may be stale or incorrectly set
+                    db_environment = trader_dict.get('environment', 'demo')
+                    is_demo_from_db = (db_environment == 'demo')
+                    
+                    # Override is_demo with DB value
+                    trader_dict['is_demo'] = is_demo_from_db
+                    
                     traders.append(trader_dict)
-                    logger.info(f"  ✅ Added trader: {trader_dict.get('subaccount_name')} (ID: {subaccount_id})")
+                    env_label = "DEMO" if is_demo_from_db else "LIVE"
+                    logger.info(f"  ✅ Added trader: {trader_dict.get('subaccount_name')} (ID: {subaccount_id}, Env: {env_label})")
         
         conn.close()
         logger.info(f"📋 Found {len(traders)} account(s) to trade on")
@@ -925,7 +949,10 @@ def execute_trade_simple(
             # The account might work via cached token, API Access, or OAuth fallback
             # If ALL methods fail, auth logic will return the appropriate error
             
-            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type})")
+            # CRITICAL: Get is_demo from trader dict - this was populated from accounts.environment
+            is_demo = trader.get('is_demo', True)  # Default to True for safety (prevents live trades on error)
+            env_label = "DEMO" if is_demo else "🟢 LIVE"
+            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type}, Environment: {env_label})")
             
             # ============================================================
             # BROKER ROUTING - ProjectX vs Tradovate (Added Jan 2026)
@@ -1121,18 +1148,21 @@ def execute_trade_simple(
                     pooled_conn = await get_pooled_connection(tradovate_account_id, is_demo, access_token)
                     if pooled_conn:
                         tradovate = pooled_conn
-                        logger.debug(f"⚡ [{acct_name}] Using POOLED WebSocket connection")
+                        api_endpoint = "demo.tradovateapi.com" if is_demo else "live.tradovateapi.com"
+                        logger.debug(f"⚡ [{acct_name}] Using POOLED WebSocket connection (API: {api_endpoint})")
                     else:
                         # Create new connection (will be closed after trade)
                         tradovate = TradovateIntegration(demo=is_demo)
                         await tradovate.__aenter__()
                         tradovate.access_token = access_token
-                        logger.debug(f"🔌 [{acct_name}] Created new connection")
+                        # Log the actual endpoint being used
+                        logger.info(f"🔌 [{acct_name}] Created new Tradovate connection → {tradovate.base_url}")
                 except Exception as pool_err:
                     logger.warning(f"⚠️ [{acct_name}] Pool error, creating new connection: {pool_err}")
                     tradovate = TradovateIntegration(demo=is_demo)
                     await tradovate.__aenter__()
                     tradovate.access_token = access_token
+                    logger.info(f"🔌 [{acct_name}] Fallback Tradovate connection → {tradovate.base_url}")
                 
                 try:
                     # STEP 0: Check if this is a new entry or DCA (adding to position)
@@ -4125,9 +4155,10 @@ def reconcile_positions_with_broker():
         cursor = conn.cursor()
         
         # Get all open positions from database
+        # CRITICAL: Get environment from accounts table - this is the SOURCE OF TRUTH for demo/live!
         cursor.execute('''
             SELECT rp.*, r.name as recorder_name, t.subaccount_id, t.is_demo,
-                   a.tradovate_token, a.username, a.password, a.id as account_id
+                   a.tradovate_token, a.username, a.password, a.id as account_id, a.environment
             FROM recorder_positions rp
             JOIN recorders r ON rp.recorder_id = r.id
             JOIN traders t ON t.recorder_id = r.id AND t.enabled = 1
@@ -4156,12 +4187,18 @@ def reconcile_positions_with_broker():
                     ticker = db_pos['ticker']
                     db_qty = db_pos['total_quantity']
                     db_avg = db_pos['avg_entry_price']
-                    is_demo = bool(db_pos['is_demo'])
                     account_id = db_pos['account_id']
                     username = db_pos['username']
                     password = db_pos['password']
                     access_token = db_pos['tradovate_token']
                     subaccount_id = db_pos['subaccount_id']
+                    
+                    # CRITICAL FIX: Use environment from accounts table, not traders.is_demo
+                    # traders.is_demo may be stale or incorrectly set
+                    db_environment = db_pos.get('environment', 'demo')
+                    is_demo = (db_environment == 'demo')
+                    env_label = "DEMO" if is_demo else "LIVE"
+                    logger.debug(f"🔄 Reconciling {ticker} (Env: {env_label})")
                     
                     # Authenticate
                     api_access = TradovateAPIAccess(demo=is_demo)
