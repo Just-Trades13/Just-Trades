@@ -270,11 +270,23 @@ class EventLedger:
             
             raw_json = json.dumps(event.raw_data) if event.raw_data else None
             
-            cursor.execute('''
-                INSERT INTO broker_events (account_id, timestamp, entity_type, event_type, entity_id, raw_data, sequence)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (event.account_id, event.timestamp, event.entity_type, event.event_type, 
-                  event.entity_id, raw_json, event.sequence))
+            # Detect database type and use appropriate placeholder
+            # PostgreSQL uses %s, SQLite uses ?
+            db_type = type(self._db).__module__
+            if 'psycopg' in db_type or 'pg8000' in db_type:
+                # PostgreSQL
+                cursor.execute('''
+                    INSERT INTO broker_events (account_id, timestamp, entity_type, event_type, entity_id, raw_data, sequence)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ''', (event.account_id, event.timestamp, event.entity_type, event.event_type, 
+                      event.entity_id, raw_json, event.sequence))
+            else:
+                # SQLite or other
+                cursor.execute('''
+                    INSERT INTO broker_events (account_id, timestamp, entity_type, event_type, entity_id, raw_data, sequence)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (event.account_id, event.timestamp, event.entity_type, event.event_type, 
+                      event.entity_id, raw_json, event.sequence))
             
             self._db.commit()
             
