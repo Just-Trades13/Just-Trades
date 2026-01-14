@@ -18158,6 +18158,7 @@ def manual_trade():
         # CRITICAL FIX: Use account.environment as source of truth (from DB, not stale JSON)
         account_env = (account['environment'] or 'demo').lower()
         demo = account_env != 'live'
+        logger.info(f"🔍 Manual trade DEBUG: account_id={account_id}, environment={account_env}, demo={demo}, subaccount_id={subaccount_id}")
         account_spec = (selected_subaccount.get('name') if selected_subaccount else None) or account['name'] or str(account_id)
         account_numeric_id = int(subaccount_id) if subaccount_id else account_id
         
@@ -18380,9 +18381,13 @@ def manual_trade():
                         quantity,
                         account_numeric_id
                     )
+                    # DEBUG: Log the order being placed
+                    logger.info(f"📤 Manual trade order: endpoint={'DEMO' if demo else 'LIVE'}, account_spec={account_spec}, account_id={account_numeric_id}")
+                    logger.info(f"📤 Order data: {order_data}")
                     if risk_settings:
                         order_data.setdefault('customFields', {})['riskSettings'] = risk_settings
                     result = await tradovate.place_order(order_data)
+                    logger.info(f"📥 Order result: {result}")
                     if result and result.get('success') and risk_settings:
                         await apply_risk_orders(
                             tradovate,
