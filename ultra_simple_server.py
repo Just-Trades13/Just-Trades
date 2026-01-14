@@ -7714,7 +7714,50 @@ def connect_account(account_id):
         
         # Get environment from query parameter (demo or live)
         # CRITICAL: Demo accounts require demo OAuth endpoint, live accounts require live OAuth endpoint
-        env = request.args.get('env', 'demo').lower()
+        env = request.args.get('env', '').lower()
+        
+        # SMART DEFAULT (Jan 14, 2026): If no env specified, check if account has live subaccounts
+        # This fixes the bug where Reconnect button didn't specify env and defaulted to demo
+        if not env:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT tradovate_accounts, environment FROM accounts WHERE id = ?", (account_id,))
+                row = cursor.fetchone()
+                conn.close()
+                
+                if row:
+                    existing_env = row[1] if row[1] else None
+                    tradovate_accounts_json = row[0]
+                    
+                    # Priority 1: Use existing environment if set to 'live'
+                    if existing_env == 'live':
+                        env = 'live'
+                        logger.info(f"🔑 Account {account_id} has environment=live, using live OAuth")
+                    # Priority 2: Check if account has any live subaccounts
+                    elif tradovate_accounts_json:
+                        import json
+                        try:
+                            accounts_data = json.loads(tradovate_accounts_json) if isinstance(tradovate_accounts_json, str) else tradovate_accounts_json
+                            subaccounts = accounts_data.get('subaccounts', []) if isinstance(accounts_data, dict) else []
+                            # Check for any live subaccounts (numeric names without "DEMO")
+                            for sub in subaccounts:
+                                sub_name = str(sub.get('name', '')).upper()
+                                sub_env = sub.get('environment', '')
+                                if sub_env == 'live' or (sub_name and 'DEMO' not in sub_name and sub_name.replace('-', '').isdigit()):
+                                    env = 'live'
+                                    logger.info(f"🔑 Account {account_id} has live subaccount {sub_name}, using live OAuth")
+                                    break
+                        except Exception as json_err:
+                            logger.warning(f"Could not parse tradovate_accounts JSON: {json_err}")
+                    
+                    if not env:
+                        env = 'demo'
+                        logger.info(f"🔑 Account {account_id} defaulting to demo OAuth (no live subaccounts found)")
+            except Exception as e:
+                logger.warning(f"Could not determine account environment: {e}, defaulting to demo")
+                env = 'demo'
+        
         is_demo = env == 'demo'
 
         # Build redirect URI - check Railway, then ngrok, then localhost
