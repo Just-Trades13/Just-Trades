@@ -687,9 +687,10 @@ def execute_trade_simple(
         placeholder = '%s' if is_postgres else '?'
         
         # Get ALL traders linked to this recorder (multi-user support)
+        # CRITICAL: Include a.environment - this is the source of truth for demo vs live
         cursor.execute(f'''
             SELECT t.id, t.enabled_accounts, t.subaccount_id, t.subaccount_name, t.is_demo,
-                   a.tradovate_token, a.username, a.password, a.id as account_id
+                   a.tradovate_token, a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = {placeholder} AND t.enabled = {'true' if is_postgres else '1'}
@@ -732,7 +733,8 @@ def execute_trade_simple(
                         acct_id = acct.get('account_id')
                         subaccount_id = acct.get('subaccount_id')
                         subaccount_name = acct.get('subaccount_name') or acct.get('account_name')
-                        is_demo = acct.get('is_demo', True)
+                        # NOTE: Don't use acct.get('is_demo') here - it's stale/cached
+                        # We'll get the correct value from accounts.environment below
                         multiplier = float(acct.get('multiplier', 1.0))  # Extract multiplier from account settings
                         
                         # Skip duplicates
@@ -741,8 +743,9 @@ def execute_trade_simple(
                         seen_subaccounts.add(subaccount_id)
                         
                         # Get credentials from accounts table (includes broker type for routing)
+                        # CRITICAL: Include environment - source of truth for demo vs live
                         placeholder = '%s' if is_postgres else '?'
-                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key FROM accounts WHERE id = {placeholder}', (acct_id,))
+                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment FROM accounts WHERE id = {placeholder}', (acct_id,))
                         creds_row = cursor.fetchone()
                         
                         if not creds_row:
@@ -752,10 +755,14 @@ def execute_trade_simple(
                         if creds_row:
                             creds = dict(creds_row)
                             broker_type = creds.get('broker', 'Tradovate')  # Default to Tradovate for existing accounts
+                            # CRITICAL FIX: Use accounts.environment as source of truth for demo vs live
+                            env = (creds.get('environment') or 'demo').lower()
+                            is_demo_from_env = env != 'live'
                             traders.append({
                                 'subaccount_id': subaccount_id,
                                 'subaccount_name': subaccount_name,
-                                'is_demo': is_demo,
+                                'is_demo': is_demo_from_env,  # Use environment, not cached JSON value
+                                'environment': env,  # Also pass environment for downstream use
                                 'tradovate_token': creds.get('tradovate_token'),
                                 'username': creds.get('username'),
                                 'password': creds.get('password'),
@@ -764,7 +771,7 @@ def execute_trade_simple(
                                 'account_id': acct_id,
                                 'multiplier': multiplier  # Store multiplier for this account
                             })
-                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type})")
+                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type}, Env: {env})")
                 except Exception as e:
                     logger.error(f"❌ Error parsing enabled_accounts: {e}")
             else:
@@ -825,7 +832,9 @@ def execute_trade_simple(
             username = trader.get('username')
             password = trader.get('password')  # FREE auth method (like Trade Manager)
             api_key = trader.get('api_key')    # Paid API key method
-            is_demo = bool(trader.get('is_demo', True))
+            # CRITICAL FIX: Use environment as source of truth for demo vs live
+            env = (trader.get('environment') or 'demo').lower()
+            is_demo = env != 'live'
             subaccount_id = trader.get('subaccount_id')  # This is the ProjectX account ID
             
             logger.info(f"🚀 [{acct_name}] ProjectX execution: {action} {adjusted_quantity} {ticker}")
@@ -937,7 +946,10 @@ def execute_trade_simple(
             
             tradovate_account_id = trader['subaccount_id']
             tradovate_account_spec = trader['subaccount_name']
-            is_demo = bool(trader.get('is_demo', True))
+            # CRITICAL FIX: Use environment as source of truth, not is_demo
+            # is_demo from trader dict may be stale/cached - environment is authoritative
+            env = (trader.get('environment') or 'demo').lower()
+            is_demo = env != 'live'
             username = trader.get('username')
             password = trader.get('password')
             
@@ -1945,7 +1957,7 @@ def sync_position_with_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
         
         cursor.execute('''
             SELECT t.subaccount_id, t.is_demo, a.tradovate_token,
-                   a.username, a.password, a.id as account_id
+                   a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = ? AND t.enabled = 1
@@ -1959,7 +1971,9 @@ def sync_position_with_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
         
         trader = dict(trader)
         tradovate_account_id = trader.get('subaccount_id')
-        is_demo = bool(trader.get('is_demo'))
+        # CRITICAL FIX: Use environment as source of truth for demo vs live
+        env = (trader.get('environment') or 'demo').lower()
+        is_demo = env != 'live'
         access_token = trader.get('tradovate_token')
         username = trader.get('username')
         password = trader.get('password')
@@ -2130,7 +2144,7 @@ def cancel_old_tp_orders_for_symbol(recorder_id: int, ticker: str) -> None:
             
             cursor.execute('''
                 SELECT t.subaccount_id, t.is_demo, a.tradovate_token,
-                       a.username, a.password, a.id as account_id
+                       a.username, a.password, a.id as account_id, a.environment
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
                 WHERE t.recorder_id = ? AND t.enabled = 1
@@ -2145,7 +2159,9 @@ def cancel_old_tp_orders_for_symbol(recorder_id: int, ticker: str) -> None:
             
             trader = dict(trader)
             tradovate_account_id = trader.get('subaccount_id')
-            is_demo = bool(trader.get('is_demo'))
+            # CRITICAL FIX: Use environment as source of truth for demo vs live
+            env = (trader.get('environment') or 'demo').lower()
+            is_demo = env != 'live'
             access_token = trader.get('tradovate_token')
             username = trader.get('username')
             password = trader.get('password')
@@ -2276,7 +2292,7 @@ def check_broker_position_exists(recorder_id: int, ticker: str) -> bool:
         
         cursor.execute('''
             SELECT t.subaccount_id, t.is_demo, a.tradovate_token,
-                   a.username, a.password, a.id as account_id
+                   a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = ? AND t.enabled = 1
@@ -2291,7 +2307,9 @@ def check_broker_position_exists(recorder_id: int, ticker: str) -> bool:
         
         trader = dict(trader)
         tradovate_account_id = trader.get('subaccount_id')
-        is_demo = bool(trader.get('is_demo'))
+        # CRITICAL FIX: Use environment as source of truth for demo vs live
+        env = (trader.get('environment') or 'demo').lower()
+        is_demo = env != 'live'
         access_token = trader.get('tradovate_token')
         username = trader.get('username')
         password = trader.get('password')
@@ -2358,7 +2376,7 @@ def get_broker_position_for_recorder(recorder_id: int, ticker: str) -> Dict[str,
         
         cursor.execute('''
             SELECT t.subaccount_id, t.is_demo, a.tradovate_token,
-                   a.username, a.password, a.id as account_id
+                   a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = ? AND t.enabled = 1
@@ -2373,7 +2391,9 @@ def get_broker_position_for_recorder(recorder_id: int, ticker: str) -> Dict[str,
         
         trader = dict(trader)
         tradovate_account_id = trader.get('subaccount_id')
-        is_demo = bool(trader.get('is_demo'))
+        # CRITICAL FIX: Use environment as source of truth for demo vs live
+        env = (trader.get('environment') or 'demo').lower()
+        is_demo = env != 'live'
         access_token = trader.get('tradovate_token')
         username = trader.get('username')
         password = trader.get('password')
@@ -3712,7 +3732,8 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                 t.is_demo,
                 a.tradovate_token,
                 a.tradovate_refresh_token,
-                a.md_access_token
+                a.md_access_token,
+                a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.recorder_id = ? AND t.enabled = 1
@@ -3728,7 +3749,9 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
         
         trader = dict(trader)
         tradovate_account_id = trader.get('subaccount_id')
-        is_demo = bool(trader.get('is_demo'))
+        # CRITICAL FIX: Use environment as source of truth for demo vs live
+        env = (trader.get('environment') or 'demo').lower()
+        is_demo = env != 'live'
         access_token = trader.get('tradovate_token')
         
         if not access_token:
@@ -6188,7 +6211,7 @@ def receive_webhook(webhook_token):
                 cursor.execute('''
                     SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
                            a.tradovate_token, a.tradovate_refresh_token, a.md_access_token,
-                           a.username, a.password, a.id as account_id
+                           a.username, a.password, a.id as account_id, a.environment
                     FROM traders t
                     JOIN accounts a ON t.account_id = a.id
                     WHERE t.recorder_id = ? AND t.enabled = 1
@@ -6200,7 +6223,9 @@ def receive_webhook(webhook_token):
                 if trader:
                     trader = dict(trader)
                     tradovate_account_id = trader.get('subaccount_id')
-                    is_demo = bool(trader.get('is_demo'))
+                    # CRITICAL FIX: Use environment as source of truth for demo vs live
+                    env = (trader.get('environment') or 'demo').lower()
+                    is_demo = env != 'live'
                     access_token = trader.get('tradovate_token')
                     username = trader.get('username')
                     password = trader.get('password')
