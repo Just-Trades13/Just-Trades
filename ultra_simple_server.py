@@ -18077,11 +18077,14 @@ def manual_trade():
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("""
+        # CRITICAL: Include environment for demo/live detection
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        cursor.execute(f"""
             SELECT name, tradovate_token, tradovate_refresh_token, md_access_token,
-                   token_expires_at, tradovate_accounts
+                   token_expires_at, tradovate_accounts, environment
             FROM accounts 
-            WHERE id = ? AND tradovate_token IS NOT NULL
+            WHERE id = {placeholder} AND tradovate_token IS NOT NULL
         """, (account_id,))
         account = cursor.fetchone()
         if not account:
@@ -18105,14 +18108,9 @@ def manual_trade():
         if not selected_subaccount and tradovate_accounts:
             selected_subaccount = tradovate_accounts[0]
             subaccount_id = str(selected_subaccount.get('id'))
-        # CRITICAL FIX: Use environment as source of truth, not is_demo (which can be stale)
-        demo = True
-        if selected_subaccount:
-            # Priority: environment > is_demo (environment is authoritative)
-            if selected_subaccount.get('environment'):
-                demo = selected_subaccount['environment'].lower() == 'demo'
-            elif 'is_demo' in selected_subaccount:
-                demo = bool(selected_subaccount.get('is_demo'))
+        # CRITICAL FIX: Use account.environment as source of truth (from DB, not stale JSON)
+        account_env = (account['environment'] or 'demo').lower()
+        demo = account_env != 'live'
         account_spec = (selected_subaccount.get('name') if selected_subaccount else None) or account['name'] or str(account_id)
         account_numeric_id = int(subaccount_id) if subaccount_id else account_id
         
