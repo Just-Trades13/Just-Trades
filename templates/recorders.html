@@ -1040,6 +1040,25 @@
     }
 
     function collectFormData() {
+        // DEBUG: Log what we're about to save
+        console.log('=== collectFormData DEBUG ===');
+        console.log('tpTargets array:', JSON.stringify(tpTargets));
+        console.log('tp_value input:', document.getElementById('tp_value')?.value);
+        console.log('tp_trim input:', document.getElementById('tp_trim')?.value);
+        
+        // CRITICAL: Sync static inputs to tpTargets before collecting
+        // This ensures even if event didn't fire, we capture the current input values
+        const tpValueInput = document.getElementById('tp_value');
+        const tpTrimInput = document.getElementById('tp_trim');
+        if (tpValueInput && tpTrimInput) {
+            if (!tpTargets[0]) {
+                tpTargets[0] = { value: 0, trim: 100 };
+            }
+            tpTargets[0].value = parseFloat(tpValueInput.value) || 0;
+            tpTargets[0].trim = parseFloat(tpTrimInput.value) || 100;
+            console.log('Synced tpTargets from inputs:', JSON.stringify(tpTargets));
+        }
+        
         return {
             name: document.getElementById('name').value.trim(),
             strategy_type: document.getElementById('strategy_type').value,
