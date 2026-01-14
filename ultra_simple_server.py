@@ -8029,6 +8029,8 @@ def oauth_callback():
                 logger.info(f"Storing actual expiration time: {expires_at}")
             
             # Store tokens in database with actual expiration time
+            # CRITICAL FIX (Jan 14, 2026): Also update environment to match OAuth environment!
+            # Without this, token refresh daemon uses wrong endpoint and gets demo tokens for live accounts
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("""
@@ -8036,11 +8038,13 @@ def oauth_callback():
                 SET tradovate_token = ?, 
                     tradovate_refresh_token = ?,
                     md_access_token = ?,
-                    token_expires_at = ?
+                    token_expires_at = ?,
+                    environment = ?
                 WHERE id = ?
-            """, (access_token, refresh_token, md_access_token, expires_at, account_id))
+            """, (access_token, refresh_token, md_access_token, expires_at, oauth_env, account_id))
             conn.commit()
             conn.close()
+            logger.info(f"✅ Stored tokens for account {account_id} with environment={oauth_env}")
             
             # Clear any reauth flag - account is now authenticated!
             clear_account_reauth(account_id)
