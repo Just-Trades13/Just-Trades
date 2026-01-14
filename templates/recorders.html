@@ -911,6 +911,54 @@
 
         // Render TP targets
         renderTpTargets();
+        
+        // CRITICAL FIX: Sync static TP inputs with tpTargets array
+        // The static inputs (tp_value, tp_trim) weren't updating tpTargets when changed
+        const tpValueInput = document.getElementById('tp_value');
+        const tpTrimInput = document.getElementById('tp_trim');
+        
+        if (tpValueInput) {
+            tpValueInput.addEventListener('change', function() {
+                // Ensure tpTargets[0] exists
+                if (!tpTargets[0]) {
+                    tpTargets[0] = { value: 0, trim: 100 };
+                }
+                tpTargets[0].value = parseFloat(this.value) || 0;
+                console.log('TP Value updated:', tpTargets[0].value);
+            });
+            // Also trigger on input for immediate feedback
+            tpValueInput.addEventListener('input', function() {
+                if (!tpTargets[0]) {
+                    tpTargets[0] = { value: 0, trim: 100 };
+                }
+                tpTargets[0].value = parseFloat(this.value) || 0;
+            });
+        }
+        
+        if (tpTrimInput) {
+            tpTrimInput.addEventListener('change', function() {
+                if (!tpTargets[0]) {
+                    tpTargets[0] = { value: 0, trim: 100 };
+                }
+                tpTargets[0].trim = parseFloat(this.value) || 100;
+                console.log('TP Trim updated:', tpTargets[0].trim);
+            });
+            tpTrimInput.addEventListener('input', function() {
+                if (!tpTargets[0]) {
+                    tpTargets[0] = { value: 0, trim: 100 };
+                }
+                tpTargets[0].trim = parseFloat(this.value) || 100;
+            });
+        }
+        
+        // Initialize tpTargets[0] from static inputs if empty
+        if (tpTargets.length === 0 && tpValueInput && tpTrimInput) {
+            tpTargets[0] = {
+                value: parseFloat(tpValueInput.value) || 0,
+                trim: parseFloat(tpTrimInput.value) || 100
+            };
+            console.log('Initialized tpTargets from static inputs:', tpTargets[0]);
+        }
 
         // Load webhook info if webhook section exists (with small delay to ensure DOM is ready)
         const webhookSection = document.querySelector('.webhook-card');
