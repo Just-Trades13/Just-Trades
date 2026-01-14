@@ -2673,21 +2673,26 @@ def execute_live_trade_with_bracket(
                     subaccount_name = acct.get('subaccount_name')
                     multiplier = float(acct.get('multiplier', 1.0))  # Extract multiplier from account settings
                     
-                    # Look up credentials for this account
-                    cursor.execute('''
+                    # Look up credentials for this account - CRITICAL: Include environment
+                    is_postgres = is_using_postgres()
+                    placeholder = '%s' if is_postgres else '?'
+                    cursor.execute(f'''
                         SELECT id, name, tradovate_token, tradovate_refresh_token, md_access_token,
-                               username, password
-                        FROM accounts WHERE id = ?
+                               username, password, environment
+                        FROM accounts WHERE id = {placeholder}
                     ''', (acct_id,))
                     account_row = cursor.fetchone()
                     
                     if account_row:
                         account_row = dict(account_row)
                         if account_row.get('username') and account_row.get('password'):
+                            # CRITICAL FIX: Use environment as source of truth for demo vs live
+                            env = (account_row.get('environment') or 'demo').lower()
+                            is_demo_val = env != 'live'
                             accounts_to_trade.append({
                                 'subaccount_id': subaccount_id,
                                 'subaccount_name': subaccount_name,
-                                'is_demo': acct.get('is_demo', True),
+                                'is_demo': is_demo_val,
                                 'account_name': account_row['name'],
                                 'tradovate_token': account_row['tradovate_token'],
                                 'md_access_token': account_row['md_access_token'],
@@ -2707,10 +2712,13 @@ def execute_live_trade_with_bracket(
         # If no multi-account routing, use primary account
         if not accounts_to_trade:
             logger.info(f"📋 Using primary account only (no multi-account routing)")
+            # CRITICAL FIX: Use environment as source of truth for demo vs live
+            env = (trader.get('environment') or 'demo').lower()
+            is_demo_val = env != 'live'
             accounts_to_trade.append({
                 'subaccount_id': trader.get('subaccount_id'),
                 'subaccount_name': trader.get('subaccount_name'),
-                'is_demo': trader.get('is_demo', True),
+                'is_demo': is_demo_val,
                 'account_name': trader.get('account_name'),
                 'tradovate_token': trader.get('tradovate_token'),
                 'md_access_token': trader.get('md_access_token'),
@@ -4314,13 +4322,15 @@ def reconcile_positions_with_broker():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Get all open positions from database
-        cursor.execute('''
+        # Get all open positions from database - CRITICAL: Include environment for demo/live detection
+        is_postgres = is_using_postgres()
+        enabled_val = 'true' if is_postgres else '1'
+        cursor.execute(f'''
             SELECT rp.*, r.name as recorder_name, t.subaccount_id, t.is_demo,
-                   a.tradovate_token, a.username, a.password, a.id as account_id
+                   a.tradovate_token, a.username, a.password, a.id as account_id, a.environment
             FROM recorder_positions rp
             JOIN recorders r ON rp.recorder_id = r.id
-            JOIN traders t ON t.recorder_id = r.id AND t.enabled = 1
+            JOIN traders t ON t.recorder_id = r.id AND t.enabled = {enabled_val}
             JOIN accounts a ON t.account_id = a.id
             WHERE rp.status = 'open'
         ''')
@@ -4346,7 +4356,9 @@ def reconcile_positions_with_broker():
                     ticker = db_pos['ticker']
                     db_qty = db_pos['total_quantity']
                     db_avg = db_pos['avg_entry_price']
-                    is_demo = bool(db_pos['is_demo'])
+                    # CRITICAL FIX: Use environment as source of truth for demo vs live
+                    env = (db_pos.get('environment') or 'demo').lower()
+                    is_demo = env != 'live'
                     account_id = db_pos['account_id']
                     username = db_pos['username']
                     password = db_pos['password']
