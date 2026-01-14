@@ -964,7 +964,9 @@ def bulk_fetch_account_data(account_ids: list = None) -> dict:
             for ta in tradovate_accounts:
                 sub_id = ta.get('id')
                 sub_name = ta.get('name', str(sub_id))
-                is_demo = ta.get('is_demo', True)
+                # CRITICAL FIX: Use environment as source of truth for demo vs live
+                env = (ta.get('environment') or 'demo').lower()
+                is_demo = env != 'live'
                 
                 sub_base_url = 'https://demo.tradovateapi.com/v1' if is_demo else 'https://live.tradovateapi.com/v1'
                 
@@ -10625,13 +10627,15 @@ def api_test_trader_connection(trader_id):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Get trader with account info
-        cursor.execute('''
+        # Get trader with account info - CRITICAL: Include environment for demo/live detection
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        cursor.execute(f'''
             SELECT t.*, a.tradovate_token, a.username, a.password, a.id as account_id,
-                   a.name as account_name, t.subaccount_name, t.is_demo
+                   a.name as account_name, t.subaccount_name, t.is_demo, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
-            WHERE t.id = ?
+            WHERE t.id = {placeholder}
         ''', (trader_id,))
         trader_row = cursor.fetchone()
         
@@ -10644,7 +10648,9 @@ def api_test_trader_connection(trader_id):
         
         account_name = trader.get('account_name', 'Unknown')
         subaccount_name = trader.get('subaccount_name', '')
-        is_demo = bool(trader.get('is_demo', True))
+        # CRITICAL FIX: Use environment as source of truth for demo vs live
+        env = (trader.get('environment') or 'demo').lower()
+        is_demo = env != 'live'
         tradovate_token = trader.get('tradovate_token')
         username = trader.get('username')
         password = trader.get('password')
@@ -18099,12 +18105,14 @@ def manual_trade():
         if not selected_subaccount and tradovate_accounts:
             selected_subaccount = tradovate_accounts[0]
             subaccount_id = str(selected_subaccount.get('id'))
+        # CRITICAL FIX: Use environment as source of truth, not is_demo (which can be stale)
         demo = True
         if selected_subaccount:
-            if 'is_demo' in selected_subaccount:
-                demo = bool(selected_subaccount.get('is_demo'))
-            elif selected_subaccount.get('environment'):
+            # Priority: environment > is_demo (environment is authoritative)
+            if selected_subaccount.get('environment'):
                 demo = selected_subaccount['environment'].lower() == 'demo'
+            elif 'is_demo' in selected_subaccount:
+                demo = bool(selected_subaccount.get('is_demo'))
         account_spec = (selected_subaccount.get('name') if selected_subaccount else None) or account['name'] or str(account_id)
         account_numeric_id = int(subaccount_id) if subaccount_id else account_id
         
@@ -22149,7 +22157,9 @@ def cleanup_orphaned_orders():
             
             for ta in tradovate_accounts:
                 acc_id = ta.get('id')
-                is_demo = ta.get('is_demo', True)
+                # CRITICAL FIX: Use environment as source of truth for demo vs live
+                env = (ta.get('environment') or 'demo').lower()
+                is_demo = env != 'live'
                 acc_name = ta.get('name', str(acc_id))
                 base_url = 'https://demo.tradovateapi.com/v1' if is_demo else 'https://live.tradovateapi.com/v1'
                 headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
@@ -22305,9 +22315,11 @@ def monitor_break_even():
                         tradovate_accounts = json.loads(tradovate_accounts_str)
                         for ta in tradovate_accounts:
                             acc_id = ta.get('id') or ta.get('accountId')
-                            is_demo = ta.get('is_demo', True)
+                            # CRITICAL FIX: Use environment as source of truth (already have env from acc)
+                            # Prioritize account-level environment over stale ta.is_demo
+                            ta_env = (ta.get('environment') or env or 'demo').lower()
                             if acc_id:
-                                account_info_map[int(acc_id)] = {'token': token, 'env': 'demo' if is_demo else 'live'}
+                                account_info_map[int(acc_id)] = {'token': token, 'env': ta_env}
                     except:
                         pass
             
@@ -22917,7 +22929,9 @@ def fetch_tradovate_pnl_sync():
             for ta in tradovate_accounts:
                 acc_id = ta.get('id')
                 subaccount_name = ta.get('name', str(acc_id))  # Tradovate's subaccount name
-                is_demo = ta.get('is_demo', True)
+                # CRITICAL FIX: Use environment as source of truth for demo vs live
+                env = (ta.get('environment') or 'demo').lower()
+                is_demo = env != 'live'
                 # Display as "UserName - SubaccountName" (like account dropdown)
                 acc_name = f"{user_account_name} - {subaccount_name}"
                 
