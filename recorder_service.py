@@ -2686,9 +2686,23 @@ def execute_live_trade_with_bracket(
                     if account_row:
                         account_row = dict(account_row)
                         if account_row.get('username') and account_row.get('password'):
-                            # CRITICAL FIX: Use environment as source of truth for demo vs live
-                            env = (account_row.get('environment') or 'demo').lower()
-                            is_demo_val = env != 'live'
+                            # CRITICAL FIX: Detect demo vs live PER-SUBACCOUNT (not account level!)
+                            # Priority: 1) acct.environment, 2) acct.is_demo, 3) subaccount name pattern, 4) account.environment
+                            is_demo_val = True  # Default to demo for safety
+                            if acct.get('environment'):
+                                is_demo_val = acct['environment'].lower() != 'live'
+                            elif 'is_demo' in acct:
+                                is_demo_val = bool(acct.get('is_demo'))
+                            elif subaccount_name and (subaccount_name.upper().startswith('DEMO') or 'DEMO' in subaccount_name.upper()):
+                                is_demo_val = True  # Name contains DEMO = demo account
+                            elif subaccount_name and subaccount_name.isdigit():
+                                is_demo_val = False  # Numeric-only name = likely live account
+                            else:
+                                # Fallback to account-level environment
+                                env = (account_row.get('environment') or 'demo').lower()
+                                is_demo_val = env != 'live'
+                            
+                            logger.info(f"🔍 [{subaccount_name}] is_demo={is_demo_val} (detected from subaccount)")
                             accounts_to_trade.append({
                                 'subaccount_id': subaccount_id,
                                 'subaccount_name': subaccount_name,
@@ -2712,12 +2726,20 @@ def execute_live_trade_with_bracket(
         # If no multi-account routing, use primary account
         if not accounts_to_trade:
             logger.info(f"📋 Using primary account only (no multi-account routing)")
-            # CRITICAL FIX: Use environment as source of truth for demo vs live
-            env = (trader.get('environment') or 'demo').lower()
-            is_demo_val = env != 'live'
+            # CRITICAL FIX: Detect demo vs live from subaccount name pattern
+            subaccount_name = trader.get('subaccount_name') or ''
+            is_demo_val = True  # Default to demo for safety
+            if trader.get('environment'):
+                is_demo_val = trader['environment'].lower() != 'live'
+            elif subaccount_name.upper().startswith('DEMO') or 'DEMO' in subaccount_name.upper():
+                is_demo_val = True
+            elif subaccount_name.isdigit():
+                is_demo_val = False  # Numeric-only = live
+            
+            logger.info(f"🔍 [{subaccount_name}] is_demo={is_demo_val} (primary account)")
             accounts_to_trade.append({
                 'subaccount_id': trader.get('subaccount_id'),
-                'subaccount_name': trader.get('subaccount_name'),
+                'subaccount_name': subaccount_name,
                 'is_demo': is_demo_val,
                 'account_name': trader.get('account_name'),
                 'tradovate_token': trader.get('tradovate_token'),
