@@ -1612,16 +1612,23 @@
                     });
                     
                     // Add change event listener to populate risk settings
-                    select.addEventListener('change', function() {
+                    select.addEventListener('change', async function() {
                         const selectedId = this.value;
                         document.getElementById('existingStrategySelect').value = selectedId;
                         selectedRecorderId = selectedId ? parseInt(selectedId) : null;
                         
                         if (selectedId) {
-                            // Find the selected recorder and populate risk settings
-                            const recorder = allRecorders.find(r => r.id == selectedId);
-                            if (recorder) {
-                                populateRiskSettings(recorder);
+                            // FETCH FULL recorder data from API (list endpoint has incomplete columns)
+                            try {
+                                const response = await fetch(`/api/recorders/${selectedId}`);
+                                const data = await response.json();
+                                if (data.success && data.recorder) {
+                                    populateRiskSettings(data.recorder);
+                                } else {
+                                    console.error('Failed to load recorder:', data.error);
+                                }
+                            } catch (error) {
+                                console.error('Error fetching recorder:', error);
                             }
                         } else {
                             // Hide risk settings section if no recorder selected
