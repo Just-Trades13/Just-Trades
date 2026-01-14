@@ -11118,21 +11118,43 @@ def broker_execution_worker():
             traceback.print_exc()
             time.sleep(1)  # Brief pause before retrying
 
-# Start broker execution worker
-logger.info("🔧 Creating broker execution worker thread...")
-broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
-broker_execution_thread.start()
+# ============================================================================
+# PARALLEL BROKER EXECUTION WORKERS (Jan 14, 2026)
+# ============================================================================
+# With 20+ users, a single worker causes 40-60 second delays (20 users × 2-3s each)
+# Multiple parallel workers process trades simultaneously for near-instant execution
+# ============================================================================
+NUM_BROKER_WORKERS = 8  # 8 parallel workers - handles 20+ users with minimal delay
 
-# Verify worker started successfully
-time.sleep(0.5)  # Give thread time to start
-if not broker_execution_thread.is_alive():
-    logger.error("❌ CRITICAL: Broker execution worker thread failed to start!")
+logger.info(f"🔧 Creating {NUM_BROKER_WORKERS} parallel broker execution workers...")
+broker_execution_workers = []
+broker_execution_thread = None  # Keep for backward compatibility with monitoring
+
+for i in range(NUM_BROKER_WORKERS):
+    worker = threading.Thread(
+        target=broker_execution_worker,
+        daemon=True,
+        name=f"Broker-Execution-Worker-{i+1}"
+    )
+    worker.start()
+    broker_execution_workers.append(worker)
+    if i == 0:
+        broker_execution_thread = worker  # First worker for legacy compatibility
+
+# Verify workers started successfully
+time.sleep(0.5)  # Give threads time to start
+alive_count = sum(1 for w in broker_execution_workers if w.is_alive())
+if alive_count == 0:
+    logger.error("❌ CRITICAL: No broker execution workers started!")
     logger.error("   This means broker orders will be queued but NEVER executed!")
+elif alive_count < NUM_BROKER_WORKERS:
+    logger.warning(f"⚠️ Only {alive_count}/{NUM_BROKER_WORKERS} broker workers started")
 else:
-    logger.info("✅ Broker execution worker thread started (Trade Manager style - async, non-blocking)")
-    logger.info(f"   Thread name: {broker_execution_thread.name}")
-    logger.info(f"   Thread alive: {broker_execution_thread.is_alive()}")
+    logger.info(f"✅ All {NUM_BROKER_WORKERS} broker execution workers started!")
+    logger.info(f"   Parallel processing: Up to {NUM_BROKER_WORKERS} trades simultaneously")
     logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
+    for w in broker_execution_workers:
+        logger.info(f"   - {w.name}: alive={w.is_alive()}")
 
 # Track broker execution stats
 _broker_execution_stats = {
@@ -11140,20 +11162,46 @@ _broker_execution_stats = {
     'total_executed': 0,
     'total_failed': 0,
     'last_execution_time': None,
-    'last_error': None
+    'last_error': None,
+    'num_workers': NUM_BROKER_WORKERS,
+    'workers_alive': alive_count
 }
 
 # Register for thread health monitoring
 def restart_broker_execution_worker():
-    """Restart broker execution worker thread"""
+    """Restart a single broker execution worker (for legacy compatibility)"""
     global broker_execution_thread
     try:
-        broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
-        broker_execution_thread.start()
-        return broker_execution_thread
+        worker = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker-Restarted")
+        worker.start()
+        broker_execution_thread = worker
+        broker_execution_workers.append(worker)
+        return worker
     except Exception as e:
         logger.error(f"Failed to restart broker execution worker: {e}")
         return None
+
+def restart_all_broker_workers():
+    """Restart all broker execution workers"""
+    global broker_execution_workers, broker_execution_thread
+    new_workers = []
+    for i in range(NUM_BROKER_WORKERS):
+        try:
+            worker = threading.Thread(
+                target=broker_execution_worker,
+                daemon=True,
+                name=f"Broker-Execution-Worker-{i+1}"
+            )
+            worker.start()
+            new_workers.append(worker)
+        except Exception as e:
+            logger.error(f"Failed to restart broker worker {i+1}: {e}")
+    
+    broker_execution_workers = new_workers
+    if new_workers:
+        broker_execution_thread = new_workers[0]
+    logger.info(f"🔄 Restarted {len(new_workers)}/{NUM_BROKER_WORKERS} broker workers")
+    return new_workers
 
 # ============================================================
 # WEBHOOK HANDLER - Direct Processing (No Proxy)
@@ -23904,12 +23952,15 @@ def api_broker_execution_status():
         
         # Check queue status
         queue_size = broker_execution_queue.qsize()
-        worker_alive = broker_execution_thread.is_alive() if broker_execution_thread else False
-        
+        workers_alive = sum(1 for w in broker_execution_workers if w.is_alive()) if broker_execution_workers else 0
+        worker_alive = workers_alive > 0  # Legacy compatibility
+
         return jsonify({
             'success': True,
             'broker_execution': {
                 'worker_alive': worker_alive,
+                'workers_alive': workers_alive,
+                'total_workers': NUM_BROKER_WORKERS,
                 'queue_size': queue_size,
                 'stats': _broker_execution_stats,
                 'last_execution_ago_seconds': time.time() - _broker_execution_stats['last_execution_time'] if _broker_execution_stats['last_execution_time'] else None
@@ -23987,10 +24038,11 @@ def api_recorder_execution_status(recorder_id):
         
         conn.close()
         
-        # Check broker execution worker
-        worker_alive = broker_execution_thread.is_alive() if broker_execution_thread else False
+        # Check broker execution workers (multi-worker support)
+        workers_alive = sum(1 for w in broker_execution_workers if w.is_alive()) if broker_execution_workers else 0
+        worker_alive = workers_alive > 0  # Legacy compatibility
         queue_size = broker_execution_queue.qsize()
-        
+
         # Analyze issues
         issues = []
         if not recorder.get('recording_enabled'):
@@ -24006,8 +24058,10 @@ def api_recorder_execution_status(recorder_id):
                 if not trader.get('account_enabled'):
                     issues.append(f"Trader {trader.get('id')} linked to disabled account {trader.get('account_id')}")
         
-        if not worker_alive:
-            issues.append("Broker execution worker thread is not running (CRITICAL)")
+        if workers_alive == 0:
+            issues.append("No broker execution workers running (CRITICAL)")
+        elif workers_alive < NUM_BROKER_WORKERS:
+            issues.append(f"Only {workers_alive}/{NUM_BROKER_WORKERS} broker workers running")
         
         if queue_size >= broker_execution_queue.maxsize:
             issues.append(f"Broker execution queue is full ({queue_size}/{broker_execution_queue.maxsize})")
@@ -24023,6 +24077,8 @@ def api_recorder_execution_status(recorder_id):
             'traders': traders,
             'broker_execution': {
                 'worker_alive': worker_alive,
+                'workers_alive': workers_alive,
+                'total_workers': NUM_BROKER_WORKERS,
                 'queue_size': queue_size,
                 'queue_maxsize': broker_execution_queue.maxsize,
                 'stats': _broker_execution_stats
@@ -24063,12 +24119,15 @@ def api_test_broker_execution():
         try:
             broker_execution_queue.put_nowait(broker_task)
             logger.info(f"✅ TEST: Broker task queued successfully")
+            workers_alive = sum(1 for w in broker_execution_workers if w.is_alive()) if broker_execution_workers else 0
             return jsonify({
                 'success': True,
                 'message': 'Broker task queued',
                 'task': broker_task,
                 'queue_size': broker_execution_queue.qsize(),
-                'worker_alive': broker_execution_thread.is_alive() if broker_execution_thread else False
+                'worker_alive': workers_alive > 0,
+                'workers_alive': workers_alive,
+                'total_workers': NUM_BROKER_WORKERS
             })
         except Exception as queue_err:
             logger.error(f"❌ TEST: Failed to queue broker task: {queue_err}")
@@ -24106,9 +24165,11 @@ if '_position_drawdown_thread' in dir() and _position_drawdown_thread:
 if 'token_refresh_thread' in dir() and token_refresh_thread:
     register_critical_thread('Token-Refresh', token_refresh_thread, None)  # Can't easily restart
 
-# Broker Execution Worker - CRITICAL for executing trades
-if 'broker_execution_thread' in dir() and broker_execution_thread:
-    register_critical_thread('Broker-Execution-Worker', broker_execution_thread, restart_broker_execution_worker)
+# Broker Execution Workers - CRITICAL for executing trades (multi-worker)
+if 'broker_execution_workers' in dir() and broker_execution_workers:
+    for i, worker in enumerate(broker_execution_workers):
+        register_critical_thread(f'Broker-Execution-Worker-{i+1}', worker, restart_broker_execution_worker)
+    logger.info(f"✅ Registered {len(broker_execution_workers)} broker workers for health monitoring")
 
 # Start the watchdog thread
 watchdog_thread = threading.Thread(target=thread_health_watchdog, daemon=True, name="Thread-Watchdog")
