@@ -755,14 +755,37 @@ def execute_trade_simple(
                         if creds_row:
                             creds = dict(creds_row)
                             broker_type = creds.get('broker', 'Tradovate')  # Default to Tradovate for existing accounts
-                            # CRITICAL FIX: Use accounts.environment as source of truth for demo vs live
-                            env = (creds.get('environment') or 'demo').lower()
-                            is_demo_from_env = env != 'live'
+                            
+                            # CRITICAL FIX: Detect demo vs live PER-SUBACCOUNT (not account level!)
+                            # Priority: 1) acct.environment, 2) acct.is_demo, 3) subaccount name pattern, 4) account.environment
+                            is_demo_from_env = True  # Default to demo for safety
+                            detected_from = 'default'
+                            if acct.get('environment'):
+                                is_demo_from_env = acct['environment'].lower() != 'live'
+                                detected_from = f"acct.environment={acct.get('environment')}"
+                            elif 'is_demo' in acct:
+                                is_demo_from_env = bool(acct.get('is_demo'))
+                                detected_from = f"acct.is_demo={acct.get('is_demo')}"
+                            elif subaccount_name and ('DEMO' in subaccount_name.upper()):
+                                is_demo_from_env = True  # Name contains DEMO = demo account
+                                detected_from = f"name contains DEMO"
+                            elif subaccount_name and subaccount_name.replace('-', '').isdigit():
+                                is_demo_from_env = False  # Numeric-only name = likely live account
+                                detected_from = f"numeric name = LIVE"
+                            else:
+                                # Fallback to account-level environment
+                                env = (creds.get('environment') or 'demo').lower()
+                                is_demo_from_env = env != 'live'
+                                detected_from = f"account.environment={env}"
+                            
+                            env_label = 'DEMO' if is_demo_from_env else 'LIVE'
+                            logger.info(f"  🔍 [{subaccount_name}] is_demo={is_demo_from_env} ({detected_from}) → {env_label}")
+                            
                             traders.append({
                                 'subaccount_id': subaccount_id,
                                 'subaccount_name': subaccount_name,
-                                'is_demo': is_demo_from_env,  # Use environment, not cached JSON value
-                                'environment': env,  # Also pass environment for downstream use
+                                'is_demo': is_demo_from_env,
+                                'environment': 'demo' if is_demo_from_env else 'live',
                                 'tradovate_token': creds.get('tradovate_token'),
                                 'username': creds.get('username'),
                                 'password': creds.get('password'),
