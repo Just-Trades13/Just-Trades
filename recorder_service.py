@@ -1954,13 +1954,16 @@ def sync_position_with_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        enabled_val = 'true' if is_postgres else '1'
         
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT t.subaccount_id, t.is_demo, a.tradovate_token,
                    a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = ? AND t.enabled = 1
+            WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
             LIMIT 1
         ''', (recorder_id,))
         
@@ -2141,13 +2144,16 @@ def cancel_old_tp_orders_for_symbol(recorder_id: int, ticker: str) -> None:
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
+            is_postgres = is_using_postgres()
+            placeholder = '%s' if is_postgres else '?'
+            enabled_val = 'true' if is_postgres else '1'
             
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT t.subaccount_id, t.is_demo, a.tradovate_token,
                        a.username, a.password, a.id as account_id, a.environment
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
-                WHERE t.recorder_id = ? AND t.enabled = 1
+                WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
                 LIMIT 1
             ''', (recorder_id,))
             
@@ -2289,13 +2295,16 @@ def check_broker_position_exists(recorder_id: int, ticker: str) -> bool:
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        enabled_val = 'true' if is_postgres else '1'
         
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT t.subaccount_id, t.is_demo, a.tradovate_token,
                    a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = ? AND t.enabled = 1
+            WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
             LIMIT 1
         ''', (recorder_id,))
         
@@ -2373,13 +2382,16 @@ def get_broker_position_for_recorder(recorder_id: int, ticker: str) -> Dict[str,
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        enabled_val = 'true' if is_postgres else '1'
         
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT t.subaccount_id, t.is_demo, a.tradovate_token,
                    a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = ? AND t.enabled = 1
+            WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
             LIMIT 1
         ''', (recorder_id,))
         
@@ -2613,18 +2625,21 @@ def execute_live_trade_with_bracket(
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        enabled_val = 'true' if is_postgres else '1'
         
         # Find enabled trader with username/password for REST API Access
         # CRITICAL: Include enabled_accounts for multi-account routing
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT 
                 t.id as trader_id, t.subaccount_id, t.subaccount_name, t.is_demo, t.enabled_accounts,
                 a.name as account_name, a.tradovate_token,
                 a.tradovate_refresh_token, a.md_access_token,
-                a.username, a.password, a.id as account_id
+                a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = ? AND t.enabled = 1
+            WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
             LIMIT 1
         ''', (recorder_id,))
         
@@ -3445,11 +3460,14 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        enabled_val = 'true' if is_postgres else '1'
         
         # FIRST: Get existing tp_order_id from DB
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT tp_order_id FROM recorded_trades
-            WHERE recorder_id = ? AND status = 'open' AND tp_order_id IS NOT NULL
+            WHERE recorder_id = {placeholder} AND status = 'open' AND tp_order_id IS NOT NULL
             ORDER BY entry_time DESC LIMIT 1
         ''', (recorder_id,))
         tp_row = cursor.fetchone()
@@ -3460,13 +3478,13 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
         else:
             logger.info(f"📋 [DCA-TP] No existing tp_order_id - will place new")
         
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
                    a.tradovate_token, a.tradovate_refresh_token, a.md_access_token,
                    a.username, a.password, a.id as account_id, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = ? AND t.enabled = 1
+            WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
             LIMIT 1
         ''', (recorder_id,))
         
@@ -3723,9 +3741,12 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        enabled_val = 'true' if is_postgres else '1'
         
         # Get trader linked to this recorder
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT 
                 t.subaccount_id,
                 t.subaccount_name,
@@ -3736,7 +3757,7 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                 a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = ? AND t.enabled = 1
+            WHERE t.recorder_id = {placeholder} AND t.enabled = {enabled_val}
             LIMIT 1
         ''', (recorder_id,))
         
@@ -6208,13 +6229,16 @@ def receive_webhook(webhook_token):
                 logger.info(f"🔄 CLOSE signal: Liquidating {open_trade['side']} position on broker (cancels TP orders automatically)...")
                 
                 # Get trader info for broker access
-                cursor.execute('''
+                is_postgres_inner = is_using_postgres()
+                placeholder_inner = '%s' if is_postgres_inner else '?'
+                enabled_val_inner = 'true' if is_postgres_inner else '1'
+                cursor.execute(f'''
                     SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
                            a.tradovate_token, a.tradovate_refresh_token, a.md_access_token,
                            a.username, a.password, a.id as account_id, a.environment
                     FROM traders t
                     JOIN accounts a ON t.account_id = a.id
-                    WHERE t.recorder_id = ? AND t.enabled = 1
+                    WHERE t.recorder_id = {placeholder_inner} AND t.enabled = {enabled_val_inner}
                     LIMIT 1
                 ''', (recorder_id,))
                 trader = cursor.fetchone()
