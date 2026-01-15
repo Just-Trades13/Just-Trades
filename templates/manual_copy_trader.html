@@ -1510,10 +1510,10 @@
                 <tbody>
         `;
 
-        // Filter positions by user_id
+        // Filter positions by user_id - ONLY show positions owned by current user
         const filteredPositions = positions.filter(pos => {
             if (CURRENT_USER_ID === null) return true;
-            if (pos.user_id === null || pos.user_id === undefined) return true;
+            // Only show positions that explicitly belong to this user (no null pass-through)
             return pos.user_id === CURRENT_USER_ID;
         });
         
@@ -1546,8 +1546,8 @@
         let html = '<div class="pnl-summary">';
         
         for (const [accId, acc] of Object.entries(pnlData)) {
-            // Filter by user_id if logged in
-            if (CURRENT_USER_ID !== null && acc.user_id !== null && acc.user_id !== CURRENT_USER_ID) {
+            // Filter by user_id - ONLY show accounts owned by current user (no null pass-through)
+            if (CURRENT_USER_ID !== null && acc.user_id !== CURRENT_USER_ID) {
                 continue; // Skip accounts not owned by current user
             }
             const openPnl = acc.open_pnl || 0;
