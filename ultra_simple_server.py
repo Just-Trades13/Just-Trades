@@ -4534,10 +4534,9 @@ def admin_get_user_details(user_id):
             acc.pop('tradovate_accounts', None)
             accounts.append(acc)
 
-        # Get user's recorders/strategies
+        # Get user's recorders/strategies (using only columns guaranteed to exist)
         cursor.execute(f'''
-            SELECT id, name, strategy_type, enabled, ticker, enabled_accounts,
-                   tp_value, sl_value, created_at
+            SELECT id, name, strategy_type, enabled, ticker, created_at
             FROM recorders 
             WHERE user_id = {placeholder}
             ORDER BY created_at DESC
@@ -4554,35 +4553,48 @@ def admin_get_user_details(user_id):
                     'strategy_type': row[2],
                     'enabled': bool(row[3]),
                     'ticker': row[4],
-                    'enabled_accounts': row[5],
-                    'tp_value': row[6],
-                    'sl_value': row[7],
-                    'created_at': str(row[8]) if row[8] else None
+                    'created_at': str(row[5]) if row[5] else None
                 }
             
-            # Parse enabled accounts count
-            enabled_count = 0
-            if rec.get('enabled_accounts'):
-                try:
-                    ea = json.loads(rec['enabled_accounts']) if isinstance(rec['enabled_accounts'], str) else rec['enabled_accounts']
-                    enabled_count = len(ea) if isinstance(ea, list) else 0
-                except:
-                    pass
-            rec['enabled_accounts_count'] = enabled_count
-            rec.pop('enabled_accounts', None)
+            # Get linked accounts count from traders table instead
+            try:
+                cursor.execute(f'''
+                    SELECT COUNT(*) FROM traders 
+                    WHERE recorder_id = {placeholder} AND enabled = {'TRUE' if is_postgres else '1'}
+                ''', (rec['id'],))
+                count_row = cursor.fetchone()
+                rec['enabled_accounts_count'] = count_row[0] if count_row else 0
+            except:
+                rec['enabled_accounts_count'] = 0
+            
             recorders.append(rec)
 
-        # Get user's recent trades (last 50)
-        cursor.execute(f'''
-            SELECT t.id, t.ticker, t.side, t.quantity, t.entry_price, t.exit_price,
-                   t.realized_pnl, t.status, t.entry_time, t.exit_time,
-                   r.name as recorder_name
-            FROM trades t
-            LEFT JOIN recorders r ON t.recorder_id = r.id
-            WHERE t.user_id = {placeholder}
-            ORDER BY t.entry_time DESC
-            LIMIT 50
-        ''', (user_id,))
+        # Get user's recent trades from recorder_positions (closed positions have P&L)
+        # Use recorder_positions for consolidated view, or recorded_trades for individual entries
+        try:
+            cursor.execute(f'''
+                SELECT rp.id, rp.ticker, rp.side, rp.total_quantity, rp.avg_entry_price, rp.exit_price,
+                       rp.realized_pnl, rp.status, rp.opened_at, rp.closed_at,
+                       r.name as recorder_name
+                FROM recorder_positions rp
+                LEFT JOIN recorders r ON rp.recorder_id = r.id
+                WHERE r.user_id = {placeholder}
+                ORDER BY rp.opened_at DESC
+                LIMIT 50
+            ''', (user_id,))
+        except Exception as query_err:
+            # Fallback: try recorded_trades table if recorder_positions doesn't work
+            logger.debug(f"recorder_positions query failed, trying recorded_trades: {query_err}")
+            cursor.execute(f'''
+                SELECT rt.id, rt.ticker, rt.side, rt.quantity, rt.entry_price, rt.exit_price,
+                       0 as realized_pnl, rt.status, rt.entry_time, rt.exit_time,
+                       r.name as recorder_name
+                FROM recorded_trades rt
+                LEFT JOIN recorders r ON rt.recorder_id = r.id
+                WHERE r.user_id = {placeholder}
+                ORDER BY rt.entry_time DESC
+                LIMIT 50
+            ''', (user_id,))
         
         trades = []
         total_pnl = 0
