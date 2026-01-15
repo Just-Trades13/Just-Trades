@@ -2236,7 +2236,7 @@ def cancel_old_tp_orders_for_symbol(recorder_id: int, ticker: str) -> None:
                         
                         # Filter to working limit orders for this symbol (TP orders are limits)
                         tp_orders = []
-                        for order in working_orders:
+                        for order in (working_orders or []):
                             order_symbol = order.get('symbol', '') or ''
                             order_type = order.get('orderType', '') or ''
                             order_status = order.get('ordStatus', '') or ''
@@ -2280,7 +2280,7 @@ def cancel_old_tp_orders_for_symbol(recorder_id: int, ticker: str) -> None:
                                 await asyncio.sleep(0.25)
                                 check_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
                                 still_working = 0
-                                for order in check_orders:
+                                for order in (check_orders or []):
                                     o_sym = str(order.get('symbol', '') or '').upper()
                                     o_type = str(order.get('orderType', '') or '').upper()
                                     o_status = str(order.get('ordStatus', '') or '').upper()
@@ -6380,7 +6380,7 @@ def receive_webhook(webhook_token):
                                             # Cancel all TP orders after manual close
                                             all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
                                             cancelled = 0
-                                            for order in all_orders:
+                                            for order in (all_orders or []):
                                                 order_symbol = order.get('symbol', '') or ''
                                                 order_type = order.get('orderType', '') or ''
                                                 order_status = order.get('ordStatus', '') or ''
