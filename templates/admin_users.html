@@ -507,6 +507,255 @@
             min-width: 700px;
         }
     }
+    
+    /* User Details Modal */
+    .details-modal {
+        max-width: 900px;
+        max-height: 85vh;
+        overflow-y: auto;
+    }
+    
+    .details-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 12px;
+    }
+    
+    .details-tab {
+        padding: 10px 20px;
+        background: rgba(148, 163, 184, 0.08);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    
+    .details-tab:hover {
+        background: rgba(148, 163, 184, 0.15);
+        color: var(--text-light);
+    }
+    
+    .details-tab.active {
+        background: rgba(25, 184, 255, 0.15);
+        border-color: rgba(25, 184, 255, 0.3);
+        color: var(--primary-color);
+    }
+    
+    .details-tab .material-icons {
+        font-size: 18px;
+    }
+    
+    .details-tab .count {
+        background: rgba(148, 163, 184, 0.2);
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+    }
+    
+    .details-tab.active .count {
+        background: rgba(25, 184, 255, 0.2);
+    }
+    
+    .tab-content {
+        display: none;
+    }
+    
+    .tab-content.active {
+        display: block;
+    }
+    
+    .details-card {
+        background: rgba(148, 163, 184, 0.05);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+    }
+    
+    .details-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    
+    .details-card-title {
+        font-weight: 600;
+        color: var(--text-light);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .details-card-title .material-icons {
+        font-size: 20px;
+        color: var(--primary-color);
+    }
+    
+    .details-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+    }
+    
+    .details-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    
+    .details-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+    }
+    
+    .details-value {
+        font-size: 0.9rem;
+        color: var(--text-light);
+    }
+    
+    .subaccount-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+    }
+    
+    .subaccount-badge {
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    
+    .subaccount-badge.demo {
+        background: rgba(255, 193, 7, 0.15);
+        color: #ffc107;
+    }
+    
+    .subaccount-badge.live {
+        background: rgba(45, 206, 137, 0.15);
+        color: var(--green);
+    }
+    
+    .stats-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 16px;
+        margin-bottom: 20px;
+        padding: 16px;
+        background: rgba(148, 163, 184, 0.05);
+        border-radius: 12px;
+    }
+    
+    .stat-item {
+        text-align: center;
+    }
+    
+    .stat-item .value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-light);
+    }
+    
+    .stat-item .value.positive {
+        color: var(--green);
+    }
+    
+    .stat-item .value.negative {
+        color: #f5365c;
+    }
+    
+    .stat-item .label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        margin-top: 4px;
+    }
+    
+    .trades-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+    
+    .trades-table th {
+        padding: 10px;
+        text-align: left;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .trades-table td {
+        padding: 10px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    
+    .trades-table .pnl-positive {
+        color: var(--green);
+        font-weight: 600;
+    }
+    
+    .trades-table .pnl-negative {
+        color: #f5365c;
+        font-weight: 600;
+    }
+    
+    .empty-details {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--text-muted);
+    }
+    
+    .empty-details .material-icons {
+        font-size: 48px;
+        opacity: 0.5;
+        margin-bottom: 10px;
+    }
+    
+    .btn-view {
+        background: rgba(25, 184, 255, 0.15) !important;
+        border-color: rgba(25, 184, 255, 0.3) !important;
+        color: var(--primary-color) !important;
+    }
+    
+    .btn-view:hover {
+        background: rgba(25, 184, 255, 0.25) !important;
+    }
+    
+    .loading-spinner {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 40px;
+    }
+    
+    .loading-spinner::after {
+        content: '';
+        width: 40px;
+        height: 40px;
+        border: 3px solid rgba(148, 163, 184, 0.2);
+        border-top-color: var(--primary-color);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
 </style>
 {% endblock %}
 
@@ -705,6 +954,9 @@
                 </td>
                 <td>
                     <div class="action-buttons">
+                        <button class="btn-action btn-view" onclick="viewUserDetails({{ user.id }}, '{{ user.display_name or user.username }}')" title="View full details">
+                            <span class="material-icons">visibility</span>
+                        </button>
                         {% if not user.is_approved and not user.is_admin %}
                         <button class="btn-action btn-approve" onclick="approveUser({{ user.id }}, '{{ user.username }}')" title="Approve user">
                             <span class="material-icons">check_circle</span>
@@ -776,6 +1028,39 @@
                 <button type="submit" class="btn-submit">Create User</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- User Details Modal -->
+<div class="modal-overlay" id="userDetailsModal">
+    <div class="modal details-modal">
+        <h3>
+            <span class="material-icons">person</span>
+            <span id="detailsUserName">User Details</span>
+        </h3>
+        
+        <div class="details-tabs">
+            <button class="details-tab active" data-tab="accounts">
+                <span class="material-icons">account_balance</span>
+                Accounts <span class="count" id="accountsCount">0</span>
+            </button>
+            <button class="details-tab" data-tab="recorders">
+                <span class="material-icons">smart_toy</span>
+                Strategies <span class="count" id="recordersCount">0</span>
+            </button>
+            <button class="details-tab" data-tab="trades">
+                <span class="material-icons">candlestick_chart</span>
+                Trades <span class="count" id="tradesCount">0</span>
+            </button>
+        </div>
+        
+        <div id="detailsContent">
+            <div class="loading-spinner"></div>
+        </div>
+        
+        <div class="modal-buttons" style="margin-top: 20px;">
+            <button type="button" class="btn-cancel" onclick="hideUserDetailsModal()">Close</button>
+        </div>
     </div>
 </div>
 
@@ -1133,6 +1418,295 @@ function rejectUsernameChange(changeId, oldUsername, newUsername) {
         });
     }
 }
+
+// ============================================================================
+// USER DETAILS MODAL
+// ============================================================================
+
+let currentUserDetails = null;
+
+function showUserDetailsModal() {
+    document.getElementById('userDetailsModal').classList.add('show');
+}
+
+function hideUserDetailsModal() {
+    document.getElementById('userDetailsModal').classList.remove('show');
+    currentUserDetails = null;
+}
+
+function viewUserDetails(userId, userName) {
+    document.getElementById('detailsUserName').textContent = userName + ' - Full Details';
+    document.getElementById('detailsContent').innerHTML = '<div class="loading-spinner"></div>';
+    
+    // Reset tab counts
+    document.getElementById('accountsCount').textContent = '...';
+    document.getElementById('recordersCount').textContent = '...';
+    document.getElementById('tradesCount').textContent = '...';
+    
+    // Activate first tab
+    document.querySelectorAll('.details-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('.details-tab[data-tab="accounts"]').classList.add('active');
+    
+    showUserDetailsModal();
+    
+    // Fetch user details
+    fetch('/admin/users/' + userId + '/details')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentUserDetails = data;
+                
+                // Update counts
+                document.getElementById('accountsCount').textContent = data.accounts_count;
+                document.getElementById('recordersCount').textContent = data.recorders_count;
+                document.getElementById('tradesCount').textContent = data.trades.length;
+                
+                // Show accounts tab by default
+                showDetailsTab('accounts');
+            } else {
+                document.getElementById('detailsContent').innerHTML = 
+                    '<div class="empty-details"><span class="material-icons">error</span><p>Error loading details: ' + data.error + '</p></div>';
+            }
+        })
+        .catch(error => {
+            document.getElementById('detailsContent').innerHTML = 
+                '<div class="empty-details"><span class="material-icons">error</span><p>Error: ' + error + '</p></div>';
+        });
+}
+
+function showDetailsTab(tabName) {
+    if (!currentUserDetails) return;
+    
+    // Update active tab
+    document.querySelectorAll('.details-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.details-tab[data-tab="${tabName}"]`).classList.add('active');
+    
+    const content = document.getElementById('detailsContent');
+    
+    if (tabName === 'accounts') {
+        content.innerHTML = renderAccountsTab(currentUserDetails.accounts);
+    } else if (tabName === 'recorders') {
+        content.innerHTML = renderRecordersTab(currentUserDetails.recorders);
+    } else if (tabName === 'trades') {
+        content.innerHTML = renderTradesTab(currentUserDetails.trades, currentUserDetails.trade_stats);
+    }
+}
+
+function renderAccountsTab(accounts) {
+    if (!accounts || accounts.length === 0) {
+        return '<div class="empty-details"><span class="material-icons">account_balance_wallet</span><p>No connected accounts</p></div>';
+    }
+    
+    let html = '';
+    accounts.forEach(acc => {
+        const statusBadge = acc.is_connected 
+            ? '<span class="badge badge-active">Connected</span>' 
+            : '<span class="badge badge-inactive">Not Connected</span>';
+        const envBadge = acc.environment === 'live'
+            ? '<span class="badge badge-admin">LIVE</span>'
+            : '<span class="badge badge-pending">DEMO</span>';
+        
+        html += `
+            <div class="details-card">
+                <div class="details-card-header">
+                    <div class="details-card-title">
+                        <span class="material-icons">account_balance</span>
+                        ${acc.name || 'Account ' + acc.id}
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        ${envBadge}
+                        ${statusBadge}
+                    </div>
+                </div>
+                <div class="details-grid">
+                    <div class="details-item">
+                        <span class="details-label">Broker</span>
+                        <span class="details-value">${acc.broker || 'Tradovate'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Environment</span>
+                        <span class="details-value">${acc.environment || 'demo'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Created</span>
+                        <span class="details-value">${acc.created_at ? new Date(acc.created_at).toLocaleDateString() : 'N/A'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Enabled</span>
+                        <span class="details-value">${acc.enabled ? 'Yes' : 'No'}</span>
+                    </div>
+                </div>
+                ${acc.subaccounts && acc.subaccounts.length > 0 ? `
+                    <div style="margin-top: 12px;">
+                        <span class="details-label">Subaccounts</span>
+                        <div class="subaccount-list">
+                            ${acc.subaccounts.map(sub => `
+                                <span class="subaccount-badge ${sub.is_demo ? 'demo' : 'live'}">
+                                    ${sub.name || sub.id} (${sub.is_demo ? 'Demo' : 'Live'})
+                                </span>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    });
+    
+    return html;
+}
+
+function renderRecordersTab(recorders) {
+    if (!recorders || recorders.length === 0) {
+        return '<div class="empty-details"><span class="material-icons">smart_toy</span><p>No strategies configured</p></div>';
+    }
+    
+    let html = '';
+    recorders.forEach(rec => {
+        const statusBadge = rec.enabled 
+            ? '<span class="badge badge-active">Active</span>' 
+            : '<span class="badge badge-inactive">Inactive</span>';
+        
+        html += `
+            <div class="details-card">
+                <div class="details-card-header">
+                    <div class="details-card-title">
+                        <span class="material-icons">smart_toy</span>
+                        ${rec.name}
+                    </div>
+                    ${statusBadge}
+                </div>
+                <div class="details-grid">
+                    <div class="details-item">
+                        <span class="details-label">Type</span>
+                        <span class="details-value">${rec.strategy_type || 'Futures'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Ticker</span>
+                        <span class="details-value">${rec.ticker || 'Any'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">TP (ticks)</span>
+                        <span class="details-value">${rec.tp_value || 'N/A'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">SL (ticks)</span>
+                        <span class="details-value">${rec.sl_value || 'N/A'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Linked Accounts</span>
+                        <span class="details-value">${rec.enabled_accounts_count || 0}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Created</span>
+                        <span class="details-value">${rec.created_at ? new Date(rec.created_at).toLocaleDateString() : 'N/A'}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    return html;
+}
+
+function renderTradesTab(trades, stats) {
+    let html = '';
+    
+    // Stats summary
+    if (stats) {
+        const pnlClass = stats.total_pnl >= 0 ? 'positive' : 'negative';
+        html += `
+            <div class="stats-summary">
+                <div class="stat-item">
+                    <div class="value">${stats.total_trades}</div>
+                    <div class="label">Total Trades</div>
+                </div>
+                <div class="stat-item">
+                    <div class="value" style="color: var(--green);">${stats.winning_trades}</div>
+                    <div class="label">Winners</div>
+                </div>
+                <div class="stat-item">
+                    <div class="value" style="color: #f5365c;">${stats.losing_trades}</div>
+                    <div class="label">Losers</div>
+                </div>
+                <div class="stat-item">
+                    <div class="value">${stats.win_rate}%</div>
+                    <div class="label">Win Rate</div>
+                </div>
+                <div class="stat-item">
+                    <div class="value ${pnlClass}">${stats.total_pnl >= 0 ? '+' : ''}$${stats.total_pnl.toFixed(2)}</div>
+                    <div class="label">Total P&L</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    if (!trades || trades.length === 0) {
+        html += '<div class="empty-details"><span class="material-icons">candlestick_chart</span><p>No trades recorded</p></div>';
+        return html;
+    }
+    
+    html += `
+        <table class="trades-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Strategy</th>
+                    <th>Ticker</th>
+                    <th>Side</th>
+                    <th>Qty</th>
+                    <th>Entry</th>
+                    <th>Exit</th>
+                    <th>P&L</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    trades.forEach(trade => {
+        const pnlClass = trade.realized_pnl > 0 ? 'pnl-positive' : (trade.realized_pnl < 0 ? 'pnl-negative' : '');
+        const pnlDisplay = trade.realized_pnl !== null ? (trade.realized_pnl >= 0 ? '+' : '') + '$' + trade.realized_pnl.toFixed(2) : '-';
+        const sideClass = trade.side === 'BUY' ? 'style="color: var(--green);"' : 'style="color: #f5365c;"';
+        
+        html += `
+            <tr>
+                <td>${trade.entry_time ? new Date(trade.entry_time).toLocaleString() : 'N/A'}</td>
+                <td>${trade.recorder_name || 'Manual'}</td>
+                <td><strong>${trade.ticker || 'N/A'}</strong></td>
+                <td ${sideClass}>${trade.side || 'N/A'}</td>
+                <td>${trade.quantity || 0}</td>
+                <td>${trade.entry_price ? trade.entry_price.toFixed(2) : '-'}</td>
+                <td>${trade.exit_price ? trade.exit_price.toFixed(2) : '-'}</td>
+                <td class="${pnlClass}">${pnlDisplay}</td>
+                <td><span class="badge badge-${trade.status === 'closed' ? 'inactive' : 'active'}">${trade.status || 'open'}</span></td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table>';
+    return html;
+}
+
+// Tab click handlers
+document.querySelectorAll('.details-tab').forEach(tab => {
+    tab.addEventListener('click', function() {
+        showDetailsTab(this.dataset.tab);
+    });
+});
+
+// Close details modal on escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        hideUserDetailsModal();
+    }
+});
+
+// Close details modal on background click
+document.getElementById('userDetailsModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideUserDetailsModal();
+    }
+});
 </script>
 {% endblock %}
 
