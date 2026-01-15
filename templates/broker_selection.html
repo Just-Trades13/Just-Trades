@@ -157,10 +157,10 @@
         {
             id: 'ninjatrader',
             name: 'NinjaTrader',
-            description: 'Futures and forex trading',
+            description: 'NinjaTrader Brokerage accounts (futures)',
             icon: 'show_chart',
-            status: 'coming-soon',
-            comingSoon: true
+            status: 'available',
+            comingSoon: false
         }
     ];
     
@@ -224,9 +224,9 @@
         .then(data => {
             if (data.success) {
                 // Redirect to appropriate connection flow based on broker
-                if (brokerId === 'tradovate') {
-                    // For Tradovate, collect credentials first (optional, for mdAccessToken)
-                    // Then proceed to OAuth
+                if (brokerId === 'tradovate' || brokerId === 'ninjatrader') {
+                    // For Tradovate and NinjaTrader Brokerage (same API)
+                    // NinjaTrader Brokerage uses Tradovate's backend
                     window.location.href = `/accounts/${accountId}/credentials`;
                 } else if (brokerId === 'projectx') {
                     // For ProjectX/TopstepX, collect API key credentials
