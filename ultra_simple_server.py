@@ -4483,28 +4483,28 @@ def admin_get_user_details(user_id):
     if not current or not current.is_admin:
         return jsonify({'success': False, 'error': 'Not authorized'}), 403
 
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         placeholder = '%s' if is_postgres else '?'
 
-        # Get user's connected accounts
-        cursor.execute(f'''
-            SELECT id, name, broker, environment, enabled, 
-                   CASE WHEN tradovate_token IS NOT NULL AND tradovate_token != '' THEN 1 ELSE 0 END as is_connected,
-                   tradovate_accounts, created_at, updated_at
-            FROM accounts 
-            WHERE user_id = {placeholder}
-            ORDER BY created_at DESC
-        ''', (user_id,))
-        
+        # =====================
+        # 1. Get user's accounts
+        # =====================
         accounts = []
-        for row in cursor.fetchall():
-            # Handle both dict and tuple rows
-            if hasattr(row, 'keys'):
-                acc = dict(row)
-            else:
+        try:
+            cursor.execute(f'''
+                SELECT id, name, broker, environment, enabled, 
+                       CASE WHEN tradovate_token IS NOT NULL AND tradovate_token != '' THEN 1 ELSE 0 END as is_connected,
+                       tradovate_accounts, created_at
+                FROM accounts 
+                WHERE user_id = {placeholder}
+                ORDER BY created_at DESC
+            ''', (user_id,))
+            
+            for row in cursor.fetchall():
                 acc = {
                     'id': row[0],
                     'name': row[1],
@@ -4513,64 +4513,82 @@ def admin_get_user_details(user_id):
                     'enabled': bool(row[4]),
                     'is_connected': bool(row[5]),
                     'tradovate_accounts': row[6],
-                    'created_at': str(row[7]) if row[7] else None,
-                    'updated_at': str(row[8]) if row[8] else None
+                    'created_at': str(row[7]) if row[7] else None
                 }
-            
-            # Parse tradovate subaccounts
-            subaccounts = []
-            if acc.get('tradovate_accounts'):
-                try:
-                    ta = json.loads(acc['tradovate_accounts']) if isinstance(acc['tradovate_accounts'], str) else acc['tradovate_accounts']
-                    for sub in ta:
-                        subaccounts.append({
-                            'id': sub.get('id'),
-                            'name': sub.get('name'),
-                            'is_demo': sub.get('is_demo', True)
-                        })
-                except:
-                    pass
-            acc['subaccounts'] = subaccounts
-            acc.pop('tradovate_accounts', None)
-            accounts.append(acc)
+                
+                # Parse tradovate subaccounts
+                subaccounts = []
+                if acc.get('tradovate_accounts'):
+                    try:
+                        ta = json.loads(acc['tradovate_accounts']) if isinstance(acc['tradovate_accounts'], str) else acc['tradovate_accounts']
+                        for sub in ta:
+                            subaccounts.append({
+                                'id': sub.get('id'),
+                                'name': sub.get('name'),
+                                'is_demo': sub.get('is_demo', True)
+                            })
+                    except:
+                        pass
+                acc['subaccounts'] = subaccounts
+                acc.pop('tradovate_accounts', None)
+                accounts.append(acc)
+        except Exception as e:
+            logger.warning(f"Error fetching accounts for user {user_id}: {e}")
+            if is_postgres:
+                conn.rollback()
 
-        # Get user's recorders/strategies (using only columns guaranteed to exist)
-        cursor.execute(f'''
-            SELECT id, name, strategy_type, enabled, ticker, created_at
-            FROM recorders 
-            WHERE user_id = {placeholder}
-            ORDER BY created_at DESC
-        ''', (user_id,))
-        
+        # =====================
+        # 2. Get user's recorders/strategies
+        # =====================
         recorders = []
-        for row in cursor.fetchall():
-            if hasattr(row, 'keys'):
-                rec = dict(row)
-            else:
+        try:
+            cursor.execute(f'''
+                SELECT id, name, strategy_type, enabled, ticker, created_at
+                FROM recorders 
+                WHERE user_id = {placeholder}
+                ORDER BY created_at DESC
+            ''', (user_id,))
+            
+            for row in cursor.fetchall():
                 rec = {
                     'id': row[0],
                     'name': row[1],
                     'strategy_type': row[2],
                     'enabled': bool(row[3]),
                     'ticker': row[4],
-                    'created_at': str(row[5]) if row[5] else None
+                    'created_at': str(row[5]) if row[5] else None,
+                    'enabled_accounts_count': 0
                 }
-            
-            # Get linked accounts count from traders table instead
+                recorders.append(rec)
+        except Exception as e:
+            logger.warning(f"Error fetching recorders for user {user_id}: {e}")
+            if is_postgres:
+                conn.rollback()
+
+        # Get linked accounts count for each recorder (separate queries to avoid transaction issues)
+        for rec in recorders:
             try:
                 cursor.execute(f'''
                     SELECT COUNT(*) FROM traders 
-                    WHERE recorder_id = {placeholder} AND enabled = {'TRUE' if is_postgres else '1'}
+                    WHERE recorder_id = {placeholder}
                 ''', (rec['id'],))
                 count_row = cursor.fetchone()
                 rec['enabled_accounts_count'] = count_row[0] if count_row else 0
-            except:
+            except Exception as e:
+                logger.debug(f"Error counting traders for recorder {rec['id']}: {e}")
+                if is_postgres:
+                    conn.rollback()
                 rec['enabled_accounts_count'] = 0
-            
-            recorders.append(rec)
 
-        # Get user's recent trades from recorder_positions (closed positions have P&L)
-        # Use recorder_positions for consolidated view, or recorded_trades for individual entries
+        # =====================
+        # 3. Get user's trades/positions
+        # =====================
+        trades = []
+        total_pnl = 0
+        winning_trades = 0
+        losing_trades = 0
+        
+        # Try recorder_positions first (has P&L data)
         try:
             cursor.execute(f'''
                 SELECT rp.id, rp.ticker, rp.side, rp.total_quantity, rp.avg_entry_price, rp.exit_price,
@@ -4582,29 +4600,8 @@ def admin_get_user_details(user_id):
                 ORDER BY rp.opened_at DESC
                 LIMIT 50
             ''', (user_id,))
-        except Exception as query_err:
-            # Fallback: try recorded_trades table if recorder_positions doesn't work
-            logger.debug(f"recorder_positions query failed, trying recorded_trades: {query_err}")
-            cursor.execute(f'''
-                SELECT rt.id, rt.ticker, rt.side, rt.quantity, rt.entry_price, rt.exit_price,
-                       0 as realized_pnl, rt.status, rt.entry_time, rt.exit_time,
-                       r.name as recorder_name
-                FROM recorded_trades rt
-                LEFT JOIN recorders r ON rt.recorder_id = r.id
-                WHERE r.user_id = {placeholder}
-                ORDER BY rt.entry_time DESC
-                LIMIT 50
-            ''', (user_id,))
-        
-        trades = []
-        total_pnl = 0
-        winning_trades = 0
-        losing_trades = 0
-        
-        for row in cursor.fetchall():
-            if hasattr(row, 'keys'):
-                trade = dict(row)
-            else:
+            
+            for row in cursor.fetchall():
                 trade = {
                     'id': row[0],
                     'ticker': row[1],
@@ -4618,15 +4615,52 @@ def admin_get_user_details(user_id):
                     'exit_time': str(row[9]) if row[9] else None,
                     'recorder_name': row[10]
                 }
+                
+                if trade.get('realized_pnl'):
+                    total_pnl += trade['realized_pnl']
+                    if trade['realized_pnl'] > 0:
+                        winning_trades += 1
+                    elif trade['realized_pnl'] < 0:
+                        losing_trades += 1
+                
+                trades.append(trade)
+        except Exception as e:
+            logger.warning(f"Error fetching positions for user {user_id}: {e}")
+            if is_postgres:
+                conn.rollback()
             
-            if trade.get('realized_pnl'):
-                total_pnl += trade['realized_pnl']
-                if trade['realized_pnl'] > 0:
-                    winning_trades += 1
-                elif trade['realized_pnl'] < 0:
-                    losing_trades += 1
-            
-            trades.append(trade)
+            # Fallback: try recorded_trades
+            try:
+                cursor.execute(f'''
+                    SELECT rt.id, rt.ticker, rt.side, rt.quantity, rt.entry_price, rt.exit_price,
+                           rt.status, rt.entry_time, rt.exit_time,
+                           r.name as recorder_name
+                    FROM recorded_trades rt
+                    LEFT JOIN recorders r ON rt.recorder_id = r.id
+                    WHERE r.user_id = {placeholder}
+                    ORDER BY rt.entry_time DESC
+                    LIMIT 50
+                ''', (user_id,))
+                
+                for row in cursor.fetchall():
+                    trade = {
+                        'id': row[0],
+                        'ticker': row[1],
+                        'side': row[2],
+                        'quantity': row[3],
+                        'entry_price': float(row[4]) if row[4] else None,
+                        'exit_price': float(row[5]) if row[5] else None,
+                        'realized_pnl': None,
+                        'status': row[6],
+                        'entry_time': str(row[7]) if row[7] else None,
+                        'exit_time': str(row[8]) if row[8] else None,
+                        'recorder_name': row[9]
+                    }
+                    trades.append(trade)
+            except Exception as e2:
+                logger.warning(f"Error fetching recorded_trades for user {user_id}: {e2}")
+                if is_postgres:
+                    conn.rollback()
 
         conn.close()
 
@@ -4656,6 +4690,11 @@ def admin_get_user_details(user_id):
         logger.error(f"❌ Failed to get user details for {user_id}: {e}")
         import traceback
         logger.debug(traceback.format_exc())
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
