@@ -1462,6 +1462,9 @@ def execute_trade_simple(
                         tp_price = broker_avg - (tp_ticks * tick_size)
                         tp_action = 'Buy'
                     
+                    # CRITICAL: Round TP price to valid tick increment (LIVE rejects off-tick prices)
+                    tp_price = round(tp_price / tick_size) * tick_size
+                    
                     logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
                     
                     # STEP 4: Find existing TP or place new - OPTIMIZED for minimum API calls
