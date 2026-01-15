@@ -760,6 +760,10 @@ BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 # This ensures webhooks NEVER fail due to broker issues.
 broker_execution_queue = Queue(maxsize=1000)
 
+# INSTANT WEBHOOK QUEUE - Returns 200 immediately, processes in background
+# This prevents TradingView timeout (3 second limit) from losing signals
+webhook_processing_queue = Queue(maxsize=500)
+
 # ============================================================================
 # WEBHOOK HEALTH TRACKING - Detect stuck webhook processing
 # ============================================================================
@@ -11204,6 +11208,68 @@ def restart_all_broker_workers():
     return new_workers
 
 # ============================================================
+# INSTANT WEBHOOK PROCESSOR - Background worker for fast response
+# ============================================================
+# This worker processes webhooks from the queue so the endpoint can return immediately.
+# Prevents TradingView's 3-second timeout from losing signals.
+# ============================================================
+
+def webhook_processor_worker():
+    """Background worker that processes webhooks from queue."""
+    logger.info("🚀 Webhook processor worker started (instant response mode)")
+    
+    while True:
+        try:
+            # Get next webhook task (blocking with timeout)
+            task = webhook_processing_queue.get(timeout=1)
+            
+            webhook_token = task.get('webhook_token')
+            raw_data = task.get('raw_data')
+            received_at = task.get('received_at', time.time())
+            
+            logger.info(f"📥 Processing queued webhook: token={webhook_token[:8]}... (queued {time.time() - received_at:.2f}s ago)")
+            
+            try:
+                # Process using existing logic - this is the same as before, just in background
+                # We need to create a fake request context for process_webhook_directly
+                with app.test_request_context(
+                    f'/webhook/{webhook_token}',
+                    method='POST',
+                    data=json.dumps(raw_data),
+                    content_type='application/json'
+                ):
+                    result = process_webhook_directly(webhook_token)
+                    logger.info(f"✅ Queued webhook processed: token={webhook_token[:8]}...")
+            except Exception as proc_err:
+                logger.error(f"❌ Queued webhook processing failed: {proc_err}")
+                import traceback
+                logger.error(traceback.format_exc())
+            
+            webhook_processing_queue.task_done()
+            
+        except Empty:
+            # No webhook in queue, just continue waiting
+            pass
+        except Exception as e:
+            logger.error(f"Webhook processor worker error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            time.sleep(0.5)  # Brief pause on error
+
+# Start webhook processor workers (2 workers for redundancy)
+NUM_WEBHOOK_WORKERS = 2
+webhook_processor_workers = []
+for i in range(NUM_WEBHOOK_WORKERS):
+    worker = threading.Thread(
+        target=webhook_processor_worker,
+        daemon=True,
+        name=f"Webhook-Processor-{i+1}"
+    )
+    worker.start()
+    webhook_processor_workers.append(worker)
+logger.info(f"✅ {NUM_WEBHOOK_WORKERS} webhook processor workers started")
+
+# ============================================================
 # WEBHOOK HANDLER - Direct Processing (No Proxy)
 # ============================================================
 # Webhook processing is done directly here using recorder_service logic.
@@ -11220,14 +11286,53 @@ def receive_webhook_fast(webhook_token):
 
 @app.route('/webhook/<webhook_token>', methods=['GET', 'POST'])
 def receive_webhook(webhook_token):
-    """Main webhook endpoint - processes directly using DCA logic.
+    """Main webhook endpoint - INSTANT RESPONSE MODE.
     GET: Returns webhook status (for verification)
-    POST: Processes the actual signal"""
+    POST: Queues signal and returns 200 IMMEDIATELY (prevents TradingView timeout)"""
     logger.info(f"🌐 WEBHOOK ENDPOINT HIT: /webhook/{webhook_token[:8]}... method={request.method}")
+    
     if request.method == 'POST':
-        logger.info(f"   POST data length: {len(request.get_data()) if request.get_data() else 0} bytes")
-        logger.info(f"   POST JSON: {request.get_json(silent=True)}")
-        return process_webhook_directly(webhook_token)
+        # INSTANT RESPONSE: Grab data, queue it, return 200 immediately
+        # This prevents TradingView's 3-second timeout from losing signals
+        try:
+            raw_data = request.get_json(force=True, silent=True) or {}
+            if not raw_data:
+                try:
+                    raw_data = json.loads(request.data.decode('utf-8'))
+                except:
+                    raw_data = request.form.to_dict() or {}
+            
+            logger.info(f"   POST data: {raw_data}")
+            
+            # Queue for background processing
+            webhook_task = {
+                'webhook_token': webhook_token,
+                'raw_data': raw_data,
+                'received_at': time.time()
+            }
+            
+            try:
+                webhook_processing_queue.put_nowait(webhook_task)
+                queue_size = webhook_processing_queue.qsize()
+                logger.info(f"⚡ INSTANT: Webhook queued for processing (queue size: {queue_size})")
+                
+                # Return 200 IMMEDIATELY - processing happens in background
+                return jsonify({
+                    'success': True,
+                    'queued': True,
+                    'message': 'Signal received and queued for processing',
+                    'queue_size': queue_size
+                }), 200
+                
+            except Exception as queue_err:
+                # Queue full - fall back to direct processing (slower but still works)
+                logger.warning(f"⚠️ Webhook queue full, processing directly: {queue_err}")
+                return process_webhook_directly(webhook_token)
+                
+        except Exception as e:
+            logger.error(f"❌ Webhook receive error: {e}")
+            # Fall back to direct processing on any error
+            return process_webhook_directly(webhook_token)
     
     # GET: TradingView or browser verification
     if request.method == 'GET':
