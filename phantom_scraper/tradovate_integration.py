@@ -43,6 +43,14 @@ class TradovateIntegration:
         # Set to False to disable WebSocket orders and use REST only
         # WebSocket bypasses REST rate limits (80/min) for scalability
         self.use_websocket_orders = True
+
+        # 🔄 PERSISTENT WEBSOCKET (Added Jan 16, 2025)
+        # Keeps WebSocket alive with heartbeats to avoid reconnection overhead
+        self._ws_heartbeat_task: Optional[asyncio.Task] = None
+        self._ws_lock = asyncio.Lock()  # Prevent concurrent connection attempts
+        self._ws_last_heartbeat: float = 0
+        self._ws_reconnect_attempts: int = 0
+        self._ws_max_reconnect_attempts: int = 5
         
         # ========================================================
         # CRITICAL: TradingView Routing Mode Detection
@@ -76,6 +84,8 @@ class TradovateIntegration:
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        # Stop heartbeat first
+        await self._stop_websocket_heartbeat()
         if self.session:
             await self.session.close()
         if self.websocket:
@@ -84,7 +94,74 @@ class TradovateIntegration:
             except:
                 pass
             self.ws_connected = False
-    
+
+    # ========================================================================
+    # PERSISTENT WEBSOCKET HEARTBEAT (Added Jan 16, 2025)
+    # Tradovate requires heartbeats to keep connection alive
+    # ========================================================================
+
+    async def _start_websocket_heartbeat(self):
+        """Start the heartbeat task to keep WebSocket alive."""
+        if self._ws_heartbeat_task and not self._ws_heartbeat_task.done():
+            return  # Already running
+
+        async def heartbeat_loop():
+            """Send heartbeat every 2.5 seconds to keep connection alive."""
+            import time
+            logger.info("💓 WebSocket heartbeat started")
+            while True:
+                try:
+                    await asyncio.sleep(2.5)
+
+                    if not self.websocket or not self.ws_connected:
+                        logger.debug("💔 Heartbeat: WebSocket not connected, stopping")
+                        break
+
+                    # Send heartbeat - Tradovate expects empty array []
+                    try:
+                        await self.websocket.send("[]")
+                        self._ws_last_heartbeat = time.time()
+                        self._ws_reconnect_attempts = 0  # Reset on successful heartbeat
+                        logger.debug("💓 Heartbeat sent")
+                    except Exception as send_err:
+                        logger.warning(f"💔 Heartbeat send failed: {send_err}")
+                        self.ws_connected = False
+                        break
+
+                except asyncio.CancelledError:
+                    logger.info("💔 Heartbeat cancelled")
+                    break
+                except Exception as e:
+                    logger.error(f"💔 Heartbeat error: {e}")
+                    self.ws_connected = False
+                    break
+
+            logger.info("💔 WebSocket heartbeat stopped")
+
+        self._ws_heartbeat_task = asyncio.create_task(heartbeat_loop())
+
+    async def _stop_websocket_heartbeat(self):
+        """Stop the heartbeat task."""
+        if self._ws_heartbeat_task and not self._ws_heartbeat_task.done():
+            self._ws_heartbeat_task.cancel()
+            try:
+                await self._ws_heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self._ws_heartbeat_task = None
+            logger.debug("💔 Heartbeat task stopped")
+
+    async def _close_websocket(self):
+        """Properly close WebSocket and stop heartbeat."""
+        await self._stop_websocket_heartbeat()
+        if self.websocket:
+            try:
+                await self.websocket.close()
+            except:
+                pass
+            self.websocket = None
+        self.ws_connected = False
+
     async def login_with_credentials(self, username: str, password: str, client_id: str = None, client_secret: str = None) -> bool:
         """Login to Tradovate using username/password credentials with Client ID and Secret"""
         try:
@@ -478,114 +555,129 @@ class TradovateIntegration:
         """
         Ensure WebSocket is connected and authenticated.
         Returns True if connected, False otherwise.
+        Uses lock to prevent concurrent connection attempts.
+        Starts heartbeat to keep connection alive.
         """
         if not WEBSOCKETS_AVAILABLE:
             logger.error("websockets library not installed. Cannot use WebSocket order strategies.")
             logger.error("Install with: pip install websockets")
             return False
-        
+
         # Ensure we have a valid token before connecting
         if not self.access_token:
             logger.error("Cannot connect WebSocket: No access token. Please login first.")
             return False
-        
-        # Check token validity and refresh if needed
-        await self._ensure_valid_token()
-        
+
+        # Quick check if already connected (before acquiring lock)
         if self.ws_connected and self.websocket:
             try:
-                # Check if connection is still alive
-                # Check websocket state - websockets library uses closed property
                 if hasattr(self.websocket, 'closed') and not self.websocket.closed:
                     return True
                 elif hasattr(self.websocket, 'open') and self.websocket.open:
                     return True
-                else:
-                    # Connection closed
-                    logger.info("WebSocket connection closed, will reconnect...")
-                    self.ws_connected = False
-                    self.websocket = None
-            except Exception as e:
-                # Connection dead, reconnect
-                logger.warning(f"WebSocket connection check failed: {e}, reconnecting...")
-                self.ws_connected = False
-                if self.websocket:
-                    try:
-                        await self.websocket.close()
-                    except:
-                        pass
-                    self.websocket = None
-        
-        try:
-            async def connect_and_auth() -> bool:
-                # Connect to WebSocket (URL aligned with base_url)
-                logger.info(f"🔌 Connecting to Tradovate WebSocket: {self.ws_url}")
-                # Some websockets versions don't support extra_headers; send token via auth message only
-                self.websocket = await websockets.connect(self.ws_url)
-                
-                # Authenticate via WebSocket
-                auth_message = {
-                    "url": "authorize",
-                    "token": self.access_token
-                }
-                logger.debug(f"🔐 Sending WebSocket auth with token: {self.access_token[:20]}...")
-                await self.websocket.send(json.dumps(auth_message))
-                
-                # Wait for authentication response
-                response = await asyncio.wait_for(self.websocket.recv(), timeout=10.0)
-                raw_response = response
-                if not raw_response:
-                    logger.error("WebSocket auth response is empty/None")
-                else:
-                    logger.error(f"WebSocket auth raw (first 200 chars): {str(raw_response)[:200]}")
+            except:
+                pass
+
+        # Use lock to prevent multiple concurrent connection attempts
+        async with self._ws_lock:
+            # Double-check after acquiring lock (another task may have connected)
+            if self.ws_connected and self.websocket:
                 try:
-                    auth_result = json.loads(response)
-                except Exception:
-                    auth_result = raw_response
-                
-                # Check if auth was successful
-                is_ok = False
-                if isinstance(auth_result, dict):
-                    is_ok = auth_result.get('ok') or auth_result.get('success') or auth_result.get('status') == 'ok'
-                elif isinstance(auth_result, list) and len(auth_result) > 0:
-                    is_ok = auth_result[0] == 'ok' or (isinstance(auth_result[0], dict) and auth_result[0].get('ok'))
-                
-                if is_ok or (isinstance(auth_result, str) and auth_result and 'error' not in str(auth_result).lower()):
-                    self.ws_connected = True
-                    logger.info("✅ WebSocket authenticated successfully")
+                    if hasattr(self.websocket, 'closed') and not self.websocket.closed:
+                        return True
+                    elif hasattr(self.websocket, 'open') and self.websocket.open:
+                        return True
+                    else:
+                        logger.info("🔌 WebSocket connection closed, reconnecting...")
+                        await self._close_websocket()
+                except Exception as e:
+                    logger.warning(f"🔌 WebSocket check failed: {e}, reconnecting...")
+                    await self._close_websocket()
+
+            # Check token validity and refresh if needed
+            await self._ensure_valid_token()
+
+            # Check reconnect attempts
+            if self._ws_reconnect_attempts >= self._ws_max_reconnect_attempts:
+                logger.error(f"❌ Max WebSocket reconnect attempts ({self._ws_max_reconnect_attempts}) reached")
+                self._ws_reconnect_attempts = 0  # Reset for next time
+                return False
+
+            try:
+                async def connect_and_auth() -> bool:
+                    # Connect to WebSocket (URL aligned with base_url)
+                    logger.info(f"🔌 Connecting to Tradovate WebSocket: {self.ws_url}")
+                    # Use ping_interval and ping_timeout to help keep connection alive
+                    self.websocket = await websockets.connect(
+                        self.ws_url,
+                        ping_interval=None,  # We'll handle our own heartbeats
+                        ping_timeout=None,
+                        close_timeout=5
+                    )
+
+                    # Authenticate via WebSocket
+                    auth_message = {
+                        "url": "authorize",
+                        "token": self.access_token
+                    }
+                    logger.debug(f"🔐 Sending WebSocket auth with token: {self.access_token[:20]}...")
+                    await self.websocket.send(json.dumps(auth_message))
+
+                    # Wait for authentication response
+                    response = await asyncio.wait_for(self.websocket.recv(), timeout=10.0)
+                    raw_response = response
+                    if not raw_response:
+                        logger.error("WebSocket auth response is empty/None")
+                    else:
+                        logger.debug(f"WebSocket auth raw (first 200 chars): {str(raw_response)[:200]}")
+                    try:
+                        auth_result = json.loads(response)
+                    except Exception:
+                        auth_result = raw_response
+
+                    # Check if auth was successful
+                    is_ok = False
+                    if isinstance(auth_result, dict):
+                        is_ok = auth_result.get('ok') or auth_result.get('success') or auth_result.get('status') == 'ok'
+                    elif isinstance(auth_result, list) and len(auth_result) > 0:
+                        is_ok = auth_result[0] == 'ok' or (isinstance(auth_result[0], dict) and auth_result[0].get('ok'))
+
+                    if is_ok or (isinstance(auth_result, str) and auth_result and 'error' not in str(auth_result).lower()):
+                        self.ws_connected = True
+                        logger.info("✅ WebSocket authenticated successfully")
+                        return True
+                    else:
+                        logger.error(f"WebSocket authentication failed: {auth_result}")
+                        await self.websocket.close()
+                        self.websocket = None
+                        return False
+
+                # Attempt auth; if it fails, force a refresh and retry once
+                self._ws_reconnect_attempts += 1
+                success = await connect_and_auth()
+                if not success:
+                    logger.warning("WebSocket auth failed - attempting token refresh and one retry")
+                    refresh_res = await self.refresh_access_token()
+                    if refresh_res.get('success'):
+                        self._last_refresh_result = refresh_res
+                        self._update_ws_url_from_base()
+                        # Reconnect with new token
+                        self._ws_reconnect_attempts += 1
+                        success = await connect_and_auth()
+
+                if success:
+                    # 🔄 START HEARTBEAT to keep connection alive
+                    await self._start_websocket_heartbeat()
+                    self._ws_reconnect_attempts = 0  # Reset on success
+                    logger.info("🔌 WebSocket connection established with heartbeat")
                     return True
                 else:
-                    logger.error(f"WebSocket authentication failed: {auth_result}")
-                    await self.websocket.close()
-                    self.websocket = None
                     return False
-            
-            # Attempt auth; if it fails, force a refresh and retry once
-            success = await connect_and_auth()
-            if not success:
-                logger.warning("WebSocket auth failed - attempting token refresh and one retry")
-                refresh_res = await self.refresh_access_token()
-                if refresh_res.get('success'):
-                    self._last_refresh_result = refresh_res
-                    self._update_ws_url_from_base()
-                    # Reconnect with new token
-                    success = await connect_and_auth()
-            
-            if success:
-                return True
-            else:
+
+            except Exception as e:
+                logger.error(f"Failed to connect/authenticate WebSocket: {e}")
+                await self._close_websocket()
                 return False
-            
-        except Exception as e:
-            logger.error(f"Failed to connect/authenticate WebSocket: {e}")
-            if self.websocket:
-                try:
-                    await self.websocket.close()
-                except:
-                    pass
-                self.websocket = None
-            self.ws_connected = False
-            return False
     
     async def _send_websocket_message(self, message_type: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
