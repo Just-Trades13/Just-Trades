@@ -567,18 +567,24 @@ def start_user_sync_daemon():
         
         logger.info("🔌 UserSync daemon started - will provide real-time position updates")
         
+        # Initial delay to let system start up
+        time.sleep(10)
+        logger.info("🔌 UserSync daemon: Initial delay complete, starting main loop")
+        
         while _USER_SYNC_RUNNING:
             try:
-                # Sleep first to allow system to initialize
-                time.sleep(60)  # Check every 60 seconds
-                
                 if not _USER_SYNC_ENABLED:
+                    logger.debug("UserSync: Disabled, sleeping...")
+                    time.sleep(60)
                     continue
                 
                 # Get list of connected Tradovate accounts
+                logger.debug("UserSync: Checking for Tradovate accounts...")
                 try:
                     conn = get_db_connection()
                     if not conn:
+                        logger.warning("UserSync: Could not get database connection")
+                        time.sleep(60)
                         continue
                     
                     cursor = conn.cursor()
@@ -594,8 +600,11 @@ def start_user_sync_daemon():
                     accounts = cursor.fetchall()
                     conn.close()
                     
+                    logger.info(f"🔌 UserSync: Found {len(accounts) if accounts else 0} Tradovate accounts with tokens")
+                    
                     if not accounts:
                         logger.debug("UserSync: No Tradovate accounts with tokens found")
+                        time.sleep(60)
                         continue
                     
                     # For each account, get the Tradovate user ID via API
@@ -708,18 +717,25 @@ def start_user_sync_daemon():
                             
                         except Exception as e:
                             logger.error(f"UserSync connection error for account {acc_id}: {e}")
+                            import traceback
+                            logger.error(traceback.format_exc())
                     
                     # Log status
                     with _USER_SYNC_LOCK:
                         active = sum(1 for ws in _USER_SYNC_CONNECTIONS.values() if ws and ws.connected)
-                        if active > 0:
-                            logger.debug(f"📡 UserSync: {active} active connections")
+                        logger.info(f"📡 UserSync: {active} active connections out of {len(_USER_SYNC_CONNECTIONS)} total")
                     
                 except Exception as e:
                     logger.error(f"UserSync daemon error: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                
+                # Sleep before next iteration
+                time.sleep(60)
                     
             except Exception as e:
                 logger.error(f"UserSync daemon outer error: {e}")
+                time.sleep(60)
     
     thread = threading.Thread(target=user_sync_loop, daemon=True, name="UserSyncDaemon")
     thread.start()
