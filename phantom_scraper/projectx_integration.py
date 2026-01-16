@@ -60,13 +60,17 @@ class ProjectXIntegration:
     STATUS_REJECTED = 4
     
     # Prop firm specific endpoints
+    # IMPORTANT: TopstepX uses generic ProjectX userapi for password auth
+    # TopstepX API key auth uses https://api.topstepx.com/api (note /api path)
     FIRM_ENDPOINTS = {
         'topstep': {
-            'demo': 'https://api.topstepx.com',
-            'live': 'https://api.topstepx.com',
-            'user_api': 'https://api.topstepx.com',  # Password auth endpoint
-            'ws_user': 'wss://api.topstepx.com/hubs/user',
-            'ws_market': 'wss://api.topstepx.com/hubs/market',
+            # API key auth base URL (must append /api/Auth/loginKey)
+            'demo': 'https://api.topstepx.com/api',
+            'live': 'https://api.topstepx.com/api',
+            # Password auth uses GENERIC userapi (same as all ProjectX firms)
+            # DO NOT set user_api here - TopstepX doesn't have /login endpoint
+            'ws_user': 'wss://rtc.topstepx.com/hubs/user',
+            'ws_market': 'wss://rtc.topstepx.com/hubs/market',
         },
         'default': {
             'demo': 'https://gateway-api-demo.s2f.projectx.com',
@@ -95,9 +99,11 @@ class ProjectXIntegration:
         endpoints = self.FIRM_ENDPOINTS.get(self.prop_firm, self.FIRM_ENDPOINTS['default'])
         
         if self.prop_firm == 'topstep':
-            # TopstepX has unified endpoints
-            self.base_url = endpoints['demo']  # Same for demo/live
-            self.user_api_url = endpoints.get('user_api', endpoints['demo'])
+            # TopstepX: API key auth uses api.topstepx.com/api
+            # Password auth uses GENERIC userapi (same as all ProjectX firms)
+            self.base_url = endpoints['demo']  # Same for demo/live: https://api.topstepx.com/api
+            # IMPORTANT: Use generic userapi for password auth - TopstepX doesn't have /login
+            self.user_api_url = 'https://userapi-demo.s2f.projectx.com'
             self.ws_user_hub = endpoints['ws_user']
             self.ws_market_hub = endpoints['ws_market']
         else:
@@ -165,11 +171,14 @@ class ProjectXIntegration:
             # Password auth uses userapi endpoint, NOT gateway-api
             # Note: userapi-demo works for both demo AND live/funded accounts
             # The "demo" in the URL refers to the API environment, not the account type
+            # IMPORTANT: ALL firms (including TopstepX) use the generic userapi for password auth
             endpoints_to_try = [
-                "https://userapi-demo.s2f.projectx.com/login",  # Primary - works for all accounts
-                "https://userapi.s2f.projectx.com/login",  # Live API (may not always be available)
-                f"{self.user_api_url}/login",  # Firm-specific if different
+                "https://userapi-demo.s2f.projectx.com/login",  # Primary - works for ALL accounts including TopstepX
+                "https://userapi.s2f.projectx.com/login",  # Live userapi (fallback)
             ]
+            # Only add firm-specific endpoint if it's different from generic (not for TopstepX)
+            if self.user_api_url and 'userapi' not in self.user_api_url:
+                endpoints_to_try.append(f"{self.user_api_url}/login")
             
             last_error = "No endpoints succeeded"
             
@@ -257,18 +266,19 @@ class ProjectXIntegration:
             }
             
             # Try multiple endpoint variations
-            endpoints_to_try = [
-                f"{self.base_url}/api/Auth/loginKey",
-                f"{self.base_url}/Auth/loginKey",
-                f"{self.base_url}/v1/auth/loginKey",
-            ]
-            
-            # TopstepX might use different endpoint structure
+            # TopstepX base_url already includes /api, others don't
             if self.prop_firm == 'topstep':
+                # TopstepX: base_url = https://api.topstepx.com/api
+                endpoints_to_try = [
+                    f"{self.base_url}/Auth/loginKey",  # https://api.topstepx.com/api/Auth/loginKey
+                    "https://api.topstepx.com/api/Auth/loginKey",  # Direct fallback
+                ]
+            else:
+                # Generic ProjectX: base_url = https://gateway-api-demo.s2f.projectx.com
                 endpoints_to_try = [
                     f"{self.base_url}/api/Auth/loginKey",
-                    f"{self.base_url}/auth/loginKey",
-                    "https://api.topstepx.com/api/Auth/loginKey",
+                    f"{self.base_url}/Auth/loginKey",
+                    f"{self.base_url}/v1/auth/loginKey",
                 ]
             
             last_error = "No endpoints succeeded"
