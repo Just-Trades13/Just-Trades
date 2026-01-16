@@ -11235,69 +11235,70 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                         order_id = result.get('orderId') or result.get('id')
                         logger.info(f"✅ [{acct_name}] Order placed! ID: {order_id}")
                         
-                        # Apply TP/SL if configured
+                        # Apply TP/SL using Tradovate native modify
                         if tp_ticks > 0 or sl_ticks > 0:
                             try:
-                                # Try to get fill price from order response first (fastest)
-                                fill_price = result.get('avgPx') or result.get('price') or result.get('avgPrice')
-                                pos_side = 'LONG' if order_side == 'Buy' else 'SHORT'
-                                pos_qty = adjusted_qty
+                                # Get current position for fill price and qty
+                                await asyncio.sleep(0.1)
+                                positions = await tradovate.get_positions(subaccount_id)
+                                symbol_root = tradovate_symbol[:3].upper()
+                                fill_price = None
+                                pos_qty = 0
+                                pos_side = None
                                 
-                                # If no fill price in response, quick position check
-                                if not fill_price:
-                                    await asyncio.sleep(0.1)  # Quick wait (was 0.5s)
-                                    positions = await tradovate.get_positions(subaccount_id)
-                                    symbol_root = tradovate_symbol[:3].upper()
-                                    for pos in (positions or []):
-                                        pos_symbol = str(pos.get('symbol', '')).upper()
-                                        if symbol_root in pos_symbol:
-                                            net_pos = pos.get('netPos', 0)
-                                            if net_pos != 0:
-                                                fill_price = pos.get('netPrice')
-                                                pos_side = 'LONG' if net_pos > 0 else 'SHORT'
-                                                pos_qty = abs(net_pos)
-                                                break
+                                for pos in (positions or []):
+                                    if symbol_root in str(pos.get('symbol', '')).upper():
+                                        net_pos = pos.get('netPos', 0)
+                                        if net_pos != 0:
+                                            fill_price = pos.get('netPrice')
+                                            pos_qty = abs(net_pos)
+                                            pos_side = 'LONG' if net_pos > 0 else 'SHORT'
+                                            break
                                 
                                 if fill_price and pos_side:
                                     exit_side = 'Sell' if pos_side == 'LONG' else 'Buy'
                                     
-                                    # Place TP
+                                    # Get existing orders to find TP/SL to modify
+                                    existing_orders = await tradovate.get_orders(account_id=str(subaccount_id))
+                                    existing_tp_id = None
+                                    existing_sl_id = None
+                                    
+                                    for order in (existing_orders or []):
+                                        if symbol_root in str(order.get('symbol', '')).upper() and order.get('status') == 'Working':
+                                            if order.get('orderType') == 'Limit':
+                                                existing_tp_id = order.get('id')
+                                            elif order.get('orderType') in ('Stop', 'StopLimit'):
+                                                existing_sl_id = order.get('id')
+                                    
+                                    # Handle TP
                                     if tp_ticks > 0:
-                                        if pos_side == 'LONG':
-                                            tp_price = fill_price + (tp_ticks * tick_size)
-                                        else:
-                                            tp_price = fill_price - (tp_ticks * tick_size)
+                                        tp_price = fill_price + (tp_ticks * tick_size) if pos_side == 'LONG' else fill_price - (tp_ticks * tick_size)
                                         
-                                        tp_order = tradovate.create_limit_order(
-                                            acct_name, tradovate_symbol, exit_side, pos_qty, tp_price, subaccount_id
-                                        )
-                                        tp_result = await tradovate.place_order(tp_order)
-                                        if tp_result and tp_result.get('success'):
+                                        if existing_tp_id:
+                                            # MODIFY existing TP (native Tradovate)
+                                            await tradovate.modify_order(existing_tp_id, new_price=tp_price, new_qty=pos_qty, order_type='Limit', time_in_force='GTC')
+                                            logger.info(f"✅ [{acct_name}] TP modified @ {tp_price} qty={pos_qty}")
+                                        else:
+                                            # Place new TP
+                                            tp_order = tradovate.create_limit_order(acct_name, tradovate_symbol, exit_side, pos_qty, tp_price, subaccount_id)
+                                            await tradovate.place_order(tp_order)
                                             logger.info(f"✅ [{acct_name}] TP placed @ {tp_price}")
                                     
-                                    # Place SL
+                                    # Handle SL
                                     if sl_ticks > 0:
-                                        if pos_side == 'LONG':
-                                            sl_price = fill_price - (sl_ticks * tick_size)
-                                        else:
-                                            sl_price = fill_price + (sl_ticks * tick_size)
+                                        sl_price = fill_price - (sl_ticks * tick_size) if pos_side == 'LONG' else fill_price + (sl_ticks * tick_size)
                                         
-                                        sl_order = {
-                                            "accountId": subaccount_id,
-                                            "accountSpec": acct_name,
-                                            "symbol": tradovate_symbol,
-                                            "action": exit_side,
-                                            "orderQty": pos_qty,
-                                            "orderType": "Stop",
-                                            "stopPrice": sl_price,
-                                            "timeInForce": "GTC",
-                                            "isAutomated": True
-                                        }
-                                        sl_result = await tradovate.place_order(sl_order)
-                                        if sl_result and sl_result.get('success'):
+                                        if existing_sl_id:
+                                            # MODIFY existing SL (native Tradovate)
+                                            await tradovate.modify_order(existing_sl_id, stop_price=sl_price, new_qty=pos_qty, order_type='Stop', time_in_force='GTC')
+                                            logger.info(f"✅ [{acct_name}] SL modified @ {sl_price} qty={pos_qty}")
+                                        else:
+                                            # Place new SL
+                                            sl_order = {"accountId": subaccount_id, "accountSpec": acct_name, "symbol": tradovate_symbol, "action": exit_side, "orderQty": pos_qty, "orderType": "Stop", "stopPrice": sl_price, "timeInForce": "GTC", "isAutomated": True}
+                                            await tradovate.place_order(sl_order)
                                             logger.info(f"✅ [{acct_name}] SL placed @ {sl_price}")
                             except Exception as risk_err:
-                                logger.warning(f"⚠️ [{acct_name}] TP/SL placement error: {risk_err}")
+                                logger.warning(f"⚠️ [{acct_name}] TP/SL error: {risk_err}")
                         
                         return {'success': True, 'account': acct_name, 'order_id': order_id}
                     else:
