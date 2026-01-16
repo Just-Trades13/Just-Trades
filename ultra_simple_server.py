@@ -18292,14 +18292,14 @@ def get_open_trades():
                 rp.avg_entry_price,
                 rp.unrealized_pnl,
                 rp.worst_unrealized_pnl,
-                rp.opened_at,
-                rp.current_price,
+                rp.created_at,
+                rp.updated_at,
                 r.name as strategy_name,
                 r.account_id
             FROM recorder_positions rp
             LEFT JOIN recorders r ON rp.recorder_id = r.id
             WHERE rp.status = 'open'
-            ORDER BY rp.opened_at DESC
+            ORDER BY rp.created_at DESC
         ''')
         positions = cursor.fetchall()
         conn.close()
@@ -18320,7 +18320,7 @@ def get_open_trades():
                 'TimeFrame': '',
                 'Direction': pos_dict.get('side'),
                 'Open_Price': str(pos_dict.get('avg_entry_price') or 0),
-                'Open_Time': pos_dict.get('opened_at'),
+                'Open_Time': pos_dict.get('created_at'),
                 'Running_Pos': float(pos_dict.get('total_quantity') or 0),
                 'Account': f"Account {pos_dict.get('account_id')}" if pos_dict.get('account_id') else 'N/A',
                 'Nickname': '',
