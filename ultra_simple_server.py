@@ -23634,37 +23634,7 @@ def emit_realtime_updates():
     while True:
         try:
             # ============================================================
-            # CHECK FOR WEBSOCKET POSITION DATA FIRST (Jan 2026)
-            # If UserSync WebSocket is providing real-time updates, skip REST polling
-            # This reduces API calls and provides faster updates
-            # ============================================================
-            
-            ws_data_fresh = False
-            try:
-                from recorder_service import get_ws_position_cache, _USER_SYNC_ENABLED
-                ws_cache, ws_last_update = get_ws_position_cache()
-                
-                # Check if WebSocket data is fresh (within last 10 seconds)
-                if _USER_SYNC_ENABLED and ws_last_update > 0:
-                    ws_age = time.time() - ws_last_update
-                    if ws_age < 10:
-                        ws_data_fresh = True
-                        logger.debug(f"📡 Using WebSocket position data (age: {ws_age:.1f}s)")
-            except ImportError:
-                pass  # recorder_service not available
-            except Exception as e:
-                logger.debug(f"WebSocket cache check error: {e}")
-            
-            # If WebSocket data is fresh, we can reduce REST polling frequency
-            # The UserSync daemon already emits position_update events in real-time
-            if ws_data_fresh:
-                # Still do occasional REST fetch for PnL data (cashBalance)
-                # but less frequently since positions are already updating
-                time.sleep(10)  # Longer sleep when WebSocket is active
-                continue
-            
-            # ============================================================
-            # FALLBACK: FETCH REAL-TIME PnL DIRECTLY FROM TRADOVATE REST API
+            # FETCH REAL-TIME PnL DIRECTLY FROM TRADOVATE
             # This is the correct approach - no market data needed!
             # Note: fetch_tradovate_pnl_sync() has built-in throttling
             # ============================================================
@@ -24386,63 +24356,6 @@ def api_websocket_status():
         })
     except Exception as e:
         logger.error(f"Error getting websocket status: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/usersync-status', methods=['GET'])
-def api_usersync_status():
-    """Diagnostic endpoint to check UserSync WebSocket status for real-time position updates"""
-    try:
-        from recorder_service import (
-            _USER_SYNC_CONNECTIONS, _USER_SYNC_LOCK, _USER_SYNC_ENABLED,
-            _WS_POSITION_CACHE, _WS_POSITION_LAST_UPDATE
-        )
-        
-        # Get UserSync connection status
-        sync_status = {}
-        with _USER_SYNC_LOCK:
-            for user_id, ws in _USER_SYNC_CONNECTIONS.items():
-                try:
-                    sync_status[str(user_id)] = {
-                        'connected': getattr(ws, 'connected', False),
-                        'authenticated': getattr(ws, 'authenticated', False),
-                        'subscribed': getattr(ws, 'subscribed', False),
-                        'is_demo': getattr(ws, 'is_demo', True),
-                        'cached_positions': len(getattr(ws, 'positions_cache', {}))
-                    }
-                except Exception as e:
-                    sync_status[str(user_id)] = {'error': str(e)}
-        
-        # Get position cache info
-        cache_age = time.time() - _WS_POSITION_LAST_UPDATE if _WS_POSITION_LAST_UPDATE > 0 else None
-        
-        return jsonify({
-            'success': True,
-            'usersync_enabled': _USER_SYNC_ENABLED,
-            'connections': {
-                'count': len(sync_status),
-                'users': sync_status
-            },
-            'position_cache': {
-                'size': len(_WS_POSITION_CACHE),
-                'last_update_ago_seconds': round(cache_age, 1) if cache_age else None,
-                'is_fresh': cache_age is not None and cache_age < 10
-            },
-            'explanation': {
-                'usersync_enabled=True': 'UserSync is enabled - real-time position updates active',
-                'usersync_enabled=False': 'UserSync disabled - using REST polling only',
-                'is_fresh=True': 'WebSocket data is fresh (< 10 sec) - REST polling reduced',
-                'is_fresh=False': 'No recent WebSocket data - using REST polling as fallback'
-            }
-        })
-    except ImportError as e:
-        return jsonify({
-            'success': True,
-            'usersync_enabled': False,
-            'note': 'UserSync module not loaded yet',
-            'error': str(e)
-        })
-    except Exception as e:
-        logger.error(f"Error getting usersync status: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/recorders/<int:recorder_id>/execution-status', methods=['GET'])
