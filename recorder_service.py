@@ -5836,6 +5836,50 @@ def api_reset_recorder_history(recorder_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/recorders/clear-all-history', methods=['POST'])
+def api_clear_all_trade_history():
+    """Clear ALL trade history across all recorders - start fresh"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get counts before clearing
+        cursor.execute('SELECT COUNT(*) FROM recorded_trades')
+        trades_count = cursor.fetchone()[0]
+
+        cursor.execute('SELECT COUNT(*) FROM recorder_positions')
+        positions_count = cursor.fetchone()[0]
+
+        cursor.execute('SELECT COUNT(*) FROM recorded_signals')
+        signals_count = cursor.fetchone()[0]
+
+        # Clear all trade-related tables
+        cursor.execute('DELETE FROM recorded_trades')
+        cursor.execute('DELETE FROM recorder_positions')
+        cursor.execute('DELETE FROM recorded_signals')
+
+        conn.commit()
+        conn.close()
+
+        # Rebuild index since positions changed
+        rebuild_index()
+
+        logger.info(f"🗑️ CLEARED ALL TRADE HISTORY: {trades_count} trades, {signals_count} signals, {positions_count} positions deleted")
+
+        return jsonify({
+            'success': True,
+            'message': f'All trade history cleared! Deleted {trades_count} trades, {signals_count} signals, and {positions_count} positions.',
+            'trades_deleted': trades_count,
+            'signals_deleted': signals_count,
+            'positions_deleted': positions_count
+        })
+    except Exception as e:
+        logger.error(f"Error clearing all trade history: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/recorders/<int:recorder_id>/toggle-simulation', methods=['POST'])
 def api_toggle_simulation_mode(recorder_id):
     """Toggle simulation mode for a recorder (paper trading vs live)"""
