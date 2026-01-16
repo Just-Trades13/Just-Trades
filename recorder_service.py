@@ -582,41 +582,44 @@ def start_user_sync_daemon():
                         continue
                     
                     cursor = conn.cursor()
-                    # Get accounts with valid access tokens
+                    # Get accounts with valid Tradovate tokens
+                    # Note: tradovate_token is the access token, environment determines demo/live
                     cursor.execute('''
-                        SELECT DISTINCT id, access_token, user_id, environment 
+                        SELECT DISTINCT id, tradovate_token, environment 
                         FROM accounts 
                         WHERE broker = 'Tradovate' 
-                        AND access_token IS NOT NULL 
-                        AND access_token != ''
-                        AND user_id IS NOT NULL
+                        AND tradovate_token IS NOT NULL 
+                        AND tradovate_token != ''
                     ''')
                     accounts = cursor.fetchall()
                     conn.close()
                     
                     if not accounts:
+                        logger.debug("UserSync: No Tradovate accounts with tokens found")
                         continue
                     
-                    # Group accounts by user_id (one connection per user)
-                    users_to_connect = {}
+                    # For each account, get the Tradovate user ID via API
+                    # We need to make an API call because user_id isn't stored in DB
+                    accounts_to_connect = []
                     for acc in accounts:
                         acc_id = acc[0] if isinstance(acc, tuple) else acc['id']
-                        access_token = acc[1] if isinstance(acc, tuple) else acc['access_token']
-                        user_id = acc[2] if isinstance(acc, tuple) else acc['user_id']
-                        environment = acc[3] if isinstance(acc, tuple) else acc.get('environment', 'demo')
+                        access_token = acc[1] if isinstance(acc, tuple) else acc['tradovate_token']
+                        environment = acc[2] if isinstance(acc, tuple) else acc.get('environment', 'demo')
                         
-                        if user_id and access_token:
-                            # Keep the most recent token for each user
-                            users_to_connect[user_id] = {
+                        if access_token:
+                            accounts_to_connect.append({
+                                'account_id': acc_id,
                                 'access_token': access_token,
-                                'is_demo': environment != 'live',
-                                'account_id': acc_id
-                            }
+                                'is_demo': environment != 'live'
+                            })
                     
-                    # Check/create connections for each user
-                    for user_id, user_data in users_to_connect.items():
+                    # Check/create connections for each account
+                    # We use account_id as key since we don't have Tradovate user_id stored
+                    for acc_data in accounts_to_connect:
+                        acc_id = acc_data['account_id']
+                        
                         with _USER_SYNC_LOCK:
-                            existing = _USER_SYNC_CONNECTIONS.get(user_id)
+                            existing = _USER_SYNC_CONNECTIONS.get(acc_id)
                             
                             # Check if existing connection is still alive
                             if existing and existing.connected and existing.subscribed:
@@ -632,14 +635,42 @@ def start_user_sync_daemon():
                                 except:
                                     pass
                         
+                        # Get Tradovate user ID via API call
+                        try:
+                            import requests
+                            base_url = "https://demo.tradovateapi.com/v1" if acc_data['is_demo'] else "https://live.tradovateapi.com/v1"
+                            headers = {"Authorization": f"Bearer {acc_data['access_token']}"}
+                            
+                            # Get user info to find user_id
+                            user_response = requests.get(f"{base_url}/user/list", headers=headers, timeout=10)
+                            if user_response.status_code != 200:
+                                logger.warning(f"UserSync: Could not get user info for account {acc_id}: {user_response.status_code}")
+                                continue
+                            
+                            users = user_response.json()
+                            if not users or not isinstance(users, list) or len(users) == 0:
+                                logger.warning(f"UserSync: No users returned for account {acc_id}")
+                                continue
+                            
+                            tradovate_user_id = users[0].get('id')
+                            if not tradovate_user_id:
+                                logger.warning(f"UserSync: No user ID in response for account {acc_id}")
+                                continue
+                            
+                            logger.info(f"UserSync: Got Tradovate user ID {tradovate_user_id} for account {acc_id}")
+                            
+                        except Exception as e:
+                            logger.warning(f"UserSync: Error getting user ID for account {acc_id}: {e}")
+                            continue
+                        
                         # Create new connection (outside lock to avoid blocking)
                         try:
                             from phantom_scraper.tradovate_integration import TradovateUserSyncWebSocket
                             
                             ws = TradovateUserSyncWebSocket(
-                                access_token=user_data['access_token'],
-                                user_id=user_id,
-                                is_demo=user_data['is_demo']
+                                access_token=acc_data['access_token'],
+                                user_id=tradovate_user_id,
+                                is_demo=acc_data['is_demo']
                             )
                             
                             # Register position callback
@@ -651,32 +682,32 @@ def start_user_sync_daemon():
                             
                             if connected:
                                 with _USER_SYNC_LOCK:
-                                    _USER_SYNC_CONNECTIONS[user_id] = ws
-                                logger.info(f"✅ UserSync: Connected for user {user_id}")
+                                    _USER_SYNC_CONNECTIONS[acc_id] = ws
+                                logger.info(f"✅ UserSync: Connected for account {acc_id} (user {tradovate_user_id})")
                                 
                                 # Start listening in background thread
-                                def listen_thread(ws_conn, uid):
+                                def listen_thread(ws_conn, aid):
                                     try:
                                         listen_loop = asyncio.new_event_loop()
                                         listen_loop.run_until_complete(ws_conn.listen())
                                         listen_loop.close()
                                     except Exception as e:
-                                        logger.debug(f"UserSync listen ended for user {uid}: {e}")
+                                        logger.debug(f"UserSync listen ended for account {aid}: {e}")
                                 
                                 t = threading.Thread(
                                     target=listen_thread, 
-                                    args=(ws, user_id),
+                                    args=(ws, acc_id),
                                     daemon=True,
-                                    name=f"UserSync-{user_id}"
+                                    name=f"UserSync-{acc_id}"
                                 )
                                 t.start()
                             else:
-                                logger.warning(f"⚠️ UserSync: Failed to connect for user {user_id}")
+                                logger.warning(f"⚠️ UserSync: Failed to connect for account {acc_id}")
                             
                             loop.close()
                             
                         except Exception as e:
-                            logger.error(f"UserSync connection error for user {user_id}: {e}")
+                            logger.error(f"UserSync connection error for account {acc_id}: {e}")
                     
                     # Log status
                     with _USER_SYNC_LOCK:
