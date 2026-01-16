@@ -2525,17 +2525,58 @@ def get_contract_multiplier(symbol: str) -> float:
 
 def get_market_price_simple(symbol: str) -> Optional[float]:
     """
-    Get current market price using TradingView's public scanner API.
-    This doesn't require authentication but has rate limits.
+    Get current market price for futures. Tries multiple sources:
+    1. Yahoo Finance (most reliable for futures)
+    2. TradingView scanner API (fallback)
     """
     try:
         if not symbol:
             return None
-        
-        # Normalize symbol (remove !, add CME prefix if needed)
-        clean_symbol = symbol.upper().replace('!', '')
-        
-        # Map common futures symbols to TradingView format
+
+        # Extract root symbol
+        clean_symbol = symbol.upper().replace('!', '').replace('1', '')
+        root = extract_symbol_root(clean_symbol)
+
+        # Map to Yahoo Finance futures symbols (e.g., MNQ=F)
+        yahoo_futures_map = {
+            'MNQ': 'MNQ=F',  # Micro E-mini Nasdaq
+            'MES': 'MES=F',  # Micro E-mini S&P
+            'M2K': 'M2K=F',  # Micro E-mini Russell
+            'MYM': 'MYM=F',  # Micro E-mini Dow
+            'NQ': 'NQ=F',    # E-mini Nasdaq
+            'ES': 'ES=F',    # E-mini S&P
+            'RTY': 'RTY=F',  # E-mini Russell
+            'YM': 'YM=F',    # E-mini Dow
+            'CL': 'CL=F',    # Crude Oil
+            'GC': 'GC=F',    # Gold
+            'MCL': 'MCL=F',  # Micro Crude
+        }
+
+        yahoo_symbol = yahoo_futures_map.get(root)
+        if yahoo_symbol:
+            # Try Yahoo Finance first - most reliable
+            try:
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
+                params = {'interval': '1m', 'range': '1d'}
+                headers = {'User-Agent': 'JustTrades/1.0'}
+
+                response = requests.get(url, params=params, headers=headers, timeout=5)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    result = data.get('chart', {}).get('result', [])
+
+                    if result:
+                        meta = result[0].get('meta', {})
+                        price = meta.get('regularMarketPrice')
+
+                        if price:
+                            logger.debug(f"📈 Yahoo Finance price for {root}: {price}")
+                            return float(price)
+            except Exception as yahoo_err:
+                logger.debug(f"Yahoo Finance error for {root}: {yahoo_err}")
+
+        # Fallback: TradingView scanner API
         tv_symbol_map = {
             'MNQ': 'CME_MINI:MNQ1!',
             'MES': 'CME_MINI:MES1!',
@@ -2548,35 +2589,28 @@ def get_market_price_simple(symbol: str) -> Optional[float]:
             'CL': 'NYMEX:CL1!',
             'GC': 'COMEX:GC1!',
         }
-        
-        # Extract root symbol
-        root = extract_symbol_root(clean_symbol)
-        tv_symbol = tv_symbol_map.get(root)
-        
-        if not tv_symbol:
-            # Try direct format
-            tv_symbol = f'CME:{clean_symbol}'
-        
-        # Use TradingView's scanner endpoint
+
+        tv_symbol = tv_symbol_map.get(root, f'CME:{clean_symbol}')
+
         url = "https://scanner.tradingview.com/futures/scan"
         payload = {
             "symbols": {"tickers": [tv_symbol]},
             "columns": ["close", "change", "high", "low", "volume"]
         }
-        
+
         response = requests.post(url, json=payload, timeout=5)
-        
+
         if response.status_code == 200:
             data = response.json()
             if data.get('data') and len(data['data']) > 0:
                 price = data['data'][0].get('d', [None])[0]
                 if price:
-                    logger.debug(f"Got price for {symbol}: {price}")
+                    logger.debug(f"📈 TradingView price for {root}: {price}")
                     return float(price)
-        
-        logger.debug(f"Could not get price for {symbol} from TradingView")
+
+        logger.debug(f"Could not get price for {symbol} from any source")
         return None
-        
+
     except Exception as e:
         logger.warning(f"Error getting market price for {symbol}: {e}")
         return None
