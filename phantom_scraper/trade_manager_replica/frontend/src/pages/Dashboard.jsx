@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { dashboardAPI, tradesAPI, profilesAPI } from '../services/api';
+import api from '../services/api';
 import Layout from '../components/Layout';
 import './Dashboard.css';
 
@@ -23,162 +24,10 @@ const Dashboard = () => {
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
-  
-  // Mock data for testing - will be replaced with real API data
-  const [mockChartData, setMockChartData] = useState([]);
-  const [mockCalendarData, setMockCalendarData] = useState({});
-  
-  // BYPASS: Set default data immediately so page renders
-  useEffect(() => {
-    // Set mock summary data - this will persist unless API overwrites it
-    setSummary({ total_strategies: 1, active_positions: 1, total_pnl: 16250.50, today_pnl: 87.50 });
-    
-    // Set mock trades to display in table
-    const mockTrades = [
-      {
-        id: 'mock-1',
-        status: 'OPEN',
-        open_time: '2025-11-05T11:38:00',
-        closed_time: null,
-        strategy_name: 'JADDCAVIXES',
-        symbol: 'MES1!',
-        side: 'SELL',
-        quantity: 2,
-        entry_price: 6856.50,
-        exit_price: null,
-        pnl: 0.00,
-        drawdown: 0.00
-      },
-      {
-        id: 'mock-2',
-        status: 'WIN',
-        open_time: '2025-11-05T14:44:00',
-        closed_time: '2025-11-05T14:47:00',
-        strategy_name: 'JADES',
-        symbol: 'ES1!',
-        side: 'SELL',
-        quantity: 1,
-        entry_price: 6843.00,
-        exit_price: 6841.25,
-        pnl: 87.50,
-        drawdown: -75.00
-      },
-      {
-        id: 'mock-3',
-        status: 'LOSS',
-        open_time: '2025-11-05T14:41:00',
-        closed_time: '2025-11-05T14:42:00',
-        strategy_name: 'JADES',
-        symbol: 'ES1!',
-        side: 'BUY',
-        quantity: 1,
-        entry_price: 6847.50,
-        exit_price: 6847.00,
-        pnl: -25.00,
-        drawdown: 0.00
-      },
-      {
-        id: 'mock-4',
-        status: 'WIN',
-        open_time: '2025-11-05T14:19:00',
-        closed_time: '2025-11-05T14:24:00',
-        strategy_name: 'JADES',
-        symbol: 'ES1!',
-        side: 'SELL',
-        quantity: 1,
-        entry_price: 6851.50,
-        exit_price: 6850.00,
-        pnl: 75.00,
-        drawdown: -62.50
-      },
-      {
-        id: 'mock-5',
-        status: 'LOSS',
-        open_time: '2025-11-05T14:16:00',
-        closed_time: '2025-11-05T14:18:00',
-        strategy_name: 'JADES',
-        symbol: 'ES1!',
-        side: 'BUY',
-        quantity: 1,
-        entry_price: 6853.75,
-        exit_price: 6851.00,
-        pnl: -137.50,
-        drawdown: -87.50
-      }
-    ];
-    setTrades(mockTrades);
-    setOpenTrades([mockTrades[0]]); // First trade is OPEN
-    
-    // Generate mock chart data (equity curve)
-    generateMockChartData();
-    // Generate mock calendar data
-    generateMockCalendarData();
-  }, []);
-  
-  const generateMockChartData = () => {
-    // Generate data points from Oct 9 to Nov 5 (skipping weekends)
-    // Matching the original chart curve more closely
-    const dataPoints = [];
-    const startDate = new Date('2025-10-09');
-    const endDate = new Date('2025-11-05');
-    let currentDate = new Date(startDate);
-    
-    // Predefined profit values to match the original chart curve
-    const profitValues = [
-      0, 500, 1200, 1800, 2500, 3200, 4000, 4800, 5500, 6200,
-      7000, 7800, 8500, 9200, 10000, 10800, 11500, 12200, 13000,
-      13800, 14500, 15200, 16000, 16800, 17500, 17000, 16500, 16000
-    ];
-    
-    // Predefined drawdown values
-    const drawdownValues = [
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-      0, 0, 0, 0, 0, 0, 0, 0, 0,
-      0, 0, 0, 0, 0, 0, 500, 1000, 1500
-    ];
-    
-    let dataIndex = 0;
-    while (currentDate <= endDate) {
-      const dayOfWeek = currentDate.getDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Skip weekends
-        const profit = profitValues[dataIndex] || (dataIndex * 600);
-        const drawdown = drawdownValues[dataIndex] || 0;
-        
-        dataPoints.push({
-          date: new Date(currentDate),
-          profit: Math.min(profit, 18000), // Cap at 18,000
-          drawdown: Math.min(drawdown, 8000) // Cap drawdown
-        });
-        dataIndex++;
-      }
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-    
-    setMockChartData(dataPoints);
-  };
-  
-  const generateMockCalendarData = () => {
-    // Generate calendar data for days with trades
-    const calendarData = {};
-    
-    // Add test days with trades (matching the original screenshot exactly)
-    const tradeDays = [
-      { date: '2025-10-27', profit: 925, count: 21 },
-      { date: '2025-10-28', profit: 317, count: 22 },
-      { date: '2025-10-29', profit: 757, count: 27 },
-      { date: '2025-10-30', profit: 466, count: 18 },
-      { date: '2025-10-31', profit: 1622, count: 28 },
-      { date: '2025-11-03', profit: 1009, count: 34 },
-      { date: '2025-11-04', profit: 2090, count: 55 },
-      { date: '2025-11-05', profit: 2369, count: 76 }
-    ];
-    
-    tradeDays.forEach(day => {
-      calendarData[day.date] = { profit: day.profit, count: day.count };
-    });
-    
-    setMockCalendarData(calendarData);
-  };
+
+  // Real data states for chart and calendar
+  const [chartData, setChartData] = useState([]);
+  const [calendarData, setCalendarData] = useState({});
 
   useEffect(() => {
     setMounted(true);
@@ -255,7 +104,43 @@ const Dashboard = () => {
         console.log('Favorites API failed:', error.message);
         // Don't set state if API fails
       }
-      
+
+      // Fetch chart data (PnL and drawdown)
+      try {
+        const chartRes = await api.get('/dashboard/pnl-drawdown-chart');
+        console.log('Chart data loaded:', chartRes.data);
+        if (chartRes.data && chartRes.data.chart_data && chartRes.data.chart_data.length > 0) {
+          // Transform API data to chart format
+          const formattedChartData = chartRes.data.chart_data.map(d => ({
+            date: new Date(d.timestamp),
+            profit: d.pnl || 0,
+            drawdown: d.drawdown || 0
+          }));
+          setChartData(formattedChartData);
+        }
+      } catch (error) {
+        console.log('Chart API failed:', error.message);
+      }
+
+      // Fetch calendar data
+      try {
+        const calendarRes = await api.get('/dashboard/calendar-data');
+        console.log('Calendar data loaded:', calendarRes.data);
+        if (calendarRes.data && calendarRes.data.calendar_data) {
+          // Transform API data to calendar format: { 'YYYY-MM-DD': { profit: X, count: Y } }
+          const formattedCalendarData = {};
+          calendarRes.data.calendar_data.forEach(d => {
+            formattedCalendarData[d.date] = {
+              profit: d.pnl || 0,
+              count: d.trade_count || 0
+            };
+          });
+          setCalendarData(formattedCalendarData);
+        }
+      } catch (error) {
+        console.log('Calendar API failed:', error.message);
+      }
+
       console.log('Dashboard data loading complete');
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
@@ -351,66 +236,64 @@ const Dashboard = () => {
             </div>
             <div className="chart-area">
               <svg className="chart-svg" viewBox="0 0 1000 500" preserveAspectRatio="none">
-                {/* Y-axis labels (0 to 18,000 in increments of 2,000) */}
-                {[0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000].map((val, i) => {
-                  const yPos = 450 - (val / 18000 * 400);
-                  return (
-                    <g key={i}>
-                      <line x1="50" y1={yPos} x2="950" y2={yPos} 
-                            stroke="rgba(255, 255, 255, 0.1)" strokeWidth="1" />
-                      <text x="40" y={yPos + 4} fill="rgba(255, 255, 255, 0.6)" 
-                            fontSize="11" textAnchor="end" fontFamily="Poppins, sans-serif">
-                        {val.toLocaleString()}
-                      </text>
-                    </g>
-                  );
-                })}
-                {/* X-axis date labels and chart lines */}
+                {/* Dynamic Y-axis and chart rendering based on real data */}
                 {(() => {
-                  const dates = [];
-                  const startDate = new Date('2025-10-09');
-                  const endDate = new Date('2025-11-05');
-                  let currentDate = new Date(startDate);
-                  let xPos = 50;
-                  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
-                  const tradingDays = mockChartData.length;
-                  const xStep = tradingDays > 0 ? 900 / (tradingDays - 1) : 0;
-                  
-                  let dataIndex = 0;
-                  while (currentDate <= endDate) {
-                    const dayOfWeek = currentDate.getDay();
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                      const month = currentDate.toLocaleString('default', { month: 'short' });
-                      const day = currentDate.getDate();
-                      dates.push({ 
-                        x: xPos, 
-                        label: `${month} ${day}`, 
-                        date: new Date(currentDate),
-                        dataIndex 
-                      });
-                      xPos += xStep;
-                      dataIndex++;
-                    }
-                    currentDate.setDate(currentDate.getDate() + 1);
-                  }
-                  
+                  // Calculate max values from actual data
+                  const maxProfit = chartData.length > 0
+                    ? Math.max(...chartData.map(d => Math.abs(d.profit || 0)), ...chartData.map(d => Math.abs(d.drawdown || 0)))
+                    : 1000;
+                  // Round up to nearest nice number
+                  const yMax = Math.ceil(maxProfit / 1000) * 1000 || 1000;
+                  const yStep = yMax / 5;
+                  const yLabels = Array.from({ length: 6 }, (_, i) => i * yStep);
+
+                  // Build date positions from actual chart data
+                  const tradingDays = chartData.length;
+                  const xStep = tradingDays > 1 ? 900 / (tradingDays - 1) : 0;
+
+                  const dates = chartData.map((d, i) => {
+                    const date = d.date instanceof Date ? d.date : new Date(d.date);
+                    const month = date.toLocaleString('default', { month: 'short' });
+                    const day = date.getDate();
+                    return {
+                      x: 50 + i * xStep,
+                      label: `${month} ${day}`,
+                      date: date,
+                      dataIndex: i
+                    };
+                  });
+
                   // Draw profit and drawdown lines
-                  const profitPoints = mockChartData.map((d, i) => {
+                  const profitPoints = chartData.map((d, i) => {
                     const x = dates[i]?.x || 50;
-                    const y = 450 - (d.profit / 18000 * 400);
+                    const y = 450 - ((d.profit || 0) / yMax * 400);
                     return `${x},${y}`;
                   }).join(' ');
-                  
-                  const drawdownPoints = mockChartData.map((d, i) => {
+
+                  const drawdownPoints = chartData.map((d, i) => {
                     const x = dates[i]?.x || 50;
-                    const y = 450 - (d.drawdown / 18000 * 400);
+                    const y = 450 - ((d.drawdown || 0) / yMax * 400);
                     return `${x},${y}`;
                   }).join(' ');
-                  
+
                   return (
                     <>
+                      {/* Y-axis labels */}
+                      {yLabels.map((val, i) => {
+                        const yPos = 450 - (val / yMax * 400);
+                        return (
+                          <g key={i}>
+                            <line x1="50" y1={yPos} x2="950" y2={yPos}
+                                  stroke="rgba(255, 255, 255, 0.1)" strokeWidth="1" />
+                            <text x="40" y={yPos + 4} fill="rgba(255, 255, 255, 0.6)"
+                                  fontSize="11" textAnchor="end" fontFamily="Poppins, sans-serif">
+                              {val.toLocaleString()}
+                            </text>
+                          </g>
+                        );
+                      })}
                       {/* Profit line (green) */}
-                      {mockChartData.length > 0 && (
+                      {chartData.length > 0 && (
                         <polyline
                           points={profitPoints}
                           fill="none"
@@ -421,7 +304,7 @@ const Dashboard = () => {
                         />
                       )}
                       {/* Drawdown line (red) */}
-                      {mockChartData.length > 0 && (
+                      {chartData.length > 0 && (
                         <polyline
                           points={drawdownPoints}
                           fill="none"
@@ -432,30 +315,37 @@ const Dashboard = () => {
                         />
                       )}
                       {/* Data point circles */}
-                      {mockChartData.map((d, i) => {
+                      {chartData.map((d, i) => {
                         const x = dates[i]?.x || 50;
-                        const profitY = 450 - (d.profit / 18000 * 400);
-                        const drawdownY = 450 - (d.drawdown / 18000 * 400);
+                        const profitY = 450 - ((d.profit || 0) / yMax * 400);
+                        const drawdownY = 450 - ((d.drawdown || 0) / yMax * 400);
                         return (
                           <g key={i}>
                             <circle cx={x} cy={profitY} r="3" fill="#2dce89" stroke="#fff" strokeWidth="1" />
-                            {d.drawdown > 0 && (
+                            {(d.drawdown || 0) > 0 && (
                               <circle cx={x} cy={drawdownY} r="3" fill="#fd5d93" stroke="#fff" strokeWidth="1" />
                             )}
                           </g>
                         );
                       })}
-                      {/* X-axis labels */}
-                      {dates.map((dateInfo, i) => (
+                      {/* X-axis labels - show only every few labels if many data points */}
+                      {dates.filter((_, i) => chartData.length < 15 || i % Math.ceil(chartData.length / 10) === 0).map((dateInfo, i) => (
                         <g key={i}>
-                          <line x1={dateInfo.x} y1="450" x2={dateInfo.x} y2="455" 
+                          <line x1={dateInfo.x} y1="450" x2={dateInfo.x} y2="455"
                                 stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1" />
-                          <text x={dateInfo.x} y="470" fill="rgba(255, 255, 255, 0.6)" 
+                          <text x={dateInfo.x} y="470" fill="rgba(255, 255, 255, 0.6)"
                                 fontSize="10" textAnchor="middle" fontFamily="Poppins, sans-serif">
                             {dateInfo.label}
                           </text>
                         </g>
                       ))}
+                      {/* Show message if no data */}
+                      {chartData.length === 0 && (
+                        <text x="500" y="250" fill="rgba(255, 255, 255, 0.5)"
+                              fontSize="14" textAnchor="middle" fontFamily="Poppins, sans-serif">
+                          No trade data available
+                        </text>
+                      )}
                     </>
                   );
                 })()}
@@ -546,61 +436,76 @@ const Dashboard = () => {
             )}
           </div>
 
-          {/* Calendar Widget */}
+          {/* Calendar Widget - Dynamic based on current date */}
           <div className="dashboard-calendar">
-            <div className="calendar-header">
-              <h3>NOVEMBER 2025</h3>
-              <div className="calendar-nav">
-                <button className="calendar-nav-btn">today</button>
-                <button className="calendar-nav-btn">back</button>
-                <button className="calendar-nav-btn">next</button>
-              </div>
-            </div>
-            <div className="calendar-grid">
-              <div className="calendar-weekdays">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="calendar-weekday">{day}</div>
-                ))}
-              </div>
-              <div className="calendar-days">
-                {/* Calendar days - November 2025, showing Oct 26 - Nov 8 (2 weeks) */}
-                {(() => {
-                  const days = [];
-                  // Start from Oct 26, 2025 (Sunday) - first day visible in calendar
-                  const startDate = new Date('2025-10-26');
-                  // Show 14 days (2 weeks)
-                  for (let i = 0; i < 14; i++) {
-                    const date = new Date(startDate);
-                    date.setDate(startDate.getDate() + i);
-                    const day = date.getDate();
-                    const isCurrentMonth = date.getMonth() === 10; // November is month 10 (0-indexed)
-                    const dateKey = date.toISOString().split('T')[0];
-                    const dayTrades = mockCalendarData[dateKey];
-                    const hasTrades = !!dayTrades;
-                    
-                    days.push(
-                      <div 
-                        key={i} 
-                        className={`calendar-day ${!isCurrentMonth ? 'other-month' : ''} ${hasTrades ? 'has-trades' : ''}`}
-                      >
-                        {hasTrades ? (
-                          <div className="calendar-day-content">
-                            <div className="calendar-day-profit">${dayTrades.profit.toLocaleString()}</div>
-                            <div className="calendar-day-count">({dayTrades.count} trades)</div>
-                          </div>
-                        ) : (
-                          day
-                        )}
+            {(() => {
+              const now = new Date();
+              const currentMonth = now.getMonth();
+              const currentYear = now.getFullYear();
+              const monthName = now.toLocaleString('default', { month: 'long' }).toUpperCase();
+
+              // Get first day of month and calculate start of calendar grid
+              const firstOfMonth = new Date(currentYear, currentMonth, 1);
+              const startDayOfWeek = firstOfMonth.getDay(); // 0 = Sunday
+              const calendarStart = new Date(firstOfMonth);
+              calendarStart.setDate(calendarStart.getDate() - startDayOfWeek);
+
+              // Generate 14 days (2 weeks) for the calendar grid
+              const days = [];
+              for (let i = 0; i < 14; i++) {
+                const date = new Date(calendarStart);
+                date.setDate(calendarStart.getDate() + i);
+                const day = date.getDate();
+                const isCurrentMonth = date.getMonth() === currentMonth;
+                const dateKey = date.toISOString().split('T')[0];
+                const dayTrades = calendarData[dateKey];
+                const hasTrades = !!dayTrades;
+
+                days.push(
+                  <div
+                    key={i}
+                    className={`calendar-day ${!isCurrentMonth ? 'other-month' : ''} ${hasTrades ? 'has-trades' : ''}`}
+                  >
+                    {hasTrades ? (
+                      <div className="calendar-day-content">
+                        <div className={`calendar-day-profit ${dayTrades.profit >= 0 ? 'profit' : 'loss'}`}>
+                          ${Math.abs(dayTrades.profit).toLocaleString()}
+                        </div>
+                        <div className="calendar-day-count">({dayTrades.count} trades)</div>
                       </div>
-                    );
-                  }
-                  return days;
-                })()}
-              </div>
-            </div>
-            <div className="calendar-footer">
-              <div className="calendar-logo">PR</div>
-            </div>
+                    ) : (
+                      day
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <>
+                  <div className="calendar-header">
+                    <h3>{monthName} {currentYear}</h3>
+                    <div className="calendar-nav">
+                      <button className="calendar-nav-btn">today</button>
+                      <button className="calendar-nav-btn">back</button>
+                      <button className="calendar-nav-btn">next</button>
+                    </div>
+                  </div>
+                  <div className="calendar-grid">
+                    <div className="calendar-weekdays">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                        <div key={day} className="calendar-weekday">{day}</div>
+                      ))}
+                    </div>
+                    <div className="calendar-days">
+                      {days}
+                    </div>
+                  </div>
+                  <div className="calendar-footer">
+                    <div className="calendar-logo">JT</div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>

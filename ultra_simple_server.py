@@ -18274,45 +18274,69 @@ def api_close_recorder_positions(recorder_id):
 
 @app.route('/api/trades/open/', methods=['GET'])
 def get_open_trades():
-    """Get open positions (like Trade Manager's /api/trades/open/)"""
+    """Get open positions from recorder_positions table"""
     try:
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
+        is_postgres = is_using_postgres()
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        
-        # Get all open positions
+
+        # Get all open positions from recorder_positions, joined with recorders for strategy name
         cursor.execute('''
-            SELECT * FROM open_positions
-            ORDER BY open_time DESC
+            SELECT
+                rp.id,
+                rp.ticker,
+                rp.side,
+                rp.total_quantity,
+                rp.avg_entry_price,
+                rp.unrealized_pnl,
+                rp.worst_unrealized_pnl,
+                rp.opened_at,
+                rp.current_price,
+                r.name as strategy_name,
+                r.account_id
+            FROM recorder_positions rp
+            LEFT JOIN recorders r ON rp.recorder_id = r.id
+            WHERE rp.status = 'open'
+            ORDER BY rp.opened_at DESC
         ''')
         positions = cursor.fetchall()
         conn.close()
-        
+
         # Format like Trade Manager
         formatted_positions = []
         for pos in positions:
+            pos_dict = dict(pos) if hasattr(pos, 'keys') else dict(zip([desc[0] for desc in cursor.description], pos))
+
+            # Calculate drawdown (worst unrealized PnL)
+            drawdown = pos_dict.get('worst_unrealized_pnl') or 0
+            unrealized = pos_dict.get('unrealized_pnl') or 0
+
             formatted_positions.append({
-                'id': pos['id'],
-                'Strat_Name': pos.get('strategy_name') or 'Manual Trade',
-                'Ticker': pos['symbol'],
+                'id': pos_dict.get('id'),
+                'Strat_Name': pos_dict.get('strategy_name') or 'Unknown Strategy',
+                'Ticker': pos_dict.get('ticker'),
                 'TimeFrame': '',
-                'Direction': pos['direction'],
-                'Open_Price': str(pos['avg_price']),
-                'Open_Time': pos['open_time'],
-                'Running_Pos': float(pos['quantity']),
-                'Account': pos['account_name'] or f"Account {pos['account_id']}",
+                'Direction': pos_dict.get('side'),
+                'Open_Price': str(pos_dict.get('avg_entry_price') or 0),
+                'Open_Time': pos_dict.get('opened_at'),
+                'Running_Pos': float(pos_dict.get('total_quantity') or 0),
+                'Account': f"Account {pos_dict.get('account_id')}" if pos_dict.get('account_id') else 'N/A',
                 'Nickname': '',
                 'Expo': None,
                 'Strike': None,
-                'Drawdown': f"{pos['unrealized_pnl']:.2f}",
-                'StratTicker': pos['symbol'],
+                'Drawdown': f"{drawdown:.2f}",
+                'Unrealized_PnL': f"{unrealized:.2f}",
+                'Current_Price': pos_dict.get('current_price'),
+                'StratTicker': pos_dict.get('ticker'),
                 'Stoploss': '0.00',
                 'TakeProfit': [],
                 'SLTP_Data': {},
-                'Opt_Name': pos['symbol'],
+                'Opt_Name': pos_dict.get('ticker'),
                 'IfOption': False
             })
-        
+
         return jsonify(formatted_positions)
     except Exception as e:
         logger.error(f"Error fetching open trades: {e}")
@@ -20059,91 +20083,107 @@ def api_dashboard_trade_history():
 
 @app.route('/api/dashboard/pnl-calendar', methods=['GET'])
 def api_pnl_calendar():
-    """Get P&L data for calendar view (like Trade Manager)"""
+    """Get P&L data for calendar view from recorded_trades"""
     try:
         start_date = request.args.get('start_date', (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
         end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
-        
+
+        # Query recorded_trades for daily PnL instead of strategy_pnl_history
         if is_postgres:
             cursor.execute('''
-                SELECT DATE(timestamp) as date, SUM(pnl) as daily_pnl
-                FROM strategy_pnl_history
-                WHERE DATE(timestamp) BETWEEN %s AND %s
-                GROUP BY DATE(timestamp)
+                SELECT DATE(exit_time) as date, SUM(pnl) as daily_pnl, COUNT(*) as trade_count
+                FROM recorded_trades
+                WHERE status = 'closed' AND DATE(exit_time) BETWEEN %s AND %s
+                GROUP BY DATE(exit_time)
                 ORDER BY date
             ''', (start_date, end_date))
         else:
             cursor.execute('''
-                SELECT DATE(timestamp) as date, SUM(pnl) as daily_pnl
-                FROM strategy_pnl_history
-                WHERE DATE(timestamp) BETWEEN ? AND ?
-                GROUP BY DATE(timestamp)
+                SELECT DATE(exit_time) as date, SUM(pnl) as daily_pnl, COUNT(*) as trade_count
+                FROM recorded_trades
+                WHERE status = 'closed' AND DATE(exit_time) BETWEEN ? AND ?
+                GROUP BY DATE(exit_time)
                 ORDER BY date
             ''', (start_date, end_date))
-        
-        data = [{'date': str(row[0]), 'pnl': float(row[1]) if row[1] else 0.0} for row in cursor.fetchall()]
+
+        data = [
+            {
+                'date': str(row[0]),
+                'pnl': float(row[1]) if row[1] else 0.0,
+                'trade_count': int(row[2]) if row[2] else 0
+            }
+            for row in cursor.fetchall()
+        ]
         conn.close()
-        
+
         return jsonify({'calendar_data': data})
     except Exception as e:
         logger.error(f"Error fetching P&L calendar: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'calendar_data': []})
 
 @app.route('/api/dashboard/pnl-drawdown-chart', methods=['GET'])
 def api_pnl_drawdown_chart():
-    """Get P&L and drawdown data for chart (like Trade Manager)"""
+    """Get P&L and drawdown data for chart from recorded_trades"""
     try:
         strategy_id = request.args.get('strategy_id', None)
         limit = int(request.args.get('limit', 1000))
         is_postgres = is_using_postgres()
-        
+        ph = '%s' if is_postgres else '?'
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        if is_postgres:
-            if strategy_id:
-                cursor.execute('''
-                    SELECT timestamp, pnl, drawdown
-                    FROM strategy_pnl_history
-                    WHERE strategy_id = %s
-                    ORDER BY timestamp DESC LIMIT %s
-                ''', (strategy_id, limit))
-            else:
-                cursor.execute('''
-                    SELECT timestamp, pnl, drawdown
-                    FROM strategy_pnl_history
-                    ORDER BY timestamp DESC LIMIT %s
-                ''', (limit,))
-        else:
-            query = '''
-                SELECT timestamp, pnl, drawdown
-                FROM strategy_pnl_history
-            '''
-            params = []
-            
-            if strategy_id:
-                query += ' WHERE strategy_id = ?'
-                params.append(strategy_id)
-            
-            query += ' ORDER BY timestamp DESC LIMIT ?'
-            params.append(limit)
-            cursor.execute(query, params)
-        
-        data = [{
-            'timestamp': str(row[0]),
-            'pnl': float(row[1]) if row[1] else 0.0,
-            'drawdown': float(row[2]) if row[2] else 0.0
-        } for row in cursor.fetchall()]
-        data.reverse()  # Reverse to get chronological order
+
+        # Build query to get closed trades ordered by exit time
+        where_clauses = ["status = 'closed'", "exit_time IS NOT NULL"]
+        params = []
+
+        if strategy_id:
+            where_clauses.append(f'recorder_id = {ph}')
+            params.append(int(strategy_id))
+
+        where_sql = ' AND '.join(where_clauses)
+
+        cursor.execute(f'''
+            SELECT exit_time, pnl
+            FROM recorded_trades
+            WHERE {where_sql}
+            ORDER BY exit_time ASC
+            LIMIT {ph}
+        ''', params + [limit])
+
+        rows = cursor.fetchall()
         conn.close()
-        
-        return jsonify({'chart_data': data})
+
+        # Calculate cumulative PnL and drawdown
+        chart_data = []
+        cumulative_pnl = 0
+        peak_pnl = 0
+
+        for row in rows:
+            exit_time = row[0]
+            pnl = float(row[1]) if row[1] else 0.0
+
+            cumulative_pnl += pnl
+            peak_pnl = max(peak_pnl, cumulative_pnl)
+            drawdown = peak_pnl - cumulative_pnl  # Drawdown from peak
+
+            chart_data.append({
+                'timestamp': str(exit_time),
+                'pnl': cumulative_pnl,
+                'drawdown': drawdown
+            })
+
+        return jsonify({'chart_data': chart_data})
     except Exception as e:
         logger.error(f"Error fetching P&L chart: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'chart_data': []})
 
 @app.route('/api/dashboard/metrics', methods=['GET'])
@@ -20317,6 +20357,68 @@ def calculate_time_traded_legacy(positions):
         return f'{months}M'
     else:
         return f'{days}D'
+
+@app.route('/api/dashboard/summary/', methods=['GET'])
+def api_dashboard_summary():
+    """Get dashboard summary stats from recorded trades and positions"""
+    try:
+        conn = get_db_connection()
+        is_postgres = is_using_postgres()
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Get total strategies (recorders)
+        cursor.execute('SELECT COUNT(*) FROM recorders')
+        total_strategies = cursor.fetchone()[0] or 0
+
+        # Get active positions from recorder_positions
+        cursor.execute("SELECT COUNT(*) FROM recorder_positions WHERE status = 'open'")
+        active_positions = cursor.fetchone()[0] or 0
+
+        # Get total PnL from closed trades
+        cursor.execute("SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades WHERE status = 'closed'")
+        total_pnl = cursor.fetchone()[0] or 0
+
+        # Get today's PnL - PostgreSQL vs SQLite syntax
+        if is_postgres:
+            cursor.execute("""
+                SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                WHERE status = 'closed' AND DATE(exit_time) = CURRENT_DATE
+            """)
+        else:
+            cursor.execute("""
+                SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                WHERE status = 'closed' AND DATE(exit_time) = DATE('now')
+            """)
+        today_pnl = cursor.fetchone()[0] or 0
+
+        conn.close()
+
+        return jsonify({
+            'total_strategies': total_strategies,
+            'active_positions': active_positions,
+            'total_pnl': float(total_pnl),
+            'today_pnl': float(today_pnl)
+        })
+    except Exception as e:
+        logger.error(f"Error fetching dashboard summary: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'total_strategies': 0,
+            'active_positions': 0,
+            'total_pnl': 0,
+            'today_pnl': 0,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/trades/', methods=['GET'])
+def api_trades_list():
+    """Alias for /api/dashboard/trade-history for frontend compatibility"""
+    return api_dashboard_trade_history()
+
 
 @app.route('/api/dashboard/calendar-data', methods=['GET'])
 def api_dashboard_calendar_data():
