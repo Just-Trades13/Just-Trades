@@ -477,6 +477,236 @@ def _auto_start_ws_keepalive():
 threading.Timer(5.0, _auto_start_ws_keepalive).start()
 
 # ============================================================================
+# USER SYNC WEBSOCKET - Real-time position updates for hero cards (Jan 2026)
+# This reduces REST API polling and provides instant position/PnL updates
+# ============================================================================
+_USER_SYNC_CONNECTIONS: Dict[int, Any] = {}  # user_id -> TradovateUserSyncWebSocket
+_USER_SYNC_LOCK = threading.Lock()
+_USER_SYNC_RUNNING = False
+_USER_SYNC_ENABLED = True  # Feature flag - set to False to disable
+
+# Shared cache for position updates from WebSocket
+_WS_POSITION_CACHE: Dict[str, Dict] = {}  # "symbol_accountId" -> position data
+_WS_POSITION_LAST_UPDATE: float = 0  # Timestamp of last WebSocket update
+
+def get_ws_position_cache():
+    """Get the current WebSocket position cache for use by emit_realtime_updates."""
+    return _WS_POSITION_CACHE, _WS_POSITION_LAST_UPDATE
+
+def _on_position_update_from_ws(entity: Dict, event_action: str):
+    """
+    Callback when position update received from UserSync WebSocket.
+    Updates the shared cache and can trigger Socket.IO emit.
+    """
+    global _WS_POSITION_LAST_UPDATE
+    import time
+    
+    try:
+        # Extract position data
+        account_id = entity.get('accountId')
+        contract_id = entity.get('contractId')
+        net_pos = entity.get('netPos', 0)
+        net_price = entity.get('netPrice', 0)
+        
+        if account_id and contract_id:
+            cache_key = f"{contract_id}_{account_id}"
+            _WS_POSITION_CACHE[cache_key] = {
+                'account_id': account_id,
+                'contract_id': contract_id,
+                'net_quantity': net_pos,
+                'avg_price': net_price,
+                'timestamp': time.time(),
+                'event_action': event_action,
+                'raw_entity': entity
+            }
+            _WS_POSITION_LAST_UPDATE = time.time()
+            
+            logger.debug(f"📊 WS Position Update: {contract_id} @ account {account_id}: qty={net_pos}, price={net_price}")
+            
+            # Try to emit via Socket.IO if available
+            try:
+                # Import socketio from ultra_simple_server (may not be available during import)
+                from ultra_simple_server import socketio
+                socketio.emit('position_update', {
+                    'positions': [_WS_POSITION_CACHE[cache_key]],
+                    'count': 1,
+                    'timestamp': time.time(),
+                    'source': 'websocket_realtime'
+                })
+            except ImportError:
+                pass  # Socket.IO not available yet
+            except Exception as e:
+                logger.debug(f"Could not emit position update: {e}")
+                
+    except Exception as e:
+        logger.error(f"Error processing WS position update: {e}")
+
+def start_user_sync_daemon():
+    """
+    Start background daemon that maintains UserSync WebSocket connections.
+    
+    This provides real-time position updates instead of REST polling.
+    One connection per user (not per account) since Tradovate user/syncrequest
+    subscribes to all accounts for that user.
+    """
+    global _USER_SYNC_RUNNING
+    
+    if not _USER_SYNC_ENABLED:
+        logger.info("UserSync daemon disabled via feature flag")
+        return
+    
+    if _USER_SYNC_RUNNING:
+        logger.info("UserSync daemon already running")
+        return
+    
+    _USER_SYNC_RUNNING = True
+    
+    def user_sync_loop():
+        """Background loop that maintains UserSync WebSocket connections."""
+        import time
+        
+        logger.info("🔌 UserSync daemon started - will provide real-time position updates")
+        
+        while _USER_SYNC_RUNNING:
+            try:
+                # Sleep first to allow system to initialize
+                time.sleep(60)  # Check every 60 seconds
+                
+                if not _USER_SYNC_ENABLED:
+                    continue
+                
+                # Get list of connected Tradovate accounts
+                try:
+                    conn = get_db_connection()
+                    if not conn:
+                        continue
+                    
+                    cursor = conn.cursor()
+                    # Get accounts with valid access tokens
+                    cursor.execute('''
+                        SELECT DISTINCT id, access_token, user_id, environment 
+                        FROM accounts 
+                        WHERE broker = 'Tradovate' 
+                        AND access_token IS NOT NULL 
+                        AND access_token != ''
+                        AND user_id IS NOT NULL
+                    ''')
+                    accounts = cursor.fetchall()
+                    conn.close()
+                    
+                    if not accounts:
+                        continue
+                    
+                    # Group accounts by user_id (one connection per user)
+                    users_to_connect = {}
+                    for acc in accounts:
+                        acc_id = acc[0] if isinstance(acc, tuple) else acc['id']
+                        access_token = acc[1] if isinstance(acc, tuple) else acc['access_token']
+                        user_id = acc[2] if isinstance(acc, tuple) else acc['user_id']
+                        environment = acc[3] if isinstance(acc, tuple) else acc.get('environment', 'demo')
+                        
+                        if user_id and access_token:
+                            # Keep the most recent token for each user
+                            users_to_connect[user_id] = {
+                                'access_token': access_token,
+                                'is_demo': environment != 'live',
+                                'account_id': acc_id
+                            }
+                    
+                    # Check/create connections for each user
+                    for user_id, user_data in users_to_connect.items():
+                        with _USER_SYNC_LOCK:
+                            existing = _USER_SYNC_CONNECTIONS.get(user_id)
+                            
+                            # Check if existing connection is still alive
+                            if existing and existing.connected and existing.subscribed:
+                                continue  # Connection is good
+                            
+                            # Need to create/reconnect
+                            if existing:
+                                # Close old connection
+                                try:
+                                    loop = asyncio.new_event_loop()
+                                    loop.run_until_complete(existing.disconnect())
+                                    loop.close()
+                                except:
+                                    pass
+                        
+                        # Create new connection (outside lock to avoid blocking)
+                        try:
+                            from phantom_scraper.tradovate_integration import TradovateUserSyncWebSocket
+                            
+                            ws = TradovateUserSyncWebSocket(
+                                access_token=user_data['access_token'],
+                                user_id=user_id,
+                                is_demo=user_data['is_demo']
+                            )
+                            
+                            # Register position callback
+                            ws.on_position_update(_on_position_update_from_ws)
+                            
+                            # Connect and subscribe
+                            loop = asyncio.new_event_loop()
+                            connected = loop.run_until_complete(ws.connect_and_subscribe())
+                            
+                            if connected:
+                                with _USER_SYNC_LOCK:
+                                    _USER_SYNC_CONNECTIONS[user_id] = ws
+                                logger.info(f"✅ UserSync: Connected for user {user_id}")
+                                
+                                # Start listening in background thread
+                                def listen_thread(ws_conn, uid):
+                                    try:
+                                        listen_loop = asyncio.new_event_loop()
+                                        listen_loop.run_until_complete(ws_conn.listen())
+                                        listen_loop.close()
+                                    except Exception as e:
+                                        logger.debug(f"UserSync listen ended for user {uid}: {e}")
+                                
+                                t = threading.Thread(
+                                    target=listen_thread, 
+                                    args=(ws, user_id),
+                                    daemon=True,
+                                    name=f"UserSync-{user_id}"
+                                )
+                                t.start()
+                            else:
+                                logger.warning(f"⚠️ UserSync: Failed to connect for user {user_id}")
+                            
+                            loop.close()
+                            
+                        except Exception as e:
+                            logger.error(f"UserSync connection error for user {user_id}: {e}")
+                    
+                    # Log status
+                    with _USER_SYNC_LOCK:
+                        active = sum(1 for ws in _USER_SYNC_CONNECTIONS.values() if ws and ws.connected)
+                        if active > 0:
+                            logger.debug(f"📡 UserSync: {active} active connections")
+                    
+                except Exception as e:
+                    logger.error(f"UserSync daemon error: {e}")
+                    
+            except Exception as e:
+                logger.error(f"UserSync daemon outer error: {e}")
+    
+    thread = threading.Thread(target=user_sync_loop, daemon=True, name="UserSyncDaemon")
+    thread.start()
+    logger.info("🔌 UserSync daemon thread started")
+
+def _auto_start_user_sync():
+    """Auto-start UserSync daemon after delay."""
+    global _USER_SYNC_RUNNING
+    if not _USER_SYNC_RUNNING and _USER_SYNC_ENABLED:
+        try:
+            start_user_sync_daemon()
+        except Exception as e:
+            print(f"Warning: Could not start UserSync daemon: {e}")
+
+# Delay UserSync daemon start to allow system to initialize
+threading.Timer(30.0, _auto_start_user_sync).start()
+
+# ============================================================================
 # DATABASE CONNECTION - Supports both SQLite and PostgreSQL
 # ============================================================================
 DATABASE_URL = os.getenv('DATABASE_URL')
