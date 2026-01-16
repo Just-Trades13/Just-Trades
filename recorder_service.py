@@ -970,18 +970,21 @@ def execute_trade_simple(
             tradovate_account_id = trader['subaccount_id']
             tradovate_account_spec = trader['subaccount_name']
             # CRITICAL FIX: Determine demo vs live correctly
-            # Priority: 1) environment field, 2) is_demo field, 3) subaccount name pattern
-            env = trader.get('environment')
-            if env:
-                is_demo = env.lower() != 'live'
-            elif 'is_demo' in trader:
+            # Priority: 1) trader.is_demo field (most specific), 2) subaccount name pattern, 3) account environment
+            # NOTE: Account-level environment can be wrong when account has BOTH demo and live subaccounts
+            if 'is_demo' in trader and trader.get('is_demo') is not None:
                 is_demo = bool(trader.get('is_demo'))
             elif tradovate_account_spec and tradovate_account_spec.replace('-', '').isdigit():
                 # Numeric-only subaccount name = live account
                 is_demo = False
+            elif tradovate_account_spec and 'DEMO' in tradovate_account_spec.upper():
+                # Name contains DEMO = demo account
+                is_demo = True
             else:
-                is_demo = True  # Default to demo for safety
-            logger.info(f"🔍 [{acct_name}] is_demo={is_demo} (env={env}, trader.is_demo={trader.get('is_demo')}, name={tradovate_account_spec})")
+                # Fallback to account-level environment
+                env = trader.get('environment')
+                is_demo = (env or 'demo').lower() != 'live'
+            logger.info(f"🔍 [{acct_name}] is_demo={is_demo} (trader.is_demo={trader.get('is_demo')}, name={tradovate_account_spec}, env={trader.get('environment')})")
             username = trader.get('username')
             password = trader.get('password')
             
