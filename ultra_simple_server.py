@@ -11268,9 +11268,10 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                                 if fill_price and pos_side:
                                     exit_side = 'Sell' if pos_side == 'LONG' else 'Buy'
                                     
-                                    # Find existing TP/SL orders to MODIFY instead of cancel+replace
+                                    # Find existing TP/SL orders - check if they match the needed exit_side
                                     existing_tp_id = None
                                     existing_sl_id = None
+                                    wrong_side_orders = []  # Orders to cancel (wrong direction)
                                     try:
                                         orders = await tradovate.get_orders(account_id=str(subaccount_id))
                                         symbol_root = tradovate_symbol[:3].upper()
@@ -11278,13 +11279,34 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                                             order_symbol = str(order.get('symbol', '')).upper()
                                             order_type = order.get('orderType', '')
                                             order_status = order.get('status', '')
+                                            order_action = order.get('action', '')  # Buy or Sell
+                                            order_id = order.get('id')
+                                            
                                             if symbol_root in order_symbol and order_status == 'Working':
-                                                if order_type == 'Limit' and not existing_tp_id:
-                                                    existing_tp_id = order.get('id')
-                                                    logger.info(f"📝 [{acct_name}] Found existing TP order: {existing_tp_id}")
-                                                elif order_type in ('Stop', 'StopLimit') and not existing_sl_id:
-                                                    existing_sl_id = order.get('id')
-                                                    logger.info(f"📝 [{acct_name}] Found existing SL order: {existing_sl_id}")
+                                                # Check if order matches the needed exit direction
+                                                if order_type == 'Limit':
+                                                    if order_action == exit_side and not existing_tp_id:
+                                                        existing_tp_id = order_id
+                                                        logger.info(f"📝 [{acct_name}] Found matching TP order: {existing_tp_id} ({order_action})")
+                                                    else:
+                                                        # Wrong direction - need to cancel
+                                                        wrong_side_orders.append(order_id)
+                                                        logger.info(f"🗑️ [{acct_name}] Found WRONG-SIDE TP: {order_id} ({order_action} != {exit_side})")
+                                                elif order_type in ('Stop', 'StopLimit'):
+                                                    if order_action == exit_side and not existing_sl_id:
+                                                        existing_sl_id = order_id
+                                                        logger.info(f"📝 [{acct_name}] Found matching SL order: {existing_sl_id} ({order_action})")
+                                                    else:
+                                                        wrong_side_orders.append(order_id)
+                                                        logger.info(f"🗑️ [{acct_name}] Found WRONG-SIDE SL: {order_id} ({order_action} != {exit_side})")
+                                        
+                                        # Cancel wrong-side orders
+                                        for bad_order_id in wrong_side_orders:
+                                            try:
+                                                await tradovate.cancel_order(bad_order_id)
+                                                logger.info(f"🗑️ [{acct_name}] Cancelled wrong-side order {bad_order_id}")
+                                            except Exception as cancel_err:
+                                                logger.warning(f"⚠️ [{acct_name}] Failed to cancel order {bad_order_id}: {cancel_err}")
                                     except Exception as find_err:
                                         logger.warning(f"⚠️ [{acct_name}] Error finding existing orders: {find_err}")
                                     
