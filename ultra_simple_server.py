@@ -376,27 +376,43 @@ def notify_trade_execution(user_id: int = None, action: str = None, symbol: str 
         user_ids_to_notify = [user_id]
     else:
         user_ids_to_notify = []
-    
+
     logger.info(f"🔔 Users to notify: {user_ids_to_notify}")
-    
-    # Send Discord DM with embed to ALL users
-    logger.info(f"🔔 DISCORD_NOTIFICATIONS_ENABLED={DISCORD_NOTIFICATIONS_ENABLED}")
-    if DISCORD_NOTIFICATIONS_ENABLED:
-        for uid in user_ids_to_notify:
-            users = get_discord_enabled_users(uid)
-            logger.info(f"🔔 Discord users for user_id {uid}: {users}")
-            for user in users:
-                logger.info(f"🔔 Sending Discord DM to: {user['discord_user_id']}")
-                result = send_discord_dm(user['discord_user_id'], "", embed)
-                logger.info(f"🔔 Discord DM result: {result}")
-    else:
-        logger.warning("⚠️ Discord notifications disabled (no DISCORD_BOT_TOKEN)")
-    
-    # Send Push Notification to ALL users
-    if PUSH_NOTIFICATIONS_ENABLED:
-        for uid in user_ids_to_notify:
-            push_result = send_push_notification(uid, push_title, push_body, url='/dashboard')
-        logger.info(f"🔔 Push notification result: {push_result}")
+
+    # 🚀 FIRE-AND-FORGET: Send notifications in background thread to avoid blocking order execution
+    def send_notifications_background():
+        """Background thread for sending Discord and Push notifications."""
+        try:
+            # Send Discord DM with embed to ALL users
+            if DISCORD_NOTIFICATIONS_ENABLED:
+                for uid in user_ids_to_notify:
+                    try:
+                        users = get_discord_enabled_users(uid)
+                        for user in users:
+                            try:
+                                send_discord_dm(user['discord_user_id'], "", embed)
+                            except Exception as dm_err:
+                                logger.debug(f"Discord DM error: {dm_err}")
+                    except Exception as user_err:
+                        logger.debug(f"Discord user lookup error: {user_err}")
+
+            # Send Push Notification to ALL users
+            if PUSH_NOTIFICATIONS_ENABLED:
+                for uid in user_ids_to_notify:
+                    try:
+                        send_push_notification(uid, push_title, push_body, url='/dashboard')
+                    except Exception as push_err:
+                        logger.debug(f"Push notification error: {push_err}")
+
+            logger.debug(f"🔔 Background notifications completed for {len(user_ids_to_notify)} users")
+        except Exception as e:
+            logger.error(f"🔔 Background notification error: {e}")
+
+    # Start background thread (non-blocking)
+    import threading
+    notification_thread = threading.Thread(target=send_notifications_background, daemon=True)
+    notification_thread.start()
+    logger.info(f"🔔 Notifications dispatched to background thread")
 
 
 def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = None, quantity: int = None, 
@@ -455,23 +471,40 @@ def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = 
         user_ids_to_notify = [user_id]
     else:
         user_ids_to_notify = []
-    
+
     logger.info(f"🔔 Users to notify for TP/SL: {user_ids_to_notify}")
-    
-    # Send Discord DM with embed to ALL users
-    if DISCORD_NOTIFICATIONS_ENABLED:
-        for uid in user_ids_to_notify:
-            users = get_discord_enabled_users(uid)
-            logger.info(f"🔔 Discord users for user_id {uid}: {users}")
-            for user in users:
-                result = send_discord_dm(user['discord_user_id'], "", embed)
-                logger.info(f"🔔 Discord DM result: {result}")
-    
-    # Send Push Notification to ALL users
-    if PUSH_NOTIFICATIONS_ENABLED:
-        for uid in user_ids_to_notify:
-            push_result = send_push_notification(uid, push_title, push_body, url='/dashboard')
-            logger.info(f"🔔 Push notification result for user {uid}: {push_result}")
+
+    # 🚀 FIRE-AND-FORGET: Send notifications in background thread to avoid blocking
+    def send_tpsl_notifications_background():
+        """Background thread for sending TP/SL Discord and Push notifications."""
+        try:
+            if DISCORD_NOTIFICATIONS_ENABLED:
+                for uid in user_ids_to_notify:
+                    try:
+                        users = get_discord_enabled_users(uid)
+                        for user in users:
+                            try:
+                                send_discord_dm(user['discord_user_id'], "", embed)
+                            except Exception as dm_err:
+                                logger.debug(f"Discord DM error: {dm_err}")
+                    except Exception as user_err:
+                        logger.debug(f"Discord user lookup error: {user_err}")
+
+            if PUSH_NOTIFICATIONS_ENABLED:
+                for uid in user_ids_to_notify:
+                    try:
+                        send_push_notification(uid, push_title, push_body, url='/dashboard')
+                    except Exception as push_err:
+                        logger.debug(f"Push notification error: {push_err}")
+
+            logger.debug(f"🔔 Background TP/SL notifications completed")
+        except Exception as e:
+            logger.error(f"🔔 Background TP/SL notification error: {e}")
+
+    import threading
+    notification_thread = threading.Thread(target=send_tpsl_notifications_background, daemon=True)
+    notification_thread.start()
+    logger.info(f"🔔 TP/SL notifications dispatched to background thread")
 
 
 def notify_error(user_id: int, error_type: str, error_message: str, details: str = None):
@@ -4561,6 +4594,7 @@ def admin_get_user_details(user_id):
                 count_row = cursor.fetchone()
                 rec['enabled_accounts_count'] = count_row[0] if count_row else 0
             except:
+                conn.rollback()  # Reset PostgreSQL transaction state
                 rec['enabled_accounts_count'] = 0
             
             recorders.append(rec)
@@ -4579,6 +4613,7 @@ def admin_get_user_details(user_id):
             ''', (user_id,))
         except Exception as query_err:
             # Fallback: try recorded_trades table if recorder_positions doesn't work
+            conn.rollback()  # Reset PostgreSQL transaction state before fallback query
             logger.debug(f"recorder_positions query failed, trying recorded_trades: {query_err}")
             cursor.execute(f'''
                 SELECT rt.id, rt.ticker, rt.side, rt.quantity, rt.entry_price, rt.exit_price,
