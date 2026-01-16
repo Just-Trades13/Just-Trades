@@ -2849,11 +2849,27 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
     
     # If only TP (no SL)
     elif tp_price:
-        logger.info(f"📊 Placing Take Profit only @ {tp_price}, Qty: {quantity}")
-        tp_order_data = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, quantity, tp_price, account_id)
-        tp_result = await tradovate.place_order(tp_order_data)
-        if tp_result and tp_result.get('success'):
-            tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
+        # Check for existing TP to modify
+        existing_tp_id = None
+        try:
+            orders = await tradovate.get_orders(account_id=str(account_id))
+            for order in (orders or []):
+                if symbol_upper[:3] in str(order.get('symbol', '')).upper() and order.get('status') == 'Working' and order.get('orderType') == 'Limit':
+                    existing_tp_id = order.get('id')
+                    break
+        except:
+            pass
+        
+        if existing_tp_id:
+            logger.info(f"📊 Modifying existing TP {existing_tp_id} @ {tp_price}, Qty: {quantity}")
+            await tradovate.modify_order(existing_tp_id, new_price=tp_price, new_qty=quantity, order_type='Limit', time_in_force='GTC')
+            tp_order_id = existing_tp_id
+        else:
+            logger.info(f"📊 Placing Take Profit only @ {tp_price}, Qty: {quantity}")
+            tp_order_data = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, quantity, tp_price, account_id)
+            tp_result = await tradovate.place_order(tp_order_data)
+            if tp_result and tp_result.get('success'):
+                tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
     
     # If only SL (no TP)
     elif sl_price:
