@@ -371,112 +371,6 @@ def _auto_start_daemon():
 threading.Timer(2.0, _auto_start_daemon).start()
 
 # ============================================================================
-# WEBSOCKET KEEP-ALIVE DAEMON - Maintains WebSocket connections for fast orders
-# ============================================================================
-_WS_KEEPALIVE_RUNNING = False
-
-def start_websocket_keepalive_daemon():
-    """
-    Start background daemon that keeps WebSocket connections alive.
-    This prevents Tradovate from closing idle connections, enabling faster order execution.
-    """
-    global _WS_KEEPALIVE_RUNNING
-    if _WS_KEEPALIVE_RUNNING:
-        logger.info("WebSocket keep-alive daemon already running")
-        return
-    
-    _WS_KEEPALIVE_RUNNING = True
-    
-    def keepalive_loop():
-        """Background loop that pings WebSocket connections every 30 seconds."""
-        import asyncio
-        
-        logger.info("🔌 WebSocket keep-alive daemon started (pings every 30 seconds)")
-        
-        while True:
-            try:
-                time.sleep(30)  # Check every 30 seconds
-                
-                with _WS_POOL_LOCK:
-                    pool_size = len(_WS_POOL)
-                    if pool_size == 0:
-                        continue  # No connections to maintain
-                    
-                    connections_to_check = list(_WS_POOL.items())
-                
-                alive_count = 0
-                reconnected_count = 0
-                
-                for account_id, conn in connections_to_check:
-                    if not conn:
-                        continue
-                    
-                    try:
-                        # Check if connection is still alive
-                        if conn.websocket and conn.ws_connected:
-                            # Send a ping to keep connection alive
-                            try:
-                                # Use asyncio to send ping
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                try:
-                                    # Try to ping - if it fails, connection is dead
-                                    loop.run_until_complete(
-                                        asyncio.wait_for(conn.websocket.ping(), timeout=5.0)
-                                    )
-                                    alive_count += 1
-                                except Exception as ping_err:
-                                    # Ping failed - mark connection as dead
-                                    logger.debug(f"🔌 WebSocket ping failed for {account_id}: {ping_err}")
-                                    conn.ws_connected = False
-                                finally:
-                                    loop.close()
-                            except Exception as e:
-                                conn.ws_connected = False
-                        else:
-                            # Connection not connected - try to reconnect
-                            if conn.access_token:
-                                try:
-                                    loop = asyncio.new_event_loop()
-                                    asyncio.set_event_loop(loop)
-                                    try:
-                                        connected = loop.run_until_complete(
-                                            asyncio.wait_for(conn._ensure_websocket_connected(), timeout=10.0)
-                                        )
-                                        if connected:
-                                            reconnected_count += 1
-                                            logger.info(f"🔌 WebSocket reconnected for account {account_id}")
-                                    finally:
-                                        loop.close()
-                                except Exception as reconnect_err:
-                                    logger.debug(f"🔌 WebSocket reconnect failed for {account_id}: {reconnect_err}")
-                    except Exception as e:
-                        logger.debug(f"🔌 WebSocket keep-alive error for {account_id}: {e}")
-                
-                if alive_count > 0 or reconnected_count > 0:
-                    logger.debug(f"🔌 WebSocket pool status: {alive_count} alive, {reconnected_count} reconnected, {pool_size} total")
-                    
-            except Exception as e:
-                logger.error(f"Error in WebSocket keep-alive loop: {e}")
-                time.sleep(30)  # Wait before retrying
-    
-    thread = threading.Thread(target=keepalive_loop, daemon=True, name="WebSocketKeepAliveDaemon")
-    thread.start()
-    logger.info("🔌 WebSocket keep-alive daemon thread started")
-
-def _auto_start_ws_keepalive():
-    """Auto-start WebSocket keep-alive daemon."""
-    global _WS_KEEPALIVE_RUNNING
-    if not _WS_KEEPALIVE_RUNNING:
-        try:
-            start_websocket_keepalive_daemon()
-        except Exception as e:
-            print(f"Warning: Could not start WebSocket keep-alive daemon: {e}")
-
-# Delay WebSocket daemon start to allow imports to complete
-threading.Timer(5.0, _auto_start_ws_keepalive).start()
-
-# ============================================================================
 # DATABASE CONNECTION - Supports both SQLite and PostgreSQL
 # ============================================================================
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -1568,57 +1462,77 @@ def execute_trade_simple(
                         tp_price = broker_avg - (tp_ticks * tick_size)
                         tp_action = 'Buy'
                     
-                    # CRITICAL: Round TP price to valid tick increment (LIVE rejects off-tick prices)
-                    tp_price = round(tp_price / tick_size) * tick_size
-                    
                     logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
                     
-                    # STEP 4: TRADOVATE NATIVE TP HANDLING
-                    # Simple: Check broker for existing TP → MODIFY or PLACE
-                    # No DB tracking, broker is source of truth
+                    # STEP 4: Find existing TP or place new - OPTIMIZED for minimum API calls
                     tp_order_id = None
                     existing_tp_id = None
                     
-                    # Check broker for existing TP orders (1 API call)
-                    logger.info(f"🔍 [{acct_name}] Checking broker for existing TP orders...")
-                    try:
-                        all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
-                        for order in (all_orders or []):
-                            order_status = str(order.get('ordStatus', '')).upper()
-                            order_action_check = order.get('action', '')
-                            order_id_check = order.get('id')
-                            order_symbol = str(order.get('contractId', '')).upper() if order.get('contractId') else ''
-                            
-                            # Find working limit order in TP direction (exit order)
-                            if order_status in ['WORKING', 'NEW', 'PENDINGNEW'] and order_action_check == tp_action and order_id_check:
-                                existing_tp_id = int(order_id_check)
-                                logger.info(f"🔍 [{acct_name}] Found existing TP: {existing_tp_id} @ {order.get('price')} qty={order.get('orderQty')}")
-                                break
-                    except Exception as e:
-                        logger.warning(f"⚠️ [{acct_name}] Could not check broker orders: {e}")
+                    # OPTIMIZATION: For NEW entries (no existing position), skip order lookup - just place TP
+                    if not has_existing_position:
+                        logger.info(f"📊 [{acct_name}] NEW ENTRY - placing TP directly (0 extra API calls)")
+                    else:
+                        # OPTIMIZATION: Check DB first for stored tp_order_id (no API call!)
+                        try:
+                            tp_lookup_conn = get_db_connection()
+                            tp_lookup_cursor = tp_lookup_conn.cursor()
+                            tp_lookup_cursor.execute('''
+                                SELECT tp_order_id FROM recorded_trades 
+                                WHERE recorder_id = ? AND ticker LIKE ? AND status = 'open' AND tp_order_id IS NOT NULL
+                                ORDER BY entry_time DESC LIMIT 1
+                            ''', (recorder_id, f'%{symbol_root}%'))
+                            tp_row = tp_lookup_cursor.fetchone()
+                            if tp_row and tp_row['tp_order_id']:
+                                existing_tp_id = int(tp_row['tp_order_id'])
+                                logger.info(f"🔍 [{acct_name}] Found stored TP order {existing_tp_id} in DB (0 API calls!)")
+                            tp_lookup_conn.close()
+                        except Exception as e:
+                            logger.debug(f"[{acct_name}] Could not check DB for TP: {e}")
+                        
+                        # If we have stored TP, try to modify it directly (1 API call)
+                        if existing_tp_id:
+                            logger.info(f"🔄 [{acct_name}] MODIFYING TP {existing_tp_id} (1 API call)")
+                            modify_result = await tradovate.modify_order_smart(
+                                order_id=existing_tp_id,
+                                order_data={
+                                    "price": tp_price,
+                                    "orderQty": broker_qty,
+                                    "orderType": "Limit",
+                                    "timeInForce": "GTC"
+                                }
+                            )
+                            if modify_result and modify_result.get('success'):
+                                tp_order_id = existing_tp_id
+                                logger.info(f"✅ [{acct_name}] TP MODIFIED @ {tp_price}")
+                            else:
+                                error_msg = modify_result.get('error', 'Unknown error') if modify_result else 'No response'
+                                logger.warning(f"⚠️ [{acct_name}] TP MODIFY FAILED: {error_msg} - will place new")
+                                existing_tp_id = None  # Fall through to place new
                     
-                    # MODIFY existing TP or PLACE new (Tradovate native)
-                    if existing_tp_id:
-                        # MODIFY existing TP with new price and qty
-                        logger.info(f"🔄 [{acct_name}] MODIFYING TP {existing_tp_id} → price={tp_price}, qty={broker_qty}")
-                        modify_result = await tradovate.modify_order(
-                            order_id=existing_tp_id,
-                            new_price=tp_price,
-                            new_qty=broker_qty,
-                            order_type="Limit",
-                            time_in_force="GTC"
-                        )
-                        if modify_result and modify_result.get('orderId'):
-                            tp_order_id = existing_tp_id
-                            logger.info(f"✅ [{acct_name}] TP MODIFIED @ {tp_price} qty={broker_qty}")
-                        else:
-                            error_msg = modify_result.get('failureReason', 'Unknown') if modify_result else 'No response'
-                            logger.warning(f"⚠️ [{acct_name}] TP MODIFY FAILED: {error_msg} - will place new")
-                            existing_tp_id = None
-                    
-                    # Place new TP if no existing or modify failed
+                    # Place new TP if needed
                     if not tp_order_id:
-                        logger.info(f"📊 [{acct_name}] PLACING NEW TP @ {tp_price} qty={broker_qty}")
+                        # CRITICAL: Cancel ALL existing TP orders on broker before placing new!
+                        # This prevents duplicates (especially after bracket orders where strategy ID != order ID)
+                        logger.info(f"🗑️ [{acct_name}] Checking for existing TPs on broker before placing new...")
+                        try:
+                            all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                            for order in (all_orders or []):
+                                order_status = str(order.get('ordStatus', '')).upper()
+                                order_action_check = order.get('action', '')
+                                order_id_check = order.get('id')
+                                
+                                # Cancel any working TP orders (same action as our TP)
+                                if order_status in ['WORKING', 'NEW', 'PENDINGNEW'] and order_action_check == tp_action and order_id_check:
+                                    logger.info(f"🗑️ [{acct_name}] Cancelling existing TP {order_id_check} @ {order.get('price')} before placing new")
+                                    try:
+                                        await tradovate.cancel_order_smart(int(order_id_check))
+                                        await asyncio.sleep(0.1)
+                                    except Exception as cancel_err:
+                                        logger.warning(f"⚠️ [{acct_name}] Could not cancel order {order_id_check}: {cancel_err}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ [{acct_name}] Could not check/cancel existing orders: {e}")
+                        
+                        logger.info(f"📊 [{acct_name}] PLACING NEW TP @ {tp_price}")
                         tp_order_data = {
                             "accountId": tradovate_account_id,
                             "accountSpec": tradovate_account_spec,
@@ -1631,14 +1545,36 @@ def execute_trade_simple(
                             "isAutomated": True
                         }
                         
-                        tp_result = await tradovate.place_order(tp_order_data)
-                        if tp_result and (tp_result.get('orderId') or tp_result.get('id')):
-                            tp_order_id = tp_result.get('orderId') or tp_result.get('id')
-                            logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price} (order_id: {tp_order_id})")
-                        else:
-                            error_msg = tp_result.get('failureReason', tp_result.get('error', 'Unknown')) if tp_result else 'No response'
-                            logger.error(f"❌ [{acct_name}] TP PLACEMENT FAILED: {error_msg}")
-                            logger.error(f"   Position {broker_side} {broker_qty} @ {broker_avg} may not have TP protection!")
+                        # CRITICAL: NEVER GIVE UP on TP placement - keep retrying until success
+                        # TP protection is essential - positions without TP are at risk
+                        tp_result = None
+                        max_attempts = 10  # Increased from 3 to 10
+                        tp_placed = False
+                        
+                        for tp_attempt in range(max_attempts):
+                            tp_result = await tradovate.place_order_smart(tp_order_data)
+                            if tp_result and tp_result.get('success'):
+                                tp_order_id = tp_result.get('orderId') or tp_result.get('id')
+                                logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price} (order_id: {tp_order_id}) after {tp_attempt+1} attempt(s)")
+                                tp_placed = True
+                                break
+                            else:
+                                error_msg = tp_result.get('error', 'Unknown error') if tp_result else 'No response'
+                                logger.warning(f"⚠️ [{acct_name}] TP placement attempt {tp_attempt+1}/{max_attempts} failed: {error_msg}")
+                                
+                                # Exponential backoff: 1s, 2s, 4s, 8s, etc. (max 10s)
+                                wait_time = min(2 ** tp_attempt, 10)
+                                if tp_attempt < max_attempts - 1:
+                                    logger.info(f"   ⏳ Retrying in {wait_time}s...")
+                                    await asyncio.sleep(wait_time)
+                        
+                        if not tp_placed:
+                            # CRITICAL ERROR: Position has NO TP protection
+                            logger.error(f"❌❌❌ [{acct_name}] CRITICAL: FAILED to place TP after {max_attempts} attempts!")
+                            logger.error(f"   Position: {broker_side} {broker_qty} @ {broker_avg} has NO TP PROTECTION!")
+                            logger.error(f"   TP should be @ {tp_price} ({tp_action} {broker_qty})")
+                            logger.error(f"   Last error: {tp_result.get('error') if tp_result else 'No response'}")
+                            logger.error(f"   ⚠️ MANUAL INTERVENTION REQUIRED - Position is unprotected!")
                             
                             # Still return success for the entry, but mark TP as failed
                             # The position monitoring system should detect this and retry
@@ -2300,7 +2236,7 @@ def cancel_old_tp_orders_for_symbol(recorder_id: int, ticker: str) -> None:
                         
                         # Filter to working limit orders for this symbol (TP orders are limits)
                         tp_orders = []
-                        for order in (working_orders or []):
+                        for order in working_orders:
                             order_symbol = order.get('symbol', '') or ''
                             order_type = order.get('orderType', '') or ''
                             order_status = order.get('ordStatus', '') or ''
@@ -2344,7 +2280,7 @@ def cancel_old_tp_orders_for_symbol(recorder_id: int, ticker: str) -> None:
                                 await asyncio.sleep(0.25)
                                 check_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
                                 still_working = 0
-                                for order in (check_orders or []):
+                                for order in check_orders:
                                     o_sym = str(order.get('symbol', '') or '').upper()
                                     o_type = str(order.get('orderType', '') or '').upper()
                                     o_status = str(order.get('ordStatus', '') or '').upper()
@@ -6444,7 +6380,7 @@ def receive_webhook(webhook_token):
                                             # Cancel all TP orders after manual close
                                             all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
                                             cancelled = 0
-                                            for order in (all_orders or []):
+                                            for order in all_orders:
                                                 order_symbol = order.get('symbol', '') or ''
                                                 order_type = order.get('orderType', '') or ''
                                                 order_status = order.get('ordStatus', '') or ''
