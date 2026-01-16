@@ -790,7 +790,7 @@ class BrokerWSManager:
         try:
             d = data.get('d', {})
             entity_type = d.get('entityType')
-            event_type = d.get('event')
+            event_type = d.get('event') or 'Updated'  # Default to 'Updated' if None
             entity = d.get('entity', {})
             entity_id = entity.get('id')
             

@@ -205,13 +205,16 @@ class EventLedger:
         with self._events_lock:
             self._event_id += 1
             self._sequence += 1
-            
+
+            # Safety net: ensure event_type is never None (DB constraint)
+            safe_event_type = event_type or 'Updated'
+
             event = BrokerEvent(
                 id=self._event_id,
                 account_id=account_id,
                 timestamp=timestamp or time.time(),
                 entity_type=entity_type,
-                event_type=event_type,
+                event_type=safe_event_type,
                 entity_id=entity_id,
                 raw_data=raw_data or {},
                 sequence=self._sequence
