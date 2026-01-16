@@ -11262,6 +11262,23 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                                 if fill_price and pos_side:
                                     exit_side = 'Sell' if pos_side == 'LONG' else 'Buy'
                                     
+                                    # CANCEL OLD TP/SL ORDERS FIRST
+                                    try:
+                                        orders = await tradovate.get_orders(account_id=str(subaccount_id))
+                                        symbol_root = tradovate_symbol[:3].upper()
+                                        for order in (orders or []):
+                                            order_symbol = str(order.get('symbol', '')).upper()
+                                            order_type = order.get('orderType', '')
+                                            order_status = order.get('status', '')
+                                            if symbol_root in order_symbol and order_status == 'Working':
+                                                if order_type in ('Limit', 'Stop', 'StopLimit'):
+                                                    order_id_to_cancel = order.get('id')
+                                                    if order_id_to_cancel:
+                                                        await tradovate.cancel_order(order_id_to_cancel)
+                                                        logger.info(f"🗑️ [{acct_name}] Cancelled old {order_type} order {order_id_to_cancel}")
+                                    except Exception as cancel_err:
+                                        logger.warning(f"⚠️ [{acct_name}] Error cancelling old orders: {cancel_err}")
+                                    
                                     # Place TP
                                     if tp_ticks > 0:
                                         if pos_side == 'LONG':
