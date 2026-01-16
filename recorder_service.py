@@ -139,45 +139,6 @@ def clear_all_cached_tokens():
         logger.info("🧹 Cleared all cached tokens")
 
 # ============================================================================
-# Position Cache - Skip slow REST calls for recently fetched positions
-# ============================================================================
-# Structure: {subaccount_id: {'positions': [...], 'timestamp': float}}
-_POSITION_CACHE: Dict[int, Dict] = {}
-_POSITION_CACHE_LOCK = threading.Lock()
-_POSITION_CACHE_TTL = 10  # Cache valid for 10 seconds
-
-def get_cached_positions(subaccount_id: int) -> Optional[List[Dict]]:
-    """Get cached positions if still valid (within TTL)."""
-    with _POSITION_CACHE_LOCK:
-        cached = _POSITION_CACHE.get(subaccount_id)
-        if cached:
-            age = time.time() - cached.get('timestamp', 0)
-            if age < _POSITION_CACHE_TTL:
-                logger.debug(f"⚡ Position cache HIT for {subaccount_id} (age: {age:.1f}s)")
-                return cached.get('positions', [])
-            else:
-                logger.debug(f"⏰ Position cache EXPIRED for {subaccount_id} (age: {age:.1f}s)")
-    return None
-
-def cache_positions(subaccount_id: int, positions: List[Dict]):
-    """Cache positions for a subaccount."""
-    # Ensure we never cache None - use empty list as default
-    safe_positions = positions if positions is not None else []
-    with _POSITION_CACHE_LOCK:
-        _POSITION_CACHE[subaccount_id] = {
-            'positions': safe_positions,
-            'timestamp': time.time()
-        }
-        logger.debug(f"💾 Cached {len(safe_positions)} positions for {subaccount_id}")
-
-def invalidate_position_cache(subaccount_id: int):
-    """Invalidate position cache after a trade (forces fresh fetch next time)."""
-    with _POSITION_CACHE_LOCK:
-        if subaccount_id in _POSITION_CACHE:
-            del _POSITION_CACHE[subaccount_id]
-            logger.debug(f"🗑️ Invalidated position cache for {subaccount_id}")
-
-# ============================================================================
 # WebSocket Connection Pool - Keep persistent connections (TradeManager's secret)
 # ============================================================================
 # Structure: {subaccount_id: TradovateIntegration instance with active WebSocket}
@@ -1093,9 +1054,6 @@ def execute_trade_simple(
         # ============================================================
         async def do_trade_for_account(trader, trader_idx):
             """Execute trade for a single account - runs in parallel with others"""
-            import time as _time
-            _trade_start = _time.time()
-            
             acct_name = trader.get('subaccount_name', 'Unknown')
             acct_id = trader.get('account_id')
             account_multiplier = float(trader.get('multiplier', 1.0))  # Get multiplier for this account
@@ -1139,11 +1097,10 @@ def execute_trade_simple(
                 auth_method = None
                 
                 # PRIORITY 1: Check token cache (instant, no API call)
-                _auth_start = _time.time()
                 access_token = get_cached_token(account_id)
                 if access_token:
                     auth_method = "CACHED"
-                    logger.info(f"⚡ [{acct_name}] Using CACHED token (no API call) [{_time.time()-_auth_start:.2f}s]")
+                    logger.info(f"⚡ [{acct_name}] Using CACHED token (no API call)")
                 
                 # PRIORITY 2: Use OAuth token from database (like TradersPost)
                 # This is the scalable approach - tokens obtained via OAuth never trigger captcha
@@ -1179,7 +1136,7 @@ def execute_trade_simple(
                     if oauth_token and token_is_valid:
                         access_token = oauth_token
                         auth_method = "OAUTH"
-                        logger.info(f"🔑 [{acct_name}] Using OAuth token (scalable - no rate limit) [{_time.time()-_auth_start:.2f}s]")
+                        logger.info(f"🔑 [{acct_name}] Using OAuth token (scalable - no rate limit)")
                 
                 # PRIORITY 3: Try to refresh OAuth token if expired
                 if not access_token:
@@ -1187,7 +1144,7 @@ def execute_trade_simple(
                     refresh_token = trader.get('tradovate_refresh_token')
                     
                     if oauth_token and refresh_token:
-                        logger.info(f"🔄 [{acct_name}] Attempting token refresh... [{_time.time()-_auth_start:.2f}s elapsed]")
+                        logger.info(f"🔄 [{acct_name}] Attempting token refresh...")
                         try:
                             # Try to refresh the token
                             tradovate_temp = TradovateIntegration(demo=is_demo)
@@ -1213,7 +1170,7 @@ def execute_trade_simple(
                                     conn_refresh.commit()
                                     conn_refresh.close()
                                     cache_token(account_id, access_token, refresh_result.get('expires_at'))
-                                    logger.info(f"✅ [{acct_name}] Token refreshed successfully [{_time.time()-_auth_start:.2f}s]")
+                                    logger.info(f"✅ [{acct_name}] Token refreshed successfully")
                                 except Exception as update_err:
                                     logger.warning(f"⚠️ [{acct_name}] Could not update token in DB: {update_err}")
                             await tradovate_temp.__aexit__(None, None, None)
@@ -1223,7 +1180,7 @@ def execute_trade_simple(
                 # PRIORITY 4: API Access - ONLY if no OAuth token (last resort)
                 # This can trigger captcha and rate limiting - avoid for scale!
                 if not access_token and username and password:
-                    logger.warning(f"⚠️ [{acct_name}] No OAuth token - trying API Access (SLOW!) [{_time.time()-_auth_start:.2f}s elapsed]")
+                    logger.warning(f"⚠️ [{acct_name}] No OAuth token - trying API Access (not scalable)")
                     await wait_for_rate_limit()  # Respect rate limits
                     record_api_call()
                     
@@ -1246,21 +1203,21 @@ def execute_trade_simple(
                                     cache_token(account_id, access_token, expiry, login_result.get('mdAccessToken'))
                                 except:
                                     pass
-                                logger.info(f"✅ [{acct_name}] API Access successful (cached) [{_time.time()-_auth_start:.2f}s]")
+                                logger.info(f"✅ [{acct_name}] API Access successful (cached)")
                                 break
                             else:
                                 error_msg = login_result.get('error', 'Unknown error')
                                 if api_attempt < 2:
-                                    logger.warning(f"⚠️ [{acct_name}] API Access attempt {api_attempt + 1} failed, retrying... [{_time.time()-_auth_start:.2f}s]")
-                                    await asyncio.sleep(0.5)  # Reduced from 2s to 0.5s for speed
+                                    logger.warning(f"⚠️ [{acct_name}] API Access attempt {api_attempt + 1} failed, retrying...")
+                                    await asyncio.sleep(2)
                                 else:
-                                    logger.error(f"❌ [{acct_name}] API Access failed after 3 attempts: {error_msg} [{_time.time()-_auth_start:.2f}s]")
+                                    logger.error(f"❌ [{acct_name}] API Access failed after 3 attempts: {error_msg}")
                         except Exception as api_err:
                             if api_attempt < 2:
-                                logger.warning(f"⚠️ [{acct_name}] API Access exception, retrying: {api_err} [{_time.time()-_auth_start:.2f}s]")
-                                await asyncio.sleep(0.5)  # Reduced from 2s to 0.5s for speed
+                                logger.warning(f"⚠️ [{acct_name}] API Access exception, retrying: {api_err}")
+                                await asyncio.sleep(2)
                             else:
-                                logger.error(f"❌ [{acct_name}] API Access exception after 3 attempts: {api_err} [{_time.time()-_auth_start:.2f}s]")
+                                logger.error(f"❌ [{acct_name}] API Access exception after 3 attempts: {api_err}")
                 
                 # CRITICAL: If still no access token, try one more time with fresh DB lookup
                 if not access_token:
@@ -1301,19 +1258,18 @@ def execute_trade_simple(
                 
                 tradovate = None
                 pooled_conn = None
-                _ws_start = _time.time()
                 try:
                     # Try to get pooled WebSocket connection
                     pooled_conn = await get_pooled_connection(tradovate_account_id, is_demo, access_token)
                     if pooled_conn:
                         tradovate = pooled_conn
-                        logger.info(f"⚡ [{acct_name}] Using POOLED WebSocket [{_time.time()-_ws_start:.2f}s] (auth took {_time.time()-_auth_start:.2f}s)")
+                        logger.debug(f"⚡ [{acct_name}] Using POOLED WebSocket connection")
                     else:
                         # Create new connection (will be closed after trade)
                         tradovate = TradovateIntegration(demo=is_demo)
                         await tradovate.__aenter__()
                         tradovate.access_token = access_token
-                        logger.info(f"🔌 [{acct_name}] Created NEW connection [{_time.time()-_ws_start:.2f}s] (auth took {_time.time()-_auth_start:.2f}s)")
+                        logger.debug(f"🔌 [{acct_name}] Created new connection")
                 except Exception as pool_err:
                     logger.warning(f"⚠️ [{acct_name}] Pool error, creating new connection: {pool_err}")
                     tradovate = TradovateIntegration(demo=is_demo)
@@ -1323,29 +1279,18 @@ def execute_trade_simple(
                 try:
                     # STEP 0: Check if this is a new entry or DCA (adding to position)
                     order_action = 'Buy' if action == 'BUY' else 'Sell'
+                    record_api_call()  # Track API calls for rate limiting
                     
                     # Log multiplier application
                     if account_multiplier != 1.0:
                         logger.info(f"📊 [{acct_name}] Applying multiplier: {quantity} × {account_multiplier} = {adjusted_quantity} contracts")
                     
-                    # Check existing position - USE CACHE to skip slow REST call
-                    # Cache is valid for 10 seconds - much faster than REST (2-3s per call)
-                    _pos_start = _time.time()
-                    existing_positions = get_cached_positions(tradovate_account_id)
-                    if existing_positions is None:
-                        # Cache miss - fetch from API and cache result
-                        logger.info(f"🔍 [{acct_name}] Fetching positions (cache miss)... [total: {_time.time()-_trade_start:.2f}s]")
-                        record_api_call()  # Track API calls for rate limiting
-                        existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
-                        cache_positions(tradovate_account_id, existing_positions)
-                        logger.info(f"🔍 [{acct_name}] Position fetch took [{_time.time()-_pos_start:.2f}s]")
-                    else:
-                        logger.info(f"⚡ [{acct_name}] Using CACHED positions (fast!) [{_time.time()-_pos_start:.3f}s]")
-                    
+                    # Check existing position first
+                    existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
                     has_existing_position = False
                     existing_position_side = None
                     existing_position_qty = 0
-                    for pos in (existing_positions or []):  # Safety check for None
+                    for pos in existing_positions:
                         pos_symbol = str(pos.get('symbol', '')).upper()
                         net_pos = pos.get('netPos', 0)
                         if symbol_root in pos_symbol and net_pos != 0:
@@ -1436,9 +1381,8 @@ def execute_trade_simple(
                         sl_log = f" + SL: {sl_ticks} ticks" if sl_ticks > 0 else ""
                         be_log = f" + BE: {break_even_ticks} ticks" if break_even_ticks else ""
                         trail_log = f" + Trail" if auto_trail or trailing_stop_bool else ""
-                        logger.info(f"📤 [{acct_name}] Using NATIVE BRACKET ORDER (WebSocket) - Entry + TP{sl_log}{be_log}{trail_log} [total: {_time.time()-_trade_start:.2f}s]")
+                        logger.info(f"📤 [{acct_name}] Using NATIVE BRACKET ORDER (WebSocket) - Entry + TP{sl_log}{be_log}{trail_log} in one call")
                         
-                        _order_start = _time.time()
                         bracket_result = await tradovate.place_bracket_order(
                             account_id=tradovate_account_id,
                             account_spec=tradovate_account_spec,
@@ -1454,7 +1398,7 @@ def execute_trade_simple(
                         
                         if bracket_result and bracket_result.get('success'):
                             strategy_id = bracket_result.get('orderStrategyId') or bracket_result.get('id')
-                            logger.info(f"✅ [{acct_name}] BRACKET ORDER SUCCESS! Strategy ID: {strategy_id} [order: {_time.time()-_order_start:.2f}s, total: {_time.time()-_trade_start:.2f}s]")
+                            logger.info(f"✅ [{acct_name}] BRACKET ORDER SUCCESS! Strategy ID: {strategy_id}")
                             
                             # OPTIMIZATION: Skip position verification - bracket order handles everything
                             # The TP is already placed as part of the bracket, no need to verify
@@ -1472,9 +1416,6 @@ def execute_trade_simple(
                                 sl_price = None
                             
                             logger.info(f"📊 [{acct_name}] BRACKET: {broker_side} {broker_qty} with TP @ +{tp_ticks} ticks (1 API call!)")
-                            
-                            # Invalidate position cache after trade - next signal gets fresh data
-                            invalidate_position_cache(tradovate_account_id)
                             
                             return {
                                 'success': True,
@@ -1550,7 +1491,7 @@ def execute_trade_simple(
                         await asyncio.sleep(1.0)  # Give order time to fill
                         positions = await tradovate.get_positions(account_id=tradovate_account_id)
                         
-                        for pos in (positions or []):  # Safety check for None
+                        for pos in positions:
                             pos_symbol = str(pos.get('symbol', '')).upper()
                             if symbol_root in pos_symbol:
                                 net_pos = pos.get('netPos', 0)
@@ -1808,9 +1749,6 @@ def execute_trade_simple(
                         logger.info(f"📊 [{acct_name}] TP placed but no SL - skipping OCO registration")
                     elif sl_order_id:
                         logger.info(f"📊 [{acct_name}] SL placed but no TP - skipping OCO registration")
-                    
-                    # Invalidate position cache after trade - next signal gets fresh data
-                    invalidate_position_cache(tradovate_account_id)
                     
                     return {
                         'success': True,
@@ -2216,7 +2154,7 @@ def sync_position_with_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                 positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
                 broker_pos = None
-                for pos in (positions or []):
+                for pos in positions:
                     if tradovate_symbol[:3] in pos.get('symbol', ''):
                         broker_pos = pos
                         break
@@ -2549,7 +2487,7 @@ def check_broker_position_exists(recorder_id: int, ticker: str) -> bool:
                 tradovate.access_token = access_token
                 positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
-                for pos in (positions or []):
+                for pos in positions:
                     pos_symbol = pos.get('symbol', '') or ''
                     net_pos = pos.get('netPos', 0)
                     if tradovate_symbol[:3] in pos_symbol and net_pos != 0:
@@ -2635,7 +2573,7 @@ def get_broker_position_for_recorder(recorder_id: int, ticker: str) -> Dict[str,
                 tradovate.access_token = current_token
                 positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
-                for pos in (positions or []):
+                for pos in positions:
                     pos_symbol = pos.get('symbol', '') or ''
                     net_pos = pos.get('netPos', 0)
                     if tradovate_symbol[:3] in pos_symbol:
@@ -3043,7 +2981,7 @@ def execute_live_trade_with_bracket(
                     existing_pos = None
                     existing_net_pos = 0
                     existing_price = None
-                    for pos in (positions_before or []):
+                    for pos in positions_before:
                         pos_symbol = pos.get('symbol', '')
                         if tradovate_symbol[:3] in pos_symbol:
                             existing_pos = pos
@@ -3256,7 +3194,7 @@ def execute_live_trade_with_bracket(
                                 await asyncio.sleep(0.4)  # Wait between attempts
                                 positions_after = await tradovate.get_positions(account_id=tradovate_account_id)
                                 
-                                for pos in (positions_after or []):
+                                for pos in positions_after:
                                     pos_symbol = str(pos.get('symbol', '')).upper()
                                     # Match by symbol root (MNQ matches MNQH6, MNQZ5, etc)
                                     if symbol_root in pos_symbol or pos_symbol.startswith(symbol_root):
@@ -3792,7 +3730,7 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
                 contract_id = None
                 pos_qty = total_quantity if side == 'LONG' else -total_quantity
                 
-                for pos in (positions or []):
+                for pos in positions:
                     pos_symbol = str(pos.get('symbol', '') or '').upper()
                     if symbol_root in pos_symbol or pos_symbol[:3] == symbol_root:
                         contract_id = pos.get('contractId')
@@ -4018,7 +3956,7 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                 positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
                 # Find position for this symbol
-                for pos in (positions or []):
+                for pos in positions:
                     if pos.get('symbol', '').startswith(tradovate_symbol[:3]):
                         return pos
                 return None
@@ -4602,7 +4540,7 @@ def reconcile_positions_with_broker():
                         
                         tradovate_symbol = convert_ticker_to_tradovate(ticker)
                         broker_pos = None
-                        for pos in (positions or []):
+                        for pos in positions:
                             pos_symbol = pos.get('symbol', '')
                             if tradovate_symbol[:3] in pos_symbol:
                                 broker_pos = pos
@@ -4775,7 +4713,7 @@ def reconcile_positions_with_broker():
                                     # Check if TP order exists on broker
                                     orders = await tradovate.get_orders(account_id=str(subaccount_id))
                                     has_tp_order = False
-                                    for order in (orders or []):
+                                    for order in orders:
                                         order_symbol = order.get('symbol', '')
                                         order_type = order.get('orderType', '') or ''
                                         order_status = order.get('ordStatus', '') or ''
@@ -5096,7 +5034,7 @@ def poll_position_drawdown():
                 time.sleep(1)
                 continue
             
-            for pos in (positions or []):
+            for pos in positions:
                 ticker = pos['ticker']
                 side = pos['side']
                 avg_entry = pos['avg_entry_price']
@@ -6517,7 +6455,7 @@ def receive_webhook(webhook_token):
                                 
                                 # Find matching position
                                 matched_pos = None
-                                for pos in (positions or []):
+                                for pos in positions:
                                     pos_symbol = str(pos.get('symbol', '')).upper()
                                     pos_net = pos.get('netPos', 0)
                                     if pos_net != 0:
