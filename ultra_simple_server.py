@@ -11360,7 +11360,7 @@ def broker_execution_worker():
     while True:
         try:
             # Get next broker execution task (blocking, but that's OK - we're in background)
-            task = broker_execution_queue.get(timeout=1)
+            task = broker_execution_queue.get(timeout=0.1)
             logger.info(f"🔔 Worker received task from queue: {task.get('action')} {task.get('quantity')} {task.get('ticker')} (recorder_id={task.get('recorder_id')})")
             
             recorder_id = task.get('recorder_id')
