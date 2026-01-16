@@ -1802,11 +1802,19 @@ def init_trading_engine_db():
             webhook_token TEXT UNIQUE,
             -- State
             recording_enabled INTEGER DEFAULT 1,
+            simulation_mode INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_recorders_webhook ON recorders(webhook_token)')
+
+    # Migration: Add simulation_mode column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE recorders ADD COLUMN simulation_mode INTEGER DEFAULT 0')
+        logger.info("✅ Added simulation_mode column to recorders table")
+    except:
+        pass  # Column already exists
     
     # Recorded signals table - raw webhook signals
     cursor.execute('''
@@ -5525,8 +5533,8 @@ def api_create_recorder():
                 sl_enabled, sl_amount, sl_units, sl_type,
                 avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
                 add_delay, max_contracts_per_trade, option_premium_filter, direction_filter,
-                recording_enabled, webhook_token
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                recording_enabled, simulation_mode, webhook_token
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             name,
             data.get('strategy_type', 'Futures'),
@@ -5551,6 +5559,7 @@ def api_create_recorder():
             data.get('option_premium_filter', 0),
             data.get('direction_filter'),
             1 if data.get('recording_enabled', True) else 0,
+            1 if data.get('simulation_mode', False) else 0,
             webhook_token
         ))
         
@@ -5631,6 +5640,9 @@ def api_update_recorder(recorder_id):
         if 'recording_enabled' in data:
             fields.append('recording_enabled = ?')
             values.append(1 if data['recording_enabled'] else 0)
+        if 'simulation_mode' in data:
+            fields.append('simulation_mode = ?')
+            values.append(1 if data['simulation_mode'] else 0)
         
         # Handle TP targets JSON
         if 'tp_targets' in data:
@@ -5821,6 +5833,43 @@ def api_reset_recorder_history(recorder_id):
         })
     except Exception as e:
         logger.error(f"Error resetting history for recorder {recorder_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/recorders/<int:recorder_id>/toggle-simulation', methods=['POST'])
+def api_toggle_simulation_mode(recorder_id):
+    """Toggle simulation mode for a recorder (paper trading vs live)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if recorder exists and get current state
+        cursor.execute('SELECT simulation_mode FROM recorders WHERE id = ?', (recorder_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+
+        current_mode = row[0] if row[0] else 0
+        new_mode = 0 if current_mode else 1
+
+        cursor.execute('''
+            UPDATE recorders SET simulation_mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        ''', (new_mode, recorder_id))
+        conn.commit()
+        conn.close()
+
+        mode_str = 'SIMULATION (Paper Trading)' if new_mode else 'LIVE (Broker Execution)'
+        logger.info(f"📝 Recorder {recorder_id} mode changed to: {mode_str}")
+
+        return jsonify({
+            'success': True,
+            'simulation_mode': bool(new_mode),
+            'message': f'Recorder is now in {mode_str} mode'
+        })
+    except Exception as e:
+        logger.error(f"Error toggling simulation mode for recorder {recorder_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -6038,7 +6087,11 @@ def receive_webhook(webhook_token):
         recorder = dict(recorder)
         recorder_id = recorder['id']
         recorder_name = recorder['name']
-        
+        simulation_mode = recorder.get('simulation_mode', 0) == 1
+
+        if simulation_mode:
+            logger.info(f"📝 SIMULATION MODE: Recording paper trade for '{recorder_name}' (no broker execution)")
+
         # CRITICAL: Sync with broker BEFORE processing signal to prevent drift
         # This ensures database matches broker state (especially if user cleared positions)
         # BUT: Skip sync if we're rate limited to avoid blocking trades
@@ -6049,8 +6102,8 @@ def receive_webhook(webhook_token):
         # which has comprehensive logic to cancel old TPs without cancelling new ones.
         # We don't cancel here to avoid race conditions with newly placed TP orders.
         
-        # TEST MODE: Skip broker sync for signal-based tracking test
-        if ticker and not SIGNAL_BASED_TEST_MODE:
+        # Skip broker sync for simulation mode or test mode
+        if ticker and not SIGNAL_BASED_TEST_MODE and not simulation_mode:
             try:
                 sync_result = sync_position_with_broker(recorder_id, ticker)
                 if sync_result.get('cleared'):
@@ -6062,6 +6115,8 @@ def receive_webhook(webhook_token):
                 logger.warning(f"⚠️ Sync failed (continuing anyway): {e}")
         elif SIGNAL_BASED_TEST_MODE:
             logger.debug(f"🧪 TEST MODE: Skipping broker sync for {ticker}")
+        elif simulation_mode:
+            logger.debug(f"📝 SIMULATION: Skipping broker sync for {ticker}")
         
         # Parse incoming data (support both JSON and form data)
         if request.is_json:
@@ -6283,127 +6338,133 @@ def receive_webhook(webhook_token):
         elif normalized_action == 'CLOSE' or (market_position and market_position.lower() == 'flat'):
             # CRITICAL: Use liquidate_position (like manual trader) to close position AND cancel all orders
             if open_trade:
-                logger.info(f"🔄 CLOSE signal: Liquidating {open_trade['side']} position on broker (cancels TP orders automatically)...")
-                
-                # Get trader info for broker access
-                is_postgres_inner = is_using_postgres()
-                placeholder_inner = '%s' if is_postgres_inner else '?'
-                enabled_val_inner = 'true' if is_postgres_inner else '1'
-                cursor.execute(f'''
-                    SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
-                           a.tradovate_token, a.tradovate_refresh_token, a.md_access_token,
-                           a.username, a.password, a.id as account_id, a.environment
-                    FROM traders t
-                    JOIN accounts a ON t.account_id = a.id
-                    WHERE t.recorder_id = {placeholder_inner} AND t.enabled = {enabled_val_inner}
-                    LIMIT 1
-                ''', (recorder_id,))
-                trader = cursor.fetchone()
-                
                 broker_closed = False
-                if trader:
-                    trader = dict(trader)
-                    tradovate_account_id = trader.get('subaccount_id')
-                    # CRITICAL FIX: Use environment as source of truth for demo vs live
-                    env = (trader.get('environment') or 'demo').lower()
-                    is_demo = env != 'live'
-                    access_token = trader.get('tradovate_token')
-                    username = trader.get('username')
-                    password = trader.get('password')
-                    account_id = trader.get('account_id')
-                    
-                    if tradovate_account_id:
-                        from phantom_scraper.tradovate_integration import TradovateIntegration
-                        from tradovate_api_access import TradovateAPIAccess
-                        import asyncio
-                        
-                        async def liquidate():
-                            api_access = TradovateAPIAccess(demo=is_demo)
-                            current_access_token = access_token
-                            current_md_token = trader.get('md_access_token')
-                            
-                            if not current_access_token and username and password:
-                                login_result = await api_access.login(
-                                    username=username, password=password,
-                                    db_path=DATABASE_PATH, account_id=account_id
-                                )
-                                if login_result.get('success'):
-                                    current_access_token = login_result.get('accessToken')
-                                    current_md_token = login_result.get('mdAccessToken')
-                            
-                            if not current_access_token:
-                                return {'success': False, 'error': 'No access token'}
-                            
-                            async with TradovateIntegration(demo=is_demo) as tradovate:
-                                tradovate.access_token = current_access_token
-                                tradovate.md_access_token = current_md_token
-                                
-                                tradovate_symbol = convert_ticker_to_tradovate(ticker)
-                                symbol_upper = tradovate_symbol.upper()
-                                
-                                # Get positions
-                                positions = await tradovate.get_positions(account_id=int(tradovate_account_id))
-                                
-                                # Find matching position
-                                matched_pos = None
-                                for pos in positions:
-                                    pos_symbol = str(pos.get('symbol', '')).upper()
-                                    pos_net = pos.get('netPos', 0)
-                                    if pos_net != 0:
-                                        # Match symbol (base match like MNQ)
-                                        if (symbol_upper[:3] in pos_symbol or pos_symbol[:3] in symbol_upper or 
-                                            pos_symbol == symbol_upper):
-                                            matched_pos = pos
-                                            break
-                                
-                                if matched_pos:
-                                    contract_id = matched_pos.get('contractId')
-                                    if contract_id:
-                                        # Use liquidate_position (closes position AND cancels related orders)
-                                        result = await tradovate.liquidate_position(
-                                            int(tradovate_account_id), contract_id, admin=False
-                                        )
-                                        if result and result.get('success'):
-                                            logger.info(f"✅ Liquidated position for {ticker} (cancelled TP orders)")
-                                            return {'success': True}
-                                    
-                                    # Fallback: Manual close if no contract_id
-                                    net_pos = matched_pos.get('netPos', 0)
-                                    if net_pos != 0:
-                                        qty = abs(int(net_pos))
-                                        close_side = 'Sell' if net_pos > 0 else 'Buy'
-                                        order_data = tradovate.create_market_order(
-                                            trader.get('subaccount_name'), tradovate_symbol, close_side, qty, int(tradovate_account_id)
-                                        )
-                                        result = await tradovate.place_order_smart(order_data)
-                                        if result and result.get('success'):
-                                            # Cancel all TP orders after manual close
-                                            all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
-                                            cancelled = 0
-                                            for order in all_orders:
-                                                order_symbol = order.get('symbol', '') or ''
-                                                order_type = order.get('orderType', '') or ''
-                                                order_status = order.get('ordStatus', '') or ''
-                                                order_id = order.get('id') or order.get('orderId')
-                                                
-                                                if (symbol_upper[:3] in order_symbol.upper() and 
-                                                    ('limit' in order_type.lower() or order_type in ['Limit', 'LimitOrder']) and
-                                                    order_status in ['New', 'PartiallyFilled', 'Working', 'PendingNew', 'PendingReplace', 'PendingCancel', 'Accepted', ''] and
-                                                    order_id):
-                                                    try:
-                                                        cancel_result = await tradovate.cancel_order_smart(int(order_id))
-                                                        if cancel_result and cancel_result.get('success'):
-                                                            cancelled += 1
-                                                    except:
-                                                        pass
-                                            if cancelled > 0:
-                                                logger.info(f"✅ Cancelled {cancelled} TP order(s) after manual close")
-                                            return {'success': True}
-                                
-                                return {'success': False, 'error': 'No position found to close'}
-                        
-                        broker_result = run_async(liquidate())
-                        broker_closed = broker_result.get('success', False)
+
+                # In simulation mode, skip broker liquidation entirely
+                if simulation_mode:
+                    logger.info(f"📝 SIMULATION: Closing {open_trade['side']} position (no broker call)")
+                    broker_closed = True  # Simulated close always succeeds
+                else:
+                    logger.info(f"🔄 CLOSE signal: Liquidating {open_trade['side']} position on broker (cancels TP orders automatically)...")
+
+                    # Get trader info for broker access
+                    is_postgres_inner = is_using_postgres()
+                    placeholder_inner = '%s' if is_postgres_inner else '?'
+                    enabled_val_inner = 'true' if is_postgres_inner else '1'
+                    cursor.execute(f'''
+                        SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
+                               a.tradovate_token, a.tradovate_refresh_token, a.md_access_token,
+                               a.username, a.password, a.id as account_id, a.environment
+                        FROM traders t
+                        JOIN accounts a ON t.account_id = a.id
+                        WHERE t.recorder_id = {placeholder_inner} AND t.enabled = {enabled_val_inner}
+                        LIMIT 1
+                    ''', (recorder_id,))
+                    trader = cursor.fetchone()
+
+                    if trader:
+                        trader = dict(trader)
+                        tradovate_account_id = trader.get('subaccount_id')
+                        # CRITICAL FIX: Use environment as source of truth for demo vs live
+                        env = (trader.get('environment') or 'demo').lower()
+                        is_demo = env != 'live'
+                        access_token = trader.get('tradovate_token')
+                        username = trader.get('username')
+                        password = trader.get('password')
+                        account_id = trader.get('account_id')
+
+                        if tradovate_account_id:
+                            from phantom_scraper.tradovate_integration import TradovateIntegration
+                            from tradovate_api_access import TradovateAPIAccess
+                            import asyncio
+
+                            async def liquidate():
+                                api_access = TradovateAPIAccess(demo=is_demo)
+                                current_access_token = access_token
+                                current_md_token = trader.get('md_access_token')
+
+                                if not current_access_token and username and password:
+                                    login_result = await api_access.login(
+                                        username=username, password=password,
+                                        db_path=DATABASE_PATH, account_id=account_id
+                                    )
+                                    if login_result.get('success'):
+                                        current_access_token = login_result.get('accessToken')
+                                        current_md_token = login_result.get('mdAccessToken')
+
+                                if not current_access_token:
+                                    return {'success': False, 'error': 'No access token'}
+
+                                async with TradovateIntegration(demo=is_demo) as tradovate:
+                                    tradovate.access_token = current_access_token
+                                    tradovate.md_access_token = current_md_token
+
+                                    tradovate_symbol = convert_ticker_to_tradovate(ticker)
+                                    symbol_upper = tradovate_symbol.upper()
+
+                                    # Get positions
+                                    positions = await tradovate.get_positions(account_id=int(tradovate_account_id))
+
+                                    # Find matching position
+                                    matched_pos = None
+                                    for pos in positions:
+                                        pos_symbol = str(pos.get('symbol', '')).upper()
+                                        pos_net = pos.get('netPos', 0)
+                                        if pos_net != 0:
+                                            # Match symbol (base match like MNQ)
+                                            if (symbol_upper[:3] in pos_symbol or pos_symbol[:3] in symbol_upper or
+                                                pos_symbol == symbol_upper):
+                                                matched_pos = pos
+                                                break
+
+                                    if matched_pos:
+                                        contract_id = matched_pos.get('contractId')
+                                        if contract_id:
+                                            # Use liquidate_position (closes position AND cancels related orders)
+                                            result = await tradovate.liquidate_position(
+                                                int(tradovate_account_id), contract_id, admin=False
+                                            )
+                                            if result and result.get('success'):
+                                                logger.info(f"✅ Liquidated position for {ticker} (cancelled TP orders)")
+                                                return {'success': True}
+
+                                        # Fallback: Manual close if no contract_id
+                                        net_pos = matched_pos.get('netPos', 0)
+                                        if net_pos != 0:
+                                            qty = abs(int(net_pos))
+                                            close_side = 'Sell' if net_pos > 0 else 'Buy'
+                                            order_data = tradovate.create_market_order(
+                                                trader.get('subaccount_name'), tradovate_symbol, close_side, qty, int(tradovate_account_id)
+                                            )
+                                            result = await tradovate.place_order_smart(order_data)
+                                            if result and result.get('success'):
+                                                # Cancel all TP orders after manual close
+                                                all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                                                cancelled = 0
+                                                for order in all_orders:
+                                                    order_symbol = order.get('symbol', '') or ''
+                                                    order_type = order.get('orderType', '') or ''
+                                                    order_status = order.get('ordStatus', '') or ''
+                                                    order_id = order.get('id') or order.get('orderId')
+
+                                                    if (symbol_upper[:3] in order_symbol.upper() and
+                                                        ('limit' in order_type.lower() or order_type in ['Limit', 'LimitOrder']) and
+                                                        order_status in ['New', 'PartiallyFilled', 'Working', 'PendingNew', 'PendingReplace', 'PendingCancel', 'Accepted', ''] and
+                                                        order_id):
+                                                        try:
+                                                            cancel_result = await tradovate.cancel_order_smart(int(order_id))
+                                                            if cancel_result and cancel_result.get('success'):
+                                                                cancelled += 1
+                                                        except:
+                                                            pass
+                                                if cancelled > 0:
+                                                    logger.info(f"✅ Cancelled {cancelled} TP order(s) after manual close")
+                                                return {'success': True}
+
+                                    return {'success': False, 'error': 'No position found to close'}
+
+                            broker_result = run_async(liquidate())
+                            broker_closed = broker_result.get('success', False)
                 
                 if open_trade['side'] == 'LONG':
                     pnl_ticks = (current_price - open_trade['entry_price']) / tick_size
@@ -6445,14 +6506,19 @@ def receive_webhook(webhook_token):
                 logger.info(f"📊 SHORT closed by BUY reversal: ${pnl:.2f}")
             
             # SIMPLE EXECUTION: Place order, get broker position, place/modify TP
-            broker_result = execute_trade_simple(
-                recorder_id=recorder_id,
-                action='BUY',
-                ticker=ticker,
-                quantity=quantity,
-                tp_ticks=tp_ticks
-            )
-            
+            # Skip broker execution in simulation mode - use signal-only tracking
+            if simulation_mode:
+                broker_result = {'success': False, 'no_broker': True, 'simulation': True}
+                logger.info(f"📝 SIMULATION: Skipping broker execution for BUY {ticker}")
+            else:
+                broker_result = execute_trade_simple(
+                    recorder_id=recorder_id,
+                    action='BUY',
+                    ticker=ticker,
+                    quantity=quantity,
+                    tp_ticks=tp_ticks
+                )
+
             if broker_result.get('success') and broker_result.get('broker_avg'):
                 trade_result = {
                     'action': 'executed',
@@ -6568,14 +6634,19 @@ def receive_webhook(webhook_token):
                 logger.info(f"📊 LONG closed by SELL reversal: ${pnl:.2f}")
             
             # SIMPLE EXECUTION: Place order, get broker position, place/modify TP
-            broker_result = execute_trade_simple(
-                recorder_id=recorder_id,
-                action='SELL',
-                ticker=ticker,
-                quantity=quantity,
-                tp_ticks=tp_ticks
-            )
-            
+            # Skip broker execution in simulation mode - use signal-only tracking
+            if simulation_mode:
+                broker_result = {'success': False, 'no_broker': True, 'simulation': True}
+                logger.info(f"📝 SIMULATION: Skipping broker execution for SELL {ticker}")
+            else:
+                broker_result = execute_trade_simple(
+                    recorder_id=recorder_id,
+                    action='SELL',
+                    ticker=ticker,
+                    quantity=quantity,
+                    tp_ticks=tp_ticks
+                )
+
             if broker_result.get('success') and broker_result.get('broker_avg'):
                 trade_result = {
                     'action': 'executed',
