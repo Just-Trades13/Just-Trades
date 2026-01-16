@@ -11210,7 +11210,6 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
         
         async def place_on_account(acct):
             """Place order on a single account - mirrors manual trader logic"""
-            _start_time = time.time()
             acct_name = acct['subaccount_name']
             subaccount_id = acct['subaccount_id']
             is_demo = acct['is_demo']
@@ -11234,13 +11233,10 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                     
                     if result and result.get('success'):
                         order_id = result.get('orderId') or result.get('id')
-                        duration_ms = int((time.time() - _start_time) * 1000)
-                        logger.info(f"✅ [{acct_name}] Order placed! ID: {order_id} [{duration_ms}ms]")
-                        log_execution(action, ticker, acct_name, 'success', duration_ms, f"Order ID: {order_id}")
+                        logger.info(f"✅ [{acct_name}] Order placed! ID: {order_id}")
                         
                         # Apply TP/SL if configured
                         if tp_ticks > 0 or sl_ticks > 0:
-                            logger.info(f"📊 [{acct_name}] TP/SL configured: TP={tp_ticks} ticks, SL={sl_ticks} ticks")
                             try:
                                 # Get fill price from position
                                 await asyncio.sleep(0.5)  # Brief wait for fill
@@ -11250,164 +11246,65 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                                 pos_qty = 0
                                 
                                 symbol_root = tradovate_symbol[:3].upper()
-                                logger.info(f"📊 [{acct_name}] Checking {len(positions or [])} positions for {symbol_root}")
                                 for pos in (positions or []):
                                     pos_symbol = str(pos.get('symbol', '')).upper()
-                                    net_pos = pos.get('netPos', 0)
-                                    logger.debug(f"   Position: {pos_symbol} netPos={net_pos}")
                                     if symbol_root in pos_symbol:
+                                        net_pos = pos.get('netPos', 0)
                                         if net_pos != 0:
                                             fill_price = pos.get('netPrice')
                                             pos_side = 'LONG' if net_pos > 0 else 'SHORT'
                                             pos_qty = abs(net_pos)
-                                            logger.info(f"📊 [{acct_name}] Found position: {pos_side} {pos_qty} @ {fill_price}")
                                             break
-                                        else:
-                                            logger.info(f"📊 [{acct_name}] Position {pos_symbol} is FLAT (netPos=0) - no TP needed")
                                 
                                 if fill_price and pos_side:
                                     exit_side = 'Sell' if pos_side == 'LONG' else 'Buy'
                                     
-                                    # Find existing TP/SL orders - check if they match the needed exit_side
-                                    existing_tp_id = None
-                                    existing_sl_id = None
-                                    wrong_side_orders = []  # Orders to cancel (wrong direction)
-                                    try:
-                                        orders = await tradovate.get_orders(account_id=str(subaccount_id))
-                                        symbol_root = tradovate_symbol[:3].upper()
-                                        for order in (orders or []):
-                                            order_symbol = str(order.get('symbol', '')).upper()
-                                            order_type = order.get('orderType', '')
-                                            order_status = order.get('status', '')
-                                            order_action = order.get('action', '')  # Buy or Sell
-                                            order_id = order.get('id')
-                                            
-                                            if symbol_root in order_symbol and order_status == 'Working':
-                                                # Check if order matches the needed exit direction
-                                                if order_type == 'Limit':
-                                                    if order_action == exit_side and not existing_tp_id:
-                                                        existing_tp_id = order_id
-                                                        logger.info(f"📝 [{acct_name}] Found matching TP order: {existing_tp_id} ({order_action})")
-                                                    else:
-                                                        # Wrong direction - need to cancel
-                                                        wrong_side_orders.append(order_id)
-                                                        logger.info(f"🗑️ [{acct_name}] Found WRONG-SIDE TP: {order_id} ({order_action} != {exit_side})")
-                                                elif order_type in ('Stop', 'StopLimit'):
-                                                    if order_action == exit_side and not existing_sl_id:
-                                                        existing_sl_id = order_id
-                                                        logger.info(f"📝 [{acct_name}] Found matching SL order: {existing_sl_id} ({order_action})")
-                                                    else:
-                                                        wrong_side_orders.append(order_id)
-                                                        logger.info(f"🗑️ [{acct_name}] Found WRONG-SIDE SL: {order_id} ({order_action} != {exit_side})")
-                                        
-                                        # Cancel wrong-side orders
-                                        for bad_order_id in wrong_side_orders:
-                                            try:
-                                                await tradovate.cancel_order(bad_order_id)
-                                                logger.info(f"🗑️ [{acct_name}] Cancelled wrong-side order {bad_order_id}")
-                                            except Exception as cancel_err:
-                                                logger.warning(f"⚠️ [{acct_name}] Failed to cancel order {bad_order_id}: {cancel_err}")
-                                    except Exception as find_err:
-                                        logger.warning(f"⚠️ [{acct_name}] Error finding existing orders: {find_err}")
-                                    
-                                    # Handle TP - modify if exists, create if not
+                                    # Place TP
                                     if tp_ticks > 0:
                                         if pos_side == 'LONG':
                                             tp_price = fill_price + (tp_ticks * tick_size)
                                         else:
                                             tp_price = fill_price - (tp_ticks * tick_size)
                                         
-                                        if existing_tp_id:
-                                            # MODIFY existing TP order
-                                            tp_result = await tradovate.modify_order(
-                                                order_id=existing_tp_id,
-                                                new_price=tp_price,
-                                                new_qty=pos_qty,
-                                                order_type='Limit',
-                                                time_in_force='GTC'
-                                            )
-                                            if tp_result and tp_result.get('success'):
-                                                logger.info(f"✅ [{acct_name}] TP MODIFIED @ {tp_price}")
-                                            else:
-                                                logger.warning(f"⚠️ [{acct_name}] TP modify failed, placing new")
-                                                tp_order = tradovate.create_limit_order(
-                                                    acct_name, tradovate_symbol, exit_side, pos_qty, tp_price, subaccount_id
-                                                )
-                                                await tradovate.place_order(tp_order)
-                                        else:
-                                            # Place new TP
-                                            tp_order = tradovate.create_limit_order(
-                                                acct_name, tradovate_symbol, exit_side, pos_qty, tp_price, subaccount_id
-                                            )
-                                            tp_result = await tradovate.place_order(tp_order)
-                                            if tp_result and tp_result.get('success'):
-                                                logger.info(f"✅ [{acct_name}] TP placed @ {tp_price}")
+                                        tp_order = tradovate.create_limit_order(
+                                            acct_name, tradovate_symbol, exit_side, pos_qty, tp_price, subaccount_id
+                                        )
+                                        tp_result = await tradovate.place_order(tp_order)
+                                        if tp_result and tp_result.get('success'):
+                                            logger.info(f"✅ [{acct_name}] TP placed @ {tp_price}")
                                     
-                                    # Handle SL - modify if exists, create if not
+                                    # Place SL
                                     if sl_ticks > 0:
                                         if pos_side == 'LONG':
                                             sl_price = fill_price - (sl_ticks * tick_size)
                                         else:
                                             sl_price = fill_price + (sl_ticks * tick_size)
                                         
-                                        if existing_sl_id:
-                                            # MODIFY existing SL order
-                                            sl_result = await tradovate.modify_order(
-                                                order_id=existing_sl_id,
-                                                stop_price=sl_price,
-                                                new_qty=pos_qty,
-                                                order_type='Stop',
-                                                time_in_force='GTC'
-                                            )
-                                            if sl_result and sl_result.get('success'):
-                                                logger.info(f"✅ [{acct_name}] SL MODIFIED @ {sl_price}")
-                                            else:
-                                                logger.warning(f"⚠️ [{acct_name}] SL modify failed, placing new")
-                                                sl_order = {
-                                                    "accountId": subaccount_id,
-                                                    "accountSpec": acct_name,
-                                                    "symbol": tradovate_symbol,
-                                                    "action": exit_side,
-                                                    "orderQty": pos_qty,
-                                                    "orderType": "Stop",
-                                                    "stopPrice": sl_price,
-                                                    "timeInForce": "GTC",
-                                                    "isAutomated": True
-                                                }
-                                                await tradovate.place_order(sl_order)
-                                        else:
-                                            # Place new SL
-                                            sl_order = {
-                                                "accountId": subaccount_id,
-                                                "accountSpec": acct_name,
-                                                "symbol": tradovate_symbol,
-                                                "action": exit_side,
-                                                "orderQty": pos_qty,
-                                                "orderType": "Stop",
-                                                "stopPrice": sl_price,
-                                                "timeInForce": "GTC",
-                                                "isAutomated": True
-                                            }
-                                            sl_result = await tradovate.place_order(sl_order)
-                                            if sl_result and sl_result.get('success'):
-                                                logger.info(f"✅ [{acct_name}] SL placed @ {sl_price}")
-                                else:
-                                    logger.warning(f"⚠️ [{acct_name}] No open position found - skipping TP/SL (fill_price={fill_price}, pos_side={pos_side})")
+                                        sl_order = {
+                                            "accountId": subaccount_id,
+                                            "accountSpec": acct_name,
+                                            "symbol": tradovate_symbol,
+                                            "action": exit_side,
+                                            "orderQty": pos_qty,
+                                            "orderType": "Stop",
+                                            "stopPrice": sl_price,
+                                            "timeInForce": "GTC",
+                                            "isAutomated": True
+                                        }
+                                        sl_result = await tradovate.place_order(sl_order)
+                                        if sl_result and sl_result.get('success'):
+                                            logger.info(f"✅ [{acct_name}] SL placed @ {sl_price}")
                             except Exception as risk_err:
                                 logger.warning(f"⚠️ [{acct_name}] TP/SL placement error: {risk_err}")
                         
                         return {'success': True, 'account': acct_name, 'order_id': order_id}
                     else:
                         error = result.get('error', 'Unknown error') if result else 'No response'
-                        duration_ms = int((time.time() - _start_time) * 1000)
-                        logger.error(f"❌ [{acct_name}] Order failed: {error} [{duration_ms}ms]")
-                        log_execution(action, ticker, acct_name, 'failed', duration_ms, error)
+                        logger.error(f"❌ [{acct_name}] Order failed: {error}")
                         return {'success': False, 'account': acct_name, 'error': error}
                         
             except Exception as e:
-                duration_ms = int((time.time() - _start_time) * 1000)
-                logger.error(f"❌ [{acct_name}] Exception: {e} [{duration_ms}ms]")
-                log_execution(action, ticker, acct_name, 'error', duration_ms, str(e))
+                logger.error(f"❌ [{acct_name}] Exception: {e}")
                 return {'success': False, 'account': acct_name, 'error': str(e)}
         
         # Execute on all accounts in parallel
@@ -11728,26 +11625,6 @@ _broker_execution_stats = {
     'num_workers': NUM_BROKER_WORKERS,
     'workers_alive': alive_count
 }
-
-# ============================================================================
-# EXECUTION LOG BUFFER - View recent trades at /api/execution-logs
-# ============================================================================
-from collections import deque
-_execution_logs = deque(maxlen=50)  # Keep last 50 execution logs
-_execution_logs_lock = threading.Lock()
-
-def log_execution(action, ticker, account, status, duration_ms, details=None):
-    """Add an execution event to the log buffer"""
-    with _execution_logs_lock:
-        _execution_logs.append({
-            'timestamp': datetime.utcnow().isoformat() + 'Z',
-            'action': action,
-            'ticker': ticker,
-            'account': account,
-            'status': status,  # 'success', 'failed', 'error'
-            'duration_ms': duration_ms,
-            'details': details
-        })
 
 # Register for thread health monitoring
 def restart_broker_execution_worker():
@@ -24658,35 +24535,6 @@ def api_broker_execution_status():
         logger.error(f"Error getting broker execution status: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/execution-logs', methods=['GET'])
-def api_execution_logs():
-    """View recent trade execution logs - shows last 50 executions with timing"""
-    try:
-        with _execution_logs_lock:
-            logs = list(_execution_logs)
-        
-        # Reverse so newest first
-        logs.reverse()
-        
-        # Summary stats
-        recent_successes = sum(1 for l in logs if l.get('status') == 'success')
-        recent_failures = sum(1 for l in logs if l.get('status') in ('failed', 'error'))
-        avg_duration = sum(l.get('duration_ms', 0) for l in logs) / len(logs) if logs else 0
-        
-        return jsonify({
-            'success': True,
-            'summary': {
-                'total_logs': len(logs),
-                'recent_successes': recent_successes,
-                'recent_failures': recent_failures,
-                'avg_duration_ms': round(avg_duration, 1)
-            },
-            'logs': logs
-        })
-    except Exception as e:
-        logger.error(f"Error getting execution logs: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/websocket-status', methods=['GET'])
