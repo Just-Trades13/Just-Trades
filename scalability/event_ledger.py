@@ -120,17 +120,17 @@ class EventLedger:
         """Initialize database table for event storage"""
         try:
             cursor = self._db.cursor()
-            
+
             # Try PostgreSQL syntax first
             try:
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS broker_events (
                         id SERIAL PRIMARY KEY,
-                        account_id INTEGER NOT NULL,
+                        account_id BIGINT NOT NULL,
                         timestamp DOUBLE PRECISION NOT NULL,
                         entity_type VARCHAR(50) NOT NULL,
                         event_type VARCHAR(50) NOT NULL,
-                        entity_id INTEGER,
+                        entity_id BIGINT,
                         raw_data JSONB,
                         sequence BIGINT NOT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -139,6 +139,18 @@ class EventLedger:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_broker_events_account ON broker_events(account_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_broker_events_entity ON broker_events(entity_type, entity_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_broker_events_timestamp ON broker_events(timestamp)')
+
+                # MIGRATION: Alter existing columns from INTEGER to BIGINT if table already exists
+                # This fixes "integer out of range" errors for large Tradovate IDs
+                try:
+                    cursor.execute('ALTER TABLE broker_events ALTER COLUMN account_id TYPE BIGINT')
+                    cursor.execute('ALTER TABLE broker_events ALTER COLUMN entity_id TYPE BIGINT')
+                    self._db.commit()
+                    logger.info("📜 Migrated broker_events columns to BIGINT")
+                except Exception as migrate_err:
+                    # Column might already be BIGINT or migration failed - that's ok
+                    self._db.rollback()
+                    logger.debug(f"BIGINT migration skipped (may already be done): {migrate_err}")
             except:
                 # Fall back to SQLite syntax
                 cursor.execute('''
