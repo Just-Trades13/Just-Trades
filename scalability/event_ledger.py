@@ -254,10 +254,10 @@ class EventLedger:
             
             data = raw_event.get('d', {})
             entity_type = data.get('entityType')
-            event_type = data.get('event')
+            event_type = data.get('event') or 'Updated'  # Default to 'Updated' if None
             entity = data.get('entity', {})
             entity_id = entity.get('id')
-            
+
             if not entity_type:
                 logger.debug(f"Unknown entity type in raw event: {raw_event}")
                 return None
