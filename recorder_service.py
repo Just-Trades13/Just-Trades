@@ -1091,6 +1091,9 @@ def execute_trade_simple(
         # ============================================================
         async def do_trade_for_account(trader, trader_idx):
             """Execute trade for a single account - runs in parallel with others"""
+            import time as _time
+            _trade_start = _time.time()
+            
             acct_name = trader.get('subaccount_name', 'Unknown')
             acct_id = trader.get('account_id')
             account_multiplier = float(trader.get('multiplier', 1.0))  # Get multiplier for this account
@@ -1134,10 +1137,11 @@ def execute_trade_simple(
                 auth_method = None
                 
                 # PRIORITY 1: Check token cache (instant, no API call)
+                _auth_start = _time.time()
                 access_token = get_cached_token(account_id)
                 if access_token:
                     auth_method = "CACHED"
-                    logger.info(f"⚡ [{acct_name}] Using CACHED token (no API call)")
+                    logger.info(f"⚡ [{acct_name}] Using CACHED token (no API call) [{_time.time()-_auth_start:.2f}s]")
                 
                 # PRIORITY 2: Use OAuth token from database (like TradersPost)
                 # This is the scalable approach - tokens obtained via OAuth never trigger captcha
@@ -1173,7 +1177,7 @@ def execute_trade_simple(
                     if oauth_token and token_is_valid:
                         access_token = oauth_token
                         auth_method = "OAUTH"
-                        logger.info(f"🔑 [{acct_name}] Using OAuth token (scalable - no rate limit)")
+                        logger.info(f"🔑 [{acct_name}] Using OAuth token (scalable - no rate limit) [{_time.time()-_auth_start:.2f}s]")
                 
                 # PRIORITY 3: Try to refresh OAuth token if expired
                 if not access_token:
@@ -1181,7 +1185,7 @@ def execute_trade_simple(
                     refresh_token = trader.get('tradovate_refresh_token')
                     
                     if oauth_token and refresh_token:
-                        logger.info(f"🔄 [{acct_name}] Attempting token refresh...")
+                        logger.info(f"🔄 [{acct_name}] Attempting token refresh... [{_time.time()-_auth_start:.2f}s elapsed]")
                         try:
                             # Try to refresh the token
                             tradovate_temp = TradovateIntegration(demo=is_demo)
@@ -1207,7 +1211,7 @@ def execute_trade_simple(
                                     conn_refresh.commit()
                                     conn_refresh.close()
                                     cache_token(account_id, access_token, refresh_result.get('expires_at'))
-                                    logger.info(f"✅ [{acct_name}] Token refreshed successfully")
+                                    logger.info(f"✅ [{acct_name}] Token refreshed successfully [{_time.time()-_auth_start:.2f}s]")
                                 except Exception as update_err:
                                     logger.warning(f"⚠️ [{acct_name}] Could not update token in DB: {update_err}")
                             await tradovate_temp.__aexit__(None, None, None)
@@ -1217,7 +1221,7 @@ def execute_trade_simple(
                 # PRIORITY 4: API Access - ONLY if no OAuth token (last resort)
                 # This can trigger captcha and rate limiting - avoid for scale!
                 if not access_token and username and password:
-                    logger.warning(f"⚠️ [{acct_name}] No OAuth token - trying API Access (not scalable)")
+                    logger.warning(f"⚠️ [{acct_name}] No OAuth token - trying API Access (SLOW!) [{_time.time()-_auth_start:.2f}s elapsed]")
                     await wait_for_rate_limit()  # Respect rate limits
                     record_api_call()
                     
@@ -1240,21 +1244,21 @@ def execute_trade_simple(
                                     cache_token(account_id, access_token, expiry, login_result.get('mdAccessToken'))
                                 except:
                                     pass
-                                logger.info(f"✅ [{acct_name}] API Access successful (cached)")
+                                logger.info(f"✅ [{acct_name}] API Access successful (cached) [{_time.time()-_auth_start:.2f}s]")
                                 break
                             else:
                                 error_msg = login_result.get('error', 'Unknown error')
                                 if api_attempt < 2:
-                                    logger.warning(f"⚠️ [{acct_name}] API Access attempt {api_attempt + 1} failed, retrying...")
-                                    await asyncio.sleep(2)
+                                    logger.warning(f"⚠️ [{acct_name}] API Access attempt {api_attempt + 1} failed, retrying... [{_time.time()-_auth_start:.2f}s]")
+                                    await asyncio.sleep(0.5)  # Reduced from 2s to 0.5s for speed
                                 else:
-                                    logger.error(f"❌ [{acct_name}] API Access failed after 3 attempts: {error_msg}")
+                                    logger.error(f"❌ [{acct_name}] API Access failed after 3 attempts: {error_msg} [{_time.time()-_auth_start:.2f}s]")
                         except Exception as api_err:
                             if api_attempt < 2:
-                                logger.warning(f"⚠️ [{acct_name}] API Access exception, retrying: {api_err}")
-                                await asyncio.sleep(2)
+                                logger.warning(f"⚠️ [{acct_name}] API Access exception, retrying: {api_err} [{_time.time()-_auth_start:.2f}s]")
+                                await asyncio.sleep(0.5)  # Reduced from 2s to 0.5s for speed
                             else:
-                                logger.error(f"❌ [{acct_name}] API Access exception after 3 attempts: {api_err}")
+                                logger.error(f"❌ [{acct_name}] API Access exception after 3 attempts: {api_err} [{_time.time()-_auth_start:.2f}s]")
                 
                 # CRITICAL: If still no access token, try one more time with fresh DB lookup
                 if not access_token:
@@ -1295,18 +1299,19 @@ def execute_trade_simple(
                 
                 tradovate = None
                 pooled_conn = None
+                _ws_start = _time.time()
                 try:
                     # Try to get pooled WebSocket connection
                     pooled_conn = await get_pooled_connection(tradovate_account_id, is_demo, access_token)
                     if pooled_conn:
                         tradovate = pooled_conn
-                        logger.debug(f"⚡ [{acct_name}] Using POOLED WebSocket connection")
+                        logger.info(f"⚡ [{acct_name}] Using POOLED WebSocket [{_time.time()-_ws_start:.2f}s] (auth took {_time.time()-_auth_start:.2f}s)")
                     else:
                         # Create new connection (will be closed after trade)
                         tradovate = TradovateIntegration(demo=is_demo)
                         await tradovate.__aenter__()
                         tradovate.access_token = access_token
-                        logger.debug(f"🔌 [{acct_name}] Created new connection")
+                        logger.info(f"🔌 [{acct_name}] Created NEW connection [{_time.time()-_ws_start:.2f}s] (auth took {_time.time()-_auth_start:.2f}s)")
                 except Exception as pool_err:
                     logger.warning(f"⚠️ [{acct_name}] Pool error, creating new connection: {pool_err}")
                     tradovate = TradovateIntegration(demo=is_demo)
@@ -1323,15 +1328,17 @@ def execute_trade_simple(
                     
                     # Check existing position - USE CACHE to skip slow REST call
                     # Cache is valid for 10 seconds - much faster than REST (2-3s per call)
+                    _pos_start = _time.time()
                     existing_positions = get_cached_positions(tradovate_account_id)
                     if existing_positions is None:
                         # Cache miss - fetch from API and cache result
-                        logger.info(f"🔍 [{acct_name}] Fetching positions (cache miss)...")
+                        logger.info(f"🔍 [{acct_name}] Fetching positions (cache miss)... [total: {_time.time()-_trade_start:.2f}s]")
                         record_api_call()  # Track API calls for rate limiting
                         existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
                         cache_positions(tradovate_account_id, existing_positions)
+                        logger.info(f"🔍 [{acct_name}] Position fetch took [{_time.time()-_pos_start:.2f}s]")
                     else:
-                        logger.info(f"⚡ [{acct_name}] Using CACHED positions (fast!)")
+                        logger.info(f"⚡ [{acct_name}] Using CACHED positions (fast!) [{_time.time()-_pos_start:.3f}s]")
                     
                     has_existing_position = False
                     existing_position_side = None
@@ -1427,8 +1434,9 @@ def execute_trade_simple(
                         sl_log = f" + SL: {sl_ticks} ticks" if sl_ticks > 0 else ""
                         be_log = f" + BE: {break_even_ticks} ticks" if break_even_ticks else ""
                         trail_log = f" + Trail" if auto_trail or trailing_stop_bool else ""
-                        logger.info(f"📤 [{acct_name}] Using NATIVE BRACKET ORDER (WebSocket) - Entry + TP{sl_log}{be_log}{trail_log} in one call")
+                        logger.info(f"📤 [{acct_name}] Using NATIVE BRACKET ORDER (WebSocket) - Entry + TP{sl_log}{be_log}{trail_log} [total: {_time.time()-_trade_start:.2f}s]")
                         
+                        _order_start = _time.time()
                         bracket_result = await tradovate.place_bracket_order(
                             account_id=tradovate_account_id,
                             account_spec=tradovate_account_spec,
@@ -1444,7 +1452,7 @@ def execute_trade_simple(
                         
                         if bracket_result and bracket_result.get('success'):
                             strategy_id = bracket_result.get('orderStrategyId') or bracket_result.get('id')
-                            logger.info(f"✅ [{acct_name}] BRACKET ORDER SUCCESS! Strategy ID: {strategy_id}")
+                            logger.info(f"✅ [{acct_name}] BRACKET ORDER SUCCESS! Strategy ID: {strategy_id} [order: {_time.time()-_order_start:.2f}s, total: {_time.time()-_trade_start:.2f}s]")
                             
                             # OPTIMIZATION: Skip position verification - bracket order handles everything
                             # The TP is already placed as part of the bracket, no need to verify
