@@ -139,6 +139,43 @@ def clear_all_cached_tokens():
         logger.info("🧹 Cleared all cached tokens")
 
 # ============================================================================
+# Position Cache - Skip slow REST calls for recently fetched positions
+# ============================================================================
+# Structure: {subaccount_id: {'positions': [...], 'timestamp': float}}
+_POSITION_CACHE: Dict[int, Dict] = {}
+_POSITION_CACHE_LOCK = threading.Lock()
+_POSITION_CACHE_TTL = 10  # Cache valid for 10 seconds
+
+def get_cached_positions(subaccount_id: int) -> Optional[List[Dict]]:
+    """Get cached positions if still valid (within TTL)."""
+    with _POSITION_CACHE_LOCK:
+        cached = _POSITION_CACHE.get(subaccount_id)
+        if cached:
+            age = time.time() - cached.get('timestamp', 0)
+            if age < _POSITION_CACHE_TTL:
+                logger.debug(f"⚡ Position cache HIT for {subaccount_id} (age: {age:.1f}s)")
+                return cached.get('positions', [])
+            else:
+                logger.debug(f"⏰ Position cache EXPIRED for {subaccount_id} (age: {age:.1f}s)")
+    return None
+
+def cache_positions(subaccount_id: int, positions: List[Dict]):
+    """Cache positions for a subaccount."""
+    with _POSITION_CACHE_LOCK:
+        _POSITION_CACHE[subaccount_id] = {
+            'positions': positions,
+            'timestamp': time.time()
+        }
+        logger.debug(f"💾 Cached {len(positions)} positions for {subaccount_id}")
+
+def invalidate_position_cache(subaccount_id: int):
+    """Invalidate position cache after a trade (forces fresh fetch next time)."""
+    with _POSITION_CACHE_LOCK:
+        if subaccount_id in _POSITION_CACHE:
+            del _POSITION_CACHE[subaccount_id]
+            logger.debug(f"🗑️ Invalidated position cache for {subaccount_id}")
+
+# ============================================================================
 # WebSocket Connection Pool - Keep persistent connections (TradeManager's secret)
 # ============================================================================
 # Structure: {subaccount_id: TradovateIntegration instance with active WebSocket}
@@ -1279,14 +1316,23 @@ def execute_trade_simple(
                 try:
                     # STEP 0: Check if this is a new entry or DCA (adding to position)
                     order_action = 'Buy' if action == 'BUY' else 'Sell'
-                    record_api_call()  # Track API calls for rate limiting
                     
                     # Log multiplier application
                     if account_multiplier != 1.0:
                         logger.info(f"📊 [{acct_name}] Applying multiplier: {quantity} × {account_multiplier} = {adjusted_quantity} contracts")
                     
-                    # Check existing position first
-                    existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                    # Check existing position - USE CACHE to skip slow REST call
+                    # Cache is valid for 10 seconds - much faster than REST (2-3s per call)
+                    existing_positions = get_cached_positions(tradovate_account_id)
+                    if existing_positions is None:
+                        # Cache miss - fetch from API and cache result
+                        logger.info(f"🔍 [{acct_name}] Fetching positions (cache miss)...")
+                        record_api_call()  # Track API calls for rate limiting
+                        existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                        cache_positions(tradovate_account_id, existing_positions)
+                    else:
+                        logger.info(f"⚡ [{acct_name}] Using CACHED positions (fast!)")
+                    
                     has_existing_position = False
                     existing_position_side = None
                     existing_position_qty = 0
@@ -1416,6 +1462,9 @@ def execute_trade_simple(
                                 sl_price = None
                             
                             logger.info(f"📊 [{acct_name}] BRACKET: {broker_side} {broker_qty} with TP @ +{tp_ticks} ticks (1 API call!)")
+                            
+                            # Invalidate position cache after trade - next signal gets fresh data
+                            invalidate_position_cache(tradovate_account_id)
                             
                             return {
                                 'success': True,
@@ -1749,6 +1798,9 @@ def execute_trade_simple(
                         logger.info(f"📊 [{acct_name}] TP placed but no SL - skipping OCO registration")
                     elif sl_order_id:
                         logger.info(f"📊 [{acct_name}] SL placed but no TP - skipping OCO registration")
+                    
+                    # Invalidate position cache after trade - next signal gets fresh data
+                    invalidate_position_cache(tradovate_account_id)
                     
                     return {
                         'success': True,
