@@ -161,12 +161,14 @@ def get_cached_positions(subaccount_id: int) -> Optional[List[Dict]]:
 
 def cache_positions(subaccount_id: int, positions: List[Dict]):
     """Cache positions for a subaccount."""
+    # Ensure we never cache None - use empty list as default
+    safe_positions = positions if positions is not None else []
     with _POSITION_CACHE_LOCK:
         _POSITION_CACHE[subaccount_id] = {
-            'positions': positions,
+            'positions': safe_positions,
             'timestamp': time.time()
         }
-        logger.debug(f"💾 Cached {len(positions)} positions for {subaccount_id}")
+        logger.debug(f"💾 Cached {len(safe_positions)} positions for {subaccount_id}")
 
 def invalidate_position_cache(subaccount_id: int):
     """Invalidate position cache after a trade (forces fresh fetch next time)."""
@@ -1343,7 +1345,7 @@ def execute_trade_simple(
                     has_existing_position = False
                     existing_position_side = None
                     existing_position_qty = 0
-                    for pos in existing_positions:
+                    for pos in (existing_positions or []):  # Safety check for None
                         pos_symbol = str(pos.get('symbol', '')).upper()
                         net_pos = pos.get('netPos', 0)
                         if symbol_root in pos_symbol and net_pos != 0:
@@ -1548,7 +1550,7 @@ def execute_trade_simple(
                         await asyncio.sleep(1.0)  # Give order time to fill
                         positions = await tradovate.get_positions(account_id=tradovate_account_id)
                         
-                        for pos in positions:
+                        for pos in (positions or []):  # Safety check for None
                             pos_symbol = str(pos.get('symbol', '')).upper()
                             if symbol_root in pos_symbol:
                                 net_pos = pos.get('netPos', 0)
