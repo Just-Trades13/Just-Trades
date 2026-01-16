@@ -11238,23 +11238,25 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                         # Apply TP/SL if configured
                         if tp_ticks > 0 or sl_ticks > 0:
                             try:
-                                # Get fill price from position
-                                await asyncio.sleep(0.5)  # Brief wait for fill
-                                positions = await tradovate.get_positions(subaccount_id)
-                                fill_price = None
-                                pos_side = None
-                                pos_qty = 0
+                                # Try to get fill price from order response first (fastest)
+                                fill_price = result.get('avgPx') or result.get('price') or result.get('avgPrice')
+                                pos_side = 'LONG' if order_side == 'Buy' else 'SHORT'
+                                pos_qty = adjusted_qty
                                 
-                                symbol_root = tradovate_symbol[:3].upper()
-                                for pos in (positions or []):
-                                    pos_symbol = str(pos.get('symbol', '')).upper()
-                                    if symbol_root in pos_symbol:
-                                        net_pos = pos.get('netPos', 0)
-                                        if net_pos != 0:
-                                            fill_price = pos.get('netPrice')
-                                            pos_side = 'LONG' if net_pos > 0 else 'SHORT'
-                                            pos_qty = abs(net_pos)
-                                            break
+                                # If no fill price in response, quick position check
+                                if not fill_price:
+                                    await asyncio.sleep(0.1)  # Quick wait (was 0.5s)
+                                    positions = await tradovate.get_positions(subaccount_id)
+                                    symbol_root = tradovate_symbol[:3].upper()
+                                    for pos in (positions or []):
+                                        pos_symbol = str(pos.get('symbol', '')).upper()
+                                        if symbol_root in pos_symbol:
+                                            net_pos = pos.get('netPos', 0)
+                                            if net_pos != 0:
+                                                fill_price = pos.get('netPrice')
+                                                pos_side = 'LONG' if net_pos > 0 else 'SHORT'
+                                                pos_qty = abs(net_pos)
+                                                break
                                 
                                 if fill_price and pos_side:
                                     exit_side = 'Sell' if pos_side == 'LONG' else 'Buy'
