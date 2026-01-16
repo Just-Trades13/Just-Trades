@@ -24314,6 +24314,50 @@ def api_broker_execution_status():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/websocket-status', methods=['GET'])
+def api_websocket_status():
+    """Diagnostic endpoint to check WebSocket connection pool status"""
+    try:
+        from recorder_service import _WS_POOL, _WS_POOL_LOCK
+        
+        pool_status = {}
+        with _WS_POOL_LOCK:
+            for account_id, conn in _WS_POOL.items():
+                try:
+                    pool_status[str(account_id)] = {
+                        'ws_connected': getattr(conn, 'ws_connected', False),
+                        'has_websocket': conn.websocket is not None if hasattr(conn, 'websocket') else False,
+                        'is_demo': getattr(conn, 'base_url', '').find('demo') >= 0 if hasattr(conn, 'base_url') else None
+                    }
+                except Exception as e:
+                    pool_status[str(account_id)] = {'error': str(e)}
+        
+        # Check if websocket orders are enabled in the integration
+        ws_orders_enabled = True  # Default from tradovate_integration.py
+        try:
+            from phantom_scraper.tradovate_integration import TradovateIntegration
+            temp = TradovateIntegration(demo=True)
+            ws_orders_enabled = getattr(temp, 'use_websocket_orders', True)
+        except:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'websocket_orders_enabled': ws_orders_enabled,
+            'connection_pool': {
+                'size': len(pool_status),
+                'connections': pool_status
+            },
+            'explanation': {
+                'ws_connected=True': 'WebSocket is connected and will be used for orders (FAST)',
+                'ws_connected=False': 'WebSocket not connected, will fall back to REST API',
+                'pool_size=0': 'No active WebSocket connections (normal if no recent trades)'
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting websocket status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/recorders/<int:recorder_id>/execution-status', methods=['GET'])
 def api_recorder_execution_status(recorder_id):
     """Diagnostic endpoint to check why broker execution isn't happening for a recorder"""
