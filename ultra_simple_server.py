@@ -12515,11 +12515,13 @@ def process_webhook_directly(webhook_token):
                     pnl_result = {'pnl': pnl_dollars, 'pnl_ticks': pnl_ticks, 'closed_side': existing_side}
                     
                     # Now open new position in opposite direction
+                    # Set broker_managed_tp_sl=1 if trader exists (broker will handle TP/SL)
+                    broker_managed = 1 if trader else 0
                     trade_cursor.execute(f'''
-                        INSERT INTO recorded_trades 
-                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, created_at, updated_at)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price))
+                        INSERT INTO recorded_trades
+                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, broker_managed))
                     recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
                     if is_pg:
                         trade_cursor.execute('SELECT lastval()')
@@ -12544,13 +12546,15 @@ def process_webhook_directly(webhook_token):
                 else:
                     # SAME SIDE: DCA - Add to existing position!
                     _logger.info(f"📈 DCA: Adding {quantity} to existing {existing_side} position")
-                    
+
                     # Create a new trade entry for DCA
+                    # Set broker_managed_tp_sl=1 if trader exists (broker will handle TP/SL)
+                    broker_managed = 1 if trader else 0
                     trade_cursor.execute(f'''
-                        INSERT INTO recorded_trades 
-                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, created_at, updated_at)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price))
+                        INSERT INTO recorded_trades
+                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, broker_managed))
                     recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
                     if is_pg:
                         trade_cursor.execute('SELECT lastval()')
@@ -12574,11 +12578,13 @@ def process_webhook_directly(webhook_token):
                         _logger.warning(f"⚠️ Could not send DCA notification: {notif_err}")
             else:
                 # NO EXISTING POSITION: Open new trade
+                # Set broker_managed_tp_sl=1 if trader exists (broker will handle TP/SL)
+                broker_managed = 1 if trader else 0
                 trade_cursor.execute(f'''
-                    INSERT INTO recorded_trades 
-                    (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, created_at, updated_at)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price))
+                    INSERT INTO recorded_trades
+                    (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, broker_managed))
                 recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
                 if is_pg:
                     trade_cursor.execute('SELECT lastval()')
@@ -21374,11 +21380,14 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
         cursor = conn.cursor()
         
         # Get all open trades that have TP or SL set
+        # SKIP broker_managed_tp_sl=1 trades - broker handles those exits, not us
         cursor.execute('''
-            SELECT t.*, r.name as recorder_name 
+            SELECT t.*, r.name as recorder_name
             FROM recorded_trades t
             JOIN recorders r ON t.recorder_id = r.id
-            WHERE t.status = 'open' AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
+            WHERE t.status = 'open'
+              AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
+              AND COALESCE(t.broker_managed_tp_sl, 0) = 0
         ''')
         
         open_trades = [dict(row) for row in cursor.fetchall()]
