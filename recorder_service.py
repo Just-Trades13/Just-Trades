@@ -2216,7 +2216,7 @@ def sync_position_with_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                 positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
                 broker_pos = None
-                for pos in positions:
+                for pos in (positions or []):
                     if tradovate_symbol[:3] in pos.get('symbol', ''):
                         broker_pos = pos
                         break
@@ -2549,7 +2549,7 @@ def check_broker_position_exists(recorder_id: int, ticker: str) -> bool:
                 tradovate.access_token = access_token
                 positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
-                for pos in positions:
+                for pos in (positions or []):
                     pos_symbol = pos.get('symbol', '') or ''
                     net_pos = pos.get('netPos', 0)
                     if tradovate_symbol[:3] in pos_symbol and net_pos != 0:
@@ -2635,7 +2635,7 @@ def get_broker_position_for_recorder(recorder_id: int, ticker: str) -> Dict[str,
                 tradovate.access_token = current_token
                 positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
-                for pos in positions:
+                for pos in (positions or []):
                     pos_symbol = pos.get('symbol', '') or ''
                     net_pos = pos.get('netPos', 0)
                     if tradovate_symbol[:3] in pos_symbol:
@@ -3043,7 +3043,7 @@ def execute_live_trade_with_bracket(
                     existing_pos = None
                     existing_net_pos = 0
                     existing_price = None
-                    for pos in positions_before:
+                    for pos in (positions_before or []):
                         pos_symbol = pos.get('symbol', '')
                         if tradovate_symbol[:3] in pos_symbol:
                             existing_pos = pos
@@ -3256,7 +3256,7 @@ def execute_live_trade_with_bracket(
                                 await asyncio.sleep(0.4)  # Wait between attempts
                                 positions_after = await tradovate.get_positions(account_id=tradovate_account_id)
                                 
-                                for pos in positions_after:
+                                for pos in (positions_after or []):
                                     pos_symbol = str(pos.get('symbol', '')).upper()
                                     # Match by symbol root (MNQ matches MNQH6, MNQZ5, etc)
                                     if symbol_root in pos_symbol or pos_symbol.startswith(symbol_root):
@@ -3792,7 +3792,7 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
                 contract_id = None
                 pos_qty = total_quantity if side == 'LONG' else -total_quantity
                 
-                for pos in positions:
+                for pos in (positions or []):
                     pos_symbol = str(pos.get('symbol', '') or '').upper()
                     if symbol_root in pos_symbol or pos_symbol[:3] == symbol_root:
                         contract_id = pos.get('contractId')
@@ -4018,7 +4018,7 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                 positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
                 # Find position for this symbol
-                for pos in positions:
+                for pos in (positions or []):
                     if pos.get('symbol', '').startswith(tradovate_symbol[:3]):
                         return pos
                 return None
@@ -4602,7 +4602,7 @@ def reconcile_positions_with_broker():
                         
                         tradovate_symbol = convert_ticker_to_tradovate(ticker)
                         broker_pos = None
-                        for pos in positions:
+                        for pos in (positions or []):
                             pos_symbol = pos.get('symbol', '')
                             if tradovate_symbol[:3] in pos_symbol:
                                 broker_pos = pos
@@ -4775,7 +4775,7 @@ def reconcile_positions_with_broker():
                                     # Check if TP order exists on broker
                                     orders = await tradovate.get_orders(account_id=str(subaccount_id))
                                     has_tp_order = False
-                                    for order in orders:
+                                    for order in (orders or []):
                                         order_symbol = order.get('symbol', '')
                                         order_type = order.get('orderType', '') or ''
                                         order_status = order.get('ordStatus', '') or ''
@@ -5096,7 +5096,7 @@ def poll_position_drawdown():
                 time.sleep(1)
                 continue
             
-            for pos in positions:
+            for pos in (positions or []):
                 ticker = pos['ticker']
                 side = pos['side']
                 avg_entry = pos['avg_entry_price']
@@ -6517,7 +6517,7 @@ def receive_webhook(webhook_token):
                                 
                                 # Find matching position
                                 matched_pos = None
-                                for pos in positions:
+                                for pos in (positions or []):
                                     pos_symbol = str(pos.get('symbol', '')).upper()
                                     pos_net = pos.get('netPos', 0)
                                     if pos_net != 0:
