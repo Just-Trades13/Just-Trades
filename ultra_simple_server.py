@@ -11210,6 +11210,7 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
         
         async def place_on_account(acct):
             """Place order on a single account - mirrors manual trader logic"""
+            _start_time = time.time()
             acct_name = acct['subaccount_name']
             subaccount_id = acct['subaccount_id']
             is_demo = acct['is_demo']
@@ -11233,7 +11234,9 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                     
                     if result and result.get('success'):
                         order_id = result.get('orderId') or result.get('id')
-                        logger.info(f"✅ [{acct_name}] Order placed! ID: {order_id}")
+                        duration_ms = int((time.time() - _start_time) * 1000)
+                        logger.info(f"✅ [{acct_name}] Order placed! ID: {order_id} [{duration_ms}ms]")
+                        log_execution(action, ticker, acct_name, 'success', duration_ms, f"Order ID: {order_id}")
                         
                         # Apply TP/SL if configured
                         if tp_ticks > 0 or sl_ticks > 0:
@@ -11300,11 +11303,15 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                         return {'success': True, 'account': acct_name, 'order_id': order_id}
                     else:
                         error = result.get('error', 'Unknown error') if result else 'No response'
-                        logger.error(f"❌ [{acct_name}] Order failed: {error}")
+                        duration_ms = int((time.time() - _start_time) * 1000)
+                        logger.error(f"❌ [{acct_name}] Order failed: {error} [{duration_ms}ms]")
+                        log_execution(action, ticker, acct_name, 'failed', duration_ms, error)
                         return {'success': False, 'account': acct_name, 'error': error}
                         
             except Exception as e:
-                logger.error(f"❌ [{acct_name}] Exception: {e}")
+                duration_ms = int((time.time() - _start_time) * 1000)
+                logger.error(f"❌ [{acct_name}] Exception: {e} [{duration_ms}ms]")
+                log_execution(action, ticker, acct_name, 'error', duration_ms, str(e))
                 return {'success': False, 'account': acct_name, 'error': str(e)}
         
         # Execute on all accounts in parallel
@@ -11625,6 +11632,26 @@ _broker_execution_stats = {
     'num_workers': NUM_BROKER_WORKERS,
     'workers_alive': alive_count
 }
+
+# ============================================================================
+# EXECUTION LOG BUFFER - View recent trades at /api/execution-logs
+# ============================================================================
+from collections import deque
+_execution_logs = deque(maxlen=50)  # Keep last 50 execution logs
+_execution_logs_lock = threading.Lock()
+
+def log_execution(action, ticker, account, status, duration_ms, details=None):
+    """Add an execution event to the log buffer"""
+    with _execution_logs_lock:
+        _execution_logs.append({
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'action': action,
+            'ticker': ticker,
+            'account': account,
+            'status': status,  # 'success', 'failed', 'error'
+            'duration_ms': duration_ms,
+            'details': details
+        })
 
 # Register for thread health monitoring
 def restart_broker_execution_worker():
@@ -24535,6 +24562,35 @@ def api_broker_execution_status():
         logger.error(f"Error getting broker execution status: {e}")
         import traceback
         traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/execution-logs', methods=['GET'])
+def api_execution_logs():
+    """View recent trade execution logs - shows last 50 executions with timing"""
+    try:
+        with _execution_logs_lock:
+            logs = list(_execution_logs)
+        
+        # Reverse so newest first
+        logs.reverse()
+        
+        # Summary stats
+        recent_successes = sum(1 for l in logs if l.get('status') == 'success')
+        recent_failures = sum(1 for l in logs if l.get('status') in ('failed', 'error'))
+        avg_duration = sum(l.get('duration_ms', 0) for l in logs) / len(logs) if logs else 0
+        
+        return jsonify({
+            'success': True,
+            'summary': {
+                'total_logs': len(logs),
+                'recent_successes': recent_successes,
+                'recent_failures': recent_failures,
+                'avg_duration_ms': round(avg_duration, 1)
+            },
+            'logs': logs
+        })
+    except Exception as e:
+        logger.error(f"Error getting execution logs: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/websocket-status', methods=['GET'])
