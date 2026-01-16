@@ -11381,20 +11381,24 @@ def broker_execution_worker():
             # Retries can cause duplicate trades which is dangerous
             
             try:
-                # USE FAST EXECUTION - mirrors manual trader for instant snappy trades
-                logger.info(f"⚡ Broker execution: {action} {quantity} {ticker}")
+                # Use proven execute_trade_simple from recorder_service (Jan 14 working version)
+                from recorder_service import execute_trade_simple
+                logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
                 
-                result = execute_trade_fast(
+                result = execute_trade_simple(
                     recorder_id=recorder_id,
                     action=action,
                     ticker=ticker,
                     quantity=quantity,
                     tp_ticks=tp_ticks,
                     sl_ticks=sl_ticks if sl_ticks > 0 else 0,
-                    risk_config=risk_config
+                    break_even_enabled=break_even_enabled,
+                    break_even_ticks=break_even_ticks,
+                    entry_price=entry_price,
+                    is_long=is_long
                 )
                 
-                logger.info(f"⚡ execute_trade_fast returned: success={result.get('success')}, accounts_traded={result.get('accounts_traded', 0)}")
+                logger.info(f"🔧 execute_trade_simple returned: success={result.get('success')}, error={result.get('error')}, accounts_traded={result.get('accounts_traded', 0)}")
                 
                 if result.get('success'):
                     accounts_traded = result.get('accounts_traded', 0)
@@ -11750,47 +11754,9 @@ def receive_webhook(webhook_token):
     logger.info(f"🌐 WEBHOOK ENDPOINT HIT: /webhook/{webhook_token[:8]}... method={request.method}")
     
     if request.method == 'POST':
-        # INSTANT RESPONSE: Grab data, queue it, return 200 immediately
-        # This prevents TradingView's 3-second timeout from losing signals
-        try:
-            raw_data = request.get_json(force=True, silent=True) or {}
-            if not raw_data:
-                try:
-                    raw_data = json.loads(request.data.decode('utf-8'))
-                except:
-                    raw_data = request.form.to_dict() or {}
-            
-            logger.info(f"   POST data: {raw_data}")
-            
-            # Queue for background processing
-            webhook_task = {
-                'webhook_token': webhook_token,
-                'raw_data': raw_data,
-                'received_at': time.time()
-            }
-            
-            try:
-                webhook_processing_queue.put_nowait(webhook_task)
-                queue_size = webhook_processing_queue.qsize()
-                logger.info(f"⚡ INSTANT: Webhook queued for processing (queue size: {queue_size})")
-                
-                # Return 200 IMMEDIATELY - processing happens in background
-                return jsonify({
-                    'success': True,
-                    'queued': True,
-                    'message': 'Signal received and queued for processing',
-                    'queue_size': queue_size
-                }), 200
-                
-            except Exception as queue_err:
-                # Queue full - fall back to direct processing (slower but still works)
-                logger.warning(f"⚠️ Webhook queue full, processing directly: {queue_err}")
-                return process_webhook_directly(webhook_token)
-                
-        except Exception as e:
-            logger.error(f"❌ Webhook receive error: {e}")
-            # Fall back to direct processing on any error
-            return process_webhook_directly(webhook_token)
+        # DIRECT PROCESSING - Jan 14 working version
+        # Process webhook synchronously for reliability
+        return process_webhook_directly(webhook_token)
     
     # GET: TradingView or browser verification
     if request.method == 'GET':
