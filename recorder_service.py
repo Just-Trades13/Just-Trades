@@ -371,6 +371,112 @@ def _auto_start_daemon():
 threading.Timer(2.0, _auto_start_daemon).start()
 
 # ============================================================================
+# WEBSOCKET KEEP-ALIVE DAEMON - Maintains WebSocket connections for fast orders
+# ============================================================================
+_WS_KEEPALIVE_RUNNING = False
+
+def start_websocket_keepalive_daemon():
+    """
+    Start background daemon that keeps WebSocket connections alive.
+    This prevents Tradovate from closing idle connections, enabling faster order execution.
+    """
+    global _WS_KEEPALIVE_RUNNING
+    if _WS_KEEPALIVE_RUNNING:
+        logger.info("WebSocket keep-alive daemon already running")
+        return
+    
+    _WS_KEEPALIVE_RUNNING = True
+    
+    def keepalive_loop():
+        """Background loop that pings WebSocket connections every 30 seconds."""
+        import asyncio
+        
+        logger.info("🔌 WebSocket keep-alive daemon started (pings every 30 seconds)")
+        
+        while True:
+            try:
+                time.sleep(30)  # Check every 30 seconds
+                
+                with _WS_POOL_LOCK:
+                    pool_size = len(_WS_POOL)
+                    if pool_size == 0:
+                        continue  # No connections to maintain
+                    
+                    connections_to_check = list(_WS_POOL.items())
+                
+                alive_count = 0
+                reconnected_count = 0
+                
+                for account_id, conn in connections_to_check:
+                    if not conn:
+                        continue
+                    
+                    try:
+                        # Check if connection is still alive
+                        if conn.websocket and conn.ws_connected:
+                            # Send a ping to keep connection alive
+                            try:
+                                # Use asyncio to send ping
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                try:
+                                    # Try to ping - if it fails, connection is dead
+                                    loop.run_until_complete(
+                                        asyncio.wait_for(conn.websocket.ping(), timeout=5.0)
+                                    )
+                                    alive_count += 1
+                                except Exception as ping_err:
+                                    # Ping failed - mark connection as dead
+                                    logger.debug(f"🔌 WebSocket ping failed for {account_id}: {ping_err}")
+                                    conn.ws_connected = False
+                                finally:
+                                    loop.close()
+                            except Exception as e:
+                                conn.ws_connected = False
+                        else:
+                            # Connection not connected - try to reconnect
+                            if conn.access_token:
+                                try:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                    try:
+                                        connected = loop.run_until_complete(
+                                            asyncio.wait_for(conn._ensure_websocket_connected(), timeout=10.0)
+                                        )
+                                        if connected:
+                                            reconnected_count += 1
+                                            logger.info(f"🔌 WebSocket reconnected for account {account_id}")
+                                    finally:
+                                        loop.close()
+                                except Exception as reconnect_err:
+                                    logger.debug(f"🔌 WebSocket reconnect failed for {account_id}: {reconnect_err}")
+                    except Exception as e:
+                        logger.debug(f"🔌 WebSocket keep-alive error for {account_id}: {e}")
+                
+                if alive_count > 0 or reconnected_count > 0:
+                    logger.debug(f"🔌 WebSocket pool status: {alive_count} alive, {reconnected_count} reconnected, {pool_size} total")
+                    
+            except Exception as e:
+                logger.error(f"Error in WebSocket keep-alive loop: {e}")
+                time.sleep(30)  # Wait before retrying
+    
+    thread = threading.Thread(target=keepalive_loop, daemon=True, name="WebSocketKeepAliveDaemon")
+    thread.start()
+    logger.info("🔌 WebSocket keep-alive daemon thread started")
+
+def _auto_start_ws_keepalive():
+    """Auto-start WebSocket keep-alive daemon."""
+    global _WS_KEEPALIVE_RUNNING
+    if not _WS_KEEPALIVE_RUNNING:
+        try:
+            start_websocket_keepalive_daemon()
+        except Exception as e:
+            print(f"Warning: Could not start WebSocket keep-alive daemon: {e}")
+
+# Delay WebSocket daemon start to allow imports to complete
+threading.Timer(5.0, _auto_start_ws_keepalive).start()
+
+# ============================================================================
 # DATABASE CONNECTION - Supports both SQLite and PostgreSQL
 # ============================================================================
 DATABASE_URL = os.getenv('DATABASE_URL')
