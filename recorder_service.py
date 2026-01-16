@@ -483,7 +483,7 @@ threading.Timer(5.0, _auto_start_ws_keepalive).start()
 _USER_SYNC_CONNECTIONS: Dict[int, Any] = {}  # user_id -> TradovateUserSyncWebSocket
 _USER_SYNC_LOCK = threading.Lock()
 _USER_SYNC_RUNNING = False
-_USER_SYNC_ENABLED = True  # Feature flag - set to False to disable
+_USER_SYNC_ENABLED = False  # DISABLED - Investigating webhook delays (Jan 2026)
 
 # Shared cache for position updates from WebSocket
 _WS_POSITION_CACHE: Dict[str, Dict] = {}  # "symbol_accountId" -> position data
