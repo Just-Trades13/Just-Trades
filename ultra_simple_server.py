@@ -11240,6 +11240,7 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                         
                         # Apply TP/SL if configured
                         if tp_ticks > 0 or sl_ticks > 0:
+                            logger.info(f"📊 [{acct_name}] TP/SL configured: TP={tp_ticks} ticks, SL={sl_ticks} ticks")
                             try:
                                 # Get fill price from position
                                 await asyncio.sleep(0.5)  # Brief wait for fill
@@ -11249,15 +11250,20 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                                 pos_qty = 0
                                 
                                 symbol_root = tradovate_symbol[:3].upper()
+                                logger.info(f"📊 [{acct_name}] Checking {len(positions or [])} positions for {symbol_root}")
                                 for pos in (positions or []):
                                     pos_symbol = str(pos.get('symbol', '')).upper()
+                                    net_pos = pos.get('netPos', 0)
+                                    logger.debug(f"   Position: {pos_symbol} netPos={net_pos}")
                                     if symbol_root in pos_symbol:
-                                        net_pos = pos.get('netPos', 0)
                                         if net_pos != 0:
                                             fill_price = pos.get('netPrice')
                                             pos_side = 'LONG' if net_pos > 0 else 'SHORT'
                                             pos_qty = abs(net_pos)
+                                            logger.info(f"📊 [{acct_name}] Found position: {pos_side} {pos_qty} @ {fill_price}")
                                             break
+                                        else:
+                                            logger.info(f"📊 [{acct_name}] Position {pos_symbol} is FLAT (netPos=0) - no TP needed")
                                 
                                 if fill_price and pos_side:
                                     exit_side = 'Sell' if pos_side == 'LONG' else 'Buy'
@@ -11363,6 +11369,8 @@ def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_tic
                                             sl_result = await tradovate.place_order(sl_order)
                                             if sl_result and sl_result.get('success'):
                                                 logger.info(f"✅ [{acct_name}] SL placed @ {sl_price}")
+                                else:
+                                    logger.warning(f"⚠️ [{acct_name}] No open position found - skipping TP/SL (fill_price={fill_price}, pos_side={pos_side})")
                             except Exception as risk_err:
                                 logger.warning(f"⚠️ [{acct_name}] TP/SL placement error: {risk_err}")
                         
