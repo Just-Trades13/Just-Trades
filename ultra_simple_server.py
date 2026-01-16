@@ -760,10 +760,6 @@ BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 # This ensures webhooks NEVER fail due to broker issues.
 broker_execution_queue = Queue(maxsize=1000)
 
-# INSTANT WEBHOOK QUEUE - Returns 200 immediately, processes in background
-# This prevents TradingView timeout (3 second limit) from losing signals
-webhook_processing_queue = Queue(maxsize=500)
-
 # ============================================================================
 # WEBHOOK HEALTH TRACKING - Detect stuck webhook processing
 # ============================================================================
@@ -4464,238 +4460,6 @@ def admin_edit_user(user_id):
     finally:
         cursor.close()
         conn.close()
-
-
-# ============================================================================
-# ADMIN USER DETAILS - Full Overview (Accounts, Recorders, Trades)
-# ============================================================================
-
-@app.route('/admin/users/<int:user_id>/details', methods=['GET'])
-def admin_get_user_details(user_id):
-    """Admin endpoint to get full user details including accounts, recorders, and trades."""
-    if not USER_AUTH_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Auth not available'}), 400
-
-    if not is_logged_in():
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
-
-    current = get_current_user()
-    if not current or not current.is_admin:
-        return jsonify({'success': False, 'error': 'Not authorized'}), 403
-
-    conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        placeholder = '%s' if is_postgres else '?'
-
-        # =====================
-        # 1. Get user's accounts
-        # =====================
-        accounts = []
-        try:
-            cursor.execute(f'''
-                SELECT id, name, broker, environment, enabled, 
-                       CASE WHEN tradovate_token IS NOT NULL AND tradovate_token != '' THEN 1 ELSE 0 END as is_connected,
-                       tradovate_accounts, created_at
-                FROM accounts 
-                WHERE user_id = {placeholder}
-                ORDER BY created_at DESC
-            ''', (user_id,))
-            
-            for row in cursor.fetchall():
-                acc = {
-                    'id': row[0],
-                    'name': row[1],
-                    'broker': row[2],
-                    'environment': row[3],
-                    'enabled': bool(row[4]),
-                    'is_connected': bool(row[5]),
-                    'tradovate_accounts': row[6],
-                    'created_at': str(row[7]) if row[7] else None
-                }
-                
-                # Parse tradovate subaccounts
-                subaccounts = []
-                if acc.get('tradovate_accounts'):
-                    try:
-                        ta = json.loads(acc['tradovate_accounts']) if isinstance(acc['tradovate_accounts'], str) else acc['tradovate_accounts']
-                        for sub in ta:
-                            subaccounts.append({
-                                'id': sub.get('id'),
-                                'name': sub.get('name'),
-                                'is_demo': sub.get('is_demo', True)
-                            })
-                    except:
-                        pass
-                acc['subaccounts'] = subaccounts
-                acc.pop('tradovate_accounts', None)
-                accounts.append(acc)
-        except Exception as e:
-            logger.warning(f"Error fetching accounts for user {user_id}: {e}")
-            if is_postgres:
-                conn.rollback()
-
-        # =====================
-        # 2. Get user's recorders/strategies
-        # =====================
-        recorders = []
-        try:
-            cursor.execute(f'''
-                SELECT id, name, strategy_type, enabled, ticker, created_at
-                FROM recorders 
-                WHERE user_id = {placeholder}
-                ORDER BY created_at DESC
-            ''', (user_id,))
-            
-            for row in cursor.fetchall():
-                rec = {
-                    'id': row[0],
-                    'name': row[1],
-                    'strategy_type': row[2],
-                    'enabled': bool(row[3]),
-                    'ticker': row[4],
-                    'created_at': str(row[5]) if row[5] else None,
-                    'enabled_accounts_count': 0
-                }
-                recorders.append(rec)
-        except Exception as e:
-            logger.warning(f"Error fetching recorders for user {user_id}: {e}")
-            if is_postgres:
-                conn.rollback()
-
-        # Get linked accounts count for each recorder (separate queries to avoid transaction issues)
-        for rec in recorders:
-            try:
-                cursor.execute(f'''
-                    SELECT COUNT(*) FROM traders 
-                    WHERE recorder_id = {placeholder}
-                ''', (rec['id'],))
-                count_row = cursor.fetchone()
-                rec['enabled_accounts_count'] = count_row[0] if count_row else 0
-            except Exception as e:
-                logger.debug(f"Error counting traders for recorder {rec['id']}: {e}")
-                if is_postgres:
-                    conn.rollback()
-                rec['enabled_accounts_count'] = 0
-
-        # =====================
-        # 3. Get user's trades/positions
-        # =====================
-        trades = []
-        total_pnl = 0
-        winning_trades = 0
-        losing_trades = 0
-        
-        # Try recorder_positions first (has P&L data)
-        try:
-            cursor.execute(f'''
-                SELECT rp.id, rp.ticker, rp.side, rp.total_quantity, rp.avg_entry_price, rp.exit_price,
-                       rp.realized_pnl, rp.status, rp.opened_at, rp.closed_at,
-                       r.name as recorder_name
-                FROM recorder_positions rp
-                LEFT JOIN recorders r ON rp.recorder_id = r.id
-                WHERE r.user_id = {placeholder}
-                ORDER BY rp.opened_at DESC
-                LIMIT 50
-            ''', (user_id,))
-            
-            for row in cursor.fetchall():
-                trade = {
-                    'id': row[0],
-                    'ticker': row[1],
-                    'side': row[2],
-                    'quantity': row[3],
-                    'entry_price': float(row[4]) if row[4] else None,
-                    'exit_price': float(row[5]) if row[5] else None,
-                    'realized_pnl': float(row[6]) if row[6] else None,
-                    'status': row[7],
-                    'entry_time': str(row[8]) if row[8] else None,
-                    'exit_time': str(row[9]) if row[9] else None,
-                    'recorder_name': row[10]
-                }
-                
-                if trade.get('realized_pnl'):
-                    total_pnl += trade['realized_pnl']
-                    if trade['realized_pnl'] > 0:
-                        winning_trades += 1
-                    elif trade['realized_pnl'] < 0:
-                        losing_trades += 1
-                
-                trades.append(trade)
-        except Exception as e:
-            logger.warning(f"Error fetching positions for user {user_id}: {e}")
-            if is_postgres:
-                conn.rollback()
-            
-            # Fallback: try recorded_trades
-            try:
-                cursor.execute(f'''
-                    SELECT rt.id, rt.ticker, rt.side, rt.quantity, rt.entry_price, rt.exit_price,
-                           rt.status, rt.entry_time, rt.exit_time,
-                           r.name as recorder_name
-                    FROM recorded_trades rt
-                    LEFT JOIN recorders r ON rt.recorder_id = r.id
-                    WHERE r.user_id = {placeholder}
-                    ORDER BY rt.entry_time DESC
-                    LIMIT 50
-                ''', (user_id,))
-                
-                for row in cursor.fetchall():
-                    trade = {
-                        'id': row[0],
-                        'ticker': row[1],
-                        'side': row[2],
-                        'quantity': row[3],
-                        'entry_price': float(row[4]) if row[4] else None,
-                        'exit_price': float(row[5]) if row[5] else None,
-                        'realized_pnl': None,
-                        'status': row[6],
-                        'entry_time': str(row[7]) if row[7] else None,
-                        'exit_time': str(row[8]) if row[8] else None,
-                        'recorder_name': row[9]
-                    }
-                    trades.append(trade)
-            except Exception as e2:
-                logger.warning(f"Error fetching recorded_trades for user {user_id}: {e2}")
-                if is_postgres:
-                    conn.rollback()
-
-        conn.close()
-
-        # Calculate stats
-        total_trades = winning_trades + losing_trades
-        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-
-        return jsonify({
-            'success': True,
-            'user_id': user_id,
-            'accounts': accounts,
-            'accounts_count': len(accounts),
-            'recorders': recorders,
-            'recorders_count': len(recorders),
-            'trades': trades,
-            'trade_stats': {
-                'total_trades': len(trades),
-                'closed_trades': total_trades,
-                'winning_trades': winning_trades,
-                'losing_trades': losing_trades,
-                'win_rate': round(win_rate, 1),
-                'total_pnl': round(total_pnl, 2)
-            }
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Failed to get user details for {user_id}: {e}")
-        import traceback
-        logger.debug(traceback.format_exc())
-        if conn:
-            try:
-                conn.close()
-            except:
-                pass
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ============================================================================
@@ -11112,236 +10876,6 @@ signal_processor_thread = threading.Thread(target=signal_processor_worker, daemo
 signal_processor_thread.start()
 
 # ============================================================================
-# FAST TRADE EXECUTION - Manual Trader Style (Direct, Simple, FAST)
-# ============================================================================
-def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_ticks=0, risk_config=None):
-    """
-    Fast trade execution that mirrors the manual copy trader.
-    NO position checking, NO complex auth - just direct order placement.
-    
-    This is what makes manual trader snap instantly - we use the same approach.
-    """
-    import asyncio
-    from phantom_scraper.tradovate_integration import TradovateIntegration
-    from recorder_service import convert_ticker_to_tradovate, get_tick_size
-    
-    logger.info(f"⚡ FAST EXECUTE: {action} {quantity} {ticker} (recorder_id={recorder_id})")
-    
-    results = {'success': False, 'accounts_traded': 0, 'errors': []}
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        ph = '%s' if is_postgres else '?'
-        
-        # Get all enabled traders linked to this recorder with their accounts
-        cursor.execute(f'''
-            SELECT t.id, t.enabled_accounts, t.subaccount_id, t.subaccount_name,
-                   a.tradovate_token, a.tradovate_refresh_token, a.md_access_token,
-                   a.id as account_id, a.environment, a.name as account_name
-            FROM traders t
-            JOIN accounts a ON t.account_id = a.id
-            WHERE t.recorder_id = {ph} AND t.enabled = {'true' if is_postgres else '1'}
-              AND a.tradovate_token IS NOT NULL
-        ''', (recorder_id,))
-        trader_rows = cursor.fetchall()
-        conn.close()
-        
-        if not trader_rows:
-            logger.warning(f"⚠️ No enabled traders with tokens for recorder {recorder_id}")
-            results['error'] = 'No enabled traders with valid tokens'
-            return results
-        
-        # Build list of accounts to trade on
-        accounts_to_trade = []
-        seen_subaccounts = set()
-        
-        for row in trader_rows:
-            trader = dict(row)
-            enabled_accounts_raw = trader.get('enabled_accounts')
-            
-            # If trader has enabled_accounts JSON, use those
-            if enabled_accounts_raw and enabled_accounts_raw != '[]':
-                try:
-                    enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
-                    for acct in enabled_accounts:
-                        subaccount_id = acct.get('subaccount_id')
-                        if subaccount_id and subaccount_id not in seen_subaccounts:
-                            seen_subaccounts.add(subaccount_id)
-                            multiplier = float(acct.get('multiplier', 1.0))
-                            accounts_to_trade.append({
-                                'subaccount_id': subaccount_id,
-                                'subaccount_name': acct.get('subaccount_name') or acct.get('account_name'),
-                                'token': trader.get('tradovate_token'),
-                                'refresh_token': trader.get('tradovate_refresh_token'),
-                                'md_token': trader.get('md_access_token'),
-                                'is_demo': (trader.get('environment') or 'demo').lower() != 'live',
-                                'multiplier': multiplier
-                            })
-                except Exception as e:
-                    logger.warning(f"Error parsing enabled_accounts: {e}")
-            else:
-                # Use trader's own subaccount
-                subaccount_id = trader.get('subaccount_id')
-                if subaccount_id and subaccount_id not in seen_subaccounts:
-                    seen_subaccounts.add(subaccount_id)
-                    accounts_to_trade.append({
-                        'subaccount_id': subaccount_id,
-                        'subaccount_name': trader.get('subaccount_name'),
-                        'token': trader.get('tradovate_token'),
-                        'refresh_token': trader.get('tradovate_refresh_token'),
-                        'md_token': trader.get('md_access_token'),
-                        'is_demo': (trader.get('environment') or 'demo').lower() != 'live',
-                        'multiplier': 1.0
-                    })
-        
-        if not accounts_to_trade:
-            logger.warning(f"⚠️ No accounts to trade on for recorder {recorder_id}")
-            results['error'] = 'No accounts configured'
-            return results
-        
-        logger.info(f"⚡ Trading on {len(accounts_to_trade)} account(s)")
-        
-        # Convert ticker
-        tradovate_symbol = convert_ticker_to_tradovate(ticker)
-        order_side = 'Buy' if action.upper() == 'BUY' else 'Sell'
-        tick_size = get_tick_size(ticker)
-        
-        async def place_on_account(acct):
-            """Place order on a single account - mirrors manual trader logic"""
-            acct_name = acct['subaccount_name']
-            subaccount_id = acct['subaccount_id']
-            is_demo = acct['is_demo']
-            multiplier = acct['multiplier']
-            adjusted_qty = max(1, int(quantity * multiplier))
-            
-            logger.info(f"⚡ [{acct_name}] Placing {order_side} {adjusted_qty} {tradovate_symbol}...")
-            
-            try:
-                async with TradovateIntegration(demo=is_demo) as tradovate:
-                    tradovate.access_token = acct['token']
-                    tradovate.refresh_token = acct['refresh_token']
-                    tradovate.md_access_token = acct['md_token']
-                    
-                    # Create and place order directly - just like manual trader
-                    order_data = tradovate.create_market_order(
-                        acct_name, tradovate_symbol, order_side, adjusted_qty, subaccount_id
-                    )
-                    
-                    result = await tradovate.place_order(order_data)
-                    
-                    if result and result.get('success'):
-                        order_id = result.get('orderId') or result.get('id')
-                        logger.info(f"✅ [{acct_name}] Order placed! ID: {order_id}")
-                        
-                        # Apply TP/SL using Tradovate native modify
-                        if tp_ticks > 0 or sl_ticks > 0:
-                            try:
-                                # Get current position for fill price and qty
-                                await asyncio.sleep(0.1)
-                                positions = await tradovate.get_positions(subaccount_id)
-                                symbol_root = tradovate_symbol[:3].upper()
-                                fill_price = None
-                                pos_qty = 0
-                                pos_side = None
-                                
-                                for pos in (positions or []):
-                                    if symbol_root in str(pos.get('symbol', '')).upper():
-                                        net_pos = pos.get('netPos', 0)
-                                        if net_pos != 0:
-                                            fill_price = pos.get('netPrice')
-                                            pos_qty = abs(net_pos)
-                                            pos_side = 'LONG' if net_pos > 0 else 'SHORT'
-                                            break
-                                
-                                if fill_price and pos_side:
-                                    exit_side = 'Sell' if pos_side == 'LONG' else 'Buy'
-                                    
-                                    # Get existing orders to find TP/SL to modify
-                                    existing_orders = await tradovate.get_orders(account_id=str(subaccount_id))
-                                    existing_tp_id = None
-                                    existing_sl_id = None
-                                    
-                                    for order in (existing_orders or []):
-                                        if symbol_root in str(order.get('symbol', '')).upper() and order.get('status') == 'Working':
-                                            if order.get('orderType') == 'Limit':
-                                                existing_tp_id = order.get('id')
-                                            elif order.get('orderType') in ('Stop', 'StopLimit'):
-                                                existing_sl_id = order.get('id')
-                                    
-                                    # Handle TP
-                                    if tp_ticks > 0:
-                                        tp_price = fill_price + (tp_ticks * tick_size) if pos_side == 'LONG' else fill_price - (tp_ticks * tick_size)
-                                        
-                                        if existing_tp_id:
-                                            # MODIFY existing TP (native Tradovate)
-                                            await tradovate.modify_order(existing_tp_id, new_price=tp_price, new_qty=pos_qty, order_type='Limit', time_in_force='GTC')
-                                            logger.info(f"✅ [{acct_name}] TP modified @ {tp_price} qty={pos_qty}")
-                                        else:
-                                            # Place new TP
-                                            tp_order = tradovate.create_limit_order(acct_name, tradovate_symbol, exit_side, pos_qty, tp_price, subaccount_id)
-                                            await tradovate.place_order(tp_order)
-                                            logger.info(f"✅ [{acct_name}] TP placed @ {tp_price}")
-                                    
-                                    # Handle SL
-                                    if sl_ticks > 0:
-                                        sl_price = fill_price - (sl_ticks * tick_size) if pos_side == 'LONG' else fill_price + (sl_ticks * tick_size)
-                                        
-                                        if existing_sl_id:
-                                            # MODIFY existing SL (native Tradovate)
-                                            await tradovate.modify_order(existing_sl_id, stop_price=sl_price, new_qty=pos_qty, order_type='Stop', time_in_force='GTC')
-                                            logger.info(f"✅ [{acct_name}] SL modified @ {sl_price} qty={pos_qty}")
-                                        else:
-                                            # Place new SL
-                                            sl_order = {"accountId": subaccount_id, "accountSpec": acct_name, "symbol": tradovate_symbol, "action": exit_side, "orderQty": pos_qty, "orderType": "Stop", "stopPrice": sl_price, "timeInForce": "GTC", "isAutomated": True}
-                                            await tradovate.place_order(sl_order)
-                                            logger.info(f"✅ [{acct_name}] SL placed @ {sl_price}")
-                            except Exception as risk_err:
-                                logger.warning(f"⚠️ [{acct_name}] TP/SL error: {risk_err}")
-                        
-                        return {'success': True, 'account': acct_name, 'order_id': order_id}
-                    else:
-                        error = result.get('error', 'Unknown error') if result else 'No response'
-                        logger.error(f"❌ [{acct_name}] Order failed: {error}")
-                        return {'success': False, 'account': acct_name, 'error': error}
-                        
-            except Exception as e:
-                logger.error(f"❌ [{acct_name}] Exception: {e}")
-                return {'success': False, 'account': acct_name, 'error': str(e)}
-        
-        # Execute on all accounts in parallel
-        async def run_all():
-            tasks = [place_on_account(acct) for acct in accounts_to_trade]
-            return await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Run the async execution
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            all_results = loop.run_until_complete(run_all())
-        finally:
-            loop.close()
-        
-        # Count successes
-        for r in all_results:
-            if isinstance(r, dict) and r.get('success'):
-                results['accounts_traded'] += 1
-            elif isinstance(r, dict) and r.get('error'):
-                results['errors'].append(r)
-            elif isinstance(r, Exception):
-                results['errors'].append({'error': str(r)})
-        
-        results['success'] = results['accounts_traded'] > 0
-        logger.info(f"⚡ FAST EXECUTE complete: {results['accounts_traded']}/{len(accounts_to_trade)} accounts traded")
-        
-    except Exception as e:
-        logger.error(f"❌ FAST EXECUTE error: {e}")
-        results['error'] = str(e)
-    
-    return results
-
-# ============================================================================
 # BROKER EXECUTION WORKER - Trade Manager Style (Async, Reliable)
 # ============================================================================
 def broker_execution_worker():
@@ -11361,7 +10895,7 @@ def broker_execution_worker():
     while True:
         try:
             # Get next broker execution task (blocking, but that's OK - we're in background)
-            task = broker_execution_queue.get(timeout=0.1)
+            task = broker_execution_queue.get(timeout=1)
             logger.info(f"🔔 Worker received task from queue: {task.get('action')} {task.get('quantity')} {task.get('ticker')} (recorder_id={task.get('recorder_id')})")
             
             recorder_id = task.get('recorder_id')
@@ -11381,9 +10915,12 @@ def broker_execution_worker():
             # Retries can cause duplicate trades which is dangerous
             
             try:
-                # Use proven execute_trade_simple from recorder_service (Jan 14 working version)
                 from recorder_service import execute_trade_simple
+                
+                logger.info(f"📤 Broker execution: {action} {quantity} {ticker}")
                 logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
+                if risk_config:
+                    logger.info(f"📊 Risk config: {risk_config}")
                 
                 result = execute_trade_simple(
                     recorder_id=recorder_id,
@@ -11392,10 +10929,7 @@ def broker_execution_worker():
                     quantity=quantity,
                     tp_ticks=tp_ticks,
                     sl_ticks=sl_ticks if sl_ticks > 0 else 0,
-                    break_even_enabled=break_even_enabled,
-                    break_even_ticks=break_even_ticks,
-                    entry_price=entry_price,
-                    is_long=is_long
+                    risk_config=risk_config  # NEW: Pass risk_config for trailing stop/break-even
                 )
                 
                 logger.info(f"🔧 execute_trade_simple returned: success={result.get('success')}, error={result.get('error')}, accounts_traded={result.get('accounts_traded', 0)}")
@@ -11584,43 +11118,21 @@ def broker_execution_worker():
             traceback.print_exc()
             time.sleep(1)  # Brief pause before retrying
 
-# ============================================================================
-# PARALLEL BROKER EXECUTION WORKERS (Jan 14, 2026)
-# ============================================================================
-# With 20+ users, a single worker causes 40-60 second delays (20 users × 2-3s each)
-# Multiple parallel workers process trades simultaneously for near-instant execution
-# ============================================================================
-NUM_BROKER_WORKERS = 8  # 8 parallel workers - handles 20+ users with minimal delay
+# Start broker execution worker
+logger.info("🔧 Creating broker execution worker thread...")
+broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
+broker_execution_thread.start()
 
-logger.info(f"🔧 Creating {NUM_BROKER_WORKERS} parallel broker execution workers...")
-broker_execution_workers = []
-broker_execution_thread = None  # Keep for backward compatibility with monitoring
-
-for i in range(NUM_BROKER_WORKERS):
-    worker = threading.Thread(
-        target=broker_execution_worker,
-        daemon=True,
-        name=f"Broker-Execution-Worker-{i+1}"
-    )
-    worker.start()
-    broker_execution_workers.append(worker)
-    if i == 0:
-        broker_execution_thread = worker  # First worker for legacy compatibility
-
-# Verify workers started successfully
-time.sleep(0.5)  # Give threads time to start
-alive_count = sum(1 for w in broker_execution_workers if w.is_alive())
-if alive_count == 0:
-    logger.error("❌ CRITICAL: No broker execution workers started!")
+# Verify worker started successfully
+time.sleep(0.5)  # Give thread time to start
+if not broker_execution_thread.is_alive():
+    logger.error("❌ CRITICAL: Broker execution worker thread failed to start!")
     logger.error("   This means broker orders will be queued but NEVER executed!")
-elif alive_count < NUM_BROKER_WORKERS:
-    logger.warning(f"⚠️ Only {alive_count}/{NUM_BROKER_WORKERS} broker workers started")
 else:
-    logger.info(f"✅ All {NUM_BROKER_WORKERS} broker execution workers started!")
-    logger.info(f"   Parallel processing: Up to {NUM_BROKER_WORKERS} trades simultaneously")
+    logger.info("✅ Broker execution worker thread started (Trade Manager style - async, non-blocking)")
+    logger.info(f"   Thread name: {broker_execution_thread.name}")
+    logger.info(f"   Thread alive: {broker_execution_thread.is_alive()}")
     logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
-    for w in broker_execution_workers:
-        logger.info(f"   - {w.name}: alive={w.is_alive()}")
 
 # Track broker execution stats
 _broker_execution_stats = {
@@ -11628,108 +11140,20 @@ _broker_execution_stats = {
     'total_executed': 0,
     'total_failed': 0,
     'last_execution_time': None,
-    'last_error': None,
-    'num_workers': NUM_BROKER_WORKERS,
-    'workers_alive': alive_count
+    'last_error': None
 }
 
 # Register for thread health monitoring
 def restart_broker_execution_worker():
-    """Restart a single broker execution worker (for legacy compatibility)"""
+    """Restart broker execution worker thread"""
     global broker_execution_thread
     try:
-        worker = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker-Restarted")
-        worker.start()
-        broker_execution_thread = worker
-        broker_execution_workers.append(worker)
-        return worker
+        broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
+        broker_execution_thread.start()
+        return broker_execution_thread
     except Exception as e:
         logger.error(f"Failed to restart broker execution worker: {e}")
         return None
-
-def restart_all_broker_workers():
-    """Restart all broker execution workers"""
-    global broker_execution_workers, broker_execution_thread
-    new_workers = []
-    for i in range(NUM_BROKER_WORKERS):
-        try:
-            worker = threading.Thread(
-                target=broker_execution_worker,
-                daemon=True,
-                name=f"Broker-Execution-Worker-{i+1}"
-            )
-            worker.start()
-            new_workers.append(worker)
-        except Exception as e:
-            logger.error(f"Failed to restart broker worker {i+1}: {e}")
-    
-    broker_execution_workers = new_workers
-    if new_workers:
-        broker_execution_thread = new_workers[0]
-    logger.info(f"🔄 Restarted {len(new_workers)}/{NUM_BROKER_WORKERS} broker workers")
-    return new_workers
-
-# ============================================================
-# INSTANT WEBHOOK PROCESSOR - Background worker for fast response
-# ============================================================
-# This worker processes webhooks from the queue so the endpoint can return immediately.
-# Prevents TradingView's 3-second timeout from losing signals.
-# ============================================================
-
-def webhook_processor_worker():
-    """Background worker that processes webhooks from queue."""
-    logger.info("🚀 Webhook processor worker started (instant response mode)")
-    
-    while True:
-        try:
-            # Get next webhook task (blocking with timeout)
-            task = webhook_processing_queue.get(timeout=1)
-            
-            webhook_token = task.get('webhook_token')
-            raw_data = task.get('raw_data')
-            received_at = task.get('received_at', time.time())
-            
-            logger.info(f"📥 Processing queued webhook: token={webhook_token[:8]}... (queued {time.time() - received_at:.2f}s ago)")
-            
-            try:
-                # Process using existing logic - this is the same as before, just in background
-                # We need to create a fake request context for process_webhook_directly
-                with app.test_request_context(
-                    f'/webhook/{webhook_token}',
-                    method='POST',
-                    data=json.dumps(raw_data),
-                    content_type='application/json'
-                ):
-                    result = process_webhook_directly(webhook_token)
-                    logger.info(f"✅ Queued webhook processed: token={webhook_token[:8]}...")
-            except Exception as proc_err:
-                logger.error(f"❌ Queued webhook processing failed: {proc_err}")
-                import traceback
-                logger.error(traceback.format_exc())
-            
-            webhook_processing_queue.task_done()
-            
-        except Empty:
-            # No webhook in queue, just continue waiting
-            pass
-        except Exception as e:
-            logger.error(f"Webhook processor worker error: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            time.sleep(0.5)  # Brief pause on error
-
-# Start webhook processor workers (2 workers for redundancy)
-NUM_WEBHOOK_WORKERS = 2
-webhook_processor_workers = []
-for i in range(NUM_WEBHOOK_WORKERS):
-    worker = threading.Thread(
-        target=webhook_processor_worker,
-        daemon=True,
-        name=f"Webhook-Processor-{i+1}"
-    )
-    worker.start()
-    webhook_processor_workers.append(worker)
-logger.info(f"✅ {NUM_WEBHOOK_WORKERS} webhook processor workers started")
 
 # ============================================================
 # WEBHOOK HANDLER - Direct Processing (No Proxy)
@@ -11748,14 +11172,13 @@ def receive_webhook_fast(webhook_token):
 
 @app.route('/webhook/<webhook_token>', methods=['GET', 'POST'])
 def receive_webhook(webhook_token):
-    """Main webhook endpoint - INSTANT RESPONSE MODE.
+    """Main webhook endpoint - processes directly using DCA logic.
     GET: Returns webhook status (for verification)
-    POST: Queues signal and returns 200 IMMEDIATELY (prevents TradingView timeout)"""
+    POST: Processes the actual signal"""
     logger.info(f"🌐 WEBHOOK ENDPOINT HIT: /webhook/{webhook_token[:8]}... method={request.method}")
-    
     if request.method == 'POST':
-        # DIRECT PROCESSING - Jan 14 working version
-        # Process webhook synchronously for reliability
+        logger.info(f"   POST data length: {len(request.get_data()) if request.get_data() else 0} bytes")
+        logger.info(f"   POST JSON: {request.get_json(silent=True)}")
         return process_webhook_directly(webhook_token)
     
     # GET: TradingView or browser verification
@@ -24481,15 +23904,12 @@ def api_broker_execution_status():
         
         # Check queue status
         queue_size = broker_execution_queue.qsize()
-        workers_alive = sum(1 for w in broker_execution_workers if w.is_alive()) if broker_execution_workers else 0
-        worker_alive = workers_alive > 0  # Legacy compatibility
-
+        worker_alive = broker_execution_thread.is_alive() if broker_execution_thread else False
+        
         return jsonify({
             'success': True,
             'broker_execution': {
                 'worker_alive': worker_alive,
-                'workers_alive': workers_alive,
-                'total_workers': NUM_BROKER_WORKERS,
                 'queue_size': queue_size,
                 'stats': _broker_execution_stats,
                 'last_execution_ago_seconds': time.time() - _broker_execution_stats['last_execution_time'] if _broker_execution_stats['last_execution_time'] else None
@@ -24504,50 +23924,6 @@ def api_broker_execution_status():
         logger.error(f"Error getting broker execution status: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/websocket-status', methods=['GET'])
-def api_websocket_status():
-    """Diagnostic endpoint to check WebSocket connection pool status"""
-    try:
-        from recorder_service import _WS_POOL, _WS_POOL_LOCK
-        
-        pool_status = {}
-        with _WS_POOL_LOCK:
-            for account_id, conn in _WS_POOL.items():
-                try:
-                    pool_status[str(account_id)] = {
-                        'ws_connected': getattr(conn, 'ws_connected', False),
-                        'has_websocket': conn.websocket is not None if hasattr(conn, 'websocket') else False,
-                        'is_demo': getattr(conn, 'base_url', '').find('demo') >= 0 if hasattr(conn, 'base_url') else None
-                    }
-                except Exception as e:
-                    pool_status[str(account_id)] = {'error': str(e)}
-        
-        # Check if websocket orders are enabled in the integration
-        ws_orders_enabled = True  # Default from tradovate_integration.py
-        try:
-            from phantom_scraper.tradovate_integration import TradovateIntegration
-            temp = TradovateIntegration(demo=True)
-            ws_orders_enabled = getattr(temp, 'use_websocket_orders', True)
-        except:
-            pass
-        
-        return jsonify({
-            'success': True,
-            'websocket_orders_enabled': ws_orders_enabled,
-            'connection_pool': {
-                'size': len(pool_status),
-                'connections': pool_status
-            },
-            'explanation': {
-                'ws_connected=True': 'WebSocket is connected and will be used for orders (FAST)',
-                'ws_connected=False': 'WebSocket not connected, will fall back to REST API',
-                'pool_size=0': 'No active WebSocket connections (normal if no recent trades)'
-            }
-        })
-    except Exception as e:
-        logger.error(f"Error getting websocket status: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/recorders/<int:recorder_id>/execution-status', methods=['GET'])
@@ -24611,11 +23987,10 @@ def api_recorder_execution_status(recorder_id):
         
         conn.close()
         
-        # Check broker execution workers (multi-worker support)
-        workers_alive = sum(1 for w in broker_execution_workers if w.is_alive()) if broker_execution_workers else 0
-        worker_alive = workers_alive > 0  # Legacy compatibility
+        # Check broker execution worker
+        worker_alive = broker_execution_thread.is_alive() if broker_execution_thread else False
         queue_size = broker_execution_queue.qsize()
-
+        
         # Analyze issues
         issues = []
         if not recorder.get('recording_enabled'):
@@ -24631,10 +24006,8 @@ def api_recorder_execution_status(recorder_id):
                 if not trader.get('account_enabled'):
                     issues.append(f"Trader {trader.get('id')} linked to disabled account {trader.get('account_id')}")
         
-        if workers_alive == 0:
-            issues.append("No broker execution workers running (CRITICAL)")
-        elif workers_alive < NUM_BROKER_WORKERS:
-            issues.append(f"Only {workers_alive}/{NUM_BROKER_WORKERS} broker workers running")
+        if not worker_alive:
+            issues.append("Broker execution worker thread is not running (CRITICAL)")
         
         if queue_size >= broker_execution_queue.maxsize:
             issues.append(f"Broker execution queue is full ({queue_size}/{broker_execution_queue.maxsize})")
@@ -24650,8 +24023,6 @@ def api_recorder_execution_status(recorder_id):
             'traders': traders,
             'broker_execution': {
                 'worker_alive': worker_alive,
-                'workers_alive': workers_alive,
-                'total_workers': NUM_BROKER_WORKERS,
                 'queue_size': queue_size,
                 'queue_maxsize': broker_execution_queue.maxsize,
                 'stats': _broker_execution_stats
@@ -24692,15 +24063,12 @@ def api_test_broker_execution():
         try:
             broker_execution_queue.put_nowait(broker_task)
             logger.info(f"✅ TEST: Broker task queued successfully")
-            workers_alive = sum(1 for w in broker_execution_workers if w.is_alive()) if broker_execution_workers else 0
             return jsonify({
                 'success': True,
                 'message': 'Broker task queued',
                 'task': broker_task,
                 'queue_size': broker_execution_queue.qsize(),
-                'worker_alive': workers_alive > 0,
-                'workers_alive': workers_alive,
-                'total_workers': NUM_BROKER_WORKERS
+                'worker_alive': broker_execution_thread.is_alive() if broker_execution_thread else False
             })
         except Exception as queue_err:
             logger.error(f"❌ TEST: Failed to queue broker task: {queue_err}")
@@ -24738,11 +24106,9 @@ if '_position_drawdown_thread' in dir() and _position_drawdown_thread:
 if 'token_refresh_thread' in dir() and token_refresh_thread:
     register_critical_thread('Token-Refresh', token_refresh_thread, None)  # Can't easily restart
 
-# Broker Execution Workers - CRITICAL for executing trades (multi-worker)
-if 'broker_execution_workers' in dir() and broker_execution_workers:
-    for i, worker in enumerate(broker_execution_workers):
-        register_critical_thread(f'Broker-Execution-Worker-{i+1}', worker, restart_broker_execution_worker)
-    logger.info(f"✅ Registered {len(broker_execution_workers)} broker workers for health monitoring")
+# Broker Execution Worker - CRITICAL for executing trades
+if 'broker_execution_thread' in dir() and broker_execution_thread:
+    register_critical_thread('Broker-Execution-Worker', broker_execution_thread, restart_broker_execution_worker)
 
 # Start the watchdog thread
 watchdog_thread = threading.Thread(target=thread_health_watchdog, daemon=True, name="Thread-Watchdog")
