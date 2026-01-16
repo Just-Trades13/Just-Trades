@@ -18306,6 +18306,46 @@ def api_close_recorder_positions(recorder_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/positions/debug', methods=['GET'])
+def get_positions_debug():
+    """Debug endpoint to see all recorder_positions data"""
+    try:
+        conn = get_db_connection()
+        is_postgres = is_using_postgres()
+        if not is_postgres:
+            conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Get ALL positions (open and closed)
+        cursor.execute('''
+            SELECT rp.*, r.name as recorder_name
+            FROM recorder_positions rp
+            LEFT JOIN recorders r ON rp.recorder_id = r.id
+            ORDER BY rp.id DESC
+            LIMIT 50
+        ''')
+
+        positions = []
+        for row in cursor.fetchall():
+            pos = dict(row) if hasattr(row, 'keys') else dict(zip([desc[0] for desc in cursor.description], row))
+            positions.append(pos)
+
+        # Also get count of open trades in recorded_trades for comparison
+        cursor.execute("SELECT COUNT(*) FROM recorded_trades WHERE status = 'open'")
+        open_trades_count = cursor.fetchone()[0]
+
+        conn.close()
+
+        return jsonify({
+            'positions': positions,
+            'position_count': len(positions),
+            'open_trades_in_recorded_trades': open_trades_count
+        })
+    except Exception as e:
+        logger.error(f"Error in positions debug: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/trades/open/', methods=['GET'])
 def get_open_trades():
     """Get open positions from recorder_positions table"""
