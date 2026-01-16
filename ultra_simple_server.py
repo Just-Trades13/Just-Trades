@@ -2584,7 +2584,7 @@ def get_market_price_simple(symbol: str) -> Optional[float]:
 
 # Cache for price data to avoid excessive API calls
 _price_cache = {}
-_price_cache_ttl = 60  # seconds (increased to 60s - trades are priority, PnL is secondary)
+_price_cache_ttl = 10  # seconds - reduced for better drawdown tracking when WebSocket unavailable
 
 
 def get_cached_price(symbol: str) -> Optional[float]:
@@ -21656,17 +21656,23 @@ def poll_recorder_positions_drawdown():
                 avg_entry = pos['avg_entry_price']
                 total_qty = pos['total_quantity']
                 
-                # Get current price from market data cache
+                # Get current price - try multiple sources
                 root = extract_symbol_root(ticker)
                 current_price = None
+
+                # 1. Try market data cache (WebSocket prices)
                 if root in _market_data_cache:
-                    current_price = _market_data_cache[root].get('last')
-                
+                    cache_data = _market_data_cache.get(root, {})
+                    cache_age = time.time() - cache_data.get('updated', 0)
+                    if cache_age < 30:  # Only use if less than 30 seconds old
+                        current_price = cache_data.get('last')
+
+                # 2. Always try to get fresh price via API for open positions
                 if not current_price:
-                    # Try to get cached price
                     current_price = get_cached_price(ticker)
-                
+
                 if not current_price:
+                    logger.debug(f"⚠️ No price available for {ticker} - skipping drawdown update")
                     continue
                 
                 # Calculate unrealized P&L
