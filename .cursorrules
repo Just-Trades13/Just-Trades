@@ -142,6 +142,36 @@
 ## - Eventually succeed and place unexpected trades
 ## - Multiple duplicate positions opened
 
+## 🚨🚨🚨 CRITICAL: WEBSOCKET KEEP-ALIVE FOR FAST EXECUTION (Jan 15, 2026) 🚨🚨🚨
+## NEVER remove the WebSocket keep-alive daemon from recorder_service.py
+## NEVER remove websockets from requirements.txt
+## See WEBSOCKET_FAST_EXECUTION.md for details
+##
+## The WebSocket system provides 5-10x faster order execution:
+## - websockets library in requirements.txt enables WebSocket orders
+## - _WS_POOL keeps connections alive for reuse
+## - start_websocket_keepalive_daemon() pings connections every 30 seconds
+## - get_pooled_connection() returns persistent connections for trades
+## - /api/websocket-status endpoint shows connection pool status
+##
+## NEVER remove:
+## - websockets==12.0 from requirements.txt
+## - _WS_POOL and _WS_POOL_LOCK variables
+## - start_websocket_keepalive_daemon() function
+## - get_pooled_connection() function
+## - /api/websocket-status endpoint
+##
+## LOCATIONS:
+## - requirements.txt → websockets==12.0
+## - recorder_service.py → _WS_POOL, get_pooled_connection(), start_websocket_keepalive_daemon()
+## - ultra_simple_server.py → /api/websocket-status endpoint
+## - phantom_scraper/tradovate_integration.py → use_websocket_orders = True
+##
+## WITHOUT THIS:
+## - Orders fall back to REST API (1-2 sec per order)
+## - WebSocket orders are 5-10x faster (~100-300ms)
+## - Connections drop and each trade must reconnect (slow)
+
 ## 🚨 ABSOLUTE REQUIREMENT: ASK BEFORE MODIFYING
 
 **BEFORE touching ANY code, you MUST:**
