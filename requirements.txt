@@ -24,6 +24,7 @@ sqlalchemy[asyncio]==2.0.23
 # Async support
 aiohttp==3.9.1
 celery==5.3.4
+websockets==12.0
 
 # Push notifications
 pywebpush==1.14.1
