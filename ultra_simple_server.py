@@ -11112,6 +11112,233 @@ signal_processor_thread = threading.Thread(target=signal_processor_worker, daemo
 signal_processor_thread.start()
 
 # ============================================================================
+# FAST TRADE EXECUTION - Manual Trader Style (Direct, Simple, FAST)
+# ============================================================================
+def execute_trade_fast(recorder_id, action, ticker, quantity, tp_ticks=0, sl_ticks=0, risk_config=None):
+    """
+    Fast trade execution that mirrors the manual copy trader.
+    NO position checking, NO complex auth - just direct order placement.
+    
+    This is what makes manual trader snap instantly - we use the same approach.
+    """
+    import asyncio
+    from phantom_scraper.tradovate_integration import TradovateIntegration
+    from recorder_service import convert_ticker_to_tradovate, get_tick_size
+    
+    logger.info(f"⚡ FAST EXECUTE: {action} {quantity} {ticker} (recorder_id={recorder_id})")
+    
+    results = {'success': False, 'accounts_traded': 0, 'errors': []}
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        
+        # Get all enabled traders linked to this recorder with their accounts
+        cursor.execute(f'''
+            SELECT t.id, t.enabled_accounts, t.subaccount_id, t.subaccount_name,
+                   a.tradovate_token, a.tradovate_refresh_token, a.md_access_token,
+                   a.id as account_id, a.environment, a.name as account_name
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.recorder_id = {ph} AND t.enabled = {'true' if is_postgres else '1'}
+              AND a.tradovate_token IS NOT NULL
+        ''', (recorder_id,))
+        trader_rows = cursor.fetchall()
+        conn.close()
+        
+        if not trader_rows:
+            logger.warning(f"⚠️ No enabled traders with tokens for recorder {recorder_id}")
+            results['error'] = 'No enabled traders with valid tokens'
+            return results
+        
+        # Build list of accounts to trade on
+        accounts_to_trade = []
+        seen_subaccounts = set()
+        
+        for row in trader_rows:
+            trader = dict(row)
+            enabled_accounts_raw = trader.get('enabled_accounts')
+            
+            # If trader has enabled_accounts JSON, use those
+            if enabled_accounts_raw and enabled_accounts_raw != '[]':
+                try:
+                    enabled_accounts = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
+                    for acct in enabled_accounts:
+                        subaccount_id = acct.get('subaccount_id')
+                        if subaccount_id and subaccount_id not in seen_subaccounts:
+                            seen_subaccounts.add(subaccount_id)
+                            multiplier = float(acct.get('multiplier', 1.0))
+                            accounts_to_trade.append({
+                                'subaccount_id': subaccount_id,
+                                'subaccount_name': acct.get('subaccount_name') or acct.get('account_name'),
+                                'token': trader.get('tradovate_token'),
+                                'refresh_token': trader.get('tradovate_refresh_token'),
+                                'md_token': trader.get('md_access_token'),
+                                'is_demo': (trader.get('environment') or 'demo').lower() != 'live',
+                                'multiplier': multiplier
+                            })
+                except Exception as e:
+                    logger.warning(f"Error parsing enabled_accounts: {e}")
+            else:
+                # Use trader's own subaccount
+                subaccount_id = trader.get('subaccount_id')
+                if subaccount_id and subaccount_id not in seen_subaccounts:
+                    seen_subaccounts.add(subaccount_id)
+                    accounts_to_trade.append({
+                        'subaccount_id': subaccount_id,
+                        'subaccount_name': trader.get('subaccount_name'),
+                        'token': trader.get('tradovate_token'),
+                        'refresh_token': trader.get('tradovate_refresh_token'),
+                        'md_token': trader.get('md_access_token'),
+                        'is_demo': (trader.get('environment') or 'demo').lower() != 'live',
+                        'multiplier': 1.0
+                    })
+        
+        if not accounts_to_trade:
+            logger.warning(f"⚠️ No accounts to trade on for recorder {recorder_id}")
+            results['error'] = 'No accounts configured'
+            return results
+        
+        logger.info(f"⚡ Trading on {len(accounts_to_trade)} account(s)")
+        
+        # Convert ticker
+        tradovate_symbol = convert_ticker_to_tradovate(ticker)
+        order_side = 'Buy' if action.upper() == 'BUY' else 'Sell'
+        tick_size = get_tick_size(ticker)
+        
+        async def place_on_account(acct):
+            """Place order on a single account - mirrors manual trader logic"""
+            acct_name = acct['subaccount_name']
+            subaccount_id = acct['subaccount_id']
+            is_demo = acct['is_demo']
+            multiplier = acct['multiplier']
+            adjusted_qty = max(1, int(quantity * multiplier))
+            
+            logger.info(f"⚡ [{acct_name}] Placing {order_side} {adjusted_qty} {tradovate_symbol}...")
+            
+            try:
+                async with TradovateIntegration(demo=is_demo) as tradovate:
+                    tradovate.access_token = acct['token']
+                    tradovate.refresh_token = acct['refresh_token']
+                    tradovate.md_access_token = acct['md_token']
+                    
+                    # Create and place order directly - just like manual trader
+                    order_data = tradovate.create_market_order(
+                        acct_name, tradovate_symbol, order_side, adjusted_qty, subaccount_id
+                    )
+                    
+                    result = await tradovate.place_order(order_data)
+                    
+                    if result and result.get('success'):
+                        order_id = result.get('orderId') or result.get('id')
+                        logger.info(f"✅ [{acct_name}] Order placed! ID: {order_id}")
+                        
+                        # Apply TP/SL if configured
+                        if tp_ticks > 0 or sl_ticks > 0:
+                            try:
+                                # Get fill price from position
+                                await asyncio.sleep(0.5)  # Brief wait for fill
+                                positions = await tradovate.get_positions(subaccount_id)
+                                fill_price = None
+                                pos_side = None
+                                pos_qty = 0
+                                
+                                symbol_root = tradovate_symbol[:3].upper()
+                                for pos in (positions or []):
+                                    pos_symbol = str(pos.get('symbol', '')).upper()
+                                    if symbol_root in pos_symbol:
+                                        net_pos = pos.get('netPos', 0)
+                                        if net_pos != 0:
+                                            fill_price = pos.get('netPrice')
+                                            pos_side = 'LONG' if net_pos > 0 else 'SHORT'
+                                            pos_qty = abs(net_pos)
+                                            break
+                                
+                                if fill_price and pos_side:
+                                    exit_side = 'Sell' if pos_side == 'LONG' else 'Buy'
+                                    
+                                    # Place TP
+                                    if tp_ticks > 0:
+                                        if pos_side == 'LONG':
+                                            tp_price = fill_price + (tp_ticks * tick_size)
+                                        else:
+                                            tp_price = fill_price - (tp_ticks * tick_size)
+                                        
+                                        tp_order = tradovate.create_limit_order(
+                                            acct_name, tradovate_symbol, exit_side, pos_qty, tp_price, subaccount_id
+                                        )
+                                        tp_result = await tradovate.place_order(tp_order)
+                                        if tp_result and tp_result.get('success'):
+                                            logger.info(f"✅ [{acct_name}] TP placed @ {tp_price}")
+                                    
+                                    # Place SL
+                                    if sl_ticks > 0:
+                                        if pos_side == 'LONG':
+                                            sl_price = fill_price - (sl_ticks * tick_size)
+                                        else:
+                                            sl_price = fill_price + (sl_ticks * tick_size)
+                                        
+                                        sl_order = {
+                                            "accountId": subaccount_id,
+                                            "accountSpec": acct_name,
+                                            "symbol": tradovate_symbol,
+                                            "action": exit_side,
+                                            "orderQty": pos_qty,
+                                            "orderType": "Stop",
+                                            "stopPrice": sl_price,
+                                            "timeInForce": "GTC",
+                                            "isAutomated": True
+                                        }
+                                        sl_result = await tradovate.place_order(sl_order)
+                                        if sl_result and sl_result.get('success'):
+                                            logger.info(f"✅ [{acct_name}] SL placed @ {sl_price}")
+                            except Exception as risk_err:
+                                logger.warning(f"⚠️ [{acct_name}] TP/SL placement error: {risk_err}")
+                        
+                        return {'success': True, 'account': acct_name, 'order_id': order_id}
+                    else:
+                        error = result.get('error', 'Unknown error') if result else 'No response'
+                        logger.error(f"❌ [{acct_name}] Order failed: {error}")
+                        return {'success': False, 'account': acct_name, 'error': error}
+                        
+            except Exception as e:
+                logger.error(f"❌ [{acct_name}] Exception: {e}")
+                return {'success': False, 'account': acct_name, 'error': str(e)}
+        
+        # Execute on all accounts in parallel
+        async def run_all():
+            tasks = [place_on_account(acct) for acct in accounts_to_trade]
+            return await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Run the async execution
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            all_results = loop.run_until_complete(run_all())
+        finally:
+            loop.close()
+        
+        # Count successes
+        for r in all_results:
+            if isinstance(r, dict) and r.get('success'):
+                results['accounts_traded'] += 1
+            elif isinstance(r, dict) and r.get('error'):
+                results['errors'].append(r)
+            elif isinstance(r, Exception):
+                results['errors'].append({'error': str(r)})
+        
+        results['success'] = results['accounts_traded'] > 0
+        logger.info(f"⚡ FAST EXECUTE complete: {results['accounts_traded']}/{len(accounts_to_trade)} accounts traded")
+        
+    except Exception as e:
+        logger.error(f"❌ FAST EXECUTE error: {e}")
+        results['error'] = str(e)
+    
+    return results
+
+# ============================================================================
 # BROKER EXECUTION WORKER - Trade Manager Style (Async, Reliable)
 # ============================================================================
 def broker_execution_worker():
@@ -11151,24 +11378,20 @@ def broker_execution_worker():
             # Retries can cause duplicate trades which is dangerous
             
             try:
-                from recorder_service import execute_trade_simple
+                # USE FAST EXECUTION - mirrors manual trader for instant snappy trades
+                logger.info(f"⚡ Broker execution: {action} {quantity} {ticker}")
                 
-                logger.info(f"📤 Broker execution: {action} {quantity} {ticker}")
-                logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
-                if risk_config:
-                    logger.info(f"📊 Risk config: {risk_config}")
-                
-                result = execute_trade_simple(
+                result = execute_trade_fast(
                     recorder_id=recorder_id,
                     action=action,
                     ticker=ticker,
                     quantity=quantity,
                     tp_ticks=tp_ticks,
                     sl_ticks=sl_ticks if sl_ticks > 0 else 0,
-                    risk_config=risk_config  # NEW: Pass risk_config for trailing stop/break-even
+                    risk_config=risk_config
                 )
                 
-                logger.info(f"🔧 execute_trade_simple returned: success={result.get('success')}, error={result.get('error')}, accounts_traded={result.get('accounts_traded', 0)}")
+                logger.info(f"⚡ execute_trade_fast returned: success={result.get('success')}, accounts_traded={result.get('accounts_traded', 0)}")
                 
                 if result.get('success'):
                     accounts_traded = result.get('accounts_traded', 0)
