@@ -394,6 +394,7 @@ const Dashboard = () => {
                         </td>
                         <td>{trade.open_time ? (() => {
                           const d = new Date(trade.open_time);
+                          if (isNaN(d.getTime())) return '-';
                           const month = d.toLocaleString('en-US', { month: 'short' });
                           const day = d.getDate();
                           const year = d.getFullYear();
@@ -406,6 +407,7 @@ const Dashboard = () => {
                         })() : '-'}</td>
                         <td>{trade.closed_time ? (() => {
                           const d = new Date(trade.closed_time);
+                          if (isNaN(d.getTime())) return trade.status === 'OPEN' ? 'In Progress' : '-';
                           const month = d.toLocaleString('en-US', { month: 'short' });
                           const day = d.getDate();
                           const year = d.getFullYear();
@@ -415,15 +417,15 @@ const Dashboard = () => {
                           const hour12 = hour % 12 || 12;
                           const minStr = minute.toString().padStart(2, '0');
                           return `${month} ${day}, ${year} ${hour12}:${minStr} ${ampm}`;
-                        })() : '-'}</td>
-                        <td>{trade.strategy_name || 'N/A'}</td>
+                        })() : (trade.status === 'OPEN' ? 'In Progress' : '-')}</td>
+                        <td>{trade.strategy_name || trade.strategy || 'N/A'}</td>
                         <td>{trade.symbol || 'N/A'}</td>
                         <td className={trade.side === 'BUY' ? 'buy' : 'sell'}>{trade.side || 'N/A'}</td>
                         <td>{trade.quantity || trade.size || 'N/A'}</td>
                         <td>{trade.entry_price?.toFixed(2) || '-'}</td>
                         <td>{trade.exit_price?.toFixed(2) || '-'}</td>
-                        <td className={trade.pnl >= 0 ? 'profit' : 'loss'}>
-                          ${trade.pnl?.toFixed(2) || '0.00'}
+                        <td className={(trade.pnl || trade.profit || 0) >= 0 ? 'profit' : 'loss'}>
+                          ${(trade.pnl ?? trade.profit)?.toFixed(2) || '0.00'}
                         </td>
                         <td className={trade.drawdown >= 0 ? 'drawdown' : ''}>
                           {trade.drawdown !== null && trade.drawdown !== undefined ? `$${trade.drawdown.toFixed(2)}` : '-'}
