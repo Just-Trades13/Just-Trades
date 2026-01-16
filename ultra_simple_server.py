@@ -4463,6 +4463,198 @@ def admin_edit_user(user_id):
 
 
 # ============================================================================
+# ADMIN USER DETAILS - Full Overview (Accounts, Recorders, Trades)
+# ============================================================================
+
+@app.route('/admin/users/<int:user_id>/details', methods=['GET'])
+def admin_get_user_details(user_id):
+    """Admin endpoint to get full user details including accounts, recorders, and trades."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+
+    current = get_current_user()
+    if not current or not current.is_admin:
+        return jsonify({'success': False, 'error': 'Not authorized'}), 403
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        # Get user's connected accounts
+        cursor.execute(f'''
+            SELECT id, name, broker, environment, enabled, 
+                   CASE WHEN tradovate_token IS NOT NULL AND tradovate_token != '' THEN 1 ELSE 0 END as is_connected,
+                   tradovate_accounts, created_at, updated_at
+            FROM accounts 
+            WHERE user_id = {placeholder}
+            ORDER BY created_at DESC
+        ''', (user_id,))
+        
+        accounts = []
+        for row in cursor.fetchall():
+            # Handle both dict and tuple rows
+            if hasattr(row, 'keys'):
+                acc = dict(row)
+            else:
+                acc = {
+                    'id': row[0],
+                    'name': row[1],
+                    'broker': row[2],
+                    'environment': row[3],
+                    'enabled': bool(row[4]),
+                    'is_connected': bool(row[5]),
+                    'tradovate_accounts': row[6],
+                    'created_at': str(row[7]) if row[7] else None,
+                    'updated_at': str(row[8]) if row[8] else None
+                }
+            
+            # Parse tradovate subaccounts
+            subaccounts = []
+            if acc.get('tradovate_accounts'):
+                try:
+                    ta = json.loads(acc['tradovate_accounts']) if isinstance(acc['tradovate_accounts'], str) else acc['tradovate_accounts']
+                    for sub in ta:
+                        subaccounts.append({
+                            'id': sub.get('id'),
+                            'name': sub.get('name'),
+                            'is_demo': sub.get('is_demo', True)
+                        })
+                except:
+                    pass
+            acc['subaccounts'] = subaccounts
+            acc.pop('tradovate_accounts', None)
+            accounts.append(acc)
+
+        # Get user's recorders/strategies (using only columns guaranteed to exist)
+        cursor.execute(f'''
+            SELECT id, name, strategy_type, enabled, ticker, created_at
+            FROM recorders 
+            WHERE user_id = {placeholder}
+            ORDER BY created_at DESC
+        ''', (user_id,))
+        
+        recorders = []
+        for row in cursor.fetchall():
+            if hasattr(row, 'keys'):
+                rec = dict(row)
+            else:
+                rec = {
+                    'id': row[0],
+                    'name': row[1],
+                    'strategy_type': row[2],
+                    'enabled': bool(row[3]),
+                    'ticker': row[4],
+                    'created_at': str(row[5]) if row[5] else None
+                }
+            
+            # Get linked accounts count from traders table instead
+            try:
+                cursor.execute(f'''
+                    SELECT COUNT(*) FROM traders 
+                    WHERE recorder_id = {placeholder} AND enabled = {'TRUE' if is_postgres else '1'}
+                ''', (rec['id'],))
+                count_row = cursor.fetchone()
+                rec['enabled_accounts_count'] = count_row[0] if count_row else 0
+            except:
+                rec['enabled_accounts_count'] = 0
+            
+            recorders.append(rec)
+
+        # Get user's recent trades from recorder_positions (closed positions have P&L)
+        try:
+            cursor.execute(f'''
+                SELECT rp.id, rp.ticker, rp.side, rp.total_quantity, rp.avg_entry_price, rp.exit_price,
+                       rp.realized_pnl, rp.status, rp.opened_at, rp.closed_at,
+                       r.name as recorder_name
+                FROM recorder_positions rp
+                LEFT JOIN recorders r ON rp.recorder_id = r.id
+                WHERE r.user_id = {placeholder}
+                ORDER BY rp.opened_at DESC
+                LIMIT 50
+            ''', (user_id,))
+        except Exception as query_err:
+            # Fallback: try recorded_trades table if recorder_positions doesn't work
+            logger.debug(f"recorder_positions query failed, trying recorded_trades: {query_err}")
+            cursor.execute(f'''
+                SELECT rt.id, rt.ticker, rt.side, rt.quantity, rt.entry_price, rt.exit_price,
+                       0 as realized_pnl, rt.status, rt.entry_time, rt.exit_time,
+                       r.name as recorder_name
+                FROM recorded_trades rt
+                LEFT JOIN recorders r ON rt.recorder_id = r.id
+                WHERE r.user_id = {placeholder}
+                ORDER BY rt.entry_time DESC
+                LIMIT 50
+            ''', (user_id,))
+        
+        trades = []
+        total_pnl = 0
+        winning_trades = 0
+        losing_trades = 0
+        
+        for row in cursor.fetchall():
+            if hasattr(row, 'keys'):
+                trade = dict(row)
+            else:
+                trade = {
+                    'id': row[0],
+                    'ticker': row[1],
+                    'side': row[2],
+                    'quantity': row[3],
+                    'entry_price': float(row[4]) if row[4] else None,
+                    'exit_price': float(row[5]) if row[5] else None,
+                    'realized_pnl': float(row[6]) if row[6] else None,
+                    'status': row[7],
+                    'entry_time': str(row[8]) if row[8] else None,
+                    'exit_time': str(row[9]) if row[9] else None,
+                    'recorder_name': row[10]
+                }
+            
+            if trade.get('realized_pnl'):
+                total_pnl += trade['realized_pnl']
+                if trade['realized_pnl'] > 0:
+                    winning_trades += 1
+                elif trade['realized_pnl'] < 0:
+                    losing_trades += 1
+            
+            trades.append(trade)
+
+        conn.close()
+
+        # Calculate stats
+        total_trades = winning_trades + losing_trades
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'accounts': accounts,
+            'accounts_count': len(accounts),
+            'recorders': recorders,
+            'recorders_count': len(recorders),
+            'trades': trades,
+            'trade_stats': {
+                'total_trades': len(trades),
+                'closed_trades': total_trades,
+                'winning_trades': winning_trades,
+                'losing_trades': losing_trades,
+                'win_rate': round(win_rate, 1),
+                'total_pnl': round(total_pnl, 2)
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Failed to get user details for {user_id}: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
 # ADMIN SUBSCRIPTION MANAGEMENT
 # ============================================================================
 
