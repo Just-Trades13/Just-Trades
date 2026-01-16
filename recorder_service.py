@@ -969,10 +969,19 @@ def execute_trade_simple(
             
             tradovate_account_id = trader['subaccount_id']
             tradovate_account_spec = trader['subaccount_name']
-            # CRITICAL FIX: Use environment as source of truth, not is_demo
-            # is_demo from trader dict may be stale/cached - environment is authoritative
-            env = (trader.get('environment') or 'demo').lower()
-            is_demo = env != 'live'
+            # CRITICAL FIX: Determine demo vs live correctly
+            # Priority: 1) environment field, 2) is_demo field, 3) subaccount name pattern
+            env = trader.get('environment')
+            if env:
+                is_demo = env.lower() != 'live'
+            elif 'is_demo' in trader:
+                is_demo = bool(trader.get('is_demo'))
+            elif tradovate_account_spec and tradovate_account_spec.replace('-', '').isdigit():
+                # Numeric-only subaccount name = live account
+                is_demo = False
+            else:
+                is_demo = True  # Default to demo for safety
+            logger.info(f"🔍 [{acct_name}] is_demo={is_demo} (env={env}, trader.is_demo={trader.get('is_demo')}, name={tradovate_account_spec})")
             username = trader.get('username')
             password = trader.get('password')
             
