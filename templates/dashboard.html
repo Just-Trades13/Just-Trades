@@ -187,35 +187,71 @@
         </div>
     </section>
 
-    <!-- Economic Calendar Section -->
-    <section class="economic-calendar-section">
-        <header class="calendar-header">
+    <!-- Market Intel Section - Calendar + News -->
+    <section class="market-intel-section">
+        <header class="market-intel-header">
             <div>
-                <h2>Economic Calendar</h2>
-                <p class="calendar-sub">Upcoming market-moving events</p>
-            </div>
-            <div class="calendar-controls">
-                <a href="https://www.tradingview.com/economic-calendar/" target="_blank" class="link-button" rel="noopener noreferrer">
-                    View Full Calendar
-                    <span class="material-icons" style="font-size: 16px; vertical-align: middle; margin-left: 4px;">open_in_new</span>
-                </a>
+                <h2>Market Intel</h2>
+                <p class="market-intel-sub">Economic events & real-time news</p>
             </div>
         </header>
-        <div class="calendar-container">
-            <!-- TradingView Economic Calendar Widget -->
-            <div class="tradingview-widget-container">
-                <div class="tradingview-widget-container__widget"></div>
-                <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
-                {
-                    "colorTheme": "dark",
-                    "isTransparent": true,
-                    "width": "100%",
-                    "height": "400",
-                    "locale": "en",
-                    "importanceFilter": "0,1",
-                    "countryFilter": "us"
-                }
-                </script>
+        <div class="market-intel-grid">
+            <!-- Economic Calendar -->
+            <div class="intel-card">
+                <div class="intel-card-header">
+                    <h3><span class="material-icons">event</span> Economic Calendar</h3>
+                    <a href="https://www.tradingview.com/economic-calendar/" target="_blank" class="link-button-sm" rel="noopener noreferrer">
+                        Full Calendar <span class="material-icons">open_in_new</span>
+                    </a>
+                </div>
+                <div class="intel-card-content">
+                    <!-- TradingView Economic Calendar Widget -->
+                    <div class="tradingview-widget-container">
+                        <div class="tradingview-widget-container__widget"></div>
+                        <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async>
+                        {
+                            "colorTheme": "dark",
+                            "isTransparent": true,
+                            "width": "100%",
+                            "height": "380",
+                            "locale": "en",
+                            "importanceFilter": "0,1",
+                            "countryFilter": "us"
+                        }
+                        </script>
+                    </div>
+                </div>
+            </div>
+            <!-- Financial Juice Headlines -->
+            <div class="intel-card">
+                <div class="intel-card-header">
+                    <h3><span class="material-icons">bolt</span> Live News Feed</h3>
+                    <a href="https://www.financialjuice.com/" target="_blank" class="link-button-sm" rel="noopener noreferrer">
+                        Financial Juice <span class="material-icons">open_in_new</span>
+                    </a>
+                </div>
+                <div class="intel-card-content fj-container">
+                    <!-- FinancialJuice Headlines Widget -->
+                    <div id="financialjuice-headlines-widget-container"></div>
+                    <script type="text/javascript">
+                        var jo = document.createElement("script");
+                        jo.type = "text/javascript";
+                        jo.src = "https://feed.financialjuice.com/widgets/widgets.js?r=" + Math.random();
+                        jo.onload = function(){
+                            var options = {};
+                            options.container = "financialjuice-headlines-widget-container";
+                            options.widgetType = "headlines";
+                            options.width = "100%";
+                            options.height = "380";
+                            options.backgroundColor = "#0f172a";
+                            options.fontColor = "#e2e8f0";
+                            options.headerFontColor = "#60a5fa";
+                            options.borderColor = "rgba(148, 163, 184, 0.1)";
+                            new window.FJWidgets.createWidget(options);
+                        }
+                        document.getElementsByTagName("head")[0].appendChild(jo);
+                    </script>
+                </div>
             </div>
         </div>
     </section>
@@ -1007,8 +1043,8 @@
         flex-direction: column;
         gap: 1.5rem;
     }
-    /* Economic Calendar Section */
-    .economic-calendar-section {
+    /* Market Intel Section */
+    .market-intel-section {
         background: var(--background-light);
         border-radius: 16px;
         border: 1px solid rgba(255, 255, 255, 0.05);
@@ -1018,42 +1054,92 @@
         flex-direction: column;
         gap: 1.5rem;
     }
-    .calendar-header {
+    .market-intel-header {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        flex-wrap: wrap;
-        gap: 1rem;
     }
-    .calendar-header h2 {
+    .market-intel-header h2 {
         font-size: 1.5rem;
         font-weight: 600;
         color: var(--text-light);
         margin: 0;
         letter-spacing: 0.05em;
     }
-    .calendar-sub {
+    .market-intel-sub {
         font-size: 0.85rem;
         color: var(--text-muted);
         margin: 0.25rem 0 0 0;
         letter-spacing: 0.03em;
     }
-    .calendar-controls {
-        display: flex;
-        gap: 0.75rem;
-        align-items: center;
+    .market-intel-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1.5rem;
     }
-    .calendar-container {
-        width: 100%;
-        border-radius: 12px;
-        overflow: hidden;
+    .intel-card {
         background: var(--background-dark);
+        border-radius: 12px;
         border: 1px solid rgba(148, 163, 184, 0.1);
-        min-height: 400px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
     }
-    .calendar-container .tradingview-widget-container {
+    .intel-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        background: rgba(15, 23, 42, 0.5);
+    }
+    .intel-card-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-light);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .intel-card-header h3 .material-icons {
+        font-size: 1.25rem;
+        color: var(--primary-color);
+    }
+    .link-button-sm {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        transition: color 0.2s;
+    }
+    .link-button-sm:hover {
+        color: var(--primary-color);
+    }
+    .link-button-sm .material-icons {
+        font-size: 0.875rem;
+    }
+    .intel-card-content {
+        flex: 1;
+        min-height: 380px;
+    }
+    .intel-card-content .tradingview-widget-container {
         width: 100%;
-        height: 400px;
+        height: 380px;
+    }
+    .fj-container {
+        background: #0f172a;
+    }
+    #financialjuice-headlines-widget-container {
+        width: 100%;
+        height: 380px;
+    }
+    @media (max-width: 1024px) {
+        .market-intel-grid {
+            grid-template-columns: 1fr;
+        }
     }
     /* Heatmap Section */
     .heatmap-section {
