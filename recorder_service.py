@@ -388,34 +388,128 @@ is_postgres = False  # Will be set True only after verified connection
 
 # Contract multipliers for PnL calculation
 CONTRACT_MULTIPLIERS = {
-    'MES': 5.0,    # Micro E-mini S&P 500: $5 per point
-    'MNQ': 2.0,    # Micro E-mini Nasdaq: $2 per point
-    'ES': 50.0,    # E-mini S&P 500: $50 per point
-    'NQ': 20.0,    # E-mini Nasdaq: $20 per point
-    'MYM': 5.0,    # Micro E-mini Dow: $5 per point
-    'YM': 5.0,     # E-mini Dow: $5 per point
-    'M2K': 5.0,    # Micro E-mini Russell 2000: $5 per point
-    'RTY': 50.0,   # E-mini Russell 2000: $50 per point
-    'MCL': 100.0,  # Micro Crude Oil: $100 per point
-    'CL': 1000.0,  # Crude Oil: $1000 per point
-    'MGC': 10.0,   # Micro Gold: $10 per point
-    'GC': 100.0,   # Gold: $100 per point
+    # === INDEX FUTURES (Quarterly: H, M, U, Z) ===
+    'MES': 5.0,      # Micro E-mini S&P 500: $5 per point
+    'ES': 50.0,      # E-mini S&P 500: $50 per point
+    'MNQ': 2.0,      # Micro E-mini Nasdaq: $2 per point
+    'NQ': 20.0,      # E-mini Nasdaq: $20 per point
+    'MYM': 0.5,      # Micro E-mini Dow: $0.50 per point
+    'YM': 5.0,       # E-mini Dow: $5 per point
+    'M2K': 5.0,      # Micro E-mini Russell 2000: $5 per point
+    'RTY': 50.0,     # E-mini Russell 2000: $50 per point
+
+    # === METALS (Bimonthly: G, J, M, Q, V, Z) ===
+    'GC': 100.0,     # Gold: $100 per point
+    'MGC': 10.0,     # Micro Gold: $10 per point
+    'SI': 5000.0,    # Silver: $5000 per point (5000 oz * $1)
+    'SIL': 1000.0,   # Micro Silver: $1000 per point
+    'HG': 25000.0,   # Copper: $25000 per point
+    'PL': 50.0,      # Platinum: $50 per point
+
+    # === ENERGIES (Monthly: all 12 months) ===
+    'CL': 1000.0,    # Crude Oil: $1000 per point
+    'MCL': 100.0,    # Micro Crude Oil: $100 per point
+    'NG': 10000.0,   # Natural Gas: $10000 per point
+    'HO': 42000.0,   # Heating Oil: $42000 per point
+    'RB': 42000.0,   # RBOB Gasoline: $42000 per point
+
+    # === TREASURIES (Quarterly: H, M, U, Z) ===
+    'ZB': 1000.0,    # 30-Year Bond: $1000 per point
+    'ZN': 1000.0,    # 10-Year Note: $1000 per point
+    'ZF': 1000.0,    # 5-Year Note: $1000 per point
+    'ZT': 2000.0,    # 2-Year Note: $2000 per point
+
+    # === CURRENCIES (Quarterly: H, M, U, Z) ===
+    '6E': 125000.0,  # Euro FX: $125000 per point
+    '6J': 12500000.0,# Japanese Yen: $12.5M per point (quoted in 0.0000xx)
+    '6B': 62500.0,   # British Pound: $62500 per point
+    '6A': 100000.0,  # Australian Dollar: $100000 per point
+    '6C': 100000.0,  # Canadian Dollar: $100000 per point
+    '6S': 125000.0,  # Swiss Franc: $125000 per point
+    '6N': 100000.0,  # New Zealand Dollar: $100000 per point
+    '6M': 500000.0,  # Mexican Peso: $500000 per point
+    'DX': 1000.0,    # US Dollar Index: $1000 per point
+
+    # === CRYPTO (Monthly) ===
+    'BTC': 5.0,      # Bitcoin: $5 per point (CME)
+    'MBT': 0.1,      # Micro Bitcoin: $0.10 per point
+    'ETH': 50.0,     # Ether: $50 per point (CME)
+    'MET': 0.1,      # Micro Ether: $0.10 per point
+
+    # === GRAINS (Monthly: F, H, K, N, U, Z for most) ===
+    'ZC': 50.0,      # Corn: $50 per point
+    'ZS': 50.0,      # Soybeans: $50 per point
+    'ZW': 50.0,      # Wheat: $50 per point
+    'ZM': 100.0,     # Soybean Meal: $100 per point
+    'ZL': 600.0,     # Soybean Oil: $600 per point
+
+    # === SOFTS ===
+    'KC': 37500.0,   # Coffee: $37500 per point
+    'CT': 50000.0,   # Cotton: $50000 per point
+    'SB': 112000.0,  # Sugar: $112000 per point
 }
 
 # Tick information: tick_size and tick_value for each contract
 TICK_INFO = {
-    'MNQ': {'tick_size': 0.25, 'tick_value': 0.5},
-    'NQ': {'tick_size': 0.25, 'tick_value': 5.0},
+    # === INDEX FUTURES ===
     'MES': {'tick_size': 0.25, 'tick_value': 1.25},
     'ES': {'tick_size': 0.25, 'tick_value': 12.5},
-    'M2K': {'tick_size': 0.1, 'tick_value': 0.5},
-    'RTY': {'tick_size': 0.1, 'tick_value': 5.0},
+    'MNQ': {'tick_size': 0.25, 'tick_value': 0.5},
+    'NQ': {'tick_size': 0.25, 'tick_value': 5.0},
     'MYM': {'tick_size': 1.0, 'tick_value': 0.5},
     'YM': {'tick_size': 1.0, 'tick_value': 5.0},
-    'CL': {'tick_size': 0.01, 'tick_value': 10.0},
-    'MCL': {'tick_size': 0.01, 'tick_value': 1.0},
+    'M2K': {'tick_size': 0.1, 'tick_value': 0.5},
+    'RTY': {'tick_size': 0.1, 'tick_value': 5.0},
+
+    # === METALS ===
     'GC': {'tick_size': 0.1, 'tick_value': 10.0},
     'MGC': {'tick_size': 0.1, 'tick_value': 1.0},
+    'SI': {'tick_size': 0.005, 'tick_value': 25.0},
+    'SIL': {'tick_size': 0.005, 'tick_value': 5.0},
+    'HG': {'tick_size': 0.0005, 'tick_value': 12.5},
+    'PL': {'tick_size': 0.1, 'tick_value': 5.0},
+
+    # === ENERGIES ===
+    'CL': {'tick_size': 0.01, 'tick_value': 10.0},
+    'MCL': {'tick_size': 0.01, 'tick_value': 1.0},
+    'NG': {'tick_size': 0.001, 'tick_value': 10.0},
+    'HO': {'tick_size': 0.0001, 'tick_value': 4.2},
+    'RB': {'tick_size': 0.0001, 'tick_value': 4.2},
+
+    # === TREASURIES ===
+    'ZB': {'tick_size': 0.03125, 'tick_value': 31.25},  # 1/32
+    'ZN': {'tick_size': 0.015625, 'tick_value': 15.625}, # 1/64
+    'ZF': {'tick_size': 0.0078125, 'tick_value': 7.8125}, # 1/128
+    'ZT': {'tick_size': 0.0078125, 'tick_value': 15.625}, # 1/128
+
+    # === CURRENCIES ===
+    '6E': {'tick_size': 0.00005, 'tick_value': 6.25},
+    '6J': {'tick_size': 0.0000005, 'tick_value': 6.25},
+    '6B': {'tick_size': 0.0001, 'tick_value': 6.25},
+    '6A': {'tick_size': 0.0001, 'tick_value': 10.0},
+    '6C': {'tick_size': 0.00005, 'tick_value': 5.0},
+    '6S': {'tick_size': 0.0001, 'tick_value': 12.5},
+    '6N': {'tick_size': 0.0001, 'tick_value': 10.0},
+    '6M': {'tick_size': 0.00001, 'tick_value': 5.0},
+    'DX': {'tick_size': 0.005, 'tick_value': 5.0},
+
+    # === CRYPTO ===
+    'BTC': {'tick_size': 5.0, 'tick_value': 25.0},
+    'MBT': {'tick_size': 5.0, 'tick_value': 0.5},
+    'ETH': {'tick_size': 0.25, 'tick_value': 12.5},
+    'MET': {'tick_size': 0.25, 'tick_value': 0.025},
+
+    # === GRAINS ===
+    'ZC': {'tick_size': 0.25, 'tick_value': 12.5},
+    'ZS': {'tick_size': 0.25, 'tick_value': 12.5},
+    'ZW': {'tick_size': 0.25, 'tick_value': 12.5},
+    'ZM': {'tick_size': 0.1, 'tick_value': 10.0},
+    'ZL': {'tick_size': 0.01, 'tick_value': 6.0},
+
+    # === SOFTS ===
+    'KC': {'tick_size': 0.05, 'tick_value': 18.75},
+    'CT': {'tick_size': 0.01, 'tick_value': 5.0},
+    'SB': {'tick_size': 0.01, 'tick_value': 11.2},
 }
 
 # Legacy format for compatibility
@@ -2603,14 +2697,41 @@ def get_front_month_contract(root_symbol: str) -> str:
         (12, 'Z'),  # December
     ]
 
+    # Grain contract months (F, H, K, N, U, Z)
+    GRAIN_MONTHS = [
+        (1, 'F'),   # January
+        (3, 'H'),   # March
+        (5, 'K'),   # May
+        (7, 'N'),   # July
+        (9, 'U'),   # September
+        (12, 'Z'),  # December
+    ]
+
     # Determine which contract cycle to use
     root_upper = root_symbol.upper()
-    if root_upper in ['GC', 'MGC', 'SI', 'SIL']:
+
+    # Metals: Bimonthly (Feb, Apr, Jun, Aug, Oct, Dec)
+    if root_upper in ['GC', 'MGC', 'SI', 'SIL', 'HG', 'PL']:
         CONTRACT_MONTHS = BIMONTHLY_MONTHS
+
+    # Energies: Monthly (all 12 months)
     elif root_upper in ['CL', 'MCL', 'NG', 'HO', 'RB']:
         CONTRACT_MONTHS = MONTHLY_MONTHS
+
+    # Crypto: Monthly (all 12 months)
+    elif root_upper in ['BTC', 'MBT', 'ETH', 'MET']:
+        CONTRACT_MONTHS = MONTHLY_MONTHS
+
+    # Grains: F, H, K, N, U, Z
+    elif root_upper in ['ZC', 'ZS', 'ZW', 'ZM', 'ZL']:
+        CONTRACT_MONTHS = GRAIN_MONTHS
+
+    # Softs: Specific months (using bimonthly as approximation)
+    elif root_upper in ['KC', 'CT', 'SB']:
+        CONTRACT_MONTHS = BIMONTHLY_MONTHS
+
+    # Default to quarterly for index futures, treasuries, currencies
     else:
-        # Default to quarterly for index futures
         CONTRACT_MONTHS = QUARTERLY_MONTHS
 
     today = datetime.now()
