@@ -21018,6 +21018,146 @@ def api_news_feed():
             ]
         })
 
+@app.route('/api/market-data/test', methods=['POST'])
+def api_market_data_test():
+    """Test market data connection by subscribing to a symbol and getting a quote"""
+    global _market_data_ws, _market_data_cache
+
+    try:
+        data = request.get_json() or {}
+        symbol = data.get('symbol', 'MNQH5')  # Default to MNQ front month
+
+        if not _market_data_ws:
+            return jsonify({
+                'success': False,
+                'error': 'Market data websocket not connected',
+                'instructions': 'Ensure at least one account has valid tokens'
+            }), 400
+
+        # Check if websocket is still open
+        if getattr(_market_data_ws, 'closed', True):
+            return jsonify({
+                'success': False,
+                'error': 'Market data websocket is closed',
+                'instructions': 'WebSocket connection may have been lost. It will auto-reconnect.'
+            }), 400
+
+        # Try to get quote via REST API instead (more reliable for testing)
+        # Use an account with valid token
+        conn = get_db_connection()
+        is_postgres = is_using_postgres()
+        cursor = conn.cursor()
+
+        if is_postgres:
+            cursor.execute('''
+                SELECT id, tradovate_token, environment FROM accounts
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+                LIMIT 1
+            ''')
+        else:
+            cursor.execute('''
+                SELECT id, tradovate_token, environment FROM accounts
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+                LIMIT 1
+            ''')
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({
+                'success': False,
+                'error': 'No accounts with valid tokens found'
+            }), 400
+
+        if isinstance(row, dict):
+            account_id = row['id']
+            access_token = row['tradovate_token']
+            env = row['environment'] or 'demo'
+        else:
+            account_id = row[0]
+            access_token = row[1]
+            env = row[2] or 'demo'
+
+        # Refresh token if needed
+        valid_token = get_valid_tradovate_token(account_id)
+        if valid_token:
+            access_token = valid_token
+
+        # Use REST API to get a quote (more reliable test)
+        base_url = "https://live.tradovateapi.com/v1" if env == 'live' else "https://demo.tradovateapi.com/v1"
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+
+        # Try to find the contract
+        contract_response = requests.get(
+            f"{base_url}/contract/find",
+            params={"name": symbol},
+            headers=headers,
+            timeout=10
+        )
+
+        if contract_response.status_code == 200:
+            contract_data = contract_response.json()
+            contract_id = contract_data.get('id')
+
+            if contract_id:
+                # Get quote for the contract
+                quote_response = requests.get(
+                    f"{base_url}/md/getQuote",
+                    params={"id": contract_id},
+                    headers=headers,
+                    timeout=10
+                )
+
+                if quote_response.status_code == 200:
+                    quote_data = quote_response.json()
+
+                    # Cache the price
+                    root_symbol = symbol[:3] if len(symbol) > 3 else symbol
+                    _market_data_cache[root_symbol] = {
+                        'last': quote_data.get('lastPrice') or quote_data.get('last'),
+                        'bid': quote_data.get('bid'),
+                        'ask': quote_data.get('ask'),
+                        'updated': time.time()
+                    }
+
+                    return jsonify({
+                        'success': True,
+                        'symbol': symbol,
+                        'contract_id': contract_id,
+                        'quote': quote_data,
+                        'message': f'Successfully retrieved quote for {symbol}',
+                        'cached_as': root_symbol
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': f'Quote request failed: {quote_response.status_code}',
+                        'response': quote_response.text[:500]
+                    }), 400
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': f'Contract not found for symbol: {symbol}',
+                    'response': contract_data
+                }), 400
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Contract lookup failed: {contract_response.status_code}',
+                'response': contract_response.text[:500]
+            }), 400
+
+    except Exception as e:
+        logger.error(f"Error testing market data: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/market-data/status', methods=['GET'])
 def api_market_data_status():
     """Check market data connection status and available tokens"""
