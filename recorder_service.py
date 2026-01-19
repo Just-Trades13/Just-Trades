@@ -3966,17 +3966,17 @@ def execute_live_trades(recorder_id: int, action: str, ticker: str, quantity: in
             try:
                 tp_targets = json.loads(tp_targets_json) if tp_targets_json else []
                 if tp_targets and len(tp_targets) > 0:
-                    tp_ticks = int(tp_targets[0].get('ticks', 5))
+                    tp_ticks = int(tp_targets[0].get('ticks', 0) or 0)
             except:
-                tp_ticks = 5  # Default
-            
+                tp_ticks = 0  # No TP by default - let strategy handle it
+
             # Get SL
             if rec.get('sl_enabled'):
-                sl_ticks = int(rec.get('sl_amount', 10))
+                sl_ticks = int(rec.get('sl_amount', 0) or 0)
     except Exception as e:
         logger.warning(f"Could not get TP/SL settings: {e}")
-        tp_ticks = 5  # Default
-        sl_ticks = 10
+        tp_ticks = 0  # No TP by default - let strategy handle it
+        sl_ticks = 0
     
     # Call the new broker-first function
     result = execute_live_trade_with_bracket(
@@ -4111,12 +4111,12 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                             rec = dict(rec)
                             try:
                                 tp_targets = json.loads(rec.get('tp_targets', '[]'))
-                                tp_ticks = int(tp_targets[0].get('value', 5)) if tp_targets else 5
+                                tp_ticks = int(tp_targets[0].get('value', 0) or 0) if tp_targets else 0
                             except:
-                                tp_ticks = 5
-                            sl_amount = rec.get('sl_amount', 10) if rec.get('sl_enabled') else 0
+                                tp_ticks = 0
+                            sl_amount = rec.get('sl_amount', 0) if rec.get('sl_enabled') else 0
                         else:
-                            tp_ticks = 5
+                            tp_ticks = 0  # No TP - let strategy handle it
                             sl_amount = 0
                         
                         # Get tick size for symbol
@@ -4849,64 +4849,66 @@ def reconcile_positions_with_broker():
                                         # Calculate correct TP based on broker avg price
                                         is_long = db_side == 'LONG'
                                         tick_size = 0.25  # MNQ tick size
-                                        tp_ticks = 5  # Default TP distance
-                                        
+                                        tp_ticks = 0  # No TP by default - let strategy handle it
+
                                         # Get TP ticks from recorder settings
                                         conn_tp = get_db_connection()
                                         cursor_tp = conn_tp.cursor()
                                         cursor_tp.execute('SELECT tp_targets FROM recorders WHERE id = ?', (recorder_id,))
                                         rec_row = cursor_tp.fetchone()
                                         conn_tp.close()
-                                        
+
                                         if rec_row and rec_row['tp_targets']:
                                             try:
                                                 import json
                                                 tp_config = json.loads(rec_row['tp_targets'])
                                                 if isinstance(tp_config, list) and len(tp_config) > 0:
-                                                    tp_ticks = tp_config[0].get('ticks', 5)
+                                                    tp_ticks = tp_config[0].get('ticks', 0) or 0
                                                 elif isinstance(tp_config, dict):
-                                                    tp_ticks = tp_config.get('ticks', 5)
+                                                    tp_ticks = tp_config.get('ticks', 0) or 0
                                             except:
                                                 pass
-                                        
-                                        # Calculate TP price from BROKER avg (source of truth)
-                                        if is_long:
-                                            new_tp_price = broker_avg + (tp_ticks * tick_size)
-                                            tp_action = 'Sell'
-                                        else:
-                                            new_tp_price = broker_avg - (tp_ticks * tick_size)
-                                            tp_action = 'Buy'
-                                        
-                                        # Place the TP order
-                                        try:
-                                            result = await tradovate.place_order_smart(
-                                                account_id=str(subaccount_id),
-                                                symbol=tradovate_symbol,
-                                                action=tp_action,
-                                                quantity=abs(broker_qty),
-                                                order_type='Limit',
-                                                price=new_tp_price,
-                                                time_in_force='GTC'
-                                            )
-                                            
-                                            if result and result.get('orderId'):
-                                                new_tp_order_id = result.get('orderId')
-                                                logger.info(f"✅ SYNC FIX: Placed TP order {new_tp_order_id}: {tp_action} {abs(broker_qty)} @ {new_tp_price}")
-                                                
-                                                # Update DB with new TP order ID
-                                                conn_upd = get_db_connection()
-                                                cursor_upd = conn_upd.cursor()
-                                                cursor_upd.execute('''
-                                                    UPDATE recorded_trades 
-                                                    SET tp_order_id = ?, tp_price = ?
-                                                    WHERE recorder_id = ? AND status = 'open'
-                                                ''', (str(new_tp_order_id), new_tp_price, recorder_id))
-                                                conn_upd.commit()
-                                                conn_upd.close()
+
+                                        # Only place TP if tp_ticks > 0 (skip if 0 - let strategy handle)
+                                        if tp_ticks and tp_ticks > 0:
+                                            # Calculate TP price from BROKER avg (source of truth)
+                                            if is_long:
+                                                new_tp_price = broker_avg + (tp_ticks * tick_size)
+                                                tp_action = 'Sell'
                                             else:
-                                                logger.error(f"❌ Failed to place TP order: {result}")
-                                        except Exception as tp_err:
-                                            logger.error(f"❌ Error placing TP order: {tp_err}")
+                                                new_tp_price = broker_avg - (tp_ticks * tick_size)
+                                                tp_action = 'Buy'
+
+                                            # Place the TP order
+                                            try:
+                                                result = await tradovate.place_order_smart(
+                                                    account_id=str(subaccount_id),
+                                                    symbol=tradovate_symbol,
+                                                    action=tp_action,
+                                                    quantity=abs(broker_qty),
+                                                    order_type='Limit',
+                                                    price=new_tp_price,
+                                                    time_in_force='GTC'
+                                                )
+
+                                                if result and result.get('orderId'):
+                                                    new_tp_order_id = result.get('orderId')
+                                                    logger.info(f"✅ SYNC FIX: Placed TP order {new_tp_order_id}: {tp_action} {abs(broker_qty)} @ {new_tp_price}")
+
+                                                    # Update DB with new TP order ID
+                                                    conn_upd = get_db_connection()
+                                                    cursor_upd = conn_upd.cursor()
+                                                    cursor_upd.execute('''
+                                                        UPDATE recorded_trades
+                                                        SET tp_order_id = ?, tp_price = ?
+                                                        WHERE recorder_id = ? AND status = 'open'
+                                                    ''', (str(new_tp_order_id), new_tp_price, recorder_id))
+                                                    conn_upd.commit()
+                                                    conn_upd.close()
+                                                else:
+                                                    logger.error(f"❌ Failed to place TP order: {result}")
+                                            except Exception as tp_err:
+                                                logger.error(f"❌ Error placing TP order: {tp_err}")
                             
                 except Exception as e:
                     logger.error(f"Error reconciling position for {db_pos.get('ticker', 'unknown')}: {e}")
