@@ -186,17 +186,12 @@
                         </div>
                     </label>
                 </div>
-                <div class="tp-row">
-                    <span class="tp-pill">TP #1</span>
-                    <label class="form-field">
-                        <span>TP Value (Ticks)</span>
-                        <input type="number" id="tpValue" name="tp_value" value="{{ trader.tp_value if trader.tp_value is not none else 0 }}" min="0">
-                    </label>
-                    <label class="form-field">
-                        <span>Trim %</span>
-                        <input type="number" id="tpTrim" name="tp_trim" value="{{ trader.tp_trim or 100 }}" min="0" max="100">
-                    </label>
+                <div id="tpTargetsContainer">
+                    <!-- TP targets will be dynamically loaded here -->
                 </div>
+                <button type="button" class="add-tp-btn" onclick="addTpTarget()">
+                    <span class="material-icons">add</span> Add TP Target
+                </button>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Stop Loss</span>
@@ -1278,6 +1273,62 @@
         border-color: rgba(148,163,184,0.5); 
     }
     .btn-small { padding: 0.5rem 1rem; font-size: 0.75rem; }
+    /* Multi-TP Target Styles */
+    .tp-target-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+        padding: 0.75rem;
+        background: rgba(30,41,59,0.5);
+        border-radius: 8px;
+        border: 1px solid rgba(148,163,184,0.1);
+    }
+    .tp-target-row .tp-pill {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: white;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .tp-target-row .form-field {
+        flex: 1;
+        min-width: 0;
+    }
+    .tp-target-row .remove-tp-btn {
+        background: transparent;
+        border: none;
+        color: #ef4444;
+        cursor: pointer;
+        padding: 0.25rem;
+        border-radius: 4px;
+        transition: background 0.2s;
+    }
+    .tp-target-row .remove-tp-btn:hover {
+        background: rgba(239,68,68,0.1);
+    }
+    .add-tp-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: transparent;
+        border: 1px dashed rgba(16,185,129,0.5);
+        color: #10b981;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.875rem;
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 1rem;
+        transition: all 0.2s;
+    }
+    .add-tp-btn:hover {
+        background: rgba(16,185,129,0.1);
+        border-color: #10b981;
+    }
 }
 </style>
 {% endblock %}
@@ -1300,6 +1351,89 @@
         const trailSettings = document.getElementById('trailSettingsCreate');
         if (slType && trailSettings) {
             trailSettings.style.display = (slType.value === 'Trail' || slType.value === 'Trailing') ? 'flex' : 'none';
+        }
+    }
+
+    // =============================================
+    // Multi-TP Target Functions
+    // =============================================
+    let tpTargetCount = 0;
+
+    function addTpTarget(ticks = 0, trim = 100) {
+        const container = document.getElementById('tpTargetsContainer');
+        if (!container) return;
+
+        tpTargetCount++;
+        const index = tpTargetCount;
+
+        const row = document.createElement('div');
+        row.className = 'tp-target-row';
+        row.dataset.tpIndex = index;
+        row.innerHTML = `
+            <span class="tp-pill">TP #${index}</span>
+            <label class="form-field">
+                <span>TP Value (Ticks)</span>
+                <input type="number" class="tp-ticks-input" value="${ticks}" min="0">
+            </label>
+            <label class="form-field">
+                <span>Trim %</span>
+                <input type="number" class="tp-trim-input" value="${trim}" min="0" max="100">
+            </label>
+            <button type="button" class="remove-tp-btn" onclick="removeTpTarget(this)" title="Remove TP">
+                <span class="material-icons">close</span>
+            </button>
+        `;
+        container.appendChild(row);
+        updateTpLabels();
+    }
+
+    function removeTpTarget(btn) {
+        const row = btn.closest('.tp-target-row');
+        if (row) {
+            row.remove();
+            updateTpLabels();
+        }
+    }
+
+    function updateTpLabels() {
+        const container = document.getElementById('tpTargetsContainer');
+        if (!container) return;
+        const rows = container.querySelectorAll('.tp-target-row');
+        rows.forEach((row, idx) => {
+            const pill = row.querySelector('.tp-pill');
+            if (pill) pill.textContent = `TP #${idx + 1}`;
+        });
+    }
+
+    function getTpTargets() {
+        const container = document.getElementById('tpTargetsContainer');
+        if (!container) return [];
+
+        const targets = [];
+        const rows = container.querySelectorAll('.tp-target-row');
+        rows.forEach(row => {
+            const ticks = parseInt(row.querySelector('.tp-ticks-input')?.value ?? 0);
+            const trim = parseInt(row.querySelector('.tp-trim-input')?.value ?? 100);
+            targets.push({ ticks, trim });
+        });
+        return targets;
+    }
+
+    function initTpTargets(targets) {
+        // Clear existing
+        const container = document.getElementById('tpTargetsContainer');
+        if (container) container.innerHTML = '';
+        tpTargetCount = 0;
+
+        if (!targets || targets.length === 0) {
+            // Add default empty TP target
+            addTpTarget(0, 100);
+        } else {
+            targets.forEach(t => {
+                const ticks = t.ticks ?? t.value ?? 0;
+                const trim = t.trim ?? 100;
+                addTpTarget(ticks, trim);
+            });
         }
     }
 
@@ -1872,8 +2006,6 @@
                         const initialPositionSize = parseInt(document.getElementById('initialPositionSize')?.value) || 1;
                         const addPositionSize = parseInt(document.getElementById('addPositionSize')?.value) || 1;
                         const tpUnits = document.getElementById('tpUnits')?.value || 'Ticks';
-                        const tpValue = parseInt(document.getElementById('tpValue')?.value ?? 0);
-                        const tpTrim = parseInt(document.getElementById('tpTrim')?.value) || 100;
                         const slEnabled = document.getElementById('slEnabled')?.checked ? 1 : 0;
                         const slAmount = parseFloat(document.getElementById('slAmount')?.value) || 0;
                         const slUnits = document.getElementById('slUnits')?.value || 'Ticks';
@@ -1893,8 +2025,8 @@
                         const timeFilter2Start = document.getElementById('timeFilter2Start')?.value || '';
                         const timeFilter2Stop = document.getElementById('timeFilter2Stop')?.value || '';
                         
-                        // Build TP targets array
-                        const tpTargets = JSON.stringify([{ ticks: tpValue, trim: tpTrim }]);
+                        // Build TP targets array from dynamic inputs
+                        const tpTargets = JSON.stringify(getTpTargets());
                         
                         // Log what we're sending
                         console.log('Saving trader with settings:', {
@@ -2034,6 +2166,24 @@
                 }
             });
         }
+
+        // Initialize TP Targets for edit mode
+        {% if mode == 'edit' and trader.tp_targets %}
+        try {
+            const tpTargetsData = {{ trader.tp_targets | tojson | safe }};
+            if (Array.isArray(tpTargetsData)) {
+                initTpTargets(tpTargetsData);
+            } else {
+                initTpTargets([]);
+            }
+        } catch (e) {
+            console.log('Could not parse TP targets, using defaults');
+            initTpTargets([]);
+        }
+        {% elif mode == 'edit' %}
+        // No TP targets saved yet - add default
+        initTpTargets([]);
+        {% endif %}
     });
 </script>
 {% endblock %}
