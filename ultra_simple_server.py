@@ -6007,8 +6007,90 @@ def tradingview_reconnect():
     _tradingview_force_reconnect = True
     logger.info("🔄 Manual TradingView reconnect requested via API")
     return jsonify({
-        'success': True, 
+        'success': True,
         'message': 'Reconnect requested - WebSocket will reconnect within 10 seconds'
+    })
+
+
+@app.route('/api/price-update', methods=['POST'])
+def api_price_update():
+    """
+    Receive real-time price updates from TradingView alerts.
+    This is the simplest way to get real-time prices without WebSocket complexity.
+
+    TradingView alert message format:
+    {"ticker":"{{ticker}}","price":"{{close}}"}
+
+    Supports multiple symbols in one request:
+    {"prices":[{"ticker":"NQ","price":"25400"},{"ticker":"ES","price":"6900"}]}
+    """
+    global _market_data_cache
+
+    try:
+        data = request.get_json() or {}
+
+        updated = []
+
+        # Handle single price update
+        if 'ticker' in data:
+            ticker = data.get('ticker', '')
+            price = data.get('price', data.get('close', 0))
+
+            if ticker and price:
+                root = extract_symbol_root(ticker)
+                if root:
+                    _market_data_cache[root] = {
+                        'last': float(price),
+                        'source': 'webhook_realtime',
+                        'updated': time.time()
+                    }
+                    updated.append({'symbol': root, 'price': float(price)})
+                    logger.info(f"💰 Real-time price update: {root} = {price}")
+
+        # Handle batch price updates
+        if 'prices' in data:
+            for item in data['prices']:
+                ticker = item.get('ticker', '')
+                price = item.get('price', item.get('close', 0))
+
+                if ticker and price:
+                    root = extract_symbol_root(ticker)
+                    if root:
+                        _market_data_cache[root] = {
+                            'last': float(price),
+                            'source': 'webhook_realtime',
+                            'updated': time.time()
+                        }
+                        updated.append({'symbol': root, 'price': float(price)})
+
+        return jsonify({
+            'success': True,
+            'updated': updated,
+            'cache_size': len(_market_data_cache)
+        })
+
+    except Exception as e:
+        logger.error(f"Price update error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/prices', methods=['GET'])
+def api_get_prices():
+    """Get all cached prices - useful for dashboard to display current market prices."""
+    global _market_data_cache
+
+    prices = {}
+    for symbol, data in _market_data_cache.items():
+        prices[symbol] = {
+            'price': data.get('last'),
+            'source': data.get('source', 'unknown'),
+            'age_seconds': round(time.time() - data.get('updated', 0), 1) if data.get('updated') else None
+        }
+
+    return jsonify({
+        'success': True,
+        'prices': prices,
+        'count': len(prices)
     })
 
 
