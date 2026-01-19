@@ -22578,10 +22578,16 @@ def get_tradingview_session():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT tradingview_session FROM accounts WHERE id = 1")
+        is_postgres = DATABASE_URL and DATABASE_URL.startswith('postgres')
+
+        # Don't hardcode id=1 - find first account with TradingView session
+        if is_postgres:
+            cursor.execute("SELECT tradingview_session FROM accounts WHERE tradingview_session IS NOT NULL AND tradingview_session != '' ORDER BY id LIMIT 1")
+        else:
+            cursor.execute("SELECT tradingview_session FROM accounts WHERE tradingview_session IS NOT NULL AND tradingview_session != '' ORDER BY id LIMIT 1")
         row = cursor.fetchone()
         conn.close()
-        
+
         if row and row[0]:
             return json.loads(row[0])
         return None
