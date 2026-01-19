@@ -3984,6 +3984,42 @@ def index():
     return redirect(url_for('pricing'))
 
 # ============================================================================
+# DATABASE MIGRATION ENDPOINT
+# ============================================================================
+
+@app.route('/api/run-migrations', methods=['POST', 'GET'])
+def run_migrations():
+    """Run pending database migrations to add missing columns."""
+    results = []
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    is_postgres = is_using_postgres()
+
+    # List of columns to ensure exist
+    migrations = [
+        ('recorders', 'same_direction_ignore', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        ('recorders', 'break_even_offset', 'INTEGER DEFAULT 0'),
+        ('recorders', 'trail_trigger', 'INTEGER DEFAULT 0'),
+        ('recorders', 'trail_freq', 'INTEGER DEFAULT 0'),
+        ('recorders', 'inverse_signals', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+    ]
+
+    for table, column, col_type in migrations:
+        try:
+            cursor.execute(f'ALTER TABLE {table} ADD COLUMN {column} {col_type}')
+            conn.commit()
+            results.append(f"✅ Added {table}.{column}")
+        except Exception as e:
+            conn.rollback()
+            if 'already exists' in str(e).lower() or 'duplicate column' in str(e).lower():
+                results.append(f"⏭️ {table}.{column} already exists")
+            else:
+                results.append(f"❌ {table}.{column}: {str(e)[:100]}")
+
+    conn.close()
+    return jsonify({'success': True, 'migrations': results})
+
+# ============================================================================
 # USER AUTHENTICATION ROUTES
 # ============================================================================
 
