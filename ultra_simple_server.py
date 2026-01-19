@@ -4035,11 +4035,14 @@ def whop_status():
                     'Authorization': f'Bearer {WHOP_API_KEY}',
                     'Accept': 'application/json',
                 }
-                resp = requests.get('https://api.whop.com/api/v2/me', headers=headers, timeout=10)
+                # Use /memberships endpoint (with limit) since /me doesn't exist in v2
+                resp = requests.get('https://api.whop.com/api/v2/memberships?per_page=1', headers=headers, timeout=10)
                 if resp.status_code == 200:
-                    api_test = {'success': True, 'message': 'API connection verified'}
+                    data = resp.json()
+                    count = len(data.get('data', []))
+                    api_test = {'success': True, 'message': f'API connected - {data.get("pagination", {}).get("total_count", count)} memberships found'}
                 else:
-                    api_test = {'success': False, 'message': f'API returned {resp.status_code}'}
+                    api_test = {'success': False, 'message': f'API returned {resp.status_code}: {resp.text[:100]}'}
             except Exception as e:
                 api_test = {'success': False, 'message': str(e)}
 
