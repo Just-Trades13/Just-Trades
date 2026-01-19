@@ -222,31 +222,86 @@
                     </div>
                 </div>
             </div>
-            <!-- TradingView Timeline News -->
+            <!-- Financial Juice News (with TradingView fallback) -->
             <div class="intel-card">
                 <div class="intel-card-header">
-                    <h3><span class="material-icons">bolt</span> Market News</h3>
-                    <a href="https://www.tradingview.com/news/" target="_blank" class="link-button-sm" rel="noopener noreferrer">
-                        TradingView News <span class="material-icons">open_in_new</span>
+                    <h3><span class="material-icons">bolt</span> Live News Feed</h3>
+                    <a href="https://www.financialjuice.com/" target="_blank" class="link-button-sm" rel="noopener noreferrer">
+                        Financial Juice <span class="material-icons">open_in_new</span>
                     </a>
                 </div>
-                <div class="intel-card-content">
-                    <!-- TradingView Timeline Widget -->
-                    <div class="tradingview-widget-container" style="height:380px;width:100%;">
-                        <div class="tradingview-widget-container__widget" style="height:100%;width:100%;"></div>
-                        <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-timeline.js" async>
-                        {
-                            "feedMode": "market",
-                            "market": "stock",
-                            "isTransparent": true,
-                            "displayMode": "regular",
-                            "width": "100%",
-                            "height": "380",
-                            "colorTheme": "dark",
-                            "locale": "en"
+                <div class="intel-card-content" id="news-widget-wrapper" style="background:#0a0a0a;">
+                    <!-- Try Financial Juice first, fallback to TradingView -->
+                    <div id="fj-news-container" style="width:100%;height:380px;"></div>
+                    <script type="text/javascript">
+                    (function() {
+                        var fjLoaded = false;
+                        var timeout = setTimeout(function() {
+                            if (!fjLoaded) loadTradingViewFallback();
+                        }, 5000);
+
+                        var script = document.createElement('script');
+                        script.src = 'https://feed.financialjuice.com/widgets/widgets.js?r=' + Date.now();
+                        script.onload = function() {
+                            clearTimeout(timeout);
+                            if (window.FJWidgets && typeof window.FJWidgets.createWidget === 'function') {
+                                try {
+                                    window.FJWidgets.createWidget({
+                                        container: 'fj-news-container',
+                                        widgetType: 'NEWS',
+                                        mode: 'Dark',
+                                        width: '100%',
+                                        height: '380px'
+                                    });
+                                    fjLoaded = true;
+                                    // Check if actually rendered after 2 seconds
+                                    setTimeout(function() {
+                                        var container = document.getElementById('fj-news-container');
+                                        if (container && container.children.length === 0) {
+                                            loadTradingViewFallback();
+                                        }
+                                    }, 2000);
+                                } catch(e) {
+                                    loadTradingViewFallback();
+                                }
+                            } else {
+                                loadTradingViewFallback();
+                            }
+                        };
+                        script.onerror = function() {
+                            clearTimeout(timeout);
+                            loadTradingViewFallback();
+                        };
+                        document.head.appendChild(script);
+
+                        function loadTradingViewFallback() {
+                            var container = document.getElementById('fj-news-container');
+                            if (!container) return;
+                            container.innerHTML = '<div class="tradingview-widget-container" style="height:380px;width:100%;"><div class="tradingview-widget-container__widget"></div></div>';
+                            var tvScript = document.createElement('script');
+                            tvScript.type = 'text/javascript';
+                            tvScript.src = 'https://s3.tradingview.com/external-embedding/embed-widget-timeline.js';
+                            tvScript.async = true;
+                            tvScript.innerHTML = JSON.stringify({
+                                feedMode: "market",
+                                market: "stock",
+                                isTransparent: true,
+                                displayMode: "regular",
+                                width: "100%",
+                                height: "380",
+                                colorTheme: "dark",
+                                locale: "en"
+                            });
+                            container.querySelector('.tradingview-widget-container').appendChild(tvScript);
+                            // Update header link
+                            var link = document.querySelector('#news-widget-wrapper').closest('.intel-card').querySelector('.link-button-sm');
+                            if (link) {
+                                link.href = 'https://www.tradingview.com/news/';
+                                link.innerHTML = 'TradingView News <span class="material-icons">open_in_new</span>';
+                            }
                         }
-                        </script>
-                    </div>
+                    })();
+                    </script>
                 </div>
             </div>
         </div>
