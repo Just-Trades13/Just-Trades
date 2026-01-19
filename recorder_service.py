@@ -2552,75 +2552,109 @@ def get_broker_position_for_recorder(recorder_id: int, ticker: str) -> Dict[str,
 def get_front_month_contract(root_symbol: str) -> str:
     """
     Dynamically calculate the current front month contract for futures.
-    
-    Quarterly futures (MNQ, MES, NQ, ES, etc.) expire on the 3rd Friday of:
-    - H = March
-    - M = June  
-    - U = September
-    - Z = December
-    
-    Roll typically happens ~1 week before expiration (around 2nd Friday).
+
+    Different products have different contract cycles:
+    - Quarterly (index futures): H, M, U, Z (March, June, Sept, Dec)
+    - Bimonthly (gold/silver): G, J, M, Q, V, Z (Feb, Apr, Jun, Aug, Oct, Dec)
+    - Monthly (crude oil): F, G, H, J, K, M, N, Q, U, V, X, Z (all months)
+
+    Roll typically happens ~1 week before expiration.
     This function returns the currently active front month contract.
-    
+
     Args:
-        root_symbol: The root symbol (e.g., "MNQ", "ES", "NQ")
-    
+        root_symbol: The root symbol (e.g., "MNQ", "ES", "MGC", "CL")
+
     Returns:
-        Full contract symbol (e.g., "MNQH5" for March 2025)
+        Full contract symbol (e.g., "MNQH5", "MGCG6", "CLG6")
     """
     from datetime import datetime, timedelta
-    
-    # Quarterly contract months and their codes
-    CONTRACT_MONTHS = [
+
+    # Contract cycles by product type
+    QUARTERLY_MONTHS = [
         (3, 'H'),   # March
         (6, 'M'),   # June
         (9, 'U'),   # September
         (12, 'Z'),  # December
     ]
-    
+
+    # Bimonthly for Gold/Silver (GC, MGC, SI, etc.)
+    BIMONTHLY_MONTHS = [
+        (2, 'G'),   # February
+        (4, 'J'),   # April
+        (6, 'M'),   # June
+        (8, 'Q'),   # August
+        (10, 'V'),  # October
+        (12, 'Z'),  # December
+    ]
+
+    # Monthly for Crude Oil (CL, MCL, etc.)
+    MONTHLY_MONTHS = [
+        (1, 'F'),   # January
+        (2, 'G'),   # February
+        (3, 'H'),   # March
+        (4, 'J'),   # April
+        (5, 'K'),   # May
+        (6, 'M'),   # June
+        (7, 'N'),   # July
+        (8, 'Q'),   # August
+        (9, 'U'),   # September
+        (10, 'V'),  # October
+        (11, 'X'),  # November
+        (12, 'Z'),  # December
+    ]
+
+    # Determine which contract cycle to use
+    root_upper = root_symbol.upper()
+    if root_upper in ['GC', 'MGC', 'SI', 'SIL']:
+        CONTRACT_MONTHS = BIMONTHLY_MONTHS
+    elif root_upper in ['CL', 'MCL', 'NG', 'HO', 'RB']:
+        CONTRACT_MONTHS = MONTHLY_MONTHS
+    else:
+        # Default to quarterly for index futures
+        CONTRACT_MONTHS = QUARTERLY_MONTHS
+
     today = datetime.now()
     current_month = today.month
     current_year = today.year
-    current_day = today.day
-    
-    # Find the 3rd Friday of a given month/year (expiration day)
+
+    # Find the 3rd Friday of a given month/year (common expiration day)
     def get_third_friday(year: int, month: int) -> datetime:
         """Get the 3rd Friday of the month (expiration day)"""
-        # Start from the 1st of the month
         first_day = datetime(year, month, 1)
-        # Find first Friday
         days_until_friday = (4 - first_day.weekday()) % 7
         first_friday = first_day + timedelta(days=days_until_friday)
-        # 3rd Friday is 14 days later
         third_friday = first_friday + timedelta(days=14)
         return third_friday
-    
-    # Roll date is typically 8 days before expiration (around 2nd Friday)
-    # This is when volume shifts to the next contract
+
+    # Roll date is typically 8 days before expiration
     ROLL_DAYS_BEFORE_EXPIRY = 8
-    
+
     # Find the current front month
-    for i, (exp_month, month_code) in enumerate(CONTRACT_MONTHS):
+    for exp_month, month_code in CONTRACT_MONTHS:
         exp_year = current_year
-        
-        # If we're past this month, check if this year's contract is still active
+
+        # If we're past this month, skip to next
         if current_month > exp_month:
             continue
-        
+
         # Get expiration date for this contract
         expiration = get_third_friday(exp_year, exp_month)
         roll_date = expiration - timedelta(days=ROLL_DAYS_BEFORE_EXPIRY)
-        
+
         # If today is before the roll date, this is the front month
         if today < roll_date:
-            year_code = str(exp_year)[-1]  # Last digit of year (2025 -> 5)
-            return f"{root_symbol}{month_code}{year_code}"
-    
+            year_code = str(exp_year)[-1]  # Last digit of year (2026 -> 6)
+            result = f"{root_symbol}{month_code}{year_code}"
+            logger.debug(f"🗓️ Front month for {root_symbol}: {result}")
+            return result
+
     # If we've passed all contracts this year, use the first contract of next year
     next_year = current_year + 1
-    first_month, first_code = CONTRACT_MONTHS[0]  # March
+    first_month, first_code = CONTRACT_MONTHS[0]
     year_code = str(next_year)[-1]
-    return f"{root_symbol}{first_code}{year_code}"
+    result = f"{root_symbol}{first_code}{year_code}"
+    logger.debug(f"🗓️ Front month for {root_symbol} (next year): {result}")
+    return result
 
 
 def convert_ticker_to_tradovate(ticker: str) -> str:
