@@ -3651,7 +3651,26 @@ def init_db():
             cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_stop TEXT DEFAULT ''")
         except:
             pass
-    
+
+    # Jan 2026: Add new webhook feature columns to traders
+    # trail_trigger - Profit ticks before trailing stop starts (0 = immediate)
+    try:
+        cursor.execute('ALTER TABLE traders ADD COLUMN trail_trigger INTEGER DEFAULT 0')
+    except:
+        pass
+
+    # trail_freq - How often to update trailing stop (0 = every tick)
+    try:
+        cursor.execute('ALTER TABLE traders ADD COLUMN trail_freq INTEGER DEFAULT 0')
+    except:
+        pass
+
+    # break_even_offset - How many ticks of profit to lock in (0 = true breakeven)
+    try:
+        cursor.execute('ALTER TABLE traders ADD COLUMN break_even_offset INTEGER DEFAULT 0')
+    except:
+        pass
+
     # Add inverse_signals column to recorders table (Jan 2026)
     if is_postgres:
         try:
@@ -3723,9 +3742,40 @@ def init_db():
             cursor.execute('ALTER TABLE recorders ADD COLUMN is_private INTEGER DEFAULT 0')
         except:
             pass  # Column already exists
-    
+
+    # Jan 2026: Add new webhook feature columns to recorders
+    # same_direction_ignore - Block duplicate signals in same direction
+    if is_postgres:
+        try:
+            cursor.execute('ALTER TABLE recorders ADD COLUMN same_direction_ignore BOOLEAN DEFAULT FALSE')
+        except:
+            pass
+    else:
+        try:
+            cursor.execute('ALTER TABLE recorders ADD COLUMN same_direction_ignore INTEGER DEFAULT 0')
+        except:
+            pass
+
+    # break_even_offset - How many ticks of profit to lock in (0 = true breakeven)
+    try:
+        cursor.execute('ALTER TABLE recorders ADD COLUMN break_even_offset INTEGER DEFAULT 0')
+    except:
+        pass
+
+    # trail_trigger - Profit ticks before trailing stop starts (0 = immediate)
+    try:
+        cursor.execute('ALTER TABLE recorders ADD COLUMN trail_trigger INTEGER DEFAULT 0')
+    except:
+        pass
+
+    # trail_freq - How often to update trailing stop (0 = every tick)
+    try:
+        cursor.execute('ALTER TABLE recorders ADD COLUMN trail_freq INTEGER DEFAULT 0')
+    except:
+        pass
+
     cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_traders_recorder 
+        CREATE INDEX IF NOT EXISTS idx_traders_recorder
         ON traders(recorder_id)
     ''')
     cursor.execute('''
@@ -11581,7 +11631,57 @@ def process_webhook_directly(webhook_token):
         market_position = str(data.get('market_position', data.get('position', ''))).lower().strip()
         prev_position_size = data.get('prev_position_size', data.get('prev_market_position_size'))
         is_strategy_alert = position_size is not None or market_position
-        
+
+        # ============================================================
+        # NEW WEBHOOK FIELDS - PickMyTrade/TradersPost compatible
+        # These override recorder/trader settings when provided
+        # ============================================================
+
+        # Dollar-based SL/TP (takes priority over ticks/percent from settings)
+        webhook_dollar_sl = data.get('dollar_sl', data.get('sl_dollar', None))
+        webhook_dollar_tp = data.get('dollar_tp', data.get('tp_dollar', None))
+
+        # Percentage-based SL/TP
+        webhook_percentage_sl = data.get('percentage_sl', data.get('sl_percent', data.get('sl_percentage', None)))
+        webhook_percentage_tp = data.get('percentage_tp', data.get('tp_percent', data.get('tp_percentage', None)))
+
+        # Tick-based SL/TP directly from webhook
+        webhook_sl_ticks = data.get('sl', data.get('stop_loss', data.get('sl_ticks', None)))
+        webhook_tp_ticks = data.get('tp', data.get('take_profit', data.get('tp_ticks', None)))
+
+        # Risk-based position sizing: quantity = risk_amount / (sl_ticks * tick_value)
+        webhook_risk_percentage = data.get('risk_percentage', data.get('risk_percent', data.get('risk', None)))
+        webhook_risk_dollars = data.get('risk_dollars', data.get('risk_amount', data.get('risk_dollar', None)))
+
+        # Same direction ignore - prevent duplicate signals in same direction
+        webhook_same_direction_ignore = data.get('same_direction_ignore', data.get('ignore_same_direction', data.get('no_duplicate', False)))
+
+        # Trailing stop fields
+        webhook_trail = data.get('trail', data.get('trailing_stop', None))
+        webhook_trail_trigger = data.get('trail_trigger', data.get('trail_start', None))
+        webhook_trail_freq = data.get('trail_freq', data.get('trail_frequency', data.get('trail_interval', None)))
+
+        # Breakeven fields
+        webhook_breakeven = data.get('breakeven', data.get('break_even', None))
+        webhook_breakeven_offset = data.get('breakeven_offset', data.get('be_offset', data.get('break_even_offset', None)))
+
+        # Log webhook overrides if any provided
+        webhook_overrides = []
+        if webhook_dollar_sl: webhook_overrides.append(f"dollar_sl={webhook_dollar_sl}")
+        if webhook_dollar_tp: webhook_overrides.append(f"dollar_tp={webhook_dollar_tp}")
+        if webhook_percentage_sl: webhook_overrides.append(f"percentage_sl={webhook_percentage_sl}")
+        if webhook_percentage_tp: webhook_overrides.append(f"percentage_tp={webhook_percentage_tp}")
+        if webhook_sl_ticks: webhook_overrides.append(f"sl_ticks={webhook_sl_ticks}")
+        if webhook_tp_ticks: webhook_overrides.append(f"tp_ticks={webhook_tp_ticks}")
+        if webhook_risk_percentage: webhook_overrides.append(f"risk_percentage={webhook_risk_percentage}")
+        if webhook_risk_dollars: webhook_overrides.append(f"risk_dollars={webhook_risk_dollars}")
+        if webhook_same_direction_ignore: webhook_overrides.append(f"same_direction_ignore=True")
+        if webhook_trail: webhook_overrides.append(f"trail={webhook_trail}")
+        if webhook_breakeven: webhook_overrides.append(f"breakeven={webhook_breakeven}")
+
+        if webhook_overrides:
+            _logger.info(f"📋 Webhook overrides detected: {', '.join(webhook_overrides)}")
+
         # Convert position_size to float for comparison
         try:
             pos_size = abs(float(position_size)) if position_size is not None else None
@@ -12119,7 +12219,11 @@ def process_webhook_directly(webhook_token):
         sl_type = recorder.get('sl_type', 'Fixed')
         break_even_enabled = recorder.get('break_even_enabled', 0)
         break_even_ticks = int(recorder.get('break_even_ticks', 10) or 10)
-        
+        break_even_offset = int(recorder.get('break_even_offset', 0) or 0)
+        trail_trigger = int(recorder.get('trail_trigger', 0) or 0)
+        trail_freq = int(recorder.get('trail_freq', 0) or 0)
+        same_direction_ignore = recorder.get('same_direction_ignore', 0)
+
         # Get linked trader for live execution with ALL risk settings
         # Also get trader's sl_type if available (trader settings override recorder)
         trader_sl_type = None
@@ -12217,85 +12321,222 @@ def process_webhook_directly(webhook_token):
         if trader_break_even_ticks is not None:
             break_even_ticks = int(trader_break_even_ticks or 10)
 
-        # Parse TP targets
+        # ============================================================
+        # TP/SL CALCULATION - Priority: Webhook > Trader > Recorder
+        # ============================================================
+        tick_value = get_tick_value(ticker) if ticker else 0.50
+
+        # Parse TP targets (from trader/recorder settings as fallback)
         try:
             tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
         except:
             tp_targets = []
-        
-        # Get TP value and convert to ticks based on units
+
+        # Get TP value from settings (fallback)
         if tp_targets and len(tp_targets) > 0:
             tp_value = float(tp_targets[0].get('value', 0) or 0)
         else:
             tp_value = 0
-        
-        # Convert TP to ticks based on units
-        if tp_value > 0:
+
+        # ============================================================
+        # WEBHOOK TP OVERRIDE - Highest priority
+        # Priority: webhook_tp_ticks > webhook_dollar_tp > webhook_percentage_tp > settings
+        # ============================================================
+        tp_ticks = 0
+        tp_source = "NONE"
+
+        if webhook_tp_ticks is not None:
+            # Direct tick value from webhook - use as-is
+            tp_ticks = int(float(webhook_tp_ticks))
+            tp_source = "WEBHOOK (ticks)"
+            _logger.info(f"📊 TP from WEBHOOK ticks: {tp_ticks} ticks")
+
+        elif webhook_dollar_tp is not None:
+            # Dollar amount per contract - convert to ticks
+            dollar_tp = float(webhook_dollar_tp)
+            if tick_value > 0:
+                tp_ticks = int(dollar_tp / tick_value)
+                tp_source = "WEBHOOK (dollar)"
+                _logger.info(f"📊 TP from WEBHOOK dollar: ${dollar_tp} → {tp_ticks} ticks (tick_value={tick_value})")
+
+        elif webhook_percentage_tp is not None:
+            # Percentage of entry price - convert to ticks
+            pct_tp = float(webhook_percentage_tp)
+            if current_price and tick_size:
+                tp_ticks = int((current_price * (pct_tp / 100)) / tick_size)
+                tp_source = "WEBHOOK (percent)"
+                _logger.info(f"📊 TP from WEBHOOK percent: {pct_tp}% → {tp_ticks} ticks (price={current_price})")
+
+        elif tp_value > 0:
+            # Fallback to trader/recorder settings
             if tp_units == 'Points':
                 # Points = dollar value per contract. Convert to ticks.
-                tick_value = get_tick_value(ticker) if ticker else 0.50
                 tp_ticks = int(tp_value / tick_value) if tick_value else int(tp_value / tick_size)
+                tp_source = "SETTINGS (points)"
             elif tp_units == 'Percent':
                 # Percent of entry price
                 tp_ticks = int((current_price * (tp_value / 100)) / tick_size) if current_price and tick_size else 0
+                tp_source = "SETTINGS (percent)"
             else:
                 # Ticks (default)
                 tp_ticks = int(tp_value)
-        else:
-            tp_ticks = 0
-        
-        # Convert SL to ticks based on units
-        if sl_enabled and sl_amount > 0:
+                tp_source = "SETTINGS (ticks)"
+
+        # ============================================================
+        # WEBHOOK SL OVERRIDE - Highest priority
+        # Priority: webhook_sl_ticks > webhook_dollar_sl > webhook_percentage_sl > settings
+        # ============================================================
+        sl_ticks = 0
+        sl_source = "NONE"
+
+        if webhook_sl_ticks is not None:
+            # Direct tick value from webhook - use as-is
+            sl_ticks = int(float(webhook_sl_ticks))
+            sl_source = "WEBHOOK (ticks)"
+            _logger.info(f"📊 SL from WEBHOOK ticks: {sl_ticks} ticks")
+
+        elif webhook_dollar_sl is not None:
+            # Dollar amount per contract - convert to ticks
+            dollar_sl = float(webhook_dollar_sl)
+            if tick_value > 0:
+                sl_ticks = int(dollar_sl / tick_value)
+                sl_source = "WEBHOOK (dollar)"
+                _logger.info(f"📊 SL from WEBHOOK dollar: ${dollar_sl} → {sl_ticks} ticks (tick_value={tick_value})")
+
+        elif webhook_percentage_sl is not None:
+            # Percentage of entry price - convert to ticks
+            pct_sl = float(webhook_percentage_sl)
+            if current_price and tick_size:
+                sl_ticks = int((current_price * (pct_sl / 100)) / tick_size)
+                sl_source = "WEBHOOK (percent)"
+                _logger.info(f"📊 SL from WEBHOOK percent: {pct_sl}% → {sl_ticks} ticks (price={current_price})")
+
+        elif sl_enabled and sl_amount > 0:
+            # Fallback to trader/recorder settings
             if sl_units == 'Loss ($)':
                 # Dollar loss per contract. Convert to ticks.
-                tick_value = get_tick_value(ticker) if ticker else 0.50
                 sl_ticks = int(sl_amount / tick_value) if tick_value else int(sl_amount / tick_size)
+                sl_source = "SETTINGS (dollar)"
             elif sl_units == 'Percent':
                 # Percent of entry price
                 sl_ticks = int((current_price * (sl_amount / 100)) / tick_size) if current_price and tick_size else 0
+                sl_source = "SETTINGS (percent)"
             else:
                 # Ticks (default)
                 sl_ticks = int(sl_amount)
-        else:
-            sl_ticks = 0
+                sl_source = "SETTINGS (ticks)"
+
+        _logger.info(f"📊 Final TP: {tp_ticks} ticks ({tp_source}) | SL: {sl_ticks} ticks ({sl_source})")
         
-        # Determine quantity from trader settings (preferred) or recorder settings (fallback)
-        # Priority: 1) Webhook quantity, 2) Trader initial_position_size, 3) Recorder initial_position_size
-        if quantity == 1 and not position_size:  # Only override if quantity wasn't specified in webhook
+        # ============================================================
+        # POSITION SIZING - Priority: Webhook risk > Webhook qty > Trader > Recorder
+        # ============================================================
+
+        # Check for existing open position first (needed for same_direction_ignore and DCA)
+        cursor.execute(f'''
+            SELECT * FROM recorded_trades
+            WHERE recorder_id = {placeholder} AND status = 'open'
+            ORDER BY entry_time DESC LIMIT 1
+        ''', (recorder_id,))
+        existing_position_row = cursor.fetchone()
+        existing_position = None
+        existing_side = None
+        if existing_position_row:
+            existing_position = dict(zip([desc[0] for desc in cursor.description], existing_position_row))
+            existing_side = existing_position.get('side', '')
+
+        # ============================================================
+        # SAME DIRECTION IGNORE - Block duplicate signals
+        # Priority: Webhook setting > Recorder setting
+        # ============================================================
+        # Use webhook setting if provided, otherwise use recorder setting
+        effective_same_direction_ignore = webhook_same_direction_ignore if webhook_same_direction_ignore else same_direction_ignore
+        if effective_same_direction_ignore and existing_position:
+            is_same_direction = (
+                (existing_side == 'LONG' and trade_action.upper() in ['BUY', 'LONG']) or
+                (existing_side == 'SHORT' and trade_action.upper() in ['SELL', 'SHORT'])
+            )
+            if is_same_direction:
+                _logger.info(f"⏭️ BLOCKED: same_direction_ignore=True and already have {existing_side} position (trade #{existing_position['id']})")
+                conn.close()
+                return jsonify({
+                    'success': True,
+                    'blocked': True,
+                    'reason': 'same_direction_ignore',
+                    'existing_side': existing_side,
+                    'existing_trade_id': existing_position['id'],
+                    'message': f'Signal ignored - already have {existing_side} position'
+                }), 200
+
+        # ============================================================
+        # RISK-BASED POSITION SIZING
+        # Formula: quantity = risk_amount / (sl_ticks * tick_value)
+        # ============================================================
+        quantity_source = "WEBHOOK" if quantity > 1 else "DEFAULT"
+
+        if webhook_risk_dollars is not None and sl_ticks > 0:
+            # Direct risk dollar amount
+            risk_amount = float(webhook_risk_dollars)
+            calculated_qty = int(risk_amount / (sl_ticks * tick_value)) if (sl_ticks * tick_value) > 0 else 1
+            quantity = max(1, calculated_qty)
+            quantity_source = f"RISK_DOLLARS (${risk_amount} / ({sl_ticks} ticks * ${tick_value}) = {quantity})"
+            _logger.info(f"📊 Quantity from WEBHOOK risk_dollars: {quantity} ({quantity_source})")
+
+        elif webhook_risk_percentage is not None and sl_ticks > 0:
+            # Risk percentage of account - need to query account balance
+            # For now, we'll need to get the trader's account balance
+            try:
+                account_id = trader.get('account_id')
+                cursor.execute(f'SELECT balance FROM accounts WHERE id = {placeholder}', (account_id,))
+                balance_row = cursor.fetchone()
+                account_balance = float(balance_row[0]) if balance_row and balance_row[0] else 10000.0  # Default $10k
+
+                risk_pct = float(webhook_risk_percentage)
+                risk_amount = account_balance * (risk_pct / 100)
+                calculated_qty = int(risk_amount / (sl_ticks * tick_value)) if (sl_ticks * tick_value) > 0 else 1
+                quantity = max(1, calculated_qty)
+                quantity_source = f"RISK_PCT ({risk_pct}% of ${account_balance:,.0f} = ${risk_amount:,.0f} → {quantity} contracts)"
+                _logger.info(f"📊 Quantity from WEBHOOK risk_percentage: {quantity} ({quantity_source})")
+            except Exception as e:
+                _logger.warning(f"⚠️ Could not calculate risk-based quantity: {e}. Using webhook/settings quantity.")
+
+        elif quantity == 1 and not position_size:
+            # No webhook quantity specified - use trader/recorder settings
             if trader_initial_size:
                 quantity = int(trader_initial_size)
-                _logger.info(f"📊 Using TRADER's initial_position_size: {quantity} (from trader settings)")
+                quantity_source = "TRADER (initial_position_size)"
+                _logger.info(f"📊 Using TRADER's initial_position_size: {quantity}")
             else:
                 # Fallback to recorder setting
                 recorder_initial_size = recorder.get('initial_position_size', 1)
                 quantity = int(recorder_initial_size) if recorder_initial_size else 1
-                _logger.info(f"📊 Using RECORDER's initial_position_size: {quantity} (trader setting not found)")
-        
-        # Check if this is DCA (adding to existing position)
-        cursor.execute(f'''
-            SELECT * FROM recorded_trades 
-            WHERE recorder_id = {placeholder} AND status = 'open' 
-            ORDER BY entry_time DESC LIMIT 1
-        ''', (recorder_id,))
-        dca_check_row = cursor.fetchone()
+                quantity_source = "RECORDER (initial_position_size)"
+                _logger.info(f"📊 Using RECORDER's initial_position_size: {quantity}")
+
+        # ============================================================
+        # DCA DETECTION - Adjust quantity if adding to position
+        # ============================================================
         is_dca = False
-        if dca_check_row:
-            dca_check = dict(zip([desc[0] for desc in cursor.description], dca_check_row))
-            existing_side = dca_check.get('side', '')
+        if existing_position:
             if (existing_side == 'LONG' and trade_action.upper() == 'BUY') or \
                (existing_side == 'SHORT' and trade_action.upper() == 'SELL'):
                 is_dca = True
-                # Use add_position_size for DCA
-                if trader_add_size:
-                    quantity = int(trader_add_size)
-                    _logger.info(f"📈 DCA detected - Using TRADER's add_position_size: {quantity}")
+                # Use add_position_size for DCA (unless risk-based sizing was used)
+                if 'RISK' not in quantity_source:
+                    if trader_add_size:
+                        quantity = int(trader_add_size)
+                        quantity_source = "TRADER (add_position_size - DCA)"
+                        _logger.info(f"📈 DCA detected - Using TRADER's add_position_size: {quantity}")
+                    else:
+                        recorder_add_size = recorder.get('add_position_size', 1)
+                        quantity = int(recorder_add_size) if recorder_add_size else 1
+                        quantity_source = "RECORDER (add_position_size - DCA)"
+                        _logger.info(f"📈 DCA detected - Using RECORDER's add_position_size: {quantity}")
                 else:
-                    recorder_add_size = recorder.get('add_position_size', 1)
-                    quantity = int(recorder_add_size) if recorder_add_size else 1
-                    _logger.info(f"📈 DCA detected - Using RECORDER's add_position_size: {quantity}")
+                    _logger.info(f"📈 DCA detected - Keeping risk-based quantity: {quantity}")
         
         # Execute the trade with FULL risk settings (trader settings override recorder)
-        _logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks | SL: {sl_ticks} ticks | Quantity from: {'TRADER' if trader_initial_size else 'RECORDER'} settings")
+        _logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks ({tp_source}) | SL: {sl_ticks} ticks ({sl_source}) | Qty: {quantity_source}")
         
         # ============================================================
         # STRATEGY MODE: Check for open position BEFORE broker execution
@@ -12675,27 +12916,62 @@ def process_webhook_directly(webhook_token):
             }]
         
         # Stop loss (fixed or trailing)
-        if sl_enabled and sl_ticks > 0:
+        # Priority: Webhook trail settings > SL type from settings
+        if webhook_trail is not None and sl_ticks > 0:
+            # Webhook provides trailing stop directly
+            trail_offset = int(float(webhook_trail))
+            trail_activation = int(float(webhook_trail_trigger)) if webhook_trail_trigger else 0
+            risk_config['trail'] = {
+                'activation_ticks': trail_activation,  # When to start trailing (0 = immediate)
+                'offset_ticks': trail_offset  # Trail distance
+            }
+            # Add trail frequency if provided
+            if webhook_trail_freq:
+                risk_config['trail']['frequency_ticks'] = int(float(webhook_trail_freq))
+                _logger.info(f"📊 Trailing stop from WEBHOOK: offset={trail_offset}, trigger={trail_activation}, freq={webhook_trail_freq}")
+            else:
+                _logger.info(f"📊 Trailing stop from WEBHOOK: offset={trail_offset}, trigger={trail_activation}")
+        elif sl_enabled and sl_ticks > 0:
             if sl_type == 'Trailing' or sl_type == 'Trail':
-                # Trailing stop: use sl_amount as offset_ticks
+                # Trailing stop from settings: use recorder's trail settings
                 risk_config['trail'] = {
-                    'activation_ticks': sl_ticks,  # Can activate immediately
+                    'activation_ticks': trail_trigger if trail_trigger > 0 else 0,  # From recorder settings (0 = immediate)
                     'offset_ticks': sl_ticks  # Trail offset = SL distance
                 }
-                _logger.info(f"📊 Trailing stop configured: offset={sl_ticks} ticks")
+                # Add trail frequency from recorder settings
+                if trail_freq > 0:
+                    risk_config['trail']['frequency_ticks'] = trail_freq
+                    _logger.info(f"📊 Trailing stop from SETTINGS: offset={sl_ticks}, trigger={trail_trigger}, freq={trail_freq}")
+                else:
+                    _logger.info(f"📊 Trailing stop from SETTINGS: offset={sl_ticks}, trigger={trail_trigger}")
             else:
                 # Fixed stop loss
                 risk_config['stop_loss'] = {
                     'type': 'fixed',
                     'loss_ticks': sl_ticks
                 }
-        
+
         # Break-even
-        if break_even_enabled and break_even_ticks > 0:
+        # Priority: Webhook breakeven > Settings breakeven
+        if webhook_breakeven is not None:
+            # Webhook provides breakeven directly
+            be_activation = int(float(webhook_breakeven))
+            be_offset = int(float(webhook_breakeven_offset)) if webhook_breakeven_offset else 0
             risk_config['break_even'] = {
-                'activation_ticks': break_even_ticks
+                'activation_ticks': be_activation,
+                'offset_ticks': be_offset  # How many ticks of profit to lock in (0 = true breakeven)
             }
-            _logger.info(f"📊 Break-even configured: activation={break_even_ticks} ticks")
+            _logger.info(f"📊 Break-even from WEBHOOK: activation={be_activation} ticks, offset={be_offset} ticks")
+        elif break_even_enabled and break_even_ticks > 0:
+            # Use recorder's break_even_offset setting
+            risk_config['break_even'] = {
+                'activation_ticks': break_even_ticks,
+                'offset_ticks': break_even_offset  # From recorder settings (0 = true breakeven)
+            }
+            if break_even_offset > 0:
+                _logger.info(f"📊 Break-even from SETTINGS: activation={break_even_ticks} ticks, offset={break_even_offset} ticks")
+            else:
+                _logger.info(f"📊 Break-even from SETTINGS: activation={break_even_ticks} ticks (true BE)")
         
         # STEP 3: Queue broker execution (Trade Manager style - async, non-blocking)
         # Webhook returns immediately, broker execution happens in background

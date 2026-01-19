@@ -144,13 +144,26 @@
                 <label class="form-field">
                     <span>SL Type</span>
                     <div class="select-shell">
-                        <select id="sl_type">
+                        <select id="sl_type" onchange="toggleTrailSettings()">
                             <option value="Fixed" {{ 'selected' if not recorder or recorder.sl_type == 'Fixed' else '' }}>Fixed</option>
                             <option value="Trail" {{ 'selected' if recorder and recorder.sl_type == 'Trail' else '' }}>Trail</option>
                         </select>
                         <span class="material-icons">expand_more</span>
                     </div>
                 </label>
+                <!-- Trailing Stop Settings (shown when SL Type = Trail) -->
+                <div id="trail_settings" class="form-two" style="display: {{ 'flex' if recorder and recorder.sl_type == 'Trail' else 'none' }};">
+                    <label class="form-field">
+                        <span>Trail Trigger (ticks)</span>
+                        <input type="number" id="trail_trigger" value="{{ recorder.trail_trigger if recorder and recorder.trail_trigger else 0 }}" min="0" step="1">
+                        <small>0 = immediate, or start after X profit</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Trail Frequency (ticks)</span>
+                        <input type="number" id="trail_freq" value="{{ recorder.trail_freq if recorder and recorder.trail_freq else 0 }}" min="0" step="1">
+                        <small>0 = every tick, or update every X ticks</small>
+                    </label>
+                </div>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Auto Break-Even</span>
@@ -159,11 +172,18 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <label class="form-field">
-                    <span>Break-Even Trigger (ticks)</span>
-                    <input type="number" id="break_even_ticks" value="{{ recorder.break_even_ticks if recorder and recorder.break_even_ticks else 10 }}" min="1" step="1">
-                    <small>Move SL to entry after X ticks profit</small>
-                </label>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Break-Even Trigger (ticks)</span>
+                        <input type="number" id="break_even_ticks" value="{{ recorder.break_even_ticks if recorder and recorder.break_even_ticks else 10 }}" min="1" step="1">
+                        <small>Move SL after X ticks profit</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Break-Even Offset (ticks)</span>
+                        <input type="number" id="break_even_offset" value="{{ recorder.break_even_offset if recorder and recorder.break_even_offset else 0 }}" min="0" step="1">
+                        <small>0 = true BE, or lock in X ticks profit</small>
+                    </label>
+                </div>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Averaging Down (DCA)</span>
@@ -329,6 +349,17 @@
                     <div>
                         <h3>Enable Auto Flat After Cutoff</h3>
                         <p>Automatically close open positions and disable signals after the session end time.</p>
+                    </div>
+                </div>
+                <div class="separator"></div>
+                <div class="switch-row">
+                    <label class="switch">
+                        <input type="checkbox" id="same_direction_ignore" {{ 'checked' if recorder and recorder.same_direction_ignore else '' }}>
+                        <span class="slider"></span>
+                    </label>
+                    <div>
+                        <h3>Ignore Same Direction Signals</h3>
+                        <p>Block duplicate signals when already in a position (prevents DCA if enabled).</p>
                     </div>
                 </div>
             </div>
@@ -889,6 +920,15 @@
     // TP Targets data
     let tpTargets = {{ recorder.tp_targets | tojson if recorder and recorder.tp_targets else '[]' }};
 
+    // Toggle trailing stop settings visibility based on SL Type
+    function toggleTrailSettings() {
+        const slType = document.getElementById('sl_type').value;
+        const trailSettings = document.getElementById('trail_settings');
+        if (trailSettings) {
+            trailSettings.style.display = (slType === 'Trail') ? 'flex' : 'none';
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         console.log('DOMContentLoaded: Starting initialization, recorderId:', recorderId);
         
@@ -1073,6 +1113,9 @@
             sl_type: document.getElementById('sl_type').value,
             break_even_enabled: document.getElementById('break_even_enabled').checked,
             break_even_ticks: parseInt(document.getElementById('break_even_ticks').value) || 10,
+            break_even_offset: parseInt(document.getElementById('break_even_offset').value) || 0,
+            trail_trigger: parseInt(document.getElementById('trail_trigger').value) || 0,
+            trail_freq: parseInt(document.getElementById('trail_freq').value) || 0,
             avg_down_enabled: document.getElementById('avg_down_enabled').checked,
             avg_down_amount: parseInt(document.getElementById('avg_down_amount').value) || 0,
             avg_down_point: parseFloat(document.getElementById('avg_down_point').value) || 0,
@@ -1091,6 +1134,7 @@
             max_signals_per_session: parseInt(document.getElementById('max_signals_per_session').value) || 0,
             max_daily_loss: parseFloat(document.getElementById('max_daily_loss').value) || 0,
             auto_flat_after_cutoff: document.getElementById('auto_flat_after_cutoff').checked,
+            same_direction_ignore: document.getElementById('same_direction_ignore').checked,
             notes: document.getElementById('notes').value.trim(),
             recording_enabled: document.getElementById('recording_enabled').checked,
             is_private: document.getElementById('is_private').checked

@@ -224,13 +224,26 @@
                 <label class="form-field">
                     <span>SL Type</span>
                     <div class="select-shell">
-                        <select id="slType" name="sl_type">
+                        <select id="slType" name="sl_type" onchange="toggleTrailSettingsEdit()">
                             <option value="Fixed" {% if trader.sl_type == 'Fixed' %}selected{% endif %}>Fixed</option>
                             <option value="Trailing" {% if trader.sl_type == 'Trailing' or trader.sl_type == 'Trail' %}selected{% endif %}>Trailing</option>
                         </select>
                         <span class="material-icons">expand_more</span>
                     </div>
                 </label>
+                <!-- Trailing Stop Settings (shown when SL Type = Trail) -->
+                <div id="trailSettingsEdit" class="form-two" style="display: {% if trader.sl_type == 'Trail' or trader.sl_type == 'Trailing' %}flex{% else %}none{% endif %};">
+                    <label class="form-field">
+                        <span>Trail Trigger (ticks)</span>
+                        <input type="number" id="trailTrigger" name="trail_trigger" value="{{ trader.trail_trigger or 0 }}" min="0" step="1">
+                        <small>0 = immediate, or start after X profit</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Trail Frequency (ticks)</span>
+                        <input type="number" id="trailFreq" name="trail_freq" value="{{ trader.trail_freq or 0 }}" min="0" step="1">
+                        <small>0 = every tick, or update every X ticks</small>
+                    </label>
+                </div>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Auto Break-Even</span>
@@ -239,11 +252,18 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <label class="form-field">
-                    <span>Break-Even Trigger (ticks)</span>
-                    <input type="number" id="breakEvenTicks" name="break_even_ticks" value="{{ trader.break_even_ticks or 10 }}" min="1" step="1">
-                    <small>Move SL to entry after X ticks profit</small>
-                </label>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Break-Even Trigger (ticks)</span>
+                        <input type="number" id="breakEvenTicks" name="break_even_ticks" value="{{ trader.break_even_ticks or 10 }}" min="1" step="1">
+                        <small>Move SL after X ticks profit</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Break-Even Offset (ticks)</span>
+                        <input type="number" id="breakEvenOffset" name="break_even_offset" value="{{ trader.break_even_offset or 0 }}" min="0" step="1">
+                        <small>0 = true BE, or lock in X profit</small>
+                    </label>
+                </div>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Averaging Down (DCA)</span>
@@ -711,13 +731,26 @@
                 <label class="form-field">
                     <span>SL Type</span>
                     <div class="select-shell">
-                        <select id="createSlType" name="sl_type">
+                        <select id="createSlType" name="sl_type" onchange="toggleTrailSettingsCreate()">
                             <option value="Fixed">Fixed</option>
                             <option value="Trail">Trail</option>
                         </select>
                         <span class="material-icons">expand_more</span>
                     </div>
                 </label>
+                <!-- Trailing Stop Settings (shown when SL Type = Trail) -->
+                <div id="trailSettingsCreate" class="form-two" style="display: none;">
+                    <label class="form-field">
+                        <span>Trail Trigger (ticks)</span>
+                        <input type="number" id="createTrailTrigger" name="trail_trigger" value="0" min="0" step="1">
+                        <small>0 = immediate, or start after X profit</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Trail Frequency (ticks)</span>
+                        <input type="number" id="createTrailFreq" name="trail_freq" value="0" min="0" step="1">
+                        <small>0 = every tick, or update every X ticks</small>
+                    </label>
+                </div>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Auto Break-Even</span>
@@ -726,11 +759,18 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <label class="form-field">
-                    <span>Break-Even Trigger (ticks)</span>
-                    <input type="number" id="createBreakEvenTicks" name="break_even_ticks" value="10" min="1" step="1">
-                    <small>Move SL to entry after X ticks profit</small>
-                </label>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Break-Even Trigger (ticks)</span>
+                        <input type="number" id="createBreakEvenTicks" name="break_even_ticks" value="10" min="1" step="1">
+                        <small>Move SL after X ticks profit</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Break-Even Offset (ticks)</span>
+                        <input type="number" id="createBreakEvenOffset" name="break_even_offset" value="0" min="0" step="1">
+                        <small>0 = true BE, or lock in X profit</small>
+                    </label>
+                </div>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Averaging Down (DCA)</span>
@@ -1244,9 +1284,29 @@
 {% block scripts %}
 <script>
     // =============================================
+    // Trail Settings Toggle Functions
+    // =============================================
+
+    function toggleTrailSettingsEdit() {
+        const slType = document.getElementById('slType');
+        const trailSettings = document.getElementById('trailSettingsEdit');
+        if (slType && trailSettings) {
+            trailSettings.style.display = (slType.value === 'Trail' || slType.value === 'Trailing') ? 'flex' : 'none';
+        }
+    }
+
+    function toggleTrailSettingsCreate() {
+        const slType = document.getElementById('createSlType');
+        const trailSettings = document.getElementById('trailSettingsCreate');
+        if (slType && trailSettings) {
+            trailSettings.style.display = (slType.value === 'Trail' || slType.value === 'Trailing') ? 'flex' : 'none';
+        }
+    }
+
+    // =============================================
     // List Page Functions (Toggle, Delete, Filter)
     // =============================================
-    
+
     async function toggleTrader(traderId, newEnabled) {
         try {
             const response = await fetch(`/api/traders/${traderId}`, {

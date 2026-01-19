@@ -713,9 +713,17 @@ def execute_trade_simple(
         # Build list of ALL accounts to trade on from ALL traders
         traders = []
         seen_subaccounts = set()  # Prevent duplicates
-        
-        for trader_row in trader_rows:
+        skipped_duplicates = []  # Track duplicates for logging
+
+        # Log how many traders are linked to this recorder
+        logger.info(f"📋 Found {len(list(trader_rows))} trader(s) linked to recorder {recorder_id}")
+        # Reset cursor since we consumed the rows
+        cursor.execute(f'SELECT * FROM traders WHERE recorder_id = {placeholder} AND enabled = {"TRUE" if is_postgres else "1"}', (recorder_id,))
+        trader_rows = cursor.fetchall()
+
+        for trader_idx, trader_row in enumerate(trader_rows):
             trader_dict = dict(trader_row)
+            logger.info(f"📋 Processing Trader #{trader_idx + 1}: ID={trader_dict.get('id')}, Name={trader_dict.get('name', 'unnamed')}")
             enabled_accounts_raw = trader_dict.get('enabled_accounts')
             
             # Check if this trader has enabled_accounts JSON (multi-account feature)
@@ -737,8 +745,10 @@ def execute_trade_simple(
                         # We'll get the correct value from accounts.environment below
                         multiplier = float(acct.get('multiplier', 1.0))  # Extract multiplier from account settings
                         
-                        # Skip duplicates
+                        # Skip duplicates - CRITICAL: Prevent same account trading twice
                         if subaccount_id in seen_subaccounts:
+                            skipped_duplicates.append(f"{subaccount_name} (ID:{subaccount_id})")
+                            logger.warning(f"⚠️ DUPLICATE SKIPPED: {subaccount_name} (ID:{subaccount_id}) already added from another trader")
                             continue
                         seen_subaccounts.add(subaccount_id)
                         
@@ -807,6 +817,12 @@ def execute_trade_simple(
         
         conn.close()
         logger.info(f"📋 Found {len(traders)} account(s) to trade on")
+
+        # Log any duplicates that were skipped
+        if skipped_duplicates:
+            logger.warning(f"⚠️ DUPLICATE ACCOUNTS SKIPPED ({len(skipped_duplicates)}): {', '.join(skipped_duplicates)}")
+            logger.warning(f"⚠️ This usually means the same account is enabled on multiple traders for this recorder")
+            logger.warning(f"⚠️ FIX: Remove duplicate account assignments from your traders")
         
         # CRITICAL: If no traders found, return error immediately
         if len(traders) == 0:
@@ -1257,28 +1273,37 @@ def execute_trade_simple(
                         trailing_stop_bool = False
                         
                         if risk_config:
-                            # Break-even: { activation_ticks: X }
+                            # Break-even: { activation_ticks: X, offset_ticks: Y }
+                            # offset_ticks = how many ticks of profit to lock in (0 = true breakeven at entry)
                             break_even_cfg = risk_config.get('break_even')
                             if break_even_cfg and break_even_cfg.get('activation_ticks'):
                                 break_even_ticks = break_even_cfg.get('activation_ticks')
-                                logger.info(f"📊 [{acct_name}] Native break-even: {break_even_ticks} ticks")
-                            
-                            # Trailing: { offset_ticks: X, activation_ticks: Y }
+                                break_even_offset = break_even_cfg.get('offset_ticks', 0)  # Default to true breakeven
+                                if break_even_offset > 0:
+                                    logger.info(f"📊 [{acct_name}] Native break-even: activation={break_even_ticks} ticks, offset={break_even_offset} ticks")
+                                else:
+                                    logger.info(f"📊 [{acct_name}] Native break-even: {break_even_ticks} ticks (true BE)")
+
+                            # Trailing: { offset_ticks: X, activation_ticks: Y, frequency_ticks: Z }
                             trail_cfg = risk_config.get('trail')
                             if trail_cfg:
                                 offset_ticks = trail_cfg.get('offset_ticks')
                                 activation_ticks = trail_cfg.get('activation_ticks')
-                                
+                                frequency_ticks = trail_cfg.get('frequency_ticks')  # How often to update trail
+
                                 # If activation_ticks exists and is different from offset_ticks, it's trail-after-profit
                                 # If they're the same (or only offset_ticks exists), it's immediate trailing
                                 if offset_ticks and activation_ticks and activation_ticks != offset_ticks:
                                     # Trail-after-profit: Use autoTrail (starts trailing after profit threshold)
+                                    # freq = how often to update (in price units, not ticks)
+                                    trail_freq = (frequency_ticks * tick_size) if frequency_ticks else (tick_size * 0.25)
                                     auto_trail = {
                                         'stopLoss': offset_ticks,  # Trailing distance
                                         'trigger': activation_ticks,  # Profit threshold to start trailing
-                                        'freq': tick_size * 0.25  # Update frequency (0.25 tick size)
+                                        'freq': trail_freq  # Update frequency
                                     }
-                                    logger.info(f"📊 [{acct_name}] Native autoTrail: distance={offset_ticks} ticks, trigger={activation_ticks} ticks")
+                                    freq_log = f", freq={frequency_ticks} ticks" if frequency_ticks else ""
+                                    logger.info(f"📊 [{acct_name}] Native autoTrail: distance={offset_ticks} ticks, trigger={activation_ticks} ticks{freq_log}")
                                 elif offset_ticks:
                                     # Immediate trailing: Use trailingStop boolean (starts trailing immediately)
                                     trailing_stop_bool = True
@@ -1750,11 +1775,34 @@ def execute_trade_simple(
             import traceback
             traceback.print_exc()
         
-        # Return result from last successful account
-        if last_result:
-            result.update(last_result)
+        # Return aggregated result
+        # CRITICAL FIX: Set success=True if ANY account traded successfully
+        if accounts_traded > 0:
+            result['success'] = True
             result['accounts_traded'] = accounts_traded
-        
+            result['total_accounts'] = len(traders)
+
+            # Use last_result for backward compatibility (TP/SL order IDs, prices, etc.)
+            if last_result:
+                result['broker_avg'] = last_result.get('broker_avg')
+                result['broker_qty'] = last_result.get('broker_qty')
+                result['broker_side'] = last_result.get('broker_side')
+                result['tp_price'] = last_result.get('tp_price')
+                result['tp_order_id'] = last_result.get('tp_order_id')
+                result['sl_price'] = last_result.get('sl_price')
+                result['sl_order_id'] = last_result.get('sl_order_id')
+
+            # Store all successful results for multi-account tracking
+            successful_results = [r for r in all_results if r and r.get('success')]
+            result['all_account_results'] = successful_results
+        else:
+            result['success'] = False
+            result['accounts_traded'] = 0
+            result['total_accounts'] = len(traders)
+            if failed_accounts:
+                result['error'] = f"All {len(failed_accounts)} accounts failed"
+                result['failed_accounts'] = failed_accounts
+
         logger.info(f"📊 TOTAL: {accounts_traded}/{len(traders)} accounts traded successfully")
         return result
         
