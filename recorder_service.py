@@ -6242,7 +6242,21 @@ def receive_webhook(webhook_token):
         action = str(data.get('action', '')).lower().strip()
         ticker = data.get('ticker', data.get('symbol', ''))
         price = data.get('price', data.get('close', 0))
-        
+
+        # Cache the real-time price from webhook (TradingView {{close}} is real-time)
+        if ticker and price:
+            try:
+                root = extract_symbol_root(ticker)
+                if root:
+                    _market_data_cache[root] = {
+                        'last': float(price),
+                        'source': 'webhook',
+                        'updated': time.time()
+                    }
+                    logger.debug(f"📊 Cached real-time price from webhook: {root} = {price}")
+            except Exception as e:
+                logger.debug(f"Could not cache webhook price: {e}")
+
         # Strategy-specific fields (when TradingView handles sizing)
         position_size = data.get('position_size', data.get('contracts'))
         market_position = data.get('market_position', '')  # long, short, flat
@@ -6268,10 +6282,23 @@ def receive_webhook(webhook_token):
             normalized_action = 'SELL'
         else:  # close, flat, exit
             normalized_action = 'CLOSE'
-        
+
+        # Handle PRICE_UPDATE - just cache the price and return (no trade action)
+        if normalized_action == 'PRICE_UPDATE':
+            conn.close()
+            root = extract_symbol_root(ticker) if ticker else None
+            return jsonify({
+                'success': True,
+                'action': 'price_update',
+                'ticker': ticker,
+                'price': float(price) if price else None,
+                'cached_as': root,
+                'message': f'Price updated for {root}: {price}'
+            })
+
         # Determine if this is a simple alert or strategy alert
         is_strategy_alert = position_size is not None or market_position
-        
+
         # Record the signal (with retry for database locks)
         max_retries = 5
         retry_delay = 0.1
