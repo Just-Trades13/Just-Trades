@@ -8742,17 +8742,36 @@ def store_tradingview_session():
         if not sessionid:
             return jsonify({'success': False, 'error': 'sessionid is required'}), 400
         
-        # Store as JSON in the first account (or create a settings table later)
+        # Store as JSON in the first available account
         tv_session = json.dumps({
             'sessionid': sessionid,
             'sessionid_sign': sessionid_sign,
             'device_t': device_t,
             'updated_at': datetime.now().isoformat()
         })
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE accounts SET tradingview_session = ? WHERE id = 1", (tv_session,))
+        is_postgres = is_using_postgres()
+
+        # Find the first account (don't assume id=1 exists)
+        if is_postgres:
+            cursor.execute("SELECT id FROM accounts ORDER BY id LIMIT 1")
+        else:
+            cursor.execute("SELECT id FROM accounts ORDER BY id LIMIT 1")
+
+        row = cursor.fetchone()
+        if row:
+            account_id = row['id'] if isinstance(row, dict) else row[0]
+            if is_postgres:
+                cursor.execute("UPDATE accounts SET tradingview_session = %s WHERE id = %s", (tv_session, account_id))
+            else:
+                cursor.execute("UPDATE accounts SET tradingview_session = ? WHERE id = ?", (tv_session, account_id))
+            logger.info(f"✅ TradingView session stored on account {account_id}")
+        else:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No accounts found to store session'}), 400
+
         conn.commit()
         conn.close()
         
@@ -8777,12 +8796,21 @@ def get_tradingview_session_status():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT tradingview_session FROM accounts WHERE id = 1")
+        is_postgres = is_using_postgres()
+
+        # Find any account with tradingview_session set
+        if is_postgres:
+            cursor.execute("SELECT tradingview_session FROM accounts WHERE tradingview_session IS NOT NULL AND tradingview_session != '' ORDER BY id LIMIT 1")
+        else:
+            cursor.execute("SELECT tradingview_session FROM accounts WHERE tradingview_session IS NOT NULL AND tradingview_session != '' ORDER BY id LIMIT 1")
+
         row = cursor.fetchone()
         conn.close()
-        
-        if row and row[0]:
-            session_data = json.loads(row[0])
+
+        session_data_raw = row['tradingview_session'] if isinstance(row, dict) else (row[0] if row else None)
+
+        if session_data_raw:
+            session_data = json.loads(session_data_raw)
             return jsonify({
                 'success': True,
                 'configured': True,
@@ -8794,7 +8822,7 @@ def get_tradingview_session_status():
                 'success': True,
                 'configured': False
             })
-            
+
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

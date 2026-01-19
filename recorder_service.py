@@ -5083,12 +5083,21 @@ def get_tradingview_session() -> Optional[Dict]:
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT tradingview_session FROM accounts WHERE id = 1")
+        is_postgres = is_using_postgres()
+
+        # Find any account with tradingview_session set (don't hardcode id=1)
+        if is_postgres:
+            cursor.execute("SELECT tradingview_session FROM accounts WHERE tradingview_session IS NOT NULL AND tradingview_session != '' ORDER BY id LIMIT 1")
+        else:
+            cursor.execute("SELECT tradingview_session FROM accounts WHERE tradingview_session IS NOT NULL AND tradingview_session != '' ORDER BY id LIMIT 1")
+
         row = cursor.fetchone()
         conn.close()
-        
-        if row and row['tradingview_session']:
-            return json.loads(row['tradingview_session'])
+
+        if row:
+            session_data = row['tradingview_session'] if isinstance(row, dict) else row[0]
+            if session_data:
+                return json.loads(session_data)
         return None
     except Exception as e:
         logger.error(f"Error getting TradingView session: {e}")
