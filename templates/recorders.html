@@ -106,17 +106,12 @@
                         </div>
                     </label>
                 </div>
-                <div class="tp-row">
-                    <span class="tp-pill">TP #1</span>
-                    <label class="form-field">
-                        <span>TP Value (Ticks)</span>
-                        <input type="number" id="tp_value" value="{{ recorder.tp_targets[0].value if recorder and recorder.tp_targets and recorder.tp_targets[0] else 5 }}" min="0">
-                    </label>
-                    <label class="form-field">
-                        <span>Trim %</span>
-                        <input type="number" id="tp_trim" value="{{ recorder.tp_targets[0].trim if recorder and recorder.tp_targets and recorder.tp_targets[0] else 100 }}" min="0" max="100">
-                    </label>
+                <div id="tpTargetsContainer">
+                    <!-- TP targets will be dynamically loaded here -->
                 </div>
+                <button type="button" class="add-tp-btn" onclick="addTpTarget()">
+                    <span class="material-icons">add</span> Add TP Target
+                </button>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Stop Loss</span>
@@ -909,6 +904,62 @@
         .header-actions { width: 100%; justify-content: flex-start; }
         .tp-row { grid-template-columns: 1fr; }
     }
+    /* Multi-TP Target Styles */
+    .tp-target-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+        padding: 0.75rem;
+        background: rgba(30,41,59,0.5);
+        border-radius: 8px;
+        border: 1px solid rgba(148,163,184,0.1);
+    }
+    .tp-target-row .tp-pill {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: white;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .tp-target-row .form-field {
+        flex: 1;
+        min-width: 0;
+    }
+    .tp-target-row .remove-tp-btn {
+        background: transparent;
+        border: none;
+        color: #ef4444;
+        cursor: pointer;
+        padding: 0.25rem;
+        border-radius: 4px;
+        transition: background 0.2s;
+    }
+    .tp-target-row .remove-tp-btn:hover {
+        background: rgba(239,68,68,0.1);
+    }
+    .add-tp-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: transparent;
+        border: 1px dashed rgba(16,185,129,0.5);
+        color: #10b981;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.875rem;
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 1rem;
+        transition: all 0.2s;
+    }
+    .add-tp-btn:hover {
+        background: rgba(16,185,129,0.1);
+        border-color: #10b981;
+    }
 </style>
 {% endblock %}
 {% block scripts %}
@@ -949,56 +1000,8 @@
             });
         });
 
-        // Render TP targets
+        // Render TP targets (dynamic multi-TP support)
         renderTpTargets();
-        
-        // CRITICAL FIX: Sync static TP inputs with tpTargets array
-        // The static inputs (tp_value, tp_trim) weren't updating tpTargets when changed
-        const tpValueInput = document.getElementById('tp_value');
-        const tpTrimInput = document.getElementById('tp_trim');
-        
-        if (tpValueInput) {
-            tpValueInput.addEventListener('change', function() {
-                // Ensure tpTargets[0] exists
-                if (!tpTargets[0]) {
-                    tpTargets[0] = { value: 0, trim: 100 };
-                }
-                tpTargets[0].value = parseFloat(this.value) || 0;
-                console.log('TP Value updated:', tpTargets[0].value);
-            });
-            // Also trigger on input for immediate feedback
-            tpValueInput.addEventListener('input', function() {
-                if (!tpTargets[0]) {
-                    tpTargets[0] = { value: 0, trim: 100 };
-                }
-                tpTargets[0].value = parseFloat(this.value) || 0;
-            });
-        }
-        
-        if (tpTrimInput) {
-            tpTrimInput.addEventListener('change', function() {
-                if (!tpTargets[0]) {
-                    tpTargets[0] = { value: 0, trim: 100 };
-                }
-                tpTargets[0].trim = parseFloat(this.value) || 100;
-                console.log('TP Trim updated:', tpTargets[0].trim);
-            });
-            tpTrimInput.addEventListener('input', function() {
-                if (!tpTargets[0]) {
-                    tpTargets[0] = { value: 0, trim: 100 };
-                }
-                tpTargets[0].trim = parseFloat(this.value) || 100;
-            });
-        }
-        
-        // Initialize tpTargets[0] from static inputs if empty
-        if (tpTargets.length === 0 && tpValueInput && tpTrimInput) {
-            tpTargets[0] = {
-                value: parseFloat(tpValueInput.value) || 0,
-                trim: parseFloat(tpTrimInput.value) || 100
-            };
-            console.log('Initialized tpTargets from static inputs:', tpTargets[0]);
-        }
 
         // Load webhook info if webhook section exists (with small delay to ensure DOM is ready)
         const webhookSection = document.querySelector('.webhook-card');
@@ -1040,25 +1043,33 @@
     }
 
     function renderTpTargets() {
-        const container = document.getElementById('tp-targets-container');
+        const container = document.getElementById('tpTargetsContainer');
+        if (!container) return;
         container.innerHTML = '';
-        
+
+        // If no targets, add a default one
+        if (tpTargets.length === 0) {
+            tpTargets.push({ ticks: 0, trim: 100 });
+        }
+
         tpTargets.forEach((tp, index) => {
             const row = document.createElement('div');
-            row.className = 'tp-row';
+            row.className = 'tp-target-row';
+            // Handle both 'ticks' (new) and 'value' (old) keys
+            const ticksValue = tp.ticks ?? tp.value ?? 0;
+            const trimValue = tp.trim ?? 100;
             row.innerHTML = `
                 <span class="tp-pill">TP #${index + 1}</span>
                 <label class="form-field">
-                    <span>TP Value</span>
-                    <input type="number" value="${tp.value || 0}" step="0.01" onchange="updateTpTarget(${index}, 'value', this.value)">
+                    <span>TP Value (Ticks)</span>
+                    <input type="number" class="tp-ticks-input" value="${ticksValue}" min="0" onchange="updateTpTarget(${index}, 'ticks', this.value)">
                 </label>
                 <label class="form-field">
-                    <span>Trim</span>
-                    <input type="number" value="${tp.trim || 0}" step="0.01" onchange="updateTpTarget(${index}, 'trim', this.value)">
-                    <small>Trim %; 0 keeps full size.</small>
+                    <span>Trim %</span>
+                    <input type="number" class="tp-trim-input" value="${trimValue}" min="0" max="100" onchange="updateTpTarget(${index}, 'trim', this.value)">
                 </label>
-                <button class="icon-btn" type="button" onclick="removeTpTarget(${index})">
-                    <span class="material-icons">delete</span>
+                <button type="button" class="remove-tp-btn" onclick="removeTpTarget(${index})" title="Remove TP">
+                    <span class="material-icons">close</span>
                 </button>
             `;
             container.appendChild(row);
@@ -1066,39 +1077,41 @@
     }
 
     function addTpTarget() {
-        tpTargets.push({ value: 0, trim: 0 });
+        tpTargets.push({ ticks: 0, trim: 100 });
         renderTpTargets();
     }
 
     function updateTpTarget(index, field, value) {
-        tpTargets[index][field] = parseFloat(value) || 0;
+        if (field === 'ticks') {
+            tpTargets[index].ticks = parseInt(value) || 0;
+            // Remove old 'value' key if present
+            delete tpTargets[index].value;
+        } else {
+            tpTargets[index][field] = parseInt(value) || 0;
+        }
     }
 
     function removeTpTarget(index) {
         tpTargets.splice(index, 1);
+        if (tpTargets.length === 0) {
+            tpTargets.push({ ticks: 0, trim: 100 });
+        }
         renderTpTargets();
     }
 
+    function getTpTargets() {
+        // Ensure all targets use 'ticks' key
+        return tpTargets.map(tp => ({
+            ticks: tp.ticks ?? tp.value ?? 0,
+            trim: tp.trim ?? 100
+        }));
+    }
+
     function collectFormData() {
-        // DEBUG: Log what we're about to save
-        console.log('=== collectFormData DEBUG ===');
-        console.log('tpTargets array:', JSON.stringify(tpTargets));
-        console.log('tp_value input:', document.getElementById('tp_value')?.value);
-        console.log('tp_trim input:', document.getElementById('tp_trim')?.value);
-        
-        // CRITICAL: Sync static inputs to tpTargets before collecting
-        // This ensures even if event didn't fire, we capture the current input values
-        const tpValueInput = document.getElementById('tp_value');
-        const tpTrimInput = document.getElementById('tp_trim');
-        if (tpValueInput && tpTrimInput) {
-            if (!tpTargets[0]) {
-                tpTargets[0] = { value: 0, trim: 100 };
-            }
-            tpTargets[0].value = parseFloat(tpValueInput.value) || 0;
-            tpTargets[0].trim = parseFloat(tpTrimInput.value) || 100;
-            console.log('Synced tpTargets from inputs:', JSON.stringify(tpTargets));
-        }
-        
+        // Get TP targets from dynamic inputs
+        const collectedTpTargets = getTpTargets();
+        console.log('Collecting TP targets:', JSON.stringify(collectedTpTargets));
+
         return {
             name: document.getElementById('name').value.trim(),
             strategy_type: document.getElementById('strategy_type').value,
@@ -1106,7 +1119,7 @@
             add_position_size: parseInt(document.getElementById('add_position_size').value) || 0,
             tp_units: document.getElementById('tp_units').value,
             trim_units: document.getElementById('trim_units').value,
-            tp_targets: tpTargets,
+            tp_targets: collectedTpTargets,
             sl_enabled: document.getElementById('sl_enabled').checked,
             sl_amount: parseFloat(document.getElementById('sl_amount').value) || 0,
             sl_units: document.getElementById('sl_units').value,
