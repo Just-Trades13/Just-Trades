@@ -222,35 +222,31 @@
                     </div>
                 </div>
             </div>
-            <!-- Financial Juice Headlines -->
+            <!-- TradingView Timeline News -->
             <div class="intel-card">
                 <div class="intel-card-header">
-                    <h3><span class="material-icons">bolt</span> Live News Feed</h3>
-                    <a href="https://www.financialjuice.com/" target="_blank" class="link-button-sm" rel="noopener noreferrer">
-                        Financial Juice <span class="material-icons">open_in_new</span>
+                    <h3><span class="material-icons">bolt</span> Market News</h3>
+                    <a href="https://www.tradingview.com/news/" target="_blank" class="link-button-sm" rel="noopener noreferrer">
+                        TradingView News <span class="material-icons">open_in_new</span>
                     </a>
                 </div>
-                <div class="intel-card-content fj-container">
-                    <!-- FinancialJuice Headlines Widget -->
-                    <div id="financialjuice-headlines-widget-container"></div>
-                    <script type="text/javascript">
-                        var jo = document.createElement("script");
-                        jo.type = "text/javascript";
-                        jo.src = "https://feed.financialjuice.com/widgets/widgets.js?r=" + Math.random();
-                        jo.onload = function(){
-                            var options = {};
-                            options.container = "financialjuice-headlines-widget-container";
-                            options.widgetType = "headlines";
-                            options.width = "100%";
-                            options.height = "380";
-                            options.backgroundColor = "#0f172a";
-                            options.fontColor = "#e2e8f0";
-                            options.headerFontColor = "#60a5fa";
-                            options.borderColor = "rgba(148, 163, 184, 0.1)";
-                            new window.FJWidgets.createWidget(options);
+                <div class="intel-card-content">
+                    <!-- TradingView Timeline Widget -->
+                    <div class="tradingview-widget-container" style="height:380px;width:100%;">
+                        <div class="tradingview-widget-container__widget" style="height:100%;width:100%;"></div>
+                        <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-timeline.js" async>
+                        {
+                            "feedMode": "market",
+                            "market": "stock",
+                            "isTransparent": true,
+                            "displayMode": "regular",
+                            "width": "100%",
+                            "height": "380",
+                            "colorTheme": "dark",
+                            "locale": "en"
                         }
-                        document.getElementsByTagName("head")[0].appendChild(jo);
-                    </script>
+                        </script>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1126,13 +1122,6 @@
         min-height: 380px;
     }
     .intel-card-content .tradingview-widget-container {
-        width: 100%;
-        height: 380px;
-    }
-    .fj-container {
-        background: #0f172a;
-    }
-    #financialjuice-headlines-widget-container {
         width: 100%;
         height: 380px;
     }
