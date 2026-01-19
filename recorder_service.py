@@ -1585,22 +1585,32 @@ def execute_trade_simple(
                             logger.warning(f"   Falling back to manual TP/SL placement")
                             use_apply_risk_orders = False  # Fall back to manual
                     
-                    # STEP 3: Calculate TP price (only if not using apply_risk_orders)
-                    if broker_side == 'LONG':
-                        tp_price = broker_avg + (tp_ticks * tick_size)
-                        tp_action = 'Sell'
+                    # STEP 3: Calculate and place TP (only if tp_ticks > 0)
+                    tp_price = None
+                    tp_action = None
+                    tp_order_id = None
+
+                    if tp_ticks and tp_ticks > 0:
+                        if broker_side == 'LONG':
+                            tp_price = broker_avg + (tp_ticks * tick_size)
+                            tp_action = 'Sell'
+                        else:
+                            tp_price = broker_avg - (tp_ticks * tick_size)
+                            tp_action = 'Buy'
+
+                        logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
                     else:
-                        tp_price = broker_avg - (tp_ticks * tick_size)
-                        tp_action = 'Buy'
-                    
-                    logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
+                        logger.info(f"🎯 [{acct_name}] TP DISABLED (tp_ticks=0) - letting strategy handle exit")
                     
                     # STEP 4: Find existing TP or place new - OPTIMIZED for minimum API calls
-                    tp_order_id = None
+                    # Skip if TP is disabled (tp_ticks = 0)
                     existing_tp_id = None
-                    
-                    # OPTIMIZATION: For NEW entries (no existing position), skip order lookup - just place TP
-                    if not has_existing_position:
+
+                    if tp_price is None:
+                        # TP disabled - skip all TP placement logic
+                        pass
+                    elif not has_existing_position:
+                        # OPTIMIZATION: For NEW entries (no existing position), skip order lookup - just place TP
                         logger.info(f"📊 [{acct_name}] NEW ENTRY - placing TP directly (0 extra API calls)")
                     else:
                         # OPTIMIZATION: Check DB first for stored tp_order_id (no API call!)
@@ -1640,8 +1650,8 @@ def execute_trade_simple(
                                 logger.warning(f"⚠️ [{acct_name}] TP MODIFY FAILED: {error_msg} - will place new")
                                 existing_tp_id = None  # Fall through to place new
                     
-                    # Place new TP if needed
-                    if not tp_order_id:
+                    # Place new TP if needed (only if TP is enabled)
+                    if tp_price is not None and not tp_order_id:
                         # CRITICAL: Cancel ALL existing TP orders on broker before placing new!
                         # This prevents duplicates (especially after bracket orders where strategy ID != order ID)
                         logger.info(f"🗑️ [{acct_name}] Checking for existing TPs on broker before placing new...")
@@ -4111,7 +4121,14 @@ def sync_position_from_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
                             rec = dict(rec)
                             try:
                                 tp_targets = json.loads(rec.get('tp_targets', '[]'))
-                                tp_ticks = int(tp_targets[0].get('value', 0) or 0) if tp_targets else 0
+                                # Handle both 'ticks' (new) and 'value' (old) keys
+                                if tp_targets:
+                                    tp_val = tp_targets[0].get('ticks')
+                                    if tp_val is None:
+                                        tp_val = tp_targets[0].get('value')
+                                    tp_ticks = int(tp_val or 0)
+                                else:
+                                    tp_ticks = 0
                             except:
                                 tp_ticks = 0
                             sl_amount = rec.get('sl_amount', 0) if rec.get('sl_enabled') else 0
@@ -6554,7 +6571,14 @@ def receive_webhook(webhook_token):
             tp_targets_raw = recorder.get('tp_targets', '[]')
             try:
                 tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw or []
-                tp_ticks = tp_targets[0].get('value', 0) if tp_targets else 0
+                # Handle both 'ticks' (new) and 'value' (old) keys
+                if tp_targets:
+                    tp_val = tp_targets[0].get('ticks')
+                    if tp_val is None:
+                        tp_val = tp_targets[0].get('value')
+                    tp_ticks = int(tp_val or 0)
+                else:
+                    tp_ticks = 0
             except:
                 tp_ticks = 0
         
