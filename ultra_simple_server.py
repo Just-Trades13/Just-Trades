@@ -3774,6 +3774,25 @@ def init_db():
     except:
         pass
 
+    # Jan 2026: Add unique constraint on traders to prevent duplicates
+    # First run cleanup, then add constraint
+    try:
+        if is_postgres:
+            # For PostgreSQL, create a unique index that handles NULLs properly
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_traders_unique_combo
+                ON traders(recorder_id, account_id, subaccount_id)
+                WHERE subaccount_id IS NOT NULL
+            ''')
+        else:
+            # SQLite doesn't support WHERE clause in CREATE UNIQUE INDEX, so use a regular unique index
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_traders_unique_combo
+                ON traders(recorder_id, account_id, subaccount_id)
+            ''')
+    except Exception as e:
+        logger.warning(f"Could not create unique index on traders (may have duplicates): {e}")
+
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_traders_recorder
         ON traders(recorder_id)
@@ -10853,6 +10872,86 @@ def api_delete_trader(trader_id):
         
     except Exception as e:
         logger.error(f"Error deleting trader {trader_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/traders/cleanup-duplicates', methods=['POST'])
+def api_cleanup_duplicate_traders():
+    """Remove duplicate traders, keeping the one with the lowest ID (oldest)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+
+        # Find all duplicates (same recorder_id, account_id, subaccount_id)
+        if is_postgres:
+            cursor.execute('''
+                SELECT recorder_id, account_id, subaccount_id, COUNT(*) as cnt,
+                       MIN(id) as keep_id, array_agg(id ORDER BY id) as all_ids
+                FROM traders
+                WHERE subaccount_id IS NOT NULL
+                GROUP BY recorder_id, account_id, subaccount_id
+                HAVING COUNT(*) > 1
+            ''')
+        else:
+            cursor.execute('''
+                SELECT recorder_id, account_id, subaccount_id, COUNT(*) as cnt,
+                       MIN(id) as keep_id, GROUP_CONCAT(id) as all_ids
+                FROM traders
+                WHERE subaccount_id IS NOT NULL
+                GROUP BY recorder_id, account_id, subaccount_id
+                HAVING COUNT(*) > 1
+            ''')
+
+        duplicates = cursor.fetchall()
+        deleted_count = 0
+        deleted_ids = []
+
+        for dup in duplicates:
+            if isinstance(dup, dict):
+                keep_id = dup['keep_id']
+                all_ids = dup['all_ids']
+                recorder_id = dup['recorder_id']
+                account_id = dup['account_id']
+                subaccount_id = dup['subaccount_id']
+            else:
+                keep_id = dup[4]
+                all_ids = dup[5]
+                recorder_id = dup[0]
+                account_id = dup[1]
+                subaccount_id = dup[2]
+
+            # Parse all_ids (PostgreSQL returns list, SQLite returns comma-separated string)
+            if isinstance(all_ids, str):
+                ids_to_check = [int(x) for x in all_ids.split(',')]
+            else:
+                ids_to_check = list(all_ids)
+
+            # Delete all except the one to keep (lowest ID)
+            ids_to_delete = [id for id in ids_to_check if id != keep_id]
+
+            for del_id in ids_to_delete:
+                if is_postgres:
+                    cursor.execute('DELETE FROM traders WHERE id = %s', (del_id,))
+                else:
+                    cursor.execute('DELETE FROM traders WHERE id = ?', (del_id,))
+                deleted_ids.append(del_id)
+                deleted_count += 1
+                logger.info(f"Deleted duplicate trader {del_id} (keeping {keep_id} for recorder={recorder_id}, account={account_id}, subaccount={subaccount_id})")
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Cleaned up {deleted_count} duplicate traders',
+            'deleted_count': deleted_count,
+            'deleted_ids': deleted_ids
+        })
+
+    except Exception as e:
+        logger.error(f"Error cleaning up duplicate traders: {e}")
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
