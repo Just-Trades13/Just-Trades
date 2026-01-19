@@ -21035,11 +21035,15 @@ def api_market_data_test():
         if len(root) > 3:
             root = root[:3]
 
-        # Build TradingView symbol
-        if root in ['MNQ', 'MES', 'M2K', 'MYM']:
+        # Build TradingView symbol - use correct exchange prefix
+        if root in ['MNQ', 'MES', 'M2K', 'MYM', 'ES', 'NQ', 'RTY']:
             tv_symbol = f"CME_MINI:{root}1!"
-        elif root in ['ES', 'NQ', 'RTY', 'YM']:
-            tv_symbol = f"CME:{root}1!"
+        elif root in ['YM']:
+            tv_symbol = f"CBOT_MINI:{root}1!"
+        elif root in ['CL', 'NG', 'HO', 'RB']:
+            tv_symbol = f"NYMEX:{root}1!"
+        elif root in ['GC', 'SI', 'HG']:
+            tv_symbol = f"COMEX:{root}1!"
         else:
             tv_symbol = f"CME:{root}1!"
 
@@ -21111,8 +21115,14 @@ def get_price_from_tradingview(symbol: str) -> Optional[float]:
         if len(root) > 3:
             root = root[:3]
 
-        if root in ['MNQ', 'MES', 'M2K', 'MYM']:
+        if root in ['MNQ', 'MES', 'M2K', 'MYM', 'ES', 'NQ', 'RTY']:
             tv_symbol = f"CME_MINI:{root}1!"
+        elif root in ['YM']:
+            tv_symbol = f"CBOT_MINI:{root}1!"
+        elif root in ['CL', 'NG', 'HO', 'RB']:
+            tv_symbol = f"NYMEX:{root}1!"
+        elif root in ['GC', 'SI', 'HG']:
+            tv_symbol = f"COMEX:{root}1!"
         else:
             tv_symbol = f"CME:{root}1!"
 
