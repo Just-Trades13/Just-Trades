@@ -21018,6 +21018,73 @@ def api_news_feed():
             ]
         })
 
+@app.route('/api/market-data/status', methods=['GET'])
+def api_market_data_status():
+    """Check market data connection status and available tokens"""
+    try:
+        conn = get_db_connection()
+        is_postgres = is_using_postgres()
+        cursor = conn.cursor()
+
+        # Check for accounts with tokens
+        if is_postgres:
+            cursor.execute('''
+                SELECT id, name, environment,
+                       CASE WHEN md_access_token IS NOT NULL AND md_access_token != '' THEN true ELSE false END as has_md_token,
+                       CASE WHEN tradovate_token IS NOT NULL AND tradovate_token != '' THEN true ELSE false END as has_access_token
+                FROM accounts
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+                ORDER BY id
+            ''')
+        else:
+            cursor.execute('''
+                SELECT id, name, environment,
+                       CASE WHEN md_access_token IS NOT NULL AND md_access_token != '' THEN 1 ELSE 0 END as has_md_token,
+                       CASE WHEN tradovate_token IS NOT NULL AND tradovate_token != '' THEN 1 ELSE 0 END as has_access_token
+                FROM accounts
+                WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+                ORDER BY id
+            ''')
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        accounts_with_tokens = []
+        for row in rows:
+            if isinstance(row, dict):
+                accounts_with_tokens.append({
+                    'id': row['id'],
+                    'name': row['name'],
+                    'environment': row['environment'],
+                    'has_md_token': bool(row['has_md_token']),
+                    'has_access_token': bool(row['has_access_token'])
+                })
+            else:
+                accounts_with_tokens.append({
+                    'id': row[0],
+                    'name': row[1],
+                    'environment': row[2],
+                    'has_md_token': bool(row[3]),
+                    'has_access_token': bool(row[4])
+                })
+
+        # Check websocket connection status
+        ws_connected = _market_data_ws is not None and not getattr(_market_data_ws, 'closed', True)
+
+        return jsonify({
+            'success': True,
+            'websocket_connected': ws_connected,
+            'accounts_with_tokens': accounts_with_tokens,
+            'total_accounts': len(accounts_with_tokens),
+            'accounts_with_md_token': sum(1 for a in accounts_with_tokens if a['has_md_token']),
+            'market_data_cache_symbols': list(_market_data_cache.keys()) if _market_data_cache else [],
+            'instructions': 'Market data uses md_access_token if available, otherwise falls back to regular accessToken'
+        })
+    except Exception as e:
+        logger.error(f"Error checking market data status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/market-data', methods=['GET'])
 def api_market_data():
     """Get LIVE market data for futures ticker from TradingView"""
@@ -21518,42 +21585,98 @@ async def connect_tradovate_market_data_websocket():
         logger.error("websockets library not available. Cannot connect to market data.")
         return
     
-    # Get md_access_token from database
+    # Get access token from database - try md_access_token first, then fall back to regular accessToken
     md_token = None
     demo = True  # Default to demo
     account_id = None
-    
+    token_source = None
+
     try:
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, md_access_token, environment, tradovate_token FROM accounts 
-            WHERE md_access_token IS NOT NULL AND md_access_token != ''
-            LIMIT 1
-        ''')
-        row = cursor.fetchone()
-        if row:
-            account_id = row['id']
-            md_token = row['md_access_token']
-            # Check if environment is 'demo' or 'live'
-            # Note: sqlite3.Row doesn't have .get() method, use dict() or direct access
-            env = row['environment'] if row['environment'] else 'demo'
-            demo = (env == 'demo' or env is None)
-            
-            # Validate that the account has valid tokens before connecting
-            if account_id:
-                valid_token = get_valid_tradovate_token(account_id)
-                if not valid_token:
-                    logger.warning(f"Account {account_id} has no valid access token - WebSocket may fail")
+        is_postgres = is_using_postgres()
+
+        if is_postgres:
+            cursor = conn.cursor()
+            # First try to find account with md_access_token
+            cursor.execute('''
+                SELECT id, md_access_token, environment, tradovate_token FROM accounts
+                WHERE md_access_token IS NOT NULL AND md_access_token != ''
+                LIMIT 1
+            ''')
+            row = cursor.fetchone()
+
+            if row:
+                account_id = row['id'] if isinstance(row, dict) else row[0]
+                md_token = row['md_access_token'] if isinstance(row, dict) else row[1]
+                env = (row['environment'] if isinstance(row, dict) else row[2]) or 'demo'
+                demo = (env == 'demo' or env is None)
+                token_source = 'md_access_token'
+            else:
+                # Fall back to regular accessToken
+                cursor.execute('''
+                    SELECT id, tradovate_token, environment FROM accounts
+                    WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+                    LIMIT 1
+                ''')
+                row = cursor.fetchone()
+                if row:
+                    account_id = row['id'] if isinstance(row, dict) else row[0]
+                    md_token = row['tradovate_token'] if isinstance(row, dict) else row[1]
+                    env = (row['environment'] if isinstance(row, dict) else row[2]) or 'demo'
+                    demo = (env == 'demo' or env is None)
+                    token_source = 'accessToken (fallback)'
+        else:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            # First try to find account with md_access_token
+            cursor.execute('''
+                SELECT id, md_access_token, environment, tradovate_token FROM accounts
+                WHERE md_access_token IS NOT NULL AND md_access_token != ''
+                LIMIT 1
+            ''')
+            row = cursor.fetchone()
+
+            if row:
+                account_id = row['id']
+                md_token = row['md_access_token']
+                env = row['environment'] if row['environment'] else 'demo'
+                demo = (env == 'demo' or env is None)
+                token_source = 'md_access_token'
+            else:
+                # Fall back to regular accessToken
+                cursor.execute('''
+                    SELECT id, tradovate_token, environment FROM accounts
+                    WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
+                    LIMIT 1
+                ''')
+                row = cursor.fetchone()
+                if row:
+                    account_id = row['id']
+                    md_token = row['tradovate_token']
+                    env = row['environment'] if row['environment'] else 'demo'
+                    demo = (env == 'demo' or env is None)
+                    token_source = 'accessToken (fallback)'
+
+        # Validate and refresh token if needed
+        if account_id:
+            valid_token = get_valid_tradovate_token(account_id)
+            if valid_token and valid_token != md_token:
+                md_token = valid_token
+                logger.info(f"Using refreshed token for account {account_id}")
+            elif not valid_token:
+                logger.warning(f"Account {account_id} has no valid access token - WebSocket may fail")
         conn.close()
     except Exception as e:
-        logger.error(f"Error fetching md_access_token: {e}")
+        logger.error(f"Error fetching access token for market data: {e}")
+        logger.error(traceback.format_exc())
         return
-    
+
     if not md_token:
-        logger.warning("No md_access_token found. Market data WebSocket will not connect.")
+        logger.warning("No access token found for market data. WebSocket will not connect.")
+        logger.info("To enable market data: Connect a Tradovate account via OAuth on the site.")
         return
+
+    logger.info(f"Using {token_source} from account {account_id} for market data WebSocket")
     
     # WebSocket URL (demo or live)
     ws_url = "wss://demo.tradovateapi.com/v1/websocket" if demo else "wss://live.tradovateapi.com/v1/websocket"
