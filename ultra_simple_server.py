@@ -25692,5 +25692,15 @@ if __name__ == '__main__':
             logger.info("✅ Subscription system initialized")
         except Exception as e:
             logger.warning(f"⚠️ Subscription system init failed: {e}")
-    
+
+    # Initialize trial abuse protection
+    try:
+        from trial_abuse_protection import init_trial_abuse_protection
+        init_trial_abuse_protection(app)
+        logger.info("✅ Trial abuse protection initialized")
+    except ImportError:
+        logger.debug("Trial abuse protection module not found")
+    except Exception as e:
+        logger.warning(f"⚠️ Trial abuse protection init failed: {e}")
+
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)

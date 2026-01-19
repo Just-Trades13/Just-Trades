@@ -272,10 +272,54 @@ def process_webhook_event(event_type: str, data: Dict) -> Dict:
     
     if event_type == 'membership.went_valid':
         # New subscription or reactivation
+        is_trial = data.get('status') == 'trialing'
+
+        # Track trial usage for abuse prevention
+        if is_trial:
+            try:
+                from trial_abuse_protection import record_trial_start, is_disposable_email
+
+                # Check for disposable email
+                if is_disposable_email(user_email):
+                    logger.warning(f"🚨 Disposable email detected for trial: {user_email}")
+                    # Still create subscription but flag it
+
+                # Extract payment info if available (Whop may include card fingerprint)
+                payment_info = data.get('payment_method', {})
+                card_fingerprint = None
+                if payment_info:
+                    # Create card fingerprint from last4 + brand
+                    last4 = payment_info.get('last4', '')
+                    brand = payment_info.get('brand', '')
+                    if last4:
+                        card_fingerprint = f"{brand}_{last4}"
+
+                # Record trial fingerprints
+                abuse_detected, abuse_msg = record_trial_start(
+                    whop_membership_id=membership_id,
+                    whop_user_id=whop_user_id,
+                    email=user_email,
+                    card_fingerprint=card_fingerprint,
+                    metadata={
+                        'plan': plan_slug,
+                        'product_id': product_id,
+                        'webhook_data': {k: v for k, v in data.items() if k not in ['user', 'product']}
+                    }
+                )
+
+                if abuse_detected:
+                    logger.warning(f"🚨 Trial abuse detected at signup: {abuse_msg}")
+                    # We still create the subscription, but it will be blocked at platform level
+
+            except ImportError:
+                logger.debug("Trial abuse protection not available")
+            except Exception as e:
+                logger.error(f"Trial abuse tracking error: {e}")
+
         # Try to find existing user by email
         from user_auth import get_user_by_email
         user = get_user_by_email(user_email) if user_email else None
-        
+
         if user:
             # Create/update subscription for existing user
             create_subscription(
@@ -283,7 +327,7 @@ def process_webhook_event(event_type: str, data: Dict) -> Dict:
                 plan_slug=plan_slug,
                 whop_membership_id=membership_id,
                 whop_customer_id=whop_user_id,
-                trial_days=7 if data.get('status') == 'trialing' else 0
+                trial_days=7 if is_trial else 0
             )
             logger.info(f"✅ Subscription created for user {user.email}: {plan_slug}")
             return {'success': True, 'message': f'Subscription activated for {user.email}'}
@@ -295,7 +339,7 @@ def process_webhook_event(event_type: str, data: Dict) -> Dict:
                 plan_slug=plan_slug,
                 whop_membership_id=membership_id,
                 whop_customer_id=whop_user_id,
-                trial_days=7 if data.get('status') == 'trialing' else 0
+                trial_days=7 if is_trial else 0
             )
             logger.info(f"✅ Pending subscription created for {user_email}: {plan_slug}")
             return {'success': True, 'message': f'Pending subscription for {user_email}'}
