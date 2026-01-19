@@ -738,7 +738,7 @@ def execute_trade_simple(
     action: str,  # 'BUY' or 'SELL'
     ticker: str,
     quantity: int,
-    tp_ticks: int = 10,
+    tp_ticks: int = 0,  # 0 = no TP (TradingView strategy may handle it)
     sl_ticks: int = 0,  # 0 = no SL (TradingView strategy may handle it)
     risk_config: dict = None  # NEW: Full risk_config for trailing stop/break-even
 ) -> Dict[str, Any]:
@@ -3976,8 +3976,14 @@ def execute_live_trades(recorder_id: int, action: str, ticker: str, quantity: in
             try:
                 tp_targets = json.loads(tp_targets_json) if tp_targets_json else []
                 if tp_targets and len(tp_targets) > 0:
-                    tp_ticks = int(tp_targets[0].get('ticks', 0) or 0)
-            except:
+                    # Handle both 'ticks' (new) and 'value' (old) keys
+                    tp_val = tp_targets[0].get('ticks')
+                    if tp_val is None:
+                        tp_val = tp_targets[0].get('value')
+                    tp_ticks = int(tp_val or 0)
+                    logger.info(f"📊 TP config parsed: tp_ticks={tp_ticks} (from tp_targets: {tp_targets[0]})")
+            except Exception as e:
+                logger.warning(f"Could not parse tp_targets: {e}")
                 tp_ticks = 0  # No TP by default - let strategy handle it
 
             # Get SL
