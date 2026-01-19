@@ -4019,6 +4019,41 @@ def run_migrations():
     conn.close()
     return jsonify({'success': True, 'migrations': results})
 
+@app.route('/api/whop/status', methods=['GET'])
+def whop_status():
+    """Check Whop integration status."""
+    try:
+        from whop_integration import get_configuration_status, WHOP_API_KEY, WHOP_WEBHOOK_SECRET
+        status = get_configuration_status()
+
+        # Test API connection if key is configured
+        api_test = None
+        if status['api_key_configured']:
+            try:
+                import requests
+                headers = {
+                    'Authorization': f'Bearer {WHOP_API_KEY}',
+                    'Accept': 'application/json',
+                }
+                resp = requests.get('https://api.whop.com/api/v2/me', headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    api_test = {'success': True, 'message': 'API connection verified'}
+                else:
+                    api_test = {'success': False, 'message': f'API returned {resp.status_code}'}
+            except Exception as e:
+                api_test = {'success': False, 'message': str(e)}
+
+        return jsonify({
+            'success': True,
+            'whop_configured': status['api_key_configured'],
+            'webhook_secret_configured': status['webhook_secret_configured'],
+            'api_test': api_test,
+            'product_map': status['product_map'],
+            'webhook_url': 'https://justtrades-production.up.railway.app/webhooks/whop'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 # ============================================================================
 # USER AUTHENTICATION ROUTES
 # ============================================================================
