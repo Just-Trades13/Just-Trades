@@ -9890,6 +9890,8 @@ def api_update_recorder(recorder_id):
             'max_signals_per_session': 'max_signals_per_session',
             'max_daily_loss': 'max_daily_loss',
             'notes': 'notes',
+            'same_direction_ignore': 'same_direction_ignore',
+            'inverse_signals': 'inverse_signals',
         }
         
         for key, db_field in field_mapping.items():
