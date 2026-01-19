@@ -409,5 +409,142 @@ curl -s "https://justtrades-production.up.railway.app/api/recorders" | python3 -
 
 ---
 
-*Last updated: Jan 19, 2026*
+## 📝 Session Log - January 19, 2026 (Continued)
+
+### 1. Whop Integration Fix
+**Problem:** API test returning 401 Unauthorized
+
+**Root Cause:** Was calling `/api/v2/me` endpoint which doesn't exist in Whop API v2
+
+**Fix:** Changed to `/api/v2/memberships?per_page=1` in `ultra_simple_server.py:4038`
+
+**User Action Required:** Created new API key in Whop Dashboard with permissions:
+- `member:basic:read`
+- `webhook_receive:memberships`
+
+**Status:** ✅ Working - 40 memberships found
+```bash
+curl -s "https://justtrades-production.up.railway.app/api/whop/status" | python3 -m json.tool
+```
+
+### 2. Economic Calendar Widgets
+
+**Added TradingView Economic Calendar to:**
+- `templates/dashboard.html` - Above the heatmap in "Market Intel" section
+- `templates/quant_screener.html` - In Market tab (replaced static data)
+
+**Widget Config:**
+```javascript
+{
+    "colorTheme": "dark",
+    "isTransparent": true,
+    "width": "100%",
+    "height": "380",
+    "locale": "en",
+    "importanceFilter": "0,1",  // High & medium importance
+    "countryFilter": "us"       // US events only
+}
+```
+
+### 3. News Feed Widget (Dashboard)
+**Location:** Dashboard → Market Intel section (right side)
+
+**Implementation:** Tries Financial Juice first, falls back to TradingView Timeline if fails
+
+**Code Location:** `templates/dashboard.html:225-306`
+
+### 4. Trial Abuse Protection System (NEW MODULE)
+
+**Problem:** Scammers abuse 7-day free trials by changing email/payment method
+
+**Solution:** New comprehensive tracking system
+
+**New File:** `trial_abuse_protection.py` (~600 lines)
+
+**Features:**
+| Detection | What It Catches |
+|-----------|-----------------|
+| Device Fingerprint | Same browser/device, even in incognito |
+| Email Pattern | `john+1@gmail.com` = `j.o.h.n@gmail.com` |
+| Disposable Emails | 40+ temp email domains blocked |
+| Card Fingerprint | Same card = blocked (if Whop provides) |
+| Whop User ID | Same Whop account trying again |
+
+**Database Tables Created:**
+```sql
+trial_fingerprints (id, fingerprint_type, fingerprint_value, whop_membership_id,
+                    whop_user_id, email, ip_address, trial_count, is_blocked, ...)
+
+trial_abuse_log (id, event_type, fingerprint_type, fingerprint_value,
+                 whop_membership_id, email, ip_address, details, created_at)
+```
+
+**Frontend Integration:**
+- Added FingerprintJS to `templates/layout.html:1271-1359`
+- Tracks device on every page load
+- Shows "Trial Already Used" modal if blocked
+
+**API Endpoints:**
+```bash
+# Check abuse stats
+curl -s "https://justtrades-production.up.railway.app/api/admin/trial-abuse/stats"
+
+# List flagged users
+curl -s "https://justtrades-production.up.railway.app/api/admin/trial-abuse/flagged"
+
+# Unblock a user
+curl -X POST "https://justtrades-production.up.railway.app/api/admin/trial-abuse/unblock" \
+  -H "Content-Type: application/json" \
+  -d '{"fingerprint_type": "device", "fingerprint_value": "abc123..."}'
+```
+
+**Files Modified:**
+- `trial_abuse_protection.py` (NEW)
+- `whop_integration.py` - Added trial tracking to webhook handler
+- `ultra_simple_server.py` - Added initialization at startup
+- `templates/layout.html` - Added fingerprinting script + body data attributes
+
+### Commits This Session
+```
+f502609 Try Financial Juice first, fallback to TradingView if fails
+8943030 Replace Financial Juice with TradingView Timeline news widget
+5bf27cc Add comprehensive trial abuse protection system
+9d65ff1 Add Financial Juice headlines widget next to economic calendar
+0e7e82b Add TradingView economic calendar widgets
+1ee2853 Fix Whop API test to use /memberships endpoint
+```
+
+### Quick Reference - New Features
+
+**Check Whop Status:**
+```bash
+curl -s "https://justtrades-production.up.railway.app/api/whop/status" | python3 -m json.tool
+```
+
+**Check Trial Abuse Stats:**
+```bash
+curl -s "https://justtrades-production.up.railway.app/api/admin/trial-abuse/stats" | python3 -m json.tool
+```
+
+**View Flagged Users:**
+```bash
+curl -s "https://justtrades-production.up.railway.app/api/admin/trial-abuse/flagged" | python3 -m json.tool
+```
+
+### File Locations for New Features
+
+| Feature | File | Lines |
+|---------|------|-------|
+| Whop API test fix | `ultra_simple_server.py` | 4038-4045 |
+| Whop status endpoint | `ultra_simple_server.py` | 4022-4055 |
+| Trial abuse module | `trial_abuse_protection.py` | 1-600+ |
+| Trial tracking in webhook | `whop_integration.py` | 277-317 |
+| Device fingerprinting | `templates/layout.html` | 1271-1359 |
+| Economic calendar (dashboard) | `templates/dashboard.html` | 190-223 |
+| News feed (dashboard) | `templates/dashboard.html` | 225-306 |
+| Economic calendar (quant) | `templates/quant_screener.html` | 762-779 |
+
+---
+
+*Last updated: Jan 19, 2026 (Evening)*
 *Author: Claude Code Session*
