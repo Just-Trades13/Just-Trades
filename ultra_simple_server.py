@@ -14700,16 +14700,21 @@ def traders_edit(trader_id):
             logger.warning(f"User {current_user_id} tried to edit trader {trader_id} owned by user {trader_user_id}")
             return redirect('/traders')
         
-        # Parse TP targets from JSON (prefer recorder settings)
+        # Parse TP targets from JSON (prefer trader settings over recorder)
         tp_targets = []
         tp_value = 0  # Default to 0 (no TP) if not set
         tp_trim = 100
         try:
-            tp_targets_raw = trader_row['r_tp_targets'] or trader_row['tp_targets']
+            # Prefer trader's own tp_targets over recorder's (user may have customized)
+            tp_targets_raw = trader_row['tp_targets'] or trader_row['r_tp_targets']
             if tp_targets_raw:
                 tp_targets = json.loads(tp_targets_raw)
                 if tp_targets and len(tp_targets) > 0:
-                    tp_value = tp_targets[0].get('value', 0)
+                    # Handle both 'ticks' (new format) and 'value' (old format)
+                    tp_val = tp_targets[0].get('ticks')
+                    if tp_val is None:
+                        tp_val = tp_targets[0].get('value')
+                    tp_value = tp_val if tp_val is not None else 0
                     tp_trim = tp_targets[0].get('trim', 100)
         except:
             tp_targets = []

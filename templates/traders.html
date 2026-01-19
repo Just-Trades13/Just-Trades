@@ -190,7 +190,7 @@
                     <span class="tp-pill">TP #1</span>
                     <label class="form-field">
                         <span>TP Value (Ticks)</span>
-                        <input type="number" id="tpValue" name="tp_value" value="{{ trader.tp_value or 5 }}" min="0">
+                        <input type="number" id="tpValue" name="tp_value" value="{{ trader.tp_value if trader.tp_value is not none else 0 }}" min="0">
                     </label>
                     <label class="form-field">
                         <span>Trim %</span>
@@ -1872,7 +1872,7 @@
                         const initialPositionSize = parseInt(document.getElementById('initialPositionSize')?.value) || 1;
                         const addPositionSize = parseInt(document.getElementById('addPositionSize')?.value) || 1;
                         const tpUnits = document.getElementById('tpUnits')?.value || 'Ticks';
-                        const tpValue = parseInt(document.getElementById('tpValue')?.value) || 5;
+                        const tpValue = parseInt(document.getElementById('tpValue')?.value ?? 0);
                         const tpTrim = parseInt(document.getElementById('tpTrim')?.value) || 100;
                         const slEnabled = document.getElementById('slEnabled')?.checked ? 1 : 0;
                         const slAmount = parseFloat(document.getElementById('slAmount')?.value) || 0;
@@ -1894,7 +1894,7 @@
                         const timeFilter2Stop = document.getElementById('timeFilter2Stop')?.value || '';
                         
                         // Build TP targets array
-                        const tpTargets = JSON.stringify([{ value: tpValue, trim: tpTrim }]);
+                        const tpTargets = JSON.stringify([{ ticks: tpValue, trim: tpTrim }]);
                         
                         // Log what we're sending
                         console.log('Saving trader with settings:', {
