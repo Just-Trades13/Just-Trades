@@ -4227,9 +4227,24 @@
                 expectancyEl.textContent = (expectancy >= 0 ? '$' : '-$') + Math.abs(expectancy).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 expectancyEl.className = 'analytics-value ' + (expectancy >= 0 ? 'positive' : 'negative');
 
-                // Render equity curve if data exists
+                // Render equity curve - clear if no data
                 if (a.equity_curve && a.equity_curve.length > 0) {
                     renderEquityCurve(a.equity_curve);
+                } else {
+                    // Clear the chart when no data
+                    if (equityChart) {
+                        equityChart.destroy();
+                        equityChart = null;
+                    }
+                    const canvas = document.getElementById('equityCurveChart');
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                        ctx.font = '14px Inter, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('No trades for this strategy', canvas.width / 2, canvas.height / 2);
+                    }
                 }
             }
         } catch (error) {
