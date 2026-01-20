@@ -23131,15 +23131,19 @@ async def connect_tradingview_websocket():
     if not session or not session.get('sessionid'):
         logger.warning("No TradingView session configured. Use /api/tradingview/session to set it up.")
         return
-    
+
     sessionid = session.get('sessionid')
     sessionid_sign = session.get('sessionid_sign', '')
+
+    # Log session info for debugging (masked)
+    logger.info(f"📡 TradingView session: sessionid={sessionid[:10]}...{sessionid[-5:]}, sign={'present' if sessionid_sign else 'MISSING'}")
     
     # TradingView WebSocket URL options:
-    # - data.tradingview.com = may be delayed
-    # - prodata.tradingview.com = for paid accounts
-    # - widgetdata.tradingview.com = real-time widget data (what Trade Manager likely uses)
-    ws_url = "wss://widgetdata.tradingview.com/socket.io/websocket"
+    # - data.tradingview.com = standard WebSocket for real-time quotes
+    # - prodata.tradingview.com = for paid accounts (may require subscription)
+    # - widgetdata.tradingview.com = for embedded widgets (may have restrictions)
+    # Using data.tradingview.com as primary - works with Premium/Essential session
+    ws_url = "wss://data.tradingview.com/socket.io/websocket"
     
     while True:
         try:
