@@ -121,54 +121,153 @@ def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, 
         quantity: Number of contracts
         price: Entry/exit price (uses live feed if not provided)
     """
-    print(f"🧪🧪🧪 PAPER TRADE CALLED: rec={recorder_id}, sym={symbol}, act={action}, qty={quantity}, price={price}", flush=True)
-    print(f"🧪🧪🧪 TV_PRICE_SERVICE_AVAILABLE = {TV_PRICE_SERVICE_AVAILABLE}", flush=True)
+    print(f"🧪 PAPER TRADE: rec={recorder_id}, sym={symbol}, act={action}, qty={quantity}, price={price}", flush=True)
 
+    # Clean up symbol (remove any exchange prefix)
+    clean_symbol = symbol.replace('CME_MINI:', '').replace('1!', '').upper()
+
+    # If price is provided, we can record directly to DB without needing price service
+    if price:
+        try:
+            return _record_paper_trade_direct(recorder_id, clean_symbol, action, quantity, price)
+        except Exception as e:
+            print(f"⚠️ Direct paper trade failed: {e}", flush=True)
+            import traceback
+            print(traceback.format_exc(), flush=True)
+
+    # Fall back to price service if available and no price provided
     if not TV_PRICE_SERVICE_AVAILABLE:
-        print("🧪🧪🧪 TV_PRICE_SERVICE_AVAILABLE is False - RETURNING NONE", flush=True)
+        print("⚠️ No price provided and TV_PRICE_SERVICE not available", flush=True)
         return None
 
     try:
         paper_engine = get_paper_engine()
         ticker = get_ticker()
-        print(f"🧪🧪🧪 paper_engine={type(paper_engine).__name__ if paper_engine else 'None'}", flush=True)
 
-        # Clean up symbol (remove any exchange prefix)
-        clean_symbol = symbol.replace('CME_MINI:', '').replace('1!', '').upper()
+        # Get live price
+        for tv_format in [f"CME_MINI:{clean_symbol}1!", clean_symbol]:
+            price_data = ticker.get_price(tv_format)
+            if price_data:
+                if action in ['LONG', 'BUY']:
+                    price = price_data.get('ask') or price_data.get('last_price')
+                elif action in ['SHORT', 'SELL']:
+                    price = price_data.get('bid') or price_data.get('last_price')
+                else:
+                    price = price_data.get('last_price')
+                if price:
+                    break
 
-        # Get live price if not provided
-        if not price:
-            # Try different symbol formats
-            for tv_format in [f"CME_MINI:{clean_symbol}1!", clean_symbol]:
-                price_data = ticker.get_price(tv_format)
-                if price_data:
-                    if action in ['LONG', 'BUY']:
-                        price = price_data.get('ask') or price_data.get('last_price')
-                    elif action in ['SHORT', 'SELL']:
-                        price = price_data.get('bid') or price_data.get('last_price')
-                    else:
-                        price = price_data.get('last_price')
-                    if price:
-                        break
-
-        if action in ['LONG', 'BUY']:
-            result = paper_engine.open_position(recorder_id, clean_symbol, 'LONG', quantity, price)
-            print(f"📝 Paper trade recorded: LONG {quantity} {clean_symbol} @ {price}")
-            return result
-        elif action in ['SHORT', 'SELL']:
-            result = paper_engine.open_position(recorder_id, clean_symbol, 'SHORT', quantity, price)
-            print(f"📝 Paper trade recorded: SHORT {quantity} {clean_symbol} @ {price}")
-            return result
-        elif action in ['CLOSE', 'EXIT', 'FLAT']:
-            result = paper_engine.close_position(recorder_id, clean_symbol, price)
-            if result:
-                print(f"📝 Paper trade closed: {clean_symbol} @ {price}, P&L: ${result.get('pnl', 0):.2f}")
-            return result
+        if price:
+            return _record_paper_trade_direct(recorder_id, clean_symbol, action, quantity, price)
 
         return None
     except Exception as e:
-        print(f"⚠️ Error recording paper trade: {e}")
+        print(f"⚠️ Error recording paper trade: {e}", flush=True)
         return None
+
+
+def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quantity: int, price: float):
+    """Direct database recording for paper trades - works without price service"""
+    from datetime import datetime
+    import os
+
+    print(f"📝 Recording paper trade directly: {action} {quantity} {symbol} @ {price}", flush=True)
+
+    # Determine side
+    if action in ['LONG', 'BUY']:
+        side = 'LONG'
+    elif action in ['SHORT', 'SELL']:
+        side = 'SHORT'
+    else:
+        side = 'CLOSE'
+
+    # Get database connection
+    database_url = os.environ.get('DATABASE_URL')
+    use_postgres = bool(database_url)
+
+    if use_postgres:
+        import psycopg2
+        conn = psycopg2.connect(database_url)
+        ph = '%s'
+    else:
+        conn = sqlite3.connect('paper_trades.db')
+        ph = '?'
+
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+
+    try:
+        if side in ['LONG', 'SHORT']:
+            # Opening a position - check if there's an existing open position to close first
+            cursor.execute(f'''
+                SELECT id, side, quantity, entry_price FROM paper_trades
+                WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
+                ORDER BY opened_at DESC LIMIT 1
+            ''', (recorder_id, symbol))
+            existing = cursor.fetchone()
+
+            if existing:
+                # Close existing position first
+                exist_id, exist_side, exist_qty, exist_entry = existing
+                if exist_side != side:  # Opposite direction = close and open new
+                    # Calculate P&L for closing
+                    from tv_price_service import FUTURES_SPECS
+                    spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
+                    point_value = spec['point_value']
+
+                    if exist_side == 'LONG':
+                        pnl = (price - exist_entry) * point_value * exist_qty
+                    else:
+                        pnl = (exist_entry - price) * point_value * exist_qty
+
+                    cursor.execute(f'''
+                        UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph}, closed_at = {ph}
+                        WHERE id = {ph}
+                    ''', (price, pnl, now, exist_id))
+                    print(f"📝 Closed existing {exist_side} position, P&L: ${pnl:.2f}", flush=True)
+
+            # Open new position
+            cursor.execute(f'''
+                INSERT INTO paper_trades (recorder_id, symbol, side, quantity, entry_price, opened_at, status)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+            ''', (recorder_id, symbol, side, quantity, price, now))
+            print(f"📝 Opened {side} {quantity} {symbol} @ {price}", flush=True)
+
+        else:  # CLOSE action
+            # Find and close open position
+            cursor.execute(f'''
+                SELECT id, side, quantity, entry_price FROM paper_trades
+                WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
+                ORDER BY opened_at DESC LIMIT 1
+            ''', (recorder_id, symbol))
+            existing = cursor.fetchone()
+
+            if existing:
+                exist_id, exist_side, exist_qty, exist_entry = existing
+                from tv_price_service import FUTURES_SPECS
+                spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
+                point_value = spec['point_value']
+
+                if exist_side == 'LONG':
+                    pnl = (price - exist_entry) * point_value * exist_qty
+                else:
+                    pnl = (exist_entry - price) * point_value * exist_qty
+
+                cursor.execute(f'''
+                    UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph}, closed_at = {ph}
+                    WHERE id = {ph}
+                ''', (price, pnl, now, exist_id))
+                print(f"📝 Closed {exist_side} position, P&L: ${pnl:.2f}", flush=True)
+
+        conn.commit()
+        return {'success': True, 'symbol': symbol, 'action': action, 'price': price}
+
+    except Exception as e:
+        print(f"⚠️ DB error in paper trade: {e}", flush=True)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 # ============================================================================
