@@ -75,8 +75,10 @@ class ProjectXIntegration:
         'default': {
             'demo': 'https://gateway-api-demo.s2f.projectx.com',
             'live': 'https://gateway-api.s2f.projectx.com',
-            'user_api_demo': 'https://userapi-demo.s2f.projectx.com',  # Password auth endpoint
-            'user_api_live': 'https://userapi.s2f.projectx.com',
+            # IMPORTANT: userapi-demo works for ALL accounts (demo AND live/funded)
+            # userapi.s2f.projectx.com does NOT exist (DNS NXDOMAIN)
+            'user_api_demo': 'https://userapi-demo.s2f.projectx.com',  # Password auth - works for ALL
+            'user_api_live': 'https://userapi-demo.s2f.projectx.com',  # Same endpoint works for live too
             'ws_user_demo': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/user',
             'ws_user_live': 'https://gateway-rtc.s2f.projectx.com/hubs/user',
             'ws_market_demo': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/market',
@@ -169,12 +171,12 @@ class ProjectXIntegration:
             }
             
             # Password auth uses userapi endpoint, NOT gateway-api
-            # Note: userapi-demo works for both demo AND live/funded accounts
-            # The "demo" in the URL refers to the API environment, not the account type
-            # IMPORTANT: ALL firms (including TopstepX) use the generic userapi for password auth
+            # IMPORTANT: userapi-demo.s2f.projectx.com works for ALL accounts (demo AND live/funded)
+            # The "demo" in the URL is misleading - it's the only working endpoint
+            # userapi.s2f.projectx.com does NOT exist (DNS NXDOMAIN) - DO NOT USE
+            # IMPORTANT: ALL firms (including TopstepX) use this generic userapi for password auth
             endpoints_to_try = [
-                "https://userapi-demo.s2f.projectx.com/login",  # Primary - works for ALL accounts including TopstepX
-                "https://userapi.s2f.projectx.com/login",  # Live userapi (fallback)
+                "https://userapi-demo.s2f.projectx.com/login",  # Primary - works for ALL accounts (demo + live)
             ]
             # Only add firm-specific endpoint if it's different from generic (not for TopstepX)
             if self.user_api_url and 'userapi' not in self.user_api_url:
