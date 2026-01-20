@@ -3910,26 +3910,42 @@
 
     // Initialize paper trading panel
     async function initPaperTradingPanel() {
-        await refreshPaperTrades();
+        // Initial load with error handling
+        try {
+            await refreshPaperTrades();
+        } catch (e) {
+            console.log('Paper trading panel: initial load skipped (service may not be ready)');
+        }
 
-        // Refresh positions every 5 seconds for real-time P&L
-        setInterval(loadPaperPositions, 5000);
+        // Refresh positions every 10 seconds (reduced from 5s to prevent flashing)
+        setInterval(async () => {
+            try {
+                await loadPaperPositions();
+            } catch (e) { /* silent */ }
+        }, 10000);
 
-        // Refresh prices every 2 seconds
-        setInterval(loadLivePrices, 2000);
+        // Refresh prices every 5 seconds (reduced from 2s)
+        setInterval(async () => {
+            try {
+                await loadLivePrices();
+            } catch (e) { /* silent */ }
+        }, 5000);
 
-        // Refresh history and cards every 30 seconds
-        setInterval(() => {
-            loadPaperHistory();
-            loadRecorderCards();
-        }, 30000);
+        // Refresh history and cards every 60 seconds (reduced from 30s)
+        setInterval(async () => {
+            try {
+                await loadPaperHistory();
+                await loadRecorderCards();
+            } catch (e) { /* silent */ }
+        }, 60000);
     }
 
-    // Start paper trading panel when page loads
+    // Start paper trading panel when page loads (delayed to prevent initial flash)
     document.addEventListener('DOMContentLoaded', function() {
         // Check if paper trading section exists before initializing
         if (document.getElementById('paperTradingSection')) {
-            initPaperTradingPanel();
+            // Delay initialization by 2 seconds to let other elements load first
+            setTimeout(initPaperTradingPanel, 2000);
         }
     });
 
