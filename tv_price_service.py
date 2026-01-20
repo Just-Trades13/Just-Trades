@@ -309,8 +309,8 @@ class TradingViewTicker:
             on_open=self._on_open
         )
 
-        # Run in thread
-        wst = threading.Thread(target=self.ws.run_forever)
+        # Run in thread with keepalive pings
+        wst = threading.Thread(target=lambda: self.ws.run_forever(ping_interval=25, ping_timeout=10))
         wst.daemon = True
         wst.start()
 
