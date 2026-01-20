@@ -406,10 +406,10 @@
                             <th>Symbol</th>
                             <th>Side</th>
                             <th>Entry</th>
+                            <th>TP/SL</th>
                             <th>Exit</th>
                             <th>P&L</th>
-                            <th>Drawdown</th>
-                            <th>Status</th>
+                            <th>Reason</th>
                         </tr>
                     </thead>
                     <tbody id="paperHistoryBody">
@@ -1775,6 +1775,14 @@
     .status-closed {
         background: rgba(107, 114, 128, 0.2);
         color: #9ca3af;
+    }
+    .status-tp {
+        background: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+    }
+    .status-sl {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
     }
     .recorder-cards {
         display: grid;
@@ -3768,8 +3776,15 @@
                     tradesToday++;
                 }
 
-                const drawdown = trade.drawdown || 0;
-                const ddClass = drawdown > 0 ? 'pnl-negative' : '';
+                // Format TP/SL display
+                const tpStr = trade.tp_price ? trade.tp_price.toFixed(2) : '--';
+                const slStr = trade.sl_price ? trade.sl_price.toFixed(2) : '--';
+                const tpslDisplay = `${tpStr} / ${slStr}`;
+
+                // Exit reason badge
+                const exitReason = trade.exit_reason || (trade.status === 'open' ? 'open' : 'signal');
+                const reasonClass = exitReason === 'tp' ? 'status-tp' : exitReason === 'sl' ? 'status-sl' : exitReason === 'open' ? 'status-open' : 'status-closed';
+                const reasonLabel = exitReason === 'tp' ? '🎯 TP' : exitReason === 'sl' ? '🛑 SL' : exitReason === 'open' ? 'open' : 'signal';
 
                 row.innerHTML = `
                     <td>${openTime}</td>
@@ -3777,10 +3792,10 @@
                     <td>${simpleSymbol}</td>
                     <td class="${sideClass}">${trade.side}</td>
                     <td>$${trade.entry_price?.toFixed(2) || '--'}</td>
+                    <td style="font-size: 0.85em; opacity: 0.8;">${tpslDisplay}</td>
                     <td>${trade.exit_price ? '$' + trade.exit_price.toFixed(2) : '--'}</td>
                     <td class="${pnlClass}">${trade.status === 'closed' ? (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) : '--'}</td>
-                    <td class="${ddClass}">${trade.status === 'closed' && drawdown > 0 ? '-$' + drawdown.toFixed(2) : '--'}</td>
-                    <td><span class="status-badge ${statusClass}">${trade.status}</span></td>
+                    <td><span class="status-badge ${reasonClass}">${reasonLabel}</span></td>
                 `;
                 tbody.appendChild(row);
             }
