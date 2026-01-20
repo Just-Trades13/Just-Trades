@@ -393,6 +393,52 @@
             </div>
         </div>
 
+        <!-- Analytics Summary Panel -->
+        <div class="paper-analytics-panel" id="paperAnalyticsPanel">
+            <div class="analytics-grid">
+                <div class="analytics-card total-pnl">
+                    <div class="analytics-label">Total P&L</div>
+                    <div class="analytics-value" id="analyticsTotalPnl">$0.00</div>
+                </div>
+                <div class="analytics-card">
+                    <div class="analytics-label">Win Rate</div>
+                    <div class="analytics-value" id="analyticsWinRate">0%</div>
+                </div>
+                <div class="analytics-card">
+                    <div class="analytics-label">Profit Factor</div>
+                    <div class="analytics-value" id="analyticsProfitFactor">0.00</div>
+                </div>
+                <div class="analytics-card">
+                    <div class="analytics-label">Max Drawdown</div>
+                    <div class="analytics-value negative" id="analyticsMaxDD">$0.00</div>
+                </div>
+                <div class="analytics-card">
+                    <div class="analytics-label">Total Trades</div>
+                    <div class="analytics-value" id="analyticsTotalTrades">0</div>
+                </div>
+                <div class="analytics-card">
+                    <div class="analytics-label">Avg Winner</div>
+                    <div class="analytics-value positive" id="analyticsAvgWin">$0.00</div>
+                </div>
+                <div class="analytics-card">
+                    <div class="analytics-label">Avg Loser</div>
+                    <div class="analytics-value negative" id="analyticsAvgLoss">$0.00</div>
+                </div>
+                <div class="analytics-card">
+                    <div class="analytics-label">Expectancy</div>
+                    <div class="analytics-value" id="analyticsExpectancy">$0.00</div>
+                </div>
+            </div>
+
+            <!-- Equity Curve Chart -->
+            <div class="equity-curve-container">
+                <div class="equity-curve-header">
+                    <h3><span class="material-icons">show_chart</span> Equity Curve</h3>
+                </div>
+                <canvas id="equityCurveChart" height="200"></canvas>
+            </div>
+        </div>
+
         <div class="paper-trading-grid">
             <!-- Open Positions Panel -->
             <div class="paper-panel paper-positions-panel">
@@ -1676,6 +1722,98 @@
         color: #ef4444;
         background: rgba(239, 68, 68, 0.15);
     }
+
+    /* Analytics Panel Styles */
+    .paper-analytics-panel {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .analytics-grid {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    @media (max-width: 1400px) {
+        .analytics-grid {
+            grid-template-columns: repeat(4, 1fr);
+        }
+    }
+    @media (max-width: 768px) {
+        .analytics-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+    .analytics-card {
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 10px;
+        padding: 1rem;
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        transition: all 0.2s ease;
+    }
+    .analytics-card:hover {
+        background: rgba(255, 255, 255, 0.05);
+        transform: translateY(-2px);
+    }
+    .analytics-card.total-pnl {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05));
+        border-color: rgba(16, 185, 129, 0.3);
+    }
+    .analytics-card.total-pnl.negative {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
+        border-color: rgba(239, 68, 68, 0.3);
+    }
+    .analytics-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.5rem;
+    }
+    .analytics-value {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-light);
+        font-family: 'SF Mono', 'Monaco', monospace;
+    }
+    .analytics-value.positive {
+        color: #10b981;
+    }
+    .analytics-value.negative {
+        color: #ef4444;
+    }
+    .equity-curve-container {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        padding: 1rem;
+    }
+    .equity-curve-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    .equity-curve-header h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-light);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+    }
+    .equity-curve-header h3 .material-icons {
+        font-size: 1.2rem;
+        color: var(--primary-color);
+    }
+    #equityCurveChart {
+        width: 100% !important;
+        height: 200px !important;
+    }
+
     .paper-trading-grid {
         display: grid;
         grid-template-columns: 1.5fr 1fr;
@@ -3904,8 +4042,130 @@
             loadLivePrices(),
             loadPaperPositions(),
             loadPaperHistory(),
-            loadRecorderCards()
+            loadRecorderCards(),
+            loadPaperAnalytics()
         ]);
+    }
+
+    // Load and display paper trading analytics
+    let equityChart = null;
+    async function loadPaperAnalytics() {
+        try {
+            const response = await fetch('/api/paper-trades/analytics');
+            const data = await response.json();
+
+            if (data.success && data.analytics) {
+                const a = data.analytics;
+
+                // Update analytics cards
+                const totalPnlEl = document.getElementById('analyticsTotalPnl');
+                const totalPnl = a.total_pnl || 0;
+                totalPnlEl.textContent = '$' + totalPnl.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                totalPnlEl.className = 'analytics-value ' + (totalPnl >= 0 ? 'positive' : 'negative');
+
+                // Update the card background too
+                const totalPnlCard = totalPnlEl.closest('.analytics-card');
+                if (totalPnlCard) {
+                    totalPnlCard.classList.toggle('negative', totalPnl < 0);
+                }
+
+                document.getElementById('analyticsWinRate').textContent = (a.win_rate || 0) + '%';
+                document.getElementById('analyticsProfitFactor').textContent = a.profit_factor === 'Infinite' ? '∞' : (a.profit_factor || 0).toFixed(2);
+                document.getElementById('analyticsMaxDD').textContent = '-$' + (a.max_drawdown || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                document.getElementById('analyticsTotalTrades').textContent = a.total_trades || 0;
+                document.getElementById('analyticsAvgWin').textContent = '$' + (a.average_win || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                document.getElementById('analyticsAvgLoss').textContent = '-$' + (a.average_loss || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+                const expectancy = a.expectancy || 0;
+                const expectancyEl = document.getElementById('analyticsExpectancy');
+                expectancyEl.textContent = (expectancy >= 0 ? '$' : '-$') + Math.abs(expectancy).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                expectancyEl.className = 'analytics-value ' + (expectancy >= 0 ? 'positive' : 'negative');
+
+                // Render equity curve if data exists
+                if (a.equity_curve && a.equity_curve.length > 0) {
+                    renderEquityCurve(a.equity_curve);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading paper analytics:', error);
+        }
+    }
+
+    // Render equity curve chart
+    function renderEquityCurve(equityData) {
+        const canvas = document.getElementById('equityCurveChart');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+
+        // Destroy existing chart if any
+        if (equityChart) {
+            equityChart.destroy();
+        }
+
+        // Prepare data
+        const labels = equityData.map((_, i) => 'Trade ' + (i + 1));
+        const values = equityData;
+
+        // Determine colors based on final P&L
+        const finalValue = equityData[equityData.length - 1];
+        const lineColor = finalValue >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
+        const fillColor = finalValue >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+
+        equityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Cumulative P&L',
+                    data: values,
+                    borderColor: lineColor,
+                    backgroundColor: fillColor,
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: values.length > 50 ? 0 : 3,
+                    pointHoverRadius: 5,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                return '$' + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        display: false
+                    },
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        },
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.5)',
+                            callback: function(value) {
+                                return '$' + value.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                }
+            }
+        });
     }
 
     // Initialize paper trading panel
