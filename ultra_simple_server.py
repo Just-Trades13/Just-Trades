@@ -4773,11 +4773,17 @@ def admin_get_user_details(user_id):
 
         # Get user's connected accounts
         # Check both tradovate_token (for Tradovate) AND is_connected column (for ProjectX/other brokers)
+        # PostgreSQL uses TRUE/FALSE booleans, SQLite uses 1/0 integers
+        if is_postgres:
+            is_connected_check = "is_connected = TRUE"
+        else:
+            is_connected_check = "is_connected = 1"
+
         cursor.execute(f'''
             SELECT id, name, broker, environment, enabled,
                    CASE
                        WHEN tradovate_token IS NOT NULL AND tradovate_token != '' THEN 1
-                       WHEN is_connected = TRUE OR is_connected = 1 THEN 1
+                       WHEN {is_connected_check} THEN 1
                        ELSE 0
                    END as is_connected,
                    tradovate_accounts, created_at, updated_at
