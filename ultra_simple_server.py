@@ -4073,6 +4073,11 @@ def run_migrations():
         ('recorders', 'trail_trigger', 'INTEGER DEFAULT 0'),
         ('recorders', 'trail_freq', 'INTEGER DEFAULT 0'),
         ('recorders', 'inverse_signals', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        ('accounts', 'is_connected', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        ('accounts', 'projectx_username', 'TEXT'),
+        ('accounts', 'projectx_api_key', 'TEXT'),
+        ('accounts', 'projectx_prop_firm', 'TEXT'),
+        ('accounts', 'projectx_account_id', 'TEXT'),
     ]
 
     for table, column, col_type in migrations:
