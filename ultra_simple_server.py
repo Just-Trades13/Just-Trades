@@ -8112,29 +8112,34 @@ def projectx_connect(account_id):
         # Store credentials in database
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
+        # Handle PostgreSQL vs SQLite differences
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        connected_val = 'TRUE' if is_postgres else '1'
+
         # Store password OR api_key based on auth method
         if auth_method == 'password':
-            cursor.execute("""
-                UPDATE accounts 
+            cursor.execute(f"""
+                UPDATE accounts
                 SET broker = 'ProjectX',
-                    username = ?, 
-                    password = ?,
+                    username = {ph},
+                    password = {ph},
                     api_key = NULL,
-                    environment = ?,
-                    is_connected = 1
-                WHERE id = ?
+                    environment = {ph},
+                    is_connected = {connected_val}
+                WHERE id = {ph}
             """, (username, password, environment, account_id))
         else:
-            cursor.execute("""
-                UPDATE accounts 
+            cursor.execute(f"""
+                UPDATE accounts
                 SET broker = 'ProjectX',
-                    username = ?, 
+                    username = {ph},
                     password = NULL,
-                    api_key = ?,
-                    environment = ?,
-                    is_connected = 1
-                WHERE id = ?
+                    api_key = {ph},
+                    environment = {ph},
+                    is_connected = {connected_val}
+                WHERE id = {ph}
             """, (username, api_key, environment, account_id))
         
         conn.commit()
