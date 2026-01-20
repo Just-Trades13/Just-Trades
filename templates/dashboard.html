@@ -359,6 +359,9 @@
                 <p class="paper-trading-sub">Real-time strategy performance with TradingView prices (~100ms delay)</p>
             </div>
             <div class="paper-trading-controls">
+                <select id="strategySelector" class="strategy-selector" onchange="onStrategyChange()">
+                    <option value="">All Strategies</option>
+                </select>
                 <div class="live-indicator" id="priceServiceStatus">
                     <span class="status-dot"></span>
                     <span class="status-text">Connecting...</span>
@@ -436,6 +439,31 @@
                     <h3><span class="material-icons">show_chart</span> Equity Curve</h3>
                 </div>
                 <canvas id="equityCurveChart" height="200"></canvas>
+            </div>
+
+            <!-- P&L Calendar -->
+            <div class="pnl-calendar-container">
+                <div class="pnl-calendar-header">
+                    <h3><span class="material-icons">calendar_month</span> P&L Calendar</h3>
+                    <div class="calendar-nav">
+                        <button class="cal-nav-btn" onclick="changeCalendarMonth(-1)"><span class="material-icons">chevron_left</span></button>
+                        <span id="calendarMonthYear">January 2026</span>
+                        <button class="cal-nav-btn" onclick="changeCalendarMonth(1)"><span class="material-icons">chevron_right</span></button>
+                    </div>
+                </div>
+                <div class="pnl-calendar" id="pnlCalendar">
+                    <div class="calendar-weekdays">
+                        <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                    </div>
+                    <div class="calendar-days" id="calendarDays">
+                        <!-- Days will be populated by JavaScript -->
+                    </div>
+                </div>
+                <div class="calendar-legend">
+                    <span class="legend-item"><span class="legend-color profit"></span> Profit</span>
+                    <span class="legend-item"><span class="legend-color loss"></span> Loss</span>
+                    <span class="legend-item"><span class="legend-color no-trades"></span> No Trades</span>
+                </div>
             </div>
         </div>
 
@@ -1812,6 +1840,170 @@
     #equityCurveChart {
         width: 100% !important;
         height: 200px !important;
+    }
+
+    /* Strategy Selector */
+    .strategy-selector {
+        padding: 0.5rem 1rem;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        color: var(--text-light);
+        font-size: 0.9rem;
+        cursor: pointer;
+        min-width: 180px;
+    }
+    .strategy-selector:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+    .strategy-selector option {
+        background: #1a1a2e;
+        color: var(--text-light);
+    }
+
+    /* P&L Calendar Styles */
+    .pnl-calendar-container {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        padding: 1rem;
+        margin-top: 1rem;
+    }
+    .pnl-calendar-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    .pnl-calendar-header h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-light);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+    }
+    .pnl-calendar-header h3 .material-icons {
+        font-size: 1.2rem;
+        color: var(--primary-color);
+    }
+    .calendar-nav {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .cal-nav-btn {
+        background: rgba(255, 255, 255, 0.05);
+        border: none;
+        border-radius: 6px;
+        padding: 0.3rem;
+        cursor: pointer;
+        color: var(--text-light);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .cal-nav-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
+    .cal-nav-btn .material-icons {
+        font-size: 1.2rem;
+    }
+    #calendarMonthYear {
+        font-weight: 600;
+        min-width: 120px;
+        text-align: center;
+    }
+    .calendar-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 4px;
+        margin-bottom: 4px;
+    }
+    .calendar-weekdays span {
+        text-align: center;
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        padding: 0.3rem;
+        text-transform: uppercase;
+    }
+    .calendar-days {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 4px;
+    }
+    .calendar-day {
+        aspect-ratio: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 0.8rem;
+        cursor: default;
+        position: relative;
+        min-height: 45px;
+    }
+    .calendar-day.empty {
+        background: transparent;
+    }
+    .calendar-day.profit {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.1));
+        border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .calendar-day.loss {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.3), rgba(239, 68, 68, 0.1));
+        border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+    .calendar-day.today {
+        border: 2px solid var(--primary-color);
+    }
+    .calendar-day .day-number {
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+    .calendar-day .day-pnl {
+        font-size: 0.65rem;
+        font-weight: 600;
+        margin-top: 2px;
+    }
+    .calendar-day.profit .day-pnl {
+        color: #10b981;
+    }
+    .calendar-day.loss .day-pnl {
+        color: #ef4444;
+    }
+    .calendar-legend {
+        display: flex;
+        justify-content: center;
+        gap: 1.5rem;
+        margin-top: 1rem;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .legend-color {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+    }
+    .legend-color.profit {
+        background: rgba(16, 185, 129, 0.5);
+        border: 1px solid rgba(16, 185, 129, 0.8);
+    }
+    .legend-color.loss {
+        background: rgba(239, 68, 68, 0.5);
+        border: 1px solid rgba(239, 68, 68, 0.8);
+    }
+    .legend-color.no-trades {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .paper-trading-grid {
@@ -3873,7 +4065,8 @@
     async function loadPaperHistory() {
         try {
             const filterEl = document.getElementById('historyRecorderFilter');
-            const recorderId = filterEl ? filterEl.value : '';
+            // Use global strategy selector if set, otherwise use local filter
+            const recorderId = selectedStrategyId || (filterEl ? filterEl.value : '');
 
             let url = '/api/paper-trades/history?limit=50';
             if (recorderId) {
@@ -4168,8 +4361,204 @@
         });
     }
 
+    // ============================================================
+    // Strategy Selector & Filtering
+    // ============================================================
+    let selectedStrategyId = null;
+
+    async function loadStrategySelector() {
+        try {
+            const response = await fetch('/api/recorders');
+            const data = await response.json();
+
+            const selector = document.getElementById('strategySelector');
+            if (!selector) return;
+
+            // Keep current selection
+            const currentValue = selector.value;
+
+            selector.innerHTML = '<option value="">All Strategies</option>';
+
+            if (data.recorders && data.recorders.length > 0) {
+                data.recorders.forEach(rec => {
+                    const option = document.createElement('option');
+                    option.value = rec.id;
+                    option.textContent = rec.name;
+                    selector.appendChild(option);
+                });
+            }
+
+            // Restore selection
+            if (currentValue) {
+                selector.value = currentValue;
+            }
+        } catch (error) {
+            console.error('Error loading strategy selector:', error);
+        }
+    }
+
+    function onStrategyChange() {
+        const selector = document.getElementById('strategySelector');
+        selectedStrategyId = selector.value ? parseInt(selector.value) : null;
+
+        // Refresh all filtered data
+        loadPaperAnalytics();
+        loadPaperHistory();
+        loadPnlCalendar();
+    }
+
+    // ============================================================
+    // P&L Calendar
+    // ============================================================
+    let calendarDate = new Date();
+    let dailyPnlData = {};
+
+    function changeCalendarMonth(delta) {
+        calendarDate.setMonth(calendarDate.getMonth() + delta);
+        loadPnlCalendar();
+    }
+
+    async function loadPnlCalendar() {
+        try {
+            let url = '/api/paper-trades/daily-pnl?days=90';
+            if (selectedStrategyId) {
+                url += `&recorder_id=${selectedStrategyId}`;
+            }
+
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.success && data.daily_pnl) {
+                // Convert to lookup object by date
+                dailyPnlData = {};
+                data.daily_pnl.forEach(day => {
+                    dailyPnlData[day.date] = day;
+                });
+            }
+
+            renderCalendar();
+        } catch (error) {
+            console.error('Error loading P&L calendar:', error);
+            renderCalendar();
+        }
+    }
+
+    function renderCalendar() {
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                           'July', 'August', 'September', 'October', 'November', 'December'];
+
+        const year = calendarDate.getFullYear();
+        const month = calendarDate.getMonth();
+
+        // Update header
+        document.getElementById('calendarMonthYear').textContent = `${monthNames[month]} ${year}`;
+
+        // Get first day of month and number of days
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        const today = new Date();
+        const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+
+        const container = document.getElementById('calendarDays');
+        container.innerHTML = '';
+
+        // Empty cells for days before first of month
+        for (let i = 0; i < firstDay; i++) {
+            const emptyDay = document.createElement('div');
+            emptyDay.className = 'calendar-day empty';
+            container.appendChild(emptyDay);
+        }
+
+        // Days of the month
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const dayData = dailyPnlData[dateStr];
+
+            const dayEl = document.createElement('div');
+            dayEl.className = 'calendar-day';
+
+            if (isCurrentMonth && day === today.getDate()) {
+                dayEl.classList.add('today');
+            }
+
+            if (dayData) {
+                const pnl = dayData.pnl || 0;
+                if (pnl > 0) {
+                    dayEl.classList.add('profit');
+                } else if (pnl < 0) {
+                    dayEl.classList.add('loss');
+                }
+
+                dayEl.innerHTML = `
+                    <span class="day-number">${day}</span>
+                    <span class="day-pnl">${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(0)}</span>
+                `;
+                dayEl.title = `${dateStr}: ${dayData.trade_count} trades, $${pnl.toFixed(2)} P&L, ${dayData.win_rate}% win rate`;
+            } else {
+                dayEl.innerHTML = `<span class="day-number">${day}</span>`;
+            }
+
+            container.appendChild(dayEl);
+        }
+    }
+
+    // Update loadPaperAnalytics to use selectedStrategyId
+    const originalLoadPaperAnalytics = loadPaperAnalytics;
+    loadPaperAnalytics = async function() {
+        try {
+            let url = '/api/paper-trades/analytics';
+            if (selectedStrategyId) {
+                url += `?recorder_id=${selectedStrategyId}`;
+            }
+
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.success && data.analytics) {
+                const a = data.analytics;
+
+                // Update analytics cards
+                const totalPnlEl = document.getElementById('analyticsTotalPnl');
+                const totalPnl = a.total_pnl || 0;
+                totalPnlEl.textContent = '$' + totalPnl.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                totalPnlEl.className = 'analytics-value ' + (totalPnl >= 0 ? 'positive' : 'negative');
+
+                // Update the card background too
+                const totalPnlCard = totalPnlEl.closest('.analytics-card');
+                if (totalPnlCard) {
+                    totalPnlCard.classList.toggle('negative', totalPnl < 0);
+                }
+
+                document.getElementById('analyticsWinRate').textContent = (a.win_rate || 0) + '%';
+                document.getElementById('analyticsProfitFactor').textContent = a.profit_factor === 'Infinite' ? '∞' : (a.profit_factor || 0).toFixed(2);
+                document.getElementById('analyticsMaxDD').textContent = '-$' + (a.max_drawdown || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                document.getElementById('analyticsTotalTrades').textContent = a.total_trades || 0;
+                document.getElementById('analyticsAvgWin').textContent = '$' + (a.average_win || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                document.getElementById('analyticsAvgLoss').textContent = '-$' + (a.average_loss || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+                const expectancy = a.expectancy || 0;
+                const expectancyEl = document.getElementById('analyticsExpectancy');
+                expectancyEl.textContent = (expectancy >= 0 ? '$' : '-$') + Math.abs(expectancy).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                expectancyEl.className = 'analytics-value ' + (expectancy >= 0 ? 'positive' : 'negative');
+
+                // Render equity curve if data exists
+                if (a.equity_curve && a.equity_curve.length > 0) {
+                    renderEquityCurve(a.equity_curve);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading paper analytics:', error);
+        }
+    };
+
     // Initialize paper trading panel
     async function initPaperTradingPanel() {
+        // Load strategy selector first
+        await loadStrategySelector();
+
+        // Load calendar
+        await loadPnlCalendar();
         // Initial load with error handling
         try {
             await refreshPaperTrades();
