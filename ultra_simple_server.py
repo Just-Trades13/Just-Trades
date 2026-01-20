@@ -22166,6 +22166,24 @@ def api_paper_symbol_stats():
         logger.error(f"Error getting symbol stats: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/paper-trades/test-direct', methods=['POST'])
+def api_paper_test_direct():
+    """Test the direct paper trading function"""
+    try:
+        data = request.get_json() or {}
+        recorder_id = data.get('recorder_id', 27)
+        symbol = data.get('symbol', 'NQ')
+        action = data.get('action', 'BUY')
+        quantity = data.get('quantity', 1)
+        price = data.get('price', 25000)
+
+        result = _record_paper_trade_direct(recorder_id, symbol, action, quantity, price)
+        return jsonify({'success': True, 'result': result})
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
 @app.route('/api/paper-trades/record', methods=['POST'])
 def api_paper_record_trade():
     """
