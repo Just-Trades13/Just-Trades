@@ -148,98 +148,39 @@ class ProjectXIntegration:
     
     async def login_with_password(self, username: str, password: str) -> dict:
         """
-        Authenticate with ProjectX using username and password (FREE method!).
-        
-        This is how Trade Manager authenticates - no API subscription required.
-        Uses your TopstepX/prop firm credentials directly.
-        
+        Password authentication is NOT supported by ProjectX API for third-party apps.
+
+        IMPORTANT: ProjectX only supports API Key authentication for external applications.
+        Password login is only available on their built-in Trade Manager web interface.
+
+        To connect your TopstepX account:
+        1. Go to https://www.projectx.com and log in
+        2. Navigate to Settings → API
+        3. Subscribe to API access ($14.50/mo)
+        4. Generate an API key
+        5. Use that API key (not your password) to connect
+
         Args:
             username: Your TopstepX/prop firm username
             password: Your TopstepX/prop firm password
-        
+
         Returns:
-            dict with 'success' and 'error' keys for detailed diagnostics
+            dict with 'success' and 'error' keys
         """
-        try:
-            logger.info(f"🔐 Attempting ProjectX login (password method)")
-            logger.info(f"   Username: {username}")
-            logger.info(f"   Endpoint: {self.user_api_url}/login")
-            
-            login_data = {
-                "username": username,
-                "password": password
-            }
-            
-            # Password auth uses userapi endpoint, NOT gateway-api
-            # IMPORTANT: userapi-demo.s2f.projectx.com works for ALL accounts (demo AND live/funded)
-            # The "demo" in the URL is misleading - it's the only working endpoint
-            # userapi.s2f.projectx.com does NOT exist (DNS NXDOMAIN) - DO NOT USE
-            # IMPORTANT: ALL firms (including TopstepX) use this generic userapi for password auth
-            endpoints_to_try = [
-                "https://userapi-demo.s2f.projectx.com/login",  # Primary - works for ALL accounts (demo + live)
-            ]
-            # Only add firm-specific endpoint if it's different from generic (not for TopstepX)
-            if self.user_api_url and 'userapi' not in self.user_api_url:
-                endpoints_to_try.append(f"{self.user_api_url}/login")
-            
-            last_error = "No endpoints succeeded"
-            
-            for endpoint in endpoints_to_try:
-                try:
-                    logger.info(f"   Trying endpoint: {endpoint}")
-                    
-                    async with self.session.post(
-                        endpoint,
-                        json=login_data,
-                        headers={"Content-Type": "application/json", "Accept": "application/json"}
-                    ) as response:
-                        response_text = await response.text()
-                        logger.info(f"   Response status: {response.status}")
-                        logger.info(f"   Response body: {response_text[:500]}")
-                        
-                        if response.status == 200:
-                            try:
-                                data = json.loads(response_text)
-                            except:
-                                data = {"raw": response_text}
-                            
-                            # Check for success - response format may vary
-                            token = data.get("token") or data.get("accessToken") or data.get("sessionToken")
-                            error_code = data.get("errorCode", 0)
-                            success = data.get("success", True) if token else False
-                            
-                            if token and error_code == 0 and success != False:
-                                self.session_token = token
-                                self.username = username
-                                self.auth_method = 'password'
-                                self.token_expires = datetime.now() + timedelta(hours=24)
-                                
-                                logger.info(f"✅ Successfully logged in to ProjectX as {username}")
-                                logger.info(f"   Token (first 20 chars): {token[:20]}...")
-                                return {"success": True}
-                            else:
-                                error_msg = data.get("errorMessage") or data.get("message") or data.get("error") or "Auth failed"
-                                last_error = f"Endpoint {endpoint}: {error_msg}"
-                                logger.warning(f"   Auth response error: {error_msg}")
-                        elif response.status == 401:
-                            last_error = f"Invalid credentials (HTTP 401) at {endpoint}"
-                        elif response.status == 404:
-                            last_error = f"Endpoint not found (HTTP 404): {endpoint}"
-                            continue  # Try next endpoint
-                        else:
-                            last_error = f"HTTP {response.status} at {endpoint}: {response_text[:200]}"
-                            
-                except Exception as endpoint_error:
-                    last_error = f"Endpoint {endpoint} error: {str(endpoint_error)}"
-                    logger.warning(f"   Endpoint error: {endpoint_error}")
-                    continue
-            
-            logger.error(f"❌ All password auth endpoints failed. Last error: {last_error}")
-            return {"success": False, "error": last_error}
-                    
-        except Exception as e:
-            logger.error(f"ProjectX password login exception: {e}")
-            return {"success": False, "error": f"Exception: {str(e)}"}
+        logger.warning("⚠️ Password authentication attempted - NOT SUPPORTED by ProjectX API")
+
+        error_message = (
+            "Password authentication is not supported by ProjectX API for third-party apps.\n\n"
+            "To connect your TopstepX/ProjectX account:\n"
+            "1. Go to projectx.com and log in\n"
+            "2. Navigate to Settings → API\n"
+            "3. Subscribe to API access ($14.50/month)\n"
+            "4. Generate an API key\n"
+            "5. Use your ProjectX USERNAME and API KEY (not password) to connect\n\n"
+            "Note: Your ProjectX username may be different from your TopstepX email."
+        )
+
+        return {"success": False, "error": error_message}
     
     async def login_with_api_key(self, username: str, api_key: str) -> dict:
         """
