@@ -241,96 +241,156 @@ class TradingViewTicker:
 
 class PaperTradingEngine:
     """
-    Paper trading engine that tracks theoretical trades using real-time prices
+    Paper trading engine that tracks theoretical trades using real-time prices.
+    Uses PostgreSQL on Railway, SQLite locally.
     """
 
     def __init__(self, db_path: str = "paper_trades.db"):
         self.db_path = db_path
         self.positions: Dict[str, dict] = {}  # {recorder_id: {symbol: position}}
         self.current_prices: Dict[str, dict] = {}
+
+        # Check for PostgreSQL (Railway)
+        import os
+        self.database_url = os.environ.get('DATABASE_URL')
+        self.use_postgres = bool(self.database_url)
+
+        if self.use_postgres:
+            logger.info("Paper trading using PostgreSQL (Railway)")
+        else:
+            logger.info("Paper trading using SQLite (local)")
+
         self._init_db()
         self._load_positions()
 
+    def _get_connection(self):
+        """Get database connection (PostgreSQL or SQLite)"""
+        if self.use_postgres:
+            try:
+                import psycopg2
+                return psycopg2.connect(self.database_url)
+            except ImportError:
+                logger.error("psycopg2 not available, falling back to SQLite")
+                self.use_postgres = False
+                return sqlite3.connect(self.db_path)
+        else:
+            return sqlite3.connect(self.db_path)
+
+    def _get_placeholder(self):
+        """Get SQL placeholder for current database"""
+        return '%s' if self.use_postgres else '?'
+
     def _init_db(self):
         """Initialize database tables"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Paper positions table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS paper_positions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                recorder_id INTEGER NOT NULL,
-                symbol TEXT NOT NULL,
-                side TEXT NOT NULL,
-                quantity REAL NOT NULL,
-                entry_price REAL NOT NULL,
-                current_price REAL,
-                unrealized_pnl REAL DEFAULT 0,
-                opened_at TEXT NOT NULL,
-                updated_at TEXT,
-                status TEXT DEFAULT 'open',
-                UNIQUE(recorder_id, symbol, status)
-            )
-        ''')
+        ph = self._get_placeholder()
 
-        # Paper trades history
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS paper_trades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                recorder_id INTEGER NOT NULL,
-                symbol TEXT NOT NULL,
-                side TEXT NOT NULL,
-                quantity REAL NOT NULL,
-                entry_price REAL NOT NULL,
-                exit_price REAL,
-                pnl REAL,
-                opened_at TEXT NOT NULL,
-                closed_at TEXT,
-                status TEXT DEFAULT 'open'
-            )
-        ''')
+        if self.use_postgres:
+            # PostgreSQL syntax
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS paper_positions (
+                    id SERIAL PRIMARY KEY,
+                    recorder_id INTEGER NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    quantity REAL NOT NULL,
+                    entry_price REAL NOT NULL,
+                    current_price REAL,
+                    unrealized_pnl REAL DEFAULT 0,
+                    opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    status TEXT DEFAULT 'open'
+                )
+            ''')
 
-        # Price history for analysis
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS price_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                price REAL NOT NULL,
-                bid REAL,
-                ask REAL,
-                volume INTEGER,
-                timestamp TEXT NOT NULL
-            )
-        ''')
+            # Create unique index if not exists
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS paper_positions_unique_idx
+                ON paper_positions (recorder_id, symbol) WHERE status = 'open'
+            ''')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS paper_trades (
+                    id SERIAL PRIMARY KEY,
+                    recorder_id INTEGER NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    quantity REAL NOT NULL,
+                    entry_price REAL NOT NULL,
+                    exit_price REAL,
+                    pnl REAL,
+                    opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    closed_at TIMESTAMP,
+                    status TEXT DEFAULT 'open'
+                )
+            ''')
+        else:
+            # SQLite syntax
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS paper_positions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recorder_id INTEGER NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    quantity REAL NOT NULL,
+                    entry_price REAL NOT NULL,
+                    current_price REAL,
+                    unrealized_pnl REAL DEFAULT 0,
+                    opened_at TEXT NOT NULL,
+                    updated_at TEXT,
+                    status TEXT DEFAULT 'open',
+                    UNIQUE(recorder_id, symbol, status)
+                )
+            ''')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS paper_trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recorder_id INTEGER NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    quantity REAL NOT NULL,
+                    entry_price REAL NOT NULL,
+                    exit_price REAL,
+                    pnl REAL,
+                    opened_at TEXT NOT NULL,
+                    closed_at TEXT,
+                    status TEXT DEFAULT 'open'
+                )
+            ''')
 
         conn.commit()
         conn.close()
-        logger.info("Paper trading database initialized")
+        logger.info(f"Paper trading database initialized ({'PostgreSQL' if self.use_postgres else 'SQLite'})")
 
     def _load_positions(self):
         """Load open positions from database"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            SELECT recorder_id, symbol, side, quantity, entry_price
-            FROM paper_positions WHERE status = 'open'
-        ''')
+            cursor.execute('''
+                SELECT recorder_id, symbol, side, quantity, entry_price
+                FROM paper_positions WHERE status = 'open'
+            ''')
 
-        for row in cursor.fetchall():
-            recorder_id, symbol, side, quantity, entry_price = row
-            if recorder_id not in self.positions:
-                self.positions[recorder_id] = {}
-            self.positions[recorder_id][symbol] = {
-                'side': side,
-                'quantity': quantity,
-                'entry_price': entry_price,
-                'unrealized_pnl': 0
-            }
+            for row in cursor.fetchall():
+                recorder_id, symbol, side, quantity, entry_price = row
+                if recorder_id not in self.positions:
+                    self.positions[recorder_id] = {}
+                self.positions[recorder_id][symbol] = {
+                    'side': side,
+                    'quantity': quantity,
+                    'entry_price': entry_price,
+                    'unrealized_pnl': 0
+                }
 
-        conn.close()
-        logger.info(f"Loaded {len(self.positions)} recorder positions")
+            conn.close()
+            logger.info(f"Loaded {len(self.positions)} recorder positions from {'PostgreSQL' if self.use_postgres else 'SQLite'}")
+        except Exception as e:
+            logger.error(f"Error loading positions: {e}")
 
     def update_price(self, symbol: str, price_data: dict):
         """Update price and recalculate P&L for all positions"""
@@ -378,27 +438,45 @@ class PaperTradingEngine:
         }
 
         # Store in database
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
 
-        now = datetime.now().isoformat()
+            now = datetime.now().isoformat()
 
-        cursor.execute('''
-            INSERT OR REPLACE INTO paper_positions
-            (recorder_id, symbol, side, quantity, entry_price, current_price, opened_at, updated_at, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open')
-        ''', (recorder_id, symbol, side.upper(), quantity, entry_price, entry_price, now, now))
+            if self.use_postgres:
+                # PostgreSQL: Delete existing open position first, then insert
+                cursor.execute(f'''
+                    DELETE FROM paper_positions
+                    WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
+                ''', (recorder_id, symbol))
 
-        cursor.execute('''
-            INSERT INTO paper_trades
-            (recorder_id, symbol, side, quantity, entry_price, opened_at, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'open')
-        ''', (recorder_id, symbol, side.upper(), quantity, entry_price, now))
+                cursor.execute(f'''
+                    INSERT INTO paper_positions
+                    (recorder_id, symbol, side, quantity, entry_price, current_price, opened_at, updated_at, status)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+                ''', (recorder_id, symbol, side.upper(), quantity, entry_price, entry_price, now, now))
+            else:
+                # SQLite: Use INSERT OR REPLACE
+                cursor.execute(f'''
+                    INSERT OR REPLACE INTO paper_positions
+                    (recorder_id, symbol, side, quantity, entry_price, current_price, opened_at, updated_at, status)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+                ''', (recorder_id, symbol, side.upper(), quantity, entry_price, entry_price, now, now))
 
-        conn.commit()
-        conn.close()
+            cursor.execute(f'''
+                INSERT INTO paper_trades
+                (recorder_id, symbol, side, quantity, entry_price, opened_at, status)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+            ''', (recorder_id, symbol, side.upper(), quantity, entry_price, now))
 
-        logger.info(f"Opened paper {side} position: {quantity} {symbol} @ {entry_price} for recorder {recorder_id}")
+            conn.commit()
+            conn.close()
+
+            logger.info(f"📊 Opened paper {side} position: {quantity} {symbol} @ {entry_price} for recorder {recorder_id}")
+        except Exception as e:
+            logger.error(f"Error opening paper position: {e}")
 
         return {
             'recorder_id': recorder_id,
@@ -434,28 +512,32 @@ class PaperTradingEngine:
             pnl = (pos['entry_price'] - exit_price) * pos['quantity']
 
         # Update database
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
 
-        now = datetime.now().isoformat()
+            now = datetime.now().isoformat()
 
-        cursor.execute('''
-            UPDATE paper_positions SET status = 'closed', updated_at = ?
-            WHERE recorder_id = ? AND symbol = ? AND status = 'open'
-        ''', (now, recorder_id, symbol))
+            cursor.execute(f'''
+                UPDATE paper_positions SET status = 'closed', updated_at = {ph}
+                WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
+            ''', (now, recorder_id, symbol))
 
-        cursor.execute('''
-            UPDATE paper_trades SET exit_price = ?, pnl = ?, closed_at = ?, status = 'closed'
-            WHERE recorder_id = ? AND symbol = ? AND status = 'open'
-        ''', (exit_price, pnl, now, recorder_id, symbol))
+            cursor.execute(f'''
+                UPDATE paper_trades SET exit_price = {ph}, pnl = {ph}, closed_at = {ph}, status = 'closed'
+                WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
+            ''', (exit_price, pnl, now, recorder_id, symbol))
 
-        conn.commit()
-        conn.close()
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error closing paper position: {e}")
 
         # Remove from memory
         del self.positions[recorder_id][symbol]
 
-        logger.info(f"Closed paper position: {symbol} @ {exit_price}, P&L: {pnl:.2f} for recorder {recorder_id}")
+        logger.info(f"📊 Closed paper position: {symbol} @ {exit_price}, P&L: ${pnl:.2f} for recorder {recorder_id}")
 
         return {
             'recorder_id': recorder_id,
@@ -504,26 +586,31 @@ class PaperTradingEngine:
 
     def get_trade_history(self, recorder_id: int = None, limit: int = 100) -> list:
         """Get trade history"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
 
-        if recorder_id:
-            cursor.execute('''
-                SELECT * FROM paper_trades
-                WHERE recorder_id = ?
-                ORDER BY opened_at DESC LIMIT ?
-            ''', (recorder_id, limit))
-        else:
-            cursor.execute('''
-                SELECT * FROM paper_trades
-                ORDER BY opened_at DESC LIMIT ?
-            ''', (limit,))
+            if recorder_id:
+                cursor.execute(f'''
+                    SELECT * FROM paper_trades
+                    WHERE recorder_id = {ph}
+                    ORDER BY opened_at DESC LIMIT {ph}
+                ''', (recorder_id, limit))
+            else:
+                cursor.execute(f'''
+                    SELECT * FROM paper_trades
+                    ORDER BY opened_at DESC LIMIT {ph}
+                ''', (limit,))
 
-        columns = [desc[0] for desc in cursor.description]
-        trades = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            columns = [desc[0] for desc in cursor.description]
+            trades = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-        conn.close()
-        return trades
+            conn.close()
+            return trades
+        except Exception as e:
+            logger.error(f"Error getting trade history: {e}")
+            return []
 
 
 # Global instances
