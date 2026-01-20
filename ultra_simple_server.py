@@ -94,6 +94,19 @@ except ImportError:
     PRODUCTION_DB_AVAILABLE = False
 
 # ============================================================================
+# TRADINGVIEW REAL-TIME PRICE SERVICE
+# ============================================================================
+try:
+    from tv_price_service import (
+        get_ticker, get_paper_engine, start_price_service,
+        TradingViewTicker, PaperTradingEngine
+    )
+    TV_PRICE_SERVICE_AVAILABLE = True
+except ImportError as e:
+    TV_PRICE_SERVICE_AVAILABLE = False
+    print(f"⚠️ TradingView price service not available: {e}")
+
+# ============================================================================
 # 100+ USER SCALABILITY MODULE (Feature-flagged, additive)
 # ============================================================================
 # Enable with: export SCALABILITY_UI_PUBLISHER=1
@@ -413,6 +426,64 @@ def notify_trade_execution(user_id: int = None, action: str = None, symbol: str 
     notification_thread = threading.Thread(target=send_notifications_background, daemon=True)
     notification_thread.start()
     logger.info(f"🔔 Notifications dispatched to background thread")
+
+
+def track_paper_trade(recorder_id: int, symbol: str, action: str, quantity: float = 1, price: float = None):
+    """
+    Track paper trades using TradingView real-time prices.
+    Called after webhook signals to track theoretical P&L.
+
+    Args:
+        recorder_id: Recorder ID
+        symbol: Trading symbol (e.g., 'NQ', 'ES')
+        action: 'LONG', 'SHORT', 'BUY', 'SELL', 'CLOSE'
+        quantity: Number of contracts
+        price: Entry/exit price (uses market price if not provided)
+    """
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return None
+
+    try:
+        paper_engine = get_paper_engine()
+        action_upper = action.upper()
+
+        # Convert symbol to TradingView format for price lookup
+        tv_symbol = f"CME_MINI:{symbol.upper().replace('MNQ', 'NQ').replace('MES', 'ES')}1!"
+
+        # Determine action type
+        if action_upper in ['CLOSE', 'EXIT', 'FLATTEN']:
+            # Close all positions for this recorder/symbol
+            result = paper_engine.close_position(recorder_id, tv_symbol, price)
+            if result:
+                logger.info(f"📊 Paper trade CLOSED: Recorder {recorder_id} {symbol} P&L: ${result.get('pnl', 0):.2f}")
+            return result
+
+        elif action_upper in ['LONG', 'BUY']:
+            # Check if we have opposite position to close first
+            existing = paper_engine.get_position(recorder_id, tv_symbol)
+            if existing and existing.get('side') == 'SHORT':
+                paper_engine.close_position(recorder_id, tv_symbol, price)
+
+            result = paper_engine.open_position(recorder_id, tv_symbol, 'LONG', quantity, price)
+            if result:
+                logger.info(f"📊 Paper trade OPENED: Recorder {recorder_id} LONG {quantity} {symbol} @ ${result.get('entry_price', 0):.2f}")
+            return result
+
+        elif action_upper in ['SHORT', 'SELL']:
+            # Check if we have opposite position to close first
+            existing = paper_engine.get_position(recorder_id, tv_symbol)
+            if existing and existing.get('side') == 'LONG':
+                paper_engine.close_position(recorder_id, tv_symbol, price)
+
+            result = paper_engine.open_position(recorder_id, tv_symbol, 'SHORT', quantity, price)
+            if result:
+                logger.info(f"📊 Paper trade OPENED: Recorder {recorder_id} SHORT {quantity} {symbol} @ ${result.get('entry_price', 0):.2f}")
+            return result
+
+    except Exception as e:
+        logger.warning(f"⚠️ Paper trade tracking error: {e}")
+
+    return None
 
 
 def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = None, quantity: int = None, 
@@ -12151,7 +12222,13 @@ def process_webhook_directly(webhook_token):
             _webhook_processing_count += 1
             processing_time = _webhook_last_processed - webhook_start_time
             _logger.info(f"✅ FLAT signal processed in {processing_time:.2f}s")
-            
+
+            # Track paper trade close for FLAT signal
+            try:
+                track_paper_trade(recorder_id, ticker, 'CLOSE', close_qty, current_price)
+            except Exception as paper_err:
+                _logger.debug(f"Paper trade tracking error: {paper_err}")
+
             conn.close()
             return jsonify({
                 'success': True,
@@ -12215,9 +12292,15 @@ def process_webhook_directly(webhook_token):
                     
                     conn.commit()
                     _logger.info(f"📊 Trade #{trade_id} closed: {trade_side} {ticker} @ {entry_price} → {close_price} | PnL: ${pnl:.2f}")
+
+                    # Track paper trade close
+                    try:
+                        track_paper_trade(recorder_id, ticker, 'CLOSE', qty, close_price)
+                    except Exception as paper_err:
+                        _logger.debug(f"Paper trade tracking error: {paper_err}")
             except Exception as e:
                 _logger.warning(f"⚠️ Could not update trade record: {e}")
-            
+
             conn.close()
             return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed'})
         else:
@@ -13069,6 +13152,12 @@ def process_webhook_directly(webhook_token):
                         )
                     except Exception as notif_err:
                         _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
+
+                    # Track paper trade for flip (closes old, opens new)
+                    try:
+                        track_paper_trade(recorder_id, ticker, trade_side, quantity, current_price)
+                    except Exception as paper_err:
+                        _logger.debug(f"Paper trade tracking error: {paper_err}")
                 else:
                     # SAME SIDE: DCA - Add to existing position!
                     _logger.info(f"📈 DCA: Adding {quantity} to existing {existing_side} position")
@@ -13102,6 +13191,12 @@ def process_webhook_directly(webhook_token):
                         )
                     except Exception as notif_err:
                         _logger.warning(f"⚠️ Could not send DCA notification: {notif_err}")
+
+                    # Track paper trade DCA
+                    try:
+                        track_paper_trade(recorder_id, ticker, trade_side, quantity, current_price)
+                    except Exception as paper_err:
+                        _logger.debug(f"Paper trade tracking error: {paper_err}")
             else:
                 # NO EXISTING POSITION: Open new trade
                 # Set broker_managed_tp_sl=1 if trader exists (broker will handle TP/SL)
@@ -13132,7 +13227,13 @@ def process_webhook_directly(webhook_token):
                     )
                 except Exception as notif_err:
                     _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
-            
+
+                # Track paper trade for theoretical P&L
+                try:
+                    track_paper_trade(recorder_id, ticker, trade_side, quantity, current_price)
+                except Exception as paper_err:
+                    _logger.debug(f"Paper trade tracking error: {paper_err}")
+
             # Also update recorder_positions for aggregate tracking
             trade_cursor.execute(f'''
                 SELECT id, side, total_quantity, avg_entry_price FROM recorder_positions
@@ -21434,6 +21535,254 @@ def api_market_data():
         logger.error(f"Error fetching market data: {e}")
         return jsonify({'data': []})
 
+# ============================================================================
+# TRADINGVIEW REAL-TIME PRICE API (Paper Trading)
+# ============================================================================
+
+@app.route('/api/live-prices', methods=['GET'])
+def api_live_prices():
+    """Get real-time prices from TradingView WebSocket (~300-500ms delay)"""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'TradingView price service not available'}), 503
+
+    try:
+        ticker = get_ticker()
+        prices = ticker.get_all_prices()
+
+        # Format response
+        formatted = {}
+        for symbol, data in prices.items():
+            # Convert TradingView symbol to simple format (CME_MINI:NQ1! -> NQ)
+            simple_symbol = symbol.split(':')[-1].replace('1!', '').upper()
+            formatted[simple_symbol] = {
+                'symbol': simple_symbol,
+                'full_symbol': symbol,
+                'price': data.get('last_price'),
+                'bid': data.get('bid'),
+                'ask': data.get('ask'),
+                'change': data.get('change'),
+                'change_percent': data.get('change_percent'),
+                'high': data.get('high'),
+                'low': data.get('low'),
+                'volume': data.get('volume'),
+                'timestamp': data.get('timestamp'),
+                'age_ms': int((time.time() - data.get('update_time', time.time())) * 1000)
+            }
+
+        return jsonify({
+            'success': True,
+            'prices': formatted,
+            'source': 'tradingview_websocket',
+            'connected': ticker.connected
+        })
+    except Exception as e:
+        logger.error(f"Error getting live prices: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/live-prices/<symbol>', methods=['GET'])
+def api_live_price_symbol(symbol):
+    """Get real-time price for specific symbol"""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'TradingView price service not available'}), 503
+
+    try:
+        ticker = get_ticker()
+
+        # Try different symbol formats
+        symbol_formats = [
+            f"CME_MINI:{symbol.upper()}1!",  # e.g., CME_MINI:NQ1!
+            f"CME_MINI:{symbol.upper()}",
+            symbol.upper()
+        ]
+
+        price_data = None
+        for fmt in symbol_formats:
+            price_data = ticker.get_price(fmt)
+            if price_data:
+                break
+
+        if not price_data:
+            return jsonify({'success': False, 'error': f'No price data for {symbol}'}), 404
+
+        simple_symbol = symbol.upper()
+        return jsonify({
+            'success': True,
+            'symbol': simple_symbol,
+            'price': price_data.get('last_price'),
+            'bid': price_data.get('bid'),
+            'ask': price_data.get('ask'),
+            'change': price_data.get('change'),
+            'change_percent': price_data.get('change_percent'),
+            'timestamp': price_data.get('timestamp'),
+            'age_ms': int((time.time() - price_data.get('update_time', time.time())) * 1000)
+        })
+    except Exception as e:
+        logger.error(f"Error getting price for {symbol}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/positions', methods=['GET'])
+def api_paper_positions():
+    """Get all open paper trading positions"""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        paper_engine = get_paper_engine()
+        positions = paper_engine.get_all_positions()
+
+        # Format with current prices
+        formatted = []
+        for recorder_id, recorder_positions in positions.items():
+            for symbol, pos in recorder_positions.items():
+                formatted.append({
+                    'recorder_id': recorder_id,
+                    'symbol': symbol,
+                    'side': pos.get('side'),
+                    'quantity': pos.get('quantity'),
+                    'entry_price': pos.get('entry_price'),
+                    'current_price': pos.get('current_price'),
+                    'unrealized_pnl': pos.get('unrealized_pnl', 0)
+                })
+
+        return jsonify({
+            'success': True,
+            'positions': formatted,
+            'count': len(formatted)
+        })
+    except Exception as e:
+        logger.error(f"Error getting paper positions: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/recorder/<int:recorder_id>', methods=['GET'])
+def api_paper_recorder_pnl(recorder_id):
+    """Get P&L and positions for a specific recorder"""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        paper_engine = get_paper_engine()
+        pnl_data = paper_engine.get_recorder_pnl(recorder_id)
+
+        return jsonify({
+            'success': True,
+            **pnl_data
+        })
+    except Exception as e:
+        logger.error(f"Error getting recorder {recorder_id} P&L: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/history', methods=['GET'])
+def api_paper_trade_history():
+    """Get paper trade history"""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        recorder_id = request.args.get('recorder_id', type=int)
+        limit = request.args.get('limit', 100, type=int)
+
+        paper_engine = get_paper_engine()
+        trades = paper_engine.get_trade_history(recorder_id=recorder_id, limit=limit)
+
+        return jsonify({
+            'success': True,
+            'trades': trades,
+            'count': len(trades)
+        })
+    except Exception as e:
+        logger.error(f"Error getting trade history: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/open', methods=['POST'])
+def api_paper_open_position():
+    """Open a paper trading position"""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+        recorder_id = data.get('recorder_id')
+        symbol = data.get('symbol')
+        side = data.get('side')
+        quantity = data.get('quantity', 1)
+        entry_price = data.get('entry_price')  # Optional - uses market price if not provided
+
+        if not all([recorder_id, symbol, side]):
+            return jsonify({'success': False, 'error': 'Missing required fields: recorder_id, symbol, side'}), 400
+
+        paper_engine = get_paper_engine()
+        result = paper_engine.open_position(recorder_id, symbol, side, quantity, entry_price)
+
+        if result:
+            return jsonify({'success': True, 'position': result})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to open position - no price available'}), 400
+    except Exception as e:
+        logger.error(f"Error opening paper position: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/close', methods=['POST'])
+def api_paper_close_position():
+    """Close a paper trading position"""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+        recorder_id = data.get('recorder_id')
+        symbol = data.get('symbol')
+        exit_price = data.get('exit_price')  # Optional - uses market price if not provided
+
+        if not all([recorder_id, symbol]):
+            return jsonify({'success': False, 'error': 'Missing required fields: recorder_id, symbol'}), 400
+
+        paper_engine = get_paper_engine()
+        result = paper_engine.close_position(recorder_id, symbol, exit_price)
+
+        if result:
+            return jsonify({'success': True, 'trade': result})
+        else:
+            return jsonify({'success': False, 'error': 'No open position found'}), 404
+    except Exception as e:
+        logger.error(f"Error closing paper position: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/service-status', methods=['GET'])
+def api_paper_service_status():
+    """Get TradingView price service status"""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({
+            'success': True,
+            'available': False,
+            'reason': 'TradingView price service module not installed'
+        })
+
+    try:
+        ticker = get_ticker()
+        paper_engine = get_paper_engine()
+
+        return jsonify({
+            'success': True,
+            'available': True,
+            'websocket_connected': ticker.connected,
+            'symbols_tracked': len(ticker.symbols),
+            'symbols': ticker.symbols,
+            'prices_cached': len(ticker.prices),
+            'open_positions': len(paper_engine.positions)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'available': True,
+            'error': str(e)
+        })
+
 @app.route('/api/stock-heatmap', methods=['GET'])
 def api_stock_heatmap():
     """Get stock heatmap data from Finnhub (primary) or Yahoo Finance (fallback)"""
@@ -25702,5 +26051,30 @@ if __name__ == '__main__':
         logger.debug("Trial abuse protection module not found")
     except Exception as e:
         logger.warning(f"⚠️ Trial abuse protection init failed: {e}")
+
+    # Initialize TradingView real-time price service
+    if TV_PRICE_SERVICE_AVAILABLE:
+        try:
+            def on_price_update(symbol, price_data):
+                # Emit to connected WebSocket clients
+                try:
+                    socketio.emit('price_update', {
+                        'symbol': symbol,
+                        'price': price_data.get('last_price'),
+                        'bid': price_data.get('bid'),
+                        'ask': price_data.get('ask'),
+                        'change': price_data.get('change'),
+                        'change_percent': price_data.get('change_percent'),
+                        'timestamp': price_data.get('timestamp')
+                    }, namespace='/')
+                except:
+                    pass  # Ignore if no clients connected
+
+            ticker, paper_engine = start_price_service(on_price_update=on_price_update)
+            logger.info(f"✅ TradingView price service started - tracking {len(ticker.symbols)} symbols")
+        except Exception as e:
+            logger.warning(f"⚠️ TradingView price service init failed: {e}")
+    else:
+        logger.info("ℹ️ TradingView price service not available")
 
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)

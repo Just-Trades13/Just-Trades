@@ -351,6 +351,149 @@
         </div>
     </section>
 
+    <!-- Paper Trading Panel - Real-Time Strategy Performance -->
+    <section class="paper-trading-section" id="paperTradingSection">
+        <header class="paper-trading-header">
+            <div>
+                <h2><span class="material-icons">analytics</span> Paper Trading Monitor</h2>
+                <p class="paper-trading-sub">Real-time strategy performance with TradingView prices (~500ms delay)</p>
+            </div>
+            <div class="paper-trading-controls">
+                <div class="live-indicator" id="priceServiceStatus">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Connecting...</span>
+                </div>
+                <button class="btn btn-sm btn-secondary" onclick="refreshPaperTrades()">
+                    <span class="material-icons">refresh</span> Refresh
+                </button>
+            </div>
+        </header>
+
+        <!-- Live Prices Bar -->
+        <div class="live-prices-bar" id="livePricesBar">
+            <div class="live-price-item" data-symbol="NQ">
+                <span class="price-symbol">NQ</span>
+                <span class="price-value" id="price-NQ">--</span>
+                <span class="price-change" id="change-NQ">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="ES">
+                <span class="price-symbol">ES</span>
+                <span class="price-value" id="price-ES">--</span>
+                <span class="price-change" id="change-ES">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="MNQ">
+                <span class="price-symbol">MNQ</span>
+                <span class="price-value" id="price-MNQ">--</span>
+                <span class="price-change" id="change-MNQ">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="MES">
+                <span class="price-symbol">MES</span>
+                <span class="price-value" id="price-MES">--</span>
+                <span class="price-change" id="change-MES">--</span>
+            </div>
+        </div>
+
+        <div class="paper-trading-grid">
+            <!-- Open Positions Panel -->
+            <div class="paper-panel paper-positions-panel">
+                <div class="panel-header">
+                    <h3><span class="material-icons">trending_up</span> Open Positions</h3>
+                    <span class="position-count" id="positionCount">0 positions</span>
+                </div>
+                <div class="panel-content">
+                    <table class="positions-table" id="paperPositionsTable">
+                        <thead>
+                            <tr>
+                                <th>Recorder</th>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Qty</th>
+                                <th>Entry</th>
+                                <th>Current</th>
+                                <th>Unrealized P&L</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paperPositionsBody">
+                            <tr class="empty-row">
+                                <td colspan="7">No open paper positions</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recorder Performance Cards -->
+            <div class="paper-panel paper-recorders-panel">
+                <div class="panel-header">
+                    <h3><span class="material-icons">leaderboard</span> Recorder Performance</h3>
+                </div>
+                <div class="panel-content">
+                    <div class="recorder-cards" id="recorderCards">
+                        <div class="recorder-card-placeholder">
+                            <span class="material-icons">hourglass_empty</span>
+                            <p>Loading recorder stats...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Paper Trade History -->
+        <div class="paper-panel paper-history-panel">
+            <div class="panel-header">
+                <h3><span class="material-icons">history</span> Recent Paper Trades</h3>
+                <select id="historyRecorderFilter" onchange="loadPaperHistory()">
+                    <option value="">All Recorders</option>
+                </select>
+            </div>
+            <div class="panel-content">
+                <table class="history-table" id="paperHistoryTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Recorder</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>P&L</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="paperHistoryBody">
+                        <tr class="empty-row">
+                            <td colspan="8">No paper trades yet</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Summary Stats -->
+        <div class="paper-summary-stats" id="paperSummaryStats">
+            <div class="summary-stat">
+                <span class="stat-label">Total P&L</span>
+                <span class="stat-value" id="totalPnl">$0.00</span>
+            </div>
+            <div class="summary-stat">
+                <span class="stat-label">Open P&L</span>
+                <span class="stat-value" id="openPnl">$0.00</span>
+            </div>
+            <div class="summary-stat">
+                <span class="stat-label">Win Rate</span>
+                <span class="stat-value" id="winRate">--%</span>
+            </div>
+            <div class="summary-stat">
+                <span class="stat-label">Max Drawdown</span>
+                <span class="stat-value" id="maxDrawdown">$0.00</span>
+            </div>
+            <div class="summary-stat">
+                <span class="stat-label">Trades Today</span>
+                <span class="stat-value" id="tradesToday">0</span>
+            </div>
+        </div>
+    </section>
+
     <section class="onboarding-strip">
         <header class="onboarding-header">
             <div>
@@ -1421,6 +1564,330 @@
         font-size: 0.75rem;
         color: var(--text-muted);
     }
+
+    /* Paper Trading Panel Styles */
+    .paper-trading-section {
+        background: var(--background-light);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 2rem;
+        margin-top: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    .paper-trading-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .paper-trading-header h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-light);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .paper-trading-header h2 .material-icons {
+        color: var(--primary-color);
+    }
+    .paper-trading-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0 0;
+    }
+    .paper-trading-controls {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+    .live-indicator {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: rgba(16, 185, 129, 0.1);
+        border-radius: 20px;
+        font-size: 0.8rem;
+    }
+    .live-indicator .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #10b981;
+        animation: pulse 2s infinite;
+    }
+    .live-indicator.disconnected {
+        background: rgba(239, 68, 68, 0.1);
+    }
+    .live-indicator.disconnected .status-dot {
+        background: #ef4444;
+        animation: none;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    .live-prices-bar {
+        display: flex;
+        gap: 1rem;
+        padding: 1rem;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 12px;
+        overflow-x: auto;
+        flex-wrap: wrap;
+    }
+    .live-price-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1.25rem;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        min-width: 180px;
+    }
+    .price-symbol {
+        font-weight: 700;
+        font-size: 1rem;
+        color: var(--text-light);
+    }
+    .price-value {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-light);
+        font-family: 'SF Mono', 'Monaco', monospace;
+    }
+    .price-change {
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+    }
+    .price-change.up {
+        color: #10b981;
+        background: rgba(16, 185, 129, 0.15);
+    }
+    .price-change.down {
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.15);
+    }
+    .paper-trading-grid {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr;
+        gap: 1.5rem;
+    }
+    @media (max-width: 1024px) {
+        .paper-trading-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    .paper-panel {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        overflow: hidden;
+    }
+    .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.25rem;
+        background: rgba(0, 0, 0, 0.2);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .panel-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text-light);
+    }
+    .panel-header h3 .material-icons {
+        font-size: 1.2rem;
+        color: var(--primary-color);
+    }
+    .panel-header select {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--text-light);
+        padding: 0.4rem 0.8rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+    }
+    .position-count {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 0.3rem 0.7rem;
+        border-radius: 12px;
+    }
+    .panel-content {
+        padding: 1rem;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    .positions-table, .history-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+    .positions-table th, .history-table th {
+        text-align: left;
+        padding: 0.75rem;
+        color: var(--text-muted);
+        font-weight: 500;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        white-space: nowrap;
+    }
+    .positions-table td, .history-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        color: var(--text-light);
+    }
+    .positions-table tbody tr:hover, .history-table tbody tr:hover {
+        background: rgba(255, 255, 255, 0.02);
+    }
+    .empty-row td {
+        text-align: center;
+        color: var(--text-muted);
+        padding: 2rem;
+    }
+    .pnl-positive {
+        color: #10b981 !important;
+        font-weight: 600;
+    }
+    .pnl-negative {
+        color: #ef4444 !important;
+        font-weight: 600;
+    }
+    .side-long {
+        color: #10b981;
+        font-weight: 600;
+    }
+    .side-short {
+        color: #ef4444;
+        font-weight: 600;
+    }
+    .status-badge {
+        padding: 0.2rem 0.6rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .status-open {
+        background: rgba(59, 130, 246, 0.2);
+        color: #3b82f6;
+    }
+    .status-closed {
+        background: rgba(107, 114, 128, 0.2);
+        color: #9ca3af;
+    }
+    .recorder-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+    .recorder-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        padding: 1rem;
+        transition: all 0.2s;
+    }
+    .recorder-card:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(94, 114, 228, 0.3);
+    }
+    .recorder-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 0.75rem;
+    }
+    .recorder-card-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: var(--text-light);
+    }
+    .recorder-card-pnl {
+        font-weight: 700;
+        font-size: 1.1rem;
+    }
+    .recorder-card-stats {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+    .recorder-stat {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.8rem;
+    }
+    .recorder-stat-label {
+        color: var(--text-muted);
+    }
+    .recorder-stat-value {
+        color: var(--text-light);
+        font-weight: 500;
+    }
+    .recorder-card-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        color: var(--text-muted);
+        text-align: center;
+    }
+    .recorder-card-placeholder .material-icons {
+        font-size: 2rem;
+        opacity: 0.5;
+        margin-bottom: 0.5rem;
+    }
+    .paper-history-panel {
+        margin-top: 0;
+    }
+    .paper-summary-stats {
+        display: flex;
+        gap: 1rem;
+        padding: 1.25rem;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 12px;
+        flex-wrap: wrap;
+        justify-content: space-around;
+    }
+    .summary-stat {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.3rem;
+        min-width: 100px;
+    }
+    .stat-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .stat-value {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-light);
+    }
+    .stat-value.positive {
+        color: #10b981;
+    }
+    .stat-value.negative {
+        color: #ef4444;
+    }
+
     .onboarding-header {
         display: flex;
         align-items: flex-start;
@@ -3051,24 +3518,429 @@
     // Trade executed - add to trade history table
     socket.on('trade_executed', (data) => {
         console.log('Trade executed:', data);
-        
+
         // Reload trade history to show new trade
         const userId = document.getElementById('filterUser')?.value || '';
         const strategyId = document.getElementById('filterStrategy')?.value || '';
         const symbol = document.getElementById('filterSymbol')?.value || '';
         const timeFrame = document.getElementById('filterTimeFrame')?.value || '';
-        
+
         // Reload trade history
         if (typeof loadTradeHistory === 'function') {
             loadTradeHistory(userId || null, strategyId || null, symbol || null, timeFrame || null, 1);
         }
-        
+
         // Reload metrics
         if (typeof loadMetricCards === 'function') {
             const metricsSection = document.getElementById('metricsCardsSection');
             if (metricsSection && metricsSection.style.display !== 'none') {
                 loadMetricCards();
             }
+        }
+    });
+
+    // ============================================================================
+    // Real-Time Price Updates from TradingView WebSocket (~300-500ms delay)
+    // ============================================================================
+    const realtimePrices = {}; // Store latest prices by symbol
+
+    socket.on('price_update', (data) => {
+        // Convert TV symbol (CME_MINI:NQ1!) to simple symbol (NQ)
+        const symbol = data.symbol ? data.symbol.split(':').pop().replace('1!', '').toUpperCase() : null;
+        if (!symbol) return;
+
+        // Store latest price
+        realtimePrices[symbol] = {
+            price: data.price,
+            change: data.change,
+            change_percent: data.change_percent,
+            timestamp: data.timestamp
+        };
+
+        // Update ticker display if this symbol is shown
+        const tickerContent = document.getElementById('tickerContent');
+        if (tickerContent) {
+            const tickerItems = tickerContent.querySelectorAll('.ticker-item');
+            tickerItems.forEach(item => {
+                const symbolEl = item.querySelector('.symbol');
+                if (symbolEl && symbolEl.textContent.trim() === symbol) {
+                    const priceEl = item.querySelector('.price');
+                    const changeEl = item.querySelector('.ticker-price');
+
+                    if (priceEl && data.price) {
+                        priceEl.textContent = '$' + data.price.toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                        });
+                    }
+
+                    if (changeEl && data.change_percent !== undefined) {
+                        const direction = data.change_percent >= 0 ? 'up' : 'down';
+                        const arrow = data.change_percent >= 0 ? '\u25B2' : '\u25BC';
+                        changeEl.className = 'ticker-price ' + direction;
+                        changeEl.textContent = arrow + ' ' + (data.change_percent >= 0 ? '+' : '') +
+                            data.change_percent.toFixed(2) + '%';
+                    }
+                }
+            });
+        }
+
+        // Log for debugging (remove in production)
+        // console.log('Price update:', symbol, data.price, data.change_percent + '%');
+    });
+
+    // Function to get latest real-time price for a symbol
+    function getRealtimePrice(symbol) {
+        return realtimePrices[symbol.toUpperCase()] || null;
+    }
+
+    // ============================================================================
+    // Paper Trading Panel Functions
+    // ============================================================================
+
+    // Cache for recorder names
+    const recorderNames = {};
+
+    // Load paper trading service status
+    async function loadPaperServiceStatus() {
+        try {
+            const response = await fetch('/api/paper-trades/service-status');
+            const data = await response.json();
+
+            const statusEl = document.getElementById('priceServiceStatus');
+            if (statusEl) {
+                if (data.available && data.websocket_connected) {
+                    statusEl.classList.remove('disconnected');
+                    statusEl.querySelector('.status-text').textContent = 'Live';
+                } else {
+                    statusEl.classList.add('disconnected');
+                    statusEl.querySelector('.status-text').textContent = 'Offline';
+                }
+            }
+            return data;
+        } catch (error) {
+            console.error('Error loading paper service status:', error);
+            return null;
+        }
+    }
+
+    // Load live prices for the prices bar
+    async function loadLivePrices() {
+        try {
+            const response = await fetch('/api/live-prices');
+            const data = await response.json();
+
+            if (data.success && data.prices) {
+                Object.entries(data.prices).forEach(([symbol, priceData]) => {
+                    updatePriceDisplay(symbol, priceData);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading live prices:', error);
+        }
+    }
+
+    // Update price display in the prices bar
+    function updatePriceDisplay(symbol, priceData) {
+        const priceEl = document.getElementById(`price-${symbol}`);
+        const changeEl = document.getElementById(`change-${symbol}`);
+
+        if (priceEl && priceData.price) {
+            priceEl.textContent = '$' + priceData.price.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        if (changeEl && priceData.change_percent !== undefined && priceData.change_percent !== null) {
+            const isUp = priceData.change_percent >= 0;
+            changeEl.textContent = (isUp ? '+' : '') + priceData.change_percent.toFixed(2) + '%';
+            changeEl.className = 'price-change ' + (isUp ? 'up' : 'down');
+        }
+    }
+
+    // Load paper positions
+    async function loadPaperPositions() {
+        try {
+            const response = await fetch('/api/paper-trades/positions');
+            const data = await response.json();
+
+            const tbody = document.getElementById('paperPositionsBody');
+            const countEl = document.getElementById('positionCount');
+
+            if (!data.success || !data.positions || data.positions.length === 0) {
+                tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No open paper positions</td></tr>';
+                if (countEl) countEl.textContent = '0 positions';
+                return;
+            }
+
+            if (countEl) countEl.textContent = `${data.positions.length} position${data.positions.length !== 1 ? 's' : ''}`;
+
+            let totalUnrealized = 0;
+            tbody.innerHTML = '';
+
+            for (const pos of data.positions) {
+                const row = document.createElement('tr');
+                const pnl = pos.unrealized_pnl || 0;
+                totalUnrealized += pnl;
+                const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                const sideClass = pos.side === 'LONG' ? 'side-long' : 'side-short';
+
+                // Get recorder name
+                const recorderName = await getRecorderName(pos.recorder_id);
+                const simpleSymbol = pos.symbol.split(':').pop().replace('1!', '');
+
+                row.innerHTML = `
+                    <td>${recorderName}</td>
+                    <td>${simpleSymbol}</td>
+                    <td class="${sideClass}">${pos.side}</td>
+                    <td>${pos.quantity}</td>
+                    <td>$${pos.entry_price?.toLocaleString('en-US', {minimumFractionDigits: 2}) || '--'}</td>
+                    <td>$${pos.current_price?.toLocaleString('en-US', {minimumFractionDigits: 2}) || '--'}</td>
+                    <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</td>
+                `;
+                tbody.appendChild(row);
+            }
+
+            // Update open P&L summary
+            const openPnlEl = document.getElementById('openPnl');
+            if (openPnlEl) {
+                openPnlEl.textContent = (totalUnrealized >= 0 ? '+' : '') + '$' + totalUnrealized.toFixed(2);
+                openPnlEl.className = 'stat-value ' + (totalUnrealized >= 0 ? 'positive' : 'negative');
+            }
+        } catch (error) {
+            console.error('Error loading paper positions:', error);
+        }
+    }
+
+    // Get recorder name by ID
+    async function getRecorderName(recorderId) {
+        if (recorderNames[recorderId]) {
+            return recorderNames[recorderId];
+        }
+        try {
+            const response = await fetch(`/api/recorders/${recorderId}`);
+            const data = await response.json();
+            if (data.recorder && data.recorder.name) {
+                recorderNames[recorderId] = data.recorder.name;
+                return data.recorder.name;
+            }
+        } catch (e) {
+            // ignore
+        }
+        return `Recorder #${recorderId}`;
+    }
+
+    // Load paper trade history
+    async function loadPaperHistory() {
+        try {
+            const filterEl = document.getElementById('historyRecorderFilter');
+            const recorderId = filterEl ? filterEl.value : '';
+
+            let url = '/api/paper-trades/history?limit=50';
+            if (recorderId) {
+                url += `&recorder_id=${recorderId}`;
+            }
+
+            const response = await fetch(url);
+            const data = await response.json();
+
+            const tbody = document.getElementById('paperHistoryBody');
+
+            if (!data.success || !data.trades || data.trades.length === 0) {
+                tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No paper trades yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = '';
+            let wins = 0, losses = 0, totalPnl = 0, tradesToday = 0;
+            const today = new Date().toISOString().split('T')[0];
+
+            for (const trade of data.trades) {
+                const row = document.createElement('tr');
+                const pnl = trade.pnl || 0;
+                const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                const sideClass = trade.side === 'LONG' ? 'side-long' : 'side-short';
+                const statusClass = trade.status === 'open' ? 'status-open' : 'status-closed';
+
+                const recorderName = await getRecorderName(trade.recorder_id);
+                const simpleSymbol = trade.symbol.split(':').pop().replace('1!', '');
+
+                // Format time
+                const openTime = trade.opened_at ? new Date(trade.opened_at).toLocaleString() : '--';
+
+                // Calculate stats for closed trades
+                if (trade.status === 'closed') {
+                    totalPnl += pnl;
+                    if (pnl >= 0) wins++;
+                    else losses++;
+                }
+
+                if (trade.opened_at && trade.opened_at.startsWith(today)) {
+                    tradesToday++;
+                }
+
+                row.innerHTML = `
+                    <td>${openTime}</td>
+                    <td>${recorderName}</td>
+                    <td>${simpleSymbol}</td>
+                    <td class="${sideClass}">${trade.side}</td>
+                    <td>$${trade.entry_price?.toFixed(2) || '--'}</td>
+                    <td>${trade.exit_price ? '$' + trade.exit_price.toFixed(2) : '--'}</td>
+                    <td class="${pnlClass}">${trade.status === 'closed' ? (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) : '--'}</td>
+                    <td><span class="status-badge ${statusClass}">${trade.status}</span></td>
+                `;
+                tbody.appendChild(row);
+            }
+
+            // Update summary stats
+            const totalPnlEl = document.getElementById('totalPnl');
+            if (totalPnlEl) {
+                totalPnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
+                totalPnlEl.className = 'stat-value ' + (totalPnl >= 0 ? 'positive' : 'negative');
+            }
+
+            const winRateEl = document.getElementById('winRate');
+            if (winRateEl && (wins + losses) > 0) {
+                const winRate = (wins / (wins + losses) * 100).toFixed(1);
+                winRateEl.textContent = winRate + '%';
+            }
+
+            const tradesTodayEl = document.getElementById('tradesToday');
+            if (tradesTodayEl) {
+                tradesTodayEl.textContent = tradesToday;
+            }
+        } catch (error) {
+            console.error('Error loading paper history:', error);
+        }
+    }
+
+    // Load recorder performance cards
+    async function loadRecorderCards() {
+        try {
+            // Get all recorders first
+            const recordersResponse = await fetch('/api/recorders');
+            const recordersData = await recordersResponse.json();
+
+            const cardsContainer = document.getElementById('recorderCards');
+            const filterSelect = document.getElementById('historyRecorderFilter');
+
+            if (!recordersData.recorders || recordersData.recorders.length === 0) {
+                cardsContainer.innerHTML = `
+                    <div class="recorder-card-placeholder">
+                        <span class="material-icons">add_circle_outline</span>
+                        <p>No recorders yet. Create one to start paper trading!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            cardsContainer.innerHTML = '';
+
+            // Populate filter dropdown
+            if (filterSelect) {
+                filterSelect.innerHTML = '<option value="">All Recorders</option>';
+                recordersData.recorders.forEach(rec => {
+                    filterSelect.innerHTML += `<option value="${rec.id}">${rec.name}</option>`;
+                    recorderNames[rec.id] = rec.name;
+                });
+            }
+
+            // Get P&L for each recorder
+            for (const recorder of recordersData.recorders.slice(0, 8)) {
+                try {
+                    const pnlResponse = await fetch(`/api/paper-trades/recorder/${recorder.id}`);
+                    const pnlData = await pnlResponse.json();
+
+                    const unrealizedPnl = pnlData.unrealized_pnl || 0;
+                    const positions = pnlData.positions || [];
+                    const pnlClass = unrealizedPnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+
+                    const card = document.createElement('div');
+                    card.className = 'recorder-card';
+                    card.innerHTML = `
+                        <div class="recorder-card-header">
+                            <span class="recorder-card-name">${recorder.name}</span>
+                            <span class="recorder-card-pnl ${pnlClass}">${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toFixed(2)}</span>
+                        </div>
+                        <div class="recorder-card-stats">
+                            <div class="recorder-stat">
+                                <span class="recorder-stat-label">Open Positions</span>
+                                <span class="recorder-stat-value">${positions.length}</span>
+                            </div>
+                            <div class="recorder-stat">
+                                <span class="recorder-stat-label">Symbol</span>
+                                <span class="recorder-stat-value">${recorder.symbol || 'Any'}</span>
+                            </div>
+                            <div class="recorder-stat">
+                                <span class="recorder-stat-label">Status</span>
+                                <span class="recorder-stat-value">${recorder.recording_enabled ? 'Active' : 'Paused'}</span>
+                            </div>
+                        </div>
+                    `;
+                    cardsContainer.appendChild(card);
+                } catch (e) {
+                    console.warn(`Could not load P&L for recorder ${recorder.id}`);
+                }
+            }
+
+            if (cardsContainer.children.length === 0) {
+                cardsContainer.innerHTML = `
+                    <div class="recorder-card-placeholder">
+                        <span class="material-icons">analytics</span>
+                        <p>Paper trade data will appear here</p>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Error loading recorder cards:', error);
+        }
+    }
+
+    // Refresh all paper trading data
+    async function refreshPaperTrades() {
+        await Promise.all([
+            loadPaperServiceStatus(),
+            loadLivePrices(),
+            loadPaperPositions(),
+            loadPaperHistory(),
+            loadRecorderCards()
+        ]);
+    }
+
+    // Initialize paper trading panel
+    async function initPaperTradingPanel() {
+        await refreshPaperTrades();
+
+        // Refresh positions every 5 seconds for real-time P&L
+        setInterval(loadPaperPositions, 5000);
+
+        // Refresh prices every 2 seconds
+        setInterval(loadLivePrices, 2000);
+
+        // Refresh history and cards every 30 seconds
+        setInterval(() => {
+            loadPaperHistory();
+            loadRecorderCards();
+        }, 30000);
+    }
+
+    // Start paper trading panel when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check if paper trading section exists before initializing
+        if (document.getElementById('paperTradingSection')) {
+            initPaperTradingPanel();
+        }
+    });
+
+    // Handle real-time price updates for the prices bar
+    socket.on('price_update', (data) => {
+        const symbol = data.symbol ? data.symbol.split(':').pop().replace('1!', '').toUpperCase() : null;
+        if (symbol) {
+            updatePriceDisplay(symbol, {
+                price: data.price,
+                change_percent: data.change_percent
+            });
         }
     });
 </script>
