@@ -196,6 +196,41 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
     cursor = conn.cursor()
     now = datetime.now().isoformat()
 
+    # Ensure table exists
+    if use_postgres:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS paper_trades (
+                id SERIAL PRIMARY KEY,
+                recorder_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                entry_price REAL NOT NULL,
+                exit_price REAL,
+                pnl REAL,
+                opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                closed_at TIMESTAMP,
+                status TEXT DEFAULT 'open'
+            )
+        ''')
+    else:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS paper_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recorder_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                entry_price REAL NOT NULL,
+                exit_price REAL,
+                pnl REAL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                status TEXT DEFAULT 'open'
+            )
+        ''')
+    conn.commit()
+
     try:
         if side in ['LONG', 'SHORT']:
             # Opening a position - check if there's an existing open position to close first
