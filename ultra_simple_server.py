@@ -13605,6 +13605,9 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         # Extract signal data
         action = str(data.get('action', '')).lower().strip()
         ticker = data.get('ticker', data.get('symbol', ''))
+        # Fallback to recorder's default symbol if ticker not in webhook
+        if not ticker:
+            ticker = recorder.get('symbol') or ''
         price = data.get('price', data.get('close', 0))
         
         # Strategy-specific fields (when TradingView handles sizing)
@@ -13673,7 +13676,7 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         # ============================================================
         # PAPER TRADING: Record trade using live price feed
         # ============================================================
-        if normalized_action in ['BUY', 'SELL', 'CLOSE'] and ticker:
+        if normalized_action in ['BUY', 'SELL', 'LONG', 'SHORT', 'CLOSE', 'FLAT', 'EXIT'] and ticker:
             try:
                 paper_qty = int(quantity) if quantity else 1
                 paper_price = float(price) if price else None
