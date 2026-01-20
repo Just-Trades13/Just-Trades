@@ -40,6 +40,8 @@ TV_WS_URL = "wss://data.tradingview.com/socket.io/websocket"
 DEFAULT_SYMBOLS = [
     "CME_MINI:ES1!",   # E-mini S&P 500
     "CME_MINI:NQ1!",   # E-mini Nasdaq 100
+    "CME_MINI:MES1!",  # Micro E-mini S&P 500
+    "CME_MINI:MNQ1!",  # Micro E-mini Nasdaq 100
 ]
 
 
