@@ -520,14 +520,25 @@ class ProjectXIntegration:
         try:
             await self._ensure_valid_token()
 
+            url = self._build_url("Account/search")
+            logger.info(f"📊 Fetching accounts from: {url}")
+
             async with self.session.post(
-                self._build_url("Account/search"),
+                url,
                 json={"onlyActiveAccounts": only_active},
                 headers=self._get_headers()
             ) as response:
+                response_text = await response.text()
+                logger.info(f"   Account search response status: {response.status}")
+                logger.info(f"   Account search response body: {response_text[:500]}")
+
                 if response.status == 200:
-                    data = await response.json()
-                    
+                    try:
+                        data = json.loads(response_text)
+                    except Exception as e:
+                        logger.error(f"Failed to parse account response: {e}")
+                        return []
+
                     if data.get("success"):
                         accounts = data.get("accounts", [])
                         self.accounts = accounts
@@ -539,8 +550,7 @@ class ProjectXIntegration:
                         logger.error(f"Failed to get accounts: {data.get('errorMessage')}")
                         return []
                 else:
-                    error_text = await response.text()
-                    logger.error(f"Get accounts HTTP error: {response.status} - {error_text[:200]}")
+                    logger.error(f"Get accounts HTTP error: {response.status} - {response_text[:200]}")
                     return []
                     
         except Exception as e:
