@@ -408,12 +408,13 @@
                             <th>Entry</th>
                             <th>Exit</th>
                             <th>P&L</th>
+                            <th>Drawdown</th>
                             <th>Status</th>
                         </tr>
                     </thead>
                     <tbody id="paperHistoryBody">
                         <tr class="empty-row">
-                            <td colspan="8">No paper trades yet</td>
+                            <td colspan="9">No paper trades yet</td>
                         </tr>
                     </tbody>
                 </table>
@@ -3767,6 +3768,9 @@
                     tradesToday++;
                 }
 
+                const drawdown = trade.drawdown || 0;
+                const ddClass = drawdown > 0 ? 'pnl-negative' : '';
+
                 row.innerHTML = `
                     <td>${openTime}</td>
                     <td>${recorderName}</td>
@@ -3775,6 +3779,7 @@
                     <td>$${trade.entry_price?.toFixed(2) || '--'}</td>
                     <td>${trade.exit_price ? '$' + trade.exit_price.toFixed(2) : '--'}</td>
                     <td class="${pnlClass}">${trade.status === 'closed' ? (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) : '--'}</td>
+                    <td class="${ddClass}">${trade.status === 'closed' && drawdown > 0 ? '-$' + drawdown.toFixed(2) : '--'}</td>
                     <td><span class="status-badge ${statusClass}">${trade.status}</span></td>
                 `;
                 tbody.appendChild(row);
