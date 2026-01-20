@@ -5,56 +5,84 @@
 <div class="traders-wrapper">
     {% if mode == 'list' %}
     <section class="list-header">
-        <input type="text" placeholder="Search strategy..." id="searchInput" onkeyup="filterTraders()">
+        <input type="text" placeholder="Search strategy..." id="searchInput" onkeyup="filterStrategies()">
         <a class="btn btn-primary" href="/traders/new">Create Trader</a>
     </section>
-    <table class="trader-table">
-        <thead>
-            <tr>
-                <th>ACTIONS</th>
-                <th>STRATEGY</th>
-                <th>ACCOUNT</th>
-                <th>STATUS</th>
-            </tr>
-        </thead>
-        <tbody id="tradersTableBody">
-            {% for trader in traders %}
-            <tr data-trader-id="{{ trader.id }}" data-trader-name="{{ trader.recorder_name }}">
-                <td class="actions">
-                    <a href="/traders/{{ trader.id }}" class="action-btn action-btn-edit" title="Edit Trader">
-                        <span class="material-icons">edit</span>
+
+    <div class="strategies-container" id="strategiesContainer">
+        {% for strategy in strategies %}
+        <div class="strategy-card" data-strategy-name="{{ strategy.recorder_name }}">
+            <div class="strategy-header">
+                <div class="strategy-info">
+                    <h3 class="strategy-name">{{ strategy.recorder_name }}</h3>
+                    <div class="strategy-meta">
+                        <span class="account-count">{{ strategy.total_accounts }} account{{ 's' if strategy.total_accounts != 1 else '' }}</span>
+                        <span class="live-count {{ 'has-live' if strategy.live_accounts > 0 else '' }}">
+                            {{ strategy.live_accounts }} live
+                        </span>
+                    </div>
+                </div>
+                <div class="strategy-actions">
+                    <a href="/recorders/{{ strategy.recorder_id }}" class="action-btn" title="Edit Strategy Settings">
+                        <span class="material-icons">settings</span>
                     </a>
-                    <button class="action-btn action-btn-refresh" onclick="refreshTrader({{ trader.id }})" title="Refresh Status">
-                        <span class="material-icons">refresh</span>
+                    <button class="action-btn toggle-expand" onclick="toggleStrategyExpand(this)" title="Expand/Collapse">
+                        <span class="material-icons">expand_more</span>
                     </button>
-                    <button class="action-btn action-btn-toggle" onclick="toggleTrader({{ trader.id }}, {{ 0 if trader.enabled else 1 }})" title="{{ 'Pause Trading' if trader.enabled else 'Enable Trading' }}">
-                        <span class="material-icons">{{ 'pause' if trader.enabled else 'play_arrow' }}</span>
-                    </button>
-                    <button class="action-btn action-btn-delete" onclick="deleteTrader({{ trader.id }}, '{{ trader.recorder_name }}')" title="Delete Trader">
-                        <span class="material-icons">delete</span>
-                    </button>
-                </td>
-                <td><span class="strategy-link">{{ trader.recorder_name }}</span></td>
-                <td><span class="account-name">{{ trader.account_name }}</span></td>
-                <td>
-                    <span class="status-badge {{ 'status-live' if trader.enabled else 'status-paused' }}">
-                        {{ 'LIVE' if trader.enabled else 'PAUSED' }}
-                    </span>
-                </td>
-            </tr>
-            {% endfor %}
-            {% if not traders %}
-            <tr>
-                <td colspan="4" class="empty-state">No traders yet. Click "Create Trader" to link a recorder to an account.</td>
-            </tr>
-            {% endif %}
-        </tbody>
-    </table>
-    <footer class="pager">
-        <button disabled>‹</button>
-        <span class="page-pill">1</span>
-        <button>›</button>
-    </footer>
+                </div>
+            </div>
+            <div class="strategy-accounts">
+                <table class="accounts-table">
+                    <thead>
+                        <tr>
+                            <th>ACCOUNT</th>
+                            <th>ENV</th>
+                            <th>STATUS</th>
+                            <th>ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in strategy.accounts %}
+                        <tr data-trader-id="{{ account.trader_id }}">
+                            <td class="account-name-cell">{{ account.account_name }}</td>
+                            <td>
+                                <span class="env-badge {{ 'env-demo' if account.is_demo else 'env-live' }}">
+                                    {{ account.env_label }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="status-badge {{ 'status-live' if account.enabled else 'status-paused' }}">
+                                    {{ 'LIVE' if account.enabled else 'PAUSED' }}
+                                </span>
+                            </td>
+                            <td class="actions">
+                                <a href="/traders/{{ account.trader_id }}" class="action-btn action-btn-edit" title="Edit Trader">
+                                    <span class="material-icons">edit</span>
+                                </a>
+                                <button class="action-btn action-btn-toggle" onclick="toggleTrader({{ account.trader_id }}, {{ 0 if account.enabled else 1 }})" title="{{ 'Pause' if account.enabled else 'Enable' }}">
+                                    <span class="material-icons">{{ 'pause' if account.enabled else 'play_arrow' }}</span>
+                                </button>
+                                <button class="action-btn action-btn-delete" onclick="deleteTrader({{ account.trader_id }}, '{{ strategy.recorder_name }}')" title="Remove Account">
+                                    <span class="material-icons">delete</span>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not strategies %}
+        <div class="empty-state-card">
+            <span class="material-icons">add_circle_outline</span>
+            <h3>No traders yet</h3>
+            <p>Click "Create Trader" to link a strategy to your broker accounts.</p>
+            <a class="btn btn-primary" href="/traders/new">Create Trader</a>
+        </div>
+        {% endif %}
+    </div>
     {% elif mode == 'edit' %}
     <!-- Edit Trader Form -->
     <form id="traderForm" data-trader-id="{{ trader.id }}">
@@ -1067,6 +1095,36 @@
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .empty-state { text-align: center; padding: 3rem !important; color: #64748b; font-style: italic; }
 
+    /* Grouped Strategy Cards View */
+    .strategies-container { display: flex; flex-direction: column; gap: 1rem; }
+    .strategy-card { background: rgba(7,12,23,0.92); border: 1px solid rgba(148,163,184,0.12); border-radius: 16px; overflow: hidden; transition: border-color 0.2s ease; }
+    .strategy-card:hover { border-color: rgba(59,130,246,0.3); }
+    .strategy-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem; background: rgba(15,23,42,0.5); border-bottom: 1px solid rgba(148,163,184,0.08); }
+    .strategy-info { display: flex; flex-direction: column; gap: 0.25rem; }
+    .strategy-name { margin: 0; font-size: 1.1rem; color: #60a5fa; font-weight: 600; }
+    .strategy-meta { display: flex; gap: 1rem; font-size: 0.8rem; }
+    .account-count { color: #94a3b8; }
+    .live-count { color: #64748b; }
+    .live-count.has-live { color: #10b981; font-weight: 600; }
+    .strategy-actions { display: flex; gap: 0.5rem; }
+    .toggle-expand .material-icons { transition: transform 0.2s ease; }
+    .strategy-card.collapsed .toggle-expand .material-icons { transform: rotate(-90deg); }
+    .strategy-card.collapsed .strategy-accounts { display: none; }
+    .strategy-accounts { padding: 0; }
+    .accounts-table { width: 100%; border-collapse: collapse; }
+    .accounts-table thead th { text-align: left; padding: 0.6rem 1rem; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.7rem; color: #64748b; background: rgba(15,23,42,0.3); border-bottom: 1px solid rgba(148,163,184,0.08); }
+    .accounts-table tbody td { padding: 0.75rem 1rem; border-bottom: 1px solid rgba(148,163,184,0.06); color: #e2e8f0; }
+    .accounts-table tbody tr:last-child td { border-bottom: none; }
+    .accounts-table tbody tr:hover { background: rgba(59,130,246,0.05); }
+    .account-name-cell { font-weight: 500; }
+    .env-badge { padding: 0.2rem 0.5rem; border-radius: 999px; font-size: 0.65rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+    .env-live { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .env-demo { background: rgba(251, 146, 60, 0.15); color: #fb923c; border: 1px solid rgba(251, 146, 60, 0.3); }
+    .empty-state-card { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 2rem; background: rgba(7,12,23,0.92); border: 1px dashed rgba(148,163,184,0.2); border-radius: 16px; text-align: center; }
+    .empty-state-card .material-icons { font-size: 3rem; color: #64748b; margin-bottom: 1rem; }
+    .empty-state-card h3 { margin: 0 0 0.5rem 0; color: #e2e8f0; }
+    .empty-state-card p { margin: 0 0 1.5rem 0; color: #64748b; }
+
     /* Edit View Styles */
     .chip-live { background: rgba(16, 185, 129, 0.25); color: #10b981; }
     .chip-paused { background: rgba(248, 172, 28, 0.15); color: #facc15; }
@@ -1526,19 +1584,24 @@
         }
     }
     
-    function filterTraders() {
+    function filterStrategies() {
         const input = document.getElementById('searchInput');
         const filter = input.value.toLowerCase();
-        const rows = document.querySelectorAll('#tradersTableBody tr');
-        
-        rows.forEach(row => {
-            const name = row.dataset.traderName;
+        const cards = document.querySelectorAll('.strategy-card');
+
+        cards.forEach(card => {
+            const name = card.dataset.strategyName;
             if (name && name.toLowerCase().includes(filter)) {
-                row.style.display = '';
-            } else if (!row.querySelector('.empty-state')) {
-                row.style.display = 'none';
+                card.style.display = '';
+            } else {
+                card.style.display = 'none';
             }
         });
+    }
+
+    function toggleStrategyExpand(btn) {
+        const card = btn.closest('.strategy-card');
+        card.classList.toggle('collapsed');
     }
     
     // =============================================

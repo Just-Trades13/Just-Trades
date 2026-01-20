@@ -14692,71 +14692,97 @@ def traders_list():
             if is_postgres:
                 cursor.execute('''
                     SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
+                           t.recorder_id,
                            r.name as recorder_name,
                            a.name as account_name
                     FROM traders t
                     LEFT JOIN recorders r ON t.recorder_id = r.id
                     LEFT JOIN accounts a ON t.account_id = a.id
                     WHERE t.user_id = %s OR a.user_id = %s
-                    ORDER BY t.created_at DESC
+                    ORDER BY r.name, t.created_at DESC
                 ''', (user_id, user_id))
             else:
                 cursor.execute('''
                     SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
+                           t.recorder_id,
                            r.name as recorder_name,
                            a.name as account_name
                     FROM traders t
                     LEFT JOIN recorders r ON t.recorder_id = r.id
                     LEFT JOIN accounts a ON t.account_id = a.id
                     WHERE t.user_id = ? OR a.user_id = ?
-                    ORDER BY t.created_at DESC
+                    ORDER BY r.name, t.created_at DESC
                 ''', (user_id, user_id))
         else:
             # Fallback: show all (shouldn't happen if login required)
             cursor.execute('''
                 SELECT t.id, t.enabled, t.subaccount_name, t.is_demo,
+                       t.recorder_id,
                        r.name as recorder_name,
                        a.name as account_name
                 FROM traders t
                 LEFT JOIN recorders r ON t.recorder_id = r.id
                 LEFT JOIN accounts a ON t.account_id = a.id
-                ORDER BY t.created_at DESC
+                ORDER BY r.name, t.created_at DESC
             ''')
-        
+
         rows = cursor.fetchall()
-        traders = []
-        columns = ['id', 'enabled', 'subaccount_name', 'is_demo', 'recorder_name', 'account_name']
-        
+        columns = ['id', 'enabled', 'subaccount_name', 'is_demo', 'recorder_id', 'recorder_name', 'account_name']
+
+        # Group traders by recorder/strategy
+        strategies = {}  # recorder_id -> {name, accounts: []}
+
         for row in rows:
             if hasattr(row, 'keys'):
                 row_dict = dict(row)
             else:
                 row_dict = dict(zip(columns[:len(row)], row))
-            
+
+            recorder_id = row_dict.get('recorder_id')
+            recorder_name = row_dict.get('recorder_name') or 'Unknown'
+
             is_demo = bool(row_dict.get('is_demo')) if row_dict.get('is_demo') is not None else None
-            env_label = "🟠 DEMO" if is_demo else "🟢 LIVE" if is_demo is not None else ""
+            env_label = "DEMO" if is_demo else "LIVE" if is_demo is not None else ""
             account_name = row_dict.get('account_name') or 'Unknown'
             subaccount_name = row_dict.get('subaccount_name')
-            
+
             if subaccount_name:
-                display_account = f"{account_name} {env_label} ({subaccount_name})"
+                display_account = f"{account_name} ({subaccount_name})"
             else:
                 display_account = account_name
-            
-            traders.append({
-                'id': row_dict.get('id'),
-                'recorder_name': row_dict.get('recorder_name') or 'Unknown',
-                'strategy_type': row_dict.get('strategy_type', 'Futures'),
+
+            # Create strategy entry if doesn't exist
+            if recorder_id not in strategies:
+                strategies[recorder_id] = {
+                    'recorder_id': recorder_id,
+                    'recorder_name': recorder_name,
+                    'accounts': [],
+                    'total_accounts': 0,
+                    'live_accounts': 0
+                }
+
+            # Add account to strategy
+            is_enabled = bool(row_dict.get('enabled'))
+            strategies[recorder_id]['accounts'].append({
+                'trader_id': row_dict.get('id'),
                 'account_name': display_account,
-                'enabled': bool(row_dict.get('enabled'))
+                'env_label': env_label,
+                'is_demo': is_demo,
+                'enabled': is_enabled
             })
-        
+            strategies[recorder_id]['total_accounts'] += 1
+            if is_enabled:
+                strategies[recorder_id]['live_accounts'] += 1
+
+        # Convert to list sorted by recorder name
+        strategies_list = sorted(strategies.values(), key=lambda x: x['recorder_name'].lower())
+
         conn.close()
-        
+
         return render_template(
             'traders.html',
             mode='list',
-            traders=traders
+            strategies=strategies_list
         )
     except Exception as e:
         logger.error(f"Error in traders_list: {e}")
