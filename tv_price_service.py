@@ -24,6 +24,8 @@ except ImportError:
     subprocess.check_call(['pip3', 'install', 'websocket-client', '--break-system-packages'])
     import websocket
 
+import os
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -40,6 +42,53 @@ DEFAULT_SYMBOLS = [
     "CME_MINI:NQ1!",   # E-mini Nasdaq 100
 ]
 
+
+def get_tradingview_session() -> Optional[str]:
+    """
+    Get TradingView session token from database.
+    Returns the sessionid for premium data access, or None for public data.
+    """
+    try:
+        # Check for PostgreSQL (Railway)
+        database_url = os.environ.get('DATABASE_URL')
+
+        if database_url:
+            import psycopg2
+            conn = psycopg2.connect(database_url)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT tradingview_session FROM accounts
+                WHERE tradingview_session IS NOT NULL
+                AND tradingview_session != ''
+                LIMIT 1
+            ''')
+        else:
+            conn = sqlite3.connect('just_trades.db')
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT tradingview_session FROM accounts
+                WHERE tradingview_session IS NOT NULL
+                AND tradingview_session != ''
+                LIMIT 1
+            ''')
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row and row[0]:
+            session_data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            sessionid = session_data.get('sessionid')
+            if sessionid:
+                logger.info(f"✅ Found TradingView premium session")
+                return sessionid
+
+        logger.warning("⚠️ No TradingView session found - using public data (delayed)")
+        return None
+
+    except Exception as e:
+        logger.error(f"Error getting TradingView session: {e}")
+        return None
+
 class TradingViewTicker:
     """
     TradingView WebSocket ticker for real-time price data
@@ -51,7 +100,7 @@ class TradingViewTicker:
     # Health check interval (30 seconds)
     HEALTH_CHECK_INTERVAL = 30
 
-    def __init__(self, symbols: list = None):
+    def __init__(self, symbols: list = None, auth_token: str = None):
         self.symbols = symbols or DEFAULT_SYMBOLS
         self.ws = None
         self.session_id = self._generate_session()
@@ -64,6 +113,9 @@ class TradingViewTicker:
         self.last_update_time = 0
         self.reconnect_count = 0
         self.health_thread = None
+        # Auth token for premium data - get from database if not provided
+        self.auth_token = auth_token or get_tradingview_session() or "unauthorized_user_token"
+        self.is_premium = self.auth_token != "unauthorized_user_token"
 
     def _generate_session(self, prefix: str = "qs_") -> str:
         """Generate random session ID"""
@@ -175,11 +227,14 @@ class TradingViewTicker:
 
     def _on_open(self, ws):
         """Handle WebSocket connection open"""
-        logger.info("WebSocket connected to TradingView")
+        if self.is_premium:
+            logger.info("🚀 WebSocket connected to TradingView with PREMIUM auth (~100ms delay)")
+        else:
+            logger.info("WebSocket connected to TradingView with PUBLIC auth (delayed data)")
         self.connected = True
 
-        # Set auth token (empty for public data)
-        self._send_message("set_auth_token", ["unauthorized_user_token"])
+        # Set auth token - premium sessionid for real-time, or unauthorized for delayed
+        self._send_message("set_auth_token", [self.auth_token])
 
         # Create quote session
         self._send_message("quote_create_session", [self.session_id])
@@ -239,6 +294,13 @@ class TradingViewTicker:
                 self.session_id = self._generate_session()
                 self.chart_session = self._generate_session("cs_")
 
+                # Refresh auth token in case it was updated
+                new_token = get_tradingview_session()
+                if new_token:
+                    self.auth_token = new_token
+                    self.is_premium = True
+                    logger.info("🔄 Refreshed TradingView auth token")
+
                 # Reconnect
                 self._connect()
                 logger.info(f"🔄 TradingView reconnect attempt #{self.reconnect_count}")
@@ -257,7 +319,10 @@ class TradingViewTicker:
 
         self.running = True
         self.last_update_time = time.time()  # Initialize to avoid immediate stale detection
-        logger.info(f"Starting TradingView ticker for {len(self.symbols)} symbols")
+        if self.is_premium:
+            logger.info(f"🚀 Starting TradingView PREMIUM ticker for {len(self.symbols)} symbols (~100ms delay)")
+        else:
+            logger.info(f"Starting TradingView PUBLIC ticker for {len(self.symbols)} symbols (delayed data)")
         self._connect()
 
         # Start health monitor thread
