@@ -433,10 +433,14 @@
                 </div>
             </div>
 
-            <!-- Equity Curve Chart -->
+            <!-- P&L vs Drawdown Chart -->
             <div class="equity-curve-container">
                 <div class="equity-curve-header">
-                    <h3><span class="material-icons">show_chart</span> Equity Curve</h3>
+                    <h3><span class="material-icons">show_chart</span> P&L vs Drawdown</h3>
+                    <div class="chart-legend-inline">
+                        <span class="legend-item"><span class="legend-dot" style="background: #10b981;"></span>Cumulative P&L</span>
+                        <span class="legend-item"><span class="legend-dot" style="background: #ef4444;"></span>Drawdown</span>
+                    </div>
                 </div>
                 <canvas id="equityCurveChart" height="200"></canvas>
             </div>
@@ -543,29 +547,6 @@
             </div>
         </div>
 
-        <!-- Summary Stats -->
-        <div class="paper-summary-stats" id="paperSummaryStats">
-            <div class="summary-stat">
-                <span class="stat-label">Total P&L</span>
-                <span class="stat-value" id="totalPnl">$0.00</span>
-            </div>
-            <div class="summary-stat">
-                <span class="stat-label">Open P&L</span>
-                <span class="stat-value" id="openPnl">$0.00</span>
-            </div>
-            <div class="summary-stat">
-                <span class="stat-label">Win Rate</span>
-                <span class="stat-value" id="winRate">--%</span>
-            </div>
-            <div class="summary-stat">
-                <span class="stat-label">Max Drawdown</span>
-                <span class="stat-value" id="maxDrawdown">$0.00</span>
-            </div>
-            <div class="summary-stat">
-                <span class="stat-label">Trades Today</span>
-                <span class="stat-value" id="tradesToday">0</span>
-            </div>
-        </div>
     </section>
 
     <section class="onboarding-strip">
@@ -603,153 +584,6 @@
             </article>
         </div>
     </section>
-
-    <!-- Metric Cards Section (Trade Manager Style - Visible by default) -->
-    <section class="metrics-grid" id="metricsCardsSection">
-        <article class="metric-card" data-metric="cumulative_return">
-            <header class="metric-header">
-                <h3 class="metric-title">Cumulative Return</h3>
-                <span class="material-icons card-close">close</span>
-            </header>
-            <div class="metric-body">
-                <div class="metric-icon metric-icon--success">
-                    <span class="material-icons">savings</span>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Time Traded</p>
-                    <p class="metric-value" data-field="time_traded">1M 1D</p>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Return</p>
-                    <p class="metric-value" data-field="return">$20,828</p>
-                </div>
-            </div>
-        </article>
-        <article class="metric-card" data-metric="win_rate">
-            <header class="metric-header">
-                <h3 class="metric-title">W_L_WINRATE</h3>
-                <span class="material-icons card-close">close</span>
-            </header>
-            <div class="metric-body">
-                <div class="metric-icon metric-icon--primary">
-                    <span class="material-icons">pie_chart</span>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Wins</p>
-                    <p class="metric-value" data-field="wins">609</p>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Losses</p>
-                    <p class="metric-value" data-field="losses">23</p>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">% Winrate</p>
-                    <p class="metric-value" data-field="winrate">96%</p>
-                </div>
-            </div>
-        </article>
-        <article class="metric-card" data-metric="drawdown">
-            <header class="metric-header">
-                <h3 class="metric-title">Drawdown</h3>
-                <span class="material-icons card-close">close</span>
-            </header>
-            <div class="metric-body">
-                <div class="metric-icon metric-icon--danger">
-                    <span class="material-icons">show_chart</span>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Max DD</p>
-                    <p class="metric-value" data-field="max_dd">$8,456</p>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Avg DD</p>
-                    <p class="metric-value" data-field="avg_dd">$123</p>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Run DD</p>
-                    <p class="metric-value" data-field="run_dd">$8,456</p>
-                </div>
-            </div>
-        </article>
-        <article class="metric-card" data-metric="total_roi">
-            <header class="metric-header">
-                <h3 class="metric-title">Total ROI</h3>
-                <span class="material-icons card-close">close</span>
-            </header>
-            <div class="metric-body">
-                <div class="metric-icon metric-icon--info">
-                    <span class="material-icons">percent</span>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Total ROI</p>
-                    <p class="metric-value" data-field="roi">27%</p>
-                </div>
-            </div>
-        </article>
-        <article class="metric-card" data-metric="contracts_held">
-            <header class="metric-header">
-                <h3 class="metric-title">Contracts Held</h3>
-                <span class="material-icons card-close">close</span>
-            </header>
-            <div class="metric-body">
-                <div class="metric-icon metric-icon--warning">
-                    <span class="material-icons">donut_large</span>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Max Size</p>
-                    <p class="metric-value" data-field="max_size">30</p>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Avg Size</p>
-                    <p class="metric-value" data-field="avg_size">3</p>
-                </div>
-            </div>
-        </article>
-        <article class="metric-card">
-            <header class="metric-header">
-                <h3 class="metric-title">TM Score</h3>
-                <span class="material-icons card-close">close</span>
-            </header>
-            <div class="metric-body metric-body--placeholder">
-                <p>No layout defined for this stat.</p>
-            </div>
-        </article>
-        <article class="metric-card" data-metric="pnl">
-            <header class="metric-header">
-                <h3 class="metric-title">Max/Avg PNL</h3>
-                <span class="material-icons card-close">close</span>
-            </header>
-            <div class="metric-body">
-                <div class="metric-icon metric-icon--warning">
-                    <span class="material-icons">bar_chart</span>
-                </div>
-                <div class="metric-stat metric-stat--wide">
-                    <p class="metric-label">Max/Avg Profit</p>
-                    <p class="metric-value" data-field="profit">$1,098 / $556</p>
-                </div>
-                <div class="metric-stat metric-stat--wide">
-                    <p class="metric-label">Max/Avg Loss</p>
-                    <p class="metric-value" data-field="loss">-$1,643 / -$584</p>
-                </div>
-            </div>
-        </article>
-        <article class="metric-card" data-metric="profit_factor">
-            <header class="metric-header">
-                <h3 class="metric-title">Profit Factor</h3>
-                <span class="material-icons card-close">close</span>
-            </header>
-            <div class="metric-body">
-                <div class="metric-icon metric-icon--info">
-                    <span class="material-icons">rocket_launch</span>
-                </div>
-                <div class="metric-stat">
-                    <p class="metric-label">Profit Factor</p>
-                    <p class="metric-value" data-field="profit_factor">2.55</p>
-                </div>
-            </div>
-        </article>
-    </section>
-    <!-- End Metric Cards Section -->
 
     <!-- Filter Section for Recorded Strategies (Trade Manager Style) -->
     <section class="filter-panel">
@@ -806,22 +640,6 @@
             <button class="btn btn-link" id="showAllCards">
                 <span id="cardsToggleText">Hide All Cards</span>
             </button>
-        </div>
-    </section>
-
-    <section class="chart-panel">
-        <header class="chart-header">
-            <div>
-                <h2>Profit vs Drawdown</h2>
-                <p class="chart-subtitle">Rolling 30-day performance snapshot</p>
-            </div>
-            <div class="chart-legend">
-                <span class="legend-item"><span class="legend-dot legend-dot--profit"></span>Cumulative Profit</span>
-                <span class="legend-item"><span class="legend-dot legend-dot--drawdown"></span>Cumulative Drawdown</span>
-            </div>
-        </header>
-        <div class="chart-canvas">
-            <canvas id="profitDrawdownChart"></canvas>
         </div>
     </section>
 
@@ -1836,6 +1654,22 @@
     .equity-curve-header h3 .material-icons {
         font-size: 1.2rem;
         color: var(--primary-color);
+    }
+    .chart-legend-inline {
+        display: flex;
+        gap: 1rem;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    .chart-legend-inline .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+    }
+    .chart-legend-inline .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
     }
     #equityCurveChart {
         width: 100% !important;
@@ -4284,7 +4118,7 @@
         }
     }
 
-    // Render equity curve chart
+    // Render P&L vs Drawdown chart (two lines)
     function renderEquityCurve(equityData) {
         const canvas = document.getElementById('equityCurveChart');
         if (!canvas) return;
@@ -4296,30 +4130,53 @@
             equityChart.destroy();
         }
 
-        // Prepare data
+        // Prepare data - calculate drawdown from equity curve
         const labels = equityData.map((_, i) => 'Trade ' + (i + 1));
-        const values = equityData;
+        const pnlValues = equityData;
 
-        // Determine colors based on final P&L
-        const finalValue = equityData[equityData.length - 1];
-        const lineColor = finalValue >= 0 ? 'rgba(16, 185, 129, 1)' : 'rgba(239, 68, 68, 1)';
-        const fillColor = finalValue >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+        // Calculate drawdown at each point
+        const drawdownValues = [];
+        let peak = 0;
+        for (let i = 0; i < pnlValues.length; i++) {
+            const pnl = pnlValues[i];
+            if (pnl > peak) {
+                peak = pnl;
+            }
+            // Drawdown is shown as negative (below zero line)
+            const dd = peak > 0 ? -(peak - pnl) : 0;
+            drawdownValues.push(dd);
+        }
 
         equityChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: labels,
-                datasets: [{
-                    label: 'Cumulative P&L',
-                    data: values,
-                    borderColor: lineColor,
-                    backgroundColor: fillColor,
-                    fill: true,
-                    tension: 0.2,
-                    pointRadius: values.length > 50 ? 0 : 3,
-                    pointHoverRadius: 5,
-                    borderWidth: 2
-                }]
+                datasets: [
+                    {
+                        label: 'Cumulative P&L',
+                        data: pnlValues,
+                        borderColor: 'rgba(16, 185, 129, 1)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: true,
+                        tension: 0.2,
+                        pointRadius: pnlValues.length > 50 ? 0 : 2,
+                        pointHoverRadius: 4,
+                        borderWidth: 2,
+                        order: 1
+                    },
+                    {
+                        label: 'Drawdown',
+                        data: drawdownValues,
+                        borderColor: 'rgba(239, 68, 68, 0.8)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                        fill: true,
+                        tension: 0.2,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        borderWidth: 1.5,
+                        order: 2
+                    }
+                ]
             },
             options: {
                 responsive: true,
@@ -4332,7 +4189,8 @@
                         callbacks: {
                             label: function(context) {
                                 const value = context.raw;
-                                return '$' + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                                const prefix = context.dataset.label === 'Drawdown' ? 'DD: ' : 'P&L: ';
+                                return prefix + '$' + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                             }
                         }
                     }
