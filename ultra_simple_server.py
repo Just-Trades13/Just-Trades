@@ -12779,11 +12779,36 @@ def process_webhook_directly(webhook_token):
             conn.commit()
         except Exception as e:
             _logger.warning(f"Could not record signal: {e}")
-        
+
+        # ============================================================
+        # 📄 PAPER TRADING: Record trade for analytics
+        # ============================================================
+        try:
+            paper_action = action.upper()
+            print(f"🧪🧪🧪 WEBHOOK PAPER CHECK: action={paper_action}, ticker={ticker}", flush=True)
+            if paper_action in ['BUY', 'SELL', 'LONG', 'SHORT', 'CLOSE', 'FLAT', 'EXIT']:
+                paper_qty = int(quantity) if quantity else 1
+                paper_price = float(price) if price else None
+                print(f"🧪🧪🧪 CALLING record_paper_trade: rec={recorder_id}, sym={ticker}, act={paper_action}, qty={paper_qty}, price={paper_price}", flush=True)
+                paper_result = record_paper_trade_from_webhook(
+                    recorder_id=recorder_id,
+                    symbol=ticker,
+                    action=paper_action,
+                    quantity=paper_qty,
+                    price=paper_price
+                )
+                print(f"🧪🧪🧪 PAPER TRADE RESULT: {paper_result}", flush=True)
+            else:
+                print(f"🧪🧪🧪 PAPER SKIPPED: action={paper_action} not in trade list", flush=True)
+        except Exception as paper_err:
+            import traceback
+            print(f"🧪🧪🧪 PAPER TRADE ERROR: {paper_err}", flush=True)
+            print(traceback.format_exc(), flush=True)
+
         # ============================================================
         # 📈 GET RISK SETTINGS
         # ============================================================
-        
+
         # Trade Manager Style: NO broker sync - position tracking is signal-based only
         # Signals are the source of truth. Broker execution happens async.
         # This makes webhook processing instant and never fails.
