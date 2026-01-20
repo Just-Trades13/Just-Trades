@@ -1590,10 +1590,9 @@
     .calendar-days {
         display: grid;
         grid-template-columns: repeat(7, 1fr);
-        gap: 4px;
+        gap: 6px;
     }
     .calendar-day {
-        aspect-ratio: 1;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -1603,36 +1602,53 @@
         font-size: 0.8rem;
         cursor: default;
         position: relative;
-        min-height: 45px;
+        padding: 8px 4px;
+        min-height: 60px;
+        box-sizing: border-box;
     }
     .calendar-day.empty {
         background: transparent;
+        min-height: 60px;
     }
     .calendar-day.profit {
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.1));
-        border: 1px solid rgba(16, 185, 129, 0.4);
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.35), rgba(16, 185, 129, 0.15));
+        border: 1px solid rgba(16, 185, 129, 0.5);
     }
     .calendar-day.loss {
-        background: linear-gradient(135deg, rgba(239, 68, 68, 0.3), rgba(239, 68, 68, 0.1));
-        border: 1px solid rgba(239, 68, 68, 0.4);
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.35), rgba(239, 68, 68, 0.15));
+        border: 1px solid rgba(239, 68, 68, 0.5);
     }
     .calendar-day.today {
         border: 2px solid var(--primary-color);
     }
     .calendar-day .day-number {
         font-weight: 600;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
+        line-height: 1;
     }
     .calendar-day .day-pnl {
-        font-size: 0.65rem;
-        font-weight: 600;
+        font-size: 0.85rem;
+        font-weight: 700;
+        margin-top: 3px;
+        line-height: 1;
+    }
+    .calendar-day .day-trades {
+        font-size: 0.7rem;
+        color: var(--text-muted);
         margin-top: 2px;
+        line-height: 1;
     }
     .calendar-day.profit .day-pnl {
         color: #10b981;
     }
     .calendar-day.loss .day-pnl {
         color: #ef4444;
+    }
+    .calendar-day.profit .day-trades {
+        color: rgba(16, 185, 129, 0.8);
+    }
+    .calendar-day.loss .day-trades {
+        color: rgba(239, 68, 68, 0.8);
     }
     .calendar-legend {
         display: flex;
@@ -4191,6 +4207,7 @@
 
             if (dayData) {
                 const pnl = dayData.pnl || 0;
+                const tradeCount = dayData.trade_count || 0;
                 if (pnl > 0) {
                     dayEl.classList.add('profit');
                 } else if (pnl < 0) {
@@ -4199,9 +4216,10 @@
 
                 dayEl.innerHTML = `
                     <span class="day-number">${day}</span>
-                    <span class="day-pnl">${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(0)}</span>
+                    <span class="day-pnl">${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(0)}</span>
+                    <span class="day-trades">${tradeCount} trade${tradeCount !== 1 ? 's' : ''}</span>
                 `;
-                dayEl.title = `${dateStr}: ${dayData.trade_count} trades, $${pnl.toFixed(2)} P&L, ${dayData.win_rate}% win rate`;
+                dayEl.title = `${dateStr}: ${tradeCount} trades, $${pnl.toFixed(2)} P&L, ${dayData.win_rate}% win rate`;
             } else {
                 dayEl.innerHTML = `<span class="day-number">${day}</span>`;
             }
