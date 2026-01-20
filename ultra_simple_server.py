@@ -346,7 +346,20 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                     conn.commit()
                     return {'success': True, 'symbol': symbol, 'action': 'DCA', 'price': price, 'avg_entry': avg_entry, 'quantity': new_qty}
 
-                else:  # Opposite direction = close and open new
+                else:  # Opposite direction signal
+                    # Check if this is a DCA strategy - if so, ignore opposite direction signals
+                    cursor.execute(f'SELECT avg_down_enabled FROM recorders WHERE id = {ph}', (recorder_id,))
+                    rec_check = cursor.fetchone()
+                    is_dca_strategy = bool(rec_check and rec_check[0])
+
+                    if is_dca_strategy:
+                        # DCA strategies ignore opposite direction signals - wait for TP exit
+                        print(f"📝 DCA Strategy: Ignoring opposite direction signal ({side}) - waiting for TP exit on {exist_side} position", flush=True)
+                        conn.commit()
+                        conn.close()
+                        return {'success': True, 'symbol': symbol, 'action': 'IGNORED_DCA', 'reason': f'DCA strategy ignores {side} while {exist_side} position open'}
+
+                    # Non-DCA: close existing position and open new one
                     # Calculate P&L for closing
                     from tv_price_service import FUTURES_SPECS
                     spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
