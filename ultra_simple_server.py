@@ -4772,11 +4772,16 @@ def admin_get_user_details(user_id):
         placeholder = '%s' if is_postgres else '?'
 
         # Get user's connected accounts
+        # Check both tradovate_token (for Tradovate) AND is_connected column (for ProjectX/other brokers)
         cursor.execute(f'''
-            SELECT id, name, broker, environment, enabled, 
-                   CASE WHEN tradovate_token IS NOT NULL AND tradovate_token != '' THEN 1 ELSE 0 END as is_connected,
+            SELECT id, name, broker, environment, enabled,
+                   CASE
+                       WHEN tradovate_token IS NOT NULL AND tradovate_token != '' THEN 1
+                       WHEN is_connected = TRUE OR is_connected = 1 THEN 1
+                       ELSE 0
+                   END as is_connected,
                    tradovate_accounts, created_at, updated_at
-            FROM accounts 
+            FROM accounts
             WHERE user_id = {placeholder}
             ORDER BY created_at DESC
         ''', (user_id,))
@@ -8118,7 +8123,13 @@ def projectx_connect(account_id):
         ph = '%s' if is_postgres else '?'
         connected_val = 'TRUE' if is_postgres else '1'
 
+        # Get the ProjectX accounts found and store them
+        projectx_accounts = result.get('accounts', [])
+        projectx_accounts_json = json.dumps(projectx_accounts) if projectx_accounts else None
+        prop_firm = data.get('prop_firm', 'default')
+
         # Store password OR api_key based on auth method
+        # Also store ProjectX-specific fields
         if auth_method == 'password':
             cursor.execute(f"""
                 UPDATE accounts
@@ -8127,9 +8138,12 @@ def projectx_connect(account_id):
                     password = {ph},
                     api_key = NULL,
                     environment = {ph},
-                    is_connected = {connected_val}
+                    is_connected = {connected_val},
+                    projectx_username = {ph},
+                    projectx_prop_firm = {ph},
+                    tradovate_accounts = {ph}
                 WHERE id = {ph}
-            """, (username, password, environment, account_id))
+            """, (username, password, environment, username, prop_firm, projectx_accounts_json, account_id))
         else:
             cursor.execute(f"""
                 UPDATE accounts
@@ -8138,9 +8152,13 @@ def projectx_connect(account_id):
                     password = NULL,
                     api_key = {ph},
                     environment = {ph},
-                    is_connected = {connected_val}
+                    is_connected = {connected_val},
+                    projectx_username = {ph},
+                    projectx_api_key = {ph},
+                    projectx_prop_firm = {ph},
+                    tradovate_accounts = {ph}
                 WHERE id = {ph}
-            """, (username, api_key, environment, account_id))
+            """, (username, api_key, environment, username, api_key, prop_firm, projectx_accounts_json, account_id))
         
         conn.commit()
         conn.close()
