@@ -44,6 +44,81 @@ DEFAULT_SYMBOLS = [
     "CME_MINI:MNQ1!",  # Micro E-mini Nasdaq 100
 ]
 
+# Futures contract specifications for P&L calculation
+# Format: symbol -> (tick_size, tick_value, point_value, exchange)
+FUTURES_SPECS = {
+    # E-mini contracts
+    'ES': {'tick_size': 0.25, 'tick_value': 12.50, 'point_value': 50.00, 'exchange': 'CME'},
+    'NQ': {'tick_size': 0.25, 'tick_value': 5.00, 'point_value': 20.00, 'exchange': 'CME'},
+    'RTY': {'tick_size': 0.10, 'tick_value': 5.00, 'point_value': 50.00, 'exchange': 'CME'},
+    'YM': {'tick_size': 1.00, 'tick_value': 5.00, 'point_value': 5.00, 'exchange': 'CBOT'},
+
+    # Micro contracts
+    'MES': {'tick_size': 0.25, 'tick_value': 1.25, 'point_value': 5.00, 'exchange': 'CME'},
+    'MNQ': {'tick_size': 0.25, 'tick_value': 0.50, 'point_value': 2.00, 'exchange': 'CME'},
+    'M2K': {'tick_size': 0.10, 'tick_value': 0.50, 'point_value': 5.00, 'exchange': 'CME'},
+    'MYM': {'tick_size': 1.00, 'tick_value': 0.50, 'point_value': 0.50, 'exchange': 'CBOT'},
+
+    # Energy
+    'CL': {'tick_size': 0.01, 'tick_value': 10.00, 'point_value': 1000.00, 'exchange': 'NYMEX'},
+    'MCL': {'tick_size': 0.01, 'tick_value': 1.00, 'point_value': 100.00, 'exchange': 'NYMEX'},
+    'NG': {'tick_size': 0.001, 'tick_value': 10.00, 'point_value': 10000.00, 'exchange': 'NYMEX'},
+
+    # Metals
+    'GC': {'tick_size': 0.10, 'tick_value': 10.00, 'point_value': 100.00, 'exchange': 'COMEX'},
+    'MGC': {'tick_size': 0.10, 'tick_value': 1.00, 'point_value': 10.00, 'exchange': 'COMEX'},
+    'SI': {'tick_size': 0.005, 'tick_value': 25.00, 'point_value': 5000.00, 'exchange': 'COMEX'},
+    'SIL': {'tick_size': 0.005, 'tick_value': 2.50, 'point_value': 500.00, 'exchange': 'COMEX'},
+    'HG': {'tick_size': 0.0005, 'tick_value': 12.50, 'point_value': 25000.00, 'exchange': 'COMEX'},
+
+    # Currencies
+    '6E': {'tick_size': 0.00005, 'tick_value': 6.25, 'point_value': 125000.00, 'exchange': 'CME'},
+    '6J': {'tick_size': 0.0000005, 'tick_value': 6.25, 'point_value': 12500000.00, 'exchange': 'CME'},
+    '6B': {'tick_size': 0.0001, 'tick_value': 6.25, 'point_value': 62500.00, 'exchange': 'CME'},
+
+    # Treasuries
+    'ZB': {'tick_size': 0.03125, 'tick_value': 31.25, 'point_value': 1000.00, 'exchange': 'CBOT'},
+    'ZN': {'tick_size': 0.015625, 'tick_value': 15.625, 'point_value': 1000.00, 'exchange': 'CBOT'},
+    'ZF': {'tick_size': 0.0078125, 'tick_value': 7.8125, 'point_value': 1000.00, 'exchange': 'CBOT'},
+
+    # Agriculture
+    'ZC': {'tick_size': 0.25, 'tick_value': 12.50, 'point_value': 50.00, 'exchange': 'CBOT'},
+    'ZS': {'tick_size': 0.25, 'tick_value': 12.50, 'point_value': 50.00, 'exchange': 'CBOT'},
+    'ZW': {'tick_size': 0.25, 'tick_value': 12.50, 'point_value': 50.00, 'exchange': 'CBOT'},
+}
+
+
+def get_futures_spec(symbol: str) -> dict:
+    """Get futures specification for a symbol. Returns default if not found."""
+    # Normalize symbol (remove numbers, !, etc.)
+    clean_symbol = ''.join(c for c in symbol.upper() if c.isalpha())
+
+    # Try exact match first
+    if clean_symbol in FUTURES_SPECS:
+        return FUTURES_SPECS[clean_symbol]
+
+    # Try common variations
+    for key in FUTURES_SPECS:
+        if clean_symbol.startswith(key) or key.startswith(clean_symbol):
+            return FUTURES_SPECS[key]
+
+    # Default spec (assumes $1 per point like stocks)
+    logger.warning(f"Unknown futures symbol: {symbol}, using default $1/point")
+    return {'tick_size': 0.01, 'tick_value': 1.00, 'point_value': 100.00, 'exchange': 'UNKNOWN'}
+
+
+def calculate_pnl(symbol: str, entry_price: float, exit_price: float, quantity: int, side: str) -> float:
+    """Calculate P&L in dollars for a futures trade."""
+    spec = get_futures_spec(symbol)
+    point_value = spec['point_value']
+
+    if side.upper() in ['LONG', 'BUY']:
+        points = exit_price - entry_price
+    else:  # SHORT, SELL
+        points = entry_price - exit_price
+
+    return points * point_value * quantity
+
 
 def get_tradingview_session() -> Optional[dict]:
     """
@@ -576,11 +651,8 @@ class PaperTradingEngine:
                 current_price = price_data.get('last_price', 0)
 
                 if current_price and pos['entry_price']:
-                    if pos['side'].upper() == 'LONG':
-                        pnl = (current_price - pos['entry_price']) * pos['quantity']
-                    else:  # SHORT
-                        pnl = (pos['entry_price'] - current_price) * pos['quantity']
-
+                    # Use proper futures P&L calculation
+                    pnl = calculate_pnl(symbol, pos['entry_price'], current_price, pos['quantity'], pos['side'])
                     pos['unrealized_pnl'] = pnl
                     pos['current_price'] = current_price
 
@@ -678,11 +750,8 @@ class PaperTradingEngine:
         if not exit_price:
             exit_price = pos.get('current_price', pos['entry_price'])
 
-        # Calculate final P&L
-        if pos['side'] == 'LONG':
-            pnl = (exit_price - pos['entry_price']) * pos['quantity']
-        else:
-            pnl = (pos['entry_price'] - exit_price) * pos['quantity']
+        # Calculate final P&L using proper futures point values
+        pnl = calculate_pnl(symbol, pos['entry_price'], exit_price, pos['quantity'], pos['side'])
 
         # Update database
         try:
@@ -783,6 +852,303 @@ class PaperTradingEngine:
             return trades
         except Exception as e:
             logger.error(f"Error getting trade history: {e}")
+            return []
+
+    def get_analytics(self, recorder_id: int = None) -> dict:
+        """
+        Get comprehensive trading analytics.
+        If recorder_id is provided, returns analytics for that recorder only.
+        Otherwise returns analytics for all trades.
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
+
+            # Get all closed trades
+            if recorder_id:
+                cursor.execute(f'''
+                    SELECT symbol, side, quantity, entry_price, exit_price, pnl, opened_at, closed_at
+                    FROM paper_trades
+                    WHERE recorder_id = {ph} AND status = 'closed' AND pnl IS NOT NULL
+                    ORDER BY closed_at ASC
+                ''', (recorder_id,))
+            else:
+                cursor.execute('''
+                    SELECT symbol, side, quantity, entry_price, exit_price, pnl, opened_at, closed_at
+                    FROM paper_trades
+                    WHERE status = 'closed' AND pnl IS NOT NULL
+                    ORDER BY closed_at ASC
+                ''')
+
+            trades = cursor.fetchall()
+            conn.close()
+
+            if not trades:
+                return {
+                    'total_trades': 0,
+                    'winning_trades': 0,
+                    'losing_trades': 0,
+                    'win_rate': 0,
+                    'total_pnl': 0,
+                    'gross_profit': 0,
+                    'gross_loss': 0,
+                    'profit_factor': 0,
+                    'average_win': 0,
+                    'average_loss': 0,
+                    'largest_win': 0,
+                    'largest_loss': 0,
+                    'max_drawdown': 0,
+                    'max_drawdown_pct': 0,
+                    'current_drawdown': 0,
+                    'average_trade': 0,
+                    'expectancy': 0,
+                }
+
+            # Calculate analytics
+            pnls = [t[5] for t in trades]  # pnl is index 5
+            winners = [p for p in pnls if p > 0]
+            losers = [p for p in pnls if p < 0]
+
+            total_trades = len(trades)
+            winning_trades = len(winners)
+            losing_trades = len(losers)
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+
+            total_pnl = sum(pnls)
+            gross_profit = sum(winners) if winners else 0
+            gross_loss = abs(sum(losers)) if losers else 0
+            profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
+
+            average_win = (gross_profit / winning_trades) if winning_trades > 0 else 0
+            average_loss = (gross_loss / losing_trades) if losing_trades > 0 else 0
+            largest_win = max(winners) if winners else 0
+            largest_loss = min(losers) if losers else 0  # Most negative
+
+            average_trade = total_pnl / total_trades if total_trades > 0 else 0
+
+            # Expectancy = (Win% * Avg Win) - (Loss% * Avg Loss)
+            loss_rate = losing_trades / total_trades if total_trades > 0 else 0
+            expectancy = ((win_rate / 100) * average_win) - (loss_rate * average_loss)
+
+            # Calculate drawdown from equity curve
+            equity_curve = []
+            running_pnl = 0
+            peak_pnl = 0
+            max_dd = 0
+            max_dd_pct = 0
+
+            for pnl in pnls:
+                running_pnl += pnl
+                equity_curve.append(running_pnl)
+
+                if running_pnl > peak_pnl:
+                    peak_pnl = running_pnl
+
+                dd = peak_pnl - running_pnl
+                if dd > max_dd:
+                    max_dd = dd
+                    # Calculate percentage drawdown (from peak)
+                    if peak_pnl > 0:
+                        max_dd_pct = (dd / peak_pnl) * 100
+
+            current_dd = peak_pnl - running_pnl if running_pnl < peak_pnl else 0
+
+            return {
+                'total_trades': total_trades,
+                'winning_trades': winning_trades,
+                'losing_trades': losing_trades,
+                'breakeven_trades': total_trades - winning_trades - losing_trades,
+                'win_rate': round(win_rate, 2),
+                'total_pnl': round(total_pnl, 2),
+                'gross_profit': round(gross_profit, 2),
+                'gross_loss': round(gross_loss, 2),
+                'profit_factor': round(profit_factor, 2) if profit_factor != float('inf') else 'Infinite',
+                'average_win': round(average_win, 2),
+                'average_loss': round(average_loss, 2),
+                'largest_win': round(largest_win, 2),
+                'largest_loss': round(largest_loss, 2),
+                'max_drawdown': round(max_dd, 2),
+                'max_drawdown_pct': round(max_dd_pct, 2),
+                'current_drawdown': round(current_dd, 2),
+                'average_trade': round(average_trade, 2),
+                'expectancy': round(expectancy, 2),
+                'equity_curve': equity_curve[-100:] if len(equity_curve) > 100 else equity_curve,  # Last 100 points
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating analytics: {e}")
+            return {'error': str(e)}
+
+    def get_equity_curve(self, recorder_id: int = None, limit: int = 500) -> list:
+        """Get equity curve data points for charting."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
+
+            if recorder_id:
+                cursor.execute(f'''
+                    SELECT pnl, closed_at, symbol, side
+                    FROM paper_trades
+                    WHERE recorder_id = {ph} AND status = 'closed' AND pnl IS NOT NULL
+                    ORDER BY closed_at ASC
+                    LIMIT {ph}
+                ''', (recorder_id, limit))
+            else:
+                cursor.execute(f'''
+                    SELECT pnl, closed_at, symbol, side
+                    FROM paper_trades
+                    WHERE status = 'closed' AND pnl IS NOT NULL
+                    ORDER BY closed_at ASC
+                    LIMIT {ph}
+                ''', (limit,))
+
+            trades = cursor.fetchall()
+            conn.close()
+
+            equity_points = []
+            running_pnl = 0
+
+            for trade in trades:
+                pnl, closed_at, symbol, side = trade
+                running_pnl += pnl
+                equity_points.append({
+                    'timestamp': closed_at,
+                    'pnl': round(pnl, 2),
+                    'cumulative_pnl': round(running_pnl, 2),
+                    'symbol': symbol,
+                    'side': side
+                })
+
+            return equity_points
+
+        except Exception as e:
+            logger.error(f"Error getting equity curve: {e}")
+            return []
+
+    def get_daily_pnl(self, recorder_id: int = None, days: int = 30) -> list:
+        """Get daily P&L summary for the last N days."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
+
+            if self.use_postgres:
+                date_func = "DATE(closed_at)"
+                date_filter = f"closed_at >= CURRENT_DATE - INTERVAL '{days} days'"
+            else:
+                date_func = "DATE(closed_at)"
+                date_filter = f"closed_at >= DATE('now', '-{days} days')"
+
+            if recorder_id:
+                cursor.execute(f'''
+                    SELECT {date_func} as trade_date,
+                           COUNT(*) as trade_count,
+                           SUM(pnl) as daily_pnl,
+                           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+                           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers
+                    FROM paper_trades
+                    WHERE recorder_id = {ph} AND status = 'closed' AND pnl IS NOT NULL
+                    AND {date_filter}
+                    GROUP BY {date_func}
+                    ORDER BY trade_date DESC
+                ''', (recorder_id,))
+            else:
+                cursor.execute(f'''
+                    SELECT {date_func} as trade_date,
+                           COUNT(*) as trade_count,
+                           SUM(pnl) as daily_pnl,
+                           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+                           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers
+                    FROM paper_trades
+                    WHERE status = 'closed' AND pnl IS NOT NULL
+                    AND {date_filter}
+                    GROUP BY {date_func}
+                    ORDER BY trade_date DESC
+                ''')
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            daily_data = []
+            for row in rows:
+                trade_date, trade_count, daily_pnl, winners, losers = row
+                daily_data.append({
+                    'date': str(trade_date),
+                    'trade_count': trade_count,
+                    'pnl': round(daily_pnl, 2) if daily_pnl else 0,
+                    'winners': winners or 0,
+                    'losers': losers or 0,
+                    'win_rate': round((winners / trade_count * 100), 1) if trade_count > 0 else 0
+                })
+
+            return daily_data
+
+        except Exception as e:
+            logger.error(f"Error getting daily P&L: {e}")
+            return []
+
+    def get_symbol_stats(self, recorder_id: int = None) -> list:
+        """Get P&L breakdown by symbol."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
+
+            if recorder_id:
+                cursor.execute(f'''
+                    SELECT symbol,
+                           COUNT(*) as trade_count,
+                           SUM(pnl) as total_pnl,
+                           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+                           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers,
+                           AVG(pnl) as avg_pnl,
+                           MAX(pnl) as best_trade,
+                           MIN(pnl) as worst_trade
+                    FROM paper_trades
+                    WHERE recorder_id = {ph} AND status = 'closed' AND pnl IS NOT NULL
+                    GROUP BY symbol
+                    ORDER BY total_pnl DESC
+                ''', (recorder_id,))
+            else:
+                cursor.execute('''
+                    SELECT symbol,
+                           COUNT(*) as trade_count,
+                           SUM(pnl) as total_pnl,
+                           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+                           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers,
+                           AVG(pnl) as avg_pnl,
+                           MAX(pnl) as best_trade,
+                           MIN(pnl) as worst_trade
+                    FROM paper_trades
+                    WHERE status = 'closed' AND pnl IS NOT NULL
+                    GROUP BY symbol
+                    ORDER BY total_pnl DESC
+                ''')
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            symbol_stats = []
+            for row in rows:
+                symbol, trade_count, total_pnl, winners, losers, avg_pnl, best, worst = row
+                symbol_stats.append({
+                    'symbol': symbol,
+                    'trade_count': trade_count,
+                    'total_pnl': round(total_pnl, 2) if total_pnl else 0,
+                    'winners': winners or 0,
+                    'losers': losers or 0,
+                    'win_rate': round((winners / trade_count * 100), 1) if trade_count > 0 else 0,
+                    'avg_pnl': round(avg_pnl, 2) if avg_pnl else 0,
+                    'best_trade': round(best, 2) if best else 0,
+                    'worst_trade': round(worst, 2) if worst else 0
+                })
+
+            return symbol_stats
+
+        except Exception as e:
+            logger.error(f"Error getting symbol stats: {e}")
             return []
 
 

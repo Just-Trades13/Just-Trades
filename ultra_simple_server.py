@@ -106,6 +106,64 @@ except ImportError as e:
     TV_PRICE_SERVICE_AVAILABLE = False
     print(f"⚠️ TradingView price service not available: {e}")
 
+
+def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, quantity: int = 1, price: float = None):
+    """
+    Record a paper trade from webhook signal.
+    Called automatically when webhooks are processed.
+
+    Args:
+        recorder_id: The recorder ID
+        symbol: The trading symbol (e.g., 'NQ', 'ES')
+        action: The action ('LONG', 'SHORT', 'CLOSE')
+        quantity: Number of contracts
+        price: Entry/exit price (uses live feed if not provided)
+    """
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return None
+
+    try:
+        paper_engine = get_paper_engine()
+        ticker = get_ticker()
+
+        # Clean up symbol (remove any exchange prefix)
+        clean_symbol = symbol.replace('CME_MINI:', '').replace('1!', '').upper()
+
+        # Get live price if not provided
+        if not price:
+            # Try different symbol formats
+            for tv_format in [f"CME_MINI:{clean_symbol}1!", clean_symbol]:
+                price_data = ticker.get_price(tv_format)
+                if price_data:
+                    if action in ['LONG', 'BUY']:
+                        price = price_data.get('ask') or price_data.get('last_price')
+                    elif action in ['SHORT', 'SELL']:
+                        price = price_data.get('bid') or price_data.get('last_price')
+                    else:
+                        price = price_data.get('last_price')
+                    if price:
+                        break
+
+        if action in ['LONG', 'BUY']:
+            result = paper_engine.open_position(recorder_id, clean_symbol, 'LONG', quantity, price)
+            print(f"📝 Paper trade recorded: LONG {quantity} {clean_symbol} @ {price}")
+            return result
+        elif action in ['SHORT', 'SELL']:
+            result = paper_engine.open_position(recorder_id, clean_symbol, 'SHORT', quantity, price)
+            print(f"📝 Paper trade recorded: SHORT {quantity} {clean_symbol} @ {price}")
+            return result
+        elif action in ['CLOSE', 'EXIT', 'FLAT']:
+            result = paper_engine.close_position(recorder_id, clean_symbol, price)
+            if result:
+                print(f"📝 Paper trade closed: {clean_symbol} @ {price}, P&L: ${result.get('pnl', 0):.2f}")
+            return result
+
+        return None
+    except Exception as e:
+        print(f"⚠️ Error recording paper trade: {e}")
+        return None
+
+
 # ============================================================================
 # 100+ USER SCALABILITY MODULE (Feature-flagged, additive)
 # ============================================================================
@@ -13611,7 +13669,24 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         
         # Determine if this is a simple alert or strategy alert
         is_strategy_alert = position_size is not None or market_position
-        
+
+        # ============================================================
+        # PAPER TRADING: Record trade using live price feed
+        # ============================================================
+        if normalized_action in ['BUY', 'SELL', 'CLOSE'] and ticker:
+            try:
+                paper_qty = int(quantity) if quantity else 1
+                paper_price = float(price) if price else None
+                record_paper_trade_from_webhook(
+                    recorder_id=recorder_id,
+                    symbol=ticker,
+                    action=normalized_action,
+                    quantity=paper_qty,
+                    price=paper_price
+                )
+            except Exception as paper_err:
+                _logger.warning(f"⚠️ Paper trade recording failed: {paper_err}")
+
         # Record the signal
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS recorded_signals (
@@ -21825,6 +21900,177 @@ def api_paper_service_status():
             'available': True,
             'error': str(e)
         })
+
+@app.route('/api/paper-trades/analytics', methods=['GET'])
+def api_paper_analytics():
+    """Get comprehensive paper trading analytics."""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        paper_engine = get_paper_engine()
+        recorder_id = request.args.get('recorder_id', type=int)
+
+        analytics = paper_engine.get_analytics(recorder_id)
+        return jsonify({
+            'success': True,
+            'recorder_id': recorder_id,
+            'analytics': analytics
+        })
+    except Exception as e:
+        logger.error(f"Error getting paper analytics: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/equity-curve', methods=['GET'])
+def api_paper_equity_curve():
+    """Get equity curve data for charting."""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        paper_engine = get_paper_engine()
+        recorder_id = request.args.get('recorder_id', type=int)
+        limit = request.args.get('limit', default=500, type=int)
+
+        equity_curve = paper_engine.get_equity_curve(recorder_id, limit)
+        return jsonify({
+            'success': True,
+            'recorder_id': recorder_id,
+            'equity_curve': equity_curve
+        })
+    except Exception as e:
+        logger.error(f"Error getting equity curve: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/daily-pnl', methods=['GET'])
+def api_paper_daily_pnl():
+    """Get daily P&L summary."""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        paper_engine = get_paper_engine()
+        recorder_id = request.args.get('recorder_id', type=int)
+        days = request.args.get('days', default=30, type=int)
+
+        daily_pnl = paper_engine.get_daily_pnl(recorder_id, days)
+        return jsonify({
+            'success': True,
+            'recorder_id': recorder_id,
+            'days': days,
+            'daily_pnl': daily_pnl
+        })
+    except Exception as e:
+        logger.error(f"Error getting daily P&L: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/symbol-stats', methods=['GET'])
+def api_paper_symbol_stats():
+    """Get P&L breakdown by symbol."""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        paper_engine = get_paper_engine()
+        recorder_id = request.args.get('recorder_id', type=int)
+
+        symbol_stats = paper_engine.get_symbol_stats(recorder_id)
+        return jsonify({
+            'success': True,
+            'recorder_id': recorder_id,
+            'symbol_stats': symbol_stats
+        })
+    except Exception as e:
+        logger.error(f"Error getting symbol stats: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/record', methods=['POST'])
+def api_paper_record_trade():
+    """
+    Record a paper trade (entry or exit).
+    Used by webhooks or manual entry.
+
+    POST body:
+    {
+        "recorder_id": 1,
+        "symbol": "NQ",
+        "action": "LONG" | "SHORT" | "CLOSE",
+        "quantity": 1,
+        "price": 21500.50  (optional - uses live feed if not provided)
+    }
+    """
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+        recorder_id = data.get('recorder_id')
+        symbol = data.get('symbol', '').upper()
+        action = data.get('action', '').upper()
+        quantity = data.get('quantity', 1)
+        price = data.get('price')
+
+        if not recorder_id or not symbol or not action:
+            return jsonify({'success': False, 'error': 'Missing required fields: recorder_id, symbol, action'}), 400
+
+        paper_engine = get_paper_engine()
+        ticker = get_ticker()
+
+        # Get live price if not provided
+        if not price:
+            # Try to get from live feed
+            tv_symbol = f"CME_MINI:{symbol}1!"
+            price_data = ticker.get_price(tv_symbol)
+            if price_data:
+                if action in ['LONG', 'BUY']:
+                    price = price_data.get('ask') or price_data.get('last_price')
+                elif action in ['SHORT', 'SELL']:
+                    price = price_data.get('bid') or price_data.get('last_price')
+                else:
+                    price = price_data.get('last_price')
+
+        if action in ['LONG', 'BUY']:
+            result = paper_engine.open_position(recorder_id, symbol, 'LONG', quantity, price)
+            return jsonify({'success': True, 'action': 'opened', 'position': result})
+
+        elif action in ['SHORT', 'SELL']:
+            result = paper_engine.open_position(recorder_id, symbol, 'SHORT', quantity, price)
+            return jsonify({'success': True, 'action': 'opened', 'position': result})
+
+        elif action in ['CLOSE', 'EXIT', 'FLAT']:
+            result = paper_engine.close_position(recorder_id, symbol, price)
+            if result:
+                return jsonify({'success': True, 'action': 'closed', 'trade': result})
+            else:
+                return jsonify({'success': False, 'error': 'No open position to close'}), 400
+
+        else:
+            return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
+
+    except Exception as e:
+        logger.error(f"Error recording paper trade: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/futures-specs', methods=['GET'])
+def api_futures_specs():
+    """Get futures contract specifications."""
+    if not TV_PRICE_SERVICE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Price service not available'}), 503
+
+    try:
+        from tv_price_service import FUTURES_SPECS, get_futures_spec
+
+        symbol = request.args.get('symbol')
+        if symbol:
+            spec = get_futures_spec(symbol)
+            return jsonify({'success': True, 'symbol': symbol, 'spec': spec})
+        else:
+            return jsonify({'success': True, 'specs': FUTURES_SPECS})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/stock-heatmap', methods=['GET'])
 def api_stock_heatmap():
