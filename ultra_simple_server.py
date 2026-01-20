@@ -13678,7 +13678,9 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         # ============================================================
         if normalized_action in ['BUY', 'SELL', 'LONG', 'SHORT', 'CLOSE', 'FLAT', 'EXIT'] and ticker:
             try:
-                paper_qty = int(quantity) if quantity else 1
+                # Extract quantity for paper trading (from webhook data or position_size)
+                paper_qty_raw = data.get('quantity', data.get('contracts', position_size))
+                paper_qty = int(paper_qty_raw) if paper_qty_raw else 1
                 paper_price = float(price) if price else None
                 record_paper_trade_from_webhook(
                     recorder_id=recorder_id,
@@ -13687,8 +13689,9 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
                     quantity=paper_qty,
                     price=paper_price
                 )
+                logger.info(f"📝 Paper trade recorded: {normalized_action} {paper_qty} {ticker} @ {paper_price}")
             except Exception as paper_err:
-                _logger.warning(f"⚠️ Paper trade recording failed: {paper_err}")
+                logger.warning(f"⚠️ Paper trade recording failed: {paper_err}")
 
         # Record the signal
         cursor.execute('''
