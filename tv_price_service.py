@@ -46,6 +46,11 @@ class TradingViewTicker:
     Based on reverse-engineered TradingView WebSocket protocol
     """
 
+    # Stale data threshold (60 seconds without updates = stale)
+    STALE_THRESHOLD_SECONDS = 60
+    # Health check interval (30 seconds)
+    HEALTH_CHECK_INTERVAL = 30
+
     def __init__(self, symbols: list = None):
         self.symbols = symbols or DEFAULT_SYMBOLS
         self.ws = None
@@ -56,6 +61,9 @@ class TradingViewTicker:
         self.running = False
         self.connected = False
         self.lock = threading.Lock()
+        self.last_update_time = 0
+        self.reconnect_count = 0
+        self.health_thread = None
 
     def _generate_session(self, prefix: str = "qs_") -> str:
         """Generate random session ID"""
@@ -137,6 +145,9 @@ class TradingViewTicker:
                                     'update_time': time.time()
                                 }
 
+                            # Update last update time
+                            self.last_update_time = time.time()
+
                             # Call registered callbacks
                             for callback in self.callbacks:
                                 try:
@@ -200,14 +211,58 @@ class TradingViewTicker:
         wst.daemon = True
         wst.start()
 
+    def _health_monitor(self):
+        """Monitor connection health and force reconnect if stale"""
+        logger.info("📡 TradingView health monitor started")
+
+        while self.running:
+            time.sleep(self.HEALTH_CHECK_INTERVAL)
+
+            if not self.running:
+                break
+
+            current_time = time.time()
+            seconds_since_update = current_time - self.last_update_time if self.last_update_time else 999
+
+            if seconds_since_update > self.STALE_THRESHOLD_SECONDS:
+                logger.warning(f"⚠️ TradingView data stale ({seconds_since_update:.0f}s since last update) - forcing reconnect")
+                self.reconnect_count += 1
+
+                # Force close existing connection
+                if self.ws:
+                    try:
+                        self.ws.close()
+                    except:
+                        pass
+
+                # Generate new session IDs for fresh start
+                self.session_id = self._generate_session()
+                self.chart_session = self._generate_session("cs_")
+
+                # Reconnect
+                self._connect()
+                logger.info(f"🔄 TradingView reconnect attempt #{self.reconnect_count}")
+
+                # Wait a bit before next check
+                time.sleep(10)
+            elif self.connected:
+                logger.debug(f"✅ TradingView healthy - last update {seconds_since_update:.0f}s ago")
+
+        logger.info("📡 TradingView health monitor stopped")
+
     def start(self):
         """Start the ticker"""
         if self.running:
             return
 
         self.running = True
+        self.last_update_time = time.time()  # Initialize to avoid immediate stale detection
         logger.info(f"Starting TradingView ticker for {len(self.symbols)} symbols")
         self._connect()
+
+        # Start health monitor thread
+        self.health_thread = threading.Thread(target=self._health_monitor, daemon=True)
+        self.health_thread.start()
 
     def stop(self):
         """Stop the ticker"""

@@ -23381,50 +23381,73 @@ def tradingview_health_monitor():
     Background thread that monitors TradingView WebSocket health.
     Forces reconnect if connection is stale (no data for TV_STALE_TIMEOUT seconds).
     """
-    global _tradingview_last_message_time, _tradingview_force_reconnect, _tradingview_ws_thread
-    
+    global _tradingview_last_message_time, _tradingview_force_reconnect, _tradingview_ws_thread, _tradingview_ws
+
     logger.info("🏥 TradingView health monitor STARTED")
-    
+
     check_interval = 10  # Check every 10 seconds
     stale_warning_logged = False
-    
+    force_restart_count = 0
+
     while True:
         try:
             time.sleep(check_interval)
-            
+
             # Check if WebSocket thread is alive
             if not _tradingview_ws_thread or not _tradingview_ws_thread.is_alive():
                 logger.warning("⚠️ TradingView WebSocket thread DEAD - restarting...")
                 start_tradingview_websocket()
                 stale_warning_logged = False
                 continue
-            
+
             # Check if data is stale
             if _tradingview_last_message_time > 0:
                 seconds_since_last = time.time() - _tradingview_last_message_time
-                
+
                 if seconds_since_last > TV_STALE_TIMEOUT:
                     if not stale_warning_logged:
                         logger.warning(f"⚠️ TradingView data STALE ({seconds_since_last:.0f}s since last message)")
                         stale_warning_logged = True
-                    
-                    # Force reconnect if very stale (2x timeout)
+
+                    # Force reconnect if very stale (2x timeout = 60 seconds)
                     if seconds_since_last > TV_STALE_TIMEOUT * 2:
                         logger.error(f"🔴 TradingView connection STALE for {seconds_since_last:.0f}s - FORCING RECONNECT")
                         _tradingview_force_reconnect = True
+                        force_restart_count += 1
+
+                        # If connection is truly hung, try to close WebSocket forcibly
+                        if _tradingview_ws:
+                            try:
+                                asyncio.run_coroutine_threadsafe(
+                                    _tradingview_ws.close(),
+                                    asyncio.get_event_loop()
+                                )
+                            except:
+                                pass  # Ignore errors, we're forcing close
+
+                        # If still stale after 3 force reconnect attempts, kill the thread
+                        if force_restart_count >= 3 and seconds_since_last > TV_STALE_TIMEOUT * 4:
+                            logger.error(f"🔴🔴 TradingView HUNG for {seconds_since_last:.0f}s after {force_restart_count} attempts - KILLING THREAD")
+                            # Set thread to None so next check starts fresh
+                            _tradingview_ws_thread = None
+                            _tradingview_ws = None
+                            force_restart_count = 0
+
                         stale_warning_logged = False
                 else:
                     if stale_warning_logged:
                         logger.info(f"✅ TradingView connection RECOVERED - data flowing")
                     stale_warning_logged = False
-            
+                    force_restart_count = 0  # Reset counter on successful data
+
             # Log health status every 5 minutes
             if int(time.time()) % 300 < check_interval:
                 if _tradingview_last_message_time > 0:
                     age = time.time() - _tradingview_last_message_time
                     cache_size = len(_market_data_cache)
-                    logger.info(f"📊 TradingView health: OK | Last msg: {age:.1f}s ago | Symbols cached: {cache_size}")
-                    
+                    status = "OK" if age < TV_STALE_TIMEOUT else "STALE"
+                    logger.info(f"📊 TradingView health: {status} | Last msg: {age:.1f}s ago | Symbols cached: {cache_size}")
+
         except Exception as e:
             logger.error(f"Error in TradingView health monitor: {e}")
 
