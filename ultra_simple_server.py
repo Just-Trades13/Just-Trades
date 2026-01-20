@@ -293,9 +293,60 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
             existing = cursor.fetchone()
 
             if existing:
-                # Close existing position first
                 exist_id, exist_side, exist_qty, exist_entry = existing
-                if exist_side != side:  # Opposite direction = close and open new
+
+                if exist_side == side:  # SAME direction = DCA (add to position)
+                    # Calculate new average entry price
+                    new_qty = exist_qty + quantity
+                    avg_entry = ((exist_entry * exist_qty) + (price * quantity)) / new_qty
+
+                    # Recalculate TP/SL from new average entry
+                    tp_price = None
+                    sl_price = None
+                    try:
+                        cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units FROM recorders WHERE id = {ph}', (recorder_id,))
+                        rec_row = cursor.fetchone()
+                        if rec_row:
+                            tp_targets_raw, sl_enabled, sl_amount, sl_units = rec_row
+                            from recorder_service import get_tick_size
+                            tick_size = get_tick_size(symbol)
+
+                            # Parse TP targets
+                            if tp_targets_raw:
+                                import json
+                                try:
+                                    tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
+                                    if tp_targets and len(tp_targets) > 0:
+                                        first_tp = tp_targets[0]
+                                        tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
+                                        if tp_ticks and float(tp_ticks) > 0:
+                                            tp_offset = float(tp_ticks) * tick_size
+                                            tp_price = avg_entry + tp_offset if side == 'LONG' else avg_entry - tp_offset
+                                except:
+                                    pass
+
+                            # Calculate SL price
+                            if sl_enabled and sl_amount and float(sl_amount) > 0:
+                                sl_ticks = float(sl_amount)
+                                sl_offset = sl_ticks if sl_units == 'Points' else sl_ticks * tick_size
+                                sl_price = avg_entry - sl_offset if side == 'LONG' else avg_entry + sl_offset
+                    except Exception as e:
+                        print(f"⚠️ Could not fetch recorder TP/SL for DCA: {e}", flush=True)
+
+                    # Update existing position with DCA
+                    cursor.execute(f'''
+                        UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}
+                        WHERE id = {ph}
+                    ''', (new_qty, avg_entry, tp_price, sl_price, exist_id))
+
+                    tp_str = f"TP={tp_price:.2f}" if tp_price else "TP=None"
+                    sl_str = f"SL={sl_price:.2f}" if sl_price else "SL=None"
+                    print(f"📝 DCA: Added {quantity} to {side} position | New qty: {new_qty} | Avg entry: ${avg_entry:.2f} | {tp_str} | {sl_str}", flush=True)
+
+                    conn.commit()
+                    return {'success': True, 'symbol': symbol, 'action': 'DCA', 'price': price, 'avg_entry': avg_entry, 'quantity': new_qty}
+
+                else:  # Opposite direction = close and open new
                     # Calculate P&L for closing
                     from tv_price_service import FUTURES_SPECS
                     spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
