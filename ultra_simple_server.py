@@ -14,6 +14,8 @@ See START_HERE.md for complete protection rules.
 from __future__ import annotations
 import sqlite3
 import logging
+# Early logger for paper trading (before main logger is configured)
+logger = logging.getLogger(__name__)
 import asyncio
 import argparse
 import sys
