@@ -410,12 +410,13 @@
                             <th>TP/SL</th>
                             <th>Exit</th>
                             <th>P&L</th>
+                            <th>DD</th>
                             <th>Reason</th>
                         </tr>
                     </thead>
                     <tbody id="paperHistoryBody">
                         <tr class="empty-row">
-                            <td colspan="10">No paper trades yet</td>
+                            <td colspan="11">No paper trades yet</td>
                         </tr>
                     </tbody>
                 </table>
@@ -3787,6 +3788,9 @@
                 const reasonClass = exitReason === 'tp' ? 'status-tp' : exitReason === 'sl' ? 'status-sl' : exitReason === 'open' ? 'status-open' : 'status-closed';
                 const reasonLabel = exitReason === 'tp' ? '🎯 TP' : exitReason === 'sl' ? '🛑 SL' : exitReason === 'open' ? 'open' : 'signal';
 
+                const drawdown = trade.drawdown || 0;
+                const ddDisplay = trade.status === 'closed' && drawdown > 0 ? '-$' + drawdown.toFixed(0) : '--';
+
                 row.innerHTML = `
                     <td>${openTime}</td>
                     <td>${recorderName}</td>
@@ -3797,6 +3801,7 @@
                     <td style="font-size: 0.85em; opacity: 0.8;">${tpslDisplay}</td>
                     <td>${trade.exit_price ? '$' + trade.exit_price.toFixed(2) : '--'}</td>
                     <td class="${pnlClass}">${trade.status === 'closed' ? (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) : '--'}</td>
+                    <td class="${drawdown > 0 ? 'pnl-negative' : ''}">${ddDisplay}</td>
                     <td><span class="status-badge ${reasonClass}">${reasonLabel}</span></td>
                 `;
                 tbody.appendChild(row);
