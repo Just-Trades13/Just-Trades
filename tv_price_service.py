@@ -43,10 +43,10 @@ DEFAULT_SYMBOLS = [
 ]
 
 
-def get_tradingview_session() -> Optional[str]:
+def get_tradingview_session() -> Optional[dict]:
     """
-    Get TradingView session token from database.
-    Returns the sessionid for premium data access, or None for public data.
+    Get TradingView session cookies from database.
+    Returns dict with 'sessionid' and 'sessionid_sign', or None.
     """
     try:
         # Check for PostgreSQL (Railway)
@@ -77,16 +77,55 @@ def get_tradingview_session() -> Optional[str]:
 
         if row and row[0]:
             session_data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            sessionid = session_data.get('sessionid')
-            if sessionid:
-                logger.info(f"✅ Found TradingView premium session")
-                return sessionid
+            if session_data.get('sessionid'):
+                logger.info(f"✅ Found TradingView session cookies")
+                return session_data
 
         logger.warning("⚠️ No TradingView session found - using public data (delayed)")
         return None
 
     except Exception as e:
         logger.error(f"Error getting TradingView session: {e}")
+        return None
+
+
+def get_tradingview_auth_token(session_data: dict) -> Optional[str]:
+    """
+    Get JWT auth token from TradingView chart page using session cookies.
+    This is required for premium WebSocket data.
+    """
+    try:
+        import requests
+        import re
+
+        cookies = {
+            'sessionid': session_data.get('sessionid'),
+            'sessionid_sign': session_data.get('sessionid_sign', '')
+        }
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+
+        logger.info("🔑 Fetching TradingView auth token...")
+        r = requests.get('https://www.tradingview.com/chart/', cookies=cookies, headers=headers, timeout=15)
+
+        if r.status_code != 200:
+            logger.error(f"Failed to fetch chart page: {r.status_code}")
+            return None
+
+        # Extract JWT auth token from HTML
+        auth_match = re.search(r'"auth_token":"([^"]+)"', r.text)
+        if auth_match:
+            auth_token = auth_match.group(1)
+            logger.info(f"✅ Got TradingView JWT auth token")
+            return auth_token
+
+        logger.warning("⚠️ Could not find auth_token in chart page")
+        return None
+
+    except Exception as e:
+        logger.error(f"Error getting auth token: {e}")
         return None
 
 class TradingViewTicker:
@@ -113,9 +152,16 @@ class TradingViewTicker:
         self.last_update_time = 0
         self.reconnect_count = 0
         self.health_thread = None
-        # Auth token for premium data - get from database if not provided
-        self.auth_token = auth_token or get_tradingview_session() or "unauthorized_user_token"
+        # Auth token for premium data - get JWT from TradingView
+        self.auth_token = auth_token or self._get_auth_token() or "unauthorized_user_token"
         self.is_premium = self.auth_token != "unauthorized_user_token"
+
+    def _get_auth_token(self) -> Optional[str]:
+        """Get JWT auth token from TradingView using stored session cookies."""
+        session_data = get_tradingview_session()
+        if session_data:
+            return get_tradingview_auth_token(session_data)
+        return None
 
     def _generate_session(self, prefix: str = "qs_") -> str:
         """Generate random session ID"""
@@ -294,12 +340,12 @@ class TradingViewTicker:
                 self.session_id = self._generate_session()
                 self.chart_session = self._generate_session("cs_")
 
-                # Refresh auth token in case it was updated
-                new_token = get_tradingview_session()
+                # Refresh auth token (JWT expires, need to get fresh one)
+                new_token = self._get_auth_token()
                 if new_token:
                     self.auth_token = new_token
                     self.is_premium = True
-                    logger.info("🔄 Refreshed TradingView auth token")
+                    logger.info("🔄 Refreshed TradingView JWT auth token")
 
                 # Reconnect
                 self._connect()
