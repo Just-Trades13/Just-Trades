@@ -210,6 +210,9 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                 pnl REAL,
                 drawdown REAL,
                 cumulative_pnl REAL,
+                tp_price REAL,
+                sl_price REAL,
+                exit_reason TEXT,
                 opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 closed_at TIMESTAMP,
                 status TEXT DEFAULT 'open'
@@ -219,6 +222,9 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
         try:
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS drawdown REAL")
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS cumulative_pnl REAL")
+            cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS tp_price REAL")
+            cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS sl_price REAL")
+            cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT")
         except:
             pass
     else:
@@ -234,20 +240,20 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                 pnl REAL,
                 drawdown REAL,
                 cumulative_pnl REAL,
+                tp_price REAL,
+                sl_price REAL,
+                exit_reason TEXT,
                 opened_at TEXT NOT NULL,
                 closed_at TEXT,
                 status TEXT DEFAULT 'open'
             )
         ''')
         # Add columns if they don't exist (for existing tables)
-        try:
-            cursor.execute("ALTER TABLE paper_trades ADD COLUMN drawdown REAL")
-        except:
-            pass
-        try:
-            cursor.execute("ALTER TABLE paper_trades ADD COLUMN cumulative_pnl REAL")
-        except:
-            pass
+        for col in ['drawdown', 'cumulative_pnl', 'tp_price', 'sl_price', 'exit_reason']:
+            try:
+                cursor.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {'REAL' if col != 'exit_reason' else 'TEXT'}")
+            except:
+                pass
     conn.commit()
 
     # Helper to calculate drawdown after closing a trade
@@ -305,17 +311,66 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
 
                     cursor.execute(f'''
                         UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
-                        cumulative_pnl = {ph}, drawdown = {ph}, closed_at = {ph}
+                        cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
                         WHERE id = {ph}
-                    ''', (price, pnl, cumulative, drawdown, now, exist_id))
-                    print(f"📝 Closed existing {exist_side} position, P&L: ${pnl:.2f}, Cumulative: ${cumulative:.2f}, DD: ${drawdown:.2f}", flush=True)
+                    ''', (price, pnl, cumulative, drawdown, 'signal', now, exist_id))
+                    print(f"📝 Closed existing {exist_side} position (signal), P&L: ${pnl:.2f}", flush=True)
 
-            # Open new position
+            # Open new position with TP/SL from recorder settings
+            tp_price = None
+            sl_price = None
+
+            # Fetch recorder settings for TP/SL
+            try:
+                cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units FROM recorders WHERE id = {ph}', (recorder_id,))
+                rec_row = cursor.fetchone()
+                if rec_row:
+                    tp_targets_raw, sl_enabled, sl_amount, sl_units = rec_row
+
+                    # Get tick size for this symbol
+                    from tv_price_service import FUTURES_SPECS
+                    from recorder_service import get_tick_size
+                    tick_size = get_tick_size(symbol)
+
+                    # Parse TP targets
+                    if tp_targets_raw:
+                        import json
+                        try:
+                            tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
+                            if tp_targets and len(tp_targets) > 0:
+                                first_tp = tp_targets[0]
+                                tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
+                                if tp_ticks and float(tp_ticks) > 0:
+                                    tp_offset = float(tp_ticks) * tick_size
+                                    if side == 'LONG':
+                                        tp_price = price + tp_offset
+                                    else:
+                                        tp_price = price - tp_offset
+                        except:
+                            pass
+
+                    # Calculate SL price
+                    if sl_enabled and sl_amount and float(sl_amount) > 0:
+                        sl_ticks = float(sl_amount)
+                        if sl_units == 'Points':
+                            sl_offset = sl_ticks
+                        else:  # Ticks
+                            sl_offset = sl_ticks * tick_size
+
+                        if side == 'LONG':
+                            sl_price = price - sl_offset
+                        else:
+                            sl_price = price + sl_offset
+            except Exception as e:
+                print(f"⚠️ Could not fetch recorder TP/SL settings: {e}", flush=True)
+
             cursor.execute(f'''
-                INSERT INTO paper_trades (recorder_id, symbol, side, quantity, entry_price, opened_at, status)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open')
-            ''', (recorder_id, symbol, side, quantity, price, now))
-            print(f"📝 Opened {side} {quantity} {symbol} @ {price}", flush=True)
+                INSERT INTO paper_trades (recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, opened_at, status)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+            ''', (recorder_id, symbol, side, quantity, price, tp_price, sl_price, now))
+            tp_str = f"TP={tp_price:.2f}" if tp_price else "TP=None"
+            sl_str = f"SL={sl_price:.2f}" if sl_price else "SL=None"
+            print(f"📝 Opened {side} {quantity} {symbol} @ {price} | {tp_str} | {sl_str}", flush=True)
 
         else:  # CLOSE action
             # Find and close open position
@@ -342,10 +397,10 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
 
                 cursor.execute(f'''
                     UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
-                    cumulative_pnl = {ph}, drawdown = {ph}, closed_at = {ph}
+                    cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
                     WHERE id = {ph}
-                ''', (price, pnl, cumulative, drawdown, now, exist_id))
-                print(f"📝 Closed {exist_side} position, P&L: ${pnl:.2f}, Cumulative: ${cumulative:.2f}, DD: ${drawdown:.2f}", flush=True)
+                ''', (price, pnl, cumulative, drawdown, 'signal', now, exist_id))
+                print(f"📝 Closed {exist_side} position (signal), P&L: ${pnl:.2f}", flush=True)
 
         conn.commit()
         return {'success': True, 'symbol': symbol, 'action': action, 'price': price}
@@ -356,6 +411,156 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
         raise
     finally:
         conn.close()
+
+
+# ============================================================================
+# PAPER TRADING TP/SL MONITOR - Uses live TradingView tick feed
+# ============================================================================
+_paper_monitor_running = False
+
+def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, recorder_id: int, side: str, entry_price: float, quantity: float, symbol: str):
+    """Close a paper trade due to TP or SL hit"""
+    from datetime import datetime
+    import os
+
+    database_url = os.environ.get('DATABASE_URL')
+    use_postgres = bool(database_url)
+
+    if use_postgres:
+        import psycopg2
+        conn = psycopg2.connect(database_url)
+        ph = '%s'
+    else:
+        conn = sqlite3.connect('paper_trades.db')
+        ph = '?'
+
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+
+    try:
+        from tv_price_service import FUTURES_SPECS
+        spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
+        point_value = spec['point_value']
+
+        if side == 'LONG':
+            pnl = (exit_price - entry_price) * point_value * quantity
+        else:
+            pnl = (entry_price - exit_price) * point_value * quantity
+
+        # Get cumulative P&L stats
+        cursor.execute(f'SELECT COALESCE(SUM(pnl), 0) FROM paper_trades WHERE recorder_id = {ph} AND status = %s' if use_postgres else f'SELECT COALESCE(SUM(pnl), 0) FROM paper_trades WHERE recorder_id = {ph} AND status = ?', (recorder_id, 'closed'))
+        prev_total = cursor.fetchone()[0] or 0
+        cumulative = prev_total + pnl
+
+        cursor.execute(f'SELECT COALESCE(MAX(cumulative_pnl), 0) FROM paper_trades WHERE recorder_id = {ph} AND status = %s AND cumulative_pnl IS NOT NULL' if use_postgres else f'SELECT COALESCE(MAX(cumulative_pnl), 0) FROM paper_trades WHERE recorder_id = {ph} AND status = ? AND cumulative_pnl IS NOT NULL', (recorder_id, 'closed'))
+        peak = cursor.fetchone()[0] or 0
+        drawdown = max(0, peak - cumulative) if cumulative < peak else 0
+
+        cursor.execute(f'''
+            UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
+            cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
+            WHERE id = {ph}
+        ''', (exit_price, pnl, cumulative, drawdown, exit_reason, now, trade_id))
+        conn.commit()
+
+        emoji = "🎯" if exit_reason == 'tp' else "🛑"
+        print(f"{emoji} Paper {side} closed by {exit_reason.upper()}: {symbol} @ {exit_price:.2f} | P&L: ${pnl:.2f}", flush=True)
+
+    except Exception as e:
+        print(f"⚠️ Error closing paper trade {trade_id}: {e}", flush=True)
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def check_paper_trades_tpsl():
+    """Check all open paper trades against live prices for TP/SL hits"""
+    import os
+
+    database_url = os.environ.get('DATABASE_URL')
+    use_postgres = bool(database_url)
+
+    if use_postgres:
+        import psycopg2
+        conn = psycopg2.connect(database_url)
+        ph = '%s'
+    else:
+        conn = sqlite3.connect('paper_trades.db')
+        ph = '?'
+
+    cursor = conn.cursor()
+
+    try:
+        # Get all open paper trades with TP or SL set
+        cursor.execute('''
+            SELECT id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price
+            FROM paper_trades
+            WHERE status = 'open' AND (tp_price IS NOT NULL OR sl_price IS NOT NULL)
+        ''')
+        open_trades = cursor.fetchall()
+
+        if not open_trades:
+            return
+
+        # Get live prices from TradingView cache (use globals, not import)
+        global _market_data_cache
+
+        for trade in open_trades:
+            trade_id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price = trade
+
+            # Get live price - extract symbol root (NQ1! -> NQ, etc.)
+            symbol_root = symbol.replace('1!', '').replace('CME_MINI:', '').replace('CME:', '').upper() if symbol else symbol
+            live_price = None
+            if symbol_root and symbol_root in _market_data_cache:
+                live_price = _market_data_cache[symbol_root].get('last')
+            # Also try with just the base symbol
+            if not live_price and symbol and symbol.upper() in _market_data_cache:
+                live_price = _market_data_cache[symbol.upper()].get('last')
+
+            if not live_price:
+                continue  # No live price available
+
+            # Check TP hit
+            if tp_price:
+                if (side == 'LONG' and live_price >= tp_price) or (side == 'SHORT' and live_price <= tp_price):
+                    _close_paper_trade_tpsl(trade_id, tp_price, 'tp', recorder_id, side, entry_price, quantity, symbol)
+                    continue
+
+            # Check SL hit
+            if sl_price:
+                if (side == 'LONG' and live_price <= sl_price) or (side == 'SHORT' and live_price >= sl_price):
+                    _close_paper_trade_tpsl(trade_id, sl_price, 'sl', recorder_id, side, entry_price, quantity, symbol)
+                    continue
+
+    except Exception as e:
+        print(f"⚠️ Error checking paper TP/SL: {e}", flush=True)
+    finally:
+        conn.close()
+
+
+def start_paper_tpsl_monitor():
+    """Start background thread to monitor paper trades for TP/SL hits"""
+    global _paper_monitor_running
+    if _paper_monitor_running:
+        return
+
+    import threading
+    import time
+
+    def monitor_loop():
+        global _paper_monitor_running
+        _paper_monitor_running = True
+        print("🎯 Paper trading TP/SL monitor started (checking every 500ms)", flush=True)
+
+        while _paper_monitor_running:
+            try:
+                check_paper_trades_tpsl()
+            except Exception as e:
+                print(f"⚠️ Paper monitor error: {e}", flush=True)
+            time.sleep(0.5)  # Check every 500ms for responsive TP/SL
+
+    thread = threading.Thread(target=monitor_loop, daemon=True)
+    thread.start()
 
 
 # ============================================================================
@@ -26666,6 +26871,13 @@ if __name__ == '__main__':
 
             ticker, paper_engine = start_price_service(on_price_update=on_price_update)
             logger.info(f"✅ TradingView price service started - tracking {len(ticker.symbols)} symbols")
+
+            # Start paper trading TP/SL monitor (uses live price feed)
+            try:
+                start_paper_tpsl_monitor()
+                logger.info("✅ Paper trading TP/SL monitor started")
+            except Exception as e:
+                logger.warning(f"⚠️ Paper TP/SL monitor failed to start: {e}")
         except Exception as e:
             logger.warning(f"⚠️ TradingView price service init failed: {e}")
     else:
