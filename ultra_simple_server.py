@@ -13679,22 +13679,28 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         # ============================================================
         # PAPER TRADING: Record trade using live price feed
         # ============================================================
+        logger.info(f"🧪 Paper trading check: action={normalized_action}, ticker={ticker}, TV_AVAILABLE={TV_PRICE_SERVICE_AVAILABLE}")
         if normalized_action in ['BUY', 'SELL', 'LONG', 'SHORT', 'CLOSE', 'FLAT', 'EXIT'] and ticker:
             try:
                 # Extract quantity for paper trading (from webhook data or position_size)
                 paper_qty_raw = data.get('quantity', data.get('contracts', position_size))
                 paper_qty = int(paper_qty_raw) if paper_qty_raw else 1
                 paper_price = float(price) if price else None
-                record_paper_trade_from_webhook(
+                logger.info(f"🧪 Calling record_paper_trade: recorder={recorder_id}, symbol={ticker}, action={normalized_action}, qty={paper_qty}, price={paper_price}")
+                result = record_paper_trade_from_webhook(
                     recorder_id=recorder_id,
                     symbol=ticker,
                     action=normalized_action,
                     quantity=paper_qty,
                     price=paper_price
                 )
-                logger.info(f"📝 Paper trade recorded: {normalized_action} {paper_qty} {ticker} @ {paper_price}")
+                logger.info(f"📝 Paper trade result: {result}")
             except Exception as paper_err:
-                logger.warning(f"⚠️ Paper trade recording failed: {paper_err}")
+                import traceback
+                logger.error(f"⚠️ Paper trade recording failed: {paper_err}")
+                logger.error(traceback.format_exc())
+        else:
+            logger.info(f"🧪 Paper trading skipped: action not in list or ticker empty")
 
         # Record the signal
         cursor.execute('''
