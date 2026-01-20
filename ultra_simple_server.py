@@ -21805,13 +21805,18 @@ def api_paper_service_status():
         ticker = get_ticker()
         paper_engine = get_paper_engine()
 
+        import time
+        seconds_since_update = time.time() - ticker.last_update_time if ticker.last_update_time else None
         return jsonify({
             'success': True,
             'available': True,
             'websocket_connected': ticker.connected,
+            'is_premium': ticker.is_premium,
             'symbols_tracked': len(ticker.symbols),
             'symbols': ticker.symbols,
             'prices_cached': len(ticker.prices),
+            'seconds_since_update': round(seconds_since_update, 1) if seconds_since_update else None,
+            'reconnect_count': ticker.reconnect_count,
             'open_positions': len(paper_engine.positions)
         })
     except Exception as e:
