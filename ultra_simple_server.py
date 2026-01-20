@@ -208,11 +208,19 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                 entry_price REAL NOT NULL,
                 exit_price REAL,
                 pnl REAL,
+                drawdown REAL,
+                cumulative_pnl REAL,
                 opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 closed_at TIMESTAMP,
                 status TEXT DEFAULT 'open'
             )
         ''')
+        # Add columns if they don't exist (for existing tables)
+        try:
+            cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS drawdown REAL")
+            cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS cumulative_pnl REAL")
+        except:
+            pass
     else:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS paper_trades (
@@ -224,12 +232,49 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                 entry_price REAL NOT NULL,
                 exit_price REAL,
                 pnl REAL,
+                drawdown REAL,
+                cumulative_pnl REAL,
                 opened_at TEXT NOT NULL,
                 closed_at TEXT,
                 status TEXT DEFAULT 'open'
             )
         ''')
+        # Add columns if they don't exist (for existing tables)
+        try:
+            cursor.execute("ALTER TABLE paper_trades ADD COLUMN drawdown REAL")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE paper_trades ADD COLUMN cumulative_pnl REAL")
+        except:
+            pass
     conn.commit()
+
+    # Helper to calculate drawdown after closing a trade
+    def _calc_drawdown_stats(cursor, ph, recorder_id, new_pnl):
+        """Calculate cumulative P&L and drawdown after closing a trade"""
+        # Get sum of all closed trades P&L (before this trade)
+        cursor.execute(f'''
+            SELECT COALESCE(SUM(pnl), 0) FROM paper_trades
+            WHERE recorder_id = {ph} AND status = 'closed'
+        ''', (recorder_id,))
+        prev_total = cursor.fetchone()[0] or 0
+        cumulative = prev_total + new_pnl
+
+        # Get peak equity (max cumulative P&L achieved)
+        cursor.execute(f'''
+            SELECT COALESCE(MAX(cumulative_pnl), 0) FROM paper_trades
+            WHERE recorder_id = {ph} AND status = 'closed' AND cumulative_pnl IS NOT NULL
+        ''', (recorder_id,))
+        peak = cursor.fetchone()[0] or 0
+
+        # If current cumulative is higher than peak, no drawdown
+        if cumulative >= peak:
+            drawdown = 0
+        else:
+            drawdown = peak - cumulative
+
+        return cumulative, drawdown
 
     try:
         if side in ['LONG', 'SHORT']:
@@ -255,11 +300,15 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                     else:
                         pnl = (exist_entry - price) * point_value * exist_qty
 
+                    # Calculate drawdown stats
+                    cumulative, drawdown = _calc_drawdown_stats(cursor, ph, recorder_id, pnl)
+
                     cursor.execute(f'''
-                        UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph}, closed_at = {ph}
+                        UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
+                        cumulative_pnl = {ph}, drawdown = {ph}, closed_at = {ph}
                         WHERE id = {ph}
-                    ''', (price, pnl, now, exist_id))
-                    print(f"📝 Closed existing {exist_side} position, P&L: ${pnl:.2f}", flush=True)
+                    ''', (price, pnl, cumulative, drawdown, now, exist_id))
+                    print(f"📝 Closed existing {exist_side} position, P&L: ${pnl:.2f}, Cumulative: ${cumulative:.2f}, DD: ${drawdown:.2f}", flush=True)
 
             # Open new position
             cursor.execute(f'''
@@ -288,11 +337,15 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                 else:
                     pnl = (exist_entry - price) * point_value * exist_qty
 
+                # Calculate drawdown stats
+                cumulative, drawdown = _calc_drawdown_stats(cursor, ph, recorder_id, pnl)
+
                 cursor.execute(f'''
-                    UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph}, closed_at = {ph}
+                    UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
+                    cumulative_pnl = {ph}, drawdown = {ph}, closed_at = {ph}
                     WHERE id = {ph}
-                ''', (price, pnl, now, exist_id))
-                print(f"📝 Closed {exist_side} position, P&L: ${pnl:.2f}", flush=True)
+                ''', (price, pnl, cumulative, drawdown, now, exist_id))
+                print(f"📝 Closed {exist_side} position, P&L: ${pnl:.2f}, Cumulative: ${cumulative:.2f}, DD: ${drawdown:.2f}", flush=True)
 
         conn.commit()
         return {'success': True, 'symbol': symbol, 'action': action, 'price': price}
