@@ -209,11 +209,16 @@ class TradingViewTicker:
 
     def _on_message(self, ws, message):
         """Handle incoming WebSocket message"""
-        # Handle ping
-        if message.startswith('~m~') and '~h~' in message:
-            # Respond to heartbeat
-            ws.send(message)
-            return
+        # Handle TradingView application-level heartbeats (can be anywhere in message)
+        # Format: ~m~X~m~~h~Y where X is length and Y is the heartbeat number
+        heartbeat_pattern = re.compile(r'~m~\d+~m~~h~\d+')
+        heartbeats = heartbeat_pattern.findall(message)
+        for hb in heartbeats:
+            try:
+                ws.send(hb)
+                logger.debug(f"💓 Heartbeat responded: {hb}")
+            except Exception as e:
+                logger.error(f"Failed to send heartbeat response: {e}")
 
         parsed = self._parse_message(message)
 
