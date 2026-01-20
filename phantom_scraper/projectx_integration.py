@@ -145,7 +145,22 @@ class ProjectXIntegration:
         if self.session_token:
             headers["Authorization"] = f"Bearer {self.session_token}"
         return headers
-    
+
+    def _build_url(self, endpoint: str) -> str:
+        """Build URL for API endpoint, handling TopstepX's /api prefix.
+
+        Args:
+            endpoint: API endpoint path (e.g., 'Account/search', 'Order/place')
+
+        Returns:
+            Full URL for the API call
+        """
+        # TopstepX base_url already includes /api, others need /api prefix
+        if self.prop_firm == 'topstep':
+            return f"{self.base_url}/{endpoint}"
+        else:
+            return f"{self.base_url}/api/{endpoint}"
+
     async def login_with_password(self, username: str, password: str,
                                     app_id: str = None, verify_key: str = None,
                                     device_id: str = None) -> dict:
@@ -452,7 +467,7 @@ class ProjectXIntegration:
                 return False
             
             async with self.session.post(
-                f"{self.base_url}/api/Auth/validate",
+                self._build_url("Auth/validate"),
                 headers=self._get_headers()
             ) as response:
                 if response.status == 200:
@@ -495,18 +510,18 @@ class ProjectXIntegration:
     async def get_accounts(self, only_active: bool = True) -> List[Dict[str, Any]]:
         """
         Get list of trading accounts.
-        
+
         Args:
             only_active: If True, only return active accounts
-        
+
         Returns:
             List of account dictionaries
         """
         try:
             await self._ensure_valid_token()
-            
+
             async with self.session.post(
-                f"{self.base_url}/api/Account/search",
+                self._build_url("Account/search"),
                 json={"onlyActiveAccounts": only_active},
                 headers=self._get_headers()
             ) as response:
@@ -546,7 +561,7 @@ class ProjectXIntegration:
             await self._ensure_valid_token()
             
             async with self.session.get(
-                f"{self.base_url}/api/Account/{account_id}",
+                self._build_url(f"Account/{account_id}"),
                 headers=self._get_headers()
             ) as response:
                 if response.status == 200:
@@ -578,7 +593,7 @@ class ProjectXIntegration:
             await self._ensure_valid_token()
             
             async with self.session.post(
-                f"{self.base_url}/api/Contract/available",
+                self._build_url("Contract/available"),
                 json={"live": live},
                 headers=self._get_headers()
             ) as response:
@@ -639,7 +654,7 @@ class ProjectXIntegration:
             await self._ensure_valid_token()
             
             async with self.session.post(
-                f"{self.base_url}/api/Position/search",
+                self._build_url("Position/search"),
                 json={"accountId": account_id},
                 headers=self._get_headers()
             ) as response:
@@ -681,7 +696,7 @@ class ProjectXIntegration:
                 search_params["statuses"] = [self.STATUS_PENDING, self.STATUS_WORKING]
             
             async with self.session.post(
-                f"{self.base_url}/api/Order/search",
+                self._build_url("Order/search"),
                 json=search_params,
                 headers=self._get_headers()
             ) as response:
@@ -726,7 +741,7 @@ class ProjectXIntegration:
             logger.info(f"📊 Placing ProjectX order: {order_data}")
             
             async with self.session.post(
-                f"{self.base_url}/api/Order/place",
+                self._build_url("Order/place"),
                 json=order_data,
                 headers=self._get_headers()
             ) as response:
@@ -777,7 +792,7 @@ class ProjectXIntegration:
             logger.info(f"Cancelling ProjectX order: {order_id}")
             
             async with self.session.post(
-                f"{self.base_url}/api/Order/cancel",
+                self._build_url("Order/cancel"),
                 json={"orderId": order_id},
                 headers=self._get_headers()
             ) as response:
@@ -826,7 +841,7 @@ class ProjectXIntegration:
             logger.info(f"Modifying ProjectX order {order_id}: {modify_data}")
             
             async with self.session.post(
-                f"{self.base_url}/api/Order/modify",
+                self._build_url("Order/modify"),
                 json=modify_data,
                 headers=self._get_headers()
             ) as response:
@@ -864,7 +879,7 @@ class ProjectXIntegration:
             logger.info(f"Liquidating ProjectX position: account={account_id}, contract={contract_id}")
             
             async with self.session.post(
-                f"{self.base_url}/api/Position/close",
+                self._build_url("Position/close"),
                 json={
                     "accountId": account_id,
                     "contractId": contract_id
