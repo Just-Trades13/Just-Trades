@@ -146,41 +146,130 @@ class ProjectXIntegration:
             headers["Authorization"] = f"Bearer {self.session_token}"
         return headers
     
-    async def login_with_password(self, username: str, password: str) -> dict:
+    async def login_with_password(self, username: str, password: str,
+                                    app_id: str = None, verify_key: str = None,
+                                    device_id: str = None) -> dict:
         """
-        Password authentication is NOT supported by ProjectX API for third-party apps.
+        Authenticate with ProjectX using username/password via the loginApp endpoint.
 
-        IMPORTANT: ProjectX only supports API Key authentication for external applications.
-        Password login is only available on their built-in Trade Manager web interface.
+        This requires Just.Trades to be registered as an authorized application with ProjectX.
+        The appId and verifyKey are provided by ProjectX when you register your application.
 
-        To connect your TopstepX account:
-        1. Go to https://www.projectx.com and log in
-        2. Navigate to Settings → API
-        3. Subscribe to API access ($14.50/mo)
-        4. Generate an API key
-        5. Use that API key (not your password) to connect
+        Without appId/verifyKey, password auth is NOT available - users must use API Key auth.
 
         Args:
-            username: Your TopstepX/prop firm username
+            username: Your TopstepX/prop firm username (email)
             password: Your TopstepX/prop firm password
+            app_id: Application ID from ProjectX (env: PROJECTX_APP_ID)
+            verify_key: Verify key from ProjectX (env: PROJECTX_VERIFY_KEY)
+            device_id: Device identifier (auto-generated if not provided)
 
         Returns:
             dict with 'success' and 'error' keys
         """
-        logger.warning("⚠️ Password authentication attempted - NOT SUPPORTED by ProjectX API")
+        import os
+        import uuid
 
-        error_message = (
-            "Password authentication is not supported by ProjectX API for third-party apps.\n\n"
-            "To connect your TopstepX/ProjectX account:\n"
-            "1. Go to projectx.com and log in\n"
-            "2. Navigate to Settings → API\n"
-            "3. Subscribe to API access ($14.50/month)\n"
-            "4. Generate an API key\n"
-            "5. Use your ProjectX USERNAME and API KEY (not password) to connect\n\n"
-            "Note: Your ProjectX username may be different from your TopstepX email."
-        )
+        # Check for app credentials from parameters or environment
+        app_id = app_id or os.environ.get('PROJECTX_APP_ID')
+        verify_key = verify_key or os.environ.get('PROJECTX_VERIFY_KEY')
+        device_id = device_id or os.environ.get('PROJECTX_DEVICE_ID') or f"just-trades-{uuid.uuid4().hex[:8]}"
 
-        return {"success": False, "error": error_message}
+        # If no app credentials, explain the situation
+        if not app_id or not verify_key:
+            logger.warning("⚠️ Password auth attempted but no PROJECTX_APP_ID/PROJECTX_VERIFY_KEY configured")
+
+            error_message = (
+                "Password authentication requires Just.Trades to be registered with ProjectX.\n\n"
+                "For now, please use API Key authentication:\n"
+                "1. Go to projectx.com and log in\n"
+                "2. Navigate to Settings → API\n"
+                "3. Subscribe to API access ($14.50/month with code 'topstep' for 50% off)\n"
+                "4. Generate an API key\n"
+                "5. Use your ProjectX USERNAME and API KEY to connect\n\n"
+                "Note: Your ProjectX username may be different from your prop firm email."
+            )
+            return {"success": False, "error": error_message}
+
+        # We have app credentials - try loginApp endpoint
+        logger.info(f"🔐 Attempting ProjectX login (App method)")
+        logger.info(f"   Username: {username}")
+        logger.info(f"   AppID: {app_id[:10]}..." if len(app_id) > 10 else f"   AppID: {app_id}")
+
+        login_data = {
+            "userName": username,
+            "password": password,
+            "deviceId": device_id,
+            "appId": app_id,
+            "verifyKey": verify_key
+        }
+
+        # Try multiple endpoints for App login
+        if self.prop_firm == 'topstep':
+            endpoints_to_try = [
+                "https://api.topstepx.com/api/Auth/loginApp",
+                "https://gateway-api-demo.s2f.projectx.com/api/Auth/loginApp",
+            ]
+        else:
+            endpoints_to_try = [
+                f"{self.base_url}/api/Auth/loginApp",
+                "https://gateway-api-demo.s2f.projectx.com/api/Auth/loginApp",
+            ]
+
+        last_error = "No endpoints succeeded"
+
+        for endpoint in endpoints_to_try:
+            try:
+                logger.info(f"   Trying endpoint: {endpoint}")
+
+                async with self.session.post(
+                    endpoint,
+                    json=login_data,
+                    headers={"Content-Type": "application/json", "Accept": "application/json"}
+                ) as response:
+                    response_text = await response.text()
+                    logger.info(f"   Response status: {response.status}")
+                    logger.info(f"   Response body: {response_text[:500]}")
+
+                    if response.status == 200:
+                        try:
+                            data = json.loads(response_text)
+                        except:
+                            data = {"raw": response_text}
+
+                        token = data.get("token") or data.get("accessToken") or data.get("sessionToken")
+                        error_code = data.get("errorCode", 0)
+
+                        if token and error_code == 0:
+                            self.session_token = token
+                            self.username = username
+                            self.auth_method = 'app'
+                            self.token_expires = datetime.now() + timedelta(hours=24)
+
+                            logger.info(f"✅ Successfully logged in to ProjectX (App method)")
+                            logger.info(f"   Token (first 20 chars): {token[:20]}...")
+                            return {"success": True, "method": "app"}
+                        else:
+                            error_msg = data.get("errorMessage") or f"Error code: {error_code}"
+                            if error_code == 3:
+                                error_msg = "Invalid credentials - check username/password"
+                            elif error_code == 4:
+                                error_msg = "Invalid appId or verifyKey"
+                            last_error = f"{endpoint}: {error_msg}"
+                            logger.warning(f"   Auth error: {error_msg}")
+                    elif response.status == 404:
+                        last_error = f"Endpoint not found: {endpoint}"
+                        continue
+                    else:
+                        last_error = f"HTTP {response.status} at {endpoint}"
+
+            except Exception as e:
+                last_error = f"Connection error: {str(e)}"
+                logger.warning(f"   Endpoint error: {e}")
+                continue
+
+        logger.error(f"❌ All App auth endpoints failed. Last error: {last_error}")
+        return {"success": False, "error": last_error}
     
     async def login_with_api_key(self, username: str, api_key: str) -> dict:
         """
