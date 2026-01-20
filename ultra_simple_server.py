@@ -13646,16 +13646,19 @@ def _DISABLED_receive_webhook_legacy(webhook_token):
         
         # Check signal delay (skip signals based on recorder settings)
         signal_delay = recorder.get('add_delay', 1) or 1
-        
+
         # Get/update signal counter for this recorder
-        cursor.execute('''
-            SELECT signal_count FROM recorders WHERE id = ?
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
+        cursor.execute(f'''
+            SELECT signal_count FROM recorders WHERE id = {ph}
         ''', (recorder_id,))
         result = cursor.fetchone()
         signal_count = (result['signal_count'] if result and result['signal_count'] else 0) + 1
-        
-        cursor.execute('''
-            UPDATE recorders SET signal_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+
+        cursor.execute(f'''
+            UPDATE recorders SET signal_count = {ph}, updated_at = CURRENT_TIMESTAMP WHERE id = {ph}
         ''', (signal_count, recorder_id))
         conn.commit()
         
