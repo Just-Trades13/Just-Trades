@@ -12735,8 +12735,12 @@ def process_webhook_directly(webhook_token):
             tp_targets = []
 
         # Get TP value from settings (fallback)
+        # tp_targets can use 'ticks' or 'value' key depending on how it was saved
         if tp_targets and len(tp_targets) > 0:
-            tp_value = float(tp_targets[0].get('value', 0) or 0)
+            tp_val = tp_targets[0].get('ticks')  # Try 'ticks' first (newer format)
+            if tp_val is None:
+                tp_val = tp_targets[0].get('value')  # Fallback to 'value' (older format)
+            tp_value = float(tp_val) if tp_val is not None else 0
         else:
             tp_value = 0
 
