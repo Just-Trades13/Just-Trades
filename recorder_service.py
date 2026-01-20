@@ -848,8 +848,9 @@ def execute_trade_simple(
                         
                         # Get credentials from accounts table (includes broker type for routing)
                         # CRITICAL: Include environment - source of truth for demo vs live
+                        # Include ProjectX-specific fields for TopstepX/Apex routing
                         placeholder = '%s' if is_postgres else '?'
-                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment FROM accounts WHERE id = {placeholder}', (acct_id,))
+                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm FROM accounts WHERE id = {placeholder}', (acct_id,))
                         creds_row = cursor.fetchone()
                         
                         if not creds_row:
@@ -893,10 +894,14 @@ def execute_trade_simple(
                                 'tradovate_token': creds.get('tradovate_token'),
                                 'username': creds.get('username'),
                                 'password': creds.get('password'),
-                                'api_key': creds.get('api_key'),  # ProjectX API key
+                                'api_key': creds.get('api_key'),
                                 'broker': broker_type,  # 'Tradovate' or 'ProjectX'
                                 'account_id': acct_id,
-                                'multiplier': multiplier  # Store multiplier for this account
+                                'multiplier': multiplier,  # Store multiplier for this account
+                                # ProjectX-specific fields for TopstepX/Apex
+                                'projectx_username': creds.get('projectx_username'),
+                                'projectx_api_key': creds.get('projectx_api_key'),
+                                'projectx_prop_firm': creds.get('projectx_prop_firm'),
                             })
                             logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type}, Env: {env})")
                 except Exception as e:
@@ -960,28 +965,29 @@ def execute_trade_simple(
         async def do_trade_projectx(trader, trader_idx, adjusted_quantity):
             """Execute trade on ProjectX broker (TopstepX, Apex, etc.)"""
             from phantom_scraper.projectx_integration import ProjectXIntegration
-            
+
             acct_name = trader.get('subaccount_name', 'Unknown')
-            username = trader.get('username')
+            username = trader.get('username') or trader.get('projectx_username')
             password = trader.get('password')  # FREE auth method (like Trade Manager)
-            api_key = trader.get('api_key')    # Paid API key method
+            api_key = trader.get('api_key') or trader.get('projectx_api_key')  # Paid API key method
+            prop_firm = trader.get('projectx_prop_firm', 'default')  # TopstepX, Apex, etc.
             # CRITICAL FIX: Use environment as source of truth for demo vs live
             env = (trader.get('environment') or 'demo').lower()
             is_demo = env != 'live'
             subaccount_id = trader.get('subaccount_id')  # This is the ProjectX account ID
-            
-            logger.info(f"🚀 [{acct_name}] ProjectX execution: {action} {adjusted_quantity} {ticker}")
-            
+
+            logger.info(f"🚀 [{acct_name}] ProjectX ({prop_firm}) execution: {action} {adjusted_quantity} {ticker}")
+
             if not username:
                 logger.error(f"❌ [{acct_name}] ProjectX username missing")
                 return {'success': False, 'error': 'ProjectX username missing'}
-            
+
             if not password and not api_key:
                 logger.error(f"❌ [{acct_name}] ProjectX credentials missing (need password or api_key)")
                 return {'success': False, 'error': 'ProjectX credentials missing'}
-            
+
             try:
-                async with ProjectXIntegration(demo=is_demo) as projectx:
+                async with ProjectXIntegration(demo=is_demo, prop_firm=prop_firm) as projectx:
                     # Smart authenticate - tries password (FREE) first, then API key
                     if not await projectx.login(username, password=password, api_key=api_key):
                         logger.error(f"❌ [{acct_name}] ProjectX authentication failed")
