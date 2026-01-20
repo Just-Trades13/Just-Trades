@@ -404,6 +404,7 @@
                             <th>Time</th>
                             <th>Recorder</th>
                             <th>Symbol</th>
+                            <th>Qty</th>
                             <th>Side</th>
                             <th>Entry</th>
                             <th>TP/SL</th>
@@ -414,7 +415,7 @@
                     </thead>
                     <tbody id="paperHistoryBody">
                         <tr class="empty-row">
-                            <td colspan="9">No paper trades yet</td>
+                            <td colspan="10">No paper trades yet</td>
                         </tr>
                     </tbody>
                 </table>
@@ -3790,6 +3791,7 @@
                     <td>${openTime}</td>
                     <td>${recorderName}</td>
                     <td>${simpleSymbol}</td>
+                    <td>${trade.quantity || 1}</td>
                     <td class="${sideClass}">${trade.side}</td>
                     <td>$${trade.entry_price?.toFixed(2) || '--'}</td>
                     <td style="font-size: 0.85em; opacity: 0.8;">${tpslDisplay}</td>
