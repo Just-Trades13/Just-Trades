@@ -119,12 +119,16 @@ def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, 
         quantity: Number of contracts
         price: Entry/exit price (uses live feed if not provided)
     """
+    logger.info(f"🧪 record_paper_trade called: rec={recorder_id}, sym={symbol}, act={action}, qty={quantity}, price={price}, TV_AVAIL={TV_PRICE_SERVICE_AVAILABLE}")
+
     if not TV_PRICE_SERVICE_AVAILABLE:
+        logger.warning("🧪 TV_PRICE_SERVICE_AVAILABLE is False")
         return None
 
     try:
         paper_engine = get_paper_engine()
         ticker = get_ticker()
+        logger.info(f"🧪 paper_engine={type(paper_engine).__name__ if paper_engine else None}")
 
         # Clean up symbol (remove any exchange prefix)
         clean_symbol = symbol.replace('CME_MINI:', '').replace('1!', '').upper()
