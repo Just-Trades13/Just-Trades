@@ -11058,7 +11058,7 @@ def api_get_traders():
             user_id = get_current_user_id()
             if is_postgres:
                 cursor.execute('''
-                    SELECT 
+                    SELECT
                         t.id,
                         t.recorder_id,
                         t.account_id,
@@ -11069,6 +11069,8 @@ def api_get_traders():
                         t.created_at,
                         t.user_id,
                         t.max_contracts as trader_position_size,
+                        t.add_delay,
+                        t.signal_count,
                         r.name as recorder_name,
                         r.ticker as symbol,
                         a.name as account_name,
@@ -11081,7 +11083,7 @@ def api_get_traders():
                 ''', (user_id, user_id))
             else:
                 cursor.execute('''
-                    SELECT 
+                    SELECT
                         t.id,
                         t.recorder_id,
                         t.account_id,
@@ -11098,6 +11100,8 @@ def api_get_traders():
                         t.sl_amount as trader_sl_amount,
                         t.sl_units as trader_sl_units,
                         t.max_daily_loss as trader_max_daily_loss,
+                        t.add_delay,
+                        t.signal_count,
                         r.name as recorder_name,
                         r.strategy_type,
                         r.initial_position_size as recorder_position_size,
@@ -11113,7 +11117,7 @@ def api_get_traders():
         else:
             if is_postgres:
                 cursor.execute('''
-                    SELECT 
+                    SELECT
                         t.id,
                         t.recorder_id,
                         t.account_id,
@@ -11123,6 +11127,8 @@ def api_get_traders():
                         t.enabled,
                         t.created_at,
                         t.max_contracts as trader_position_size,
+                        t.add_delay,
+                        t.signal_count,
                         r.name as recorder_name,
                         r.ticker as symbol,
                         a.name as account_name,
@@ -11134,7 +11140,7 @@ def api_get_traders():
                 ''')
             else:
                 cursor.execute('''
-                    SELECT 
+                    SELECT
                         t.id,
                         t.recorder_id,
                         t.account_id,
@@ -11150,6 +11156,8 @@ def api_get_traders():
                         t.sl_amount as trader_sl_amount,
                         t.sl_units as trader_sl_units,
                         t.max_daily_loss as trader_max_daily_loss,
+                        t.add_delay,
+                        t.signal_count,
                         r.name as recorder_name,
                         r.strategy_type,
                         r.initial_position_size as recorder_position_size,
@@ -11161,13 +11169,14 @@ def api_get_traders():
                     JOIN accounts a ON t.account_id = a.id
                     ORDER BY t.created_at DESC
                 ''')
-        
+
         rows = cursor.fetchall()
         traders = []
         
         # PostgreSQL columns for the simplified query
-        pg_columns = ['id', 'recorder_id', 'account_id', 'subaccount_id', 'subaccount_name', 
-                      'is_demo', 'enabled', 'created_at', 'trader_position_size', 
+        pg_columns = ['id', 'recorder_id', 'account_id', 'subaccount_id', 'subaccount_name',
+                      'is_demo', 'enabled', 'created_at', 'trader_position_size',
+                      'add_delay', 'signal_count',
                       'recorder_name', 'symbol', 'account_name', 'broker']
         
         for row in rows:
@@ -11208,7 +11217,9 @@ def api_get_traders():
                 'sl_enabled': bool(row_dict.get('trader_sl_enabled')) if row_dict.get('trader_sl_enabled') is not None else False,
                 'sl_amount': row_dict.get('trader_sl_amount'),
                 'sl_units': row_dict.get('trader_sl_units'),
-                'max_daily_loss': row_dict.get('trader_max_daily_loss')
+                'max_daily_loss': row_dict.get('trader_max_daily_loss'),
+                'add_delay': row_dict.get('add_delay', 1),
+                'signal_count': row_dict.get('signal_count', 0)
             })
         
         conn.close()
