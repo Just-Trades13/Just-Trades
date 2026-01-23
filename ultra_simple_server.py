@@ -1394,6 +1394,12 @@ _webhook_processing_count = 0  # Total webhooks processed since startup
 _webhook_error_count = 0  # Total webhook errors since startup
 _webhook_stuck_threshold = 300  # 5 minutes - if webhook received but not processed, it's stuck
 
+# WEBHOOK DEDUPLICATION - Prevent duplicate webhook processing
+# ============================================================================
+_webhook_dedup_cache = {}  # Key: "token:action:body_hash" -> timestamp
+_webhook_dedup_window = 5  # Seconds - reject duplicate webhooks within this window
+_webhook_dedup_max_size = 1000  # Max cache entries before cleanup
+
 # ============================================================================
 # 🚀 BROKER API QUEUE SYSTEM - Bulk requests, rate limit protection
 # ============================================================================
@@ -12491,9 +12497,37 @@ def process_webhook_directly(webhook_token):
     
     # Track webhook received time for health monitoring
     global _webhook_last_received, _webhook_last_processed, _webhook_processing_count, _webhook_error_count
+    global _webhook_dedup_cache, _webhook_dedup_window, _webhook_dedup_max_size
     webhook_start_time = time.time()
     _webhook_last_received = webhook_start_time
-    
+
+    # DEDUPLICATION CHECK - Prevent processing same webhook twice
+    import hashlib
+    raw_body = request.get_data(as_text=True) or ''
+    body_hash = hashlib.md5(raw_body.encode()).hexdigest()[:8]
+    dedup_key = f"{webhook_token}:{body_hash}"
+
+    # Check if we've seen this exact webhook recently
+    if dedup_key in _webhook_dedup_cache:
+        last_seen = _webhook_dedup_cache[dedup_key]
+        age = webhook_start_time - last_seen
+        if age < _webhook_dedup_window:
+            _logger.warning(f"⚠️ DUPLICATE WEBHOOK BLOCKED: Same signal received {age:.2f}s ago (token: {webhook_token[:8]}...)")
+            return jsonify({
+                'success': False,
+                'blocked': True,
+                'reason': 'duplicate',
+                'message': f'Duplicate signal blocked (same webhook {age:.2f}s ago)'
+            }), 200
+
+    # Store this webhook in dedup cache
+    _webhook_dedup_cache[dedup_key] = webhook_start_time
+
+    # Cleanup old entries if cache is too large
+    if len(_webhook_dedup_cache) > _webhook_dedup_max_size:
+        cutoff = webhook_start_time - 60  # Keep last 60 seconds
+        _webhook_dedup_cache = {k: v for k, v in _webhook_dedup_cache.items() if v > cutoff}
+
     try:
         # Import helper functions (broker execution is queued, not called here)
         from recorder_service import (
