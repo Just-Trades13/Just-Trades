@@ -839,6 +839,103 @@ def execute_trade_simple(
                 else:
                     logger.info(f"✅ Trader {trader_id} signal delay PASSED: Signal #{trader_signal_count} (every {trader_add_delay})")
 
+            # --- TRADER-LEVEL SIGNAL COOLDOWN FILTER ---
+            trader_cooldown = int(trader_dict.get('signal_cooldown', 0) or 0)
+            if trader_cooldown > 0:
+                try:
+                    # Check last trade time for this trader
+                    cursor.execute(f'''
+                        SELECT MAX(entry_time) FROM recorded_trades
+                        WHERE recorder_id = {placeholder} AND entry_time > datetime('now', '-{trader_cooldown} seconds')
+                    ''', (recorder_id,))
+                    last_trade = cursor.fetchone()
+                    if last_trade and last_trade[0]:
+                        logger.info(f"⏭️ Trader {trader_id} cooldown SKIPPED: Last trade within {trader_cooldown}s")
+                        continue
+                    logger.info(f"✅ Trader {trader_id} cooldown passed: {trader_cooldown}s")
+                except Exception as cool_err:
+                    logger.warning(f"⚠️ Trader cooldown check failed: {cool_err}")
+
+            # --- TRADER-LEVEL MAX SIGNALS PER SESSION FILTER ---
+            trader_max_signals = int(trader_dict.get('max_signals_per_session', 0) or 0)
+            if trader_max_signals > 0:
+                try:
+                    cursor.execute(f'''
+                        SELECT COUNT(*) FROM recorded_trades
+                        WHERE recorder_id = {placeholder} AND DATE(entry_time) = DATE('now')
+                    ''', (recorder_id,))
+                    today_trades = cursor.fetchone()[0] or 0
+                    if today_trades >= trader_max_signals:
+                        logger.info(f"⏭️ Trader {trader_id} max signals SKIPPED: {today_trades}/{trader_max_signals} today")
+                        continue
+                    logger.info(f"✅ Trader {trader_id} max signals passed: {today_trades}/{trader_max_signals}")
+                except Exception as max_err:
+                    logger.warning(f"⚠️ Trader max signals check failed: {max_err}")
+
+            # --- TRADER-LEVEL MAX DAILY LOSS FILTER ---
+            trader_max_loss = float(trader_dict.get('max_daily_loss', 0) or 0)
+            if trader_max_loss > 0:
+                try:
+                    cursor.execute(f'''
+                        SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                        WHERE recorder_id = {placeholder} AND DATE(exit_time) = DATE('now') AND status = 'closed'
+                    ''', (recorder_id,))
+                    daily_pnl = cursor.fetchone()[0] or 0
+                    if daily_pnl <= -trader_max_loss:
+                        logger.info(f"⏭️ Trader {trader_id} max daily loss SKIPPED: ${daily_pnl:.2f} (limit: -${trader_max_loss})")
+                        continue
+                    logger.info(f"✅ Trader {trader_id} max daily loss passed: ${daily_pnl:.2f} / -${trader_max_loss}")
+                except Exception as loss_err:
+                    logger.warning(f"⚠️ Trader max daily loss check failed: {loss_err}")
+
+            # --- TRADER-LEVEL TIME FILTER ---
+            trader_time_1_enabled = trader_dict.get('time_filter_1_enabled', False)
+            trader_time_1_start = trader_dict.get('time_filter_1_start', '')
+            trader_time_1_stop = trader_dict.get('time_filter_1_stop', '')
+            trader_time_2_enabled = trader_dict.get('time_filter_2_enabled', False)
+            trader_time_2_start = trader_dict.get('time_filter_2_start', '')
+            trader_time_2_stop = trader_dict.get('time_filter_2_stop', '')
+
+            has_trader_time_1 = trader_time_1_enabled and trader_time_1_start and trader_time_1_stop
+            has_trader_time_2 = trader_time_2_enabled and trader_time_2_start and trader_time_2_stop
+
+            if has_trader_time_1 or has_trader_time_2:
+                from datetime import datetime
+                try:
+                    now = datetime.now()
+                    current_time = now.time()
+
+                    def parse_time_str(t_str):
+                        if not t_str:
+                            return None
+                        t_str = t_str.strip()
+                        try:
+                            if 'AM' in t_str.upper() or 'PM' in t_str.upper():
+                                return datetime.strptime(t_str.upper(), '%I:%M %p').time()
+                            return datetime.strptime(t_str, '%H:%M').time()
+                        except:
+                            return None
+
+                    def in_window(start_str, stop_str):
+                        start = parse_time_str(start_str)
+                        stop = parse_time_str(stop_str)
+                        if not start or not stop:
+                            return True
+                        if start <= stop:
+                            return start <= current_time <= stop
+                        else:
+                            return current_time >= start or current_time <= stop
+
+                    in_window_1 = in_window(trader_time_1_start, trader_time_1_stop) if has_trader_time_1 else False
+                    in_window_2 = in_window(trader_time_2_start, trader_time_2_stop) if has_trader_time_2 else False
+
+                    if not in_window_1 and not in_window_2:
+                        logger.info(f"⏭️ Trader {trader_id} time filter SKIPPED: {now.strftime('%I:%M %p')} not in trading window")
+                        continue
+                    logger.info(f"✅ Trader {trader_id} time filter passed: {now.strftime('%I:%M %p')}")
+                except Exception as time_err:
+                    logger.warning(f"⚠️ Trader time filter check failed: {time_err}")
+
             enabled_accounts_raw = trader_dict.get('enabled_accounts')
             
             # Check if this trader has enabled_accounts JSON (multi-account feature)
