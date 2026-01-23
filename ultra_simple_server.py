@@ -11511,6 +11511,7 @@ def api_update_trader(trader_id):
         if 'add_delay' in data:
             updates.append(f'add_delay = {placeholder}')
             params.append(int(data['add_delay']) if data['add_delay'] else 1)
+            logger.info(f"📝 Adding add_delay={data['add_delay']} to trader {trader_id} update")
 
         # Update account routing if provided
         if 'enabled_accounts' in data:
@@ -11562,12 +11563,15 @@ def api_update_trader(trader_id):
             logger.info(f"✅ [SAVE] Will update enabled_accounts field with {len(json.loads(enabled_accounts) if isinstance(enabled_accounts, str) else enabled_accounts)} accounts")
         
         # Execute update if there are fields to update (with retry for db locks)
+        logger.info(f"🔍 DEBUG: updates list has {len(updates)} items: {updates}")
+        logger.info(f"🔍 DEBUG: params has {len(params)} items")
         if updates:
             params.append(trader_id)
             query = f"UPDATE traders SET {', '.join(updates)} WHERE id = {placeholder}"
-            
+
             # Log what we're updating for debugging
             logger.info(f"📝 Updating trader {trader_id} with {len(updates)} fields")
+            logger.info(f"📝 SQL: {query}")
             if 'enabled_accounts' in data:
                 logger.info(f"   - enabled_accounts will be updated (contains multipliers)")
             
