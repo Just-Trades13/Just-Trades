@@ -23419,40 +23419,67 @@ async def process_market_data_message(data):
                 if isinstance(item, dict):
                     symbol = item.get('symbol') or item.get('s')
                     if symbol:
-                        # Update cache with latest price
+                        # Update cache with latest price under BOTH full symbol and root symbol
+                        # This ensures lookups work from both webhook (root) and paper trades (root)
                         if symbol not in _market_data_cache:
                             _market_data_cache[symbol] = {}
-                        
+
+                        # Also store under root symbol (e.g., "CME_MINI:MNQ1!" -> "MNQ")
+                        root_symbol = extract_symbol_root(symbol)
+                        if root_symbol and root_symbol not in _market_data_cache:
+                            _market_data_cache[root_symbol] = {}
+
                         # Extract price data
                         last = item.get('last') or item.get('lastPrice') or item.get('l')
                         bid = item.get('bid') or item.get('b')
                         ask = item.get('ask') or item.get('a')
-                        
+
                         if last:
                             _market_data_cache[symbol]['last'] = float(last)
+                            if root_symbol:
+                                _market_data_cache[root_symbol]['last'] = float(last)
                             symbols_updated.add(symbol)
+                            if root_symbol:
+                                symbols_updated.add(root_symbol)
                         if bid:
                             _market_data_cache[symbol]['bid'] = float(bid)
+                            if root_symbol:
+                                _market_data_cache[root_symbol]['bid'] = float(bid)
                         if ask:
                             _market_data_cache[symbol]['ask'] = float(ask)
+                            if root_symbol:
+                                _market_data_cache[root_symbol]['ask'] = float(ask)
                         
         elif isinstance(data, dict):
             symbol = data.get('symbol') or data.get('s')
             if symbol:
                 if symbol not in _market_data_cache:
                     _market_data_cache[symbol] = {}
-                
+
+                # Also store under root symbol (e.g., "CME_MINI:MNQ1!" -> "MNQ")
+                root_symbol = extract_symbol_root(symbol)
+                if root_symbol and root_symbol not in _market_data_cache:
+                    _market_data_cache[root_symbol] = {}
+
                 last = data.get('last') or data.get('lastPrice') or data.get('l')
                 bid = data.get('bid') or data.get('b')
                 ask = data.get('ask') or data.get('a')
-                
+
                 if last:
                     _market_data_cache[symbol]['last'] = float(last)
+                    if root_symbol:
+                        _market_data_cache[root_symbol]['last'] = float(last)
                     symbols_updated.add(symbol)
+                    if root_symbol:
+                        symbols_updated.add(root_symbol)
                 if bid:
                     _market_data_cache[symbol]['bid'] = float(bid)
+                    if root_symbol:
+                        _market_data_cache[root_symbol]['bid'] = float(bid)
                 if ask:
                     _market_data_cache[symbol]['ask'] = float(ask)
+                    if root_symbol:
+                        _market_data_cache[root_symbol]['ask'] = float(ask)
         
         # Update PnL for positions with this symbol
         update_position_pnl()
