@@ -4637,6 +4637,19 @@ def run_migrations():
             else:
                 results.append(f"❌ {table}.{column}: {str(e)[:100]}")
 
+    # Fix NULL values for traders.add_delay and traders.signal_count
+    try:
+        cursor.execute('UPDATE traders SET add_delay = 1 WHERE add_delay IS NULL')
+        updated_delay = cursor.rowcount
+        cursor.execute('UPDATE traders SET signal_count = 0 WHERE signal_count IS NULL')
+        updated_count = cursor.rowcount
+        conn.commit()
+        if updated_delay > 0 or updated_count > 0:
+            results.append(f"✅ Fixed NULL values: add_delay={updated_delay} rows, signal_count={updated_count} rows")
+    except Exception as e:
+        conn.rollback()
+        results.append(f"⚠️ Could not fix NULL values: {str(e)[:100]}")
+
     conn.close()
     return jsonify({'success': True, 'migrations': results})
 
