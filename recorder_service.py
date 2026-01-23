@@ -843,11 +843,17 @@ def execute_trade_simple(
             trader_cooldown = int(trader_dict.get('signal_cooldown', 0) or 0)
             if trader_cooldown > 0:
                 try:
-                    # Check last trade time for this trader
-                    cursor.execute(f'''
-                        SELECT MAX(entry_time) FROM recorded_trades
-                        WHERE recorder_id = {placeholder} AND entry_time > datetime('now', '-{trader_cooldown} seconds')
-                    ''', (recorder_id,))
+                    # Check last trade time for this trader (PostgreSQL vs SQLite compatible)
+                    if is_postgres:
+                        cursor.execute(f'''
+                            SELECT MAX(entry_time) FROM recorded_trades
+                            WHERE recorder_id = %s AND entry_time > NOW() - INTERVAL '{trader_cooldown} seconds'
+                        ''', (recorder_id,))
+                    else:
+                        cursor.execute(f'''
+                            SELECT MAX(entry_time) FROM recorded_trades
+                            WHERE recorder_id = ? AND entry_time > datetime('now', '-{trader_cooldown} seconds')
+                        ''', (recorder_id,))
                     last_trade = cursor.fetchone()
                     if last_trade and last_trade[0]:
                         logger.info(f"⏭️ Trader {trader_id} cooldown SKIPPED: Last trade within {trader_cooldown}s")
@@ -860,10 +866,17 @@ def execute_trade_simple(
             trader_max_signals = int(trader_dict.get('max_signals_per_session', 0) or 0)
             if trader_max_signals > 0:
                 try:
-                    cursor.execute(f'''
-                        SELECT COUNT(*) FROM recorded_trades
-                        WHERE recorder_id = {placeholder} AND DATE(entry_time) = DATE('now')
-                    ''', (recorder_id,))
+                    # PostgreSQL vs SQLite compatible date comparison
+                    if is_postgres:
+                        cursor.execute('''
+                            SELECT COUNT(*) FROM recorded_trades
+                            WHERE recorder_id = %s AND entry_time::date = CURRENT_DATE
+                        ''', (recorder_id,))
+                    else:
+                        cursor.execute('''
+                            SELECT COUNT(*) FROM recorded_trades
+                            WHERE recorder_id = ? AND DATE(entry_time) = DATE('now')
+                        ''', (recorder_id,))
                     today_trades = cursor.fetchone()[0] or 0
                     if today_trades >= trader_max_signals:
                         logger.info(f"⏭️ Trader {trader_id} max signals SKIPPED: {today_trades}/{trader_max_signals} today")
@@ -876,10 +889,17 @@ def execute_trade_simple(
             trader_max_loss = float(trader_dict.get('max_daily_loss', 0) or 0)
             if trader_max_loss > 0:
                 try:
-                    cursor.execute(f'''
-                        SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
-                        WHERE recorder_id = {placeholder} AND DATE(exit_time) = DATE('now') AND status = 'closed'
-                    ''', (recorder_id,))
+                    # PostgreSQL vs SQLite compatible date comparison
+                    if is_postgres:
+                        cursor.execute('''
+                            SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                            WHERE recorder_id = %s AND exit_time::date = CURRENT_DATE AND status = 'closed'
+                        ''', (recorder_id,))
+                    else:
+                        cursor.execute('''
+                            SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                            WHERE recorder_id = ? AND DATE(exit_time) = DATE('now') AND status = 'closed'
+                        ''', (recorder_id,))
                     daily_pnl = cursor.fetchone()[0] or 0
                     if daily_pnl <= -trader_max_loss:
                         logger.info(f"⏭️ Trader {trader_id} max daily loss SKIPPED: ${daily_pnl:.2f} (limit: -${trader_max_loss})")
