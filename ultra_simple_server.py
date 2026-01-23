@@ -4614,6 +4614,9 @@ def run_migrations():
         ('accounts', 'projectx_api_key', 'TEXT'),
         ('accounts', 'projectx_prop_firm', 'TEXT'),
         ('accounts', 'projectx_account_id', 'TEXT'),
+        # Trader-level risk settings
+        ('traders', 'add_delay', 'INTEGER DEFAULT 1'),
+        ('traders', 'signal_count', 'INTEGER DEFAULT 0'),
     ]
 
     for table, column, col_type in migrations:
