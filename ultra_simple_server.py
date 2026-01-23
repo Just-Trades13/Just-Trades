@@ -4263,6 +4263,21 @@ def init_db():
     except:
         pass
 
+    # Jan 2026: Add signal delay columns to traders table
+    # add_delay - Take every Nth signal (1 = all, 2 = every other, 3 = every 3rd, etc.)
+    try:
+        cursor.execute('ALTER TABLE traders ADD COLUMN add_delay INTEGER DEFAULT 1')
+        logger.info("✅ Added add_delay column to traders table")
+    except:
+        pass  # Column already exists
+
+    # signal_count - Track how many signals this trader has received (for Nth signal filtering)
+    try:
+        cursor.execute('ALTER TABLE traders ADD COLUMN signal_count INTEGER DEFAULT 0')
+        logger.info("✅ Added signal_count column to traders table")
+    except:
+        pass  # Column already exists
+
     # Add inverse_signals column to recorders table (Jan 2026)
     if is_postgres:
         try:
@@ -10630,9 +10645,20 @@ def api_update_recorder(recorder_id):
                 UPDATE recorders SET {', '.join(fields)} WHERE id = {placeholder}
             ''', values)
             conn.commit()
-        
+
+        # CRITICAL: Clear recorder cache so webhooks use updated settings immediately
+        cursor.execute(f'SELECT webhook_token FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        token_row = cursor.fetchone()
+        if token_row:
+            webhook_token = token_row[0] if isinstance(token_row, tuple) else token_row.get('webhook_token')
+            if webhook_token and webhook_token in recorder_cache:
+                del recorder_cache[webhook_token]
+                if webhook_token in recorder_cache_time:
+                    del recorder_cache_time[webhook_token]
+                logger.info(f"🧹 Cleared cache for recorder {recorder_id} after update")
+
         conn.close()
-        
+
         logger.info(f"Updated recorder ID: {recorder_id}")
         
         return jsonify({
@@ -11471,7 +11497,12 @@ def api_update_trader(trader_id):
         if 'max_daily_loss' in data:
             updates.append(f'max_daily_loss = {placeholder}')
             params.append(float(data['max_daily_loss']))
-        
+
+        # Signal delay (Nth signal filter) - take every Nth signal
+        if 'add_delay' in data:
+            updates.append(f'add_delay = {placeholder}')
+            params.append(int(data['add_delay']) if data['add_delay'] else 1)
+
         # Update account routing if provided
         if 'enabled_accounts' in data:
             enabled_accounts = data['enabled_accounts']

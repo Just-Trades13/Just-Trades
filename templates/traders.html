@@ -435,11 +435,18 @@
                         <small>0 = unlimited signals</small>
                     </label>
                 </div>
-                <label class="form-field">
-                    <span>Max Daily Loss ($)</span>
-                    <input type="number" id="maxDailyLoss" name="max_daily_loss" value="{{ trader.max_daily_loss or 0 }}" step="0.01" min="0">
-                    <small>0 = no limit</small>
-                </label>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Max Daily Loss ($)</span>
+                        <input type="number" id="maxDailyLoss" name="max_daily_loss" value="{{ trader.max_daily_loss or 0 }}" step="0.01" min="0">
+                        <small>0 = no limit</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Add Delay</span>
+                        <input type="number" id="addDelay" name="add_delay" value="{{ trader.add_delay or 1 }}" min="1">
+                        <small>Take every Nth signal (1 = all, 2 = every other, 3 = every 3rd)</small>
+                    </label>
+                </div>
                 <div class="switch-row">
                     <label class="switch">
                         <input type="checkbox" id="autoFlatAfterCutoff" name="auto_flat_after_cutoff" {% if trader.auto_flat_after_cutoff %}checked{% endif %}>
@@ -1002,11 +1009,18 @@
                         <small>0 = unlimited signals</small>
                     </label>
                 </div>
-                <label class="form-field">
-                    <span>Max Daily Loss ($)</span>
-                    <input type="number" id="createMaxDailyLoss" name="max_daily_loss" value="0" step="0.01" min="0">
-                    <small>0 = no limit</small>
-                </label>
+                <div class="form-two">
+                    <label class="form-field">
+                        <span>Max Daily Loss ($)</span>
+                        <input type="number" id="createMaxDailyLoss" name="max_daily_loss" value="0" step="0.01" min="0">
+                        <small>0 = no limit</small>
+                    </label>
+                    <label class="form-field">
+                        <span>Add Delay</span>
+                        <input type="number" id="createAddDelay" name="add_delay" value="1" min="1">
+                        <small>Take every Nth signal (1 = all, 2 = every other, 3 = every 3rd)</small>
+                    </label>
+                </div>
                 <div class="switch-row">
                     <label class="switch">
                         <input type="checkbox" id="createAutoFlatAfterCutoff" name="auto_flat_after_cutoff">
@@ -2087,7 +2101,10 @@
                         const timeFilter2Enabled = document.getElementById('time_filter_2_enabled')?.checked ? true : false;
                         const timeFilter2Start = document.getElementById('timeFilter2Start')?.value || '';
                         const timeFilter2Stop = document.getElementById('timeFilter2Stop')?.value || '';
-                        
+
+                        // Signal delay - take every Nth signal
+                        const addDelay = parseInt(document.getElementById('addDelay')?.value) || 1;
+
                         // Build TP targets array from dynamic inputs
                         const tpTargets = JSON.stringify(getTpTargets());
                         
@@ -2131,7 +2148,9 @@
                                 time_filter_1_stop: timeFilter1Stop,
                                 time_filter_2_enabled: timeFilter2Enabled,
                                 time_filter_2_start: timeFilter2Start,
-                                time_filter_2_stop: timeFilter2Stop
+                                time_filter_2_stop: timeFilter2Stop,
+                                // Signal delay
+                                add_delay: addDelay
                             })
                         });
                         

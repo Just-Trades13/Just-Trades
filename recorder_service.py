@@ -817,7 +817,28 @@ def execute_trade_simple(
 
         for trader_idx, trader_row in enumerate(trader_rows):
             trader_dict = dict(trader_row)
-            logger.info(f"📋 Processing Trader #{trader_idx + 1}: ID={trader_dict.get('id')}, Name={trader_dict.get('name', 'unnamed')}")
+            trader_id = trader_dict.get('id')
+            logger.info(f"📋 Processing Trader #{trader_idx + 1}: ID={trader_id}, Name={trader_dict.get('name', 'unnamed')}")
+
+            # --- TRADER-LEVEL DELAY FILTER (Nth Signal) ---
+            trader_add_delay = int(trader_dict.get('add_delay', 1) or 1)
+            if trader_add_delay > 1:
+                # Get and increment signal count for this trader
+                trader_signal_count = int(trader_dict.get('signal_count', 0) or 0) + 1
+                # Update the signal count in database and commit immediately
+                try:
+                    cursor.execute(f'UPDATE traders SET signal_count = {placeholder} WHERE id = {placeholder}', (trader_signal_count, trader_id))
+                    conn.commit()  # Persist immediately so counter is accurate
+                except Exception as cnt_err:
+                    logger.warning(f"⚠️ Could not update signal_count for trader {trader_id}: {cnt_err}")
+
+                # Check if we should skip this signal
+                if trader_signal_count % trader_add_delay != 0:
+                    logger.info(f"⏭️ Trader {trader_id} signal delay SKIPPED: Signal #{trader_signal_count} (executing every {trader_add_delay})")
+                    continue
+                else:
+                    logger.info(f"✅ Trader {trader_id} signal delay PASSED: Signal #{trader_signal_count} (every {trader_add_delay})")
+
             enabled_accounts_raw = trader_dict.get('enabled_accounts')
             
             # Check if this trader has enabled_accounts JSON (multi-account feature)

@@ -240,8 +240,8 @@
                 <div class="form-two">
                     <label class="form-field">
                         <span>Add Delay</span>
-                        <input type="number" id="add_delay" value="{{ recorder.add_delay if recorder else 1 }}" min="0">
-                        <small>Currently disabled</small>
+                        <input type="number" id="add_delay" value="{{ recorder.add_delay if recorder else 1 }}" min="1">
+                        <small>Take every Nth signal (1 = all signals, 2 = every other, 3 = every 3rd)</small>
                     </label>
                     <label class="form-field">
                         <span>Max Contracts Per Trade</span>
