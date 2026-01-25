@@ -537,8 +537,143 @@ def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, 
         conn.close()
 
 
+def _get_live_price_for_symbol(symbol: str) -> float:
+    """Get live price for a symbol from TradingView cache"""
+    global _market_data_cache
+    if not symbol:
+        return None
+
+    # Extract symbol root (NQ1! -> NQ, CME_MINI:MNQ1! -> MNQ, etc.)
+    symbol_root = symbol.replace('1!', '').replace('CME_MINI:', '').replace('CME:', '').upper()
+
+    live_price = None
+    if symbol_root and symbol_root in _market_data_cache:
+        live_price = _market_data_cache[symbol_root].get('last')
+    # Also try with just the base symbol
+    if not live_price and symbol.upper() in _market_data_cache:
+        live_price = _market_data_cache[symbol.upper()].get('last')
+
+    return live_price
+
+
+def _calculate_unrealized_pnl(symbol: str, side: str, quantity: float, entry_price: float, live_price: float) -> float:
+    """Calculate unrealized P&L for an open position"""
+    from tv_price_service import FUTURES_SPECS
+
+    # Get symbol root for specs lookup
+    symbol_root = symbol.replace('1!', '').replace('CME_MINI:', '').replace('CME:', '').upper() if symbol else 'MNQ'
+    spec = FUTURES_SPECS.get(symbol_root, {'point_value': 2.0})  # Default to MNQ
+    point_value = spec['point_value']
+
+    if side == 'LONG':
+        return (live_price - entry_price) * point_value * quantity
+    else:
+        return (entry_price - live_price) * point_value * quantity
+
+
+def check_paper_max_daily_loss():
+    """Check all open paper trades against max_daily_loss and auto-close if breached"""
+    import os
+    from datetime import datetime
+
+    database_url = os.environ.get('DATABASE_URL')
+    use_postgres = bool(database_url)
+
+    if use_postgres:
+        import psycopg2
+        conn = psycopg2.connect(database_url)
+        ph = '%s'
+        today_filter = "DATE(closed_at) = CURRENT_DATE"
+    else:
+        conn = sqlite3.connect('paper_trades.db')
+        ph = '?'
+        today_filter = "DATE(closed_at) = DATE('now')"
+
+    cursor = conn.cursor()
+
+    try:
+        # Get all open paper trades
+        cursor.execute('''
+            SELECT id, recorder_id, symbol, side, quantity, entry_price
+            FROM paper_trades
+            WHERE status = 'open'
+        ''')
+        open_trades = cursor.fetchall()
+
+        if not open_trades:
+            return
+
+        # Group trades by recorder_id
+        recorder_trades = {}
+        for trade in open_trades:
+            trade_id, recorder_id, symbol, side, quantity, entry_price = trade
+            if recorder_id not in recorder_trades:
+                recorder_trades[recorder_id] = []
+            recorder_trades[recorder_id].append({
+                'id': trade_id,
+                'symbol': symbol,
+                'side': side,
+                'quantity': quantity,
+                'entry_price': entry_price
+            })
+
+        # Check each recorder's max_daily_loss
+        for recorder_id, trades in recorder_trades.items():
+            # Get recorder's max_daily_loss setting
+            cursor.execute(f'SELECT max_daily_loss, name FROM recorders WHERE id = {ph}', (recorder_id,))
+            rec_row = cursor.fetchone()
+            if not rec_row:
+                continue
+
+            max_daily_loss = float(rec_row[0] or 0)
+            recorder_name = rec_row[1] if len(rec_row) > 1 else f"Recorder {recorder_id}"
+
+            if max_daily_loss <= 0:
+                continue  # No max loss set
+
+            # Calculate today's realized P&L (closed trades)
+            cursor.execute(f'''
+                SELECT COALESCE(SUM(pnl), 0) FROM paper_trades
+                WHERE recorder_id = {ph} AND status = 'closed' AND {today_filter}
+            ''', (recorder_id,))
+            realized_pnl = cursor.fetchone()[0] or 0
+
+            # Calculate unrealized P&L for all open positions
+            unrealized_pnl = 0
+            for trade in trades:
+                live_price = _get_live_price_for_symbol(trade['symbol'])
+                if live_price:
+                    unrealized_pnl += _calculate_unrealized_pnl(
+                        trade['symbol'], trade['side'], trade['quantity'],
+                        trade['entry_price'], live_price
+                    )
+
+            # Total daily P&L = realized + unrealized
+            total_daily_pnl = realized_pnl + unrealized_pnl
+
+            # Check if max daily loss breached
+            if total_daily_pnl <= -max_daily_loss:
+                print(f"🚨 MAX DAILY LOSS BREACHED for [{recorder_name}]!", flush=True)
+                print(f"   Realized: ${realized_pnl:.2f} | Unrealized: ${unrealized_pnl:.2f} | Total: ${total_daily_pnl:.2f} | Limit: -${max_daily_loss:.2f}", flush=True)
+
+                # Close all open positions for this recorder
+                for trade in trades:
+                    live_price = _get_live_price_for_symbol(trade['symbol'])
+                    if live_price:
+                        _close_paper_trade_tpsl(
+                            trade['id'], live_price, 'max_loss', recorder_id,
+                            trade['side'], trade['entry_price'], trade['quantity'], trade['symbol']
+                        )
+                        print(f"   💀 Auto-closed {trade['side']} {trade['symbol']} @ {live_price:.2f}", flush=True)
+
+    except Exception as e:
+        print(f"⚠️ Error checking paper max daily loss: {e}", flush=True)
+    finally:
+        conn.close()
+
+
 def check_paper_trades_tpsl():
-    """Check all open paper trades against live prices for TP/SL hits"""
+    """Check all open paper trades against live prices for TP/SL hits AND max daily loss"""
     import os
 
     database_url = os.environ.get('DATABASE_URL')
@@ -564,6 +699,8 @@ def check_paper_trades_tpsl():
         open_trades = cursor.fetchall()
 
         if not open_trades:
+            # Still check max daily loss even if no TP/SL trades
+            check_paper_max_daily_loss()
             return
 
         # Get live prices from TradingView cache (use globals, not import)
@@ -572,14 +709,7 @@ def check_paper_trades_tpsl():
         for trade in open_trades:
             trade_id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price = trade
 
-            # Get live price - extract symbol root (NQ1! -> NQ, etc.)
-            symbol_root = symbol.replace('1!', '').replace('CME_MINI:', '').replace('CME:', '').upper() if symbol else symbol
-            live_price = None
-            if symbol_root and symbol_root in _market_data_cache:
-                live_price = _market_data_cache[symbol_root].get('last')
-            # Also try with just the base symbol
-            if not live_price and symbol and symbol.upper() in _market_data_cache:
-                live_price = _market_data_cache[symbol.upper()].get('last')
+            live_price = _get_live_price_for_symbol(symbol)
 
             if not live_price:
                 continue  # No live price available
@@ -595,6 +725,9 @@ def check_paper_trades_tpsl():
                 if (side == 'LONG' and live_price <= sl_price) or (side == 'SHORT' and live_price >= sl_price):
                     _close_paper_trade_tpsl(trade_id, sl_price, 'sl', recorder_id, side, entry_price, quantity, symbol)
                     continue
+
+        # Also check max daily loss after TP/SL checks
+        check_paper_max_daily_loss()
 
     except Exception as e:
         print(f"⚠️ Error checking paper TP/SL: {e}", flush=True)
@@ -6439,6 +6572,36 @@ def admin_list_all_discord_status():
         return jsonify({'users': users, 'total': len(users)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/max-loss-monitor/status', methods=['GET'])
+@login_required
+def admin_max_loss_monitor_status():
+    """Admin: Get status of max loss monitors (paper + live)."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    status = {
+        'paper_trades': {
+            'monitor_running': _paper_monitor_running,
+            'description': 'Monitors paper trades for TP/SL and max daily loss'
+        },
+        'live_accounts': {
+            'monitor_running': False,
+            'connected_accounts': 0,
+            'breached_today': []
+        }
+    }
+
+    try:
+        from live_max_loss_monitor import get_max_loss_monitor_status
+        live_status = get_max_loss_monitor_status()
+        status['live_accounts'].update(live_status)
+    except Exception as e:
+        status['live_accounts']['error'] = str(e)
+
+    return jsonify(status)
 
 
 @app.route('/api/admin/discord/enable/<int:user_id>', methods=['POST'])
@@ -27178,5 +27341,13 @@ if __name__ == '__main__':
             logger.warning(f"⚠️ TradingView price service init failed: {e}")
     else:
         logger.info("ℹ️ TradingView price service not available")
+
+    # Start live account max loss monitor (WebSocket-based)
+    try:
+        from live_max_loss_monitor import start_live_max_loss_monitor
+        start_live_max_loss_monitor()
+        logger.info("✅ Live max loss monitor started (WebSocket)")
+    except Exception as e:
+        logger.warning(f"⚠️ Live max loss monitor failed to start: {e}")
 
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
