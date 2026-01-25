@@ -546,5 +546,205 @@ curl -s "https://justtrades-production.up.railway.app/api/admin/trial-abuse/flag
 
 ---
 
-*Last updated: Jan 19, 2026 (Evening)*
+## 📝 Session Log - January 25, 2026
+
+### Real-Time Max Daily Loss Protection System (MAJOR FEATURE)
+
+**User Request:** "how are we tracking th users data for while its n a trade to make sure max loss etc works"
+
+**Problem Identified:** The existing `max_daily_loss` setting only checked CLOSED trades when a NEW signal came in. If a user was IN a trade and it tanked past their max loss, the system did NOTHING.
+
+### Solution Implemented
+
+Created comprehensive real-time max loss monitoring for ALL broker types:
+
+#### 1. Paper Trades - Added to `ultra_simple_server.py`
+
+**New Functions (lines 540-672):**
+- `_get_live_price_for_symbol(symbol)` - Gets live price from TradingView WebSocket cache
+- `_calculate_unrealized_pnl(symbol, side, quantity, entry_price, live_price)` - Calculates P&L using FUTURES_SPECS point values
+- `check_paper_max_daily_loss()` - Main function that:
+  - Gets all open paper trades
+  - Groups by recorder_id
+  - Calculates realized P&L (closed trades today) + unrealized P&L (open positions)
+  - Auto-closes ALL positions when `total_pnl <= -max_daily_loss`
+
+**Integration:** Called from `check_paper_trades_tpsl()` which runs every 500ms
+
+#### 2. Live Accounts - New Module `live_max_loss_monitor.py`
+
+**For Tradovate & NinjaTrader:**
+- `TradovateMaxLossConnection` class - WebSocket connection per account
+- Connects to `wss://[demo|live].tradovateapi.com/v1/websocket`
+- Subscribes to `user/syncrequest` for real-time P&L updates
+- Monitors `cashBalance.openPnL + cashBalance.realizedPnL`
+- Auto-flattens via `liquidate_position` when breached
+
+**For ProjectX/TopstepX:**
+- `_monitor_projectx_account()` - REST polling every 5 seconds
+- Gets P&L from `get_account_info()` endpoint
+- Auto-flattens via `liquidate_position` when breached
+
+**Key Functions:**
+- `_load_max_loss_accounts()` - Loads all traders with max_daily_loss > 0
+- `flatten_account_positions()` - Flattens Tradovate/NinjaTrader positions
+- `flatten_projectx_positions()` - Flattens ProjectX positions
+- `start_live_max_loss_monitor()` - Starts background thread
+- `get_max_loss_monitor_status()` - Returns current status
+
+#### 3. Admin API Endpoint
+
+**Added:** `/api/admin/max-loss-monitor/status` (lines 6577-6604)
+
+Returns:
+```json
+{
+  "paper_trades": {"monitor_running": true},
+  "live_accounts": {
+    "running": true,
+    "tradovate_accounts": 2,
+    "projectx_accounts": 1,
+    "breached_today": []
+  }
+}
+```
+
+### Broker Support Matrix
+
+| Broker | Monitoring Method | P&L Source | Flatten Method |
+|--------|------------------|------------|----------------|
+| **Tradovate** | WebSocket (real-time) | `cashBalance.openPnL` | `liquidate_position` |
+| **NinjaTrader** | WebSocket (real-time) | Same as Tradovate | Same as Tradovate |
+| **ProjectX** | REST (every 5s) | `get_account_info` | `liquidate_position` |
+| **Paper Trades** | TradingView WS (500ms) | Calculated from prices | `_close_paper_trade_tpsl` |
+
+### Database Queries
+
+**Tradovate/NinjaTrader accounts:**
+```sql
+SELECT t.id, t.recorder_id, t.account_id, t.max_daily_loss, t.subaccount_id,
+       a.tradovate_token, a.environment, a.name, a.broker
+FROM traders t
+JOIN accounts a ON t.account_id = a.id
+WHERE t.enabled = TRUE
+  AND t.max_daily_loss > 0
+  AND a.tradovate_token IS NOT NULL
+  AND t.subaccount_id IS NOT NULL
+  AND a.broker IN ('Tradovate', 'NinjaTrader', '')
+```
+
+**ProjectX accounts:**
+```sql
+SELECT t.id, t.recorder_id, t.account_id, t.max_daily_loss,
+       a.projectx_account_id, a.tradovate_token, a.environment, a.name, a.projectx_prop_firm
+FROM traders t
+JOIN accounts a ON t.account_id = a.id
+WHERE t.enabled = TRUE
+  AND t.max_daily_loss > 0
+  AND a.broker IN ('ProjectX', 'projectx')
+  AND a.tradovate_token IS NOT NULL
+```
+
+### Protection Flow
+
+```
+User sets max_daily_loss = $500 on trader
+
+While in trade:
+├── Paper Trade: Monitor checks every 500ms
+│   └── realized + unrealized > -$500 → AUTO CLOSE
+│
+├── Tradovate/NinjaTrader: WebSocket gets real-time updates
+│   └── openPnL + realizedPnL > -$500 → LIQUIDATE ALL
+│
+└── ProjectX: REST checks every 5 seconds
+    └── account P&L > -$500 → LIQUIDATE ALL
+
+After breach:
+└── Account marked as "breached today" (no repeated flattens)
+└── Resets at midnight
+```
+
+### Log Output When Triggered
+
+```
+🚨 MAX DAILY LOSS BREACHED for [Account Name]!
+   Realized: $-200.00 | Unrealized: $-350.00 | Total: $-550.00 | Limit: -$500.00
+💀 FLATTENED 2 positions for [Account Name] due to max loss breach (P&L: $-550.00)
+   Liquidated contract 12345 (netPos: 2)
+   Liquidated contract 67890 (netPos: -1)
+```
+
+### Files Created/Modified
+
+| File | Change |
+|------|--------|
+| `live_max_loss_monitor.py` | **NEW** - Complete live account monitoring module (~700 lines) |
+| `ultra_simple_server.py` | Added paper trade max loss functions + admin endpoint + startup integration |
+
+### Commits This Session
+
+```
+df54e42 Add real-time max daily loss protection for paper and live trades
+3662f57 Fix: Use subaccount_id instead of non-existent tradovate_account_id
+fc579aa Explicitly include NinjaTrader accounts in max loss monitor
+```
+
+### Testing Checklist
+
+When testing with users:
+
+**Paper Trades:**
+- [ ] Set max_daily_loss on a recorder
+- [ ] Open a paper trade
+- [ ] Let it go negative past the limit
+- [ ] Verify auto-close and log output
+
+**Tradovate/NinjaTrader:**
+- [ ] Set max_daily_loss on a trader with connected account
+- [ ] Open a position via webhook signal
+- [ ] Let it go negative past the limit
+- [ ] Verify auto-flatten and log output
+
+**ProjectX:**
+- [ ] Set max_daily_loss on a trader with ProjectX account
+- [ ] Open a position
+- [ ] Verify P&L polling (every 5s)
+- [ ] Verify auto-flatten when breached
+
+**Admin Check:**
+```bash
+curl -s "https://justtrades-production.up.railway.app/api/admin/max-loss-monitor/status" | python3 -m json.tool
+```
+
+### Key Code Locations
+
+| Feature | File | Lines |
+|---------|------|-------|
+| Paper trade max loss check | `ultra_simple_server.py` | 574-672 |
+| Live price helper | `ultra_simple_server.py` | 540-556 |
+| Unrealized P&L calculation | `ultra_simple_server.py` | 559-571 |
+| Admin status endpoint | `ultra_simple_server.py` | 6577-6604 |
+| Live monitor startup | `ultra_simple_server.py` | 27315-27321 |
+| Tradovate WebSocket class | `live_max_loss_monitor.py` | 47-241 |
+| Tradovate flatten function | `live_max_loss_monitor.py` | 244-315 |
+| Load accounts function | `live_max_loss_monitor.py` | 318-405 |
+| Main monitor loop | `live_max_loss_monitor.py` | 408-510 |
+| ProjectX monitor function | `live_max_loss_monitor.py` | 513-576 |
+| ProjectX flatten function | `live_max_loss_monitor.py` | 579-624 |
+
+### Rollback Instructions
+
+If issues arise:
+```bash
+# Revert to before max loss changes
+git revert fc579aa 3662f57 df54e42
+
+# Or reset to specific commit
+git reset --hard 4e55a38
+```
+
+---
+
+*Last updated: Jan 25, 2026*
 *Author: Claude Code Session*
