@@ -331,13 +331,14 @@ def _load_max_loss_accounts() -> dict:
         result = {'tradovate': [], 'projectx': []}
 
         # Get Tradovate accounts with max_daily_loss > 0
+        # Note: subaccount_id in traders table is the actual Tradovate account ID
         cursor.execute('''
             SELECT
                 t.id as trader_id,
                 t.recorder_id,
                 t.account_id,
                 t.max_daily_loss,
-                a.tradovate_account_id,
+                t.subaccount_id,
                 a.tradovate_token,
                 a.environment,
                 a.name as account_name
@@ -346,7 +347,7 @@ def _load_max_loss_accounts() -> dict:
             WHERE t.enabled = TRUE
               AND t.max_daily_loss > 0
               AND a.tradovate_token IS NOT NULL
-              AND a.tradovate_account_id IS NOT NULL
+              AND t.subaccount_id IS NOT NULL
               AND (a.broker IS NULL OR a.broker NOT IN ('ProjectX', 'projectx'))
         ''')
 
@@ -356,7 +357,7 @@ def _load_max_loss_accounts() -> dict:
                 'recorder_id': row[1],
                 'account_id': row[2],
                 'max_daily_loss': float(row[3]),
-                'tradovate_account_id': row[4],
+                'subaccount_id': row[4],  # This is the Tradovate account ID
                 'access_token': row[5],
                 'is_demo': row[6] != 'live',
                 'account_name': row[7],
@@ -434,8 +435,8 @@ async def _run_max_loss_monitor():
 
             # Handle Tradovate accounts
             for acc in tradovate_accounts:
-                tradovate_id = acc['tradovate_account_id']
-                conn_key = f"tradovate_{tradovate_id}"
+                subaccount_id = acc['subaccount_id']
+                conn_key = f"tradovate_{subaccount_id}"
 
                 # Skip if already connected
                 if conn_key in _account_connections:
@@ -445,7 +446,7 @@ async def _run_max_loss_monitor():
 
                 # Create new Tradovate connection
                 conn = TradovateMaxLossConnection(
-                    account_id=tradovate_id,
+                    account_id=subaccount_id,
                     access_token=acc['access_token'],
                     is_demo=acc['is_demo'],
                     max_daily_loss=acc['max_daily_loss'],
