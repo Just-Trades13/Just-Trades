@@ -2089,6 +2089,9 @@
                         const slType = document.getElementById('slType')?.value || 'Fixed';
                         const breakEvenEnabled = document.getElementById('breakEvenEnabled')?.checked ? 1 : 0;
                         const breakEvenTicks = parseInt(document.getElementById('breakEvenTicks')?.value) || 10;
+                        const breakEvenOffset = parseInt(document.getElementById('breakEvenOffset')?.value) || 0;
+                        const trailTrigger = parseInt(document.getElementById('trailTrigger')?.value) || 0;
+                        const trailFreq = parseInt(document.getElementById('trailFreq')?.value) || 0;
                         const avgDownEnabled = document.getElementById('avgDownEnabled')?.checked ? 1 : 0;
                         const avgDownAmount = parseInt(document.getElementById('avgDownAmount')?.value) || 1;
                         const avgDownPoint = parseFloat(document.getElementById('avgDownPoint')?.value) || 10;
@@ -2104,6 +2107,13 @@
 
                         // Signal delay - take every Nth signal
                         const addDelay = parseInt(document.getElementById('addDelay')?.value) || 1;
+
+                        // Risk management settings
+                        const signalCooldown = parseInt(document.getElementById('signalCooldown')?.value) || 0;
+                        const maxSignalsPerSession = parseInt(document.getElementById('maxSignalsPerSession')?.value) || 0;
+                        const maxDailyLoss = parseFloat(document.getElementById('maxDailyLoss')?.value) || 0;
+                        const autoFlatAfterCutoff = document.getElementById('autoFlatAfterCutoff')?.checked ? 1 : 0;
+                        const inverseSignals = document.getElementById('inverseSignals')?.checked ? 1 : 0;
 
                         // Build TP targets array from dynamic inputs
                         const tpTargets = JSON.stringify(getTpTargets());
@@ -2138,6 +2148,9 @@
                                 sl_type: slType,
                                 break_even_enabled: breakEvenEnabled,
                                 break_even_ticks: breakEvenTicks,
+                                break_even_offset: breakEvenOffset,
+                                trail_trigger: trailTrigger,
+                                trail_freq: trailFreq,
                                 avg_down_enabled: avgDownEnabled,
                                 avg_down_amount: avgDownAmount,
                                 avg_down_point: avgDownPoint,
@@ -2150,7 +2163,13 @@
                                 time_filter_2_start: timeFilter2Start,
                                 time_filter_2_stop: timeFilter2Stop,
                                 // Signal delay
-                                add_delay: addDelay
+                                add_delay: addDelay,
+                                // Risk management
+                                signal_cooldown: signalCooldown,
+                                max_signals_per_session: maxSignalsPerSession,
+                                max_daily_loss: maxDailyLoss,
+                                auto_flat_after_cutoff: autoFlatAfterCutoff,
+                                inverse_signals: inverseSignals
                             })
                         });
                         

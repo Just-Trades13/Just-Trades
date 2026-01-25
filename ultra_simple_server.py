@@ -4638,6 +4638,13 @@ def run_migrations():
         # Trader-level risk settings
         ('traders', 'add_delay', 'INTEGER DEFAULT 1'),
         ('traders', 'signal_count', 'INTEGER DEFAULT 0'),
+        ('traders', 'break_even_offset', 'INTEGER DEFAULT 0'),
+        ('traders', 'trail_trigger', 'INTEGER DEFAULT 0'),
+        ('traders', 'trail_freq', 'INTEGER DEFAULT 0'),
+        ('traders', 'signal_cooldown', 'INTEGER DEFAULT 0'),
+        ('traders', 'max_signals_per_session', 'INTEGER DEFAULT 0'),
+        ('traders', 'auto_flat_after_cutoff', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        ('traders', 'inverse_signals', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
     ]
 
     for table, column, col_type in migrations:
@@ -11558,6 +11565,40 @@ def api_update_trader(trader_id):
             updates.append(f'add_delay = {placeholder}')
             params.append(int(data['add_delay']) if data['add_delay'] else 1)
             logger.info(f"📝 Adding add_delay={data['add_delay']} to trader {trader_id} update")
+
+        # Break-even offset
+        if 'break_even_offset' in data:
+            updates.append(f'break_even_offset = {placeholder}')
+            params.append(int(data['break_even_offset']))
+
+        # Trailing stop settings
+        if 'trail_trigger' in data:
+            updates.append(f'trail_trigger = {placeholder}')
+            params.append(int(data['trail_trigger']))
+
+        if 'trail_freq' in data:
+            updates.append(f'trail_freq = {placeholder}')
+            params.append(int(data['trail_freq']))
+
+        # Signal cooldown
+        if 'signal_cooldown' in data:
+            updates.append(f'signal_cooldown = {placeholder}')
+            params.append(int(data['signal_cooldown']))
+
+        # Max signals per session
+        if 'max_signals_per_session' in data:
+            updates.append(f'max_signals_per_session = {placeholder}')
+            params.append(int(data['max_signals_per_session']))
+
+        # Auto flat after cutoff
+        if 'auto_flat_after_cutoff' in data:
+            updates.append(f'auto_flat_after_cutoff = {placeholder}')
+            params.append(bool(data['auto_flat_after_cutoff']) if is_postgres else (1 if data['auto_flat_after_cutoff'] else 0))
+
+        # Inverse signals
+        if 'inverse_signals' in data:
+            updates.append(f'inverse_signals = {placeholder}')
+            params.append(bool(data['inverse_signals']) if is_postgres else (1 if data['inverse_signals'] else 0))
 
         # Update account routing if provided
         if 'enabled_accounts' in data:
