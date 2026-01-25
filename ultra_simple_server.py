@@ -1784,32 +1784,47 @@ def _init_db_once():
     print("✅ SQLite initialized")
 
 def get_db_connection():
-    """Get fresh database connection - NO POOLING."""
+    """Get fresh database connection with retry logic for Neon serverless."""
     global _using_postgres, _db_url
-    
+
     # Initialize on first call
     _init_db_once()
-    
-    # PostgreSQL - create fresh connection each time
+
+    # PostgreSQL - create fresh connection with retry logic
     if _using_postgres and _db_url:
-        try:
-            import psycopg2
-            from psycopg2.extras import RealDictCursor
-            
-            # Add timeout to prevent health check hanging
-            conn = psycopg2.connect(_db_url, connect_timeout=10)
-            conn.cursor_factory = RealDictCursor
-            # Ensure clean state - rollback any previous transaction
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+
+        max_retries = 3
+        retry_delay = 0.5  # Start with 500ms
+        last_error = None
+
+        for attempt in range(max_retries):
             try:
-                conn.rollback()
-            except:
-                pass
-            return PostgresConnectionWrapper(conn, None)  # No pool
-        except Exception as e:
-            print(f"⚠️ PostgreSQL connection failed: {e}")
-            # Fall through to SQLite
-    
-    # SQLite fallback
+                # Add timeout to prevent hanging, use shorter timeout for retries
+                timeout = 10 if attempt == 0 else 5
+                conn = psycopg2.connect(_db_url, connect_timeout=timeout)
+                conn.cursor_factory = RealDictCursor
+                # Ensure clean state - rollback any previous transaction
+                try:
+                    conn.rollback()
+                except:
+                    pass
+                return PostgresConnectionWrapper(conn, None)  # No pool
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    import time
+                    print(f"⚠️ PostgreSQL connection attempt {attempt + 1}/{max_retries} failed: {e}. Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+
+        # All retries failed - raise exception instead of falling back to SQLite
+        # Falling back to SQLite would show missing data which is worse than an error
+        print(f"❌ PostgreSQL connection FAILED after {max_retries} attempts: {last_error}")
+        raise Exception(f"Database connection failed after {max_retries} attempts: {last_error}")
+
+    # SQLite fallback (only for local development when DATABASE_URL is not set)
     conn = sqlite3.connect('just_trades.db', timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
