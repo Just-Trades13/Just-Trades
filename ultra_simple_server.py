@@ -22899,6 +22899,45 @@ def api_paper_delete_trade():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/paper-trades/reset-all', methods=['POST'])
+def api_paper_reset_all():
+    """
+    Reset ALL paper trades - clears the entire paper_trades table.
+    Admin only - use for fresh start testing.
+    """
+    try:
+        import os
+        database_url = os.environ.get('DATABASE_URL')
+        use_postgres = bool(database_url)
+
+        if use_postgres:
+            import psycopg2
+            conn = psycopg2.connect(database_url)
+        else:
+            conn = sqlite3.connect('paper_trades.db')
+
+        cursor = conn.cursor()
+
+        # Count trades before deletion
+        cursor.execute('SELECT COUNT(*) FROM paper_trades')
+        count_before = cursor.fetchone()[0]
+
+        # Delete all paper trades
+        cursor.execute('DELETE FROM paper_trades')
+        conn.commit()
+        conn.close()
+
+        print(f"🗑️ RESET: Deleted {count_before} paper trades", flush=True)
+
+        return jsonify({
+            'success': True,
+            'deleted_count': count_before,
+            'message': f'Reset complete - deleted {count_before} paper trades'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/paper-trades/record', methods=['POST'])
 def api_paper_record_trade():
     """
