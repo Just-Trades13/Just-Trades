@@ -4750,8 +4750,32 @@ def index():
 
 @app.route('/api/run-migrations', methods=['POST', 'GET'])
 def run_migrations():
-    """Run pending database migrations to add missing columns."""
+    """Run pending database migrations to add missing columns.
+
+    Query params:
+        reset_paper_trades=1 - Also delete all paper trades (fresh start)
+    """
     results = []
+
+    # Check if we should reset paper trades
+    reset_paper = request.args.get('reset_paper_trades') == '1'
+    if reset_paper:
+        try:
+            import os
+            database_url = os.environ.get('DATABASE_URL')
+            if database_url:
+                import psycopg2
+                pconn = psycopg2.connect(database_url)
+                pcur = pconn.cursor()
+                pcur.execute('SELECT COUNT(*) FROM paper_trades')
+                count = pcur.fetchone()[0]
+                pcur.execute('DELETE FROM paper_trades')
+                pconn.commit()
+                pconn.close()
+                results.append(f"🗑️ RESET: Deleted {count} paper trades")
+        except Exception as e:
+            results.append(f"❌ Paper trades reset failed: {str(e)[:100]}")
+
     conn = get_db_connection()
     cursor = conn.cursor()
     is_postgres = is_using_postgres()
