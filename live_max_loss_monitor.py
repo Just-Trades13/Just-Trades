@@ -330,8 +330,9 @@ def _load_max_loss_accounts() -> dict:
 
         result = {'tradovate': [], 'projectx': []}
 
-        # Get Tradovate accounts with max_daily_loss > 0
-        # Note: subaccount_id in traders table is the actual Tradovate account ID
+        # Get Tradovate/NinjaTrader accounts with max_daily_loss > 0
+        # Note: NinjaTrader Brokerage uses Tradovate's backend API (same tokens, same WebSocket)
+        # subaccount_id in traders table is the actual Tradovate account ID
         cursor.execute('''
             SELECT
                 t.id as trader_id,
@@ -341,17 +342,19 @@ def _load_max_loss_accounts() -> dict:
                 t.subaccount_id,
                 a.tradovate_token,
                 a.environment,
-                a.name as account_name
+                a.name as account_name,
+                a.broker
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.enabled = TRUE
               AND t.max_daily_loss > 0
               AND a.tradovate_token IS NOT NULL
               AND t.subaccount_id IS NOT NULL
-              AND (a.broker IS NULL OR a.broker NOT IN ('ProjectX', 'projectx'))
+              AND (a.broker IS NULL OR a.broker IN ('Tradovate', 'tradovate', 'NinjaTrader', 'ninjatrader', ''))
         ''')
 
         for row in cursor.fetchall():
+            broker_type = row[8] or 'Tradovate'  # Default to Tradovate if NULL
             result['tradovate'].append({
                 'trader_id': row[0],
                 'recorder_id': row[1],
@@ -361,7 +364,7 @@ def _load_max_loss_accounts() -> dict:
                 'access_token': row[5],
                 'is_demo': row[6] != 'live',
                 'account_name': row[7],
-                'broker': 'tradovate'
+                'broker': broker_type  # Could be 'Tradovate' or 'NinjaTrader'
             })
 
         # Get ProjectX accounts with max_daily_loss > 0
