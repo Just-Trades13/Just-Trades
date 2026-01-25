@@ -22642,6 +22642,52 @@ def api_paper_test_direct():
         return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
+@app.route('/api/paper-trades/delete', methods=['POST'])
+def api_paper_delete_trade():
+    """Delete a specific paper trade by ID (for cleaning up bad data)"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+        trade_id = data.get('trade_id')
+        if not trade_id:
+            return jsonify({'success': False, 'error': 'trade_id required'}), 400
+
+        import os
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url:
+            import psycopg2
+            conn = psycopg2.connect(database_url)
+            ph = '%s'
+        else:
+            conn = sqlite3.connect('paper_trades.db')
+            ph = '?'
+
+        cursor = conn.cursor()
+
+        # Get trade info before deleting
+        cursor.execute(f'SELECT recorder_id, symbol, side, pnl FROM paper_trades WHERE id = {ph}', (trade_id,))
+        trade = cursor.fetchone()
+
+        if not trade:
+            conn.close()
+            return jsonify({'success': False, 'error': f'Trade {trade_id} not found'}), 404
+
+        # Delete the trade
+        cursor.execute(f'DELETE FROM paper_trades WHERE id = {ph}', (trade_id,))
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'deleted_trade_id': trade_id,
+            'message': f'Deleted trade {trade_id}'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/paper-trades/record', methods=['POST'])
 def api_paper_record_trade():
     """
