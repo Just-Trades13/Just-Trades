@@ -10487,25 +10487,27 @@ def api_create_recorder():
                 initial_position_size, add_position_size,
                 tp_units, trim_units, tp_targets, tp_enabled,
                 sl_enabled, sl_amount, sl_units, sl_type, trailing_sl,
-                break_even_enabled, break_even_ticks,
+                break_even_enabled, break_even_ticks, break_even_offset,
+                trail_trigger, trail_freq,
                 avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
                 add_delay, max_contracts_per_trade, option_premium_filter, direction_filter,
                 time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
                 time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
                 signal_cooldown, max_signals_per_session, max_daily_loss, auto_flat_after_cutoff,
-                notes, recording_enabled
+                same_direction_ignore, notes, recording_enabled
             ) VALUES (
                 {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph},
                 {ph}, {ph},
                 {ph}, {ph}, {ph}, {ph},
                 {ph}, {ph}, {ph}, {ph}, {ph},
+                {ph}, {ph}, {ph},
                 {ph}, {ph},
                 {ph}, {ph}, {ph}, {ph},
                 {ph}, {ph}, {ph}, {ph},
                 {ph}, {ph}, {ph},
                 {ph}, {ph}, {ph},
                 {ph}, {ph}, {ph}, {ph},
-                {ph}, {ph}
+                {ph}, {ph}, {ph}
             )'''
         
         if is_postgres:
@@ -10536,6 +10538,10 @@ def api_create_recorder():
             # Break-Even
             to_bool(data.get('break_even_enabled', False)),
             data.get('break_even_ticks', 10),
+            data.get('break_even_offset', 0),
+            # Trailing Stop
+            data.get('trail_trigger', 0),
+            data.get('trail_freq', 0),
             # Avg Down
             to_bool(data.get('avg_down_enabled', False)),
             data.get('avg_down_amount', 0),
@@ -10559,6 +10565,7 @@ def api_create_recorder():
             data.get('max_daily_loss', 0),
             to_bool(data.get('auto_flat_after_cutoff', False)),
             # Misc
+            to_bool(data.get('same_direction_ignore', False)),
             data.get('notes', ''),
             to_bool(data.get('recording_enabled', True)),
         ]
