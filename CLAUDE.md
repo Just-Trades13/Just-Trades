@@ -746,5 +746,83 @@ git reset --hard 4e55a38
 
 ---
 
-*Last updated: Jan 25, 2026*
+## 📝 Session Log - January 26, 2026
+
+### Stop Loss Not Working on Tradovate Prop Firm Accounts (CRITICAL FIX)
+
+**User Report:** "users are reporting stop loss not working when using the system on their tradovate propfirm accounts"
+
+**Root Cause Found:**
+The SL placement code did NOT validate that `broker_avg` (fill price) was valid before calculating the SL price. When the order fill wasn't immediately available from the API (common with prop firm accounts due to timing), `broker_avg` was set to 0, resulting in:
+- LONG positions: `sl_price = 0 - (sl_ticks * tick_size) = -5.0` (invalid negative price)
+- SHORT positions: `sl_price = 0 + (sl_ticks * tick_size) = 5.0` (invalid low price)
+
+Tradovate rejected these invalid stop orders, leaving positions unprotected.
+
+**Fixes Applied (`recorder_service.py`):**
+
+1. **Added retry logic for fill price detection (lines 1658-1700):**
+   - Now retries up to 3 times with progressive delays (0.5s, 1.0s, 1.5s) to get position fill price
+   - Logs warnings on each retry attempt
+   - Logs critical error if fill price can't be obtained after all attempts
+
+2. **Added validation before SL order placement (lines 1871-1913):**
+   - Checks `broker_avg > 0` before calculating SL price
+   - Checks `sl_price > 0` before placing order
+   - Clear error logging when SL can't be placed due to invalid data
+   - Logs full response from Tradovate when SL order fails
+
+**Code Changes:**
+
+```python
+# BEFORE (problematic):
+if sl_ticks and sl_ticks > 0:
+    if broker_side == 'LONG':
+        sl_price = broker_avg - (sl_ticks * tick_size)  # Could be negative if broker_avg=0!
+    # ... placed order with potentially invalid price
+
+# AFTER (fixed):
+if sl_ticks and sl_ticks > 0:
+    if not broker_avg or broker_avg <= 0:
+        logger.error(f"CANNOT PLACE SL: broker_avg is invalid ({broker_avg})")
+        # Position logged as unprotected
+    else:
+        if broker_side == 'LONG':
+            sl_price = broker_avg - (sl_ticks * tick_size)
+        # Validate calculated price
+        if sl_price <= 0:
+            logger.error(f"CANNOT PLACE SL: calculated sl_price is invalid ({sl_price})")
+        else:
+            # Place order with validated price
+```
+
+**Why This Affected Prop Firms More:**
+- Prop firm accounts may have slightly different order processing timing
+- API responses might not include `avgFillPrice` immediately
+- Position data might take longer to propagate
+
+**Log Messages to Watch For:**
+```
+❌ [{acct_name}] CANNOT PLACE SL: broker_avg is invalid (0)
+❌ [{acct_name}] CRITICAL: Could not get fill price after 3 attempts!
+⚠️ [{acct_name}] Position not visible yet (attempt 1/3) - retrying...
+✅ [{acct_name}] SL PLACED @ {price}
+```
+
+**Testing Checklist:**
+- [ ] Place trade on Tradovate prop firm account
+- [ ] Verify SL order appears on broker
+- [ ] Check logs for "SL PLACED" message with valid price
+- [ ] If SL fails, check for "CANNOT PLACE SL" error message
+
+**Key Code Locations:**
+
+| Feature | File | Lines |
+|---------|------|-------|
+| Fill price retry logic | `recorder_service.py` | 1658-1700 |
+| SL validation & placement | `recorder_service.py` | 1871-1913 |
+
+---
+
+*Last updated: Jan 26, 2026*
 *Author: Claude Code Session*

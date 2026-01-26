@@ -1656,25 +1656,35 @@ def execute_trade_simple(
                         logger.info(f"📊 [{acct_name}] Using fill price from order result: {broker_side} {broker_qty} @ {broker_avg} (0 extra API calls!)")
                     else:
                         # Only fetch position if we don't have fill price
-                        # OPTIMIZATION: Single call with 1 second wait (not 10 calls!)
-                        await asyncio.sleep(1.0)  # Give order time to fill
-                        positions = await tradovate.get_positions(account_id=tradovate_account_id)
-                        
-                        for pos in positions:
-                            pos_symbol = str(pos.get('symbol', '')).upper()
-                            if symbol_root in pos_symbol:
-                                net_pos = pos.get('netPos', 0)
-                                if net_pos != 0:
-                                    broker_avg = pos.get('netPrice')
-                                    broker_qty = abs(net_pos)
-                                    broker_side = 'LONG' if net_pos > 0 else 'SHORT'
-                                    contract_id = pos.get('contractId')
-                                    logger.info(f"📊 [{acct_name}] POSITION: {broker_side} {broker_qty} @ {broker_avg} (1 API call)")
-                                    break
-                        
-                        if not broker_avg:
+                        # RETRY LOGIC: Try up to 3 times with delays to get fill price
+                        # This is critical for TP/SL placement - without a valid price, orders will fail
+                        max_position_retries = 3
+                        retry_delays = [0.5, 1.0, 1.5]  # Progressive delays
+
+                        for retry_num in range(max_position_retries):
+                            await asyncio.sleep(retry_delays[retry_num])  # Give order time to fill
+                            positions = await tradovate.get_positions(account_id=tradovate_account_id)
+
+                            for pos in positions:
+                                pos_symbol = str(pos.get('symbol', '')).upper()
+                                if symbol_root in pos_symbol:
+                                    net_pos = pos.get('netPos', 0)
+                                    if net_pos != 0:
+                                        broker_avg = pos.get('netPrice')
+                                        broker_qty = abs(net_pos)
+                                        broker_side = 'LONG' if net_pos > 0 else 'SHORT'
+                                        contract_id = pos.get('contractId')
+                                        logger.info(f"📊 [{acct_name}] POSITION: {broker_side} {broker_qty} @ {broker_avg} (attempt {retry_num + 1})")
+                                        break
+
+                            if broker_avg and broker_avg > 0:
+                                break  # Got valid fill price, stop retrying
+                            elif retry_num < max_position_retries - 1:
+                                logger.warning(f"⚠️ [{acct_name}] Position not visible yet (attempt {retry_num + 1}/{max_position_retries}) - retrying...")
+
+                        if not broker_avg or broker_avg <= 0:
                             # Fallback: Use order result or existing position info
-                            logger.warning(f"⚠️ [{acct_name}] Position not visible yet - using order estimate")
+                            logger.warning(f"⚠️ [{acct_name}] Position not visible after {max_position_retries} attempts - using fallback")
                             # For DCA, we already know the existing position from earlier check
                             if has_existing_position and existing_position_qty > 0:
                                 # Estimate new average after DCA
@@ -1683,7 +1693,11 @@ def execute_trade_simple(
                                 # Use a placeholder - TP will still be calculated
                                 broker_avg = order_result.get('avgFillPrice', 0) or 0
                             else:
-                                broker_avg = 0  # Will trigger TP placement to skip if still 0
+                                broker_avg = 0  # Will trigger TP/SL placement to skip
+
+                            if broker_avg <= 0:
+                                logger.error(f"❌ [{acct_name}] CRITICAL: Could not get fill price after {max_position_retries} attempts!")
+                                logger.error(f"   TP/SL orders will NOT be placed - position is UNPROTECTED")
                     
                     # STEP 2.5: Use apply_risk_orders if risk_config has trail or break_even
                     if use_apply_risk_orders and risk_config and broker_avg:
@@ -1867,34 +1881,50 @@ def execute_trade_simple(
                     # STEP 5: Place SL order if configured (sl_ticks > 0)
                     sl_price = None
                     sl_order_id = None
-                    
+
                     if sl_ticks and sl_ticks > 0:
-                        # Calculate SL price (opposite direction from TP)
-                        if broker_side == 'LONG':
-                            sl_price = broker_avg - (sl_ticks * tick_size)
-                            sl_action = 'Sell'  # SL sells to close LONG
+                        # CRITICAL: Validate broker_avg before calculating SL price
+                        # If broker_avg is 0 or None, we can't calculate a valid SL price
+                        if not broker_avg or broker_avg <= 0:
+                            logger.error(f"❌ [{acct_name}] CANNOT PLACE SL: broker_avg is invalid ({broker_avg})")
+                            logger.error(f"   This usually means the fill price wasn't available from order result")
+                            logger.error(f"   SL would have been calculated as: {broker_avg} - ({sl_ticks} * {tick_size}) = INVALID")
+                            logger.error(f"   ⚠️ POSITION HAS NO STOP LOSS PROTECTION!")
                         else:
-                            sl_price = broker_avg + (sl_ticks * tick_size)
-                            sl_action = 'Buy'   # SL buys to close SHORT
-                        
-                        logger.info(f"📊 [{acct_name}] PLACING SL @ {sl_price} ({sl_ticks} ticks)")
-                        sl_order_data = {
-                            "accountId": tradovate_account_id,
-                            "accountSpec": tradovate_account_spec,
-                            "symbol": tradovate_symbol,
-                            "action": sl_action,
-                            "orderQty": broker_qty,
-                            "orderType": "Stop",
-                            "stopPrice": sl_price,
-                            "timeInForce": "GTC",
-                            "isAutomated": True
-                        }
-                        sl_result = await tradovate.place_order_smart(sl_order_data)
-                        if sl_result and sl_result.get('success'):
-                            sl_order_id = sl_result.get('orderId') or sl_result.get('id')
-                            logger.info(f"✅ [{acct_name}] SL PLACED @ {sl_price}")
-                        else:
-                            logger.warning(f"⚠️ [{acct_name}] SL order failed: {sl_result}")
+                            # Calculate SL price (opposite direction from TP)
+                            if broker_side == 'LONG':
+                                sl_price = broker_avg - (sl_ticks * tick_size)
+                                sl_action = 'Sell'  # SL sells to close LONG
+                            else:
+                                sl_price = broker_avg + (sl_ticks * tick_size)
+                                sl_action = 'Buy'   # SL buys to close SHORT
+
+                            # Additional validation: SL price must be positive
+                            if sl_price <= 0:
+                                logger.error(f"❌ [{acct_name}] CANNOT PLACE SL: calculated sl_price is invalid ({sl_price})")
+                                logger.error(f"   broker_avg={broker_avg}, sl_ticks={sl_ticks}, tick_size={tick_size}")
+                                logger.error(f"   ⚠️ POSITION HAS NO STOP LOSS PROTECTION!")
+                            else:
+                                logger.info(f"📊 [{acct_name}] PLACING SL @ {sl_price} ({sl_ticks} ticks from entry {broker_avg})")
+                                sl_order_data = {
+                                    "accountId": tradovate_account_id,
+                                    "accountSpec": tradovate_account_spec,
+                                    "symbol": tradovate_symbol,
+                                    "action": sl_action,
+                                    "orderQty": broker_qty,
+                                    "orderType": "Stop",
+                                    "stopPrice": sl_price,
+                                    "timeInForce": "GTC",
+                                    "isAutomated": True
+                                }
+                                sl_result = await tradovate.place_order_smart(sl_order_data)
+                                if sl_result and sl_result.get('success'):
+                                    sl_order_id = sl_result.get('orderId') or sl_result.get('id')
+                                    logger.info(f"✅ [{acct_name}] SL PLACED @ {sl_price}")
+                                else:
+                                    error_msg = sl_result.get('error', 'Unknown error') if sl_result else 'No response'
+                                    logger.warning(f"⚠️ [{acct_name}] SL order failed: {error_msg}")
+                                    logger.warning(f"   Full response: {sl_result}")
                     
                     # CRITICAL: Register TP/SL as OCO pair so one cancels the other when filled
                     if tp_order_id and sl_order_id:
