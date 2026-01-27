@@ -12718,7 +12718,11 @@ def broker_execution_worker():
                     logger.error(f"   ⚠️ NO RETRY - task abandoned to prevent duplicate trades")
                     _broker_execution_stats['total_failed'] += 1
                     _broker_execution_stats['last_error'] = error
-                    
+
+                    # Log failure details for debugging endpoint
+                    failed_accts = result.get('failed_accounts', []) if result else []
+                    log_broker_failure(recorder_id, action, ticker, error, failed_accts)
+
                     # Discord notification for failed trade
                     try:
                         if DISCORD_NOTIFICATIONS_ENABLED:
@@ -12791,6 +12795,30 @@ _broker_execution_stats = {
     'last_execution_time': None,
     'last_error': None
 }
+
+# Track recent failed executions for debugging
+_broker_failed_executions = []  # List of {timestamp, recorder, action, ticker, error}
+_broker_failed_max_size = 50  # Keep last 50 failures
+
+def log_broker_failure(recorder_id, action, ticker, error, failed_accounts=None):
+    """Log a broker execution failure for debugging"""
+    global _broker_failed_executions
+    from datetime import datetime
+    entry = {
+        'timestamp': datetime.now().isoformat(),
+        'recorder_id': recorder_id,
+        'action': action,
+        'ticker': ticker,
+        'error': str(error)[:200],
+        'failed_accounts': failed_accounts or []
+    }
+    _broker_failed_executions.append(entry)
+    if len(_broker_failed_executions) > _broker_failed_max_size:
+        _broker_failed_executions = _broker_failed_executions[-_broker_failed_max_size:]
+
+def get_broker_failures(limit=20):
+    """Get recent broker failures"""
+    return list(reversed(_broker_failed_executions[-limit:]))
 
 # Register for thread health monitoring
 def restart_broker_execution_worker():
@@ -27006,6 +27034,19 @@ def api_broker_execution_status():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/broker-execution/failures', methods=['GET'])
+def api_broker_failures():
+    """Get recent broker execution failures with details for debugging."""
+    limit = request.args.get('limit', 20, type=int)
+    failures = get_broker_failures(limit)
+    return jsonify({
+        'success': True,
+        'total_failures': len(failures),
+        'failures': failures
+    })
+
 
 @app.route('/api/recorders/<int:recorder_id>/execution-status', methods=['GET'])
 def api_recorder_execution_status(recorder_id):
