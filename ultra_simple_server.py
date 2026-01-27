@@ -12989,9 +12989,17 @@ def process_webhook_directly(webhook_token):
         
         if not recorder_row:
             _logger.warning(f"Webhook received for unknown token: {webhook_token[:8]}...")
+            # Log to activity for monitoring
+            log_webhook_activity(
+                recorder_name=f"Token:{webhook_token[:8]}",
+                action='Unknown',
+                symbol='Unknown',
+                status='failed',
+                error='Invalid webhook token'
+            )
             conn.close()
             return jsonify({'success': False, 'error': 'Invalid webhook token'}), 404
-        
+
         recorder = dict(recorder_row)
         recorder_id = recorder['id']
         recorder_name = recorder['name']
@@ -13000,9 +13008,17 @@ def process_webhook_directly(webhook_token):
         # Check if recorder is enabled - if disabled, reject the signal
         if not recorder.get('recording_enabled', 1):
             _logger.info(f"⚠️ Webhook BLOCKED for '{recorder_name}' - recorder is DISABLED")
+            # Log to activity for monitoring
+            log_webhook_activity(
+                recorder_name=recorder_name,
+                action='Unknown',
+                symbol='Unknown',
+                status='blocked',
+                error='Recorder disabled'
+            )
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder is disabled', 'blocked': True}), 200
-        
+
         # Parse incoming data
         data = request.get_json(force=True, silent=True) or {}
         if not data:
@@ -13010,8 +13026,16 @@ def process_webhook_directly(webhook_token):
                 data = json.loads(request.data.decode('utf-8'))
             except:
                 data = request.form.to_dict() or {}
-        
+
         if not data:
+            # Log to activity for monitoring
+            log_webhook_activity(
+                recorder_name=recorder_name,
+                action='Unknown',
+                symbol='Unknown',
+                status='failed',
+                error='No data received'
+            )
             conn.close()
             return jsonify({'success': False, 'error': 'No data received'}), 400
         
@@ -13162,11 +13186,27 @@ def process_webhook_directly(webhook_token):
             # If we still have no action, try to use the raw action from TradingView
             # TradingView {{strategy.order.action}} returns "buy" or "sell"
             _logger.warning(f"⚠️ No action determined for {recorder_name}, data: {data}")
+            # Log to activity for monitoring
+            log_webhook_activity(
+                recorder_name=recorder_name,
+                action='Unknown',
+                symbol=ticker,
+                status='failed',
+                error='Could not determine action'
+            )
             conn.close()
             return jsonify({'success': False, 'error': 'Could not determine action from message'}), 400
-        
+
         if action not in valid_actions:
             _logger.warning(f"Invalid action '{action}' for recorder {recorder_name}")
+            # Log to activity for monitoring
+            log_webhook_activity(
+                recorder_name=recorder_name,
+                action=action,
+                symbol=ticker,
+                status='failed',
+                error=f'Invalid action: {action}'
+            )
             conn.close()
             return jsonify({'success': False, 'error': f'Invalid action: {action}'}), 400
         
@@ -13451,6 +13491,14 @@ def process_webhook_directly(webhook_token):
                     _logger.warning(f"   Window 1 (enabled): {time_filter_1_start} - {time_filter_1_stop}")
                 if has_time_filter_2:
                     _logger.warning(f"   Window 2 (enabled): {time_filter_2_start} - {time_filter_2_stop}")
+                # Log to activity so time-blocked signals appear in monitoring
+                log_webhook_activity(
+                    recorder_name=recorder_name,
+                    action=action,
+                    symbol=ticker,
+                    status='blocked',
+                    error=f'Time filter ({now.strftime("%I:%M %p")})'
+                )
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Outside trading hours ({now.strftime("%I:%M %p")})'}), 200
             _logger.info(f"✅ Time filter passed: {now.strftime('%I:%M %p')} in window")
@@ -13732,13 +13780,21 @@ def process_webhook_directly(webhook_token):
             cursor.execute(f'SELECT COUNT(*) as count FROM traders WHERE recorder_id = {placeholder} AND enabled = {1 if not is_postgres else "TRUE"}', (recorder_id,))
             enabled_count = cursor.fetchone()[0] if cursor.rowcount > 0 else 0
             
-            conn.close()
             _logger.error(f"❌ No active trader linked to recorder '{recorder_name}' (recorder_id={recorder_id})")
             _logger.error(f"   Total traders for this recorder: {trader_count}")
             _logger.error(f"   Enabled traders for this recorder: {enabled_count}")
             _logger.error(f"   ACTION REQUIRED: Go to /traders and create/link a trader to recorder '{recorder_name}'")
+            # Log to activity so signal appears in monitoring (CRITICAL for debugging)
+            log_webhook_activity(
+                recorder_name=recorder_name,
+                action=action if 'action' in dir() else 'Unknown',
+                symbol=ticker if 'ticker' in dir() else 'Unknown',
+                status='blocked',
+                error=f'No trader linked (total: {trader_count}, enabled: {enabled_count})'
+            )
+            conn.close()
             return jsonify({
-                'success': False, 
+                'success': False,
                 'error': 'No trader linked',
                 'recorder_id': recorder_id,
                 'recorder_name': recorder_name,
@@ -13929,6 +13985,14 @@ def process_webhook_directly(webhook_token):
             )
             if is_same_direction:
                 _logger.info(f"⏭️ BLOCKED: same_direction_ignore=True and already have {existing_side} position (trade #{existing_position['id']})")
+                # Log to activity so blocked signals appear in monitoring
+                log_webhook_activity(
+                    recorder_name=recorder_name,
+                    action=trade_action,
+                    symbol=ticker,
+                    status='blocked',
+                    error=f'same_direction_ignore (already {existing_side})'
+                )
                 conn.close()
                 return jsonify({
                     'success': True,
