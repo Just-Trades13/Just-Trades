@@ -1527,6 +1527,34 @@ _webhook_processing_count = 0  # Total webhooks processed since startup
 _webhook_error_count = 0  # Total webhook errors since startup
 _webhook_stuck_threshold = 300  # 5 minutes - if webhook received but not processed, it's stuck
 
+# WEBHOOK ACTIVITY LOG - Track recent webhook processing for debugging
+# ============================================================================
+_webhook_activity_log = []  # List of recent webhook activities
+_webhook_activity_max_size = 100  # Keep last 100 webhook activities
+
+def log_webhook_activity(recorder_name, action, symbol, status, error=None, broker_result=None, trade_id=None):
+    """Log webhook activity for monitoring"""
+    global _webhook_activity_log
+    from datetime import datetime
+    activity = {
+        'timestamp': datetime.now().isoformat(),
+        'recorder': recorder_name,
+        'action': action,
+        'symbol': symbol,
+        'status': status,  # 'received', 'processing', 'success', 'failed', 'blocked'
+        'error': error,
+        'broker_result': broker_result,
+        'trade_id': trade_id
+    }
+    _webhook_activity_log.append(activity)
+    # Keep only last N entries
+    if len(_webhook_activity_log) > _webhook_activity_max_size:
+        _webhook_activity_log = _webhook_activity_log[-_webhook_activity_max_size:]
+
+def get_webhook_activity_log(limit=50):
+    """Get recent webhook activity log"""
+    return list(reversed(_webhook_activity_log[-limit:]))
+
 # WEBHOOK DEDUPLICATION - Prevent duplicate webhook processing
 # ============================================================================
 _webhook_dedup_cache = {}  # Key: "token:action:body_hash" -> timestamp
@@ -6821,6 +6849,31 @@ def broker_queue_clear_cache():
     """Clear broker API cache - useful after account changes."""
     broker_api_queue.clear_cache()
     return jsonify({'success': True, 'message': 'Cache cleared'})
+
+
+@app.route('/api/webhook-activity')
+def webhook_activity():
+    """Get recent webhook activity log - shows all incoming webhooks and their processing status."""
+    limit = request.args.get('limit', 50, type=int)
+    activity = get_webhook_activity_log(limit)
+
+    # Calculate stats
+    total = len(activity)
+    success_count = len([a for a in activity if a.get('status') == 'success'])
+    failed_count = len([a for a in activity if a.get('status') == 'failed'])
+    blocked_count = len([a for a in activity if a.get('status') == 'blocked'])
+
+    return jsonify({
+        'success': True,
+        'stats': {
+            'total': total,
+            'success': success_count,
+            'failed': failed_count,
+            'blocked': blocked_count,
+            'success_rate': f"{(success_count/total*100):.1f}%" if total > 0 else "N/A"
+        },
+        'activity': activity
+    })
 
 
 @app.route('/api/migrate-db', methods=['POST'])
@@ -12791,6 +12844,14 @@ def process_webhook_directly(webhook_token):
         age = webhook_start_time - last_seen
         if age < _webhook_dedup_window:
             _logger.warning(f"⚠️ DUPLICATE WEBHOOK BLOCKED: Same signal received {age:.2f}s ago (token: {webhook_token[:8]}...)")
+            # Log blocked webhook for monitoring
+            log_webhook_activity(
+                recorder_name=f"Token:{webhook_token[:8]}",
+                action='Unknown',
+                symbol='Unknown',
+                status='blocked',
+                error=f'Duplicate signal ({age:.2f}s ago)'
+            )
             return jsonify({
                 'success': False,
                 'blocked': True,
@@ -14331,7 +14392,17 @@ def process_webhook_directly(webhook_token):
         _webhook_last_processed = time.time()
         _webhook_processing_count += 1
         processing_time = _webhook_last_processed - webhook_start_time
-        
+
+        # Log to webhook activity for monitoring
+        log_webhook_activity(
+            recorder_name=recorder_name,
+            action=trade_action,
+            symbol=ticker,
+            status='success',
+            broker_result='queued' if broker_execution_queue.qsize() > 0 else 'no_broker',
+            trade_id=recorded_trade_id
+        )
+
         # Log final status
         queue_status = broker_execution_queue.qsize()
         worker_status = broker_execution_thread.is_alive() if broker_execution_thread else False
@@ -14356,6 +14427,17 @@ def process_webhook_directly(webhook_token):
     except NameError as name_err:
         # Track webhook error
         _webhook_error_count += 1
+        # Log to webhook activity for monitoring
+        try:
+            log_webhook_activity(
+                recorder_name=recorder_name if 'recorder_name' in locals() else 'Unknown',
+                action=trade_action if 'trade_action' in locals() else 'Unknown',
+                symbol=ticker if 'ticker' in locals() else 'Unknown',
+                status='failed',
+                error=f"NameError: {str(name_err)}"
+            )
+        except:
+            pass
         # Special handling for NameError (like 'logger' not defined)
         import logging
         safe_logger = logging.getLogger('webhook_handler')
@@ -14370,6 +14452,17 @@ def process_webhook_directly(webhook_token):
     except Exception as e:
         # Track webhook error
         _webhook_error_count += 1
+        # Log to webhook activity for monitoring
+        try:
+            log_webhook_activity(
+                recorder_name=recorder_name if 'recorder_name' in locals() else 'Unknown',
+                action=trade_action if 'trade_action' in locals() else 'Unknown',
+                symbol=ticker if 'ticker' in locals() else 'Unknown',
+                status='failed',
+                error=str(e)
+            )
+        except:
+            pass
         # Safe error handling - ensure we have a logger
         import logging
         safe_logger = logging.getLogger('webhook_handler')
