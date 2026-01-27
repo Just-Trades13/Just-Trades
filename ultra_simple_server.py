@@ -1511,17 +1511,18 @@ BATCH_SIZE = 50  # Process signals in batches for faster DB writes
 BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 
 # ============================================================================
-# FAST WEBHOOK QUEUE - Accept webhooks INSTANTLY, process in background
+# FAST WEBHOOK QUEUE - Accept webhooks INSTANTLY, process in PARALLEL
 # ============================================================================
 # CRITICAL: TradingView webhooks timeout after 5-10 seconds. If we do too much
 # work in the webhook handler, signals get dropped. This queue accepts webhooks
-# immediately (under 50ms) and processes them in background.
+# immediately (under 50ms) and processes them in parallel background workers.
 _fast_webhook_queue = Queue(maxsize=10000)
 _fast_webhook_enabled = True  # Set to False to use synchronous processing
+_fast_webhook_worker_count = 10  # Number of parallel workers for instant processing
 
-def fast_webhook_worker():
+def fast_webhook_worker(worker_id):
     """Background worker that processes raw webhooks from the fast queue"""
-    logger.info("🚀 Fast webhook worker started - processing webhooks in background")
+    logger.info(f"🚀 Fast webhook worker #{worker_id} started")
 
     while True:
         try:
@@ -1531,9 +1532,10 @@ def fast_webhook_worker():
             token = webhook_data.get('token')
             body = webhook_data.get('body')
             received_at = webhook_data.get('received_at')
+            delay = time.time() - received_at
 
             # Log that we're processing
-            logger.info(f"📦 Processing queued webhook: token={token[:8]}... (queued {time.time() - received_at:.2f}s ago)")
+            logger.info(f"⚡ Worker #{worker_id} processing webhook: token={token[:8]}... (delay: {delay:.3f}s)")
 
             # Process the webhook using the full handler
             try:
@@ -1545,18 +1547,22 @@ def fast_webhook_worker():
                 ):
                     process_webhook_directly(token)
             except Exception as proc_err:
-                logger.error(f"❌ Error processing queued webhook: {proc_err}")
+                logger.error(f"❌ Worker #{worker_id} error processing webhook: {proc_err}")
 
             _fast_webhook_queue.task_done()
 
         except Empty:
             continue  # Queue empty, keep waiting
         except Exception as e:
-            logger.error(f"Fast webhook worker error: {e}")
+            logger.error(f"Fast webhook worker #{worker_id} error: {e}")
 
-# Start the fast webhook worker thread
-_fast_webhook_thread = threading.Thread(target=fast_webhook_worker, daemon=True, name="FastWebhookWorker")
-_fast_webhook_thread.start()
+# Start multiple parallel webhook worker threads for INSTANT processing
+_fast_webhook_threads = []
+for i in range(_fast_webhook_worker_count):
+    t = threading.Thread(target=fast_webhook_worker, args=(i,), daemon=True, name=f"FastWebhookWorker-{i}")
+    t.start()
+    _fast_webhook_threads.append(t)
+logger.info(f"🚀 Started {_fast_webhook_worker_count} parallel webhook workers for instant execution")
 
 # ============================================================================
 # BROKER EXECUTION QUEUE - Trade Manager Style (Async, Non-Blocking)
