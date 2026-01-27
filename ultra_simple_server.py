@@ -1563,13 +1563,21 @@ def fast_webhook_worker(worker_id):
             import traceback
             logger.error(traceback.format_exc())
 
-# Start multiple parallel webhook worker threads for INSTANT processing
+# Worker threads will be started AFTER app is created (see start_fast_webhook_workers())
 _fast_webhook_threads = []
-for i in range(_fast_webhook_worker_count):
-    t = threading.Thread(target=fast_webhook_worker, args=(i,), daemon=True, name=f"FastWebhookWorker-{i}")
-    t.start()
-    _fast_webhook_threads.append(t)
-logger.info(f"🚀 Started {_fast_webhook_worker_count} parallel webhook workers for instant execution")
+
+def start_fast_webhook_workers():
+    """Start the fast webhook worker threads. Must be called AFTER app is created."""
+    global _fast_webhook_threads
+    if _fast_webhook_threads:
+        logger.info("Fast webhook workers already started")
+        return
+
+    for i in range(_fast_webhook_worker_count):
+        t = threading.Thread(target=fast_webhook_worker, args=(i,), daemon=True, name=f"FastWebhookWorker-{i}")
+        t.start()
+        _fast_webhook_threads.append(t)
+    logger.info(f"🚀 Started {_fast_webhook_worker_count} parallel webhook workers for instant execution")
 
 # ============================================================================
 # BROKER EXECUTION QUEUE - Trade Manager Style (Async, Non-Blocking)
@@ -27782,5 +27790,12 @@ if __name__ == '__main__':
         logger.info("✅ Live max loss monitor started (WebSocket)")
     except Exception as e:
         logger.warning(f"⚠️ Live max loss monitor failed to start: {e}")
+
+    # Start fast webhook workers (MUST be after app is created)
+    try:
+        start_fast_webhook_workers()
+        logger.info("✅ Fast webhook workers started (10 parallel)")
+    except Exception as e:
+        logger.error(f"❌ Fast webhook workers failed to start: {e}")
 
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
