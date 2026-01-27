@@ -12957,6 +12957,9 @@ def process_webhook_directly(webhook_token):
         cutoff = webhook_start_time - 60  # Keep last 60 seconds
         _webhook_dedup_cache = {k: v for k, v in _webhook_dedup_cache.items() if v > cutoff}
 
+    # Log that we're starting to process (helps track where signals get lost)
+    _logger.info(f"🚀 PROCESSING WEBHOOK: token={webhook_token[:8]}... (passed dedup check)")
+
     try:
         # Import helper functions (broker execution is queued, not called here)
         from recorder_service import (
