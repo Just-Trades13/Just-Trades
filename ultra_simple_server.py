@@ -1539,15 +1539,20 @@ def fast_webhook_worker(worker_id):
 
             # Process the webhook using the full handler
             try:
+                # Convert body to bytes if it's a string (required for test_request_context)
+                body_bytes = body.encode('utf-8') if isinstance(body, str) else body
                 with app.test_request_context(
                     f'/webhook/{token}',
                     method='POST',
-                    data=body,
+                    data=body_bytes,
                     content_type='application/json'
                 ):
                     process_webhook_directly(token)
+                logger.info(f"✅ Worker #{worker_id} completed webhook: token={token[:8]}...")
             except Exception as proc_err:
                 logger.error(f"❌ Worker #{worker_id} error processing webhook: {proc_err}")
+                import traceback
+                logger.error(traceback.format_exc())
 
             _fast_webhook_queue.task_done()
 
@@ -1555,6 +1560,8 @@ def fast_webhook_worker(worker_id):
             continue  # Queue empty, keep waiting
         except Exception as e:
             logger.error(f"Fast webhook worker #{worker_id} error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
 # Start multiple parallel webhook worker threads for INSTANT processing
 _fast_webhook_threads = []
