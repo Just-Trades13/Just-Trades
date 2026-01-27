@@ -12968,9 +12968,11 @@ def process_webhook_directly(webhook_token):
             get_tick_size,
             get_tick_value
         )
-        
+
         # Find recorder by webhook token
+        _logger.info(f"📡 Getting DB connection for {webhook_token[:8]}...")
         conn = get_db_connection()
+        _logger.info(f"✅ DB connection acquired for {webhook_token[:8]}")
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         placeholder = '%s' if is_postgres else '?'
@@ -12993,7 +12995,8 @@ def process_webhook_directly(webhook_token):
         recorder = dict(recorder_row)
         recorder_id = recorder['id']
         recorder_name = recorder['name']
-        
+        _logger.info(f"✅ Found recorder '{recorder_name}' (ID: {recorder_id}) for {webhook_token[:8]}")
+
         # Check if recorder is enabled - if disabled, reject the signal
         if not recorder.get('recording_enabled', 1):
             _logger.info(f"⚠️ Webhook BLOCKED for '{recorder_name}' - recorder is DISABLED")
