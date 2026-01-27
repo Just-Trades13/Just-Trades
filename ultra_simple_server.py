@@ -27,7 +27,7 @@ import threading
 import secrets
 import requests
 from typing import Optional
-from queue import Queue, Empty
+from queue import Queue, Empty, Full
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
 from flask_socketio import SocketIO, emit
 from datetime import datetime, timedelta
@@ -1509,6 +1509,54 @@ def notify_via_push(user_id: int, title: str, body: str, url: str = None):
 signal_queue = Queue(maxsize=10000)
 BATCH_SIZE = 50  # Process signals in batches for faster DB writes
 BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
+
+# ============================================================================
+# FAST WEBHOOK QUEUE - Accept webhooks INSTANTLY, process in background
+# ============================================================================
+# CRITICAL: TradingView webhooks timeout after 5-10 seconds. If we do too much
+# work in the webhook handler, signals get dropped. This queue accepts webhooks
+# immediately (under 50ms) and processes them in background.
+_fast_webhook_queue = Queue(maxsize=10000)
+_fast_webhook_enabled = True  # Set to False to use synchronous processing
+
+def fast_webhook_worker():
+    """Background worker that processes raw webhooks from the fast queue"""
+    logger.info("🚀 Fast webhook worker started - processing webhooks in background")
+
+    while True:
+        try:
+            # Get next webhook from queue (blocking with timeout)
+            webhook_data = _fast_webhook_queue.get(timeout=1)
+
+            token = webhook_data.get('token')
+            body = webhook_data.get('body')
+            received_at = webhook_data.get('received_at')
+
+            # Log that we're processing
+            logger.info(f"📦 Processing queued webhook: token={token[:8]}... (queued {time.time() - received_at:.2f}s ago)")
+
+            # Process the webhook using the full handler
+            try:
+                with app.test_request_context(
+                    f'/webhook/{token}',
+                    method='POST',
+                    data=body,
+                    content_type='application/json'
+                ):
+                    process_webhook_directly(token)
+            except Exception as proc_err:
+                logger.error(f"❌ Error processing queued webhook: {proc_err}")
+
+            _fast_webhook_queue.task_done()
+
+        except Empty:
+            continue  # Queue empty, keep waiting
+        except Exception as e:
+            logger.error(f"Fast webhook worker error: {e}")
+
+# Start the fast webhook worker thread
+_fast_webhook_thread = threading.Thread(target=fast_webhook_worker, daemon=True, name="FastWebhookWorker")
+_fast_webhook_thread.start()
 
 # ============================================================================
 # BROKER EXECUTION QUEUE - Trade Manager Style (Async, Non-Blocking)
@@ -12880,7 +12928,34 @@ def receive_webhook(webhook_token):
             return jsonify({'status': 'error', 'message': 'Invalid webhook token'}), 404
     
     # POST request - process the signal
-    return process_webhook_directly(webhook_token)
+    # FAST MODE: Queue for background processing, respond immediately
+    if _fast_webhook_enabled:
+        try:
+            raw_body = request.get_data(as_text=True) or ''
+            # Log immediately for tracking
+            log_raw_webhook(webhook_token, raw_body)
+
+            # Queue for background processing
+            _fast_webhook_queue.put_nowait({
+                'token': webhook_token,
+                'body': raw_body,
+                'received_at': time.time()
+            })
+
+            # Return IMMEDIATELY (under 50ms) - TradingView won't timeout
+            return jsonify({
+                'success': True,
+                'queued': True,
+                'message': 'Signal received and queued for processing',
+                'queue_size': _fast_webhook_queue.qsize()
+            }), 200
+        except Full:
+            # Queue full - fall back to synchronous processing
+            logger.warning("⚠️ Fast webhook queue full - processing synchronously")
+            return process_webhook_directly(webhook_token)
+    else:
+        # Synchronous mode (old behavior)
+        return process_webhook_directly(webhook_token)
 
 def process_webhook_directly(webhook_token):
     """
