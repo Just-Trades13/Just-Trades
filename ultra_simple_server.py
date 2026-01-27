@@ -1532,6 +1532,28 @@ _webhook_stuck_threshold = 300  # 5 minutes - if webhook received but not proces
 _webhook_activity_log = []  # List of recent webhook activities
 _webhook_activity_max_size = 100  # Keep last 100 webhook activities
 
+# RAW WEBHOOK LOG - Track ALL incoming webhooks before any processing
+_raw_webhook_log = []  # List of ALL raw webhook data
+_raw_webhook_max_size = 200  # Keep last 200 raw webhooks
+
+def log_raw_webhook(token, body):
+    """Log raw webhook data BEFORE any processing - helps debug filtering issues"""
+    global _raw_webhook_log
+    from datetime import datetime
+    entry = {
+        'timestamp': datetime.now().isoformat(),
+        'token_prefix': token[:8] if token else 'N/A',
+        'body_preview': body[:300] if body else 'empty',
+        'body_length': len(body) if body else 0
+    }
+    _raw_webhook_log.append(entry)
+    if len(_raw_webhook_log) > _raw_webhook_max_size:
+        _raw_webhook_log = _raw_webhook_log[-_raw_webhook_max_size:]
+
+def get_raw_webhook_log(limit=50):
+    """Get recent raw webhook log"""
+    return list(reversed(_raw_webhook_log[-limit:]))
+
 def log_webhook_activity(recorder_name, action, symbol, status, error=None, broker_result=None, trade_id=None):
     """Log webhook activity for monitoring"""
     global _webhook_activity_log
@@ -6873,6 +6895,40 @@ def webhook_activity():
             'success_rate': f"{(success_count/total*100):.1f}%" if total > 0 else "N/A"
         },
         'activity': activity
+    })
+
+
+@app.route('/api/raw-webhooks')
+def raw_webhooks():
+    """Get raw webhook log - shows ALL incoming webhooks before any filtering.
+    Useful for debugging why signals might not be processing.
+    """
+    limit = request.args.get('limit', 50, type=int)
+    raw_log = get_raw_webhook_log(limit)
+
+    # Parse body previews to extract action for analysis
+    action_counts = {}
+    for entry in raw_log:
+        body = entry.get('body_preview', '')
+        # Try to extract action from body
+        action = 'unknown'
+        if '"action":"buy"' in body.lower() or '"action": "buy"' in body.lower():
+            action = 'buy'
+        elif '"action":"sell"' in body.lower() or '"action": "sell"' in body.lower():
+            action = 'sell'
+        elif '"action":"long"' in body.lower() or '"action": "long"' in body.lower():
+            action = 'long'
+        elif '"action":"short"' in body.lower() or '"action": "short"' in body.lower():
+            action = 'short'
+        elif '"action":"close"' in body.lower() or '"action": "close"' in body.lower():
+            action = 'close'
+        action_counts[action] = action_counts.get(action, 0) + 1
+
+    return jsonify({
+        'success': True,
+        'total': len(raw_log),
+        'action_breakdown': action_counts,
+        'webhooks': raw_log
     })
 
 
@@ -12832,9 +12888,15 @@ def process_webhook_directly(webhook_token):
     webhook_start_time = time.time()
     _webhook_last_received = webhook_start_time
 
-    # DEDUPLICATION CHECK - Prevent processing same webhook twice
+    # EARLY LOGGING - Capture ALL incoming webhooks for debugging
     import hashlib
     raw_body = request.get_data(as_text=True) or ''
+    _logger.info(f"🔔 RAW WEBHOOK RECEIVED: token={webhook_token[:8]}... body={raw_body[:200]}")
+
+    # Log to raw webhook log for API access
+    log_raw_webhook(webhook_token, raw_body)
+
+    # DEDUPLICATION CHECK - Prevent processing same webhook twice
     body_hash = hashlib.md5(raw_body.encode()).hexdigest()[:8]
     dedup_key = f"{webhook_token}:{body_hash}"
 
@@ -13281,10 +13343,26 @@ def process_webhook_directly(webhook_token):
         if direction_filter:
             if direction_filter.lower() == 'long only' and side != 'LONG':
                 _logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Long Only)")
+                # Log blocked signal for monitoring
+                log_webhook_activity(
+                    recorder_name=recorder_name,
+                    action=action,
+                    symbol=ticker,
+                    status='blocked',
+                    error=f'Direction filter: Long Only (received {side})'
+                )
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Direction filter: Long Only (received {side})'}), 200
             elif direction_filter.lower() == 'short only' and side != 'SHORT':
                 _logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Short Only)")
+                # Log blocked signal for monitoring
+                log_webhook_activity(
+                    recorder_name=recorder_name,
+                    action=action,
+                    symbol=ticker,
+                    status='blocked',
+                    error=f'Direction filter: Short Only (received {side})'
+                )
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Direction filter: Short Only (received {side})'}), 200
             _logger.info(f"✅ Direction filter passed: {direction_filter}")
