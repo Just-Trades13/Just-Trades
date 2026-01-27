@@ -1530,11 +1530,11 @@ _webhook_stuck_threshold = 300  # 5 minutes - if webhook received but not proces
 # WEBHOOK ACTIVITY LOG - Track recent webhook processing for debugging
 # ============================================================================
 _webhook_activity_log = []  # List of recent webhook activities
-_webhook_activity_max_size = 100  # Keep last 100 webhook activities
+_webhook_activity_max_size = 300  # Keep last 300 webhook activities (increased from 100)
 
 # RAW WEBHOOK LOG - Track ALL incoming webhooks before any processing
 _raw_webhook_log = []  # List of ALL raw webhook data
-_raw_webhook_max_size = 200  # Keep last 200 raw webhooks
+_raw_webhook_max_size = 500  # Keep last 500 raw webhooks (increased from 200)
 
 def log_raw_webhook(token, body):
     """Log raw webhook data BEFORE any processing - helps debug filtering issues"""
