@@ -1046,11 +1046,40 @@ def execute_trade_simple(
                     logger.error(f"❌ Error parsing enabled_accounts: {e}")
             else:
                 # Use the trader's own subaccount (legacy single-account mode)
+                # CRITICAL FIX: Must fetch credentials from accounts table!
                 subaccount_id = trader_dict.get('subaccount_id')
-                if subaccount_id and subaccount_id not in seen_subaccounts:
-                    seen_subaccounts.add(subaccount_id)
-                    traders.append(trader_dict)
-                    logger.info(f"  ✅ Added trader: {trader_dict.get('subaccount_name')} (ID: {subaccount_id})")
+                acct_id = trader_dict.get('account_id')
+                if subaccount_id and subaccount_id not in seen_subaccounts and acct_id:
+                    # Fetch credentials from accounts table (same as enabled_accounts mode)
+                    placeholder = '%s' if is_postgres else '?'
+                    cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm, tradovate_refresh_token, token_expires_at FROM accounts WHERE id = {placeholder}', (acct_id,))
+                    creds_row = cursor.fetchone()
+
+                    if creds_row:
+                        creds = dict(creds_row)
+                        # Merge credentials into trader_dict
+                        trader_dict['tradovate_token'] = creds.get('tradovate_token')
+                        trader_dict['tradovate_refresh_token'] = creds.get('tradovate_refresh_token')
+                        trader_dict['token_expires'] = creds.get('token_expires_at')
+                        trader_dict['username'] = creds.get('username')
+                        trader_dict['password'] = creds.get('password')
+                        trader_dict['api_key'] = creds.get('api_key')
+                        trader_dict['broker'] = creds.get('broker', 'Tradovate')
+                        trader_dict['projectx_username'] = creds.get('projectx_username')
+                        trader_dict['projectx_api_key'] = creds.get('projectx_api_key')
+                        trader_dict['projectx_prop_firm'] = creds.get('projectx_prop_firm')
+
+                        # Determine environment (demo vs live)
+                        env = (creds.get('environment') or 'demo').lower()
+                        trader_dict['environment'] = env
+                        trader_dict['is_demo'] = env != 'live'
+
+                        seen_subaccounts.add(subaccount_id)
+                        traders.append(trader_dict)
+                        has_token = 'YES' if creds.get('tradovate_token') else 'NO'
+                        logger.info(f"  ✅ Added trader (legacy): {trader_dict.get('subaccount_name')} (ID: {subaccount_id}, Token: {has_token}, Env: {env})")
+                    else:
+                        logger.warning(f"  ⚠️ Skipped trader {trader_id}: Account {acct_id} not found in accounts table")
         
         conn.close()
         logger.info(f"📋 Found {len(traders)} account(s) to trade on")
