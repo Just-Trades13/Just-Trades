@@ -824,5 +824,72 @@ if sl_ticks and sl_ticks > 0:
 
 ---
 
-*Last updated: Jan 26, 2026*
+## 📝 Session Log - January 27, 2026
+
+### 40% Trade Failure Rate Fixed (CRITICAL)
+
+**User Report:** "why are we seeing so many failures"
+
+**Investigation:**
+```
+Broker Execution Stats:
+- Total Executed: 350
+- Total Failed: 195 (~40% failure rate!)
+- Last Error: "All 1 accounts failed"
+```
+
+**Root Cause Found:**
+When traders use **legacy mode** (`enabled_accounts = null`), the code was NOT fetching credentials from the `accounts` table.
+
+The query at line 815:
+```sql
+SELECT * FROM traders WHERE recorder_id = ? AND enabled = 1
+```
+
+This only gets trader columns. When the code later tried to authenticate:
+```python
+oauth_token = trader.get('tradovate_token')  # Returns None!
+```
+
+All auth methods failed because credentials were missing.
+
+**The Fix (`recorder_service.py` lines 1047-1082):**
+
+Legacy mode now fetches credentials from the accounts table:
+```python
+cursor.execute(f'''SELECT tradovate_token, username, password, broker,
+    api_key, environment, projectx_username, projectx_api_key,
+    projectx_prop_firm, tradovate_refresh_token, token_expires_at
+    FROM accounts WHERE id = {placeholder}''', (acct_id,))
+creds_row = cursor.fetchone()
+
+if creds_row:
+    creds = dict(creds_row)
+    trader_dict['tradovate_token'] = creds.get('tradovate_token')
+    trader_dict['tradovate_refresh_token'] = creds.get('tradovate_refresh_token')
+    # ... etc
+```
+
+**Why 40% of Trades Failed:**
+- 9 out of 15 enabled traders used legacy mode (null enabled_accounts)
+- All 9 had subaccount_id set but NO credentials loaded
+- Every trade on those accounts failed auth
+
+**Commits:**
+- `8766814` - Fix SL orders failing on Tradovate prop firm accounts
+- `20132d6` - Fix legacy mode missing credentials causing 40% trade failures
+
+**Log Messages After Fix:**
+```
+✅ Added trader (legacy): DEMO6385596 (ID: 37561986, Token: YES, Env: demo)
+```
+
+Previously it was just:
+```
+✅ Added trader: DEMO6385596 (ID: 37561986)
+```
+
+---
+
+*Last updated: Jan 27, 2026*
 *Author: Claude Code Session*
