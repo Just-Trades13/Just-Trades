@@ -1513,9 +1513,9 @@ def execute_trade_simple(
                             existing_position_qty = abs(net_pos)
                             break
                     
-                    # CRITICAL POSITION CHECKS - UNIVERSAL DCA + EXIT LOGIC (Jan 28, 2026)
+                    # CRITICAL POSITION CHECKS - UNIVERSAL DCA LOGIC (Jan 27, 2026)
                     # Same direction = ALWAYS add to position (DCA)
-                    # Opposite direction = ALWAYS close position (strategy exit signal)
+                    # Opposite direction = CLOSE position (for strategy exits) OR BLOCK (if avg_down_enabled)
                     if has_existing_position:
                         signal_side = 'LONG' if action == 'BUY' else 'SHORT'
 
@@ -1525,14 +1525,27 @@ def execute_trade_simple(
                             logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty} (universal DCA)")
                             # Continue to execute - will add to position
                         else:
-                            # OPPOSITE DIRECTION = ALWAYS CLOSE POSITION (strategy exit)
-                            # Use existing position qty to prevent flip
-                            # Example: LONG 2, SELL signal with 10x multiplier would place SELL 10
-                            #          That closes 2 LONG and opens 8 SHORT - BAD!
-                            # Fix: Use existing_position_qty (2) so it only closes, doesn't flip
-                            logger.info(f"🔄 [{acct_name}] EXIT SIGNAL - Opposite {signal_side} closes {existing_position_side} {existing_position_qty}")
-                            logger.info(f"   Adjusting quantity from {adjusted_quantity} to {existing_position_qty} (close exact position size)")
-                            adjusted_quantity = existing_position_qty
+                            # OPPOSITE DIRECTION - Two modes based on avg_down_enabled:
+                            # 1. avg_down_enabled=True: Block opposite (system TP will exit, or manual)
+                            # 2. avg_down_enabled=False: Process as CLOSE (strategy sends exit signal)
+                            if avg_down_enabled:
+                                # Block opposite signals - system TP or manual exit expected
+                                logger.warning(f"⚠️ [{acct_name}] OPPOSITE BLOCKED - In {existing_position_side} {existing_position_qty}, avg_down_enabled=True expects system/manual exit")
+                                return {
+                                    'success': False,
+                                    'error': f'Opposite signal blocked - use TP/SL or manual exit (avg_down_enabled=True)',
+                                    'acct_name': acct_name,
+                                    'skipped': True
+                                }
+                            else:
+                                # CLOSE position - strategy is sending exit signal
+                                # Use existing position qty to prevent flip
+                                # Example: LONG 2, SELL signal with 10x multiplier would place SELL 10
+                                #          That closes 2 LONG and opens 8 SHORT - BAD!
+                                # Fix: Use existing_position_qty (2) so it only closes, doesn't flip
+                                logger.info(f"🔄 [{acct_name}] CLOSE SIGNAL - Opposite {signal_side} signal closes {existing_position_side} {existing_position_qty}")
+                                logger.info(f"   Adjusting quantity from {adjusted_quantity} to {existing_position_qty} (close exact position size)")
+                                adjusted_quantity = existing_position_qty
                     
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
