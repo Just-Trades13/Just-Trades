@@ -72,15 +72,16 @@ _TOKEN_CACHE: Dict[int, Dict] = {}
 _TOKEN_CACHE_LOCK = threading.Lock()
 
 # ============================================================================
-# 🚀 SCALABILITY CONFIG - Designed for 50-1000 accounts
+# 🚀 SCALABILITY CONFIG - HIVE MIND for 500+ accounts
 # ============================================================================
-# Tradovate rate limits: 80 requests/minute, 5000 requests/hour
-# These settings ensure we stay well under limits even at scale
+# Tradovate rate limits are PER ACCOUNT (80 req/min, 5000 req/hour)
+# Each account has its own rate limit - no global throttling needed!
+# Signal comes in = ALL accounts execute INSTANTLY in parallel
 
 BATCH_SIZE = 1000  # Process ALL accounts in parallel (no batching)
 BATCH_DELAY_SECONDS = 0  # No delay - 100% parallel execution
-MAX_CONCURRENT_CONNECTIONS = 50  # Max simultaneous WebSocket connections
-API_CALLS_PER_MINUTE_LIMIT = 70  # Stay under 80/min limit with buffer
+MAX_CONCURRENT_CONNECTIONS = 500  # Support 500 simultaneous account executions
+API_CALLS_PER_MINUTE_LIMIT = 5000  # Effectively disabled - rate limits are per-account
 
 # Rate limit tracking
 _API_CALL_TIMES: List[float] = []
@@ -694,9 +695,9 @@ def get_db_connection():
             db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
             
             if _pg_pool is None:
-                # Increased pool size: min 5, max 50 to prevent exhaustion
-                _pg_pool = psycopg2.pool.ThreadedConnectionPool(5, 50, dsn=db_url)
-                logger.info("✅ recorder_service: PostgreSQL pool initialized (5-50 connections)")
+                # HIVE MIND: Pool sized for 500+ concurrent account executions
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(10, 100, dsn=db_url)
+                logger.info("✅ recorder_service: PostgreSQL pool initialized (10-100 connections) - HIVE MIND ready")
             
             conn = _pg_pool.getconn()
             conn.cursor_factory = RealDictCursor
