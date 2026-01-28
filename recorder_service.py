@@ -77,8 +77,8 @@ _TOKEN_CACHE_LOCK = threading.Lock()
 # Tradovate rate limits: 80 requests/minute, 5000 requests/hour
 # These settings ensure we stay well under limits even at scale
 
-BATCH_SIZE = 25  # Process accounts in batches of 25
-BATCH_DELAY_SECONDS = 0.5  # Delay between batches (allows rate limit recovery)
+BATCH_SIZE = 1000  # Process ALL accounts in parallel (no batching)
+BATCH_DELAY_SECONDS = 0  # No delay - 100% parallel execution
 MAX_CONCURRENT_CONNECTIONS = 50  # Max simultaneous WebSocket connections
 API_CALLS_PER_MINUTE_LIMIT = 70  # Stay under 80/min limit with buffer
 
