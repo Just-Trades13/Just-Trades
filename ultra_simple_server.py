@@ -12629,10 +12629,27 @@ def broker_execution_worker(worker_id=0):
             is_long = task.get('is_long', True)
             risk_config = task.get('risk_config', {})  # NEW: Get risk_config for trailing stop/break-even
             sl_type = task.get('sl_type', 'Fixed')  # NEW: Get sl_type
-            
+            queued_at = task.get('queued_at', 0)  # When signal was queued
+            signal_price = task.get('signal_price', 0)  # Original signal price
+
+            # STALENESS CHECK - Reject signals that are too old (price has moved)
+            # This prevents executing stale signals after a processing delay
+            SIGNAL_MAX_AGE_SECONDS = 30  # Signals older than this are rejected
+            if queued_at > 0:
+                signal_age = time.time() - queued_at
+                if signal_age > SIGNAL_MAX_AGE_SECONDS:
+                    logger.warning(f"⏰ STALE SIGNAL REJECTED: {action} {ticker} was {signal_age:.1f}s old (max {SIGNAL_MAX_AGE_SECONDS}s)")
+                    logger.warning(f"   Original price: {signal_price}, Signal queued at: {queued_at}")
+                    _broker_execution_stats['total_failed'] += 1
+                    _broker_execution_stats['last_error'] = f'Stale signal rejected ({signal_age:.1f}s old)'
+                    broker_execution_queue.task_done()
+                    continue
+                else:
+                    logger.info(f"⏱️ Signal age: {signal_age:.2f}s (within {SIGNAL_MAX_AGE_SECONDS}s limit)")
+
             # NO RETRIES - Try once, if fail log and move on
             # Retries can cause duplicate trades which is dangerous
-            
+
             try:
                 from recorder_service import execute_trade_simple
                 
@@ -14655,7 +14672,9 @@ def process_webhook_directly(webhook_token):
                 'is_long': trade_side == 'LONG',
                 'risk_config': risk_config,  # NEW: Pass full risk_config for trailing stop/break-even
                 'sl_type': sl_type,  # NEW: Pass sl_type for trailing stop detection
-                'retry_count': 0
+                'retry_count': 0,
+                'queued_at': time.time(),  # For staleness check - reject if too old
+                'signal_price': current_price  # Original signal price for staleness comparison
             }
 
             broker_was_queued = False  # Track if we successfully queued
