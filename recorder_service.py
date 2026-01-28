@@ -2153,11 +2153,14 @@ def execute_trade_simple(
             
             logger.info(f"✅ All {num_batches} batches processed!")
             return all_results
-        
+
+        # Initialize before try block so it's always defined
+        failed_accounts = []
+        all_results = []
+
         try:
             all_results = run_async(run_all_trades())
-            failed_accounts = []
-            
+
             for acct_result in all_results:
                 if isinstance(acct_result, Exception):
                     logger.error(f"❌ Trade exception: {acct_result}")
