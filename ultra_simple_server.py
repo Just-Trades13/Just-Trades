@@ -12903,14 +12903,19 @@ def get_broker_failures(limit=20):
 
 # Register for thread health monitoring
 def restart_broker_execution_worker():
-    """Restart broker execution worker thread"""
-    global broker_execution_thread
+    """Restart all broker execution worker threads (HIVE MIND)"""
+    global _broker_execution_threads
     try:
-        broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
-        broker_execution_thread.start()
-        return broker_execution_thread
+        # Clear old threads and restart all workers
+        _broker_execution_threads = []
+        for i in range(_broker_execution_worker_count):
+            t = threading.Thread(target=broker_execution_worker, args=(i,), daemon=True, name=f"Broker-Execution-Worker-{i}")
+            t.start()
+            _broker_execution_threads.append(t)
+        logger.info(f"🐝 HIVE MIND: Restarted {len(_broker_execution_threads)} broker execution workers")
+        return _broker_execution_threads
     except Exception as e:
-        logger.error(f"Failed to restart broker execution worker: {e}")
+        logger.error(f"Failed to restart broker execution workers: {e}")
         return None
 
 # ============================================================
@@ -14655,9 +14660,10 @@ def process_webhook_directly(webhook_token):
             
             try:
                 broker_execution_queue.put_nowait(broker_task)
+                workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
                 _logger.info(f"   ✅ Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
-                _logger.info(f"   ✅ Worker alive: {broker_execution_thread.is_alive() if broker_execution_thread else False}")
+                _logger.info(f"   ✅ HIVE MIND workers alive: {workers_alive}/{_broker_execution_worker_count}")
                 _logger.info(f"   ✅ Task details: recorder_id={recorder_id}, action={trade_action}, quantity={quantity}, ticker={ticker}")
                 _broker_execution_stats['total_queued'] += 1
             except Exception as queue_err:
@@ -14689,9 +14695,9 @@ def process_webhook_directly(webhook_token):
 
         # Log final status
         queue_status = broker_execution_queue.qsize()
-        worker_status = broker_execution_thread.is_alive() if broker_execution_thread else False
+        workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
         _logger.info(f"✅ Webhook processed in {processing_time:.2f}s (total: {_webhook_processing_count})")
-        _logger.info(f"   Final status: Queue size={queue_status}, Worker alive={worker_status}, Broker task queued={'YES' if queue_status > 0 or 'broker_task' in locals() else 'NO'}")
+        _logger.info(f"   Final status: Queue size={queue_status}, HIVE MIND workers={workers_alive}/{_broker_execution_worker_count}, Broker task queued={'YES' if queue_status > 0 or 'broker_task' in locals() else 'NO'}")
         
         return jsonify({
             'success': True,
@@ -27288,11 +27294,11 @@ def api_recorder_execution_status(recorder_id):
             traders.append(trader)
         
         conn.close()
-        
-        # Check broker execution worker
-        worker_alive = broker_execution_thread.is_alive() if broker_execution_thread else False
+
+        # Check broker execution workers (HIVE MIND)
+        workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
         queue_size = broker_execution_queue.qsize()
-        
+
         # Analyze issues
         issues = []
         if not recorder.get('recording_enabled'):
@@ -27308,12 +27314,12 @@ def api_recorder_execution_status(recorder_id):
                 if not trader.get('account_enabled'):
                     issues.append(f"Trader {trader.get('id')} linked to disabled account {trader.get('account_id')}")
         
-        if not worker_alive:
-            issues.append("Broker execution worker thread is not running (CRITICAL)")
-        
+        if workers_alive == 0:
+            issues.append("No broker execution workers running (CRITICAL)")
+
         if queue_size >= broker_execution_queue.maxsize:
             issues.append(f"Broker execution queue is full ({queue_size}/{broker_execution_queue.maxsize})")
-        
+
         return jsonify({
             'success': True,
             'recorder': {
@@ -27324,7 +27330,9 @@ def api_recorder_execution_status(recorder_id):
             },
             'traders': traders,
             'broker_execution': {
-                'worker_alive': worker_alive,
+                'hive_mind_enabled': True,
+                'workers_alive': workers_alive,
+                'workers_configured': _broker_execution_worker_count,
                 'queue_size': queue_size,
                 'queue_maxsize': broker_execution_queue.maxsize,
                 'stats': _broker_execution_stats
@@ -27364,13 +27372,14 @@ def api_test_broker_execution():
         # Try to queue it
         try:
             broker_execution_queue.put_nowait(broker_task)
+            workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
             logger.info(f"✅ TEST: Broker task queued successfully")
             return jsonify({
                 'success': True,
                 'message': 'Broker task queued',
                 'task': broker_task,
                 'queue_size': broker_execution_queue.qsize(),
-                'worker_alive': broker_execution_thread.is_alive() if broker_execution_thread else False
+                'hive_mind_workers_alive': workers_alive
             })
         except Exception as queue_err:
             logger.error(f"❌ TEST: Failed to queue broker task: {queue_err}")
@@ -27408,9 +27417,10 @@ if '_position_drawdown_thread' in dir() and _position_drawdown_thread:
 if 'token_refresh_thread' in dir() and token_refresh_thread:
     register_critical_thread('Token-Refresh', token_refresh_thread, None)  # Can't easily restart
 
-# Broker Execution Worker - CRITICAL for executing trades
-if 'broker_execution_thread' in dir() and broker_execution_thread:
-    register_critical_thread('Broker-Execution-Worker', broker_execution_thread, restart_broker_execution_worker)
+# Broker Execution Workers (HIVE MIND) - CRITICAL for executing trades
+if '_broker_execution_threads' in dir() and _broker_execution_threads:
+    for i, t in enumerate(_broker_execution_threads):
+        register_critical_thread(f'Broker-Execution-Worker-{i}', t, restart_broker_execution_worker)
 
 # Start the watchdog thread
 watchdog_thread = threading.Thread(target=thread_health_watchdog, daemon=True, name="Thread-Watchdog")
