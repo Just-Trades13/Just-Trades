@@ -1517,7 +1517,7 @@ BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 # work in the webhook handler, signals get dropped. This queue accepts webhooks
 # immediately (under 50ms) and processes them in parallel background workers.
 _fast_webhook_queue = Queue(maxsize=10000)
-_fast_webhook_enabled = True  # Set to False to use synchronous processing
+_fast_webhook_enabled = False  # TEMPORARILY DISABLED - workers have silent failures
 _fast_webhook_worker_count = 10  # Number of parallel workers for instant processing
 
 def fast_webhook_worker(worker_id):
