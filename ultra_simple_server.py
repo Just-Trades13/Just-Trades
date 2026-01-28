@@ -1517,11 +1517,15 @@ BATCH_TIMEOUT = 0.1  # Max wait time before processing partial batch (seconds)
 # work in the webhook handler, signals get dropped. This queue accepts webhooks
 # immediately (under 50ms) and processes them in parallel background workers.
 _fast_webhook_queue = Queue(maxsize=10000)
-_fast_webhook_enabled = False  # TEMPORARILY DISABLED - workers have silent failures
+_fast_webhook_enabled = True  # Fixed: workers now pass body directly, no Flask context needed
 _fast_webhook_worker_count = 10  # Number of parallel workers for instant processing
 
 def fast_webhook_worker(worker_id):
-    """Background worker that processes raw webhooks from the fast queue"""
+    """Background worker that processes raw webhooks from the fast queue.
+
+    IMPORTANT: Does NOT use Flask's test_request_context (it was causing silent failures).
+    Instead, calls process_webhook_with_data() directly with the raw body string.
+    """
     logger.info(f"🚀 Fast webhook worker #{worker_id} started")
 
     while True:
@@ -1537,18 +1541,13 @@ def fast_webhook_worker(worker_id):
             # Log that we're processing
             logger.info(f"⚡ Worker #{worker_id} processing webhook: token={token[:8]}... (delay: {delay:.3f}s)")
 
-            # Process the webhook using the full handler
+            # Process the webhook directly with the body data (no Flask context needed)
             try:
-                # Convert body to bytes if it's a string (required for test_request_context)
-                body_bytes = body.encode('utf-8') if isinstance(body, str) else body
-                with app.test_request_context(
-                    f'/webhook/{token}',
-                    method='POST',
-                    data=body_bytes,
-                    content_type='application/json'
-                ):
-                    process_webhook_directly(token)
-                logger.info(f"✅ Worker #{worker_id} completed webhook: token={token[:8]}...")
+                result = process_webhook_with_data(token, body)
+                if result.get('success'):
+                    logger.info(f"✅ Worker #{worker_id} completed webhook: token={token[:8]}...")
+                else:
+                    logger.warning(f"⚠️ Worker #{worker_id} webhook returned: {result.get('error', 'unknown error')}")
             except Exception as proc_err:
                 logger.error(f"❌ Worker #{worker_id} error processing webhook: {proc_err}")
                 import traceback
@@ -13045,11 +13044,38 @@ def receive_webhook(webhook_token):
 
     return jsonify({'error': 'Method not allowed'}), 405
 
-def process_webhook_directly(webhook_token):
+
+def process_webhook_with_data(webhook_token, raw_body_str):
+    """
+    Process webhook with raw body data directly (no Flask request needed).
+    Called by fast webhook workers. Returns a dict with success/error.
+    """
+    # Call the main processor with the body override
+    try:
+        result = process_webhook_directly(webhook_token, raw_body_override=raw_body_str)
+        # result is a Flask Response tuple or Response object
+        if hasattr(result, 'get_json'):
+            return result.get_json()
+        elif isinstance(result, tuple):
+            response, status_code = result
+            if hasattr(response, 'get_json'):
+                return response.get_json()
+            return {'success': status_code < 400}
+        return {'success': True}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def process_webhook_directly(webhook_token, raw_body_override=None):
     """
     Process webhook directly using recorder_service DCA logic.
     This is the REAL webhook handler with proper DCA, TP calculation, etc.
-    
+
+    Args:
+        webhook_token: The webhook token from URL
+        raw_body_override: If provided, use this instead of request.get_data()
+                          (used by fast webhook workers that don't have Flask context)
+
     FULL RISK MANAGEMENT:
     - Direction Filter (long only, short only)
     - Time Filters (trading windows)
@@ -13063,7 +13089,7 @@ def process_webhook_directly(webhook_token):
     """
     from datetime import datetime, timedelta, timezone
     import logging
-    
+
     # CRITICAL: Set up logger FIRST, before anything else
     # Use logging module directly - this can NEVER fail
     _logger = logging.getLogger('ultra_simple_server.webhook')
@@ -13072,7 +13098,7 @@ def process_webhook_directly(webhook_token):
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         _logger.addHandler(handler)
-    
+
     # Track webhook received time for health monitoring
     global _webhook_last_received, _webhook_last_processed, _webhook_processing_count, _webhook_error_count
     global _webhook_dedup_cache, _webhook_dedup_window, _webhook_dedup_max_size
@@ -13081,7 +13107,11 @@ def process_webhook_directly(webhook_token):
 
     # EARLY LOGGING - Capture ALL incoming webhooks for debugging
     import hashlib
-    raw_body = request.get_data(as_text=True) or ''
+    # Use override if provided (from fast webhook worker), otherwise use Flask request
+    if raw_body_override is not None:
+        raw_body = raw_body_override
+    else:
+        raw_body = request.get_data(as_text=True) or ''
     _logger.info(f"🔔 RAW WEBHOOK RECEIVED: token={webhook_token[:8]}... body={raw_body[:200]}")
 
     # Log to raw webhook log for API access
@@ -13182,13 +13212,21 @@ def process_webhook_directly(webhook_token):
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder is disabled', 'blocked': True}), 200
 
-        # Parse incoming data
-        data = request.get_json(force=True, silent=True) or {}
-        if not data:
+        # Parse incoming data (use raw_body which was already captured above)
+        data = {}
+        if raw_body:
             try:
-                data = json.loads(request.data.decode('utf-8'))
+                data = json.loads(raw_body)
+            except json.JSONDecodeError:
+                pass
+        # Fallback to Flask request methods only if raw_body parsing failed and we have Flask context
+        if not data and raw_body_override is None:
+            try:
+                data = request.get_json(force=True, silent=True) or {}
+                if not data:
+                    data = request.form.to_dict() or {}
             except:
-                data = request.form.to_dict() or {}
+                pass
 
         if not data:
             # Log to activity for monitoring
