@@ -1993,41 +1993,58 @@ except ImportError:
 
 # ============================================================
 # DATABASE CONNECTION - Supports both SQLite and PostgreSQL
-# NO POOLING - Create fresh connection each time (more reliable)
+# CONNECTION POOLING for fast parallel webhook processing
 # ============================================================
 DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('DATABASE_PRIVATE_URL') or os.getenv('DATABASE_PUBLIC_URL')
 _using_postgres = False
 _tables_initialized = False
 _db_url = None
+_pg_pool = None  # ThreadedConnectionPool for PostgreSQL
 
 def is_using_postgres():
     """Check if we're actually using PostgreSQL"""
     return _using_postgres
 
 def _init_db_once():
-    """Initialize database once on startup."""
-    global _using_postgres, _tables_initialized, _db_url
-    
+    """Initialize database once on startup with connection pool."""
+    global _using_postgres, _tables_initialized, _db_url, _pg_pool
+
     if _tables_initialized:
         return
-    
+
     if DATABASE_URL and DATABASE_URL.startswith('postgres'):
         try:
             import psycopg2
+            import psycopg2.pool
             _db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-            
+
             # Test connection and create tables (with timeout to prevent hanging)
             conn = psycopg2.connect(_db_url, connect_timeout=10)
             conn.close()
             _using_postgres = True
             _init_postgres_tables()
+
+            # Create connection pool for fast parallel processing
+            # min=20 connections ready, max=100 for burst traffic
+            try:
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=20,
+                    maxconn=100,
+                    dsn=_db_url,
+                    connect_timeout=5
+                )
+                print("✅ PostgreSQL connection pool created (20-100 connections)")
+            except Exception as pool_err:
+                print(f"⚠️ Pool creation failed, will use direct connections: {pool_err}")
+                _pg_pool = None
+
             _tables_initialized = True
             print("✅ PostgreSQL connected and tables initialized")
             return
         except Exception as e:
             print(f"⚠️ PostgreSQL init failed: {e}")
             _using_postgres = False
-    
+
     # SQLite fallback
     _using_postgres = False
     conn = sqlite3.connect('just_trades.db', timeout=30)
@@ -2037,45 +2054,54 @@ def _init_db_once():
     print("✅ SQLite initialized")
 
 def get_db_connection():
-    """Get fresh database connection with retry logic for Neon serverless."""
-    global _using_postgres, _db_url
+    """Get database connection from pool (fast) or create fresh (fallback)."""
+    global _using_postgres, _db_url, _pg_pool
 
     # Initialize on first call
     _init_db_once()
 
-    # PostgreSQL - create fresh connection with retry logic
+    # PostgreSQL - use pool for speed, fallback to fresh connection
     if _using_postgres and _db_url:
         import psycopg2
         from psycopg2.extras import RealDictCursor
 
+        # Try pool first (instant connection)
+        if _pg_pool:
+            try:
+                conn = _pg_pool.getconn()
+                conn.cursor_factory = RealDictCursor
+                # Ensure clean state
+                try:
+                    conn.rollback()
+                except:
+                    pass
+                return PostgresConnectionWrapper(conn, _pg_pool)  # Returns to pool on close
+            except Exception as pool_err:
+                print(f"⚠️ Pool getconn failed, creating fresh connection: {pool_err}")
+
+        # Fallback: fresh connection with retry logic
         max_retries = 3
-        retry_delay = 0.5  # Start with 500ms
-        last_error = None
+        retry_delay = 0.5
 
         for attempt in range(max_retries):
             try:
-                # Add timeout to prevent hanging, use shorter timeout for retries
                 timeout = 10 if attempt == 0 else 5
                 conn = psycopg2.connect(_db_url, connect_timeout=timeout)
                 conn.cursor_factory = RealDictCursor
-                # Ensure clean state - rollback any previous transaction
                 try:
                     conn.rollback()
                 except:
                     pass
                 return PostgresConnectionWrapper(conn, None)  # No pool
             except Exception as e:
-                last_error = e
                 if attempt < max_retries - 1:
                     import time
-                    print(f"⚠️ PostgreSQL connection attempt {attempt + 1}/{max_retries} failed: {e}. Retrying in {retry_delay}s...")
+                    print(f"⚠️ PostgreSQL attempt {attempt + 1}/{max_retries} failed: {e}")
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay *= 2
 
-        # All retries failed - raise exception instead of falling back to SQLite
-        # Falling back to SQLite would show missing data which is worse than an error
-        print(f"❌ PostgreSQL connection FAILED after {max_retries} attempts: {last_error}")
-        raise Exception(f"Database connection failed after {max_retries} attempts: {last_error}")
+        print(f"❌ PostgreSQL connection FAILED after {max_retries} attempts")
+        raise Exception(f"Database connection failed after {max_retries} attempts")
 
     # SQLite fallback (only for local development when DATABASE_URL is not set)
     conn = sqlite3.connect('just_trades.db', timeout=30)
@@ -12952,18 +12978,13 @@ def receive_webhook_fast(webhook_token):
 
 @app.route('/webhook/<webhook_token>', methods=['GET', 'POST'])
 def receive_webhook(webhook_token):
-    """Main webhook endpoint - processes directly using DCA logic.
+    """Main webhook endpoint - FAST MODE queues instantly, returns <50ms.
     GET: Returns webhook status (for verification)
-    POST: Processes the actual signal"""
+    POST: Queues for instant parallel processing"""
     logger.info(f"🌐 WEBHOOK ENDPOINT HIT: /webhook/{webhook_token[:8]}... method={request.method}")
-    if request.method == 'POST':
-        logger.info(f"   POST data length: {len(request.get_data()) if request.get_data() else 0} bytes")
-        logger.info(f"   POST JSON: {request.get_json(silent=True)}")
-        return process_webhook_directly(webhook_token)
-    
+
     # GET: TradingView or browser verification
     if request.method == 'GET':
-        # TradingView or browser verification - just confirm webhook exists
         conn = get_db_connection()
         cursor = conn.cursor()
         if is_using_postgres():
@@ -12972,7 +12993,7 @@ def receive_webhook(webhook_token):
             cursor.execute('SELECT id, name FROM recorders WHERE webhook_token = ?', (webhook_token,))
         recorder = cursor.fetchone()
         conn.close()
-        
+
         if recorder:
             return jsonify({
                 'status': 'active',
@@ -12981,36 +13002,48 @@ def receive_webhook(webhook_token):
             })
         else:
             return jsonify({'status': 'error', 'message': 'Invalid webhook token'}), 404
-    
-    # POST request - process the signal
-    # FAST MODE: Queue for background processing, respond immediately
-    if _fast_webhook_enabled:
-        try:
-            raw_body = request.get_data(as_text=True) or ''
-            # Log immediately for tracking
-            log_raw_webhook(webhook_token, raw_body)
 
-            # Queue for background processing
-            _fast_webhook_queue.put_nowait({
-                'token': webhook_token,
-                'body': raw_body,
-                'received_at': time.time()
-            })
+    # POST request - FAST MODE: Queue immediately, respond instantly
+    if request.method == 'POST':
+        logger.info(f"   POST data length: {len(request.get_data()) if request.get_data() else 0} bytes")
 
-            # Return IMMEDIATELY (under 50ms) - TradingView won't timeout
-            return jsonify({
-                'success': True,
-                'queued': True,
-                'message': 'Signal received and queued for processing',
-                'queue_size': _fast_webhook_queue.qsize()
-            }), 200
-        except Full:
-            # Queue full - fall back to synchronous processing
-            logger.warning("⚠️ Fast webhook queue full - processing synchronously")
+        if _fast_webhook_enabled:
+            try:
+                raw_body = request.get_data(as_text=True) or ''
+                received_at = time.time()
+
+                # Log raw webhook immediately for tracking
+                log_raw_webhook(webhook_token, raw_body)
+
+                # Queue for background processing by 10 parallel workers
+                _fast_webhook_queue.put_nowait({
+                    'token': webhook_token,
+                    'body': raw_body,
+                    'received_at': received_at
+                })
+
+                # Return IMMEDIATELY (<50ms) - TradingView won't timeout
+                queue_size = _fast_webhook_queue.qsize()
+                workers_alive = sum(1 for t in _fast_webhook_threads if t.is_alive()) if _fast_webhook_threads else 0
+                logger.info(f"⚡ FAST QUEUED: token={webhook_token[:8]}... queue={queue_size}, workers={workers_alive}")
+
+                return jsonify({
+                    'success': True,
+                    'queued': True,
+                    'message': 'Signal received and queued for instant processing',
+                    'queue_size': queue_size,
+                    'workers_alive': workers_alive
+                }), 200
+            except Full:
+                # Queue full - fall back to synchronous processing
+                logger.warning("⚠️ Fast webhook queue full (10000) - processing synchronously")
+                return process_webhook_directly(webhook_token)
+        else:
+            # Synchronous mode (disabled)
+            logger.info(f"   POST JSON: {request.get_json(silent=True)}")
             return process_webhook_directly(webhook_token)
-    else:
-        # Synchronous mode (old behavior)
-        return process_webhook_directly(webhook_token)
+
+    return jsonify({'error': 'Method not allowed'}), 405
 
 def process_webhook_directly(webhook_token):
     """
