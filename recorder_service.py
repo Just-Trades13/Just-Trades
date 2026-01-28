@@ -1488,40 +1488,37 @@ def execute_trade_simple(
                             existing_position_qty = abs(net_pos)
                             break
                     
-                    # CRITICAL POSITION CHECKS
+                    # CRITICAL POSITION CHECKS - UNIVERSAL DCA LOGIC (Jan 27, 2026)
+                    # Same direction = ALWAYS add to position (DCA)
+                    # Opposite direction = CLOSE position (for strategy exits) OR BLOCK (if avg_down_enabled)
                     if has_existing_position:
                         signal_side = 'LONG' if action == 'BUY' else 'SHORT'
-                        
-                        if avg_down_enabled:
-                            # DCA MODE: Only allow SAME direction (to add), IGNORE opposite signals
-                            if signal_side != existing_position_side:
-                                logger.warning(f"⚠️ [{acct_name}] DCA SKIP - Already {existing_position_side} {existing_position_qty}, ignoring opposite {signal_side} signal")
-                                return {
-                                    'success': False,
-                                    'error': f'DCA mode: ignoring {signal_side} signal while in {existing_position_side} position',
-                                    'acct_name': acct_name,
-                                    'skipped': True
-                                }
-                            # Same direction = allow DCA to add to position
-                            logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty}")
+
+                        if signal_side == existing_position_side:
+                            # SAME DIRECTION = ALWAYS ADD TO POSITION (Universal DCA)
+                            # This works for ALL strategies - no more avg_down_enabled gate
+                            logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty} (universal DCA)")
+                            # Continue to execute - will add to position
                         else:
-                            # NON-DCA MODE: Skip SAME direction (no stacking), allow opposite (close/flip)
-                            if signal_side == existing_position_side:
-                                logger.warning(f"⚠️ [{acct_name}] SKIPPING - Already {existing_position_side} {existing_position_qty} and avg_down_enabled=False")
+                            # OPPOSITE DIRECTION - Two modes based on avg_down_enabled:
+                            # 1. avg_down_enabled=True: Block opposite (system TP will exit, or manual)
+                            # 2. avg_down_enabled=False: Process as CLOSE (strategy sends exit signal)
+                            if avg_down_enabled:
+                                # Block opposite signals - system TP or manual exit expected
+                                logger.warning(f"⚠️ [{acct_name}] OPPOSITE BLOCKED - In {existing_position_side} {existing_position_qty}, avg_down_enabled=True expects system/manual exit")
                                 return {
                                     'success': False,
-                                    'error': f'Already have {existing_position_side} position and averaging down is disabled',
+                                    'error': f'Opposite signal blocked - use TP/SL or manual exit (avg_down_enabled=True)',
                                     'acct_name': acct_name,
                                     'skipped': True
                                 }
                             else:
-                                # CRITICAL FIX (Jan 9, 2026): Opposite signal = CLOSE ONLY
-                                # Use existing position qty instead of configured qty
-                                # This prevents accidentally flipping to a huge opposite position
+                                # CLOSE position - strategy is sending exit signal
+                                # Use existing position qty to prevent flip
                                 # Example: LONG 2, SELL signal with 10x multiplier would place SELL 10
                                 #          That closes 2 LONG and opens 8 SHORT - BAD!
                                 # Fix: Use existing_position_qty (2) so it only closes, doesn't flip
-                                logger.info(f"🔄 [{acct_name}] CLOSE ONLY - Opposite {signal_side} signal while {existing_position_side} {existing_position_qty}")
+                                logger.info(f"🔄 [{acct_name}] CLOSE SIGNAL - Opposite {signal_side} signal closes {existing_position_side} {existing_position_qty}")
                                 logger.info(f"   Adjusting quantity from {adjusted_quantity} to {existing_position_qty} (close exact position size)")
                                 adjusted_quantity = existing_position_qty
                     
