@@ -144,47 +144,52 @@ def clear_all_cached_tokens():
 # ============================================================================
 # Structure: {subaccount_id: TradovateIntegration instance with active WebSocket}
 _WS_POOL: Dict[int, Any] = {}
-_WS_POOL_LOCK = threading.Lock()
+_WS_POOL_LOCK = asyncio.Lock()  # ASYNC lock - doesn't block event loop!
 
 async def get_pooled_connection(subaccount_id: int, is_demo: bool, access_token: str):
-    """Get or create a pooled WebSocket connection for an account."""
+    """Get or create a pooled WebSocket connection for an account. INSTANT if pooled."""
     from phantom_scraper.tradovate_integration import TradovateIntegration
-    
-    with _WS_POOL_LOCK:
+
+    # Fast path - check without lock first (read is safe)
+    if subaccount_id in _WS_POOL:
+        conn = _WS_POOL[subaccount_id]
+        if conn and getattr(conn, 'ws_connected', False):
+            return conn
+
+    # Need to create/update - use async lock
+    async with _WS_POOL_LOCK:
+        # Double-check after acquiring lock
         if subaccount_id in _WS_POOL:
             conn = _WS_POOL[subaccount_id]
-            # Check if connection is still alive
-            if conn and conn.ws_connected:
+            if conn and getattr(conn, 'ws_connected', False):
                 return conn
             # Connection dead, remove it
             _WS_POOL.pop(subaccount_id, None)
-    
-    # Create new connection
-    conn = TradovateIntegration(demo=is_demo)
-    await conn.__aenter__()  # Initialize session
-    conn.access_token = access_token
-    
-    # Establish WebSocket connection
-    ws_connected = await conn._ensure_websocket_connected()
-    if ws_connected:
-        with _WS_POOL_LOCK:
+
+        # Create new connection
+        conn = TradovateIntegration(demo=is_demo)
+        await conn.__aenter__()
+        conn.access_token = access_token
+
+        # Establish WebSocket connection
+        ws_connected = await conn._ensure_websocket_connected()
+        if ws_connected:
             _WS_POOL[subaccount_id] = conn
-        logger.info(f"🔌 WebSocket pool: Added connection for account {subaccount_id}")
-        return conn
-    else:
-        await conn.__aexit__(None, None, None)
-        return None
+            logger.info(f"🔌 WebSocket pool: Added connection for account {subaccount_id}")
+            return conn
+        else:
+            await conn.__aexit__(None, None, None)
+            return None
 
 def close_pooled_connection(subaccount_id: int):
     """Close and remove a pooled connection."""
-    with _WS_POOL_LOCK:
-        conn = _WS_POOL.pop(subaccount_id, None)
-        if conn:
-            try:
-                import asyncio
-                asyncio.create_task(conn.__aexit__(None, None, None))
-            except:
-                pass
+    # Direct dict access is safe for removal
+    conn = _WS_POOL.pop(subaccount_id, None)
+    if conn:
+        try:
+            asyncio.create_task(conn.__aexit__(None, None, None))
+        except:
+            pass
 
 # ============================================================================
 # 🛡️ BULLETPROOF TOKEN MANAGEMENT - Auto-refresh before expiry
