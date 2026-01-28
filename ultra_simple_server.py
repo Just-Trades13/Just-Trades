@@ -1541,13 +1541,14 @@ def fast_webhook_worker(worker_id):
             # Log that we're processing
             logger.info(f"⚡ Worker #{worker_id} processing webhook: token={token[:8]}... (delay: {delay:.3f}s)")
 
-            # Process the webhook directly with the body data (no Flask context needed)
+            # Process the webhook with Flask app context (needed for jsonify, db, etc.)
             try:
-                result = process_webhook_with_data(token, body)
-                if result.get('success'):
-                    logger.info(f"✅ Worker #{worker_id} completed webhook: token={token[:8]}...")
-                else:
-                    logger.warning(f"⚠️ Worker #{worker_id} webhook returned: {result.get('error', 'unknown error')}")
+                with app.app_context():
+                    result = process_webhook_with_data(token, body)
+                    if result.get('success'):
+                        logger.info(f"✅ Worker #{worker_id} completed webhook: token={token[:8]}...")
+                    else:
+                        logger.warning(f"⚠️ Worker #{worker_id} webhook returned: {result.get('error', 'unknown error')}")
             except Exception as proc_err:
                 logger.error(f"❌ Worker #{worker_id} error processing webhook: {proc_err}")
                 import traceback
