@@ -27254,8 +27254,18 @@ def api_broker_execution_status():
         queue_size = broker_execution_queue.qsize()
         workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
 
+        # Check fast webhook worker status
+        fast_webhook_workers_alive = sum(1 for t in _fast_webhook_threads if t.is_alive()) if _fast_webhook_threads else 0
+        fast_webhook_queue_size = _fast_webhook_queue.qsize()
+
         return jsonify({
             'success': True,
+            'fast_webhook': {
+                'enabled': _fast_webhook_enabled,
+                'workers_configured': _fast_webhook_worker_count,
+                'workers_alive': fast_webhook_workers_alive,
+                'queue_size': fast_webhook_queue_size
+            },
             'broker_execution': {
                 'hive_mind_enabled': True,
                 'workers_configured': _broker_execution_worker_count,
