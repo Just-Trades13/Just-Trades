@@ -191,6 +191,86 @@ def close_pooled_connection(subaccount_id: int):
         except:
             pass
 
+async def prewarm_websocket_connections():
+    """
+    Pre-warm WebSocket connections for all active trading accounts.
+    Called at startup for INSTANT execution on first trade.
+    """
+    logger.info("🔥 PRE-WARMING WebSocket connections for instant execution...")
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+
+        # Get all unique subaccounts from enabled traders with valid tokens
+        cursor.execute(f'''
+            SELECT DISTINCT t.subaccount_id, a.tradovate_token, a.environment
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.enabled = {'TRUE' if is_postgres else '1'}
+            AND t.subaccount_id IS NOT NULL
+            AND a.tradovate_token IS NOT NULL
+        ''')
+
+        accounts = cursor.fetchall()
+        conn.close()
+
+        if not accounts:
+            logger.info("🔥 No accounts to pre-warm")
+            return
+
+        logger.info(f"🔥 Pre-warming {len(accounts)} WebSocket connections...")
+
+        # Warm up connections in parallel (batches of 50 to avoid overwhelming)
+        batch_size = 50
+        warmed = 0
+        failed = 0
+
+        for i in range(0, len(accounts), batch_size):
+            batch = accounts[i:i+batch_size]
+            tasks = []
+
+            for row in batch:
+                subaccount_id = row[0] if isinstance(row, tuple) else row.get('subaccount_id')
+                token = row[1] if isinstance(row, tuple) else row.get('tradovate_token')
+                env = row[2] if isinstance(row, tuple) else row.get('environment', 'demo')
+                is_demo = env != 'live'
+
+                if subaccount_id and token:
+                    tasks.append(get_pooled_connection(subaccount_id, is_demo, token))
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for r in results:
+                if isinstance(r, Exception):
+                    failed += 1
+                elif r:
+                    warmed += 1
+                else:
+                    failed += 1
+
+        logger.info(f"🔥 WebSocket pre-warm complete: {warmed} connected, {failed} failed")
+        logger.info(f"🔥 Pool size: {len(_WS_POOL)} connections ready for INSTANT execution")
+
+    except Exception as e:
+        logger.error(f"❌ WebSocket pre-warm failed: {e}")
+
+def start_websocket_prewarm():
+    """Start WebSocket pre-warming in background."""
+    def run_prewarm():
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(prewarm_websocket_connections())
+            loop.close()
+        except Exception as e:
+            logger.error(f"❌ Prewarm thread error: {e}")
+
+    thread = threading.Thread(target=run_prewarm, daemon=True, name="WebSocket-Prewarm")
+    thread.start()
+    logger.info("🔥 WebSocket pre-warm thread started")
+
 # ============================================================================
 # 🛡️ BULLETPROOF TOKEN MANAGEMENT - Auto-refresh before expiry
 # ============================================================================

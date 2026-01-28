@@ -27822,4 +27822,12 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error(f"❌ Fast webhook workers failed to start: {e}")
 
+    # Pre-warm WebSocket connections for INSTANT execution
+    try:
+        from recorder_service import start_websocket_prewarm
+        start_websocket_prewarm()
+        logger.info("🔥 WebSocket pre-warm initiated for instant execution")
+    except Exception as e:
+        logger.warning(f"⚠️ WebSocket pre-warm failed: {e}")
+
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
