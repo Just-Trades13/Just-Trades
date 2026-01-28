@@ -811,34 +811,39 @@ def execute_trade_simple(
 
         # Log how many traders are linked to this recorder
         logger.info(f"📋 Found {len(list(trader_rows))} trader(s) linked to recorder {recorder_id}")
-        # Reset cursor since we consumed the rows
-        cursor.execute(f'SELECT * FROM traders WHERE recorder_id = {placeholder} AND enabled = {"TRUE" if is_postgres else "1"}', (recorder_id,))
+
+        # Reset cursor - OPTIMIZED QUERY: Only fetch traders with VALID accounts
+        # This filters at DB level for fastest execution (no wasted loops)
+        if is_postgres:
+            cursor.execute(f'''
+                SELECT * FROM traders
+                WHERE recorder_id = {placeholder}
+                AND enabled = TRUE
+                AND (
+                    (enabled_accounts IS NOT NULL AND enabled_accounts != '[]' AND enabled_accounts != 'null' AND LENGTH(enabled_accounts) > 2)
+                    OR (subaccount_id IS NOT NULL AND account_id IS NOT NULL)
+                )
+            ''', (recorder_id,))
+        else:
+            cursor.execute(f'''
+                SELECT * FROM traders
+                WHERE recorder_id = {placeholder}
+                AND enabled = 1
+                AND (
+                    (enabled_accounts IS NOT NULL AND enabled_accounts != '[]' AND enabled_accounts != 'null' AND LENGTH(enabled_accounts) > 2)
+                    OR (subaccount_id IS NOT NULL AND account_id IS NOT NULL)
+                )
+            ''', (recorder_id,))
         trader_rows = cursor.fetchall()
+        logger.info(f"📋 {len(trader_rows)} trader(s) with valid accounts ready for execution")
 
         for trader_idx, trader_row in enumerate(trader_rows):
             trader_dict = dict(trader_row)
             trader_id = trader_dict.get('id')
-            logger.info(f"📋 Processing Trader #{trader_idx + 1}: ID={trader_id}, Name={trader_dict.get('name', 'unnamed')}")
-
-            # --- EARLY EXIT: Skip traders with no accounts configured ---
-            # Check BEFORE running filters to avoid wasted processing
             enabled_accounts_raw = trader_dict.get('enabled_accounts')
             subaccount_id = trader_dict.get('subaccount_id')
             acct_id = trader_dict.get('account_id')
-
-            has_accounts = False
-            if enabled_accounts_raw and enabled_accounts_raw != '[]' and enabled_accounts_raw != 'null':
-                try:
-                    parsed = json.loads(enabled_accounts_raw) if isinstance(enabled_accounts_raw, str) else enabled_accounts_raw
-                    has_accounts = isinstance(parsed, list) and len(parsed) > 0
-                except:
-                    has_accounts = False
-            elif subaccount_id and acct_id:
-                has_accounts = True
-
-            if not has_accounts:
-                logger.warning(f"⏭️ Trader {trader_id} SKIPPED - No accounts configured (enabled_accounts={enabled_accounts_raw is not None}, subaccount_id={subaccount_id})")
-                continue
+            logger.info(f"📋 Processing Trader #{trader_idx + 1}: ID={trader_id}, Name={trader_dict.get('name', 'unnamed')}")
 
             # --- TRADER-LEVEL DELAY FILTER (Nth Signal) ---
             trader_add_delay = int(trader_dict.get('add_delay', 1) or 1)
