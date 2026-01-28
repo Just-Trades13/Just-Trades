@@ -1006,5 +1006,184 @@ e45ea71 HIVE MIND: Add 10 parallel broker execution workers
 
 ---
 
+## 📝 Session Log - January 28, 2026 (Continued - Fast Webhook Fix)
+
+### Problem: Webhooks Processing Late or Not At All
+
+**User Report:** Signals were being received (showing in raw webhooks) but not processed (not in webhook activity), causing missed trades.
+
+### Root Cause Analysis
+
+1. **Dead Code Path:** The fast webhook mode code at lines 12987-13013 was UNREACHABLE - the function returned at line 12962 before ever reaching the fast queue logic.
+
+2. **No Connection Pooling:** `ultra_simple_server.py` created a FRESH PostgreSQL connection for every webhook (line 2059 `psycopg2.connect()`), causing delays when multiple signals arrived rapidly.
+
+3. **Flask Context Issue:** Fast webhook workers used `app.test_request_context()` which caused `request.get_json()` to silently return empty data, failing signal processing.
+
+### Fixes Applied
+
+#### 1. Fixed Fast Webhook Code Path
+**Location:** `ultra_simple_server.py:12953-13045`
+
+Restructured the webhook endpoint so POST requests actually use the fast queue:
+```python
+if request.method == 'POST':
+    if _fast_webhook_enabled:
+        # Queue immediately, return <50ms
+        _fast_webhook_queue.put_nowait({...})
+        return jsonify({'success': True, 'queued': True}), 200
+```
+
+#### 2. Added PostgreSQL Connection Pooling
+**Location:** `ultra_simple_server.py:2008-2054`
+
+```python
+_pg_pool = psycopg2.pool.ThreadedConnectionPool(
+    minconn=20,
+    maxconn=100,
+    dsn=_db_url,
+    connect_timeout=5
+)
+```
+
+- Pool of 20-100 pre-opened connections
+- `get_db_connection()` now uses pool first, falls back to fresh connection
+
+#### 3. Fixed Fast Webhook Workers - No Flask Context Needed
+**Location:** `ultra_simple_server.py:1523-1563` and `13048-13066`
+
+**Problem:** Workers called `process_webhook_directly()` inside `test_request_context()`, but `request.get_json()` returned empty.
+
+**Solution:**
+- Created `process_webhook_with_data(token, raw_body_str)` wrapper
+- Added `raw_body_override` parameter to `process_webhook_directly()`
+- Workers pass body directly, JSON parsed from string not Flask request
+- Workers use `app.app_context()` for Flask functions like `jsonify()`
+
+```python
+# Worker now does:
+with app.app_context():
+    result = process_webhook_with_data(token, body)
+```
+
+#### 4. Added Staleness Protection
+**Location:** `ultra_simple_server.py:14676-14677` and `recorder_service.py:12632-12648`
+
+Signals older than 30 seconds are rejected to prevent stale executions:
+```python
+SIGNAL_MAX_AGE_SECONDS = 30
+if signal_age > SIGNAL_MAX_AGE_SECONDS:
+    logger.warning(f"⏰ STALE SIGNAL REJECTED: {action} {ticker} was {signal_age:.1f}s old")
+```
+
+#### 5. Added Fast Webhook Monitoring
+**Location:** `ultra_simple_server.py:27257-27267`
+
+Added to `/api/broker-execution/status`:
+```json
+{
+  "fast_webhook": {
+    "enabled": true,
+    "workers_configured": 10,
+    "workers_alive": 10,
+    "queue_size": 0
+  }
+}
+```
+
+### Architecture After Fixes
+
+```
+TradingView Alert
+       ↓
+Webhook endpoint receives (<10ms)
+       ↓
+log_raw_webhook() - for tracking
+       ↓
+Queue to _fast_webhook_queue (instant)
+       ↓
+Return 200 to TradingView (<50ms total)
+       ↓
+10 Fast Webhook Workers (parallel) pick from queue
+       ↓
+process_webhook_with_data() - validates, records trade
+       ↓
+Queue to broker_execution_queue
+       ↓
+10 HIVE MIND Broker Workers (parallel)
+       ↓
+asyncio.gather() executes ALL accounts simultaneously
+       ↓
+Pre-warmed WebSocket connections → Broker
+```
+
+### Capacity
+
+| Component | Limit |
+|-----------|-------|
+| Fast webhook workers | 10 parallel |
+| Broker execution workers | 10 parallel |
+| Max concurrent accounts | 500 |
+| DB connection pool | 20-100 |
+| Webhook queue | 10,000 |
+| Broker queue | 1,000 |
+
+### Commits This Session
+```
+91fb7b8 Add staleness protection for delayed webhook processing
+844a278 INSTANT WEBHOOKS: Fast mode + connection pooling
+5104945 Add fast webhook worker status to monitoring endpoint
+de17d4a Temporarily disable fast webhook mode - silent worker failures
+d849cd1 Fix fast webhook workers - pass body directly, no Flask context
+e570aa0 Add app.app_context() to fast webhook workers
+```
+
+### Key Findings
+
+1. **TradingView sends duplicate webhooks** - Same signal arrives twice within 1ms. Deduplication handles this.
+
+2. **Deploy restarts lose in-memory queue** - Signals queued during Railway deploy are lost. This is expected behavior with in-memory queues.
+
+3. **TradingView alert latency** - 50-200ms delay between indicator painting and webhook being sent. This is TradingView's internal latency, not controllable.
+
+### Testing Results
+
+After fixes:
+- Fast webhook: enabled, 10/10 workers alive
+- 23 queued, 23 executed, 0 failed
+- Signals processing in <50ms after receipt
+- All JADVIX strategies (HighRisk/MediumRisk/LowRisk) executing correctly
+
+### Useful Debug Commands
+
+```bash
+# Check fast webhook + broker status
+curl -s "https://justtrades-production.up.railway.app/api/broker-execution/status" | python3 -m json.tool
+
+# Check raw webhooks received
+curl -s "https://justtrades-production.up.railway.app/api/raw-webhooks?limit=10" | python3 -m json.tool
+
+# Check webhook activity (processed)
+curl -s "https://justtrades-production.up.railway.app/api/webhook-activity?limit=10" | python3 -m json.tool
+
+# Check failures
+curl -s "https://justtrades-production.up.railway.app/api/broker-execution/failures?limit=10" | python3 -m json.tool
+```
+
+### Code Locations
+
+| Feature | File | Lines |
+|---------|------|-------|
+| Fast webhook queue/workers | `ultra_simple_server.py` | 1519-1580 |
+| Connection pool init | `ultra_simple_server.py` | 2027-2039 |
+| Pool-aware get_db_connection | `ultra_simple_server.py` | 2056-2109 |
+| Fast webhook endpoint | `ultra_simple_server.py` | 12978-13045 |
+| process_webhook_with_data | `ultra_simple_server.py` | 13048-13066 |
+| raw_body_override handling | `ultra_simple_server.py` | 13111-13114, 13215-13229 |
+| Fast webhook status in API | `ultra_simple_server.py` | 27257-27267 |
+| Staleness check | `recorder_service.py` | 12632-12648 |
+
+---
+
 *Last updated: Jan 28, 2026*
 *Author: Claude Code Session*
