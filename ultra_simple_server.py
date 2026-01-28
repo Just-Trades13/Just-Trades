@@ -1586,6 +1586,7 @@ def start_fast_webhook_workers():
 # Background worker processes queue with retries.
 # This ensures webhooks NEVER fail due to broker issues.
 broker_execution_queue = Queue(maxsize=1000)
+_broker_execution_worker_count = 10  # Number of parallel workers for HIVE MIND instant execution
 
 # ============================================================================
 # WEBHOOK HEALTH TRACKING - Detect stuck webhook processing
@@ -12596,25 +12597,25 @@ signal_processor_thread.start()
 # ============================================================================
 # BROKER EXECUTION WORKER - Trade Manager Style (Async, Reliable)
 # ============================================================================
-def broker_execution_worker():
+def broker_execution_worker(worker_id=0):
     """
     Background worker that processes broker execution queue.
-    CRITICAL: NEVER GIVES UP - Retries indefinitely until success.
-    
+    HIVE MIND: Multiple workers process in parallel for instant execution.
+
     Trade Manager Style:
     - Webhook records signal instantly
     - Broker execution happens async with retries
     - If broker fails, it retries later (doesn't block webhook)
-    - NEVER FAILS - Keeps retrying with exponential backoff
+    - Multiple workers = signals fan out to all accounts INSTANTLY
     """
-    logger.info("🚀 Broker execution worker started (BULLETPROOF - never gives up)")
+    logger.info(f"🚀 Broker execution worker #{worker_id} started (HIVE MIND - instant parallel execution)")
     logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
-    
+
     while True:
         try:
             # Get next broker execution task (blocking, but that's OK - we're in background)
             task = broker_execution_queue.get(timeout=1)
-            logger.info(f"🔔 Worker received task from queue: {task.get('action')} {task.get('quantity')} {task.get('ticker')} (recorder_id={task.get('recorder_id')})")
+            logger.info(f"🔔 Worker #{worker_id} received task: {task.get('action')} {task.get('quantity')} {task.get('ticker')} (recorder_id={task.get('recorder_id')})")
             
             recorder_id = task.get('recorder_id')
             action = task.get('action')
@@ -12840,21 +12841,32 @@ def broker_execution_worker():
             traceback.print_exc()
             time.sleep(1)  # Brief pause before retrying
 
-# Start broker execution worker
-logger.info("🔧 Creating broker execution worker thread...")
-broker_execution_thread = threading.Thread(target=broker_execution_worker, daemon=True, name="Broker-Execution-Worker")
-broker_execution_thread.start()
+# HIVE MIND: Start multiple broker execution workers for parallel execution
+_broker_execution_threads = []
 
-# Verify worker started successfully
-time.sleep(0.5)  # Give thread time to start
-if not broker_execution_thread.is_alive():
-    logger.error("❌ CRITICAL: Broker execution worker thread failed to start!")
-    logger.error("   This means broker orders will be queued but NEVER executed!")
-else:
-    logger.info("✅ Broker execution worker thread started (Trade Manager style - async, non-blocking)")
-    logger.info(f"   Thread name: {broker_execution_thread.name}")
-    logger.info(f"   Thread alive: {broker_execution_thread.is_alive()}")
-    logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
+def start_broker_execution_workers():
+    """Start multiple broker execution workers for HIVE MIND parallel execution."""
+    global _broker_execution_threads
+    logger.info(f"🐝 HIVE MIND: Starting {_broker_execution_worker_count} parallel broker execution workers...")
+
+    for i in range(_broker_execution_worker_count):
+        t = threading.Thread(target=broker_execution_worker, args=(i,), daemon=True, name=f"Broker-Execution-Worker-{i}")
+        t.start()
+        _broker_execution_threads.append(t)
+
+    # Verify workers started
+    time.sleep(0.5)
+    alive_count = sum(1 for t in _broker_execution_threads if t.is_alive())
+    if alive_count == 0:
+        logger.error("❌ CRITICAL: No broker execution workers started!")
+        logger.error("   This means broker orders will be queued but NEVER executed!")
+    else:
+        logger.info(f"✅ HIVE MIND ACTIVE: {alive_count}/{_broker_execution_worker_count} broker execution workers running")
+        logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
+        logger.info(f"   Signals will fan out to ALL accounts INSTANTLY in parallel")
+
+# Start the hive mind workers
+start_broker_execution_workers()
 
 # Track broker execution stats
 _broker_execution_stats = {
@@ -27176,15 +27188,17 @@ def api_broker_execution_status():
             enabled_traders.append(trader)
         
         conn.close()
-        
-        # Check queue status
+
+        # Check queue status and HIVE MIND worker status
         queue_size = broker_execution_queue.qsize()
-        worker_alive = broker_execution_thread.is_alive() if broker_execution_thread else False
-        
+        workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
+
         return jsonify({
             'success': True,
             'broker_execution': {
-                'worker_alive': worker_alive,
+                'hive_mind_enabled': True,
+                'workers_configured': _broker_execution_worker_count,
+                'workers_alive': workers_alive,
                 'queue_size': queue_size,
                 'stats': _broker_execution_stats,
                 'last_execution_ago_seconds': time.time() - _broker_execution_stats['last_execution_time'] if _broker_execution_stats['last_execution_time'] else None
