@@ -14657,9 +14657,11 @@ def process_webhook_directly(webhook_token):
                 'sl_type': sl_type,  # NEW: Pass sl_type for trailing stop detection
                 'retry_count': 0
             }
-            
+
+            broker_was_queued = False  # Track if we successfully queued
             try:
                 broker_execution_queue.put_nowait(broker_task)
+                broker_was_queued = True  # Successfully queued!
                 workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
                 _logger.info(f"   ✅ Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
@@ -14672,10 +14674,11 @@ def process_webhook_directly(webhook_token):
                 _logger.warning(f"   Queue error: {queue_err}")
                 _logger.warning(f"   Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
                 _broker_execution_stats['total_failed'] += 1
-                
+
         except Exception as e:
             # Queue error - log but don't fail webhook
             _logger.warning(f"⚠️ Broker execution queue error (tracking still works): {e}")
+            broker_was_queued = False
         
         # Return success IMMEDIATELY - position is tracked, broker execution is queued
         # Track successful webhook processing for health monitoring
@@ -14689,7 +14692,7 @@ def process_webhook_directly(webhook_token):
             action=trade_action,
             symbol=ticker,
             status='success',
-            broker_result='queued' if broker_execution_queue.qsize() > 0 else 'no_broker',
+            broker_result='queued' if broker_was_queued else 'no_broker',
             trade_id=recorded_trade_id
         )
 
