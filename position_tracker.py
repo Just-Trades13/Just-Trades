@@ -769,16 +769,13 @@ async def _rest_sync_positions(accounts: List[dict]):
 
 
 def sync_positions_now():
-    """Trigger REST sync (can be called manually via API)"""
+    """Trigger REST sync (non-blocking, runs in background)"""
     global _manager
     if _manager and _manager._loop:
         accounts = _load_accounts_from_db()
-        future = asyncio.run_coroutine_threadsafe(_rest_sync_positions(accounts), _manager._loop)
-        try:
-            future.result(timeout=60)
-            return True
-        except:
-            return False
+        # Fire and forget - don't block waiting for result
+        asyncio.run_coroutine_threadsafe(_rest_sync_positions(accounts), _manager._loop)
+        return True
     return False
 
 
