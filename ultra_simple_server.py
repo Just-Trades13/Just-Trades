@@ -27539,6 +27539,268 @@ def api_wrong_tp_prices():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/fix-tp-issues', methods=['POST'])
+def api_fix_tp_issues():
+    """
+    AUTO-FIX: Place missing TPs or update wrong TP prices.
+
+    POST body (optional):
+    {
+        "fix_orphaned": true,    // Fix positions without TP
+        "fix_wrong_tp": true,    // Fix TPs with wrong price
+        "dry_run": false         // If true, just report what would be fixed
+    }
+    """
+    try:
+        if not POSITION_TRACKER_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'error': 'Position tracker module not available'
+            }), 503
+
+        from phantom_scraper.tradovate_integration import TradovateIntegration
+        from async_utils import run_async
+
+        data = request.get_json() or {}
+        fix_orphaned = data.get('fix_orphaned', True)
+        fix_wrong_tp = data.get('fix_wrong_tp', True)
+        dry_run = data.get('dry_run', False)
+
+        results = {
+            'success': True,
+            'dry_run': dry_run,
+            'orphaned_fixed': [],
+            'orphaned_failed': [],
+            'wrong_tp_fixed': [],
+            'wrong_tp_failed': []
+        }
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
+        # Helper to get account credentials
+        def get_account_creds(account_id):
+            cursor.execute(f'''
+                SELECT t.subaccount_id, t.subaccount_name, t.recorder_id,
+                       a.tradovate_token, a.environment, a.id as account_id,
+                       r.tp_targets, r.name as recorder_name
+                FROM traders t
+                JOIN accounts a ON t.account_id = a.id
+                JOIN recorders r ON t.recorder_id = r.id
+                WHERE t.subaccount_id = {ph}
+                LIMIT 1
+            ''', (account_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+        # Helper to parse tp_ticks from tp_targets
+        def get_tp_ticks(tp_targets):
+            if not tp_targets:
+                return 0
+            try:
+                targets = json.loads(tp_targets) if isinstance(tp_targets, str) else tp_targets
+                if targets and len(targets) > 0:
+                    return targets[0].get('ticks') or targets[0].get('value') or 0
+            except:
+                pass
+            return 0
+
+        # Fix orphaned positions (no TP)
+        if fix_orphaned:
+            orphaned = position_tracker.get_orphaned_positions()
+            for pos in orphaned:
+                account_id = pos['account_id']
+                symbol = pos['symbol']
+                creds = get_account_creds(account_id)
+
+                if not creds or not creds.get('tradovate_token'):
+                    results['orphaned_failed'].append({
+                        'account_id': account_id,
+                        'symbol': symbol,
+                        'error': 'No credentials found'
+                    })
+                    continue
+
+                tp_ticks = get_tp_ticks(creds.get('tp_targets'))
+                if tp_ticks <= 0:
+                    results['orphaned_failed'].append({
+                        'account_id': account_id,
+                        'symbol': symbol,
+                        'error': 'No TP ticks configured'
+                    })
+                    continue
+
+                avg_price = pos.get('avg_price')
+                net_pos = pos.get('net_pos', 0)
+                if not avg_price or net_pos == 0:
+                    continue
+
+                # Calculate TP price
+                tick_size = position_tracker.get_tick_size(symbol)
+                if net_pos > 0:
+                    tp_price = avg_price + (tp_ticks * tick_size)
+                    tp_side = 'Sell'
+                else:
+                    tp_price = avg_price - (tp_ticks * tick_size)
+                    tp_side = 'Buy'
+
+                if dry_run:
+                    results['orphaned_fixed'].append({
+                        'account_id': account_id,
+                        'account_name': creds.get('subaccount_name'),
+                        'symbol': symbol,
+                        'action': f'Would place {tp_side} limit @ {tp_price}',
+                        'dry_run': True
+                    })
+                    continue
+
+                # Place TP order
+                try:
+                    is_demo = (creds.get('environment') or 'demo').lower() != 'live'
+
+                    async def place_tp():
+                        async with TradovateIntegration(demo=is_demo) as tradovate:
+                            tradovate.access_token = creds['tradovate_token']
+                            order_data = {
+                                'accountSpec': creds['subaccount_name'],
+                                'accountId': int(account_id),
+                                'action': tp_side,
+                                'symbol': symbol,
+                                'orderQty': abs(net_pos),
+                                'orderType': 'Limit',
+                                'price': round(tp_price, 4),
+                                'timeInForce': 'GTC'
+                            }
+                            return await tradovate.place_order_smart(order_data)
+
+                    order_result = run_async(place_tp())
+                    if order_result and order_result.get('success'):
+                        results['orphaned_fixed'].append({
+                            'account_id': account_id,
+                            'account_name': creds.get('subaccount_name'),
+                            'symbol': symbol,
+                            'tp_price': tp_price,
+                            'order_id': order_result.get('orderId')
+                        })
+                        logger.info(f"✅ Fixed orphan: Placed TP for {creds.get('subaccount_name')} {symbol} @ {tp_price}")
+                    else:
+                        results['orphaned_failed'].append({
+                            'account_id': account_id,
+                            'symbol': symbol,
+                            'error': order_result.get('error', 'Order failed') if order_result else 'No response'
+                        })
+                except Exception as e:
+                    results['orphaned_failed'].append({
+                        'account_id': account_id,
+                        'symbol': symbol,
+                        'error': str(e)
+                    })
+
+        # Fix wrong TP prices
+        if fix_wrong_tp:
+            positions = position_tracker.get_all_positions()
+            for pos in positions:
+                account_id = pos['account_id']
+                symbol = pos['symbol']
+                creds = get_account_creds(account_id)
+
+                if not creds or not creds.get('tradovate_token'):
+                    continue
+
+                tp_ticks = get_tp_ticks(creds.get('tp_targets'))
+                if tp_ticks <= 0:
+                    continue
+
+                wrong = position_tracker.verify_tp_price(account_id, symbol, tp_ticks)
+                if not wrong:
+                    continue  # TP is correct
+
+                avg_price = pos.get('avg_price')
+                net_pos = pos.get('net_pos', 0)
+                old_tp_id = wrong.get('tp_order_id')
+                new_tp_price = wrong.get('expected_tp_price')
+
+                if dry_run:
+                    results['wrong_tp_fixed'].append({
+                        'account_id': account_id,
+                        'account_name': creds.get('subaccount_name'),
+                        'symbol': symbol,
+                        'action': f'Would cancel order {old_tp_id} and place new TP @ {new_tp_price}',
+                        'old_price': wrong.get('actual_tp_price'),
+                        'new_price': new_tp_price,
+                        'dry_run': True
+                    })
+                    continue
+
+                # Cancel old TP and place new one
+                try:
+                    is_demo = (creds.get('environment') or 'demo').lower() != 'live'
+                    tp_side = 'Sell' if net_pos > 0 else 'Buy'
+
+                    async def fix_tp():
+                        async with TradovateIntegration(demo=is_demo) as tradovate:
+                            tradovate.access_token = creds['tradovate_token']
+                            # Cancel old TP
+                            if old_tp_id:
+                                await tradovate.cancel_order(old_tp_id)
+                            # Place new TP
+                            order_data = {
+                                'accountSpec': creds['subaccount_name'],
+                                'accountId': int(account_id),
+                                'action': tp_side,
+                                'symbol': symbol,
+                                'orderQty': abs(net_pos),
+                                'orderType': 'Limit',
+                                'price': round(new_tp_price, 4),
+                                'timeInForce': 'GTC'
+                            }
+                            return await tradovate.place_order_smart(order_data)
+
+                    order_result = run_async(fix_tp())
+                    if order_result and order_result.get('success'):
+                        results['wrong_tp_fixed'].append({
+                            'account_id': account_id,
+                            'account_name': creds.get('subaccount_name'),
+                            'symbol': symbol,
+                            'old_price': wrong.get('actual_tp_price'),
+                            'new_price': new_tp_price,
+                            'order_id': order_result.get('orderId')
+                        })
+                        logger.info(f"✅ Fixed wrong TP: {creds.get('subaccount_name')} {symbol} {wrong.get('actual_tp_price')} -> {new_tp_price}")
+                    else:
+                        results['wrong_tp_failed'].append({
+                            'account_id': account_id,
+                            'symbol': symbol,
+                            'error': order_result.get('error', 'Order failed') if order_result else 'No response'
+                        })
+                except Exception as e:
+                    results['wrong_tp_failed'].append({
+                        'account_id': account_id,
+                        'symbol': symbol,
+                        'error': str(e)
+                    })
+
+        conn.close()
+
+        # Summary
+        total_fixed = len(results['orphaned_fixed']) + len(results['wrong_tp_fixed'])
+        total_failed = len(results['orphaned_failed']) + len(results['wrong_tp_failed'])
+        results['summary'] = {
+            'total_fixed': total_fixed,
+            'total_failed': total_failed,
+            'message': f"Fixed {total_fixed} TP issue(s)" + (f", {total_failed} failed" if total_failed else "")
+        }
+
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Error fixing TP issues: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/broker-execution/failures', methods=['GET'])
 def api_broker_failures():
     """Get recent broker execution failures with details for debugging."""
