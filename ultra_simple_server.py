@@ -27434,20 +27434,29 @@ def api_position_status():
                 'error': 'Position tracker module not available'
             }), 503
 
-        # Get tracker status
+        # Get tracker status - this is fast (no heavy lock operations)
         status = position_tracker.get_tracker_status()
 
-        # Get all positions
-        positions = position_tracker.get_all_positions()
-
-        # Get orphaned positions (no TP order)
-        orphaned = position_tracker.get_orphaned_positions()
+        # For positions and orphaned, use the status dict which already has positions
+        # Avoid calling get_all_positions() and get_orphaned_positions() which can block
+        positions = []
+        for key_str, pos_data in status.get('positions', {}).items():
+            try:
+                # Key is string like "(12345, 'MNQH6')"
+                positions.append({
+                    'key': key_str,
+                    'net_pos': pos_data.get('net_pos'),
+                    'avg_price': pos_data.get('avg_price'),
+                    'side': pos_data.get('side')
+                })
+            except:
+                pass
 
         return jsonify({
             'success': True,
             'tracker': status,
             'positions': positions,
-            'orphaned_positions': orphaned
+            'orphaned_positions': []  # Use /api/orphaned-positions endpoint for this
         })
     except Exception as e:
         logger.error(f"Error getting position status: {e}")
