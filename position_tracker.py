@@ -102,7 +102,7 @@ WORKING_ORDERS: Dict[tuple, list] = {}
 POSITION_CLOSED_AT: Dict[tuple, datetime] = {}
 
 # Thread lock for safe access
-_lock = threading.Lock()
+_lock = threading.RLock()  # Reentrant lock - allows same thread to acquire multiple times
 
 # ============================================================================
 # POSITION LOOKUPS - Instant, no API calls
