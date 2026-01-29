@@ -13301,6 +13301,45 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
         recorder_name = recorder['name']
         _logger.info(f"✅ Found recorder '{recorder_name}' (ID: {recorder_id}) for {webhook_token[:8]}")
 
+        # EARLY TRADER LOAD: Get trader settings to use for filters (add_delay, time_filter, etc.)
+        # This allows trader-specific settings to override recorder settings
+        trader_settings = None
+        try:
+            if is_postgres:
+                cursor.execute(f'''
+                    SELECT add_delay, time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
+                           time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
+                           signal_cooldown, max_signals_per_session
+                    FROM traders
+                    WHERE recorder_id = {placeholder} AND enabled = TRUE
+                    LIMIT 1
+                ''', (recorder_id,))
+            else:
+                cursor.execute(f'''
+                    SELECT add_delay, time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
+                           time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
+                           signal_cooldown, max_signals_per_session
+                    FROM traders
+                    WHERE recorder_id = {placeholder} AND enabled = 1
+                    LIMIT 1
+                ''', (recorder_id,))
+            trader_row = cursor.fetchone()
+            if trader_row:
+                trader_settings = dict(trader_row) if hasattr(trader_row, 'keys') else {
+                    'add_delay': trader_row[0],
+                    'time_filter_1_enabled': trader_row[1],
+                    'time_filter_1_start': trader_row[2],
+                    'time_filter_1_stop': trader_row[3],
+                    'time_filter_2_enabled': trader_row[4],
+                    'time_filter_2_start': trader_row[5],
+                    'time_filter_2_stop': trader_row[6],
+                    'signal_cooldown': trader_row[7],
+                    'max_signals_per_session': trader_row[8]
+                }
+                _logger.info(f"📊 Loaded trader settings for filters: add_delay={trader_settings.get('add_delay')}, time_filter_1={trader_settings.get('time_filter_1_enabled')}")
+        except Exception as e:
+            _logger.warning(f"Could not load trader settings for filters: {e}")
+
         # Check if recorder is enabled - if disabled, reject the signal
         if not recorder.get('recording_enabled', 1):
             _logger.info(f"⚠️ Webhook BLOCKED for '{recorder_name}' - recorder is DISABLED")
@@ -13774,12 +13813,13 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
                 return current >= start or current <= stop
         
         # Check Time Filter 1 and 2 (only if enabled)
-        time_filter_1_enabled = recorder.get('time_filter_1_enabled', False)
-        time_filter_1_start = recorder.get('time_filter_1_start', '')
-        time_filter_1_stop = recorder.get('time_filter_1_stop', '')
-        time_filter_2_enabled = recorder.get('time_filter_2_enabled', False)
-        time_filter_2_start = recorder.get('time_filter_2_start', '')
-        time_filter_2_stop = recorder.get('time_filter_2_stop', '')
+        # PRIORITY: Trader settings > Recorder settings
+        time_filter_1_enabled = (trader_settings.get('time_filter_1_enabled') if trader_settings else None) or recorder.get('time_filter_1_enabled', False)
+        time_filter_1_start = (trader_settings.get('time_filter_1_start') if trader_settings else None) or recorder.get('time_filter_1_start', '')
+        time_filter_1_stop = (trader_settings.get('time_filter_1_stop') if trader_settings else None) or recorder.get('time_filter_1_stop', '')
+        time_filter_2_enabled = (trader_settings.get('time_filter_2_enabled') if trader_settings else None) or recorder.get('time_filter_2_enabled', False)
+        time_filter_2_start = (trader_settings.get('time_filter_2_start') if trader_settings else None) or recorder.get('time_filter_2_start', '')
+        time_filter_2_stop = (trader_settings.get('time_filter_2_stop') if trader_settings else None) or recorder.get('time_filter_2_stop', '')
         
         # Time filter is active only if ENABLED and has valid times
         has_time_filter_1 = time_filter_1_enabled and time_filter_1_start and time_filter_1_stop
@@ -13808,7 +13848,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
             _logger.info(f"✅ Time filter passed: {now.strftime('%I:%M %p')} in window")
         
         # --- FILTER 3: Signal Cooldown ---
-        signal_cooldown = int(recorder.get('signal_cooldown', 0) or 0)
+        # PRIORITY: Trader settings > Recorder settings
+        signal_cooldown = int((trader_settings.get('signal_cooldown') if trader_settings else None) or recorder.get('signal_cooldown', 0) or 0)
         if signal_cooldown > 0:
             if is_postgres:
                 cursor.execute(f'''
@@ -13828,7 +13869,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
             _logger.info(f"✅ Signal cooldown passed: {signal_cooldown}s")
         
         # --- FILTER 4: Max Signals Per Session ---
-        max_signals = int(recorder.get('max_signals_per_session', 0) or 0)
+        # PRIORITY: Trader settings > Recorder settings
+        max_signals = int((trader_settings.get('max_signals_per_session') if trader_settings else None) or recorder.get('max_signals_per_session', 0) or 0)
         if max_signals > 0:
             # Count signals today
             if is_postgres:
@@ -13922,7 +13964,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
                             return jsonify({'success': False, 'blocked': True, 'reason': f'Past cutoff time - only exits allowed'}), 200
         
         # --- FILTER 9: Signal Delay (Nth Signal) ---
-        add_delay = int(recorder.get('add_delay', 1) or 1)
+        # PRIORITY: Trader settings > Recorder settings
+        add_delay = int((trader_settings.get('add_delay') if trader_settings else None) or recorder.get('add_delay', 1) or 1)
         if add_delay > 1:
             # Count total signals for this recorder
             cursor.execute(f'SELECT COUNT(*) FROM recorded_signals WHERE recorder_id = {placeholder}', (recorder_id,))
