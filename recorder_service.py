@@ -50,6 +50,16 @@ from flask import Flask, request, jsonify, render_template
 from async_utils import run_async  # Safe async execution - avoids "Event loop is closed" errors
 
 # ============================================================================
+# WEBSOCKET POSITION TRACKER - Flip protection & queued signal blocking
+# ============================================================================
+try:
+    import position_tracker
+    POSITION_TRACKER_AVAILABLE = True
+except ImportError:
+    POSITION_TRACKER_AVAILABLE = False
+    print("⚠️ Position tracker module not available - flip protection disabled")
+
+# ============================================================================
 # Configuration
 # ============================================================================
 import os
@@ -1254,6 +1264,23 @@ def execute_trade_simple(
             is_demo = env != 'live'
             subaccount_id = trader.get('subaccount_id')  # This is the ProjectX account ID
 
+            # ============================================================
+            # FLIP PROTECTION - Block signals that would reverse position
+            # ============================================================
+            if POSITION_TRACKER_AVAILABLE and subaccount_id:
+                try:
+                    allowed, reason, capped_qty = position_tracker.check_can_trade(
+                        subaccount_id, ticker, action, adjusted_quantity
+                    )
+                    if not allowed:
+                        logger.warning(f"🛡️ [{acct_name}] FLIP PROTECTION BLOCKED: {reason}")
+                        return {'success': False, 'error': f"Flip protection: {reason}", 'blocked': True}
+                    elif capped_qty != adjusted_quantity:
+                        logger.info(f"🛡️ [{acct_name}] FLIP PROTECTION: {reason}")
+                        adjusted_quantity = capped_qty
+                except Exception as fp_err:
+                    logger.warning(f"⚠️ [{acct_name}] Flip protection check failed (proceeding): {fp_err}")
+
             logger.info(f"🚀 [{acct_name}] ProjectX ({prop_firm}) execution: {action} {adjusted_quantity} {ticker}")
 
             if not username:
@@ -1347,7 +1374,25 @@ def execute_trade_simple(
             account_multiplier = float(trader.get('multiplier', 1.0))  # Get multiplier for this account
             adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
             broker_type = trader.get('broker', 'Tradovate')  # Default to Tradovate
-            
+            subaccount_id = trader.get('subaccount_id')
+
+            # ============================================================
+            # FLIP PROTECTION - Block signals that would reverse position
+            # ============================================================
+            if POSITION_TRACKER_AVAILABLE and subaccount_id:
+                try:
+                    allowed, reason, capped_qty = position_tracker.check_can_trade(
+                        subaccount_id, ticker, action, adjusted_quantity
+                    )
+                    if not allowed:
+                        logger.warning(f"🛡️ [{acct_name}] FLIP PROTECTION BLOCKED: {reason}")
+                        return {'success': False, 'error': f"Flip protection: {reason}", 'blocked': True}
+                    elif capped_qty != adjusted_quantity:
+                        logger.info(f"🛡️ [{acct_name}] FLIP PROTECTION: {reason}")
+                        adjusted_quantity = capped_qty
+                except Exception as fp_err:
+                    logger.warning(f"⚠️ [{acct_name}] Flip protection check failed (proceeding): {fp_err}")
+
             # NOTE: Don't check is_account_auth_valid upfront - let auth logic handle it
             # The account might work via cached token, API Access, or OAuth fallback
             # If ALL methods fail, auth logic will return the appropriate error
