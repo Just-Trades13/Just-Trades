@@ -769,13 +769,10 @@ async def _rest_sync_positions(accounts: List[dict]):
 
 
 def sync_positions_now():
-    """Trigger REST sync (non-blocking, runs in background)"""
-    global _manager
-    if _manager and _manager._loop:
-        accounts = _load_accounts_from_db()
-        # Fire and forget - don't block waiting for result
-        asyncio.run_coroutine_threadsafe(_rest_sync_positions(accounts), _manager._loop)
-        return True
+    """Trigger REST sync - DISABLED due to performance issues"""
+    # REST sync was causing server timeouts with many accounts
+    # Using websocket-only approach for now
+    logger.warning("REST sync is disabled - using websocket only")
     return False
 
 
@@ -807,11 +804,9 @@ def start_position_tracker(accounts: List[dict] = None):
             _manager = PositionTrackerManager()
             _manager.start(accts)
 
-            # Initial REST sync after websockets start (gets current state)
-            import time
-            time.sleep(2)  # Give websockets time to initialize
-            if _manager and _manager._loop:
-                asyncio.run_coroutine_threadsafe(_rest_sync_positions(accts), _manager._loop)
+            # NOTE: REST sync disabled - using websocket only
+            # Initial REST sync was causing server timeouts
+            # Websocket should receive position updates after subscription
         except Exception as e:
             logger.error(f"Position tracker startup failed: {e}")
 
