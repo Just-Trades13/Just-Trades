@@ -96,6 +96,16 @@ except ImportError:
     PRODUCTION_DB_AVAILABLE = False
 
 # ============================================================================
+# WEBSOCKET POSITION TRACKER
+# ============================================================================
+try:
+    import position_tracker
+    POSITION_TRACKER_AVAILABLE = True
+except ImportError:
+    POSITION_TRACKER_AVAILABLE = False
+    print("⚠️ Position tracker module not available")
+
+# ============================================================================
 # TRADINGVIEW REAL-TIME PRICE SERVICE
 # ============================================================================
 try:
@@ -27326,6 +27336,36 @@ def api_broker_execution_status():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/position-status', methods=['GET'])
+def api_position_status():
+    """Get WebSocket position tracker status and positions"""
+    try:
+        if not POSITION_TRACKER_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'error': 'Position tracker module not available'
+            }), 503
+
+        # Get tracker status
+        status = position_tracker.get_tracker_status()
+
+        # Get all positions
+        positions = position_tracker.get_all_positions()
+
+        # Get orphaned positions (no TP order)
+        orphaned = position_tracker.get_orphaned_positions()
+
+        return jsonify({
+            'success': True,
+            'tracker': status,
+            'positions': positions,
+            'orphaned_positions': orphaned
+        })
+    except Exception as e:
+        logger.error(f"Error getting position status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/broker-execution/failures', methods=['GET'])
 def api_broker_failures():
     """Get recent broker execution failures with details for debugging."""
@@ -27918,6 +27958,14 @@ if __name__ == '__main__':
         logger.info("✅ Live max loss monitor started (WebSocket)")
     except Exception as e:
         logger.warning(f"⚠️ Live max loss monitor failed to start: {e}")
+
+    # Start WebSocket position tracker (NON-BLOCKING)
+    if POSITION_TRACKER_AVAILABLE:
+        try:
+            position_tracker.start_position_tracker()
+            logger.info("✅ WebSocket position tracker started (background thread)")
+        except Exception as e:
+            logger.warning(f"⚠️ Position tracker failed to start: {e}")
 
     # Start fast webhook workers (MUST be after app is created)
     try:
