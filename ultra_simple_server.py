@@ -4958,6 +4958,9 @@ def run_migrations():
         ('traders', 'max_signals_per_session', 'INTEGER DEFAULT 0'),
         ('traders', 'auto_flat_after_cutoff', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
         ('traders', 'inverse_signals', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        # SL type for trailing stops (Fixed vs Trailing)
+        ('traders', 'sl_type', "TEXT DEFAULT 'Fixed'" if is_postgres else 'TEXT DEFAULT "Fixed"'),
+        ('recorders', 'sl_type', "TEXT DEFAULT 'Fixed'" if is_postgres else 'TEXT DEFAULT "Fixed"'),
     ]
 
     for table, column, col_type in migrations:
