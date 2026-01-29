@@ -27366,6 +27366,26 @@ def api_position_status():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/sync-positions', methods=['POST'])
+def api_sync_positions():
+    """Trigger REST sync to refresh positions from broker"""
+    try:
+        if not POSITION_TRACKER_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'error': 'Position tracker module not available'
+            }), 503
+
+        result = position_tracker.sync_positions_now()
+        return jsonify({
+            'success': result,
+            'message': 'Position sync triggered' if result else 'Sync failed - tracker not running'
+        })
+    except Exception as e:
+        logger.error(f"Error syncing positions: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/orphaned-positions', methods=['GET'])
 def api_orphaned_positions():
     """TP WATCHDOG: Get positions without working TP orders"""

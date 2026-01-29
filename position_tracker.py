@@ -692,6 +692,97 @@ class PositionTrackerManager:
         self.tasks.clear()
 
 # ============================================================================
+# REST SYNC (Initial load only - websocket for live updates)
+# ============================================================================
+
+async def _rest_sync_positions(accounts: List[dict]):
+    """One-time REST sync for initial position load"""
+    import aiohttp
+
+    logger.info(f"🔄 Initial REST sync for {len(accounts)} accounts...")
+    synced = 0
+
+    for acc in accounts:
+        account_id = acc['id']
+        token = acc['token']
+        is_demo = acc.get('demo', True)
+
+        base_url = "https://demo.tradovateapi.com/v1" if is_demo else "https://live.tradovateapi.com/v1"
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Bearer {token}"}
+
+                # Get positions
+                async with session.get(f"{base_url}/position/list", headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        positions = await resp.json()
+                        for pos in positions:
+                            contract_id = pos.get('contractId')
+                            net_pos = pos.get('netPos', 0)
+                            avg_price = pos.get('netPrice')
+                            acc_id = pos.get('accountId', account_id)
+
+                            if net_pos != 0 and contract_id:
+                                # Get contract symbol
+                                async with session.get(f"{base_url}/contract/item?id={contract_id}", headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as cresp:
+                                    if cresp.status == 200:
+                                        contract = await cresp.json()
+                                        symbol = contract.get('name')
+                                        if symbol:
+                                            _update_position(acc_id, symbol, net_pos, avg_price, contract_id)
+                                            logger.info(f"📊 Initial sync: {acc_id} {symbol} = {net_pos} @ {avg_price}")
+                                            synced += 1
+
+                # Get working orders
+                async with session.get(f"{base_url}/order/list", headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        orders = await resp.json()
+                        for order in orders:
+                            status = (order.get('ordStatus') or '').upper()
+                            if status in ['WORKING', 'ACCEPTED']:
+                                contract_id = order.get('contractId')
+                                acc_id = order.get('accountId', account_id)
+
+                                if contract_id:
+                                    async with session.get(f"{base_url}/contract/item?id={contract_id}", headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as cresp:
+                                        if cresp.status == 200:
+                                            contract = await cresp.json()
+                                            symbol = contract.get('name')
+                                            if symbol:
+                                                order_data = {
+                                                    'id': order.get('id'),
+                                                    'orderId': order.get('id'),
+                                                    'accountId': acc_id,
+                                                    'symbol': symbol,
+                                                    'orderType': order.get('ordType'),
+                                                    'action': order.get('action'),
+                                                    'price': order.get('price'),
+                                                    'quantity': order.get('qty'),
+                                                    'status': status
+                                                }
+                                                _update_order(acc_id, symbol, order_data)
+        except Exception as e:
+            logger.debug(f"REST sync skipped for {account_id}: {e}")
+
+    logger.info(f"✅ Initial REST sync complete: {synced} positions loaded")
+
+
+def sync_positions_now():
+    """Trigger REST sync (can be called manually via API)"""
+    global _manager
+    if _manager and _manager._loop:
+        accounts = _load_accounts_from_db()
+        future = asyncio.run_coroutine_threadsafe(_rest_sync_positions(accounts), _manager._loop)
+        try:
+            future.result(timeout=60)
+            return True
+        except:
+            return False
+    return False
+
+
+# ============================================================================
 # STARTUP
 # ============================================================================
 
@@ -718,6 +809,12 @@ def start_position_tracker(accounts: List[dict] = None):
 
             _manager = PositionTrackerManager()
             _manager.start(accts)
+
+            # Initial REST sync after websockets start (gets current state)
+            import time
+            time.sleep(2)  # Give websockets time to initialize
+            if _manager and _manager._loop:
+                asyncio.run_coroutine_threadsafe(_rest_sync_positions(accts), _manager._loop)
         except Exception as e:
             logger.error(f"Position tracker startup failed: {e}")
 
