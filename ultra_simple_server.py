@@ -27366,6 +27366,92 @@ def api_position_status():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/orphaned-positions', methods=['GET'])
+def api_orphaned_positions():
+    """TP WATCHDOG: Get positions without working TP orders"""
+    try:
+        if not POSITION_TRACKER_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'error': 'Position tracker module not available'
+            }), 503
+
+        orphaned = position_tracker.get_orphaned_positions()
+
+        # Enrich with account names from database
+        if orphaned:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                is_postgres = is_using_postgres()
+                ph = '%s' if is_postgres else '?'
+
+                for pos in orphaned:
+                    # Try to find account name
+                    cursor.execute(f'''
+                        SELECT t.subaccount_name, a.name as account_name
+                        FROM traders t
+                        JOIN accounts a ON t.account_id = a.id
+                        WHERE t.subaccount_id = {ph}
+                        LIMIT 1
+                    ''', (pos['account_id'],))
+                    row = cursor.fetchone()
+                    if row:
+                        pos['account_name'] = dict(row).get('subaccount_name') or dict(row).get('account_name')
+                conn.close()
+            except Exception as db_err:
+                logger.warning(f"Could not enrich orphaned positions: {db_err}")
+
+        return jsonify({
+            'success': True,
+            'count': len(orphaned),
+            'orphaned_positions': orphaned,
+            'alert': len(orphaned) > 0,
+            'message': f"{len(orphaned)} position(s) without TP order" if orphaned else "All positions have TP orders"
+        })
+    except Exception as e:
+        logger.error(f"Error getting orphaned positions: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/position/<int:account_id>/<symbol>', methods=['GET'])
+def api_position_detail(account_id, symbol):
+    """Get detailed position and working orders for a specific account/symbol"""
+    try:
+        if not POSITION_TRACKER_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'error': 'Position tracker module not available'
+            }), 503
+
+        # Get position details
+        pos_details = position_tracker.get_position_details(account_id, symbol)
+
+        # Get working orders
+        working_orders = position_tracker.get_working_orders(account_id, symbol)
+
+        # Get working TP specifically
+        working_tp = position_tracker.get_working_tp(account_id, symbol)
+
+        # Check if recently closed
+        recently_closed = position_tracker.recently_closed(account_id, symbol)
+
+        return jsonify({
+            'success': True,
+            'account_id': account_id,
+            'symbol': symbol,
+            'position': pos_details,
+            'working_orders': working_orders,
+            'working_tp': working_tp,
+            'has_tp': working_tp is not None,
+            'recently_closed': recently_closed,
+            'is_orphaned': pos_details is not None and pos_details.get('net_pos', 0) != 0 and working_tp is None
+        })
+    except Exception as e:
+        logger.error(f"Error getting position detail: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/broker-execution/failures', methods=['GET'])
 def api_broker_failures():
     """Get recent broker execution failures with details for debugging."""
