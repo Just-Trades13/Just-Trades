@@ -3079,6 +3079,10 @@ def get_front_month_contract(root_symbol: str) -> str:
     # Determine which contract cycle to use
     root_upper = root_symbol.upper()
 
+    # Products that expire in the MONTH BEFORE the contract month (metals)
+    # GCG6 (February gold) expires in late January, not February
+    EARLY_EXPIRY_PRODUCTS = ['GC', 'MGC', 'SI', 'SIL', 'HG', 'PL']
+
     # Metals: Bimonthly (Feb, Apr, Jun, Aug, Oct, Dec)
     if root_upper in ['GC', 'MGC', 'SI', 'SIL', 'HG', 'PL']:
         CONTRACT_MONTHS = BIMONTHLY_MONTHS
@@ -3127,8 +3131,19 @@ def get_front_month_contract(root_symbol: str) -> str:
         if current_month > exp_month:
             continue
 
-        # Get expiration date for this contract
-        expiration = get_third_friday(exp_year, exp_month)
+        # For metals (GC, MGC, SI, etc.), expiration is in the PRIOR month
+        # GCG6 (February delivery) expires around late January
+        if root_upper in EARLY_EXPIRY_PRODUCTS:
+            # Use the month BEFORE the contract month for expiration calc
+            # Gold/silver expire ~3rd last business day of prior month
+            exp_calc_month = exp_month - 1 if exp_month > 1 else 12
+            exp_calc_year = exp_year if exp_month > 1 else exp_year - 1
+            # Approximate: 3rd Friday of prior month + ~1 week
+            expiration = get_third_friday(exp_calc_year, exp_calc_month) + timedelta(days=7)
+        else:
+            # Standard: 3rd Friday of the contract month
+            expiration = get_third_friday(exp_year, exp_month)
+
         roll_date = expiration - timedelta(days=ROLL_DAYS_BEFORE_EXPIRY)
 
         # If today is before the roll date, this is the front month
