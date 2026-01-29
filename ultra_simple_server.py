@@ -16478,11 +16478,11 @@ def traders_edit(trader_id):
         'tp_trim': tp_trim,
         'tp_units': trader_row['r_tp_units'] or 'Ticks',
         'trim_units': trader_row['r_trim_units'] or 'Contracts',
-        # SL settings from recorder
-        'sl_enabled': bool(trader_row['r_sl_enabled']),
-        'sl_amount': trader_row['r_sl_amount'] or 0,
-        'sl_units': trader_row['r_sl_units'] or 'Ticks',
-        'sl_type': trader_row.get('sl_type') or trader_row['r_sl_type'] or 'Fixed',  # Trader setting overrides recorder
+        # SL settings - trader's own settings override recorder
+        'sl_enabled': bool(trader_row.get('sl_enabled') if trader_row.get('sl_enabled') is not None else trader_row.get('r_sl_enabled')),
+        'sl_amount': trader_row.get('sl_amount') if trader_row.get('sl_amount') is not None else (trader_row.get('r_sl_amount') or 0),
+        'sl_units': trader_row.get('sl_units') or trader_row.get('r_sl_units') or 'Ticks',
+        'sl_type': trader_row.get('sl_type') or trader_row.get('r_sl_type') or 'Fixed',
         # Break-Even settings (trader setting overrides recorder)
         'break_even_enabled': bool(trader_row.get('break_even_enabled') if trader_row.get('break_even_enabled') is not None else trader_row.get('r_break_even_enabled')),
         'break_even_ticks': int(trader_row.get('break_even_ticks') if trader_row.get('break_even_ticks') is not None else (trader_row.get('r_break_even_ticks') or 10)),
