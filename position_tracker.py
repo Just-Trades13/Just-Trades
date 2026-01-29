@@ -305,6 +305,64 @@ def get_all_positions() -> List[dict]:
     return positions
 
 
+def verify_tp_price(account_id: int, symbol: str, expected_tp_ticks: int) -> Optional[dict]:
+    """
+    Verify TP order has correct price based on current avg entry.
+    Returns None if TP is correct, or dict with details if wrong.
+
+    Used after DCA to detect when TP needs updating.
+    """
+    if expected_tp_ticks <= 0:
+        return None  # No TP expected
+
+    pos = get_position_details(account_id, symbol)
+    if not pos or pos.get('net_pos', 0) == 0:
+        return None  # No position
+
+    tp = get_working_tp(account_id, symbol)
+    if not tp:
+        return None  # No TP to verify (orphan detection handles this)
+
+    avg_price = pos.get('avg_price')
+    if not avg_price:
+        return None  # Can't calculate without avg price
+
+    net_pos = pos.get('net_pos', 0)
+    tick_size = get_tick_size(symbol)
+
+    # Calculate expected TP price
+    if net_pos > 0:  # LONG - TP is above entry
+        expected_tp_price = avg_price + (expected_tp_ticks * tick_size)
+    else:  # SHORT - TP is below entry
+        expected_tp_price = avg_price - (expected_tp_ticks * tick_size)
+
+    # Get actual TP price
+    actual_tp_price = tp.get('price') or tp.get('limitPrice')
+    if not actual_tp_price:
+        return None
+
+    # Allow 1 tick tolerance
+    price_diff = abs(actual_tp_price - expected_tp_price)
+    if price_diff <= tick_size:
+        return None  # TP is correct (within 1 tick)
+
+    # TP is wrong!
+    ticks_off = round(price_diff / tick_size)
+    return {
+        'account_id': account_id,
+        'symbol': symbol,
+        'net_pos': net_pos,
+        'side': 'LONG' if net_pos > 0 else 'SHORT',
+        'avg_price': avg_price,
+        'expected_tp_price': round(expected_tp_price, 4),
+        'actual_tp_price': actual_tp_price,
+        'price_diff': round(price_diff, 4),
+        'ticks_off': ticks_off,
+        'tp_order_id': tp.get('id') or tp.get('orderId'),
+        'issue': 'WRONG_TP_PRICE'
+    }
+
+
 # ============================================================================
 # INTERNAL STATE UPDATES (called by websocket)
 # ============================================================================

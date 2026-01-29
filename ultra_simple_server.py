@@ -27452,6 +27452,93 @@ def api_position_detail(account_id, symbol):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/wrong-tp-prices', methods=['GET'])
+def api_wrong_tp_prices():
+    """TP WATCHDOG: Detect TP orders with wrong prices after DCA"""
+    try:
+        if not POSITION_TRACKER_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'error': 'Position tracker module not available'
+            }), 503
+
+        # Get all positions
+        positions = position_tracker.get_all_positions()
+        if not positions:
+            return jsonify({
+                'success': True,
+                'count': 0,
+                'wrong_tps': [],
+                'alert': False,
+                'message': 'No open positions to check'
+            })
+
+        wrong_tps = []
+
+        # For each position, look up TP settings and verify
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
+        for pos in positions:
+            account_id = pos['account_id']
+            symbol = pos['symbol']
+            symbol_base = ''.join(c for c in symbol if c.isalpha())
+
+            # Find traders linked to this account
+            cursor.execute(f'''
+                SELECT t.id as trader_id, t.recorder_id, t.subaccount_name,
+                       r.tp_targets, r.name as recorder_name
+                FROM traders t
+                JOIN recorders r ON t.recorder_id = r.id
+                WHERE t.subaccount_id = {ph}
+                LIMIT 1
+            ''', (account_id,))
+            row = cursor.fetchone()
+
+            if not row:
+                continue
+
+            trader_info = dict(row)
+            tp_targets = trader_info.get('tp_targets')
+
+            # Parse tp_ticks from tp_targets
+            tp_ticks = 0
+            if tp_targets:
+                try:
+                    targets = json.loads(tp_targets) if isinstance(tp_targets, str) else tp_targets
+                    if targets and len(targets) > 0:
+                        first_target = targets[0]
+                        tp_ticks = first_target.get('ticks') or first_target.get('value') or 0
+                except:
+                    pass
+
+            if tp_ticks <= 0:
+                continue  # No TP configured
+
+            # Verify TP price
+            wrong = position_tracker.verify_tp_price(account_id, symbol, tp_ticks)
+            if wrong:
+                wrong['recorder_name'] = trader_info.get('recorder_name')
+                wrong['account_name'] = trader_info.get('subaccount_name')
+                wrong['expected_tp_ticks'] = tp_ticks
+                wrong_tps.append(wrong)
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'count': len(wrong_tps),
+            'wrong_tps': wrong_tps,
+            'alert': len(wrong_tps) > 0,
+            'message': f"{len(wrong_tps)} TP order(s) have wrong prices" if wrong_tps else "All TP prices are correct"
+        })
+    except Exception as e:
+        logger.error(f"Error checking TP prices: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/broker-execution/failures', methods=['GET'])
 def api_broker_failures():
     """Get recent broker execution failures with details for debugging."""
