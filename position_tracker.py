@@ -888,40 +888,57 @@ def get_tracker_status() -> dict:
     """Get tracker status for debugging"""
     global _manager
 
-    positions_summary = {}
-    for key, pos_data in POSITIONS.items():
-        account_id, symbol = key
-        net_pos = pos_data.get('net_pos', 0) if isinstance(pos_data, dict) else 0
-        if net_pos != 0:
-            tp = get_working_tp(account_id, symbol)
-            positions_summary[str(key)] = {
-                'net_pos': net_pos,
-                'avg_price': pos_data.get('avg_price'),
-                'side': pos_data.get('side'),
-                'has_tp': tp is not None,
-                'tp_price': tp.get('price') if tp else None
-            }
+    try:
+        # Quick snapshot without locks
+        positions_copy = dict(POSITIONS)
+        orders_copy = dict(WORKING_ORDERS)
+        closes_copy = dict(POSITION_CLOSED_AT)
 
-    # Get connection status for each tracker
-    connection_status = {}
-    if _manager and _manager.trackers:
-        for acc_id, tracker in _manager.trackers.items():
-            connection_status[acc_id] = {
-                'connected': tracker.connected if hasattr(tracker, 'connected') else False,
-                'running': tracker.running if hasattr(tracker, 'running') else False
-            }
+        positions_summary = {}
+        for key, pos_data in positions_copy.items():
+            try:
+                account_id, symbol = key
+                net_pos = pos_data.get('net_pos', 0) if isinstance(pos_data, dict) else 0
+                if net_pos != 0:
+                    positions_summary[str(key)] = {
+                        'net_pos': net_pos,
+                        'avg_price': pos_data.get('avg_price'),
+                        'side': pos_data.get('side')
+                    }
+            except:
+                pass
 
-    connected_count = sum(1 for s in connection_status.values() if s.get('connected'))
+        # Get connection status - simplified
+        accounts_tracked = []
+        connected_count = 0
+        if _manager and _manager.trackers:
+            try:
+                accounts_tracked = list(_manager.trackers.keys())
+                for tracker in _manager.trackers.values():
+                    if hasattr(tracker, 'connected') and tracker.connected:
+                        connected_count += 1
+            except:
+                pass
 
-    return {
-        'running': _manager.running if _manager else False,
-        'accounts_tracked': list(_manager.trackers.keys()) if _manager else [],
-        'accounts_connected': connected_count,
-        'connection_status': connection_status,
-        'positions': positions_summary,
-        'working_orders': {str(k): v for k, v in WORKING_ORDERS.items()},
-        'recent_closes': {str(k): v.isoformat() for k, v in POSITION_CLOSED_AT.items()}
-    }
+        return {
+            'running': _manager.running if _manager else False,
+            'accounts_tracked': accounts_tracked,
+            'accounts_connected': connected_count,
+            'positions': positions_summary,
+            'working_orders': {str(k): len(v) for k, v in orders_copy.items()},
+            'recent_closes': {str(k): v.isoformat() for k, v in closes_copy.items()}
+        }
+    except Exception as e:
+        logger.error(f"Error in get_tracker_status: {e}")
+        return {
+            'running': False,
+            'error': str(e),
+            'accounts_tracked': [],
+            'accounts_connected': 0,
+            'positions': {},
+            'working_orders': {},
+            'recent_closes': {}
+        }
 
 
 # ============================================================================
