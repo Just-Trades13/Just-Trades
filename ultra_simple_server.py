@@ -11749,6 +11749,7 @@ def api_get_traders():
                 'sl_enabled': bool(row_dict.get('trader_sl_enabled')) if row_dict.get('trader_sl_enabled') is not None else False,
                 'sl_amount': row_dict.get('trader_sl_amount'),
                 'sl_units': row_dict.get('trader_sl_units'),
+                'sl_type': row_dict.get('trader_sl_type', 'Fixed'),
                 'max_daily_loss': row_dict.get('trader_max_daily_loss'),
                 'add_delay': row_dict.get('add_delay', 1),
                 'signal_count': row_dict.get('signal_count', 0)
@@ -14051,7 +14052,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
                 SELECT t.*,
                        t.initial_position_size, t.add_position_size,
                        t.tp_targets,
-                       t.sl_enabled, t.sl_amount, t.sl_units,
+                       t.sl_enabled, t.sl_amount, t.sl_units, t.sl_type,
+                       t.trail_trigger, t.trail_freq,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
@@ -14063,7 +14065,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
                 SELECT t.*,
                        t.initial_position_size, t.add_position_size,
                        t.tp_targets,
-                       t.sl_enabled, t.sl_amount, t.sl_units,
+                       t.sl_enabled, t.sl_amount, t.sl_units, t.sl_type,
+                       t.trail_trigger, t.trail_freq,
                        a.tradovate_token, a.md_access_token, a.username, a.password, a.id as account_id
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
@@ -14143,6 +14146,17 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
             break_even_enabled = trader_break_even_enabled
         if trader_break_even_ticks is not None:
             break_even_ticks = int(trader_break_even_ticks or 10)
+
+        # Get trader's trailing stop settings if available (override recorder)
+        if trader:
+            trader_trail_trigger = trader.get('trail_trigger')
+            trader_trail_freq = trader.get('trail_freq')
+            if trader_trail_trigger is not None:
+                trail_trigger = int(trader_trail_trigger or 0)
+                _logger.info(f"📊 Using TRADER's trail_trigger: {trail_trigger} ticks")
+            if trader_trail_freq is not None:
+                trail_freq = int(trader_trail_freq or 0)
+                _logger.info(f"📊 Using TRADER's trail_freq: {trail_freq} ticks")
 
         # ============================================================
         # TP/SL CALCULATION - Priority: Webhook > Trader > Recorder
