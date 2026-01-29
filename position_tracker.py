@@ -564,6 +564,15 @@ class TradovatePositionWebsocket:
         """Process parsed data"""
         # Handle Tradovate sync response format: {"d": {"positions": [...], "orders": [...]}}
         if isinstance(data, dict):
+            # Handle props updates: {"e": "props", "d": {"entityType": "position", ...}}
+            if data.get('e') == 'props' and 'd' in data:
+                d = data['d']
+                entity_type = d.get('entityType', '').lower()
+                if entity_type in ('position', 'order', 'contract'):
+                    logger.info(f"📡 [{self.account_id}] Props update: {entity_type}")
+                    await self._process_item(d)
+                return
+
             if 'd' in data:
                 d = data['d']
                 # Process positions array
@@ -827,9 +836,16 @@ def start_position_tracker(accounts: List[dict] = None):
             _manager = PositionTrackerManager()
             _manager.start(accts)
 
-            # NOTE: REST sync disabled - using websocket only
-            # Initial REST sync was causing server timeouts
-            # Websocket should receive position updates after subscription
+            # Initial REST sync (one-time at startup only)
+            # User approved REST for initial startup, websocket for live updates
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                # Only sync first 10 accounts to avoid timeout
+                loop.run_until_complete(_rest_sync_positions(accts[:10]))
+                loop.close()
+            except Exception as e:
+                logger.warning(f"Initial REST sync skipped: {e}")
         except Exception as e:
             logger.error(f"Position tracker startup failed: {e}")
 
