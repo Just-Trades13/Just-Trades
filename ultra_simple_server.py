@@ -9769,18 +9769,30 @@ def oauth_callback():
 
 @app.route('/api/accounts/<int:account_id>', methods=['DELETE'])
 def delete_account(account_id):
-    """Delete an account"""
+    """Delete an account and all associated traders"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        # First, delete all traders linked to this account
+        cursor.execute(f"DELETE FROM traders WHERE account_id = {placeholder}", (account_id,))
+        traders_deleted = cursor.rowcount
+
+        # Then delete the account
+        cursor.execute(f"DELETE FROM accounts WHERE id = {placeholder}", (account_id,))
+        account_deleted = cursor.rowcount
+
         conn.commit()
-        deleted = cursor.rowcount
         conn.close()
-        
-        if deleted > 0:
-            logger.info(f"Deleted account {account_id}")
-            return jsonify({'success': True, 'message': 'Account deleted successfully'})
+
+        if account_deleted > 0:
+            logger.info(f"Deleted account {account_id} and {traders_deleted} associated traders")
+            return jsonify({
+                'success': True,
+                'message': f'Account deleted successfully ({traders_deleted} traders also removed)'
+            })
         else:
             return jsonify({'success': False, 'error': 'Account not found'}), 404
     except Exception as e:
@@ -9788,6 +9800,52 @@ def delete_account(account_id):
         import traceback
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/cleanup-orphaned-traders', methods=['POST'])
+def api_cleanup_orphaned_traders():
+    """Remove traders that reference accounts that no longer exist"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+
+        # Find orphaned traders (account_id not in accounts table)
+        if is_postgres:
+            cursor.execute("""
+                DELETE FROM traders
+                WHERE account_id NOT IN (SELECT id FROM accounts)
+                RETURNING id
+            """)
+            deleted_ids = [row[0] for row in cursor.fetchall()]
+            deleted_count = len(deleted_ids)
+        else:
+            # SQLite doesn't support RETURNING, do it in two steps
+            cursor.execute("""
+                SELECT id FROM traders
+                WHERE account_id NOT IN (SELECT id FROM accounts)
+            """)
+            deleted_ids = [row[0] for row in cursor.fetchall()]
+            cursor.execute("""
+                DELETE FROM traders
+                WHERE account_id NOT IN (SELECT id FROM accounts)
+            """)
+            deleted_count = cursor.rowcount
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Cleaned up {deleted_count} orphaned traders: {deleted_ids}")
+        return jsonify({
+            'success': True,
+            'deleted_count': deleted_count,
+            'deleted_ids': deleted_ids,
+            'message': f'Removed {deleted_count} orphaned traders'
+        })
+    except Exception as e:
+        logger.error(f"Error cleaning up orphaned traders: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/accounts/<int:account_id>/refresh-subaccounts', methods=['POST'])
 def refresh_account_subaccounts(account_id):
