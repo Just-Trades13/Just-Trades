@@ -474,7 +474,8 @@ class TradovatePositionWebsocket:
     async def subscribe(self):
         """Subscribe to position/order updates"""
         try:
-            sync_msg = f"user/syncrequest\n1\n\n{{\"accounts\":[{self.account_id}]}}"
+            # user/syncrequest needs empty body - uses authenticated user's accounts
+            sync_msg = f"user/syncrequest\n2\n\n{{}}"
             await self.ws.send(sync_msg)
             logger.info(f"Subscribed to updates for account {self.account_id}")
         except Exception as e:
@@ -514,34 +515,46 @@ class TradovatePositionWebsocket:
 
     async def _handle_message(self, msg: str):
         """Process incoming message"""
-        if not msg or msg == "[]":
+        if not msg or msg in ('o', 'h', '[]'):
             return
 
-        # Debug: log first 200 chars of each message to understand format
-        if len(msg) > 10:
-            logger.debug(f"📨 [{self.account_id}] WS msg: {msg[:200]}...")
-
         try:
-            # Find JSON
-            start = msg.find('[') if msg.find('[') != -1 else msg.find('{')
-            if start == -1:
+            data = None
+
+            # Handle different Tradovate message formats
+            if msg.startswith('a['):
+                # Array format: a["json_string"] - inner content is stringified JSON
+                inner = msg[1:]
+                array = json.loads(inner)
+                if array and isinstance(array[0], str):
+                    data = json.loads(array[0])
+                    logger.info(f"📨 [{self.account_id}] Parsed a[] format message")
+            elif '{' in msg:
+                # Direct JSON or response format
+                json_start = msg.find('{')
+                json_str = msg[json_start:]
+                data = json.loads(json_str)
+            elif '[' in msg:
+                # Array response
+                json_start = msg.find('[')
+                data = json.loads(msg[json_start:])
+
+            if not data:
                 return
 
-            data = json.loads(msg[start:])
-
-            # Debug: log what we parsed
+            # Log what we got
             if isinstance(data, dict):
-                keys = list(data.keys())[:5]
-                logger.debug(f"📨 [{self.account_id}] Parsed dict keys: {keys}")
-                if 'd' in data:
-                    d = data['d']
-                    if isinstance(d, dict):
-                        d_keys = list(d.keys())[:10]
-                        logger.info(f"📨 [{self.account_id}] Sync data keys: {d_keys}")
-                        if 'positions' in d:
-                            logger.info(f"📊 [{self.account_id}] Received {len(d['positions'])} positions!")
-                        if 'orders' in d:
-                            logger.info(f"📋 [{self.account_id}] Received {len(d['orders'])} orders!")
+                keys = list(data.keys())[:10]
+                logger.info(f"📨 [{self.account_id}] Message keys: {keys}")
+                if 'd' in data and isinstance(data['d'], dict):
+                    d_keys = list(data['d'].keys())[:15]
+                    logger.info(f"📨 [{self.account_id}] Sync data keys: {d_keys}")
+                    if 'positions' in data['d']:
+                        logger.info(f"📊 [{self.account_id}] Received {len(data['d']['positions'])} positions!")
+                    if 'orders' in data['d']:
+                        logger.info(f"📋 [{self.account_id}] Received {len(data['d']['orders'])} orders!")
+                    if 'contracts' in data['d']:
+                        logger.info(f"📜 [{self.account_id}] Received {len(data['d']['contracts'])} contracts")
 
             await self._process_data(data)
         except json.JSONDecodeError as e:
