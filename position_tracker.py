@@ -524,12 +524,43 @@ class TradovatePositionWebsocket:
                 return
 
             data = json.loads(msg[start:])
+
+            # Debug: log message types we receive
+            if isinstance(data, dict) and 'd' in data:
+                d = data['d']
+                if 'positions' in d:
+                    logger.info(f"📨 WS received {len(d['positions'])} positions for account {self.account_id}")
+                if 'orders' in d:
+                    logger.info(f"📨 WS received {len(d['orders'])} orders for account {self.account_id}")
+
             await self._process_data(data)
         except json.JSONDecodeError:
             pass
 
     async def _process_data(self, data):
         """Process parsed data"""
+        # Handle Tradovate sync response format: {"d": {"positions": [...], "orders": [...]}}
+        if isinstance(data, dict):
+            if 'd' in data:
+                d = data['d']
+                # Process positions array
+                if 'positions' in d and isinstance(d['positions'], list):
+                    for pos in d['positions']:
+                        await self._process_item(pos)
+                # Process orders array
+                if 'orders' in d and isinstance(d['orders'], list):
+                    for order in d['orders']:
+                        await self._process_item(order)
+                # Process contracts for symbol mapping
+                if 'contracts' in d and isinstance(d['contracts'], list):
+                    for contract in d['contracts']:
+                        cid = contract.get('id')
+                        name = contract.get('name')
+                        if cid and name:
+                            self._contract_symbols[cid] = name
+                return
+
+        # Handle flat array format
         if isinstance(data, list):
             for item in data:
                 if isinstance(item, dict):
@@ -541,16 +572,22 @@ class TradovatePositionWebsocket:
         """Process single item - position or order"""
         entity_type = item.get('entityType', '').lower()
 
-        # Position update
-        if entity_type == 'position' or 'netPos' in item:
+        # Position update - check multiple field names Tradovate uses
+        if entity_type == 'position' or 'netPos' in item or 'netPosition' in item:
             account_id = item.get('accountId', self.account_id)
             net_pos = item.get('netPos') or item.get('netPosition') or 0
-            avg_price = item.get('avgPrice') or item.get('averagePrice')
+            avg_price = item.get('netPrice') or item.get('avgPrice') or item.get('averagePrice')
             contract_id = item.get('contractId')
 
-            symbol = item.get('symbol') or item.get('contractSymbol')
+            symbol = item.get('symbol') or item.get('contractSymbol') or item.get('name')
             if not symbol and contract_id:
-                symbol = self._contract_symbols.get(contract_id, f"C{contract_id}")
+                symbol = self._contract_symbols.get(contract_id)
+                if not symbol:
+                    # Contract ID format sometimes includes symbol
+                    symbol = f"CONTRACT_{contract_id}"
+
+            if symbol and net_pos != 0:
+                logger.info(f"📊 Position update: {account_id} {symbol} = {net_pos} @ {avg_price}")
 
             if symbol:
                 _update_position(account_id, symbol, int(net_pos), avg_price, contract_id)
