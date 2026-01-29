@@ -776,9 +776,22 @@ def get_tracker_status() -> dict:
                 'tp_price': tp.get('price') if tp else None
             }
 
+    # Get connection status for each tracker
+    connection_status = {}
+    if _manager and _manager.trackers:
+        for acc_id, tracker in _manager.trackers.items():
+            connection_status[acc_id] = {
+                'connected': tracker.connected if hasattr(tracker, 'connected') else False,
+                'running': tracker.running if hasattr(tracker, 'running') else False
+            }
+
+    connected_count = sum(1 for s in connection_status.values() if s.get('connected'))
+
     return {
         'running': _manager.running if _manager else False,
         'accounts_tracked': list(_manager.trackers.keys()) if _manager else [],
+        'accounts_connected': connected_count,
+        'connection_status': connection_status,
         'positions': positions_summary,
         'working_orders': {str(k): v for k, v in WORKING_ORDERS.items()},
         'recent_closes': {str(k): v.isoformat() for k, v in POSITION_CLOSED_AT.items()}
