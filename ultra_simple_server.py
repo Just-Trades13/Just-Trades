@@ -27386,6 +27386,26 @@ def api_sync_positions():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/debug/position/<int:account_id>', methods=['GET'])
+def api_debug_position(account_id):
+    """DEBUG: Check specific account positions via REST API"""
+    try:
+        if not POSITION_TRACKER_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'error': 'Position tracker module not available'
+            }), 503
+
+        result = position_tracker.debug_check_account(account_id)
+        return jsonify({
+            'success': True,
+            'debug': result
+        })
+    except Exception as e:
+        logger.error(f"Error in debug position check: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/orphaned-positions', methods=['GET'])
 def api_orphaned_positions():
     """TP WATCHDOG: Get positions without working TP orders"""

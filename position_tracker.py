@@ -808,6 +808,125 @@ def sync_positions_now():
     return False
 
 
+async def _debug_check_account(account_id: int) -> dict:
+    """Debug: Check specific account positions via REST"""
+    import aiohttp
+
+    conn, db_type = _get_db_connection()
+    if not conn:
+        return {'error': 'No database connection'}
+
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, tradovate_token, tradovate_accounts, subaccounts, environment
+        FROM accounts
+        WHERE tradovate_token IS NOT NULL
+    """)
+
+    # Find the account's token
+    token = None
+    is_demo = True
+    found_in_db = False
+
+    for row in cursor.fetchall():
+        accts = []
+        try:
+            if row['tradovate_accounts']:
+                accts = json.loads(row['tradovate_accounts'])
+        except:
+            pass
+        if not accts:
+            try:
+                if row['subaccounts']:
+                    accts = json.loads(row['subaccounts'])
+            except:
+                pass
+
+        for acc in accts:
+            if acc.get('id') == account_id:
+                token = row['tradovate_token']
+                found_in_db = True
+                env = acc.get('environment') or row.get('environment') or 'demo'
+                is_demo = env.lower() == 'demo'
+                break
+        if token:
+            break
+
+    conn.close()
+
+    if not found_in_db:
+        return {'error': f'Account {account_id} not found in database'}
+    if not token:
+        return {'error': f'No token for account {account_id}'}
+
+    # Query Tradovate REST API
+    base_url = "https://demo.tradovateapi.com/v1" if is_demo else "https://live.tradovateapi.com/v1"
+    result = {
+        'account_id': account_id,
+        'found_in_db': found_in_db,
+        'is_demo': is_demo,
+        'token_exists': bool(token),
+        'token_preview': token[:20] + '...' if token else None,
+        'positions': [],
+        'orders': []
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # Get positions
+            async with session.get(f"{base_url}/position/list", headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                result['position_status'] = resp.status
+                if resp.status == 200:
+                    positions = await resp.json()
+                    result['raw_positions_count'] = len(positions)
+                    for pos in positions:
+                        if pos.get('accountId') == account_id:
+                            result['positions'].append({
+                                'contractId': pos.get('contractId'),
+                                'netPos': pos.get('netPos'),
+                                'netPrice': pos.get('netPrice'),
+                                'accountId': pos.get('accountId')
+                            })
+                else:
+                    result['position_error'] = await resp.text()
+
+            # Get orders
+            async with session.get(f"{base_url}/order/list", headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                result['order_status'] = resp.status
+                if resp.status == 200:
+                    orders = await resp.json()
+                    result['raw_orders_count'] = len(orders)
+                    for order in orders:
+                        if order.get('accountId') == account_id:
+                            status = (order.get('ordStatus') or '').upper()
+                            if status in ['WORKING', 'ACCEPTED']:
+                                result['orders'].append({
+                                    'orderId': order.get('id'),
+                                    'contractId': order.get('contractId'),
+                                    'ordStatus': status,
+                                    'action': order.get('action'),
+                                    'qty': order.get('qty')
+                                })
+    except Exception as e:
+        result['rest_error'] = str(e)
+
+    return result
+
+
+def debug_check_account(account_id: int) -> dict:
+    """Debug: Check specific account positions via REST (sync wrapper)"""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(_debug_check_account(account_id))
+        loop.close()
+        return result
+    except Exception as e:
+        return {'error': str(e)}
+
+
 # ============================================================================
 # STARTUP
 # ============================================================================
