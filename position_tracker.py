@@ -282,6 +282,29 @@ def get_orphaned_positions() -> List[dict]:
 
     return orphaned
 
+
+def get_all_positions() -> List[dict]:
+    """Get all current positions from memory"""
+    positions = []
+
+    with _lock:
+        for key, pos_data in POSITIONS.items():
+            account_id, symbol = key
+            net_pos = pos_data.get('net_pos', 0) if isinstance(pos_data, dict) else 0
+
+            if net_pos != 0:
+                positions.append({
+                    'account_id': account_id,
+                    'symbol': symbol,
+                    'net_pos': net_pos,
+                    'avg_price': pos_data.get('avg_price'),
+                    'side': 'LONG' if net_pos > 0 else 'SHORT',
+                    'updated_at': pos_data.get('updated_at')
+                })
+
+    return positions
+
+
 # ============================================================================
 # INTERNAL STATE UPDATES (called by websocket)
 # ============================================================================
