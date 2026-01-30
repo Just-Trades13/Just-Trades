@@ -659,6 +659,16 @@ class TradovateIntegration:
                         close_timeout=5
                     )
 
+                    # IMPORTANT: Wait for Tradovate's initial "o" frame (open) before authenticating
+                    # Tradovate sends "o" when the socket is ready to receive messages
+                    try:
+                        open_frame = await asyncio.wait_for(self.websocket.recv(), timeout=5.0)
+                        logger.info(f"🔌 Received initial frame: {open_frame[:50] if open_frame else 'empty'}...")
+                        if open_frame != 'o':
+                            logger.warning(f"⚠️ Expected 'o' frame but got: {open_frame[:100]}")
+                    except asyncio.TimeoutError:
+                        logger.warning("⚠️ No 'o' frame received, proceeding with auth anyway")
+
                     # Authenticate via WebSocket using Tradovate's text framing protocol
                     # Format: <operation>\n<requestId>\n<query-or-blank>\n<body>
                     # For authorize: authorize\n1\n\n<accessToken>
