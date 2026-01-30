@@ -305,58 +305,84 @@ async def prewarm_websocket_connections():
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
 
-        # Get all unique subaccounts from enabled traders with valid tokens
+        # Get all enabled traders with their account info
+        # Need to check BOTH legacy subaccount_id AND new enabled_accounts JSON
         cursor.execute(f'''
-            SELECT DISTINCT t.subaccount_id, a.tradovate_token, a.environment
+            SELECT t.id, t.subaccount_id, t.enabled_accounts, a.tradovate_token, a.environment
             FROM traders t
             JOIN accounts a ON t.account_id = a.id
             WHERE t.enabled = {'TRUE' if is_postgres else '1'}
-            AND t.subaccount_id IS NOT NULL
             AND a.tradovate_token IS NOT NULL
         ''')
 
-        accounts = cursor.fetchall()
+        rows = cursor.fetchall()
         conn.close()
 
-        if not accounts:
+        # Extract unique subaccounts from both legacy and new format
+        accounts_to_warm = {}  # subaccount_id -> (token, is_demo)
+
+        for row in rows:
+            if isinstance(row, tuple):
+                trader_id, legacy_subaccount, enabled_accounts_json, token, env = row
+            else:
+                trader_id = row.get('id')
+                legacy_subaccount = row.get('subaccount_id')
+                enabled_accounts_json = row.get('enabled_accounts')
+                token = row.get('tradovate_token')
+                env = row.get('environment', 'demo')
+
+            is_demo = env != 'live'
+
+            # Check legacy subaccount_id first
+            if legacy_subaccount and token:
+                accounts_to_warm[legacy_subaccount] = (token, is_demo)
+
+            # Then check enabled_accounts JSON
+            if enabled_accounts_json:
+                try:
+                    import json
+                    accts = json.loads(enabled_accounts_json) if isinstance(enabled_accounts_json, str) else enabled_accounts_json
+                    for acct in (accts or []):
+                        sub_id = acct.get('subaccount_id')
+                        if sub_id and token:
+                            accounts_to_warm[sub_id] = (token, is_demo)
+                except Exception as parse_err:
+                    logger.warning(f"⚠️ Failed to parse enabled_accounts for trader {trader_id}: {parse_err}")
+
+        if not accounts_to_warm:
             logger.info("🔥 No accounts to pre-warm")
-            return
+            return {'warmed': 0, 'failed': 0}
 
-        logger.info(f"🔥 Pre-warming {len(accounts)} WebSocket connections...")
+        logger.info(f"🔥 Pre-warming {len(accounts_to_warm)} unique WebSocket connections...")
 
-        # Warm up connections in parallel (batches of 50 to avoid overwhelming)
-        batch_size = 50
+        # Warm up connections in parallel
         warmed = 0
         failed = 0
+        tasks = []
 
-        for i in range(0, len(accounts), batch_size):
-            batch = accounts[i:i+batch_size]
-            tasks = []
+        for subaccount_id, (token, is_demo) in accounts_to_warm.items():
+            tasks.append(get_pooled_connection(subaccount_id, is_demo, token))
 
-            for row in batch:
-                subaccount_id = row[0] if isinstance(row, tuple) else row.get('subaccount_id')
-                token = row[1] if isinstance(row, tuple) else row.get('tradovate_token')
-                env = row[2] if isinstance(row, tuple) else row.get('environment', 'demo')
-                is_demo = env != 'live'
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                if subaccount_id and token:
-                    tasks.append(get_pooled_connection(subaccount_id, is_demo, token))
-
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            for r in results:
-                if isinstance(r, Exception):
-                    failed += 1
-                elif r:
-                    warmed += 1
-                else:
-                    failed += 1
+        for r in results:
+            if isinstance(r, Exception):
+                logger.warning(f"⚠️ Prewarm connection failed: {r}")
+                failed += 1
+            elif r:
+                warmed += 1
+            else:
+                failed += 1
 
         logger.info(f"🔥 WebSocket pre-warm complete: {warmed} connected, {failed} failed")
         logger.info(f"🔥 Pool size: {len(_WS_POOL)} connections ready for INSTANT execution")
+        return {'warmed': warmed, 'failed': failed, 'pool_size': len(_WS_POOL)}
 
     except Exception as e:
         logger.error(f"❌ WebSocket pre-warm failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'warmed': 0, 'failed': 0, 'error': str(e)}
 
 def start_websocket_prewarm():
     """Start WebSocket pre-warming using the SHARED async event loop."""
