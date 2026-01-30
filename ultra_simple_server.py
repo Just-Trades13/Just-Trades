@@ -27621,15 +27621,17 @@ def api_websocket_pool():
 def api_websocket_prewarm():
     """Manually trigger WebSocket connection prewarm"""
     try:
-        from recorder_service import start_websocket_prewarm, get_websocket_order_stats, _WS_POOL
+        from recorder_service import prewarm_websocket_connections, get_websocket_order_stats, _WS_POOL
+        from async_utils import run_async
 
-        # Trigger prewarm
-        start_websocket_prewarm()
+        # Run prewarm synchronously and get result
+        prewarm_result = run_async(prewarm_websocket_connections())
 
-        # Return current pool status
+        # Return current pool status with prewarm result
         return jsonify({
             'success': True,
-            'message': 'Prewarm triggered',
+            'message': 'Prewarm completed',
+            'prewarm_result': prewarm_result,
             'pool_size': len(_WS_POOL),
             'stats': get_websocket_order_stats()
         })
