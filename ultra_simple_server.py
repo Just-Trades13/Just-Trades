@@ -14818,15 +14818,30 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
             import traceback
             traceback.print_exc()
         
-        # STEP 2: Build risk_config for apply_risk_orders (includes trailing stop and break-even)
+        # STEP 2: Build risk_config for Tradovate native bracket orders
+        # This config is passed to place_bracket_order() which builds multi-bracket orders
         risk_config = {}
-        
-        # Take profit
-        if tp_ticks and tp_ticks > 0:
-            risk_config['take_profit'] = [{
-                'gain_ticks': tp_ticks,
-                'trim_percent': 100
-            }]
+
+        # Take profit targets (full array for multi-TP support)
+        # tp_targets format: [{ticks: 5, trim: 50}, {ticks: 10, trim: 100}]
+        if tp_targets and len(tp_targets) > 0:
+            # Normalize format: ensure 'ticks' key exists (convert from 'value' if needed)
+            normalized_targets = []
+            for target in tp_targets:
+                ticks = target.get('ticks') or target.get('value') or 0
+                trim = target.get('trim', 100)
+                if ticks > 0:
+                    normalized_targets.append({'ticks': int(ticks), 'trim': int(trim)})
+            if normalized_targets:
+                risk_config['tp_targets'] = normalized_targets
+                _logger.info(f"📊 Multi-TP targets: {normalized_targets}")
+        elif tp_ticks and tp_ticks > 0:
+            # Fallback to single TP
+            risk_config['tp_targets'] = [{'ticks': int(tp_ticks), 'trim': 100}]
+
+        # SL settings (type determines Fixed vs Trailing)
+        risk_config['sl_ticks'] = sl_ticks if sl_ticks > 0 else 0
+        risk_config['sl_type'] = sl_type  # 'Fixed' or 'Trailing'
         
         # Stop loss (fixed or trailing)
         # Priority: Webhook trail settings > SL type from settings

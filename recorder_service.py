@@ -1680,73 +1680,72 @@ def execute_trade_simple(
                     
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
-                    # NOW SUPPORTS: Native break-even and autoTrail (trailing-after-profit) via Tradovate API
-                    # NOTE: Bracket orders require TP to be set. For trailing stop only (no TP),
-                    # use REST path which calls apply_risk_orders to place trailing stop separately.
+                    # NOW SUPPORTS: Multi-TP brackets, trailing stop, break-even via Tradovate native API
+                    #
+                    # Use bracket order if: Has TP OR has SL (or both)
+                    # Tradovate handles all the order management natively
+                    has_tp = (risk_config and risk_config.get('tp_targets')) or (tp_ticks and tp_ticks > 0)
+                    has_sl = (risk_config and risk_config.get('sl_ticks', 0) > 0) or (sl_ticks and sl_ticks > 0)
+
                     use_bracket_order = (
                         not has_existing_position and
-                        tp_ticks and tp_ticks > 0
+                        (has_tp or has_sl)
                     )
-                    
+
                     if use_bracket_order:
-                        # Extract native break-even and autoTrail settings from risk_config
+                        # Extract settings from risk_config (built in ultra_simple_server.py)
+                        tp_targets = risk_config.get('tp_targets', []) if risk_config else []
+                        sl_ticks_cfg = risk_config.get('sl_ticks', 0) if risk_config else 0
+                        sl_type_cfg = risk_config.get('sl_type', 'Fixed') if risk_config else 'Fixed'
+
+                        # Break-even settings
                         break_even_ticks = None
-                        auto_trail = None
-                        trailing_stop_bool = False
-                        
+                        break_even_offset = 0
                         if risk_config:
-                            # Break-even: { activation_ticks: X, offset_ticks: Y }
-                            # offset_ticks = how many ticks of profit to lock in (0 = true breakeven at entry)
                             break_even_cfg = risk_config.get('break_even')
                             if break_even_cfg and break_even_cfg.get('activation_ticks'):
                                 break_even_ticks = break_even_cfg.get('activation_ticks')
-                                break_even_offset = break_even_cfg.get('offset_ticks', 0)  # Default to true breakeven
-                                if break_even_offset > 0:
-                                    logger.info(f"📊 [{acct_name}] Native break-even: activation={break_even_ticks} ticks, offset={break_even_offset} ticks")
-                                else:
-                                    logger.info(f"📊 [{acct_name}] Native break-even: {break_even_ticks} ticks (true BE)")
+                                break_even_offset = break_even_cfg.get('offset_ticks', 0)
 
-                            # Trailing: { offset_ticks: X, activation_ticks: Y, frequency_ticks: Z }
+                        # Trail settings (for autoTrail - trailing after profit threshold)
+                        trail_trigger = 0
+                        trail_freq = 0
+                        if risk_config:
                             trail_cfg = risk_config.get('trail')
                             if trail_cfg:
-                                offset_ticks = trail_cfg.get('offset_ticks')
-                                activation_ticks = trail_cfg.get('activation_ticks')
-                                frequency_ticks = trail_cfg.get('frequency_ticks')  # How often to update trail
+                                trail_trigger = trail_cfg.get('activation_ticks', 0)
+                                trail_freq = trail_cfg.get('frequency_ticks', 0)
+                                # If trail is configured, use Trailing sl_type
+                                if trail_cfg.get('offset_ticks'):
+                                    sl_type_cfg = 'Trailing'
 
-                                # If activation_ticks exists and is different from offset_ticks, it's trail-after-profit
-                                # If they're the same (or only offset_ticks exists), it's immediate trailing
-                                if offset_ticks and activation_ticks and activation_ticks != offset_ticks:
-                                    # Trail-after-profit: Use autoTrail (starts trailing after profit threshold)
-                                    # freq = how often to update (in price units, not ticks)
-                                    trail_freq = (frequency_ticks * tick_size) if frequency_ticks else (tick_size * 0.25)
-                                    auto_trail = {
-                                        'stopLoss': offset_ticks,  # Trailing distance
-                                        'trigger': activation_ticks,  # Profit threshold to start trailing
-                                        'freq': trail_freq  # Update frequency
-                                    }
-                                    freq_log = f", freq={frequency_ticks} ticks" if frequency_ticks else ""
-                                    logger.info(f"📊 [{acct_name}] Native autoTrail: distance={offset_ticks} ticks, trigger={activation_ticks} ticks{freq_log}")
-                                elif offset_ticks:
-                                    # Immediate trailing: Use trailingStop boolean (starts trailing immediately)
-                                    trailing_stop_bool = True
-                                    logger.info(f"📊 [{acct_name}] Immediate trailing stop: {offset_ticks} ticks")
-                        
-                        sl_log = f" + SL: {sl_ticks} ticks" if sl_ticks > 0 else ""
+                        # Use configured values, fall back to function params
+                        final_sl_ticks = sl_ticks_cfg if sl_ticks_cfg > 0 else (sl_ticks if sl_ticks > 0 else 0)
+                        final_sl_type = sl_type_cfg
+
+                        # Log what we're doing
+                        tp_count = len(tp_targets) if tp_targets else (1 if tp_ticks > 0 else 0)
+                        sl_log = f" + SL: {final_sl_ticks} ticks ({final_sl_type})" if final_sl_ticks > 0 else ""
                         be_log = f" + BE: {break_even_ticks} ticks" if break_even_ticks else ""
-                        trail_log = f" + Trail" if auto_trail or trailing_stop_bool else ""
-                        logger.info(f"📤 [{acct_name}] Using NATIVE BRACKET ORDER (WebSocket) - Entry + TP{sl_log}{be_log}{trail_log} in one call")
-                        
+                        trail_log = f" + Trail: trigger={trail_trigger}" if trail_trigger > 0 else ""
+                        logger.info(f"📤 [{acct_name}] NATIVE MULTI-BRACKET: Entry + {tp_count} TP(s){sl_log}{be_log}{trail_log}")
+
                         bracket_result = await tradovate.place_bracket_order(
                             account_id=tradovate_account_id,
                             account_spec=tradovate_account_spec,
                             symbol=tradovate_symbol,
                             entry_side=order_action,
                             quantity=adjusted_quantity,
-                            profit_target_ticks=tp_ticks,
-                            stop_loss_ticks=sl_ticks if sl_ticks > 0 else None,  # Only place SL if configured
-                            trailing_stop=trailing_stop_bool,  # Immediate trailing (boolean)
-                            break_even_ticks=break_even_ticks,  # Native break-even
-                            auto_trail=auto_trail  # Native trailing-after-profit
+                            tp_targets=tp_targets if tp_targets else None,
+                            sl_ticks=final_sl_ticks if final_sl_ticks > 0 else None,
+                            sl_type=final_sl_type,
+                            break_even_ticks=break_even_ticks,
+                            break_even_offset=break_even_offset,
+                            trail_trigger=trail_trigger,
+                            trail_freq=trail_freq,
+                            # Legacy fallback params
+                            profit_target_ticks=tp_ticks if not tp_targets else None,
+                            stop_loss_ticks=sl_ticks if final_sl_ticks == 0 else None
                         )
                         
                         if bracket_result and bracket_result.get('success'):

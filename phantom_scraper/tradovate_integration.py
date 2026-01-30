@@ -1833,96 +1833,172 @@ class TradovateIntegration:
             order["accountId"] = account_id
         return order
     
-    async def place_bracket_order(self, account_id: int, account_spec: str, symbol: str, 
+    async def place_bracket_order(self, account_id: int, account_spec: str, symbol: str,
                                    entry_side: str, quantity: int,
-                                   profit_target_ticks: int = None, 
+                                   tp_targets: list = None,
+                                   sl_ticks: int = None,
+                                   sl_type: str = 'Fixed',
+                                   break_even_ticks: int = None,
+                                   break_even_offset: int = 0,
+                                   trail_trigger: int = 0,
+                                   trail_freq: int = 0,
+                                   # Legacy params for backwards compatibility
+                                   profit_target_ticks: int = None,
                                    stop_loss_ticks: int = None,
                                    trailing_stop: bool = False,
-                                   break_even_ticks: int = None,
                                    auto_trail: dict = None) -> Optional[Dict[str, Any]]:
         """
-        Place a market entry order with bracket (TP/SL) as an order strategy using Tradovate's native ATM features.
-        Supports native break-even and autoTrail (trailing-after-profit).
-        
+        Place a market entry order with MULTI-BRACKET support using Tradovate's native ATM features.
+
+        SUPPORTS ALL TRADOVATE NATIVE FEATURES:
+        - Multiple TP targets with different quantities (trimming)
+        - Fixed or Trailing stop loss per bracket
+        - Native break-even (moves SL to entry at profit threshold)
+        - Native autoTrail (trailing-after-profit)
+
         IMPORTANT: Tradovate bracket API expects profitTarget/stopLoss in POINTS, not ticks!
         Signs must be direction-aware: BUY (long) = +TP, -SL; SELL (short) = -TP, +SL
-        
+
         Args:
             account_id: The Tradovate account ID
-            account_spec: The account name/spec  
+            account_spec: The account name/spec
             symbol: The trading symbol
             entry_side: 'Buy' or 'Sell' for the entry
-            quantity: Number of contracts
-            profit_target_ticks: Profit target in ticks (we convert to points)
-            stop_loss_ticks: Stop loss in ticks (we convert to points)
-            trailing_stop: Whether to use immediate trailing stop (boolean)
-            break_even_ticks: Profit threshold (in ticks) to move SL to entry price (native break-even)
-            auto_trail: Dict with {stopLoss: ticks, trigger: ticks, freq: points} for trailing-after-profit
-        
+            quantity: Total number of contracts
+            tp_targets: List of TP targets [{ticks: 5, trim: 50}, {ticks: 10, trim: 100}]
+            sl_ticks: Stop loss distance in ticks
+            sl_type: 'Fixed' or 'Trailing' - applies to ALL brackets
+            break_even_ticks: Profit threshold (in ticks) to move SL to entry
+            break_even_offset: Additional profit to lock in beyond entry (0 = true break-even)
+            trail_trigger: Profit threshold (in ticks) to START trailing (0 = immediate)
+            trail_freq: How often to update trail in ticks (0 = default)
+
         Returns:
             Dict with order strategy result
         """
         try:
             # Get tick size for this symbol to convert ticks to points
-            # Tradovate bracket API wants POINTS, not ticks!
             symbol_root = ''.join(c for c in symbol if c.isalpha())[:3].upper()
             tick_sizes = {
                 'MNQ': 0.25, 'NQ': 0.25, 'MES': 0.25, 'ES': 0.25,
                 'M2K': 0.1, 'RTY': 0.1, 'MYM': 1.0, 'YM': 1.0,
-                'CL': 0.01, 'MCL': 0.01, 'GC': 0.1, 'MGC': 0.1
+                'MCL': 0.01, 'CL': 0.01, 'GC': 0.1, 'MGC': 0.1,
+                'SI': 0.005, 'SIL': 0.005, 'HG': 0.0005, 'PL': 0.1,
+                'ZB': 0.03125, 'ZN': 0.015625, 'ZF': 0.0078125,
+                '6E': 0.00005, '6J': 0.0000005, '6B': 0.0001
             }
             tick_size = tick_sizes.get(symbol_root, 0.25)
-            
+
             # Determine direction for sign handling
             is_long = entry_side.upper() == 'BUY'
-            
-            # Convert ticks to points and apply direction-safe signs
-            # Strategy deltas: BUY = +TP, -SL; SELL = -TP, +SL
-            pt_points = profit_target_ticks * tick_size if profit_target_ticks else None
-            sl_points = stop_loss_ticks * tick_size if stop_loss_ticks else None
-            
-            if is_long:
-                # Long: profitTarget = +pt, stopLoss = -sl
-                profit_target_delta = pt_points if pt_points else None
-                stop_loss_delta = -sl_points if sl_points else None
+
+            # Handle legacy single-TP params (backwards compatibility)
+            if tp_targets is None and profit_target_ticks:
+                tp_targets = [{'ticks': profit_target_ticks, 'trim': 100}]
+            if sl_ticks is None and stop_loss_ticks:
+                sl_ticks = stop_loss_ticks
+            if sl_type == 'Fixed' and trailing_stop:
+                sl_type = 'Trailing'
+            if trail_trigger == 0 and trail_freq == 0 and auto_trail:
+                trail_trigger = auto_trail.get('trigger', 0)
+                trail_freq = auto_trail.get('freq', 0)
+
+            # Calculate SL in points with direction
+            sl_points = sl_ticks * tick_size if sl_ticks else None
+            if sl_points:
+                sl_delta = -sl_points if is_long else sl_points
             else:
-                # Short: profitTarget = -pt, stopLoss = +sl
-                profit_target_delta = -pt_points if pt_points else None
-                stop_loss_delta = sl_points if sl_points else None
-            
-            logger.info(f"📊 Converting: {profit_target_ticks} ticks → {profit_target_delta} points, {stop_loss_ticks} ticks → {stop_loss_delta} points (tick_size={tick_size}, direction={'LONG' if is_long else 'SHORT'})")
-            
-            # Build bracket params with native Tradovate ATM features
-            bracket = {
-                "qty": int(quantity),
-                "profitTarget": float(profit_target_delta) if profit_target_delta is not None else None,
-                "stopLoss": float(stop_loss_delta) if stop_loss_delta is not None else None,
-                "trailingStop": trailing_stop  # Boolean for immediate trailing
-            }
-            
-            # Add native break-even (moves SL to entry at profit threshold)
-            if break_even_ticks and break_even_ticks > 0:
-                break_even_points = break_even_ticks * tick_size
-                bracket["breakeven"] = float(break_even_points)
-                bracket["breakevenPlus"] = 0  # Optional offset beyond entry
-                logger.info(f"📊 Native break-even: {break_even_ticks} ticks ({break_even_points} points)")
-            
-            # Add native autoTrail (trailing-after-profit)
-            if auto_trail:
-                trail_stop_loss_ticks = auto_trail.get('stopLoss')
-                trail_trigger_ticks = auto_trail.get('trigger')
-                trail_freq_points = auto_trail.get('freq', tick_size * 0.25)  # Default to 0.25 tick size
-                
-                if trail_stop_loss_ticks and trail_trigger_ticks:
-                    bracket["autoTrail"] = {
-                        "stopLoss": float(trail_stop_loss_ticks * tick_size),  # Trailing distance in points
-                        "trigger": float(trail_trigger_ticks * tick_size),  # Profit threshold to start trailing in points
-                        "freq": float(trail_freq_points)  # Update frequency in points
+                sl_delta = None
+
+            # Build brackets from tp_targets
+            brackets = []
+            remaining_qty = quantity
+
+            if tp_targets and len(tp_targets) > 0:
+                # Sort by ticks ascending (closest TP first)
+                sorted_targets = sorted(tp_targets, key=lambda x: x.get('ticks') or x.get('value') or 0)
+
+                for i, target in enumerate(sorted_targets):
+                    tp_ticks = target.get('ticks') or target.get('value') or 0
+                    trim_pct = target.get('trim', 100)
+
+                    if tp_ticks <= 0:
+                        continue
+
+                    # Calculate quantity for this bracket based on trim %
+                    # trim=50 means exit 50% of remaining position
+                    # For last target or trim=100, use all remaining
+                    if i == len(sorted_targets) - 1 or trim_pct >= 100:
+                        bracket_qty = remaining_qty
+                    else:
+                        bracket_qty = max(1, int(quantity * trim_pct / 100))
+                        bracket_qty = min(bracket_qty, remaining_qty)
+
+                    if bracket_qty <= 0:
+                        continue
+
+                    remaining_qty -= bracket_qty
+
+                    # Convert TP to points with direction
+                    tp_points = tp_ticks * tick_size
+                    tp_delta = tp_points if is_long else -tp_points
+
+                    # Build bracket object
+                    bracket = {
+                        "qty": int(bracket_qty),
+                        "profitTarget": float(tp_delta),
+                        "stopLoss": float(sl_delta) if sl_delta else None,
+                        "trailingStop": (sl_type == 'Trailing')
                     }
-                    logger.info(f"📊 Native autoTrail: distance={trail_stop_loss_ticks} ticks, trigger={trail_trigger_ticks} ticks, freq={trail_freq_points} points")
-            
-            logger.info(f"📊 Bracket params: profitTarget={bracket['profitTarget']} points, stopLoss={bracket['stopLoss']} points")
-            
+
+                    # Add break-even if configured
+                    if break_even_ticks and break_even_ticks > 0:
+                        bracket["breakeven"] = float(break_even_ticks * tick_size)
+                        bracket["breakevenPlus"] = float(break_even_offset * tick_size) if break_even_offset else 0
+
+                    # Add autoTrail if configured (trailing-after-profit)
+                    # Only applies if sl_type is Trailing AND trail_trigger > 0
+                    if sl_type == 'Trailing' and trail_trigger > 0 and sl_ticks:
+                        bracket["autoTrail"] = {
+                            "stopLoss": float(sl_ticks * tick_size),
+                            "trigger": float(trail_trigger * tick_size),
+                            "freq": float(trail_freq * tick_size) if trail_freq else tick_size * 0.25
+                        }
+                        # When using autoTrail, trailingStop should be false (autoTrail handles it)
+                        bracket["trailingStop"] = False
+
+                    brackets.append(bracket)
+
+                    logger.info(f"📊 Bracket {i+1}: qty={bracket_qty}, TP={tp_ticks} ticks ({tp_delta} pts), SL={sl_ticks} ticks, trailing={bracket['trailingStop']}")
+
+            # If no TP targets but we have SL, create a single bracket for SL only
+            if len(brackets) == 0 and sl_ticks:
+                bracket = {
+                    "qty": int(quantity),
+                    "profitTarget": None,
+                    "stopLoss": float(sl_delta) if sl_delta else None,
+                    "trailingStop": (sl_type == 'Trailing')
+                }
+                if break_even_ticks and break_even_ticks > 0:
+                    bracket["breakeven"] = float(break_even_ticks * tick_size)
+                    bracket["breakevenPlus"] = float(break_even_offset * tick_size) if break_even_offset else 0
+                if sl_type == 'Trailing' and trail_trigger > 0:
+                    bracket["autoTrail"] = {
+                        "stopLoss": float(sl_ticks * tick_size),
+                        "trigger": float(trail_trigger * tick_size),
+                        "freq": float(trail_freq * tick_size) if trail_freq else tick_size * 0.25
+                    }
+                    bracket["trailingStop"] = False
+                brackets.append(bracket)
+                logger.info(f"📊 SL-only bracket: qty={quantity}, SL={sl_ticks} ticks, trailing={bracket['trailingStop']}")
+
+            if len(brackets) == 0:
+                logger.warning(f"⚠️ No brackets to place - no TP or SL configured")
+                # Fall back to simple market order
+                return await self.place_order(self.create_market_order(account_spec, symbol, entry_side, quantity, account_id))
+
+            logger.info(f"📊 Building {len(brackets)} bracket(s) for {quantity} contracts")
+
             # Entry order params
             params = {
                 "entryVersion": {
@@ -1930,7 +2006,7 @@ class TradovateIntegration:
                     "orderType": "Market",
                     "timeInForce": "Day"
                 },
-                "brackets": [bracket]
+                "brackets": brackets
             }
             
             # Build WebSocket message payload (REQUIRED per documentation)
