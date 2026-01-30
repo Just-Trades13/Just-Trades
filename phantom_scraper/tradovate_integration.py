@@ -48,6 +48,16 @@ class TradovateIntegration:
         # Keeps WebSocket alive with heartbeats to avoid reconnection overhead
         self._ws_heartbeat_task: Optional[asyncio.Task] = None
         self._ws_lock = asyncio.Lock()  # Prevent concurrent connection attempts
+
+        # 📊 ORDER STATS (Added Jan 30, 2026)
+        # Track WebSocket vs REST order placement for verification
+        self.order_stats = {
+            'websocket_success': 0,
+            'websocket_failed': 0,
+            'rest_success': 0,
+            'rest_failed': 0,
+            'total_orders': 0
+        }
         self._ws_last_heartbeat: float = 0
         self._ws_reconnect_attempts: int = 0
         self._ws_max_reconnect_attempts: int = 5
@@ -1090,29 +1100,38 @@ class TradovateIntegration:
         Returns:
             Order result dict with 'success', 'orderId', 'via' (websocket/rest)
         """
+        # Track total orders
+        self.order_stats['total_orders'] += 1
+
         # Check if WebSocket orders are enabled
         if use_websocket and getattr(self, 'use_websocket_orders', True):
             # Try WebSocket first
             ws_result = await self.place_order_websocket(order_data)
-            
+
             if ws_result is not None:
                 # WebSocket gave a definitive result (success or failure)
                 if ws_result.get('success'):
+                    self.order_stats['websocket_success'] += 1
                     logger.info(f"✅ Order placed via WebSocket (fast path, no rate limit)")
                     return ws_result
                 else:
                     # WebSocket returned an error - don't retry via REST
                     # (the order was received but rejected by broker - retrying would be duplicate)
+                    self.order_stats['websocket_failed'] += 1
                     logger.warning(f"❌ Order rejected via WebSocket: {ws_result.get('error')}")
                     return ws_result
-            
+
             # WebSocket returned None - connection issue, try REST
             logger.info("🔄 WebSocket unavailable, falling back to REST API...")
-        
+
         # Fallback to REST (proven, reliable - the current working code)
         rest_result = await self.place_order(order_data)
         if rest_result:
             rest_result['via'] = 'rest'
+            if rest_result.get('success'):
+                self.order_stats['rest_success'] += 1
+            else:
+                self.order_stats['rest_failed'] += 1
         return rest_result
 
     async def modify_order_smart(self, order_id: int, order_data: Dict[str, Any], use_websocket: bool = True) -> Optional[Dict[str, Any]]:

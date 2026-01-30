@@ -27554,7 +27554,15 @@ def api_broker_execution_status():
         fast_webhook_workers_alive = sum(1 for t in _fast_webhook_threads if t.is_alive()) if _fast_webhook_threads else 0
         fast_webhook_queue_size = _fast_webhook_queue.qsize()
 
+        # Get WebSocket order stats
+        try:
+            from recorder_service import get_websocket_order_stats
+            ws_order_stats = get_websocket_order_stats()
+        except Exception as ws_err:
+            ws_order_stats = {'error': str(ws_err)}
+
         return jsonify({
+            'websocket_orders': ws_order_stats,
             'success': True,
             'fast_webhook': {
                 'enabled': _fast_webhook_enabled,

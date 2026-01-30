@@ -156,6 +156,35 @@ def clear_all_cached_tokens():
 _WS_POOL: Dict[int, Any] = {}
 _WS_POOL_LOCK = asyncio.Lock()  # ASYNC lock - doesn't block event loop!
 
+def get_websocket_order_stats() -> Dict[str, Any]:
+    """Aggregate WebSocket order stats from all pooled connections."""
+    total_stats = {
+        'websocket_success': 0,
+        'websocket_failed': 0,
+        'rest_success': 0,
+        'rest_failed': 0,
+        'total_orders': 0,
+        'active_connections': 0,
+        'websocket_percentage': 0.0
+    }
+    for conn in _WS_POOL.values():
+        if conn and hasattr(conn, 'order_stats'):
+            stats = conn.order_stats
+            total_stats['websocket_success'] += stats.get('websocket_success', 0)
+            total_stats['websocket_failed'] += stats.get('websocket_failed', 0)
+            total_stats['rest_success'] += stats.get('rest_success', 0)
+            total_stats['rest_failed'] += stats.get('rest_failed', 0)
+            total_stats['total_orders'] += stats.get('total_orders', 0)
+        if conn and getattr(conn, 'ws_connected', False):
+            total_stats['active_connections'] += 1
+
+    # Calculate WebSocket percentage
+    if total_stats['total_orders'] > 0:
+        ws_total = total_stats['websocket_success'] + total_stats['websocket_failed']
+        total_stats['websocket_percentage'] = round((ws_total / total_stats['total_orders']) * 100, 1)
+
+    return total_stats
+
 async def get_pooled_connection(subaccount_id: int, is_demo: bool, access_token: str):
     """Get or create a pooled WebSocket connection for an account. INSTANT if pooled."""
     from phantom_scraper.tradovate_integration import TradovateIntegration
