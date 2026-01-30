@@ -1185,5 +1185,223 @@ curl -s "https://justtrades-production.up.railway.app/api/broker-execution/failu
 
 ---
 
-*Last updated: Jan 28, 2026*
+## 📝 Session Log - January 30, 2026
+
+### CRITICAL FIX: Tradovate WebSocket Protocol Implementation
+
+**Problem:** WebSocket connections were failing. Initially thought to be rate limiting, but the real issue was **wrong message format**.
+
+### Root Cause Discovery
+
+Tradovate WebSocket uses a **plain text framing protocol**, NOT JSON:
+
+```
+<operation>
+<requestId>
+<query-or-blank-line>
+<json-body-or-token>
+```
+
+**We were sending:**
+```json
+{"url": "authorize", "token": "..."}
+```
+
+**Should be:**
+```
+authorize
+1
+
+<accessToken>
+```
+
+### Files Modified
+
+#### 1. `phantom_scraper/tradovate_integration.py`
+
+**Authentication Format Fixed (lines ~662-667):**
+```python
+# OLD (wrong):
+auth_message = {"url": "authorize", "token": self.access_token}
+await self.websocket.send(json.dumps(auth_message))
+
+# NEW (correct):
+auth_message = f"authorize\n1\n\n{self.access_token}"
+await self.websocket.send(auth_message)
+```
+
+**Order Placement Format Fixed (lines ~1051-1058):**
+```python
+# OLD (wrong):
+ws_message = {"n": "order/placeOrder", "o": order_data}
+
+# NEW (correct):
+ws_message = f"order/placeorder\n{request_id}\n\n{json.dumps(order_data)}"
+```
+
+**Also fixed:**
+- `order/modifyorder` - same text frame format
+- `order/cancelorder` - same text frame format
+- `_send_websocket_message()` - generic text frame format
+- Response parsing to handle text frame responses
+
+**Wait for 'o' frame (lines ~660-668):**
+```python
+# Tradovate sends 'o' when socket is ready
+open_frame = await asyncio.wait_for(self.websocket.recv(), timeout=5.0)
+if open_frame != 'o':
+    logger.warning(f"Expected 'o' frame but got: {open_frame}")
+```
+
+**Immediate heartbeat after auth (lines ~118-130):**
+```python
+# Send first heartbeat IMMEDIATELY - don't wait 2.5 seconds
+await self.websocket.send("[]")
+logger.info("💓 Initial heartbeat sent immediately after auth")
+```
+
+**Fixed Live WebSocket URL:**
+```python
+# OLD (wrong - returned 404):
+self.ws_url = "wss://api.tradovate.com/v1/websocket"
+
+# NEW (correct):
+self.ws_url = "wss://live.tradovateapi.com/v1/websocket"
+```
+
+#### 2. `recorder_service.py`
+
+**Added Exponential Backoff (lines ~248-260, ~395-415):**
+```python
+_WS_BACKOFF_UNTIL = 0  # Timestamp until which we should not attempt reconnections
+_WS_CONSECUTIVE_FAILURES = 0  # Track consecutive failures
+
+# In prewarm - if ALL connections fail, back off
+if warmed == 0 and failed > 0:
+    _WS_CONSECUTIVE_FAILURES += 1
+    backoff_seconds = min(60 * (2 ** (_WS_CONSECUTIVE_FAILURES - 1)), 900)  # Max 15min
+    _WS_BACKOFF_UNTIL = time.time() + backoff_seconds
+
+# In get_pooled_connection - skip if in backoff
+if time.time() < _WS_BACKOFF_UNTIL:
+    return None  # Don't attempt connection during backoff
+```
+
+#### 3. `ultra_simple_server.py`
+
+**New Endpoints Added:**
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/api/websocket-test` | Test single WebSocket connection with detailed diagnostics |
+| `/api/websocket-test?live=1` | Force test with live account |
+| `/api/websocket-raw-test` | Raw connection test (no auth) to both demo and live |
+| `/api/websocket-backoff` | GET: check backoff status, POST: reset backoff |
+
+**Enhanced `/api/websocket-pool`:**
+- Now shows `websocket_open`, `websocket_closed` state
+- Shows `last_heartbeat_ago_sec`
+- Shows `heartbeat_task_done` and any exceptions
+- Shows `token_preview` and `ws_url`
+
+### Tradovate WebSocket Protocol Reference
+
+```
+# Authentication (after receiving 'o' frame):
+authorize
+1
+
+<accessToken>
+
+# Place Order:
+order/placeorder
+<requestId>
+
+{"accountId":123,"action":"Buy","symbol":"MESZ4","orderQty":1,...}
+
+# Heartbeat (every 2.5 seconds):
+[]
+
+# User Sync (for real-time position updates):
+user/syncRequest
+<requestId>
+
+{"users":[<userId>]}
+```
+
+### WebSocket URLs
+
+| Environment | URL |
+|-------------|-----|
+| Demo | `wss://demo.tradovateapi.com/v1/websocket` |
+| Live | `wss://live.tradovateapi.com/v1/websocket` |
+| Market Data Demo | `wss://md-demo.tradovateapi.com/v1/websocket` |
+| Market Data Live | `wss://md.tradovateapi.com/v1/websocket` |
+
+### Current Status (as of session end)
+
+| Component | Status |
+|-----------|--------|
+| Live WebSocket | ✅ Connected and stable |
+| Demo WebSocket | ⏳ Rate-limited (will auto-recover with backoff) |
+| Heartbeat | ✅ Running every 2.5s |
+| Backoff Logic | ✅ Prevents rate limit hell |
+
+### Debugging Commands
+
+```bash
+# Check WebSocket pool status
+curl -s "https://justtrades-production.up.railway.app/api/websocket-pool" | python3 -m json.tool
+
+# Test raw connection (no auth)
+curl -s "https://justtrades-production.up.railway.app/api/websocket-raw-test" | python3 -m json.tool
+
+# Test with auth (uses first available account)
+curl -s "https://justtrades-production.up.railway.app/api/websocket-test" | python3 -m json.tool
+
+# Test with live account specifically
+curl -s "https://justtrades-production.up.railway.app/api/websocket-test?live=1" | python3 -m json.tool
+
+# Check/reset backoff
+curl -s "https://justtrades-production.up.railway.app/api/websocket-backoff" | python3 -m json.tool
+curl -s -X POST "https://justtrades-production.up.railway.app/api/websocket-backoff"
+
+# Trigger prewarm
+curl -s "https://justtrades-production.up.railway.app/api/websocket-prewarm" | python3 -m json.tool
+```
+
+### Key Commits This Session
+
+```
+d13f7f4 Add exponential backoff to prevent WebSocket rate limit hell
+767ca03 Add ?live=1 parameter to websocket-test endpoint
+19ffbb7 Force redeploy
+c353a91 Add version tag to verify deployment
+2a2f814 Add pre-connection diagnostics to websocket-test endpoint
+73157cf Wait for Tradovate 'o' frame before WebSocket authentication
+43d3460 CRITICAL FIX: Use Tradovate text framing protocol for WebSocket
+8bf98fc Fix live WebSocket URL: api.tradovate.com -> live.tradovateapi.com
+0bf1580 Fix: Send heartbeat IMMEDIATELY after WebSocket auth
+3bafcaa Add detailed WebSocket error capture for debugging
+b9a68c7 Enable WebSocket protocol-level ping for connection keepalive
+486585c Add /api/websocket-test endpoint for single connection debugging
+98998ab Add detailed WebSocket debugging to diagnose connection failures
+```
+
+### Why 8 Hours of Rate Limiting?
+
+The keepalive daemon was retrying failed connections every 10 seconds. With 12 demo accounts failing, that's 12 connection attempts every 10 seconds = **72 attempts per minute** = rate limit never resets.
+
+**Fix:** Exponential backoff now waits 1min → 2min → 4min → 8min → max 15min between retry batches when all connections fail.
+
+### Important Notes for Next Session
+
+1. **Demo accounts are rate-limited** - Will auto-recover, or reset backoff manually
+2. **Live accounts work** - WebSocket execution is operational for live trading
+3. **Text framing protocol** - All WebSocket messages MUST use `operation\nid\n\nbody` format, NOT JSON
+4. **Heartbeat** - Must send `[]` every 2.5 seconds AND send one immediately after auth
+
+---
+
+*Last updated: Jan 30, 2026*
 *Author: Claude Code Session*
