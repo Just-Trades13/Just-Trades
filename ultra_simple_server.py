@@ -10634,15 +10634,27 @@ def recorders_list():
         if USER_AUTH_AVAILABLE and is_logged_in():
             user_id = get_current_user_id()
         
-        if user_id:
-            # Show only recorders created by this user
-            if is_postgres:
-                cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
+        # Try query with is_premium column, fall back if column doesn't exist yet
+        has_premium_column = True
+        try:
+            if user_id:
+                if is_postgres:
+                    cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
+                else:
+                    cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
             else:
-                cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
-        else:
-            # No user auth - show all (shouldn't happen if login required)
-            cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders ORDER BY id DESC')
+                cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders ORDER BY id DESC')
+        except Exception as col_err:
+            # is_premium column might not exist yet - fall back to query without it
+            logger.warning(f"is_premium column may not exist, falling back: {col_err}")
+            has_premium_column = False
+            if user_id:
+                if is_postgres:
+                    cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
+                else:
+                    cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
+            else:
+                cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders ORDER BY id DESC')
         rows = cursor.fetchall()
         recorders = []
         for row in rows:
@@ -10658,7 +10670,7 @@ def recorders_list():
                         'ticker': row[2],
                         'enabled': row[3],
                         'created_at': row[4],
-                        'is_premium': row[5] if len(row) > 5 else False
+                        'is_premium': row[5] if has_premium_column and len(row) > 5 else False
                     }
                 # Ensure template-required fields exist
                 recorders.append({
