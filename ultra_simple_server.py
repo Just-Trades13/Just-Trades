@@ -27733,6 +27733,7 @@ def api_websocket_test():
         # Test the connection
         async def test_connection():
             results = {
+                'version': 'v3-diagnostics',
                 'subaccount_id': subaccount_id,
                 'is_demo': is_demo,
                 'token_length': len(token),
