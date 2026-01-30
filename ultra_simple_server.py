@@ -27593,18 +27593,56 @@ def api_broker_execution_status():
 
 @app.route('/api/websocket-pool', methods=['GET'])
 def api_websocket_pool():
-    """Check WebSocket connection pool status"""
+    """Check WebSocket connection pool status with detailed diagnostics"""
     try:
+        import time
         from recorder_service import _WS_POOL, get_websocket_order_stats
 
         pool_status = []
         for subaccount_id, conn in list(_WS_POOL.items()):
-            pool_status.append({
+            # Gather detailed connection info
+            conn_info = {
                 'subaccount_id': subaccount_id,
                 'ws_connected': getattr(conn, 'ws_connected', False),
                 'has_token': bool(getattr(conn, 'access_token', None)),
-                'order_stats': getattr(conn, 'order_stats', {})
-            })
+                'token_preview': getattr(conn, 'access_token', '')[:20] + '...' if getattr(conn, 'access_token', None) else None,
+                'order_stats': getattr(conn, 'order_stats', {}),
+                'ws_url': getattr(conn, 'ws_url', None),
+                'is_demo': 'demo' in str(getattr(conn, 'ws_url', '')),
+            }
+
+            # Check websocket object state
+            ws = getattr(conn, 'websocket', None)
+            if ws:
+                conn_info['websocket_exists'] = True
+                if hasattr(ws, 'closed'):
+                    conn_info['websocket_closed'] = ws.closed
+                if hasattr(ws, 'open'):
+                    conn_info['websocket_open'] = ws.open
+            else:
+                conn_info['websocket_exists'] = False
+
+            # Check heartbeat info
+            last_hb = getattr(conn, '_ws_last_heartbeat', 0)
+            if last_hb > 0:
+                conn_info['last_heartbeat_ago_sec'] = round(time.time() - last_hb, 1)
+            else:
+                conn_info['last_heartbeat_ago_sec'] = None
+
+            # Check heartbeat task
+            hb_task = getattr(conn, '_ws_heartbeat_task', None)
+            if hb_task:
+                conn_info['heartbeat_task_done'] = hb_task.done()
+                if hb_task.done():
+                    try:
+                        exc = hb_task.exception()
+                        conn_info['heartbeat_task_exception'] = str(exc) if exc else None
+                    except:
+                        pass
+            else:
+                conn_info['heartbeat_task_done'] = 'no_task'
+
+            pool_status.append(conn_info)
 
         return jsonify({
             'success': True,
@@ -27614,7 +27652,8 @@ def api_websocket_pool():
         })
     except Exception as e:
         logger.error(f"Error getting WebSocket pool: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
 @app.route('/api/websocket-prewarm', methods=['POST', 'GET'])

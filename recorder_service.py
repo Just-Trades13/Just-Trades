@@ -201,7 +201,10 @@ async def get_pooled_connection(subaccount_id: int, is_demo: bool, access_token:
     if subaccount_id in _WS_POOL:
         conn = _WS_POOL[subaccount_id]
         if conn and getattr(conn, 'ws_connected', False):
+            logger.debug(f"⚡ Pool HIT (fast path): account {subaccount_id} ws_connected=True")
             return conn
+        else:
+            logger.debug(f"⚠️ Pool STALE (fast path): account {subaccount_id} ws_connected={getattr(conn, 'ws_connected', 'N/A')}")
 
     # Need to create/update - use async lock
     async with _WS_POOL_LOCK:
@@ -209,11 +212,14 @@ async def get_pooled_connection(subaccount_id: int, is_demo: bool, access_token:
         if subaccount_id in _WS_POOL:
             conn = _WS_POOL[subaccount_id]
             if conn and getattr(conn, 'ws_connected', False):
+                logger.debug(f"⚡ Pool HIT (after lock): account {subaccount_id}")
                 return conn
             # Connection dead, remove it
+            logger.warning(f"🔌 Pool: Removing DEAD connection for account {subaccount_id} (ws_connected={getattr(conn, 'ws_connected', 'N/A')})")
             _WS_POOL.pop(subaccount_id, None)
 
         # Create new connection
+        logger.info(f"🔌 Pool: Creating NEW WebSocket connection for account {subaccount_id} (demo={is_demo}, token_len={len(access_token) if access_token else 0})")
         conn = TradovateIntegration(demo=is_demo)
         await conn.__aenter__()
         conn.access_token = access_token
@@ -222,9 +228,10 @@ async def get_pooled_connection(subaccount_id: int, is_demo: bool, access_token:
         ws_connected = await conn._ensure_websocket_connected()
         if ws_connected:
             _WS_POOL[subaccount_id] = conn
-            logger.info(f"🔌 WebSocket pool: Added connection for account {subaccount_id}")
+            logger.info(f"✅ Pool: Added connection for account {subaccount_id} (pool_size={len(_WS_POOL)})")
             return conn
         else:
+            logger.error(f"❌ Pool: FAILED to connect WebSocket for account {subaccount_id}")
             await conn.__aexit__(None, None, None)
             return None
 

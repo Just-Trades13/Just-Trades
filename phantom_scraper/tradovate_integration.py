@@ -118,37 +118,56 @@ class TradovateIntegration:
         async def heartbeat_loop():
             """Send heartbeat every 2.5 seconds to keep connection alive."""
             import time
-            logger.info("💓 WebSocket heartbeat started")
+            heartbeat_count = 0
+            logger.info(f"💓 WebSocket heartbeat started (ws_url={self.ws_url})")
             while True:
                 try:
                     await asyncio.sleep(2.5)
 
-                    if not self.websocket or not self.ws_connected:
-                        logger.debug("💔 Heartbeat: WebSocket not connected, stopping")
+                    if not self.websocket:
+                        logger.warning("💔 Heartbeat: self.websocket is None, stopping")
                         break
+                    if not self.ws_connected:
+                        logger.warning("💔 Heartbeat: ws_connected=False, stopping")
+                        break
+
+                    # Check WebSocket state
+                    ws_state = "unknown"
+                    if hasattr(self.websocket, 'closed'):
+                        ws_state = f"closed={self.websocket.closed}"
+                    elif hasattr(self.websocket, 'open'):
+                        ws_state = f"open={self.websocket.open}"
 
                     # Send heartbeat - Tradovate expects empty array []
                     try:
                         await self.websocket.send("[]")
                         self._ws_last_heartbeat = time.time()
                         self._ws_reconnect_attempts = 0  # Reset on successful heartbeat
-                        logger.debug("💓 Heartbeat sent")
+                        heartbeat_count += 1
+                        # Log every 10th heartbeat (every 25 seconds) to confirm alive
+                        if heartbeat_count % 10 == 0:
+                            logger.info(f"💓 Heartbeat #{heartbeat_count} sent successfully ({ws_state})")
+                        else:
+                            logger.debug(f"💓 Heartbeat #{heartbeat_count} sent ({ws_state})")
                     except Exception as send_err:
-                        logger.warning(f"💔 Heartbeat send failed: {send_err}")
+                        logger.error(f"💔 Heartbeat send failed after {heartbeat_count} beats: {send_err} ({ws_state})")
                         self.ws_connected = False
                         break
 
                 except asyncio.CancelledError:
-                    logger.info("💔 Heartbeat cancelled")
+                    logger.info(f"💔 Heartbeat cancelled after {heartbeat_count} beats")
                     break
                 except Exception as e:
-                    logger.error(f"💔 Heartbeat error: {e}")
+                    logger.error(f"💔 Heartbeat error after {heartbeat_count} beats: {e}")
+                    import traceback
+                    traceback.print_exc()
                     self.ws_connected = False
                     break
 
-            logger.info("💔 WebSocket heartbeat stopped")
+            logger.warning(f"💔 WebSocket heartbeat stopped after {heartbeat_count} total beats")
 
         self._ws_heartbeat_task = asyncio.create_task(heartbeat_loop())
+        logger.info(f"💓 Heartbeat task created: {self._ws_heartbeat_task}")
 
     async def _stop_websocket_heartbeat(self):
         """Stop the heartbeat task."""
@@ -639,25 +658,31 @@ class TradovateIntegration:
                     if not raw_response:
                         logger.error("WebSocket auth response is empty/None")
                     else:
-                        logger.debug(f"WebSocket auth raw (first 200 chars): {str(raw_response)[:200]}")
+                        # Log auth response at INFO level for debugging
+                        logger.info(f"🔐 WebSocket auth response (first 300 chars): {str(raw_response)[:300]}")
                     try:
                         auth_result = json.loads(response)
-                    except Exception:
+                    except Exception as json_err:
+                        logger.warning(f"🔐 Auth response not JSON ({json_err}), treating as string")
                         auth_result = raw_response
 
                     # Check if auth was successful
                     is_ok = False
                     if isinstance(auth_result, dict):
                         is_ok = auth_result.get('ok') or auth_result.get('success') or auth_result.get('status') == 'ok'
+                        logger.info(f"🔐 Auth result is dict, is_ok={is_ok}, keys={list(auth_result.keys())[:5]}")
                     elif isinstance(auth_result, list) and len(auth_result) > 0:
                         is_ok = auth_result[0] == 'ok' or (isinstance(auth_result[0], dict) and auth_result[0].get('ok'))
+                        logger.info(f"🔐 Auth result is list, is_ok={is_ok}, first_item={auth_result[0]}")
+                    else:
+                        logger.info(f"🔐 Auth result is {type(auth_result).__name__}")
 
                     if is_ok or (isinstance(auth_result, str) and auth_result and 'error' not in str(auth_result).lower()):
                         self.ws_connected = True
-                        logger.info("✅ WebSocket authenticated successfully")
+                        logger.info(f"✅ WebSocket authenticated successfully (is_ok={is_ok})")
                         return True
                     else:
-                        logger.error(f"WebSocket authentication failed: {auth_result}")
+                        logger.error(f"❌ WebSocket authentication FAILED: {auth_result}")
                         await self.websocket.close()
                         self.websocket = None
                         return False
