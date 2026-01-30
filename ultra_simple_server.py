@@ -27591,6 +27591,32 @@ def api_broker_execution_status():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/websocket-pool', methods=['GET'])
+def api_websocket_pool():
+    """Check WebSocket connection pool status"""
+    try:
+        from recorder_service import _WS_POOL, get_websocket_order_stats
+
+        pool_status = []
+        for subaccount_id, conn in list(_WS_POOL.items()):
+            pool_status.append({
+                'subaccount_id': subaccount_id,
+                'ws_connected': getattr(conn, 'ws_connected', False),
+                'has_token': bool(getattr(conn, 'access_token', None)),
+                'order_stats': getattr(conn, 'order_stats', {})
+            })
+
+        return jsonify({
+            'success': True,
+            'pool_size': len(_WS_POOL),
+            'connections': pool_status,
+            'aggregate_stats': get_websocket_order_stats()
+        })
+    except Exception as e:
+        logger.error(f"Error getting WebSocket pool: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/position-status', methods=['GET'])
 def api_position_status():
     """Get WebSocket position tracker status and positions"""
