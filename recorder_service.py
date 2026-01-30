@@ -280,23 +280,18 @@ async def _ws_keepalive_loop():
             await asyncio.sleep(5)
 
 def start_websocket_keepalive_daemon():
-    """Start the WebSocket keepalive daemon in background thread."""
+    """Start the WebSocket keepalive daemon using the SHARED async event loop."""
     global _WS_KEEPALIVE_RUNNING
     if _WS_KEEPALIVE_RUNNING:
         return
     _WS_KEEPALIVE_RUNNING = True
 
-    def run_keepalive():
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(_ws_keepalive_loop())
-        except Exception as e:
-            logger.error(f"💔 WebSocket keepalive thread error: {e}")
-
-    thread = threading.Thread(target=run_keepalive, daemon=True, name="WebSocket-Keepalive")
-    thread.start()
-    logger.info("💓 WebSocket keepalive daemon thread started")
+    # CRITICAL: Use run_async_nowait to schedule on the SAME event loop
+    # that trade execution uses. This ensures the keepalive can access
+    # the same WebSocket connections that trades use.
+    from async_utils import run_async_nowait
+    run_async_nowait(_ws_keepalive_loop())
+    logger.info("💓 WebSocket keepalive daemon started on shared event loop")
 
 async def prewarm_websocket_connections():
     """
@@ -364,19 +359,17 @@ async def prewarm_websocket_connections():
         logger.error(f"❌ WebSocket pre-warm failed: {e}")
 
 def start_websocket_prewarm():
-    """Start WebSocket pre-warming in background."""
-    def run_prewarm():
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(prewarm_websocket_connections())
-            loop.close()
-        except Exception as e:
-            logger.error(f"❌ Prewarm thread error: {e}")
-
-    thread = threading.Thread(target=run_prewarm, daemon=True, name="WebSocket-Prewarm")
-    thread.start()
-    logger.info("🔥 WebSocket pre-warm thread started")
+    """Start WebSocket pre-warming using the SHARED async event loop."""
+    try:
+        # CRITICAL: Use run_async to ensure connections are created in the SAME
+        # event loop that trade execution uses. Otherwise WebSocket connections
+        # from prewarm can't be reused for trades.
+        result = run_async(prewarm_websocket_connections())
+        logger.info(f"🔥 WebSocket pre-warm completed: {result}")
+    except Exception as e:
+        logger.error(f"❌ Prewarm error: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ============================================================================
 # 🛡️ BULLETPROOF TOKEN MANAGEMENT - Auto-refresh before expiry
