@@ -27694,6 +27694,9 @@ def api_websocket_test():
         from phantom_scraper.tradovate_integration import TradovateIntegration
 
         # Get test parameters
+        # Use ?live=1 to force live account testing
+        force_live = request.args.get('live', '0') == '1'
+
         if request.method == 'POST':
             data = request.get_json() or {}
             subaccount_id = data.get('subaccount_id')
@@ -27701,18 +27704,33 @@ def api_websocket_test():
             is_demo = data.get('is_demo', True)
         else:
             # GET - grab first available account from DB
+            # If force_live, prefer live accounts
             conn = get_db_connection()
             cursor = conn.cursor()
             is_postgres = is_using_postgres()
-            cursor.execute(f'''
-                SELECT t.subaccount_id, a.tradovate_token, a.environment
-                FROM traders t
-                JOIN accounts a ON t.account_id = a.id
-                WHERE t.enabled = {'TRUE' if is_postgres else '1'}
-                AND a.tradovate_token IS NOT NULL
-                AND t.subaccount_id IS NOT NULL
-                LIMIT 1
-            ''')
+
+            if force_live:
+                # Try to get a live account first
+                cursor.execute(f'''
+                    SELECT t.subaccount_id, a.tradovate_token, a.environment
+                    FROM traders t
+                    JOIN accounts a ON t.account_id = a.id
+                    WHERE t.enabled = {'TRUE' if is_postgres else '1'}
+                    AND a.tradovate_token IS NOT NULL
+                    AND t.subaccount_id IS NOT NULL
+                    AND a.environment = 'live'
+                    LIMIT 1
+                ''')
+            else:
+                cursor.execute(f'''
+                    SELECT t.subaccount_id, a.tradovate_token, a.environment
+                    FROM traders t
+                    JOIN accounts a ON t.account_id = a.id
+                    WHERE t.enabled = {'TRUE' if is_postgres else '1'}
+                    AND a.tradovate_token IS NOT NULL
+                    AND t.subaccount_id IS NOT NULL
+                    LIMIT 1
+                ''')
             row = cursor.fetchone()
             conn.close()
 
