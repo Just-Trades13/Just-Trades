@@ -11868,7 +11868,11 @@ def api_create_trader():
             break_even_enabled = False
         if break_even_ticks is None:
             break_even_ticks = 10
-        
+
+        # Convert boolean fields for PostgreSQL (accepts True/False, not 1/0)
+        sl_enabled = bool(sl_enabled)
+        break_even_enabled = bool(break_even_enabled)
+
         # Verify account exists
         if is_postgres:
             cursor.execute('SELECT id, name FROM accounts WHERE id = %s', (account_id,))
@@ -11949,6 +11953,7 @@ def api_create_trader():
         
     except Exception as e:
         logger.error(f"Error creating trader: {e}")
+        import traceback
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
