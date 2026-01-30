@@ -801,33 +801,150 @@ class PaperTradingEngine:
 
         return self.positions[recorder_id]
 
+    def _get_current_price(self, symbol: str) -> float:
+        """Get current price for a symbol from the price cache."""
+        if symbol in self.current_prices:
+            return self.current_prices[symbol].get('last_price', 0)
+        # Try without contract month suffix (e.g., MNQ instead of MNQH6)
+        base_symbol = symbol.rstrip('0123456789').rstrip('FGHJKMNQUVXZ')
+        if base_symbol in self.current_prices:
+            return self.current_prices[base_symbol].get('last_price', 0)
+        return 0
+
     def get_all_positions(self) -> dict:
-        """Get all open positions"""
-        return dict(self.positions)
+        """Get all open positions from DATABASE (not just in-memory).
+        Returns dict of recorder_id -> {symbol -> position_data}
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT id, recorder_id, symbol, side, quantity, entry_price,
+                       tp_price, sl_price, opened_at
+                FROM paper_trades
+                WHERE status = 'open'
+            ''')
+
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            conn.close()
+
+            # Build positions dict by recorder_id -> symbol
+            positions = {}
+            for row in rows:
+                trade = dict(zip(columns, row))
+                rec_id = trade['recorder_id']
+                symbol = trade['symbol']
+
+                if rec_id not in positions:
+                    positions[rec_id] = {}
+
+                # Get current price for unrealized P&L calculation
+                current_price = self._get_current_price(symbol)
+                entry_price = trade['entry_price']
+                quantity = trade['quantity']
+                side = trade['side']
+
+                # Calculate unrealized P&L
+                point_value = FUTURES_SPECS.get(symbol.rstrip('0123456789'), {}).get('point_value', 1)
+                if side == 'LONG':
+                    unrealized = (current_price - entry_price) * point_value * quantity if current_price else 0
+                else:
+                    unrealized = (entry_price - current_price) * point_value * quantity if current_price else 0
+
+                positions[rec_id][symbol] = {
+                    'trade_id': trade['id'],
+                    'side': side,
+                    'quantity': quantity,
+                    'entry_price': entry_price,
+                    'current_price': current_price,
+                    'unrealized_pnl': round(unrealized, 2),
+                    'tp_price': trade['tp_price'],
+                    'sl_price': trade['sl_price'],
+                    'opened_at': trade['opened_at']
+                }
+
+            return positions
+
+        except Exception as e:
+            logger.error(f"Error getting all positions from DB: {e}")
+            # Fallback to in-memory positions
+            return dict(self.positions)
 
     def get_recorder_pnl(self, recorder_id: int) -> dict:
-        """Get total P&L for a recorder"""
-        if recorder_id not in self.positions:
-            return {'unrealized_pnl': 0, 'positions': []}
+        """Get total P&L for a recorder from DATABASE"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
 
-        total_pnl = 0
-        positions_list = []
+            cursor.execute(f'''
+                SELECT id, symbol, side, quantity, entry_price, tp_price, sl_price, opened_at
+                FROM paper_trades
+                WHERE recorder_id = {ph} AND status = 'open'
+            ''', (recorder_id,))
 
-        for symbol, pos in self.positions[recorder_id].items():
-            total_pnl += pos.get('unrealized_pnl', 0)
-            positions_list.append({
-                'symbol': symbol,
-                **pos
-            })
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            conn.close()
 
-        return {
-            'recorder_id': recorder_id,
-            'unrealized_pnl': total_pnl,
-            'positions': positions_list
-        }
+            total_pnl = 0
+            positions_list = []
+
+            for row in rows:
+                trade = dict(zip(columns, row))
+                symbol = trade['symbol']
+                current_price = self._get_current_price(symbol)
+                entry_price = trade['entry_price']
+                quantity = trade['quantity']
+                side = trade['side']
+
+                # Calculate unrealized P&L
+                point_value = FUTURES_SPECS.get(symbol.rstrip('0123456789'), {}).get('point_value', 1)
+                if side == 'LONG':
+                    unrealized = (current_price - entry_price) * point_value * quantity if current_price else 0
+                else:
+                    unrealized = (entry_price - current_price) * point_value * quantity if current_price else 0
+
+                total_pnl += unrealized
+                positions_list.append({
+                    'symbol': symbol,
+                    'side': side,
+                    'quantity': quantity,
+                    'entry_price': entry_price,
+                    'current_price': current_price,
+                    'unrealized_pnl': round(unrealized, 2),
+                    'tp_price': trade['tp_price'],
+                    'sl_price': trade['sl_price']
+                })
+
+            return {
+                'recorder_id': recorder_id,
+                'unrealized_pnl': round(total_pnl, 2),
+                'positions': positions_list
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting recorder PnL: {e}")
+            # Fallback to in-memory
+            if recorder_id not in self.positions:
+                return {'unrealized_pnl': 0, 'positions': []}
+
+            total_pnl = 0
+            positions_list = []
+            for symbol, pos in self.positions[recorder_id].items():
+                total_pnl += pos.get('unrealized_pnl', 0)
+                positions_list.append({'symbol': symbol, **pos})
+
+            return {
+                'recorder_id': recorder_id,
+                'unrealized_pnl': total_pnl,
+                'positions': positions_list
+            }
 
     def get_trade_history(self, recorder_id: int = None, limit: int = 100) -> list:
-        """Get trade history"""
+        """Get trade history - only CLOSED trades, ordered by close time (most recent first)"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -836,13 +953,14 @@ class PaperTradingEngine:
             if recorder_id:
                 cursor.execute(f'''
                     SELECT * FROM paper_trades
-                    WHERE recorder_id = {ph}
-                    ORDER BY opened_at DESC LIMIT {ph}
+                    WHERE recorder_id = {ph} AND status = 'closed'
+                    ORDER BY closed_at DESC LIMIT {ph}
                 ''', (recorder_id, limit))
             else:
                 cursor.execute(f'''
                     SELECT * FROM paper_trades
-                    ORDER BY opened_at DESC LIMIT {ph}
+                    WHERE status = 'closed'
+                    ORDER BY closed_at DESC LIMIT {ph}
                 ''', (limit,))
 
             columns = [desc[0] for desc in cursor.description]

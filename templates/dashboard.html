@@ -3762,7 +3762,7 @@
             const tbody = document.getElementById('paperHistoryBody');
 
             if (!data.success || !data.trades || data.trades.length === 0) {
-                tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No paper trades yet</td></tr>';
+                tbody.innerHTML = '<tr class="empty-row"><td colspan="11">No paper trades yet</td></tr>';
                 return;
             }
 
@@ -4027,7 +4027,8 @@
                         pointRadius: pnlValues.length > 50 ? 0 : 2,
                         pointHoverRadius: 4,
                         borderWidth: 2,
-                        order: 1
+                        order: 1,
+                        yAxisID: 'yPnL'
                     },
                     {
                         label: 'Drawdown',
@@ -4039,7 +4040,8 @@
                         pointRadius: 0,
                         pointHoverRadius: 4,
                         borderWidth: 1.5,
-                        order: 2
+                        order: 2,
+                        yAxisID: 'yDD'
                     }
                 ]
             },
@@ -4064,12 +4066,27 @@
                     x: {
                         display: false
                     },
-                    y: {
+                    yPnL: {
+                        type: 'linear',
+                        position: 'left',
                         grid: {
                             color: 'rgba(255, 255, 255, 0.05)'
                         },
                         ticks: {
-                            color: 'rgba(255, 255, 255, 0.5)',
+                            color: 'rgba(16, 185, 129, 0.7)',
+                            callback: function(value) {
+                                return '$' + (value / 1000).toFixed(0) + 'k';
+                            }
+                        }
+                    },
+                    yDD: {
+                        type: 'linear',
+                        position: 'right',
+                        grid: {
+                            drawOnChartArea: false
+                        },
+                        ticks: {
+                            color: 'rgba(239, 68, 68, 0.7)',
                             callback: function(value) {
                                 return '$' + value.toLocaleString();
                             }
