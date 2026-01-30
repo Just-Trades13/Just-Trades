@@ -4993,6 +4993,15 @@ def run_migrations():
         conn.rollback()
         results.append(f"⚠️ Could not fix NULL values: {str(e)[:100]}")
 
+    # Fix JADVIX HighRisk (recorder 8) - set avg_down_enabled=False so opposite signals work
+    try:
+        cursor.execute(f"UPDATE recorders SET avg_down_enabled = {'FALSE' if is_postgres else '0'} WHERE id = 8")
+        if cursor.rowcount > 0:
+            conn.commit()
+            results.append("✅ Fixed JADVIX HighRisk: avg_down_enabled=False (opposite signals now work)")
+    except Exception as e:
+        results.append(f"⚠️ Could not fix JADVIX: {str(e)[:100]}")
+
     conn.close()
     return jsonify({'success': True, 'migrations': results})
 

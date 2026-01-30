@@ -2364,8 +2364,8 @@ def init_trading_engine_db():
             demo_account_id TEXT,
             account_id INTEGER,
             -- Positional Settings
-            initial_position_size INTEGER DEFAULT 2,
-            add_position_size INTEGER DEFAULT 2,
+            initial_position_size INTEGER DEFAULT 1,
+            add_position_size INTEGER DEFAULT 1,
             -- TP Settings
             tp_units TEXT DEFAULT 'Ticks',
             trim_units TEXT DEFAULT 'Contracts',
