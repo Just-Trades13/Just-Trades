@@ -50,6 +50,14 @@ from flask import Flask, request, jsonify, render_template
 from async_utils import run_async  # Safe async execution - avoids "Event loop is closed" errors
 
 # ============================================================================
+# Database Detection Helper
+# ============================================================================
+def is_using_postgres():
+    """Check if we're using PostgreSQL (vs SQLite)"""
+    db_url = os.environ.get('DATABASE_URL', '')
+    return 'postgres' in db_url.lower()
+
+# ============================================================================
 # WEBSOCKET POSITION TRACKER - Flip protection & queued signal blocking
 # ============================================================================
 try:
