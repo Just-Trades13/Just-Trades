@@ -6570,6 +6570,27 @@ def admin_delete_announcement(ann_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/fix-jadvix', methods=['GET', 'POST'])
+def fix_jadvix():
+    """Fix JADVIX HighRisk: set avg_down_enabled=False so opposite signals work."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+
+        cursor.execute(f"UPDATE recorders SET avg_down_enabled = {'FALSE' if is_postgres else '0'} WHERE id = 8")
+        conn.commit()
+        rows = cursor.rowcount
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'JADVIX HighRisk: avg_down_enabled set to False (rows: {rows})'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/admin/fix-columns', methods=['GET', 'POST'])
 def admin_fix_columns():
     """Fix missing columns in traders table - no auth required for emergency fix."""
