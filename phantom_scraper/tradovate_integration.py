@@ -1971,26 +1971,83 @@ class TradovateIntegration:
 
                     logger.info(f"📊 Bracket {i+1}: qty={bracket_qty}, TP={tp_ticks} ticks ({tp_delta} pts), SL={sl_ticks} ticks, trailing={bracket['trailingStop']}")
 
-            # If no TP targets but we have SL, create a single bracket for SL only
+            # If no TP targets but we have SL, handle differently based on SL type
+            # Tradovate bracket orders don't work well without a profit target
+            # For SL-only: Place market entry, then add stop order separately
             if len(brackets) == 0 and sl_ticks:
-                bracket = {
-                    "qty": int(quantity),
-                    "profitTarget": None,
-                    "stopLoss": float(sl_delta) if sl_delta else None,
-                    "trailingStop": (sl_type == 'Trailing')
-                }
-                if break_even_ticks and break_even_ticks > 0:
-                    bracket["breakeven"] = float(break_even_ticks * tick_size)
-                    bracket["breakevenPlus"] = float(break_even_offset * tick_size) if break_even_offset else 0
-                if sl_type == 'Trailing' and trail_trigger > 0:
-                    bracket["autoTrail"] = {
-                        "stopLoss": float(sl_ticks * tick_size),
-                        "trigger": float(trail_trigger * tick_size),
-                        "freq": float(trail_freq * tick_size) if trail_freq else tick_size * 0.25
+                logger.info(f"📊 SL-only order (no TP): Placing market entry + separate {sl_type} stop")
+
+                # Step 1: Place market entry
+                entry_order = self.create_market_order(account_spec, symbol, entry_side, quantity, account_id)
+                entry_result = await self.place_order(entry_order)
+
+                if not entry_result or not entry_result.get('orderId'):
+                    logger.error(f"❌ Failed to place entry order: {entry_result}")
+                    return entry_result
+
+                logger.info(f"✅ Entry filled, placing {sl_type} stop...")
+
+                # Wait briefly for position to settle
+                await asyncio.sleep(0.3)
+
+                # Get fill price from position
+                positions = await self.get_positions(account_id)
+                fill_price = None
+                for pos in positions:
+                    if pos.get('contractId'):
+                        contract = await self.get_contract(pos['contractId'])
+                        if contract and contract.get('name', '').upper().startswith(symbol_root):
+                            fill_price = pos.get('netPrice')
+                            break
+
+                if not fill_price:
+                    logger.warning(f"⚠️ Could not get fill price, using approximate")
+                    fill_price = 0  # Will cause SL placement to fail gracefully
+
+                # Step 2: Place stop order
+                exit_side = 'Sell' if is_long else 'Buy'
+                sl_offset = sl_ticks * tick_size
+
+                if sl_type == 'Trailing':
+                    # Calculate initial stop price
+                    if is_long:
+                        initial_stop = fill_price - sl_offset
+                    else:
+                        initial_stop = fill_price + sl_offset
+
+                    stop_order = self.create_trailing_stop_order(
+                        account_spec, symbol, exit_side, quantity,
+                        offset=sl_offset, account_id=account_id,
+                        initial_stop_price=initial_stop
+                    )
+                    logger.info(f"📊 Trailing stop: offset={sl_offset}, initial_stop={initial_stop}")
+                else:
+                    # Fixed stop
+                    if is_long:
+                        stop_price = fill_price - sl_offset
+                    else:
+                        stop_price = fill_price + sl_offset
+                    stop_order = self.create_stop_order(account_spec, symbol, exit_side, quantity, stop_price, account_id)
+                    logger.info(f"📊 Fixed stop: price={stop_price}")
+
+                stop_result = await self.place_order(stop_order)
+
+                if stop_result and stop_result.get('orderId'):
+                    logger.info(f"✅ {sl_type} stop placed: ID={stop_result.get('orderId')}")
+                    return {
+                        'success': True,
+                        'entry_order': entry_result,
+                        'stop_order': stop_result,
+                        'orderId': entry_result.get('orderId')
                     }
-                    bracket["trailingStop"] = False
-                brackets.append(bracket)
-                logger.info(f"📊 SL-only bracket: qty={quantity}, SL={sl_ticks} ticks, trailing={bracket['trailingStop']}")
+                else:
+                    logger.error(f"❌ Failed to place stop: {stop_result}")
+                    return {
+                        'success': True,  # Entry worked
+                        'entry_order': entry_result,
+                        'stop_error': str(stop_result),
+                        'orderId': entry_result.get('orderId')
+                    }
 
             if len(brackets) == 0:
                 logger.warning(f"⚠️ No brackets to place - no TP or SL configured")
