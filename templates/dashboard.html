@@ -224,6 +224,80 @@
         </div>
     </section>
 
+    <!-- Premium Strategies Showcase -->
+    <section class="premium-showcase-section" id="premiumShowcaseSection">
+        <header class="premium-showcase-header">
+            <div class="premium-badge-wrapper">
+                <span class="premium-badge"><span class="material-icons">star</span> PREMIUM</span>
+                <h2>Just Trades Premium Monitor</h2>
+                <p class="premium-sub">Curated premium strategies performance</p>
+            </div>
+            <div class="premium-controls">
+                <div class="premium-live-indicator" id="premiumStatus">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Live</span>
+                </div>
+                <button class="btn btn-sm btn-premium" onclick="refreshPremiumShowcase()">
+                    <span class="material-icons">refresh</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Premium Stats Summary -->
+        <div class="premium-stats-bar">
+            <div class="premium-stat">
+                <span class="stat-label">Combined P&L</span>
+                <span class="stat-value positive" id="premiumTotalPnl">$0.00</span>
+            </div>
+            <div class="premium-stat">
+                <span class="stat-label">Win Rate</span>
+                <span class="stat-value" id="premiumWinRate">0%</span>
+            </div>
+            <div class="premium-stat">
+                <span class="stat-label">Profit Factor</span>
+                <span class="stat-value" id="premiumProfitFactor">0.00</span>
+            </div>
+            <div class="premium-stat">
+                <span class="stat-label">Total Trades</span>
+                <span class="stat-value" id="premiumTotalTrades">0</span>
+            </div>
+            <div class="premium-stat">
+                <span class="stat-label">Strategies</span>
+                <span class="stat-value" id="premiumStrategyCount">0</span>
+            </div>
+        </div>
+
+        <div class="premium-content-grid">
+            <!-- Premium Strategy Cards -->
+            <div class="premium-strategies-panel">
+                <div class="premium-strategies-list" id="premiumStrategiesList">
+                    <div class="premium-empty-state">
+                        <span class="material-icons">workspace_premium</span>
+                        <p>No premium strategies yet</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mini Equity Curve + Recent Trades -->
+            <div class="premium-charts-panel">
+                <div class="premium-mini-chart">
+                    <div class="mini-chart-header">
+                        <span class="material-icons">trending_up</span> Equity Curve
+                    </div>
+                    <canvas id="premiumEquityChart" height="120"></canvas>
+                </div>
+                <div class="premium-recent-trades">
+                    <div class="recent-trades-header">
+                        <span class="material-icons">history</span> Recent Trades
+                    </div>
+                    <div class="recent-trades-list" id="premiumRecentTrades">
+                        <div class="no-trades-msg">No recent trades</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Paper Trading Panel - Real-Time Strategy Performance -->
     <section class="paper-trading-section" id="paperTradingSection">
         <header class="paper-trading-header">
@@ -423,80 +497,6 @@
             </div>
         </div>
 
-    </section>
-
-    <!-- Premium Strategies Showcase -->
-    <section class="premium-showcase-section" id="premiumShowcaseSection">
-        <header class="premium-showcase-header">
-            <div class="premium-badge-wrapper">
-                <span class="premium-badge"><span class="material-icons">star</span> PREMIUM</span>
-                <h2>Just Trades Premium Monitor</h2>
-                <p class="premium-sub">Curated premium strategies performance</p>
-            </div>
-            <div class="premium-controls">
-                <div class="premium-live-indicator" id="premiumStatus">
-                    <span class="status-dot"></span>
-                    <span class="status-text">Live</span>
-                </div>
-                <button class="btn btn-sm btn-premium" onclick="refreshPremiumShowcase()">
-                    <span class="material-icons">refresh</span>
-                </button>
-            </div>
-        </header>
-
-        <!-- Premium Stats Summary -->
-        <div class="premium-stats-bar">
-            <div class="premium-stat">
-                <span class="stat-label">Combined P&L</span>
-                <span class="stat-value positive" id="premiumTotalPnl">$0.00</span>
-            </div>
-            <div class="premium-stat">
-                <span class="stat-label">Win Rate</span>
-                <span class="stat-value" id="premiumWinRate">0%</span>
-            </div>
-            <div class="premium-stat">
-                <span class="stat-label">Profit Factor</span>
-                <span class="stat-value" id="premiumProfitFactor">0.00</span>
-            </div>
-            <div class="premium-stat">
-                <span class="stat-label">Total Trades</span>
-                <span class="stat-value" id="premiumTotalTrades">0</span>
-            </div>
-            <div class="premium-stat">
-                <span class="stat-label">Strategies</span>
-                <span class="stat-value" id="premiumStrategyCount">0</span>
-            </div>
-        </div>
-
-        <div class="premium-content-grid">
-            <!-- Premium Strategy Cards -->
-            <div class="premium-strategies-panel">
-                <div class="premium-strategies-list" id="premiumStrategiesList">
-                    <div class="premium-empty-state">
-                        <span class="material-icons">workspace_premium</span>
-                        <p>No premium strategies yet</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Mini Equity Curve + Recent Trades -->
-            <div class="premium-charts-panel">
-                <div class="premium-mini-chart">
-                    <div class="mini-chart-header">
-                        <span class="material-icons">trending_up</span> Equity Curve
-                    </div>
-                    <canvas id="premiumEquityChart" height="120"></canvas>
-                </div>
-                <div class="premium-recent-trades">
-                    <div class="recent-trades-header">
-                        <span class="material-icons">history</span> Recent Trades
-                    </div>
-                    <div class="recent-trades-list" id="premiumRecentTrades">
-                        <div class="no-trades-msg">No recent trades</div>
-                    </div>
-                </div>
-            </div>
-        </div>
     </section>
 
     <!-- Market Intel Section - Calendar + News -->
