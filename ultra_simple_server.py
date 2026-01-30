@@ -4966,6 +4966,8 @@ def run_migrations():
         # break_even settings for traders
         ('traders', 'break_even_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
         ('traders', 'break_even_ticks', 'INTEGER DEFAULT 10'),
+        # Premium strategy flag for Just Trades Showcase
+        ('recorders', 'is_premium', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
     ]
 
     for table, column, col_type in migrations:
@@ -10635,12 +10637,12 @@ def recorders_list():
         if user_id:
             # Show only recorders created by this user
             if is_postgres:
-                cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
+                cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
             else:
-                cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
+                cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
         else:
             # No user auth - show all (shouldn't happen if login required)
-            cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders ORDER BY id DESC')
+            cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders ORDER BY id DESC')
         rows = cursor.fetchall()
         recorders = []
         for row in rows:
@@ -10655,7 +10657,8 @@ def recorders_list():
                         'name': row[1],
                         'ticker': row[2],
                         'enabled': row[3],
-                        'created_at': row[4]
+                        'created_at': row[4],
+                        'is_premium': row[5] if len(row) > 5 else False
                     }
                 # Ensure template-required fields exist
                 recorders.append({
@@ -10664,7 +10667,8 @@ def recorders_list():
                     'symbol': rec.get('ticker') or rec.get('symbol', ''),
                     'is_recording': rec.get('enabled', False),
                     'enabled': rec.get('enabled', False),
-                    'created_at': str(rec.get('created_at', '')) if rec.get('created_at') else ''
+                    'created_at': str(rec.get('created_at', '')) if rec.get('created_at') else '',
+                    'is_premium': bool(rec.get('is_premium', False))
                 })
             except Exception as row_err:
                 logger.warning(f"Error processing recorder row: {row_err}")
@@ -10684,18 +10688,27 @@ def recorders_list():
                 if user.is_admin:
                     has_platform_subscription = True
         
-        return render_template('recorders_list.html', 
+        # Check if current user is admin
+        is_admin = False
+        if USER_AUTH_AVAILABLE:
+            user = get_current_user()
+            if user and user.is_admin:
+                is_admin = True
+
+        return render_template('recorders_list.html',
                               recorders=recorders,
                               has_platform_subscription=has_platform_subscription,
-                              user_tier=user_tier)
+                              user_tier=user_tier,
+                              is_admin=is_admin)
     except Exception as e:
         logger.error(f"Error loading recorders list: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return render_template('recorders_list.html', 
+        return render_template('recorders_list.html',
                               recorders=[],
                               has_platform_subscription=False,
-                              user_tier='none')
+                              user_tier='none',
+                              is_admin=False)
 
 @app.route('/recorders/new')
 def recorders_new():
@@ -23529,6 +23542,196 @@ def api_paper_analytics():
     except Exception as e:
         logger.error(f"Error getting paper analytics: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/premium-showcase', methods=['GET'])
+def api_premium_showcase():
+    """Get all data for the Premium Strategies Showcase.
+
+    Returns combined analytics for all premium recorders including:
+    - List of premium strategies with individual performance
+    - Combined equity curve
+    - Recent trades from premium strategies
+    - Overall stats (win rate, profit factor, etc.)
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
+        # Get all premium recorders
+        true_val = 'TRUE' if is_postgres else '1'
+        cursor.execute(f'''
+            SELECT id, name, symbol, tp_ticks, sl_ticks, recording_enabled
+            FROM recorders
+            WHERE is_premium = {true_val}
+        ''')
+
+        columns = [desc[0] for desc in cursor.description]
+        premium_recorders = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        if not premium_recorders:
+            conn.close()
+            return jsonify({
+                'success': True,
+                'message': 'No premium strategies configured',
+                'strategies': [],
+                'combined_stats': None,
+                'recent_trades': [],
+                'equity_curve': []
+            })
+
+        premium_ids = [r['id'] for r in premium_recorders]
+        placeholders = ','.join([ph] * len(premium_ids))
+
+        # Get combined stats for premium strategies
+        cursor.execute(f'''
+            SELECT
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+                SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers,
+                SUM(pnl) as total_pnl,
+                AVG(CASE WHEN pnl > 0 THEN pnl END) as avg_win,
+                AVG(CASE WHEN pnl < 0 THEN ABS(pnl) END) as avg_loss,
+                MAX(drawdown) as max_drawdown
+            FROM paper_trades
+            WHERE recorder_id IN ({placeholders})
+            AND status = 'closed'
+            AND pnl IS NOT NULL
+        ''', tuple(premium_ids))
+
+        stats_row = cursor.fetchone()
+        stats_cols = ['total_trades', 'winners', 'losers', 'total_pnl', 'avg_win', 'avg_loss', 'max_drawdown']
+        combined_stats = dict(zip(stats_cols, stats_row)) if stats_row else {}
+
+        # Calculate derived metrics
+        if combined_stats.get('total_trades', 0) > 0:
+            combined_stats['win_rate'] = round((combined_stats.get('winners', 0) / combined_stats['total_trades']) * 100, 1)
+            avg_win = combined_stats.get('avg_win') or 0
+            avg_loss = combined_stats.get('avg_loss') or 1
+            combined_stats['profit_factor'] = round(avg_win / avg_loss, 2) if avg_loss > 0 else 0
+            combined_stats['total_pnl'] = round(combined_stats.get('total_pnl') or 0, 2)
+            combined_stats['max_drawdown'] = round(combined_stats.get('max_drawdown') or 0, 2)
+
+        # Get per-strategy stats
+        strategies = []
+        for recorder in premium_recorders:
+            cursor.execute(f'''
+                SELECT
+                    COUNT(*) as trades,
+                    SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                    SUM(pnl) as pnl
+                FROM paper_trades
+                WHERE recorder_id = {ph}
+                AND status = 'closed'
+                AND pnl IS NOT NULL
+            ''', (recorder['id'],))
+
+            row = cursor.fetchone()
+            trades, wins, pnl = row if row else (0, 0, 0)
+
+            strategies.append({
+                'id': recorder['id'],
+                'name': recorder['name'],
+                'symbol': recorder['symbol'],
+                'trades': trades or 0,
+                'win_rate': round((wins / trades) * 100, 1) if trades and trades > 0 else 0,
+                'pnl': round(pnl or 0, 2),
+                'active': recorder.get('recording_enabled', False)
+            })
+
+        # Get recent trades from premium strategies (limit 10)
+        cursor.execute(f'''
+            SELECT pt.id, pt.recorder_id, r.name as recorder_name, pt.symbol,
+                   pt.side, pt.quantity, pt.entry_price, pt.exit_price,
+                   pt.pnl, pt.closed_at
+            FROM paper_trades pt
+            JOIN recorders r ON pt.recorder_id = r.id
+            WHERE pt.recorder_id IN ({placeholders})
+            AND pt.status = 'closed'
+            AND pt.pnl IS NOT NULL
+            ORDER BY pt.closed_at DESC
+            LIMIT 10
+        ''', tuple(premium_ids))
+
+        trade_cols = ['id', 'recorder_id', 'recorder_name', 'symbol', 'side',
+                      'quantity', 'entry_price', 'exit_price', 'pnl', 'closed_at']
+        recent_trades = [dict(zip(trade_cols, row)) for row in cursor.fetchall()]
+
+        # Get equity curve (last 50 trades cumulative)
+        cursor.execute(f'''
+            SELECT cumulative_pnl
+            FROM paper_trades
+            WHERE recorder_id IN ({placeholders})
+            AND status = 'closed'
+            AND cumulative_pnl IS NOT NULL
+            ORDER BY closed_at DESC
+            LIMIT 50
+        ''', tuple(premium_ids))
+
+        equity_curve = [row[0] for row in cursor.fetchall()]
+        equity_curve.reverse()  # Oldest to newest
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'strategies': strategies,
+            'combined_stats': combined_stats,
+            'recent_trades': recent_trades,
+            'equity_curve': equity_curve
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting premium showcase: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/recorders/<int:recorder_id>/premium', methods=['POST', 'DELETE'])
+@login_required
+def api_set_recorder_premium(recorder_id):
+    """Set or remove premium status for a recorder. ADMIN ONLY.
+
+    POST: Mark as premium
+    DELETE: Remove premium status
+    """
+    # Admin-only check
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
+        is_premium = request.method == 'POST'
+        premium_val = 'TRUE' if is_postgres else '1'
+        not_premium_val = 'FALSE' if is_postgres else '0'
+
+        cursor.execute(f'''
+            UPDATE recorders
+            SET is_premium = {premium_val if is_premium else not_premium_val}
+            WHERE id = {ph}
+        ''', (recorder_id,))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'recorder_id': recorder_id,
+            'is_premium': is_premium
+        })
+
+    except Exception as e:
+        logger.error(f"Error setting premium status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/paper-trades/equity-curve', methods=['GET'])
 def api_paper_equity_curve():

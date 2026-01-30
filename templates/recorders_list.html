@@ -174,6 +174,7 @@
                 <th>STRATEGY</th>
                 <th>SYMBOL</th>
                 <th>CREATED</th>
+                {% if is_admin %}<th>PREMIUM</th>{% endif %}
                 <th>ACTIONS</th>
             </tr>
         </thead>
@@ -198,6 +199,16 @@
                 </td>
                 <td class="symbol-col">{{ recorder.symbol or '—' }}</td>
                 <td class="date-col">{{ recorder.created_at[:10] if recorder.created_at else '—' }}</td>
+                {% if is_admin %}
+                <td class="premium-col">
+                    <button class="premium-toggle {% if recorder.is_premium %}active{% endif %}"
+                            data-id="{{ recorder.id }}"
+                            title="{% if recorder.is_premium %}Remove from Premium{% else %}Mark as Premium{% endif %}"
+                            onclick="togglePremium({{ recorder.id }}, {{ 'true' if recorder.is_premium else 'false' }})">
+                        <span class="material-icons">{% if recorder.is_premium %}star{% else %}star_border{% endif %}</span>
+                    </button>
+                </td>
+                {% endif %}
                 <td class="actions">
                     <button class="icon-btn" title="Edit" onclick="editRecorder({{ recorder.id }})">
                         <span class="material-icons">edit</span>
@@ -653,6 +664,33 @@
     }
     .toast.success { border-color: rgba(34,197,94,0.5); color: #86efac; }
     .toast.error { border-color: rgba(239,68,68,0.5); color: #fca5a5; }
+
+    /* Premium Toggle */
+    .premium-col { width: 70px; text-align: center; }
+    .premium-toggle {
+        background: rgba(15,23,42,0.6);
+        border: 1px solid rgba(148,163,184,0.15);
+        color: #64748b;
+        border-radius: 8px;
+        padding: 0.4rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    }
+    .premium-toggle:hover {
+        color: #fbbf24;
+        background: rgba(251,191,36,0.15);
+        border-color: rgba(251,191,36,0.3);
+    }
+    .premium-toggle.active {
+        color: #fbbf24;
+        background: rgba(251,191,36,0.2);
+        border-color: rgba(251,191,36,0.4);
+        box-shadow: 0 0 8px rgba(251,191,36,0.3);
+    }
+    .premium-toggle .material-icons { font-size: 1.2rem; }
 </style>
 {% endblock %}
 {% block scripts %}
@@ -810,6 +848,39 @@
             .catch(err => {
                 console.error('Error:', err);
                 showToast(`Failed to ${action} recording`, 'error');
+            });
+    }
+
+    function togglePremium(id, isPremium) {
+        const method = isPremium ? 'DELETE' : 'POST';
+        fetch(`/api/recorders/${id}/premium`, { method: method })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // Update the button visually
+                    const btn = document.querySelector(`button.premium-toggle[data-id="${id}"]`);
+                    if (btn) {
+                        const icon = btn.querySelector('.material-icons');
+                        if (data.is_premium) {
+                            btn.classList.add('active');
+                            icon.textContent = 'star';
+                            btn.title = 'Remove from Premium';
+                            btn.setAttribute('onclick', `togglePremium(${id}, true)`);
+                        } else {
+                            btn.classList.remove('active');
+                            icon.textContent = 'star_border';
+                            btn.title = 'Mark as Premium';
+                            btn.setAttribute('onclick', `togglePremium(${id}, false)`);
+                        }
+                    }
+                    showToast(data.is_premium ? 'Marked as Premium' : 'Removed from Premium', 'success');
+                } else {
+                    showToast(data.error || 'Failed to update premium status', 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                showToast('Failed to update premium status', 'error');
             });
     }
 
