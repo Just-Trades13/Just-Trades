@@ -27658,13 +27658,24 @@ def api_websocket_pool():
 
 @app.route('/api/websocket-prewarm', methods=['POST', 'GET'])
 def api_websocket_prewarm():
-    """Manually trigger WebSocket connection prewarm"""
+    """Manually trigger WebSocket connection prewarm.
+
+    Query params:
+        staggered: 0 or 1 (default 1) - open connections one at a time vs all at once
+        delay: seconds between connections when staggered (default 2.0)
+    """
     try:
         from recorder_service import prewarm_websocket_connections, get_websocket_order_stats, _WS_POOL
         from async_utils import run_async
 
+        # Parse staggered mode parameters
+        staggered = request.args.get('staggered', '1') != '0'
+        delay = float(request.args.get('delay', '2.0'))
+
+        logger.info(f"🔥 API: Starting WebSocket prewarm (staggered={staggered}, delay={delay}s)")
+
         # Run prewarm synchronously and get result
-        prewarm_result = run_async(prewarm_websocket_connections())
+        prewarm_result = run_async(prewarm_websocket_connections(staggered=staggered, delay_seconds=delay))
 
         # Return current pool status with prewarm result
         return jsonify({
@@ -27672,7 +27683,9 @@ def api_websocket_prewarm():
             'message': 'Prewarm completed',
             'prewarm_result': prewarm_result,
             'pool_size': len(_WS_POOL),
-            'stats': get_websocket_order_stats()
+            'stats': get_websocket_order_stats(),
+            'mode': 'staggered' if staggered else 'parallel',
+            'delay_seconds': delay if staggered else 0
         })
     except Exception as e:
         logger.error(f"Error prewarming WebSocket: {e}")
