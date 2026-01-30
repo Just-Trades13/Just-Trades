@@ -1681,11 +1681,11 @@ def execute_trade_simple(
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
                     # NOW SUPPORTS: Native break-even and autoTrail (trailing-after-profit) via Tradovate API
-                    # Use bracket order if: TP configured OR trailing stop configured (via risk_config)
-                    has_trailing_stop = risk_config and risk_config.get('trail') and risk_config.get('trail', {}).get('offset_ticks', 0) > 0
+                    # NOTE: Bracket orders require TP to be set. For trailing stop only (no TP),
+                    # use REST path which calls apply_risk_orders to place trailing stop separately.
                     use_bracket_order = (
                         not has_existing_position and
-                        (tp_ticks and tp_ticks > 0) or has_trailing_stop
+                        tp_ticks and tp_ticks > 0
                     )
                     
                     if use_bracket_order:
