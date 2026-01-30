@@ -11796,7 +11796,10 @@ def api_create_trader():
         sl_enabled = data.get('sl_enabled')
         sl_amount = data.get('sl_amount')
         sl_units = data.get('sl_units')
+        sl_type = data.get('sl_type')  # 'Fixed' or 'Trailing'
         max_daily_loss = data.get('max_daily_loss')
+        break_even_enabled = data.get('break_even_enabled')
+        break_even_ticks = data.get('break_even_ticks')
         
         if not recorder_id or not account_id:
             return jsonify({'success': False, 'error': 'recorder_id and account_id are required'}), 400
@@ -11854,8 +11857,14 @@ def api_create_trader():
             sl_amount = rec_sl_amount
         if sl_units is None:
             sl_units = rec_sl_units
+        if sl_type is None:
+            sl_type = 'Fixed'  # Default to Fixed if not provided
         if max_daily_loss is None:
             max_daily_loss = rec_max_loss
+        if break_even_enabled is None:
+            break_even_enabled = False
+        if break_even_ticks is None:
+            break_even_ticks = 10
         
         # Verify account exists
         if is_postgres:
@@ -11896,13 +11905,13 @@ def api_create_trader():
             cursor.execute('''
                 INSERT INTO traders (
                     recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
-                    initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                    user_id, enabled_accounts
+                    initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, sl_type,
+                    break_even_enabled, break_even_ticks, max_daily_loss, user_id, enabled_accounts
                 )
-                VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo,
-                  initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                  current_user_id, None))
+                  initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, sl_type,
+                  break_even_enabled, break_even_ticks, max_daily_loss, current_user_id, None))
             result = cursor.fetchone()
             if result:
                 trader_id = result.get('id') if isinstance(result, dict) else result[0]
@@ -11913,13 +11922,13 @@ def api_create_trader():
             cursor.execute('''
                 INSERT INTO traders (
                     recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
-                    initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                    user_id, enabled_accounts
+                    initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, sl_type,
+                    break_even_enabled, break_even_ticks, max_daily_loss, user_id, enabled_accounts
                 )
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
-                  initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                  current_user_id, None))
+                  initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, sl_type,
+                  break_even_enabled, break_even_ticks, max_daily_loss, current_user_id, None))
             trader_id = cursor.lastrowid
         
         conn.commit()

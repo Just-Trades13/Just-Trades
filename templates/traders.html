@@ -2209,6 +2209,17 @@
                         const newTimeFilter2Start = document.getElementById('newTimeFilter2Start')?.value || '';
                         const newTimeFilter2Stop = document.getElementById('newTimeFilter2Stop')?.value || '';
                         
+                        // Collect risk settings for create mode (from the create form elements)
+                        const createSlEnabled = document.getElementById('createSlEnabled')?.checked ? 1 : 0;
+                        const createSlAmount = parseFloat(document.getElementById('createSlAmount')?.value) || 0;
+                        const createSlUnits = document.getElementById('createSlUnits')?.value || 'Ticks';
+                        const createSlType = document.getElementById('createSlType')?.value || 'Fixed';
+                        const createTpTargets = JSON.stringify(getTpTargets());
+                        const createInitialPositionSize = parseInt(document.getElementById('createInitialPositionSize')?.value) || 1;
+                        const createAddPositionSize = parseInt(document.getElementById('createAddPositionSize')?.value) || 1;
+                        const createBreakEvenEnabled = document.getElementById('createBreakEvenEnabled')?.checked ? 1 : 0;
+                        const createBreakEvenTicks = parseInt(document.getElementById('createBreakEvenTicks')?.value) || 10;
+
                         for (const account of enabledAccounts) {
                             const response = await fetch('/api/traders', {
                                 method: 'POST',
@@ -2221,6 +2232,16 @@
                                     subaccount_id: account.subaccount_id,
                                     subaccount_name: account.subaccount_name,
                                     is_demo: account.is_demo,
+                                    // Risk settings
+                                    initial_position_size: createInitialPositionSize,
+                                    add_position_size: createAddPositionSize,
+                                    tp_targets: createTpTargets,
+                                    sl_enabled: createSlEnabled,
+                                    sl_amount: createSlAmount,
+                                    sl_units: createSlUnits,
+                                    sl_type: createSlType,
+                                    break_even_enabled: createBreakEvenEnabled,
+                                    break_even_ticks: createBreakEvenTicks,
                                     // Time filter settings (optional overrides)
                                     time_filter_1_enabled: newTimeFilter1Enabled,
                                     time_filter_1_start: newTimeFilter1Start,
