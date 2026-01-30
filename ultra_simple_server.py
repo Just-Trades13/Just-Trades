@@ -27956,6 +27956,32 @@ def api_websocket_raw_test():
         return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
+@app.route('/api/neon-status', methods=['GET'])
+def api_neon_status():
+    """Check Neon database connection status and data counts."""
+    try:
+        from neon_db import check_neon_connection, get_table_counts
+
+        status = check_neon_connection()
+
+        if status['connected']:
+            status['table_counts'] = get_table_counts()
+
+        return jsonify(status)
+
+    except ImportError:
+        return jsonify({
+            'connected': False,
+            'error': 'neon_db module not found'
+        }), 500
+    except Exception as e:
+        logger.error(f"Error checking Neon status: {e}")
+        return jsonify({
+            'connected': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/websocket-backoff', methods=['GET', 'POST', 'DELETE'])
 def api_websocket_backoff():
     """Check or reset WebSocket connection backoff.
