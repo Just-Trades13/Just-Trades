@@ -10,7 +10,22 @@
         <h2>Select Your Broker</h2>
         <p>Choose the trading platform you want to connect</p>
     </div>
-    
+
+    <div class="broker-filters">
+        <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all">All Brokers</button>
+            <button class="filter-tab" data-filter="prop">Prop Firms</button>
+            <button class="filter-tab" data-filter="stocks">Stocks</button>
+            <button class="filter-tab" data-filter="futures">Futures</button>
+            <button class="filter-tab" data-filter="options">Options</button>
+            <button class="filter-tab" data-filter="crypto">Crypto</button>
+        </div>
+        <div class="search-box">
+            <i class="material-icons">search</i>
+            <input type="text" id="broker-search" placeholder="Search all brokers...">
+        </div>
+    </div>
+
     <div class="brokers-grid" id="brokers-grid">
         <!-- Broker cards will be dynamically inserted here -->
     </div>
@@ -20,101 +35,300 @@
 {% block styles %}
 <style>
     .broker-selection-container {
-        max-width: 1200px;
+        max-width: 1400px;
         margin: 0 auto;
         padding: 2rem;
     }
-    
+
     .broker-selection-header {
         text-align: center;
-        margin-bottom: 3rem;
+        margin-bottom: 2rem;
     }
-    
+
     .broker-selection-header h2 {
         font-size: 2.5rem;
         margin: 0 0 0.5rem 0;
         color: var(--text-light);
     }
-    
+
     .broker-selection-header p {
         color: var(--text-muted);
         font-size: 1.1rem;
     }
-    
+
+    .broker-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .filter-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .filter-tab {
+        padding: 0.5rem 1rem;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: var(--text-muted);
+        border-radius: 20px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.2s ease;
+    }
+
+    .filter-tab:hover {
+        border-color: var(--green);
+        color: var(--text-light);
+    }
+
+    .filter-tab.active {
+        background: var(--green);
+        border-color: var(--green);
+        color: #000;
+        font-weight: 500;
+    }
+
+    .search-box {
+        display: flex;
+        align-items: center;
+        background: var(--background-light);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        min-width: 250px;
+    }
+
+    .search-box i {
+        color: var(--text-muted);
+        margin-right: 0.5rem;
+    }
+
+    .search-box input {
+        background: transparent;
+        border: none;
+        color: var(--text-light);
+        font-size: 0.95rem;
+        outline: none;
+        width: 100%;
+    }
+
+    .search-box input::placeholder {
+        color: var(--text-muted);
+    }
+
     .brokers-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: 2rem;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 1.5rem;
     }
-    
+
     .broker-card {
         background: var(--background-light);
         border: 2px solid var(--border-color);
         border-radius: 12px;
-        padding: 2rem;
+        padding: 1.25rem;
         cursor: pointer;
         transition: all 0.3s ease;
-        text-align: center;
         position: relative;
         overflow: hidden;
     }
-    
+
     .broker-card:hover {
         border-color: var(--green);
         transform: translateY(-4px);
         box-shadow: 0 8px 24px rgba(25, 184, 255, 0.2);
     }
-    
-    .broker-card.active {
-        border-color: var(--green);
-        background: rgba(25, 184, 255, 0.1);
-    }
-    
-    .broker-icon {
-        font-size: 3rem;
+
+    .broker-card-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
         margin-bottom: 1rem;
+    }
+
+    .broker-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        background: rgba(34, 197, 94, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .broker-icon i {
+        font-size: 1.5rem;
         color: var(--green);
     }
-    
+
+    .broker-header-info {
+        flex: 1;
+        min-width: 0;
+    }
+
     .broker-name {
-        font-size: 1.5rem;
+        font-size: 1.15rem;
         font-weight: 600;
-        margin-bottom: 0.5rem;
         color: var(--text-light);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.25rem;
     }
-    
+
+    .broker-badge {
+        font-size: 0.6rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-weight: 500;
+        text-transform: uppercase;
+    }
+
+    .broker-badge.beta {
+        background: rgba(251, 191, 36, 0.2);
+        color: #fbbf24;
+    }
+
     .broker-description {
-        font-size: 0.9rem;
+        font-size: 0.8rem;
         color: var(--text-muted);
-        margin-bottom: 1rem;
+        line-height: 1.4;
     }
-    
+
     .broker-status {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 0.85rem;
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        padding: 3px 10px;
+        border-radius: 10px;
+        font-size: 0.7rem;
         font-weight: 500;
     }
-    
+
     .broker-status.available {
         background: rgba(16, 185, 129, 0.2);
         color: #10b981;
     }
-    
+
     .broker-status.coming-soon {
         background: rgba(156, 163, 175, 0.2);
         color: #9ca3af;
     }
-    
+
+    /* Asset Classes Section */
+    .broker-assets {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .asset-pill {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    .asset-pill.supported {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+
+    .asset-pill.unsupported {
+        background: rgba(100, 116, 139, 0.1);
+        color: var(--text-muted);
+        opacity: 0.5;
+    }
+
+    .asset-pill i {
+        font-size: 0.85rem;
+    }
+
+    /* Features Grid */
+    .broker-features {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.4rem;
+    }
+
+    .feature-item {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .feature-item.supported {
+        color: var(--text-light);
+    }
+
+    .feature-item .check {
+        color: #22c55e;
+        font-size: 0.9rem;
+    }
+
+    .feature-item .dash {
+        color: var(--text-muted);
+        opacity: 0.5;
+        font-size: 0.9rem;
+    }
+
     .broker-card.coming-soon {
         opacity: 0.6;
         cursor: not-allowed;
     }
-    
+
     .broker-card.coming-soon:hover {
         transform: none;
         border-color: var(--border-color);
+        box-shadow: none;
+    }
+
+    .no-results {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 3rem;
+        color: var(--text-muted);
+    }
+
+    .no-results i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        display: block;
+    }
+
+    @media (max-width: 768px) {
+        .broker-filters {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .filter-tabs {
+            justify-content: center;
+        }
+
+        .search-box {
+            min-width: 100%;
+        }
+
+        .brokers-grid {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 {% endblock %}
@@ -122,21 +336,42 @@
 {% block scripts %}
 <script>
     const brokers = [
+        // === AVAILABLE BROKERS ===
         {
             id: 'tradovate',
             name: 'Tradovate',
             description: 'Professional futures trading platform',
             icon: 'trending_up',
             status: 'available',
-            comingSoon: false
+            comingSoon: false,
+            categories: ['futures'],
+            beta: false,
+            assets: { stocks: false, futures: true, options: false, crypto: false },
+            features: { live: true, paper: true, shorting: true, trailing: false, fractional: false, autoSubmit: true }
         },
         {
             id: 'projectx',
-            name: 'ProjectX / TopstepX',
+            name: 'ProjectX',
             description: 'TopstepX, Apex, and other prop firms',
             icon: 'rocket_launch',
             status: 'available',
-            comingSoon: false
+            comingSoon: false,
+            categories: ['prop', 'futures'],
+            beta: false,
+            assets: { stocks: false, futures: true, options: false, crypto: false },
+            features: { live: true, paper: true, shorting: true, trailing: false, fractional: false, autoSubmit: true }
+        },
+        {
+            id: 'ninjatrader',
+            name: 'NinjaTrader',
+            description: 'NinjaTrader Brokerage futures accounts',
+            icon: 'show_chart',
+            status: 'available',
+            comingSoon: false,
+            categories: ['futures'],
+            beta: false,
+            assets: { stocks: false, futures: true, options: false, crypto: false },
+            features: { live: true, paper: true, shorting: true, trailing: false, fractional: false, autoSubmit: true }
         },
         {
             id: 'webull',
@@ -144,7 +379,96 @@
             description: 'Stocks, ETFs, Options, Futures, Crypto',
             icon: 'account_balance',
             status: 'available',
-            comingSoon: false
+            comingSoon: false,
+            categories: ['stocks', 'futures', 'options', 'crypto'],
+            beta: false,
+            assets: { stocks: true, futures: true, options: true, crypto: true },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: true, autoSubmit: true }
+        },
+        // === COMING SOON BROKERS ===
+        {
+            id: 'tradestation',
+            name: 'TradeStation',
+            description: 'Stocks, futures, and options trading',
+            icon: 'timeline',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['stocks', 'futures', 'options'],
+            beta: false,
+            assets: { stocks: true, futures: true, options: true, crypto: false },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: false, autoSubmit: true }
+        },
+        {
+            id: 'alpaca',
+            name: 'Alpaca',
+            description: 'Commission-free stock and crypto trading API',
+            icon: 'code',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['stocks', 'crypto'],
+            beta: false,
+            assets: { stocks: true, futures: false, options: false, crypto: true },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: true, autoSubmit: true }
+        },
+        {
+            id: 'robinhood',
+            name: 'Robinhood',
+            description: 'Commission-free stocks, options, and crypto',
+            icon: 'local_florist',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['stocks', 'options', 'crypto'],
+            beta: false,
+            assets: { stocks: true, futures: false, options: true, crypto: true },
+            features: { live: true, paper: false, shorting: false, trailing: true, fractional: true, autoSubmit: true }
+        },
+        {
+            id: 'interactivebrokers',
+            name: 'Interactive Brokers',
+            description: 'Global trading across all asset classes',
+            icon: 'public',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['stocks', 'futures', 'options', 'crypto'],
+            beta: true,
+            assets: { stocks: true, futures: true, options: true, crypto: true },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: true, autoSubmit: true }
+        },
+        {
+            id: 'etrade',
+            name: 'E*TRADE',
+            description: 'Stocks and options trading platform',
+            icon: 'star',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['stocks', 'options'],
+            beta: false,
+            assets: { stocks: true, futures: false, options: true, crypto: false },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: false, autoSubmit: true }
+        },
+        {
+            id: 'tastytrade',
+            name: 'tastytrade',
+            description: 'Options-focused trading platform',
+            icon: 'restaurant',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['stocks', 'futures', 'options'],
+            beta: false,
+            assets: { stocks: true, futures: true, options: true, crypto: false },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: false, autoSubmit: true }
+        },
+        {
+            id: 'tradier',
+            name: 'Tradier',
+            description: 'Brokerage API for stocks and options',
+            icon: 'api',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['stocks', 'options'],
+            beta: false,
+            assets: { stocks: true, futures: false, options: true, crypto: false },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: false, autoSubmit: true }
         },
         {
             id: 'rithmic',
@@ -152,64 +476,188 @@
             description: 'Professional trading infrastructure',
             icon: 'speed',
             status: 'coming-soon',
-            comingSoon: true
+            comingSoon: true,
+            categories: ['prop', 'futures'],
+            beta: false,
+            assets: { stocks: false, futures: true, options: false, crypto: false },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: false, autoSubmit: true }
         },
         {
-            id: 'ninjatrader',
-            name: 'NinjaTrader',
-            description: 'NinjaTrader Brokerage accounts (futures)',
-            icon: 'show_chart',
-            status: 'available',
-            comingSoon: false
+            id: 'coinbase',
+            name: 'Coinbase',
+            description: 'Leading cryptocurrency exchange',
+            icon: 'currency_bitcoin',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['crypto'],
+            beta: false,
+            assets: { stocks: false, futures: false, options: false, crypto: true },
+            features: { live: true, paper: false, shorting: false, trailing: false, fractional: true, autoSubmit: true }
+        },
+        {
+            id: 'kraken',
+            name: 'Kraken',
+            description: 'Secure cryptocurrency exchange',
+            icon: 'waves',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['crypto'],
+            beta: false,
+            assets: { stocks: false, futures: true, options: false, crypto: true },
+            features: { live: true, paper: false, shorting: true, trailing: true, fractional: true, autoSubmit: true }
+        },
+        {
+            id: 'binance',
+            name: 'Binance',
+            description: "World's largest crypto exchange",
+            icon: 'diamond',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['crypto'],
+            beta: false,
+            assets: { stocks: false, futures: true, options: true, crypto: true },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: true, autoSubmit: true }
+        },
+        {
+            id: 'bybit',
+            name: 'Bybit',
+            description: 'Crypto derivatives and spot trading',
+            icon: 'bolt',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['crypto'],
+            beta: false,
+            assets: { stocks: false, futures: true, options: true, crypto: true },
+            features: { live: true, paper: true, shorting: true, trailing: true, fractional: true, autoSubmit: true }
+        },
+        {
+            id: 'cryptocom',
+            name: 'Crypto.com',
+            description: 'Cryptocurrency trading platform',
+            icon: 'hexagon',
+            status: 'coming-soon',
+            comingSoon: true,
+            categories: ['crypto'],
+            beta: true,
+            assets: { stocks: false, futures: false, options: false, crypto: true },
+            features: { live: true, paper: false, shorting: false, trailing: false, fractional: true, autoSubmit: true }
         }
     ];
-    
+
+    let currentFilter = 'all';
+    let searchQuery = '';
+    let accountId = null;
+
     function displayBrokers() {
         const grid = document.getElementById('brokers-grid');
-        // Get account_id from URL path: /accounts/<id>/broker-selection
         const pathParts = window.location.pathname.split('/');
-        const accountId = pathParts[2] || new URLSearchParams(window.location.search).get('account_id');
-        
+        accountId = pathParts[2] || new URLSearchParams(window.location.search).get('account_id');
+
         if (!accountId) {
             alert('Account ID missing. Redirecting to accounts page.');
             window.location.href = '/accounts';
             return;
         }
-        
+
         grid.innerHTML = '';
-        
-        brokers.forEach(broker => {
+
+        // Sort: available first, then coming soon
+        const sortedBrokers = [...brokers].sort((a, b) => {
+            if (a.comingSoon !== b.comingSoon) return a.comingSoon ? 1 : -1;
+            return a.name.localeCompare(b.name);
+        });
+
+        let visibleCount = 0;
+
+        sortedBrokers.forEach(broker => {
+            const matchesFilter = currentFilter === 'all' || broker.categories.includes(currentFilter);
+            const matchesSearch = !searchQuery ||
+                broker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                broker.description.toLowerCase().includes(searchQuery.toLowerCase());
+
+            if (!matchesFilter || !matchesSearch) return;
+
+            visibleCount++;
+
             const card = document.createElement('div');
             card.className = `broker-card ${broker.comingSoon ? 'coming-soon' : ''}`;
-            
+
             const statusClass = broker.status === 'available' ? 'available' : 'coming-soon';
             const statusText = broker.status === 'available' ? 'Available' : 'Coming Soon';
-            
+            const betaBadge = broker.beta ? '<span class="broker-badge beta">Beta</span>' : '';
+
+            // Build asset pills
+            const assetConfig = [
+                { key: 'stocks', label: 'Stocks', icon: 'trending_up' },
+                { key: 'futures', label: 'Futures', icon: 'show_chart' },
+                { key: 'options', label: 'Options', icon: 'call_split' },
+                { key: 'crypto', label: 'Crypto', icon: 'currency_bitcoin' }
+            ];
+
+            const assetsHtml = assetConfig
+                .filter(a => broker.assets[a.key])
+                .map(a => `<span class="asset-pill supported"><i class="material-icons">${a.icon}</i>${a.label}</span>`)
+                .join('');
+
+            // Build features list
+            const featureConfig = [
+                { key: 'live', label: 'Live Trading' },
+                { key: 'paper', label: 'Paper Trading' },
+                { key: 'shorting', label: 'Shorting' },
+                { key: 'trailing', label: 'Trailing Stops' },
+                { key: 'fractional', label: 'Fractional' },
+                { key: 'autoSubmit', label: 'Auto Submit' }
+            ];
+
+            const featuresHtml = featureConfig.map(f => {
+                const supported = broker.features[f.key];
+                const icon = supported ? '<i class="material-icons check">check</i>' : '<i class="material-icons dash">remove</i>';
+                return `<div class="feature-item ${supported ? 'supported' : ''}">${icon}${f.label}</div>`;
+            }).join('');
+
             card.innerHTML = `
-                <div class="broker-icon">
-                    <i class="material-icons">${broker.icon}</i>
-                </div>
-                <div class="broker-name">${broker.name}</div>
-                <div class="broker-description">${broker.description}</div>
                 <div class="broker-status ${statusClass}">${statusText}</div>
+                <div class="broker-card-header">
+                    <div class="broker-icon">
+                        <i class="material-icons">${broker.icon}</i>
+                    </div>
+                    <div class="broker-header-info">
+                        <div class="broker-name">${broker.name}${betaBadge}</div>
+                        <div class="broker-description">${broker.description}</div>
+                    </div>
+                </div>
+                <div class="broker-assets">${assetsHtml}</div>
+                <div class="broker-features">${featuresHtml}</div>
             `;
-            
+
             if (!broker.comingSoon) {
                 card.addEventListener('click', () => {
                     selectBroker(accountId, broker.id, broker.name);
                 });
             } else {
                 card.addEventListener('click', () => {
-                    alert(`${broker.name} integration is coming soon!`);
+                    showComingSoonToast(broker.name);
                 });
             }
-            
+
             grid.appendChild(card);
         });
+
+        if (visibleCount === 0) {
+            grid.innerHTML = `
+                <div class="no-results">
+                    <i class="material-icons">search_off</i>
+                    <p>No brokers found matching your criteria</p>
+                </div>
+            `;
+        }
     }
-    
+
+    function showComingSoonToast(brokerName) {
+        alert(`${brokerName} integration is coming soon! We're working hard to bring you more broker options.`);
+    }
+
     function selectBroker(accountId, brokerId, brokerName) {
-        // Update account with selected broker
         fetch(`/api/accounts/${accountId}/set-broker`, {
             method: 'POST',
             headers: {
@@ -223,22 +671,7 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // Redirect to appropriate connection flow based on broker
-                if (brokerId === 'tradovate' || brokerId === 'ninjatrader') {
-                    // For Tradovate and NinjaTrader Brokerage (same API)
-                    // NinjaTrader Brokerage uses Tradovate's backend
-                    window.location.href = `/accounts/${accountId}/credentials`;
-                } else if (brokerId === 'projectx') {
-                    // For ProjectX/TopstepX, collect API key credentials
-                    window.location.href = `/accounts/${accountId}/projectx-credentials`;
-                } else if (brokerId === 'webull') {
-                    // For Webull, collect App Key and App Secret
-                    window.location.href = `/accounts/${accountId}/webull-credentials`;
-                } else {
-                    // For other brokers, redirect to their specific connection page
-                    alert(`${brokerName} connection flow coming soon!`);
-                    window.location.href = '/accounts';
-                }
+                window.location.href = `/accounts/${accountId}/connect/${brokerId}/agreement`;
             } else {
                 alert('Error setting broker: ' + (data.error || 'Unknown error'));
             }
@@ -248,10 +681,26 @@
             alert('Error selecting broker. Please try again.');
         });
     }
-    
+
     document.addEventListener('DOMContentLoaded', function() {
         displayBrokers();
+
+        // Filter tabs
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                currentFilter = this.dataset.filter;
+                displayBrokers();
+            });
+        });
+
+        // Search
+        const searchInput = document.getElementById('broker-search');
+        searchInput.addEventListener('input', function() {
+            searchQuery = this.value;
+            displayBrokers();
+        });
     });
 </script>
 {% endblock %}
-

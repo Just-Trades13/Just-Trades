@@ -1,0 +1,626 @@
+{% extends "layout.html" %}
+
+{% block title %}Connect {{ broker_name }} - Agreement | Just.Trades.{% endblock %}
+
+{% block page_title %}CONNECT BROKER{% endblock %}
+
+{% block content %}
+<div class="broker-agreement-container">
+    <nav class="broker-agreement-breadcrumbs">
+        <a href="/accounts">Home</a>
+        <span class="breadcrumb-sep">></span>
+        <a href="/accounts">Brokers</a>
+        <span class="breadcrumb-sep">></span>
+        <a href="/accounts">Connect Broker</a>
+        <span class="breadcrumb-sep">></span>
+        <span class="breadcrumb-current">{{ broker_name }}</span>
+    </nav>
+
+    <div class="broker-agreement-layout">
+        <div class="broker-agreement-main">
+            <header class="broker-agreement-header">
+                <div class="broker-agreement-title-row">
+                    <span class="broker-agreement-icon"><i class="material-icons">{{ broker_icon | default('account_balance') }}</i></span>
+                    <div>
+                        <h1 class="broker-agreement-title">Connect {{ broker_name }}</h1>
+                        <span class="broker-agreement-tag"><i class="material-icons">{{ asset_icon | default('show_chart') }}</i> {{ asset_tag | default('Trading') }}</span>
+                    </div>
+                </div>
+            </header>
+
+            <section class="broker-agreement-disclaimer">
+                <p>Just Trades offers the powerful ability to fully automate the execution of trades through webhooks connecting your broker and exchange accounts. It's important to keep in mind that doing so may come with certain risks. While experienced traders are likely to possess the requisite knowledge and expertise to use Just Trades safely, it's important to note that not all users may be able to do so effectively. Regardless of your level of expertise, it's essential to exercise caution when automating trades through Just Trades and be aware of any potential risks that may arise.</p>
+            </section>
+
+            <section class="broker-agreement-waiver">
+                <p class="waiver-bold">BY USING JUST TRADES, YOU HEREBY ACKNOWLEDGE AND CONFIRM THAT YOU ARE AWARE OF THE INHERENT RISKS INVOLVED IN USING JUST TRADES AND WILLINGLY ACCEPT THESE RISKS.</p>
+            </section>
+
+            <section class="broker-agreement-terms">
+                <p>By using Just Trades, you agree to absolve the company, its parent company, affiliated businesses, and employees from any and all claims, demands, suits, causes of action, liabilities, costs, losses, expenses, and damages that may arise from or be related to your use of Just Trades, including but not limited to any issues arising from errors, malfunctions, or downtime in the Just Trades system or those of its vendors. It is your responsibility to monitor your positions and ensure that your signals are being executed effectively at all times. Your use of Just Trades confirms your acceptance of this waiver and confirms that you have read, comprehended, and agree to the Just Trades <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>, which includes additional disclaimers and restrictions.</p>
+            </section>
+
+            <section class="broker-agreement-enable">
+                <h2 class="broker-agreement-subtitle">Enable {{ asset_tag | default('Trading') }} Agreement for Just Trades Users</h2>
+                <p>All securities trading, whether in stocks, futures, exchange-traded funds ("ETFs"), options, crypto, or other investment vehicles, is speculative in nature and involves substantial risk of loss. Just Trades encourages its Customers to invest carefully and to use the information available at the websites of the SEC at <a href="http://www.sec.gov" target="_blank" rel="noopener">http://www.sec.gov</a> and FINRA at <a href="http://FINRA.org" target="_blank" rel="noopener">http://FINRA.org</a>. Customers can review public companies' filings at the SEC's EDGAR page but Just Trades does not make any representations or warranties on such information. FINRA has published information on how to invest carefully at its website.</p>
+                <p>Just Trades may also make some of this information available on its website. Just Trades believes it is very important that every Customer understands all of the risks of any form of trading or investing prior to trading or investing real dollars. Past performance is not necessarily representative or indicative of future results. By investing their money in securities through Just Trades, Customers are taking full responsibility for all trading actions, and should make every effort to understand the risks involved.</p>
+                {% if 'Futures' in (asset_tag | default('')) %}
+                <p>Trading security futures contracts may not be suitable for all investors. You may lose a substantial amount of money in a very short period of time. The amount you may lose is potentially unlimited and can exceed the amount you originally deposit with your broker. Only risk capital should be used when trading futures. This is because futures trading is highly leveraged, with a relatively small amount of money used to establish a position in assets having a much greater value. If you are uncomfortable with this level of risk or financially unable to assume such risk, you should not trade security futures contracts.</p>
+                <p>Trading security futures contracts involves risk and may result in potentially unlimited losses that are greater than the amount you deposited with your broker. As with any high risk financial product, you should not risk any funds that you cannot afford to lose, such as your retirement savings, medical and other emergency funds, funds set aside for purposes such as education or home ownership, proceeds from student loans or mortgages, or funds required to meet your living expenses.</p>
+                {% endif %}
+            </section>
+
+            <div class="broker-agreement-actions">
+                <a href="/accounts" class="btn btn-danger">I don't agree</a>
+                <button type="button" class="btn btn-success" id="agree-btn">I agree</button>
+            </div>
+
+            <section class="broker-agreement-help">
+                <h3>Don't have an account with {{ broker_name }}?</h3>
+                <p>To link Just Trades with {{ broker_name }}, you must first create an account. Begin by visiting the <a href="{{ broker_url | default('#') }}" target="_blank" rel="noopener">{{ broker_name }} website</a> to open a new account, and then return to Just Trades once your account is set up.</p>
+                <p>Need help? <a href="/support">Contact our support team</a> for assistance with account setup.</p>
+            </section>
+        </div>
+
+        <aside class="broker-agreement-panel">
+            <h3 class="broker-agreement-panel-title">SUPPORTED ASSET CLASSES & FEATURES</h3>
+            {% set f = features or {} %}
+
+            <!-- Asset Classes Section -->
+            <div class="feature-section">
+                <div class="feature-section-header" data-section="assets">
+                    <span class="section-icon"><i class="material-icons">category</i></span>
+                    <span class="section-title">Asset Classes</span>
+                    <span class="section-status">Supported</span>
+                    <i class="material-icons section-toggle">expand_more</i>
+                </div>
+                <div class="feature-section-content" id="section-assets">
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Stocks</span>
+                            <span class="feature-desc">Supports the stocks asset class.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('stocks', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Futures</span>
+                            <span class="feature-desc">Supports the futures asset class.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('futures', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Options</span>
+                            <span class="feature-desc">Supports the options asset class.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('options', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Crypto</span>
+                            <span class="feature-desc">Supports the crypto asset class.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('crypto', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trading Flexibility Section -->
+            <div class="feature-section">
+                <div class="feature-section-header" data-section="trading">
+                    <span class="section-icon"><i class="material-icons">swap_horiz</i></span>
+                    <span class="section-title">Trading Flexibility</span>
+                    <span class="section-status">Supported</span>
+                    <i class="material-icons section-toggle">expand_more</i>
+                </div>
+                <div class="feature-section-content" id="section-trading">
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Live Money Trading</span>
+                            <span class="feature-desc">Supports trading with real live money.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('live', '<span class="check">✓</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Paper Money Trading</span>
+                            <span class="feature-desc">Supports trading with paper money.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('paper', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Auto Submit</span>
+                            <span class="feature-desc">Supports submitting orders automatically to your broker without manual intervention.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('auto_submit', '<span class="check">✓</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Side Swapping</span>
+                            <span class="feature-desc">Supports swapping between long and short positions with a single trade signal.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('side_swapping', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Shorting</span>
+                            <span class="feature-desc">Supports opening short positions.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('shorting', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Fractional Quantity</span>
+                            <span class="feature-desc">Supports trading in fractional quantities. Crypto exchanges are always fractional.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('fractional', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Multiple Orders at Once</span>
+                            <span class="feature-desc">Supports creating and canceling multiple orders at once. Without this, operations must be submitted one at a time.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('multiple_orders', '<span class="check">✓</span>') | safe }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Risk Management Section -->
+            <div class="feature-section">
+                <div class="feature-section-header" data-section="risk">
+                    <span class="section-icon"><i class="material-icons">shield</i></span>
+                    <span class="section-title">Risk Management</span>
+                    <span class="section-status">Supported</span>
+                    <i class="material-icons section-toggle">expand_more</i>
+                </div>
+                <div class="feature-section-content" id="section-risk">
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Stop Losses</span>
+                            <span class="feature-desc">Supports submitting stop loss orders for open positions after the position is opened.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('stop_losses', '<span class="check">✓</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Take Profits</span>
+                            <span class="feature-desc">Supports submitting take profit orders for open positions after the position is opened.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('take_profits', '<span class="check">✓</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Trailing Stops</span>
+                            <span class="feature-desc">Supports submitting trailing stop orders for open positions after the position is opened.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('trailing_stops', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Stop Loss Legs</span>
+                            <span class="feature-desc">Supports sending stop loss orders attached to the entry order as a stop loss leg.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('stop_loss_legs', '<span class="check">✓</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Take Profit Legs</span>
+                            <span class="feature-desc">Supports sending take profit orders attached to the entry order as a take profit leg.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('take_profit_legs', '<span class="check">✓</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Trailing Stop Legs</span>
+                            <span class="feature-desc">Supports sending trailing stop loss orders attached to the entry order as a trailing stop leg.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('trailing_stop_legs', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Market Data Section -->
+            <div class="feature-section">
+                <div class="feature-section-header" data-section="market">
+                    <span class="section-icon"><i class="material-icons">bar_chart</i></span>
+                    <span class="section-title">Market Data</span>
+                    <span class="section-status">Supported</span>
+                    <i class="material-icons section-toggle">expand_more</i>
+                </div>
+                <div class="feature-section-content" id="section-market">
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Market Data</span>
+                            <span class="feature-desc">Supports fetching market data quotes from your broker.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('market_data', '<span class="check">✓</span>') | safe }}</span>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-info">
+                            <span class="feature-name">Paper Market Data Source</span>
+                            <span class="feature-desc">Supports using market data from your broker as a market data source for the Just Trades paper broker.</span>
+                        </div>
+                        <span class="feature-supported">{{ f.get('paper_market_data_source', '<span class="dash">—</span>') | safe }}</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.broker-agreement-container {
+    max-width: 1300px;
+    margin: 0 auto;
+    padding: 1.5rem 2rem;
+}
+
+.broker-agreement-breadcrumbs {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-bottom: 1.25rem;
+}
+
+.broker-agreement-breadcrumbs a {
+    color: var(--text-muted);
+    text-decoration: none;
+}
+
+.broker-agreement-breadcrumbs a:hover {
+    color: var(--primary-color);
+}
+
+.breadcrumb-sep {
+    margin: 0 0.5rem;
+    color: var(--text-muted);
+}
+
+.breadcrumb-current {
+    color: var(--text-light);
+}
+
+.broker-agreement-layout {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 2rem;
+    align-items: start;
+}
+
+@media (max-width: 1000px) {
+    .broker-agreement-layout {
+        grid-template-columns: 1fr;
+    }
+    .broker-agreement-panel {
+        order: -1;
+    }
+}
+
+.broker-agreement-main {
+    min-width: 0;
+}
+
+.broker-agreement-header {
+    margin-bottom: 1.5rem;
+}
+
+.broker-agreement-title-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.broker-agreement-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: rgba(34, 197, 94, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.broker-agreement-icon i {
+    font-size: 1.5rem;
+    color: var(--green);
+}
+
+.broker-agreement-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-light);
+}
+
+.broker-agreement-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.25rem;
+    padding: 0.2rem 0.6rem;
+    background: rgba(100, 116, 139, 0.15);
+    color: var(--text-muted);
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.broker-agreement-tag i {
+    font-size: 0.9rem;
+}
+
+.broker-agreement-disclaimer,
+.broker-agreement-waiver,
+.broker-agreement-terms,
+.broker-agreement-enable {
+    margin-bottom: 1.25rem;
+}
+
+.broker-agreement-main p {
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin: 0 0 0.75rem 0;
+    font-size: 0.9rem;
+}
+
+.broker-agreement-main p:last-child {
+    margin-bottom: 0;
+}
+
+.waiver-bold {
+    font-weight: 600;
+    color: var(--text-light) !important;
+    background: rgba(100, 116, 139, 0.1);
+    padding: 1rem;
+    border-radius: 8px;
+    border-left: 3px solid var(--primary-color);
+}
+
+.broker-agreement-main a {
+    color: var(--primary-color);
+    text-decoration: underline;
+}
+
+.broker-agreement-main a:hover {
+    color: var(--green);
+}
+
+.broker-agreement-subtitle {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem 0;
+    color: var(--text-light);
+}
+
+.broker-agreement-actions {
+    display: flex;
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.broker-agreement-actions .btn {
+    flex: 1;
+    padding: 0.85rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    text-decoration: none;
+    text-align: center;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.broker-agreement-actions .btn-danger {
+    background: #dc2626;
+    color: #fff;
+}
+
+.broker-agreement-actions .btn-danger:hover {
+    background: #b91c1c;
+}
+
+.broker-agreement-actions .btn-success {
+    background: #16a34a;
+    color: #fff;
+}
+
+.broker-agreement-actions .btn-success:hover {
+    background: #15803d;
+}
+
+.broker-agreement-help {
+    background: var(--background-light);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-top: 1.5rem;
+}
+
+.broker-agreement-help h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: var(--text-light);
+}
+
+.broker-agreement-help p {
+    margin: 0 0 0.5rem 0;
+}
+
+.broker-agreement-help p:last-child {
+    margin-bottom: 0;
+}
+
+/* Right Panel - Feature Matrix */
+.broker-agreement-panel {
+    background: var(--background-light);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+}
+
+.broker-agreement-panel-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 1rem 1.25rem;
+    margin: 0;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Feature Sections */
+.feature-section {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.feature-section:last-child {
+    border-bottom: none;
+}
+
+.feature-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1.25rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.feature-section-header:hover {
+    background: rgba(100, 116, 139, 0.1);
+}
+
+.section-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: rgba(100, 116, 139, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.section-icon i {
+    font-size: 1rem;
+    color: var(--text-muted);
+}
+
+.section-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+
+.section-status {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.section-toggle {
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+}
+
+.feature-section.collapsed .section-toggle {
+    transform: rotate(-90deg);
+}
+
+.feature-section.collapsed .feature-section-content {
+    display: none;
+}
+
+/* Feature Rows */
+.feature-section-content {
+    padding: 0;
+}
+
+.feature-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1.25rem 0.75rem 3.5rem;
+    border-top: 1px solid rgba(100, 116, 139, 0.1);
+}
+
+.feature-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.feature-name {
+    display: block;
+    font-weight: 500;
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-bottom: 0.15rem;
+}
+
+.feature-desc {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.feature-supported {
+    flex-shrink: 0;
+    padding-top: 0.1rem;
+}
+
+.feature-supported .check {
+    color: #22c55e;
+    font-size: 1.1rem;
+}
+
+.feature-supported .dash {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var accountId = '{{ account_id }}';
+    var brokerSlug = '{{ broker_slug }}';
+    var continueUrl = '{{ continue_url }}';
+
+    // Agree button handler
+    var agreeBtn = document.getElementById('agree-btn');
+    if (agreeBtn) {
+        agreeBtn.addEventListener('click', function() {
+            if (continueUrl) {
+                window.location.href = continueUrl;
+            } else {
+                var routes = {
+                    'tradovate': '/accounts/' + accountId + '/credentials',
+                    'ninjatrader': '/accounts/' + accountId + '/credentials',
+                    'projectx': '/accounts/' + accountId + '/projectx-credentials',
+                    'webull': '/accounts/' + accountId + '/webull-credentials'
+                };
+                window.location.href = routes[brokerSlug] || '/accounts/' + accountId + '/credentials';
+            }
+        });
+    }
+
+    // Collapsible sections
+    document.querySelectorAll('.feature-section-header').forEach(function(header) {
+        header.addEventListener('click', function() {
+            var section = this.closest('.feature-section');
+            section.classList.toggle('collapsed');
+        });
+    });
+})();
+</script>
+{% endblock %}
