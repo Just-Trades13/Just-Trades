@@ -23575,7 +23575,7 @@ def api_premium_showcase():
         # Get all premium recorders
         true_val = 'TRUE' if is_postgres else '1'
         cursor.execute(f'''
-            SELECT id, name, symbol, tp_ticks, sl_ticks, recording_enabled
+            SELECT id, name, ticker, enabled
             FROM recorders
             WHERE is_premium = {true_val}
         ''')
@@ -23646,11 +23646,11 @@ def api_premium_showcase():
             strategies.append({
                 'id': recorder['id'],
                 'name': recorder['name'],
-                'symbol': recorder['symbol'],
+                'symbol': recorder.get('ticker') or recorder.get('symbol', ''),
                 'trades': trades or 0,
                 'win_rate': round((wins / trades) * 100, 1) if trades and trades > 0 else 0,
                 'pnl': round(pnl or 0, 2),
-                'active': recorder.get('recording_enabled', False)
+                'active': recorder.get('enabled', False)
             })
 
         # Get recent trades from premium strategies (limit 10)
