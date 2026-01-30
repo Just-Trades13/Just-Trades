@@ -7012,7 +7012,30 @@ def receive_webhook(webhook_token):
         # Get TP/SL settings from recorder
         sl_enabled = recorder.get('sl_enabled', 0)
         sl_amount = recorder.get('sl_ticks', 0) or recorder.get('sl_amount', 0) or 0
-        
+        sl_type = recorder.get('sl_type', 'Fixed')  # 'Fixed' or 'Trail'
+        trail_trigger = recorder.get('trail_trigger', 0) or 0
+        trail_freq = recorder.get('trail_freq', 0) or 0
+
+        # Build risk_config for execute_trade_simple
+        # This translates our site settings to Tradovate-native order types
+        risk_config = {}
+        if sl_enabled and sl_amount > 0:
+            if sl_type == 'Trail' or sl_type == 'Trailing':
+                # Trailing stop - use Tradovate's native TrailingStop order
+                risk_config['trail'] = {
+                    'offset_ticks': int(sl_amount),
+                    'activation_ticks': int(trail_trigger),
+                    'frequency_ticks': int(trail_freq)
+                }
+                logger.info(f"📊 Trail stop config: offset={sl_amount} ticks, trigger={trail_trigger}, freq={trail_freq}")
+            else:
+                # Fixed stop loss
+                risk_config['stop_loss'] = {
+                    'type': 'fixed',
+                    'loss_ticks': int(sl_amount)
+                }
+                logger.info(f"📊 Fixed SL config: {sl_amount} ticks")
+
         # Get TP ticks - first try direct column, then tp_targets JSON
         tp_ticks = recorder.get('tp_ticks', 0) or 0
         if not tp_ticks:
@@ -7286,7 +7309,9 @@ def receive_webhook(webhook_token):
                     action='BUY',
                     ticker=ticker,
                     quantity=quantity,
-                    tp_ticks=tp_ticks
+                    tp_ticks=tp_ticks,
+                    sl_ticks=int(sl_amount) if sl_enabled else 0,
+                    risk_config=risk_config
                 )
 
             if broker_result.get('success') and broker_result.get('broker_avg'):
@@ -7414,7 +7439,9 @@ def receive_webhook(webhook_token):
                     action='SELL',
                     ticker=ticker,
                     quantity=quantity,
-                    tp_ticks=tp_ticks
+                    tp_ticks=tp_ticks,
+                    sl_ticks=int(sl_amount) if sl_enabled else 0,
+                    risk_config=risk_config
                 )
 
             if broker_result.get('success') and broker_result.get('broker_avg'):
