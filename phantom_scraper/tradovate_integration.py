@@ -659,13 +659,12 @@ class TradovateIntegration:
                         close_timeout=5
                     )
 
-                    # Authenticate via WebSocket
-                    auth_message = {
-                        "url": "authorize",
-                        "token": self.access_token
-                    }
-                    logger.debug(f"🔐 Sending WebSocket auth with token: {self.access_token[:20]}...")
-                    await self.websocket.send(json.dumps(auth_message))
+                    # Authenticate via WebSocket using Tradovate's text framing protocol
+                    # Format: <operation>\n<requestId>\n<query-or-blank>\n<body>
+                    # For authorize: authorize\n1\n\n<accessToken>
+                    auth_message = f"authorize\n1\n\n{self.access_token}"
+                    logger.info(f"🔐 Sending WebSocket auth (text frame format, token: {self.access_token[:20]}...)")
+                    await self.websocket.send(auth_message)
 
                     # Wait for authentication response
                     response = await asyncio.wait_for(self.websocket.recv(), timeout=10.0)
@@ -733,35 +732,52 @@ class TradovateIntegration:
     
     async def _send_websocket_message(self, message_type: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Send a message via WebSocket using Tradovate's format.
-        
-        Format: {"n": "messageType", "o": {payload}}
+        Send a message via WebSocket using Tradovate's text framing protocol.
+
+        Format: <operation>\n<requestId>\n<query-or-blank>\n<json-body>
         """
         if not await self._ensure_websocket_connected():
             return None
-        
+
         try:
-            # Per DCA guide: {"n": "orderStrategy/startOrderStrategy", "o": {...}}
-            message = {
-                "n": message_type,
-                "o": payload
-            }
-            
-            message_json = json.dumps(message)
-            logger.info(f"📤 Sending WebSocket message: {message_type}")
+            # Increment request ID for tracking
+            self._ws_request_id = getattr(self, '_ws_request_id', 0) + 1
+            request_id = self._ws_request_id
+
+            # Build message in Tradovate's text frame format
+            message = f"{message_type}\n{request_id}\n\n{json.dumps(payload)}"
+
+            logger.info(f"📤 Sending WebSocket message: {message_type} (reqId={request_id})")
             logger.debug(f"   Payload: {json.dumps(payload, indent=2)}")
-            
-            await self.websocket.send(message_json)
-            
+
+            await self.websocket.send(message)
+
             # Wait for response (with timeout)
             # Note: Tradovate WebSocket may send multiple messages, we need the response to our request
             response = await asyncio.wait_for(self.websocket.recv(), timeout=30.0)
-            result = json.loads(response)
-            
+
+            # Parse response - Tradovate text frames have format: <status>\n<reqId>\n<data>
+            # or could be JSON for some responses
+            try:
+                result = json.loads(response)
+            except json.JSONDecodeError:
+                # Text frame response - parse it
+                lines = response.split('\n')
+                if len(lines) >= 3:
+                    status = lines[0]
+                    resp_id = lines[1]
+                    data = '\n'.join(lines[2:])
+                    try:
+                        result = {'s': status, 'i': resp_id, 'd': json.loads(data) if data else None}
+                    except:
+                        result = {'s': status, 'i': resp_id, 'd': data}
+                else:
+                    result = {'raw': response}
+
             logger.info(f"📥 WebSocket response received for {message_type}")
             logger.debug(f"   Response: {result}")
             return result
-            
+
         except asyncio.TimeoutError:
             logger.error(f"WebSocket message timeout for {message_type}")
             return None
@@ -1032,13 +1048,13 @@ class TradovateIntegration:
     async def place_order_websocket(self, order_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Place an order via WebSocket (bypasses REST rate limits).
-        
+
         Same parameters as place_order() for drop-in compatibility.
         Returns same format as place_order() so it can be used interchangeably.
-        
+
         Args:
             order_data: Dict with accountId, accountSpec, action, symbol, orderQty, orderType, etc.
-        
+
         Returns:
             Dict with 'success', 'orderId', etc. - same format as REST place_order()
             Returns None if WebSocket unavailable (signals caller to use REST fallback)
@@ -1048,19 +1064,18 @@ class TradovateIntegration:
             if not await self._ensure_websocket_connected():
                 logger.warning("⚠️ [WS] WebSocket not available for order, will use REST fallback")
                 return None  # Signal to caller to use REST fallback
-            
-            # Build WebSocket message for order/placeOrder
-            # Format: {"n": "order/placeOrder", "o": {order_data}}
-            ws_message = {
-                "n": "order/placeOrder",
-                "o": order_data
-            }
-            
-            logger.info(f"📤 [WS] Placing order: {order_data.get('action')} {order_data.get('orderQty')} {order_data.get('symbol')}")
-            
+
+            # Build WebSocket message using Tradovate's text framing protocol
+            # Format: <operation>\n<requestId>\n<query-or-blank>\n<json-body>
+            self._ws_request_id = getattr(self, '_ws_request_id', 0) + 1
+            request_id = self._ws_request_id
+
+            ws_message = f"order/placeorder\n{request_id}\n\n{json.dumps(order_data)}"
+
+            logger.info(f"📤 [WS] Placing order (reqId={request_id}): {order_data.get('action')} {order_data.get('orderQty')} {order_data.get('symbol')}")
+
             # Send via WebSocket
-            message_json = json.dumps(ws_message)
-            await self.websocket.send(message_json)
+            await self.websocket.send(ws_message)
             
             # Wait for response with timeout
             try:
@@ -1193,12 +1208,11 @@ class TradovateIntegration:
                 if not await self._ensure_websocket_connected():
                     logger.warning("⚠️ [WS] WebSocket not available for modify, using REST")
                 else:
-                    # Build modify message
+                    # Build modify message using Tradovate's text framing protocol
                     modify_data = {**order_data, 'orderId': order_id}
-                    ws_message = {
-                        "n": "order/modifyOrder",
-                        "o": modify_data
-                    }
+                    self._ws_request_id = getattr(self, '_ws_request_id', 0) + 1
+                    request_id = self._ws_request_id
+                    ws_message = f"order/modifyorder\n{request_id}\n\n{json.dumps(modify_data)}"
                     
                     logger.info(f"📤 [WS] Modifying order {order_id}")
                     await self.websocket.send(json.dumps(ws_message))
@@ -1250,13 +1264,13 @@ class TradovateIntegration:
                 if not await self._ensure_websocket_connected():
                     logger.warning("⚠️ [WS] WebSocket not available for cancel, using REST")
                 else:
-                    ws_message = {
-                        "n": "order/cancelOrder",
-                        "o": {"orderId": order_id}
-                    }
-                    
-                    logger.info(f"📤 [WS] Cancelling order {order_id}")
-                    await self.websocket.send(json.dumps(ws_message))
+                    # Build cancel message using Tradovate's text framing protocol
+                    self._ws_request_id = getattr(self, '_ws_request_id', 0) + 1
+                    request_id = self._ws_request_id
+                    ws_message = f"order/cancelorder\n{request_id}\n\n{json.dumps({'orderId': order_id})}"
+
+                    logger.info(f"📤 [WS] Cancelling order {order_id} (reqId={request_id})")
+                    await self.websocket.send(ws_message)
                     
                     response = await asyncio.wait_for(self.websocket.recv(), timeout=30.0)
                     result = json.loads(response)
