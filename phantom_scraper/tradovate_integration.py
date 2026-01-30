@@ -636,11 +636,12 @@ class TradovateIntegration:
                 async def connect_and_auth() -> bool:
                     # Connect to WebSocket (URL aligned with base_url)
                     logger.info(f"🔌 Connecting to Tradovate WebSocket: {self.ws_url}")
-                    # Use ping_interval and ping_timeout to help keep connection alive
+                    # FIXED: Enable built-in ping to keep connection alive at protocol level
+                    # Some servers require WebSocket protocol pings in addition to app-level heartbeats
                     self.websocket = await websockets.connect(
                         self.ws_url,
-                        ping_interval=None,  # We'll handle our own heartbeats
-                        ping_timeout=None,
+                        ping_interval=20,  # Send protocol ping every 20 seconds
+                        ping_timeout=10,   # Wait 10 seconds for pong response
                         close_timeout=5
                     )
 
