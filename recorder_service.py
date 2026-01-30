@@ -327,15 +327,17 @@ def start_websocket_keepalive_daemon():
     run_async_nowait(_ws_keepalive_loop())
     logger.info("💓 WebSocket keepalive daemon started on shared event loop")
 
-async def prewarm_websocket_connections(staggered: bool = True, delay_seconds: float = 2.0):
+async def prewarm_websocket_connections(staggered: bool = True, delay_seconds: float = 2.0, live_only: bool = True):
     """
     Pre-warm WebSocket connections for all active trading accounts.
 
     Args:
         staggered: If True, open connections one at a time with delays (prevents rate limiting)
         delay_seconds: Seconds to wait between connection attempts when staggered
+        live_only: If True, skip demo accounts to avoid rate limiting (default True)
     """
-    logger.info(f"🔥 PRE-WARMING WebSocket connections (staggered={staggered}, delay={delay_seconds}s)...")
+    mode = "LIVE ONLY" if live_only else "ALL"
+    logger.info(f"🔥 PRE-WARMING WebSocket connections ({mode}, staggered={staggered}, delay={delay_seconds}s)...")
 
     try:
         conn = get_db_connection()
@@ -370,6 +372,10 @@ async def prewarm_websocket_connections(staggered: bool = True, delay_seconds: f
 
             is_demo = env != 'live'
 
+            # Skip demo accounts if live_only mode (prevents rate limit issues)
+            if live_only and is_demo:
+                continue
+
             # Check legacy subaccount_id first
             if legacy_subaccount and token:
                 accounts_to_warm[legacy_subaccount] = (token, is_demo)
@@ -381,8 +387,12 @@ async def prewarm_websocket_connections(staggered: bool = True, delay_seconds: f
                     accts = json.loads(enabled_accounts_json) if isinstance(enabled_accounts_json, str) else enabled_accounts_json
                     for acct in (accts or []):
                         sub_id = acct.get('subaccount_id')
+                        acct_is_demo = acct.get('is_demo', is_demo)
+                        # Skip demo accounts in live_only mode
+                        if live_only and acct_is_demo:
+                            continue
                         if sub_id and token:
-                            accounts_to_warm[sub_id] = (token, is_demo)
+                            accounts_to_warm[sub_id] = (token, acct_is_demo)
                 except Exception as parse_err:
                     logger.warning(f"⚠️ Failed to parse enabled_accounts for trader {trader_id}: {parse_err}")
 
