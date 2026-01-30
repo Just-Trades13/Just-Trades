@@ -27681,6 +27681,138 @@ def api_websocket_prewarm():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/websocket-test', methods=['POST', 'GET'])
+def api_websocket_test():
+    """Test a single WebSocket connection for debugging.
+
+    GET: Uses first available account from database
+    POST: Use JSON body with subaccount_id, token, and is_demo
+    """
+    try:
+        import time
+        from async_utils import run_async
+        from phantom_scraper.tradovate_integration import TradovateIntegration
+
+        # Get test parameters
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            subaccount_id = data.get('subaccount_id')
+            token = data.get('token')
+            is_demo = data.get('is_demo', True)
+        else:
+            # GET - grab first available account from DB
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            is_postgres = is_using_postgres()
+            cursor.execute(f'''
+                SELECT t.subaccount_id, a.tradovate_token, a.environment
+                FROM traders t
+                JOIN accounts a ON t.account_id = a.id
+                WHERE t.enabled = {'TRUE' if is_postgres else '1'}
+                AND a.tradovate_token IS NOT NULL
+                AND t.subaccount_id IS NOT NULL
+                LIMIT 1
+            ''')
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row:
+                return jsonify({'success': False, 'error': 'No accounts found for testing'}), 404
+
+            if isinstance(row, tuple):
+                subaccount_id, token, env = row
+            else:
+                subaccount_id = row.get('subaccount_id')
+                token = row.get('tradovate_token')
+                env = row.get('environment', 'demo')
+            is_demo = env != 'live'
+
+        if not subaccount_id or not token:
+            return jsonify({'success': False, 'error': 'Missing subaccount_id or token'}), 400
+
+        # Test the connection
+        async def test_connection():
+            results = {
+                'subaccount_id': subaccount_id,
+                'is_demo': is_demo,
+                'token_length': len(token),
+                'token_preview': token[:30] + '...' if len(token) > 30 else token,
+                'steps': []
+            }
+
+            try:
+                # Step 1: Create integration
+                results['steps'].append({'step': 'create_integration', 'status': 'starting'})
+                tradovate = TradovateIntegration(demo=is_demo)
+                results['ws_url'] = tradovate.ws_url
+                results['steps'][-1]['status'] = 'done'
+
+                # Step 2: Enter context
+                results['steps'].append({'step': 'enter_context', 'status': 'starting'})
+                await tradovate.__aenter__()
+                tradovate.access_token = token
+                results['steps'][-1]['status'] = 'done'
+
+                # Step 3: Connect WebSocket
+                results['steps'].append({'step': 'connect_websocket', 'status': 'starting'})
+                start_time = time.time()
+                ws_connected = await tradovate._ensure_websocket_connected()
+                elapsed = time.time() - start_time
+                results['steps'][-1]['status'] = 'done' if ws_connected else 'failed'
+                results['steps'][-1]['elapsed_sec'] = round(elapsed, 3)
+                results['ws_connected'] = ws_connected
+
+                if ws_connected:
+                    # Step 4: Check heartbeat task
+                    results['steps'].append({'step': 'check_heartbeat', 'status': 'starting'})
+                    hb_task = tradovate._ws_heartbeat_task
+                    if hb_task:
+                        results['heartbeat_task_running'] = not hb_task.done()
+                        results['steps'][-1]['status'] = 'running' if not hb_task.done() else 'stopped'
+                    else:
+                        results['heartbeat_task_running'] = False
+                        results['steps'][-1]['status'] = 'no_task'
+
+                    # Step 5: Wait briefly and check if still connected
+                    results['steps'].append({'step': 'wait_check', 'status': 'starting'})
+                    await asyncio.sleep(3)  # Wait for heartbeat to fire once
+                    results['still_connected_after_3s'] = tradovate.ws_connected
+                    results['steps'][-1]['status'] = 'connected' if tradovate.ws_connected else 'disconnected'
+
+                    # Check WebSocket state
+                    if tradovate.websocket:
+                        if hasattr(tradovate.websocket, 'closed'):
+                            results['websocket_closed'] = tradovate.websocket.closed
+                        if hasattr(tradovate.websocket, 'open'):
+                            results['websocket_open'] = tradovate.websocket.open
+
+                # Step 6: Cleanup
+                results['steps'].append({'step': 'cleanup', 'status': 'starting'})
+                await tradovate.__aexit__(None, None, None)
+                results['steps'][-1]['status'] = 'done'
+
+                results['success'] = ws_connected
+
+            except Exception as e:
+                import traceback
+                results['error'] = str(e)
+                results['traceback'] = traceback.format_exc()
+                results['success'] = False
+                if results['steps']:
+                    results['steps'][-1]['status'] = f'error: {e}'
+
+            return results
+
+        import asyncio
+        result = run_async(test_connection())
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error testing WebSocket: {e}")
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
 @app.route('/api/position-status', methods=['GET'])
 def api_position_status():
     """Get WebSocket position tracker status and positions"""
