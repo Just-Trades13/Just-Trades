@@ -27876,7 +27876,7 @@ def api_websocket_raw_test():
                 results['demo_connected'] = False
 
             # Step 3: Try live URL
-            live_url = "wss://api.tradovate.com/v1/websocket"
+            live_url = "wss://live.tradovateapi.com/v1/websocket"
             results['steps'].append({'step': 'connect_live', 'url': live_url, 'status': 'starting'})
             try:
                 import time

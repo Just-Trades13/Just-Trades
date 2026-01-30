@@ -27,8 +27,8 @@ if not WEBSOCKETS_AVAILABLE:
 class TradovateIntegration:
     def __init__(self, demo=True):
         self.base_url = "https://demo.tradovateapi.com/v1" if demo else "https://live.tradovateapi.com/v1"
-        # Demo: demo.tradovateapi.com, Live: api.tradovate.com (per API docs)
-        self.ws_url = "wss://demo.tradovateapi.com/v1/websocket" if demo else "wss://api.tradovate.com/v1/websocket"
+        # WebSocket URLs must match REST API base URLs
+        self.ws_url = "wss://demo.tradovateapi.com/v1/websocket" if demo else "wss://live.tradovateapi.com/v1/websocket"
         self.session = None
         self.websocket = None
         self.ws_connected = False
@@ -87,7 +87,7 @@ class TradovateIntegration:
         if "demo.tradovateapi.com" in (self.base_url or ""):
             self.ws_url = "wss://demo.tradovateapi.com/v1/websocket"
         else:
-            self.ws_url = "wss://api.tradovate.com/v1/websocket"
+            self.ws_url = "wss://live.tradovateapi.com/v1/websocket"
         
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
