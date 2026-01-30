@@ -27755,6 +27755,16 @@ def api_websocket_test():
 
                 # Step 3: Connect WebSocket
                 results['steps'].append({'step': 'connect_websocket', 'status': 'starting'})
+
+                # Add pre-connection diagnostics
+                from phantom_scraper.tradovate_integration import WEBSOCKETS_AVAILABLE
+                results['websockets_available'] = WEBSOCKETS_AVAILABLE
+                results['has_access_token'] = bool(tradovate.access_token)
+                results['access_token_len'] = len(tradovate.access_token) if tradovate.access_token else 0
+                results['ws_url_check'] = tradovate.ws_url
+                results['reconnect_attempts'] = getattr(tradovate, '_ws_reconnect_attempts', 0)
+                results['max_reconnect_attempts'] = getattr(tradovate, '_ws_max_reconnect_attempts', 5)
+
                 start_time = time.time()
                 try:
                     ws_connected = await tradovate._ensure_websocket_connected()
