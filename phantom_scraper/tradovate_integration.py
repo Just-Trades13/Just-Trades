@@ -711,7 +711,9 @@ class TradovateIntegration:
                     return False
 
             except Exception as e:
-                logger.error(f"Failed to connect/authenticate WebSocket: {e}")
+                import traceback
+                logger.error(f"❌ WEBSOCKET CONNECTION FAILED: {type(e).__name__}: {e}")
+                logger.error(f"❌ Full traceback:\n{traceback.format_exc()}")
                 await self._close_websocket()
                 return False
     

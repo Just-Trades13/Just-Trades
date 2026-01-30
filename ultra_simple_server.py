@@ -27756,7 +27756,13 @@ def api_websocket_test():
                 # Step 3: Connect WebSocket
                 results['steps'].append({'step': 'connect_websocket', 'status': 'starting'})
                 start_time = time.time()
-                ws_connected = await tradovate._ensure_websocket_connected()
+                try:
+                    ws_connected = await tradovate._ensure_websocket_connected()
+                except Exception as ws_err:
+                    import traceback
+                    ws_connected = False
+                    results['ws_error'] = f"{type(ws_err).__name__}: {ws_err}"
+                    results['ws_traceback'] = traceback.format_exc()
                 elapsed = time.time() - start_time
                 results['steps'][-1]['status'] = 'done' if ws_connected else 'failed'
                 results['steps'][-1]['elapsed_sec'] = round(elapsed, 3)
@@ -27809,6 +27815,101 @@ def api_websocket_test():
 
     except Exception as e:
         logger.error(f"Error testing WebSocket: {e}")
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/websocket-raw-test', methods=['GET'])
+def api_websocket_raw_test():
+    """Raw WebSocket connection test - bypasses TradovateIntegration"""
+    try:
+        from async_utils import run_async
+
+        async def raw_test():
+            results = {'steps': []}
+
+            # Step 1: Check if websockets is available
+            results['steps'].append({'step': 'import_websockets', 'status': 'starting'})
+            try:
+                import websockets
+                results['websockets_version'] = websockets.__version__
+                results['steps'][-1]['status'] = 'done'
+            except ImportError as e:
+                results['steps'][-1]['status'] = f'failed: {e}'
+                results['websockets_available'] = False
+                return results
+            results['websockets_available'] = True
+
+            # Step 2: Try demo URL
+            demo_url = "wss://demo.tradovateapi.com/v1/websocket"
+            results['steps'].append({'step': 'connect_demo', 'url': demo_url, 'status': 'starting'})
+            try:
+                import time
+                start = time.time()
+                ws = await asyncio.wait_for(
+                    websockets.connect(demo_url, ping_interval=20, ping_timeout=10, close_timeout=5),
+                    timeout=15.0
+                )
+                elapsed = time.time() - start
+                results['steps'][-1]['status'] = 'connected'
+                results['steps'][-1]['elapsed_sec'] = round(elapsed, 3)
+                results['demo_connected'] = True
+
+                # Check WebSocket state
+                if hasattr(ws, 'open'):
+                    results['demo_ws_open'] = ws.open
+                if hasattr(ws, 'closed'):
+                    results['demo_ws_closed'] = ws.closed
+
+                # Close it
+                await ws.close()
+                results['steps'].append({'step': 'close_demo', 'status': 'done'})
+
+            except asyncio.TimeoutError:
+                results['steps'][-1]['status'] = 'timeout (15s)'
+                results['demo_connected'] = False
+            except Exception as e:
+                import traceback
+                results['steps'][-1]['status'] = f'failed: {type(e).__name__}: {e}'
+                results['demo_error'] = str(e)
+                results['demo_traceback'] = traceback.format_exc()
+                results['demo_connected'] = False
+
+            # Step 3: Try live URL
+            live_url = "wss://api.tradovate.com/v1/websocket"
+            results['steps'].append({'step': 'connect_live', 'url': live_url, 'status': 'starting'})
+            try:
+                import time
+                start = time.time()
+                ws = await asyncio.wait_for(
+                    websockets.connect(live_url, ping_interval=20, ping_timeout=10, close_timeout=5),
+                    timeout=15.0
+                )
+                elapsed = time.time() - start
+                results['steps'][-1]['status'] = 'connected'
+                results['steps'][-1]['elapsed_sec'] = round(elapsed, 3)
+                results['live_connected'] = True
+                await ws.close()
+                results['steps'].append({'step': 'close_live', 'status': 'done'})
+            except asyncio.TimeoutError:
+                results['steps'][-1]['status'] = 'timeout (15s)'
+                results['live_connected'] = False
+            except Exception as e:
+                import traceback
+                results['steps'][-1]['status'] = f'failed: {type(e).__name__}: {e}'
+                results['live_error'] = str(e)
+                results['live_traceback'] = traceback.format_exc()
+                results['live_connected'] = False
+
+            results['success'] = results.get('demo_connected', False) or results.get('live_connected', False)
+            return results
+
+        import asyncio
+        result = run_async(raw_test())
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error in raw WebSocket test: {e}")
         import traceback
         return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()}), 500
 
