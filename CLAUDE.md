@@ -1403,5 +1403,126 @@ The keepalive daemon was retrying failed connections every 10 seconds. With 12 d
 
 ---
 
+## 📝 Session Log - January 30, 2026 (Continued - Lazy WebSocket Init)
+
+### Problem: Rate Limiting from Bulk Prewarm
+
+Even with staggered prewarm (2s delays between connections), Tradovate still rate-limited all 15 accounts. The issue is that Tradovate's rate limit window is longer than our delay.
+
+### Solution: Lazy WebSocket Initialization
+
+Instead of prewarming all connections at startup (which triggers rate limits), we now use a **lazy initialization** approach:
+
+1. **First trade uses REST only** - No WebSocket attempt, avoids rate limits
+2. **Background warmup after success** - After REST trade succeeds, spawn thread to warm WebSocket
+3. **Future trades use WebSocket** - Pooled connection ready for instant execution
+
+### Code Changes
+
+**`recorder_service.py`:**
+
+1. **New connections skip WebSocket (lines 1814, 1820):**
+```python
+tradovate.use_websocket_orders = False  # LAZY: Use REST, warm WS in background after
+```
+
+2. **New function `schedule_lazy_websocket_warmup()` (lines 488-540):**
+```python
+def schedule_lazy_websocket_warmup(subaccount_id: int, is_demo: bool, access_token: str):
+    """
+    Schedule a WebSocket connection to be warmed up in the background.
+    Non-blocking - spawns a background task and returns immediately.
+    """
+    # Check if already warming or already in pool
+    if subaccount_id in _LAZY_WARM_QUEUE or subaccount_id in _WS_POOL:
+        return
+
+    # Check backoff period
+    if time.time() < _WS_BACKOFF_UNTIL:
+        return
+
+    # Spawn background warmup thread
+    warmup_thread = threading.Thread(target=spawn_warmup, daemon=True)
+    warmup_thread.start()
+```
+
+3. **Called after successful REST trades (lines 2168, 2410):**
+```python
+if not pooled_conn:
+    schedule_lazy_websocket_warmup(tradovate_account_id, is_demo, access_token)
+```
+
+**`ultra_simple_server.py`:**
+
+Updated `/api/websocket-prewarm` to support staggered mode:
+```python
+staggered = request.args.get('staggered', '1') != '0'
+delay = float(request.args.get('delay', '2.0'))
+prewarm_result = run_async(prewarm_websocket_connections(staggered=staggered, delay_seconds=delay))
+```
+
+### Trade Flow Comparison
+
+**BEFORE (Bulk Prewarm):**
+```
+Server Start → Prewarm 15 accounts at once → HTTP 429 → All fail → Rate limited
+```
+
+**AFTER (Lazy Init):**
+```
+Server Start → Pool empty (no rate limits)
+First Trade → REST API (works) → Background: warm WebSocket
+Second Trade → WebSocket (instant!) → Already warmed
+```
+
+### API Endpoints
+
+```bash
+# Staggered prewarm (default: staggered=1, delay=2s)
+curl -s "https://justtrades-production.up.railway.app/api/websocket-prewarm"
+
+# Parallel prewarm (use with caution)
+curl -s "https://justtrades-production.up.railway.app/api/websocket-prewarm?staggered=0"
+
+# Custom delay
+curl -s "https://justtrades-production.up.railway.app/api/websocket-prewarm?delay=5"
+```
+
+### Key Commits
+
+```
+d6ed300 Add staggered mode to websocket-prewarm API endpoint
+d1a75c2 LAZY WEBSOCKET: First trade uses REST, warm WS in background for future trades
+```
+
+### Current Status (End of Session)
+
+- **Both demo AND live are rate-limited** (HTTP 429) on Railway production IP
+- **Lazy init deployed** - First trade will use REST, then warm WebSocket in background
+- **Rate limits will auto-recover** - Backoff system prevents continuous retries
+- **System operational** - Trades can still execute via REST fallback
+
+### Expected Behavior After Rate Limits Clear
+
+1. First trade on each account → REST (works, slower)
+2. Background warmup starts → WebSocket opens
+3. Second trade on same account → WebSocket (instant!)
+4. All subsequent trades → WebSocket (pooled, instant)
+
+### Recovery Commands
+
+```bash
+# Check current rate limit status
+curl -s "https://justtrades-production.up.railway.app/api/websocket-raw-test"
+
+# Reset backoff counter
+curl -s -X POST "https://justtrades-production.up.railway.app/api/websocket-backoff"
+
+# Check pool status
+curl -s "https://justtrades-production.up.railway.app/api/websocket-pool"
+```
+
+---
+
 *Last updated: Jan 30, 2026*
 *Author: Claude Code Session*
