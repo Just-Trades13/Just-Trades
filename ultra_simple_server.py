@@ -4996,9 +4996,8 @@ def run_migrations():
     # Fix JADVIX HighRisk (recorder 8) - set avg_down_enabled=False so opposite signals work
     try:
         cursor.execute(f"UPDATE recorders SET avg_down_enabled = {'FALSE' if is_postgres else '0'} WHERE id = 8")
-        if cursor.rowcount > 0:
-            conn.commit()
-            results.append("✅ Fixed JADVIX HighRisk: avg_down_enabled=False (opposite signals now work)")
+        conn.commit()
+        results.append(f"✅ JADVIX HighRisk: avg_down_enabled set to False (rows affected: {cursor.rowcount})")
     except Exception as e:
         results.append(f"⚠️ Could not fix JADVIX: {str(e)[:100]}")
 
