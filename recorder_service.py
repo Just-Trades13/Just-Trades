@@ -1164,8 +1164,8 @@ def execute_trade_simple(
                         subaccount_name = acct.get('subaccount_name') or acct.get('account_name')
                         # NOTE: Don't use acct.get('is_demo') here - it's stale/cached
                         # We'll get the correct value from accounts.environment below
-                        multiplier = float(acct.get('multiplier', 1.0))  # Extract multiplier from account settings
-                        
+                        multiplier = float(acct.get('multiplier') or 1.0)  # Extract multiplier from account settings (handle None)
+
                         # Skip duplicates - CRITICAL: Prevent same account trading twice
                         if subaccount_id in seen_subaccounts:
                             skipped_duplicates.append(f"{subaccount_name} (ID:{subaccount_id})")
@@ -1439,7 +1439,7 @@ def execute_trade_simple(
             """Execute trade for a single account - runs in parallel with others"""
             acct_name = trader.get('subaccount_name', 'Unknown')
             acct_id = trader.get('account_id')
-            account_multiplier = float(trader.get('multiplier', 1.0))  # Get multiplier for this account
+            account_multiplier = float(trader.get('multiplier') or 1.0)  # Get multiplier for this account (handle None)
             adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
             broker_type = trader.get('broker', 'Tradovate')  # Default to Tradovate
             subaccount_id = trader.get('subaccount_id')
@@ -3370,8 +3370,8 @@ def execute_live_trade_with_bracket(
                     acct_id = acct.get('account_id')
                     subaccount_id = acct.get('subaccount_id')
                     subaccount_name = acct.get('subaccount_name')
-                    multiplier = float(acct.get('multiplier', 1.0))  # Extract multiplier from account settings
-                    
+                    multiplier = float(acct.get('multiplier') or 1.0)  # Extract multiplier from account settings (handle None)
+
                     # Look up credentials for this account - CRITICAL: Include environment
                     is_postgres = is_using_postgres()
                     placeholder = '%s' if is_postgres else '?'
@@ -3470,7 +3470,7 @@ def execute_live_trade_with_bracket(
             username = trading_account.get('username')
             password = trading_account.get('password')
             account_id = trading_account.get('account_id')
-            account_multiplier = float(trading_account.get('multiplier', 1.0))  # Get multiplier for this account
+            account_multiplier = float(trading_account.get('multiplier') or 1.0)  # Get multiplier for this account (handle None)
             adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
             
             if not tradovate_account_id:
@@ -6233,8 +6233,8 @@ def api_create_recorder():
             data.get('symbol'),
             data.get('demo_account_id'),
             data.get('account_id'),
-            data.get('initial_position_size', 2),
-            data.get('add_position_size', 2),
+            data.get('initial_position_size', 1),
+            data.get('add_position_size', 1),
             data.get('tp_units', 'Ticks'),
             data.get('trim_units', 'Contracts'),
             tp_targets,
