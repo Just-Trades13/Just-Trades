@@ -196,6 +196,13 @@ def get_websocket_order_stats() -> Dict[str, Any]:
 async def get_pooled_connection(subaccount_id: int, is_demo: bool, access_token: str):
     """Get or create a pooled WebSocket connection for an account. INSTANT if pooled."""
     from phantom_scraper.tradovate_integration import TradovateIntegration
+    import time
+
+    # Check if we're in backoff period - don't attempt new connections
+    global _WS_BACKOFF_UNTIL
+    if time.time() < _WS_BACKOFF_UNTIL:
+        logger.debug(f"⏳ Skipping connection attempt for {subaccount_id} - in backoff period")
+        return None
 
     # Fast path - check without lock first (read is safe)
     if subaccount_id in _WS_POOL:
@@ -249,6 +256,8 @@ def close_pooled_connection(subaccount_id: int):
 # 💓 WEBSOCKET KEEPALIVE DAEMON - Keep all connections alive permanently
 # ============================================================================
 _WS_KEEPALIVE_RUNNING = False
+_WS_BACKOFF_UNTIL = 0  # Timestamp until which we should not attempt reconnections
+_WS_CONSECUTIVE_FAILURES = 0  # Track consecutive prewarm failures for backoff
 
 async def _ws_keepalive_loop():
     """
@@ -256,13 +265,23 @@ async def _ws_keepalive_loop():
     - Checks every 10 seconds
     - Removes dead connections from pool
     - Re-establishes connections that died
+    - Uses exponential backoff on failures to avoid rate limit hell
     """
-    global _WS_POOL
+    global _WS_POOL, _WS_BACKOFF_UNTIL, _WS_CONSECUTIVE_FAILURES
+    import time
     logger.info("💓 WebSocket keepalive daemon started - connections will stay alive")
 
     while True:
         try:
             await asyncio.sleep(10)  # Check every 10 seconds
+
+            # Check if we're in backoff period
+            now = time.time()
+            if now < _WS_BACKOFF_UNTIL:
+                wait_remaining = int(_WS_BACKOFF_UNTIL - now)
+                if wait_remaining % 60 == 0:  # Log every minute
+                    logger.info(f"⏳ WebSocket backoff: {wait_remaining}s remaining before retry")
+                continue
 
             if not _WS_POOL:
                 continue
@@ -391,6 +410,23 @@ async def prewarm_websocket_connections():
 
         logger.info(f"🔥 WebSocket pre-warm complete: {warmed} connected, {failed} failed")
         logger.info(f"🔥 Pool size: {len(_WS_POOL)} connections ready for INSTANT execution")
+
+        # BACKOFF LOGIC: If ALL connections failed, we're probably rate limited
+        # Use exponential backoff to avoid hammering Tradovate
+        global _WS_BACKOFF_UNTIL, _WS_CONSECUTIVE_FAILURES
+        import time
+
+        if warmed == 0 and failed > 0:
+            _WS_CONSECUTIVE_FAILURES += 1
+            # Exponential backoff: 1min, 2min, 4min, 8min, max 15min
+            backoff_seconds = min(60 * (2 ** (_WS_CONSECUTIVE_FAILURES - 1)), 900)
+            _WS_BACKOFF_UNTIL = time.time() + backoff_seconds
+            logger.warning(f"⚠️ All {failed} connections failed! Backing off for {backoff_seconds}s (attempt #{_WS_CONSECUTIVE_FAILURES})")
+        else:
+            # At least one connection worked, reset backoff
+            _WS_CONSECUTIVE_FAILURES = 0
+            _WS_BACKOFF_UNTIL = 0
+
         return {'warmed': warmed, 'failed': failed, 'pool_size': len(_WS_POOL)}
 
     except Exception as e:

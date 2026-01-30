@@ -27943,6 +27943,48 @@ def api_websocket_raw_test():
         return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
+@app.route('/api/websocket-backoff', methods=['GET', 'POST', 'DELETE'])
+def api_websocket_backoff():
+    """Check or reset WebSocket connection backoff.
+
+    GET: Check current backoff status
+    POST/DELETE: Reset backoff to allow immediate reconnection
+    """
+    try:
+        import time
+        from recorder_service import _WS_BACKOFF_UNTIL, _WS_CONSECUTIVE_FAILURES
+
+        if request.method in ['POST', 'DELETE']:
+            # Reset backoff
+            import recorder_service
+            recorder_service._WS_BACKOFF_UNTIL = 0
+            recorder_service._WS_CONSECUTIVE_FAILURES = 0
+            logger.info("🔄 WebSocket backoff reset manually")
+            return jsonify({
+                'success': True,
+                'message': 'Backoff reset. You can now attempt connections.',
+                'backoff_until': 0,
+                'consecutive_failures': 0
+            })
+
+        # GET - show status
+        now = time.time()
+        in_backoff = now < _WS_BACKOFF_UNTIL
+        remaining = max(0, int(_WS_BACKOFF_UNTIL - now))
+
+        return jsonify({
+            'success': True,
+            'in_backoff': in_backoff,
+            'backoff_remaining_seconds': remaining,
+            'consecutive_failures': _WS_CONSECUTIVE_FAILURES,
+            'message': f"In backoff for {remaining}s" if in_backoff else "No backoff active"
+        })
+
+    except Exception as e:
+        logger.error(f"Error checking WebSocket backoff: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/position-status', methods=['GET'])
 def api_position_status():
     """Get WebSocket position tracker status and positions"""
