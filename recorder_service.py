@@ -327,12 +327,15 @@ def start_websocket_keepalive_daemon():
     run_async_nowait(_ws_keepalive_loop())
     logger.info("💓 WebSocket keepalive daemon started on shared event loop")
 
-async def prewarm_websocket_connections():
+async def prewarm_websocket_connections(staggered: bool = True, delay_seconds: float = 2.0):
     """
     Pre-warm WebSocket connections for all active trading accounts.
-    Called at startup for INSTANT execution on first trade.
+
+    Args:
+        staggered: If True, open connections one at a time with delays (prevents rate limiting)
+        delay_seconds: Seconds to wait between connection attempts when staggered
     """
-    logger.info("🔥 PRE-WARMING WebSocket connections for instant execution...")
+    logger.info(f"🔥 PRE-WARMING WebSocket connections (staggered={staggered}, delay={delay_seconds}s)...")
 
     try:
         conn = get_db_connection()
@@ -389,24 +392,51 @@ async def prewarm_websocket_connections():
 
         logger.info(f"🔥 Pre-warming {len(accounts_to_warm)} unique WebSocket connections...")
 
-        # Warm up connections in parallel
+        # Warm up connections - staggered (one at a time) or parallel
         warmed = 0
         failed = 0
-        tasks = []
 
-        for subaccount_id, (token, is_demo) in accounts_to_warm.items():
-            tasks.append(get_pooled_connection(subaccount_id, is_demo, token))
+        if staggered:
+            # STAGGERED: Open one connection at a time with delays
+            # This prevents rate limiting from Tradovate
+            for subaccount_id, (token, is_demo) in accounts_to_warm.items():
+                try:
+                    env_str = 'demo' if is_demo else 'live'
+                    logger.info(f"🔌 Connecting account {subaccount_id} [{env_str}]...")
+                    result = await get_pooled_connection(subaccount_id, is_demo, token)
+                    if result:
+                        warmed += 1
+                        logger.info(f"✅ Account {subaccount_id} connected ({warmed} total)")
+                    else:
+                        failed += 1
+                        logger.warning(f"❌ Account {subaccount_id} failed to connect")
+                        # If we get a failure, increase delay to be safe
+                        if failed >= 2:
+                            logger.warning(f"⚠️ Multiple failures, stopping prewarm to avoid rate limit")
+                            break
+                except Exception as e:
+                    failed += 1
+                    logger.warning(f"⚠️ Prewarm connection failed for {subaccount_id}: {e}")
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+                # Wait between connections to avoid rate limiting
+                if delay_seconds > 0:
+                    await asyncio.sleep(delay_seconds)
+        else:
+            # PARALLEL: All at once (use with caution - can trigger rate limits)
+            tasks = []
+            for subaccount_id, (token, is_demo) in accounts_to_warm.items():
+                tasks.append(get_pooled_connection(subaccount_id, is_demo, token))
 
-        for r in results:
-            if isinstance(r, Exception):
-                logger.warning(f"⚠️ Prewarm connection failed: {r}")
-                failed += 1
-            elif r:
-                warmed += 1
-            else:
-                failed += 1
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for r in results:
+                if isinstance(r, Exception):
+                    logger.warning(f"⚠️ Prewarm connection failed: {r}")
+                    failed += 1
+                elif r:
+                    warmed += 1
+                else:
+                    failed += 1
 
         logger.info(f"🔥 WebSocket pre-warm complete: {warmed} connected, {failed} failed")
         logger.info(f"🔥 Pool size: {len(_WS_POOL)} connections ready for INSTANT execution")
@@ -447,6 +477,68 @@ def start_websocket_prewarm():
         logger.error(f"❌ Prewarm error: {e}")
         import traceback
         traceback.print_exc()
+
+# ============================================================================
+# 🔥 LAZY WEBSOCKET WARM-UP - Warm connection in background after REST trade
+# ============================================================================
+# This avoids rate limiting from bulk prewarm. First trade uses REST, then we
+# warm up WebSocket in background for subsequent trades to be instant.
+# ============================================================================
+
+_LAZY_WARM_QUEUE: Set[int] = set()  # Track accounts being warmed to avoid duplicates
+
+def schedule_lazy_websocket_warmup(subaccount_id: int, is_demo: bool, access_token: str):
+    """
+    Schedule a WebSocket connection to be warmed up in the background.
+    This is called after a successful REST trade to prepare for instant WebSocket trades.
+
+    Non-blocking - spawns a background task and returns immediately.
+    """
+    global _LAZY_WARM_QUEUE
+
+    # Skip if already warming or already in pool
+    if subaccount_id in _LAZY_WARM_QUEUE:
+        logger.debug(f"🔥 Lazy warmup: Account {subaccount_id} already in warmup queue")
+        return
+
+    if subaccount_id in _WS_POOL:
+        logger.debug(f"🔥 Lazy warmup: Account {subaccount_id} already in pool")
+        return
+
+    # Check backoff period - don't try to warm if we're rate limited
+    import time
+    global _WS_BACKOFF_UNTIL
+    if time.time() < _WS_BACKOFF_UNTIL:
+        logger.debug(f"🔥 Lazy warmup: Skipping account {subaccount_id} - in backoff period")
+        return
+
+    _LAZY_WARM_QUEUE.add(subaccount_id)
+
+    async def do_warmup():
+        """Async warmup task."""
+        try:
+            logger.info(f"🔥 Lazy warmup: Starting WebSocket connection for account {subaccount_id}...")
+            conn = await get_pooled_connection(subaccount_id, is_demo, access_token)
+            if conn:
+                logger.info(f"✅ Lazy warmup: Account {subaccount_id} WebSocket ready for instant trades!")
+            else:
+                logger.warning(f"⚠️ Lazy warmup: Account {subaccount_id} failed - will use REST")
+        except Exception as e:
+            logger.warning(f"⚠️ Lazy warmup: Account {subaccount_id} error: {e}")
+        finally:
+            _LAZY_WARM_QUEUE.discard(subaccount_id)
+
+    # Spawn background task using run_async (non-blocking)
+    def spawn_warmup():
+        try:
+            run_async(do_warmup())
+        except Exception as e:
+            logger.warning(f"⚠️ Lazy warmup spawn failed: {e}")
+
+    import threading
+    warmup_thread = threading.Thread(target=spawn_warmup, daemon=True)
+    warmup_thread.start()
+    logger.debug(f"🔥 Lazy warmup: Background task spawned for account {subaccount_id}")
 
 # ============================================================================
 # 🛡️ BULLETPROOF TOKEN MANAGEMENT - Auto-refresh before expiry
@@ -1778,15 +1870,18 @@ def execute_trade_simple(
                         logger.debug(f"⚡ [{acct_name}] Using POOLED WebSocket connection")
                     else:
                         # Create new connection (will be closed after trade)
+                        # LAZY INIT: Skip WebSocket, use REST only - avoids rate limits
                         tradovate = TradovateIntegration(demo=is_demo)
                         await tradovate.__aenter__()
                         tradovate.access_token = access_token
-                        logger.debug(f"🔌 [{acct_name}] Created new connection")
+                        tradovate.use_websocket_orders = False  # LAZY: Use REST, warm WS in background after
+                        logger.debug(f"🔌 [{acct_name}] Created new REST-only connection (lazy init)")
                 except Exception as pool_err:
                     logger.warning(f"⚠️ [{acct_name}] Pool error, creating new connection: {pool_err}")
                     tradovate = TradovateIntegration(demo=is_demo)
                     await tradovate.__aenter__()
                     tradovate.access_token = access_token
+                    tradovate.use_websocket_orders = False  # LAZY: Use REST, warm WS in background after
                 
                 try:
                     # STEP 0: Check if this is a new entry or DCA (adding to position)
@@ -2068,7 +2163,11 @@ def execute_trade_simple(
                                 risk_config=risk_config
                             )
                             logger.info(f"✅ [{acct_name}] apply_risk_orders completed (trailing stop/break-even configured)")
-                            
+
+                            # LAZY WARMUP: After REST trade succeeds, warm WebSocket in background
+                            if not pooled_conn:
+                                schedule_lazy_websocket_warmup(tradovate_account_id, is_demo, access_token)
+
                             # Skip manual TP/SL placement since apply_risk_orders handled it
                             return {
                                 'success': True,
@@ -2305,7 +2404,11 @@ def execute_trade_simple(
                         logger.info(f"📊 [{acct_name}] TP placed but no SL - skipping OCO registration")
                     elif sl_order_id:
                         logger.info(f"📊 [{acct_name}] SL placed but no TP - skipping OCO registration")
-                    
+
+                    # LAZY WARMUP: After REST trade succeeds, warm WebSocket in background
+                    if not pooled_conn:
+                        schedule_lazy_websocket_warmup(tradovate_account_id, is_demo, access_token)
+
                     return {
                         'success': True,
                         'broker_avg': broker_avg,
