@@ -11729,6 +11729,16 @@ def api_get_traders():
             
             position_size = row_dict.get('trader_position_size') or row_dict.get('recorder_position_size') or 1
             
+            # Parse tp_targets from JSON string
+            tp_targets_raw = row_dict.get('trader_tp_targets')
+            try:
+                if tp_targets_raw:
+                    tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
+                else:
+                    tp_targets = []
+            except:
+                tp_targets = []
+
             traders.append({
                 'id': row_dict.get('id'),
                 'recorder_id': row_dict.get('recorder_id'),
@@ -11748,7 +11758,7 @@ def api_get_traders():
                 'initial_position_size': position_size,
                 'position_size': position_size,  # For backward compatibility
                 'add_position_size': row_dict.get('trader_add_position_size'),
-                'tp_targets': [],
+                'tp_targets': tp_targets,
                 'sl_enabled': bool(row_dict.get('trader_sl_enabled')) if row_dict.get('trader_sl_enabled') is not None else False,
                 'sl_amount': row_dict.get('trader_sl_amount'),
                 'sl_units': row_dict.get('trader_sl_units'),
