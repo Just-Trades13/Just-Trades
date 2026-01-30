@@ -27617,6 +27617,29 @@ def api_websocket_pool():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/websocket-prewarm', methods=['POST', 'GET'])
+def api_websocket_prewarm():
+    """Manually trigger WebSocket connection prewarm"""
+    try:
+        from recorder_service import start_websocket_prewarm, get_websocket_order_stats, _WS_POOL
+
+        # Trigger prewarm
+        start_websocket_prewarm()
+
+        # Return current pool status
+        return jsonify({
+            'success': True,
+            'message': 'Prewarm triggered',
+            'pool_size': len(_WS_POOL),
+            'stats': get_websocket_order_stats()
+        })
+    except Exception as e:
+        logger.error(f"Error prewarming WebSocket: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/position-status', methods=['GET'])
 def api_position_status():
     """Get WebSocket position tracker status and positions"""
