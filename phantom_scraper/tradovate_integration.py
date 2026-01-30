@@ -120,8 +120,22 @@ class TradovateIntegration:
             import time
             heartbeat_count = 0
             logger.info(f"💓 WebSocket heartbeat started (ws_url={self.ws_url})")
+
+            # CRITICAL FIX: Send first heartbeat IMMEDIATELY after auth
+            # Tradovate closes idle connections quickly if no activity after auth
+            try:
+                await self.websocket.send("[]")
+                self._ws_last_heartbeat = time.time()
+                heartbeat_count += 1
+                logger.info(f"💓 Initial heartbeat sent immediately after auth")
+            except Exception as e:
+                logger.error(f"💔 Initial heartbeat failed: {e}")
+                self.ws_connected = False
+                return
+
             while True:
                 try:
+                    # Wait AFTER sending heartbeat, not before
                     await asyncio.sleep(2.5)
 
                     if not self.websocket:
