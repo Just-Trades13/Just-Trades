@@ -4963,6 +4963,9 @@ def run_migrations():
         ('recorders', 'sl_type', "TEXT DEFAULT 'Fixed'" if is_postgres else 'TEXT DEFAULT "Fixed"'),
         # tp_targets for multi-TP support
         ('traders', 'tp_targets', "TEXT DEFAULT '[]'" if is_postgres else 'TEXT DEFAULT "[]"'),
+        # break_even settings for traders
+        ('traders', 'break_even_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        ('traders', 'break_even_ticks', 'INTEGER DEFAULT 10'),
     ]
 
     for table, column, col_type in migrations:
