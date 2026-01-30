@@ -201,6 +201,74 @@ def close_pooled_connection(subaccount_id: int):
         except:
             pass
 
+# ============================================================================
+# 💓 WEBSOCKET KEEPALIVE DAEMON - Keep all connections alive permanently
+# ============================================================================
+_WS_KEEPALIVE_RUNNING = False
+
+async def _ws_keepalive_loop():
+    """
+    Background loop that keeps all WebSocket connections alive.
+    - Checks every 10 seconds
+    - Removes dead connections from pool
+    - Re-establishes connections that died
+    """
+    global _WS_POOL
+    logger.info("💓 WebSocket keepalive daemon started - connections will stay alive")
+
+    while True:
+        try:
+            await asyncio.sleep(10)  # Check every 10 seconds
+
+            if not _WS_POOL:
+                continue
+
+            dead_connections = []
+
+            # Check all pooled connections
+            for subaccount_id, conn in list(_WS_POOL.items()):
+                if not conn or not getattr(conn, 'ws_connected', False):
+                    dead_connections.append(subaccount_id)
+                    logger.warning(f"💔 WebSocket dead for account {subaccount_id} - will reconnect")
+
+            # Remove dead connections
+            for subaccount_id in dead_connections:
+                _WS_POOL.pop(subaccount_id, None)
+
+            if dead_connections:
+                logger.info(f"🔄 Removed {len(dead_connections)} dead WebSocket connections from pool")
+                # Trigger re-prewarm to re-establish connections
+                asyncio.create_task(prewarm_websocket_connections())
+            else:
+                # All connections healthy
+                logger.debug(f"💓 WebSocket pool healthy: {len(_WS_POOL)} connections alive")
+
+        except asyncio.CancelledError:
+            logger.info("💔 WebSocket keepalive daemon cancelled")
+            break
+        except Exception as e:
+            logger.error(f"💔 WebSocket keepalive error: {e}")
+            await asyncio.sleep(5)
+
+def start_websocket_keepalive_daemon():
+    """Start the WebSocket keepalive daemon in background thread."""
+    global _WS_KEEPALIVE_RUNNING
+    if _WS_KEEPALIVE_RUNNING:
+        return
+    _WS_KEEPALIVE_RUNNING = True
+
+    def run_keepalive():
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(_ws_keepalive_loop())
+        except Exception as e:
+            logger.error(f"💔 WebSocket keepalive thread error: {e}")
+
+    thread = threading.Thread(target=run_keepalive, daemon=True, name="WebSocket-Keepalive")
+    thread.start()
+    logger.info("💓 WebSocket keepalive daemon thread started")
+
 async def prewarm_websocket_connections():
     """
     Pre-warm WebSocket connections for all active trading accounts.

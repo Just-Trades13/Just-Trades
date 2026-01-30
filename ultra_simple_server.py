@@ -28678,10 +28678,13 @@ if __name__ == '__main__':
 
     # Pre-warm WebSocket connections for INSTANT execution
     try:
-        from recorder_service import start_websocket_prewarm
+        from recorder_service import start_websocket_prewarm, start_websocket_keepalive_daemon
         start_websocket_prewarm()
         logger.info("🔥 WebSocket pre-warm initiated for instant execution")
+        # Start keepalive daemon to maintain connections permanently
+        start_websocket_keepalive_daemon()
+        logger.info("💓 WebSocket keepalive daemon started - connections will stay alive")
     except Exception as e:
-        logger.warning(f"⚠️ WebSocket pre-warm failed: {e}")
+        logger.warning(f"⚠️ WebSocket pre-warm/keepalive failed: {e}")
 
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
