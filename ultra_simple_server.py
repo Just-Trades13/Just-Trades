@@ -13146,6 +13146,32 @@ def receive_webhook(webhook_token):
                 # Log raw webhook immediately for tracking
                 log_raw_webhook(webhook_token, raw_body)
 
+                # DEDUPLICATION CHECK - Block duplicates BEFORE queueing
+                # This prevents double-execution when TradingView sends same signal twice
+                import hashlib
+                body_hash = hashlib.md5(raw_body.encode()).hexdigest()[:16]
+                dedup_key = f"{webhook_token}:{body_hash}"
+
+                if dedup_key in _webhook_dedup_cache:
+                    last_seen = _webhook_dedup_cache[dedup_key]
+                    age = received_at - last_seen
+                    if age < _webhook_dedup_window:
+                        logger.warning(f"⚠️ FAST DEDUP BLOCKED: Duplicate signal {age:.2f}s ago (token: {webhook_token[:8]}...)")
+                        return jsonify({
+                            'success': True,
+                            'duplicate': True,
+                            'message': f'Duplicate signal blocked (same webhook {age:.2f}s ago)'
+                        }), 200
+
+                # Store in dedup cache BEFORE queueing
+                _webhook_dedup_cache[dedup_key] = received_at
+
+                # Cleanup old entries if cache too large
+                if len(_webhook_dedup_cache) > _webhook_dedup_max_size:
+                    cutoff = received_at - 60
+                    _webhook_dedup_cache.clear()
+                    # Note: We clear instead of filter to avoid iteration during concurrent access
+
                 # Queue for background processing by 10 parallel workers
                 _fast_webhook_queue.put_nowait({
                     'token': webhook_token,
