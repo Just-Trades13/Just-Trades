@@ -4378,7 +4378,71 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
                     tif_default="GTC",
                     existing_tp_order_id=int(existing_tp_order_id) if existing_tp_order_id else None
                 )
-                
+
+                # STEP 3: UPDATE TRAIL STOP if recorder uses trailing stop
+                # This is critical for DCA - trail stop must cover full position
+                try:
+                    conn3 = get_db_connection()
+                    cursor3 = conn3.cursor()
+                    cursor3.execute('SELECT sl_type, sl_amount, sl_enabled FROM recorders WHERE id = ?', (recorder_id,))
+                    rec_row = cursor3.fetchone()
+                    conn3.close()
+
+                    if rec_row:
+                        sl_type = rec_row['sl_type'] if rec_row['sl_type'] else 'Fixed'
+                        sl_amount = rec_row['sl_amount'] if rec_row['sl_amount'] else 0
+                        sl_enabled = rec_row['sl_enabled']
+
+                        if sl_enabled and sl_amount > 0 and sl_type in ('Trail', 'Trailing'):
+                            logger.info(f"📊 [DCA-TRAIL] Updating trail stop for DCA: offset={sl_amount} ticks, qty={abs(pos_qty)}")
+
+                            # Get current position's average price for trail calculation
+                            avg_price = None
+                            for pos in positions:
+                                pos_symbol = str(pos.get('symbol', '') or '').upper()
+                                if symbol_root in pos_symbol or pos_symbol[:3] == symbol_root:
+                                    avg_price = pos.get('netPrice') or pos.get('price')
+                                    break
+
+                            if avg_price:
+                                tick_info = get_tick_info(tradovate_symbol)
+                                tick_size = tick_info['tick_size']
+                                trail_offset = sl_amount * tick_size
+                                is_long = pos_qty > 0
+                                exit_action = 'Sell' if is_long else 'Buy'
+
+                                # Calculate initial stop price
+                                if is_long:
+                                    initial_stop = avg_price - trail_offset
+                                else:
+                                    initial_stop = avg_price + trail_offset
+
+                                # Cancel existing trail stops for this contract
+                                working_orders = await tradovate.get_working_orders(tradovate_account_id)
+                                for order in working_orders:
+                                    order_type = order.get('orderType', '')
+                                    order_contract = order.get('contractId')
+                                    if order_type == 'TrailingStop' and order_contract == contract_id:
+                                        order_id = order.get('id')
+                                        logger.info(f"🗑️ [DCA-TRAIL] Cancelling old trail stop {order_id}")
+                                        await tradovate.cancel_order(order_id)
+
+                                # Place new trail stop with updated quantity
+                                trail_order = tradovate.create_trailing_stop_order(
+                                    tradovate_account_spec, tradovate_symbol, exit_action,
+                                    abs(pos_qty), trail_offset, tradovate_account_id, initial_stop
+                                )
+                                trail_result = await tradovate.place_order_smart(trail_order)
+
+                                if trail_result and trail_result.get('success'):
+                                    logger.info(f"✅ [DCA-TRAIL] New trail stop placed for {abs(pos_qty)} contracts")
+                                else:
+                                    logger.warning(f"⚠️ [DCA-TRAIL] Failed to place new trail stop: {trail_result}")
+                            else:
+                                logger.warning(f"⚠️ [DCA-TRAIL] No avg price found, cannot update trail stop")
+                except Exception as trail_err:
+                    logger.warning(f"⚠️ [DCA-TRAIL] Error updating trail stop: {trail_err}")
+
                 # Handle token expiry and retry
                 if not tp_result.get('success') and ('Expired' in str(tp_result.get('error', '')) or '401' in str(tp_result.get('error', ''))):
                     if username and password:
