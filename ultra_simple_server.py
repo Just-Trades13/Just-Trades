@@ -14597,8 +14597,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
                     pnl_result = {'pnl': pnl_dollars, 'pnl_ticks': pnl_ticks, 'closed_side': existing_side}
                     
                     # Now open new position in opposite direction
-                    # Set broker_managed_tp_sl=1 if trader exists (broker will handle TP/SL)
-                    broker_managed = 1 if trader else 0
+                    # Set broker_managed_tp_sl=TRUE if trader exists (broker will handle TP/SL)
+                    broker_managed = True if trader else False
                     trade_cursor.execute(f'''
                         INSERT INTO recorded_trades
                         (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
@@ -14636,8 +14636,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
                     _logger.info(f"📈 DCA: Adding {quantity} to existing {existing_side} position")
 
                     # Create a new trade entry for DCA
-                    # Set broker_managed_tp_sl=1 if trader exists (broker will handle TP/SL)
-                    broker_managed = 1 if trader else 0
+                    # Set broker_managed_tp_sl=TRUE if trader exists (broker will handle TP/SL)
+                    broker_managed = True if trader else False
                     trade_cursor.execute(f'''
                         INSERT INTO recorded_trades
                         (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
@@ -14672,8 +14672,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
                         _logger.debug(f"Paper trade tracking error: {paper_err}")
             else:
                 # NO EXISTING POSITION: Open new trade
-                # Set broker_managed_tp_sl=1 if trader exists (broker will handle TP/SL)
-                broker_managed = 1 if trader else 0
+                # Set broker_managed_tp_sl=TRUE if trader exists (broker will handle TP/SL)
+                broker_managed = True if trader else False
                 trade_cursor.execute(f'''
                     INSERT INTO recorded_trades
                     (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
