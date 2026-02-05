@@ -1650,7 +1650,7 @@ def get_webhook_activity_log(limit=50):
 # WEBHOOK DEDUPLICATION - Prevent duplicate webhook processing
 # ============================================================================
 _webhook_dedup_cache = {}  # Key: "token:action:body_hash" -> timestamp
-_webhook_dedup_window = 5  # Seconds - reject duplicate webhooks within this window
+_webhook_dedup_window = 1  # Seconds - reject duplicate webhooks within this window (TV duplicates arrive within ms)
 _webhook_dedup_max_size = 1000  # Max cache entries before cleanup
 
 # ============================================================================
