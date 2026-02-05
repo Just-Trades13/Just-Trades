@@ -12968,6 +12968,110 @@ def restart_broker_execution_worker():
 # This works on Railway (single container) without needing separate service.
 # ============================================================
 
+@app.route('/webhook/incoming', methods=['POST'])
+def receive_webhook_universal():
+    """Universal webhook endpoint - routes by recorder name in body.
+
+    This endpoint allows TradingView to send webhooks with any URL as long as
+    the body contains a "recorder" field with the recorder name.
+
+    Example body:
+    {"recorder": "JADVIX", "action": "buy", "ticker": "MNQH6", ...}
+
+    Benefits:
+    - Works even if TradingView has the wrong webhook token/URL
+    - Routes based on recorder name in body
+    - Maintains backward compatibility with token-based routing
+    """
+    logger.info(f"🌐 UNIVERSAL WEBHOOK ENDPOINT HIT: /webhook/incoming")
+
+    try:
+        raw_body = request.get_data(as_text=True) or ''
+        logger.info(f"   POST data: {raw_body[:200]}")
+
+        # Parse the body to get recorder name
+        data = {}
+        if raw_body:
+            try:
+                import json
+                data = json.loads(raw_body)
+            except json.JSONDecodeError:
+                # Try parsing as key=value format
+                for item in raw_body.replace(';', ',').split(','):
+                    if '=' in item:
+                        k, v = item.strip().split('=', 1)
+                        data[k.strip()] = v.strip()
+
+        recorder_name = data.get('recorder') or data.get('strategy') or data.get('name')
+        if not recorder_name:
+            logger.warning("⚠️ Universal webhook missing recorder name in body")
+            return jsonify({
+                'success': False,
+                'error': 'Missing recorder name in body. Include "recorder": "YourRecorderName" in webhook payload.'
+            }), 400
+
+        logger.info(f"🔍 Looking up recorder by name: '{recorder_name}'")
+
+        # Look up recorder by name to get its webhook token
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        # PostgreSQL: rollback any stuck transactions
+        if is_postgres:
+            try:
+                conn.rollback()
+            except:
+                pass
+
+        cursor.execute(f'SELECT webhook_token FROM recorders WHERE name = {placeholder}', (recorder_name,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            logger.warning(f"⚠️ No recorder found with name: '{recorder_name}'")
+            return jsonify({
+                'success': False,
+                'error': f'No recorder found with name: {recorder_name}'
+            }), 404
+
+        webhook_token = row[0] if isinstance(row, tuple) else row['webhook_token']
+        logger.info(f"✅ Found recorder '{recorder_name}' -> token: {webhook_token[:8]}...")
+
+        # Now process using the existing logic with the looked-up token
+        # Use fast queue if enabled, otherwise process directly
+        if _fast_webhook_enabled:
+            received_at = time.time()
+            log_raw_webhook(webhook_token, raw_body)
+
+            _fast_webhook_queue.put_nowait({
+                'token': webhook_token,
+                'body': raw_body,
+                'received_at': received_at
+            })
+
+            queue_size = _fast_webhook_queue.qsize()
+            workers_alive = sum(1 for t in _fast_webhook_threads if t.is_alive()) if _fast_webhook_threads else 0
+            logger.info(f"⚡ UNIVERSAL FAST QUEUED: recorder={recorder_name} queue={queue_size}, workers={workers_alive}")
+
+            return jsonify({
+                'success': True,
+                'queued': True,
+                'message': f'Signal for {recorder_name} received and queued',
+                'queue_size': queue_size
+            }), 200
+        else:
+            # Process synchronously
+            return process_webhook_directly(webhook_token, raw_body_override=raw_body)
+
+    except Exception as e:
+        logger.error(f"❌ Universal webhook error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/webhook/fast/<webhook_token>', methods=['POST'])
 def receive_webhook_fast(webhook_token):
     """Fast webhook endpoint - processes directly."""
