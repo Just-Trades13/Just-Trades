@@ -13477,12 +13477,13 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             return jsonify({'success': False, 'error': 'No data received'}), 400
         
         _logger.info(f"📨 Webhook received for recorder '{recorder_name}': {data}")
-        
+        track_signal_step(signal_id, 'STEP5_DATA_PARSED', {'data_keys': list(data.keys())[:10]})
+
         # ============================================================
         # UNIVERSAL MESSAGE PARSING - Handle ANY webhook format
         # Supports: TradingView indicators, strategies, custom formats
         # ============================================================
-        
+
         # Extract ticker (multiple field names supported)
         ticker = data.get('ticker', data.get('symbol', data.get('instrument', '')))
         
@@ -13780,9 +13781,11 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         if action in ['buy', 'long']:
             side = 'LONG'
             trade_action = 'BUY'
+            track_signal_step(signal_id, 'STEP5_ACTION_DETERMINED', {'action': action, 'side': side, 'trade_action': trade_action})
         elif action in ['sell', 'short']:
             side = 'SHORT'
             trade_action = 'SELL'
+            track_signal_step(signal_id, 'STEP5_ACTION_DETERMINED', {'action': action, 'side': side, 'trade_action': trade_action})
         elif action in ['close', 'flat', 'exit']:
             # Close signals bypass filters - update open trades to closed
             _logger.info(f"🔄 CLOSE signal received for {recorder_name}")
@@ -14083,7 +14086,10 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Signal delay ({signal_number} mod {add_delay} != 0)'}), 200
             _logger.info(f"✅ Signal delay passed: #{signal_number} (every {add_delay})")
-        
+
+        # All filters passed!
+        track_signal_step(signal_id, 'STEP5_FILTERS_PASSED', {'action': trade_action, 'ticker': ticker})
+
         # ============================================================
         # 📊 RECORD THE SIGNAL (after filters pass)
         # ============================================================
