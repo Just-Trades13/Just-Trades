@@ -12011,9 +12011,6 @@ def api_update_trader(trader_id):
             val = int(val) if val else None
             updates.append(f'initial_position_size = {placeholder}')
             params.append(val)
-            # Also update legacy position_size column to stay in sync
-            updates.append(f'position_size = {placeholder}')
-            params.append(val)
 
         if 'add_position_size' in data:
             val = data['add_position_size']
