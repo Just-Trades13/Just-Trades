@@ -1554,8 +1554,14 @@ def fast_webhook_worker(worker_id):
                 with app.app_context():
                     result = process_webhook_with_data(token, body, signal_id)
                     if result.get('success'):
-                        logger.info(f"✅ Worker #{worker_id} completed webhook: token={token[:8]}... signal={signal_id}")
-                        complete_signal(signal_id, 'complete')
+                        # Check if broker execution was queued - if so, let broker worker complete the signal
+                        if result.get('broker_queued'):
+                            logger.info(f"✅ Worker #{worker_id} queued webhook for broker: token={token[:8]}... signal={signal_id}")
+                            # DON'T call complete_signal here - broker worker will do it after execution
+                        else:
+                            # No broker execution needed (e.g., close signals handled inline)
+                            logger.info(f"✅ Worker #{worker_id} completed webhook: token={token[:8]}... signal={signal_id}")
+                            complete_signal(signal_id, 'complete')
                     else:
                         error_msg = result.get('error', 'unknown error')
                         logger.warning(f"⚠️ Worker #{worker_id} webhook returned: {error_msg}")
