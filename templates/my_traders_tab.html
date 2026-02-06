@@ -1197,7 +1197,7 @@
                 const slEnabled = trader.sl_enabled ? 'Yes' : 'No';
                 const slAmount = trader.sl_amount || 0;
                 const slUnits = trader.sl_units || 'Ticks';
-                const maxDailyLoss = trader.max_daily_loss || 500;
+                const maxDailyLoss = trader.max_daily_loss !== null && trader.max_daily_loss !== undefined ? trader.max_daily_loss : 0;
                 
                 // Format TP targets
                 const tpTargets = trader.tp_targets || [];
@@ -1394,8 +1394,8 @@
             document.getElementById('editSlAmount').value = trader.sl_amount || 0;
             document.getElementById('editSlUnits').value = trader.sl_units || 'Ticks';
             
-            // Populate Max Daily Loss
-            document.getElementById('editMaxDailyLoss').value = trader.max_daily_loss || 500;
+            // Populate Max Daily Loss (allow 0 as valid value)
+            document.getElementById('editMaxDailyLoss').value = trader.max_daily_loss !== null && trader.max_daily_loss !== undefined ? trader.max_daily_loss : 0;
             
             // Populate enabled status
             const isEnabled = trader.enabled === true || trader.enabled === 1;
@@ -1674,8 +1674,8 @@
             document.getElementById('slAmount').value = recorder.sl_amount || 0;
             document.getElementById('slUnits').value = recorder.sl_units || 'Ticks';
             
-            // Populate Max Daily Loss
-            document.getElementById('maxDailyLoss').value = recorder.max_daily_loss || 500;
+            // Populate Max Daily Loss (allow 0 as valid value)
+            document.getElementById('maxDailyLoss').value = recorder.max_daily_loss !== null && recorder.max_daily_loss !== undefined ? recorder.max_daily_loss : 0;
             
             console.log('Risk settings populated from recorder:', recorder.name);
         }

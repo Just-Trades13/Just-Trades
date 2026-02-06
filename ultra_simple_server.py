@@ -16678,7 +16678,7 @@ def traders_edit(trader_id):
         'avg_down_amount': trader_row['r_avg_down_amount'] or 1,
         'avg_down_point': trader_row['r_avg_down_point'] or 10,
             'avg_down_units': trader_row['r_avg_down_units'] or 'Ticks',
-            'max_daily_loss': trader_row['max_daily_loss'] or 500,
+            'max_daily_loss': trader_row['max_daily_loss'] if trader_row['max_daily_loss'] is not None else 0,
         # Time filters from recorder
         'time_filter_1_enabled': bool(trader_row.get('r_time_filter_1_enabled') or trader_row.get('time_filter_1_enabled')),
         'time_filter_1_start': trader_row.get('r_time_filter_1_start') or trader_row.get('time_filter_1_start') or '',
