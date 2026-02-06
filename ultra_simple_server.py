@@ -4806,10 +4806,60 @@ def init_db():
         ON traders(recorder_id)
     ''')
     cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_traders_account 
+        CREATE INDEX IF NOT EXISTS idx_traders_account
         ON traders(account_id)
     ''')
-    
+
+    # Affiliate applications table
+    if is_postgres:
+        try:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS affiliate_applications (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    email VARCHAR(255) NOT NULL,
+                    website TEXT,
+                    social_handle VARCHAR(255),
+                    audience_description TEXT NOT NULL,
+                    trading_experience TEXT,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    affiliate_code VARCHAR(20) UNIQUE,
+                    admin_notes TEXT,
+                    reviewed_by INTEGER REFERENCES users(id),
+                    reviewed_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+        except:
+            pass  # Table already exists
+    else:
+        try:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS affiliate_applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL,
+                    website TEXT,
+                    social_handle TEXT,
+                    audience_description TEXT NOT NULL,
+                    trading_experience TEXT,
+                    status TEXT DEFAULT 'pending',
+                    affiliate_code TEXT UNIQUE,
+                    admin_notes TEXT,
+                    reviewed_by INTEGER REFERENCES users(id),
+                    reviewed_at TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+        except:
+            pass  # Table already exists
+
+    # Add affiliate_code column if table was created before it was added
+    try:
+        cursor.execute('ALTER TABLE affiliate_applications ADD COLUMN affiliate_code VARCHAR(20) UNIQUE' if is_postgres else 'ALTER TABLE affiliate_applications ADD COLUMN affiliate_code TEXT UNIQUE')
+    except:
+        pass  # Column already exists
+
     conn.commit()
     conn.close()
 
@@ -22651,6 +22701,319 @@ def api_user_theme():
 @app.route('/affiliate')
 def affiliate():
     return render_template('affiliate.html')
+
+
+# ============================================================
+# AFFILIATE APPLICATION SYSTEM (Restored from backup branch)
+# ============================================================
+
+@app.route('/admin/affiliates')
+def admin_affiliates_page():
+    """Admin affiliate applications dashboard"""
+    if USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if not user or not user.is_admin:
+            return redirect('/login?next=/admin/affiliates')
+    return render_template('admin_affiliates.html')
+
+
+@app.route('/api/affiliate/apply', methods=['POST'])
+def submit_affiliate_application():
+    """Submit a new affiliate application (public endpoint)"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        name = (data.get('name') or '').strip()
+        email = (data.get('email') or '').strip()
+        audience = (data.get('audience') or '').strip()
+
+        if not name or not email or not audience:
+            return jsonify({'error': 'Name, email, and audience description are required'}), 400
+
+        website = (data.get('website') or '').strip() or None
+        social = (data.get('social') or '').strip() or None
+        experience = (data.get('experience') or '').strip() or None
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'SELECT id FROM affiliate_applications WHERE email = {placeholder}', (email,))
+        existing = cursor.fetchone()
+        if existing:
+            conn.close()
+            return jsonify({'error': 'An application with this email already exists'}), 409
+
+        cursor.execute(f'''
+            INSERT INTO affiliate_applications
+            (name, email, website, social_handle, audience_description, trading_experience)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        ''', (name, email, website, social, audience, experience))
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"New affiliate application from: {name} <{email}>")
+        return jsonify({'success': True, 'message': 'Application submitted successfully'}), 201
+
+    except Exception as e:
+        logger.error(f"Error submitting affiliate application: {e}")
+        return jsonify({'error': 'Failed to submit application'}), 500
+
+
+@app.route('/api/affiliate/status', methods=['POST'])
+def check_affiliate_status():
+    """Check affiliate application status by email (public endpoint)"""
+    try:
+        data = request.get_json()
+        email = data.get('email', '').strip().lower() if data else ''
+
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'''
+            SELECT name, email, status, affiliate_code, created_at, reviewed_at
+            FROM affiliate_applications
+            WHERE LOWER(email) = {placeholder}
+            ORDER BY created_at DESC LIMIT 1
+        ''', (email,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({'found': False, 'message': 'No application found with this email'}), 404
+
+        if isinstance(row, dict):
+            result = {
+                'found': True, 'name': row['name'], 'email': row['email'],
+                'status': row['status'],
+                'affiliate_code': row['affiliate_code'] if row['status'] == 'approved' else None,
+                'applied_at': row['created_at'], 'reviewed_at': row['reviewed_at']
+            }
+        else:
+            result = {
+                'found': True, 'name': row[0], 'email': row[1], 'status': row[2],
+                'affiliate_code': row[3] if row[2] == 'approved' else None,
+                'applied_at': row[4], 'reviewed_at': row[5]
+            }
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error checking affiliate status: {e}")
+        return jsonify({'error': 'Failed to check status'}), 500
+
+
+@app.route('/api/admin/affiliates', methods=['GET'])
+def get_affiliate_applications():
+    """Get all affiliate applications (admin only)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        status_filter = request.args.get('status', None)
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        if status_filter:
+            cursor.execute(f'''
+                SELECT id, name, email, website, social_handle, audience_description,
+                       trading_experience, status, affiliate_code, admin_notes, reviewed_at, created_at
+                FROM affiliate_applications WHERE status = {placeholder}
+                ORDER BY created_at DESC
+            ''', (status_filter,))
+        else:
+            cursor.execute('''
+                SELECT id, name, email, website, social_handle, audience_description,
+                       trading_experience, status, affiliate_code, admin_notes, reviewed_at, created_at
+                FROM affiliate_applications ORDER BY created_at DESC
+            ''')
+
+        rows = cursor.fetchall()
+
+        # Get counts by status
+        cursor.execute('''
+            SELECT status, COUNT(*) as count FROM affiliate_applications GROUP BY status
+        ''')
+        status_rows = cursor.fetchall()
+        conn.close()
+
+        applications = []
+        for row in rows:
+            if isinstance(row, dict):
+                applications.append(row)
+            else:
+                applications.append({
+                    'id': row[0], 'name': row[1], 'email': row[2], 'website': row[3],
+                    'social_handle': row[4], 'audience_description': row[5],
+                    'trading_experience': row[6], 'status': row[7], 'affiliate_code': row[8],
+                    'admin_notes': row[9], 'reviewed_at': row[10], 'created_at': row[11]
+                })
+
+        counts = {'pending': 0, 'approved': 0, 'rejected': 0}
+        for row in status_rows:
+            status = row['status'] if isinstance(row, dict) else row[0]
+            count = row['count'] if isinstance(row, dict) else row[1]
+            counts[status] = count
+
+        return jsonify({'applications': applications, 'counts': counts})
+
+    except Exception as e:
+        logger.error(f"Error fetching affiliate applications: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/affiliates/<int:app_id>/status', methods=['POST'])
+def update_affiliate_status(app_id):
+    """Update affiliate application status (admin only)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        data = request.get_json()
+        new_status = data.get('status')
+        admin_notes = data.get('notes', '')
+        custom_code = data.get('custom_code', '').strip().upper() if data.get('custom_code') else None
+
+        if new_status not in ['pending', 'approved', 'rejected']:
+            return jsonify({'error': 'Invalid status'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        affiliate_code = None
+
+        if new_status == 'approved':
+            cursor.execute(f'SELECT name, email, affiliate_code FROM affiliate_applications WHERE id = {placeholder}', (app_id,))
+            app_row = cursor.fetchone()
+            existing_code = app_row['affiliate_code'] if isinstance(app_row, dict) else app_row[2]
+
+            if custom_code:
+                cursor.execute(f'SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder} AND id != {placeholder}', (custom_code, app_id))
+                if cursor.fetchone():
+                    conn.close()
+                    return jsonify({'error': f'Affiliate code "{custom_code}" is already in use'}), 409
+                affiliate_code = custom_code
+            elif not existing_code:
+                import random
+                import string
+                name = (app_row['name'] if isinstance(app_row, dict) else app_row[0]) or 'USER'
+                name_part = ''.join(c for c in name.upper() if c.isalpha())[:3].ljust(3, 'X')
+                random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                affiliate_code = f"JT-{name_part}{random_part}"
+
+                for _ in range(10):
+                    cursor.execute(f'SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder}', (affiliate_code,))
+                    if not cursor.fetchone():
+                        break
+                    random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                    affiliate_code = f"JT-{name_part}{random_part}"
+
+                cursor.execute(f'''
+                    UPDATE affiliate_applications
+                    SET status = {placeholder}, affiliate_code = {placeholder}, admin_notes = {placeholder},
+                        reviewed_by = {placeholder}, reviewed_at = CURRENT_TIMESTAMP
+                    WHERE id = {placeholder}
+                ''', (new_status, affiliate_code, admin_notes, user.id, app_id))
+            else:
+                affiliate_code = existing_code
+                cursor.execute(f'''
+                    UPDATE affiliate_applications
+                    SET status = {placeholder}, admin_notes = {placeholder}, reviewed_by = {placeholder},
+                        reviewed_at = CURRENT_TIMESTAMP
+                    WHERE id = {placeholder}
+                ''', (new_status, admin_notes, user.id, app_id))
+        else:
+            cursor.execute(f'''
+                UPDATE affiliate_applications
+                SET status = {placeholder}, admin_notes = {placeholder}, reviewed_by = {placeholder},
+                    reviewed_at = CURRENT_TIMESTAMP
+                WHERE id = {placeholder}
+            ''', (new_status, admin_notes, user.id, app_id))
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Affiliate application {app_id} marked as {new_status} by admin {user.username}" +
+                    (f" - Code: {affiliate_code}" if affiliate_code else ""))
+        return jsonify({'success': True, 'affiliate_code': affiliate_code})
+
+    except Exception as e:
+        logger.error(f"Error updating affiliate status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/affiliates/<int:app_id>/code', methods=['POST'])
+def update_affiliate_code(app_id):
+    """Update affiliate code for an application (admin only)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        data = request.get_json()
+        new_code = data.get('affiliate_code', '').strip().upper() if data else ''
+
+        if not new_code:
+            return jsonify({'error': 'Affiliate code is required'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder} AND id != {placeholder}', (new_code, app_id))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': f'Affiliate code "{new_code}" is already in use'}), 409
+
+        cursor.execute(f'UPDATE affiliate_applications SET affiliate_code = {placeholder} WHERE id = {placeholder}', (new_code, app_id))
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Affiliate code updated for application {app_id} to: {new_code} by admin {user.username}")
+        return jsonify({'success': True, 'affiliate_code': new_code})
+
+    except Exception as e:
+        logger.error(f"Error updating affiliate code: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/affiliates/count')
+def get_affiliate_count():
+    """Get count of pending affiliate applications (for nav badge)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'count': 0})
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM affiliate_applications WHERE status = 'pending'")
+        result = cursor.fetchone()
+        count = result['cnt'] if isinstance(result, dict) else result[0]
+        conn.close()
+
+        return jsonify({'count': count})
+    except Exception:
+        return jsonify({'count': 0})
+
 
 # API Endpoints for Dashboard Filters
 @app.route('/api/dashboard/users', methods=['GET'])

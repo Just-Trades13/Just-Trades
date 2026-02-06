@@ -898,9 +898,16 @@
                                 <li><a href="/admin/users"><span class="material-icons">manage_accounts</span> Manage Users</a></li>
                                 <li>
                                     <a href="/admin/support" class="support-link">
-                                        <span class="material-icons">support_agent</span> 
+                                        <span class="material-icons">support_agent</span>
                                         Support Tickets
                                         <span class="admin-ticket-badge" id="adminTicketBadge" style="display:none;">0</span>
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="/admin/affiliates" class="affiliate-link">
+                                        <span class="material-icons">handshake</span>
+                                        Affiliate Applications
+                                        <span class="admin-ticket-badge" id="adminAffiliateBadge" style="display:none;">0</span>
                                     </a>
                                 </li>
                                 {% endif %}
@@ -2159,6 +2166,31 @@
             }
         }
         
+        // Update affiliate applications badge
+        function updateAffiliateBadge() {
+            try {
+                fetch('/api/admin/affiliates/count')
+                    .then(r => r.json())
+                    .then(data => {
+                        const badge = document.getElementById('adminAffiliateBadge');
+                        if (badge) {
+                            if (data.count > 0) {
+                                badge.textContent = data.count;
+                                badge.style.display = 'inline-flex';
+                            } else {
+                                badge.style.display = 'none';
+                            }
+                        }
+                    })
+                    .catch(() => {});
+            } catch (e) { /* ignore */ }
+        }
+        // Check affiliate badge on load and every 60 seconds
+        if (document.getElementById('adminAffiliateBadge')) {
+            updateAffiliateBadge();
+            setInterval(updateAffiliateBadge, 60000);
+        }
+
         function playNotificationSound() {
             try {
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
