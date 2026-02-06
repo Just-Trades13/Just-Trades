@@ -1981,9 +1981,10 @@ def execute_trade_simple(
                         try:
                             tp_lookup_conn = get_db_connection()
                             tp_lookup_cursor = tp_lookup_conn.cursor()
-                            tp_lookup_cursor.execute('''
-                                SELECT tp_order_id FROM recorded_trades 
-                                WHERE recorder_id = ? AND ticker LIKE ? AND status = 'open' AND tp_order_id IS NOT NULL
+                            tp_ph = '%s' if is_postgres else '?'
+                            tp_lookup_cursor.execute(f'''
+                                SELECT tp_order_id FROM recorded_trades
+                                WHERE recorder_id = {tp_ph} AND ticker LIKE {tp_ph} AND status = 'open' AND tp_order_id IS NOT NULL
                                 ORDER BY entry_time DESC LIMIT 1
                             ''', (recorder_id, f'%{local_symbol_root}%'))
                             tp_row = tp_lookup_cursor.fetchone()
@@ -3840,9 +3841,10 @@ def execute_live_trade_with_bracket(
                             try:
                                 tp_conn = get_db_connection()
                                 tp_cursor = tp_conn.cursor()
-                                tp_cursor.execute('''
-                                    SELECT tp_order_id FROM recorded_trades 
-                                    WHERE recorder_id = ? AND status = 'open' AND tp_order_id IS NOT NULL
+                                tp_ph2 = '%s' if is_postgres else '?'
+                                tp_cursor.execute(f'''
+                                    SELECT tp_order_id FROM recorded_trades
+                                    WHERE recorder_id = {tp_ph2} AND status = 'open' AND tp_order_id IS NOT NULL
                                     ORDER BY entry_time DESC LIMIT 1
                                 ''', (trading_account.get('recorder_id', recorder_id),))
                                 tp_row = tp_cursor.fetchone()
