@@ -1650,7 +1650,9 @@ def execute_trade_simple(
 
                         if signal_side == existing_position_side:
                             # SAME DIRECTION - Check if trader has DCA enabled
-                            trader_dca_enabled = bool(trader.get('dca_enabled', False))
+                            # If trader.dca_enabled is None (not explicitly set), inherit from recorder.avg_down_enabled
+                            raw_dca = trader.get('dca_enabled')
+                            trader_dca_enabled = bool(raw_dca) if raw_dca is not None else avg_down_enabled
                             if trader_dca_enabled:
                                 # DCA MODE ON: Cancel+replace TP, get new avg from broker
                                 logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty} (dca_enabled=ON)")
