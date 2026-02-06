@@ -3962,16 +3962,23 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
     
     # Handle multiple TP levels (if any beyond the first)
     if len(take_profit_list) > 1:
-        logger.info(f"📊 Processing {len(take_profit_list) - 1} additional TP levels")
-        first_tp_percent = take_profit_list[0].get('trim_percent', 100)
-        first_tp_qty = int(round(quantity * (first_tp_percent / 100.0))) if first_tp_percent else quantity
+        trim_units = risk_config.get('trim_units', 'Percent')
+        logger.info(f"📊 Processing {len(take_profit_list) - 1} additional TP levels (trim_units={trim_units})")
+        first_tp_trim = take_profit_list[0].get('trim_percent', 100)
+        if trim_units == 'Contracts':
+            first_tp_qty = min(int(first_tp_trim), quantity) if first_tp_trim else quantity
+        else:
+            first_tp_qty = int(round(quantity * (first_tp_trim / 100.0))) if first_tp_trim else quantity
         remaining_qty = quantity - first_tp_qty
-        
+
         for idx, tp in enumerate(take_profit_list[1:], start=1):
             ticks = tp.get('gain_ticks')
-            trim_percent = tp.get('trim_percent', 0)
-            
-            level_qty = int(round(quantity * (trim_percent / 100.0))) if trim_percent else 0
+            trim_value = tp.get('trim_percent', 0)
+
+            if trim_units == 'Contracts':
+                level_qty = min(int(trim_value), remaining_qty) if trim_value else 0
+            else:
+                level_qty = int(round(quantity * (trim_value / 100.0))) if trim_value else 0
             if idx == len(take_profit_list) - 1 and level_qty == 0:
                 level_qty = remaining_qty  # Last level gets remaining
             
@@ -14707,6 +14714,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         # For now, get recorder defaults (will be overridden if trader has settings)
         tp_targets_raw = recorder.get('tp_targets', '[]')
         tp_units = recorder.get('tp_units', 'Ticks')
+        trim_units = recorder.get('trim_units', 'Percent')
         sl_enabled = recorder.get('sl_enabled', 0)
         sl_amount = float(recorder.get('sl_amount', 0) or 0)
         sl_units = recorder.get('sl_units', 'Ticks')
@@ -14806,6 +14814,9 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         if trader_tp_targets:
             tp_targets_raw = trader_tp_targets
             _logger.info(f"📊 Using TRADER's TP targets (override recorder)")
+        trader_trim_units = trader.get('trim_units') if trader else None
+        if trader_trim_units:
+            trim_units = trader_trim_units
         if trader_sl_enabled is not None:
             sl_enabled = trader_sl_enabled
         if trader_sl_amount is not None:
@@ -15380,6 +15391,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 'gain_ticks': tp_ticks,
                 'trim_percent': 100
             }]
+            risk_config['trim_units'] = trim_units  # 'Percent' or 'Contracts'
         
         # Stop loss (fixed or trailing)
         # Priority: Webhook trail settings > SL type from settings
