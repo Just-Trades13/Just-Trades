@@ -14618,29 +14618,26 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             _logger.warning(f"Could not record signal: {e}")
 
         # ============================================================
-        # 📄 PAPER TRADING: Record trade for analytics
+        # 📄 PAPER TRADING: Record trade for analytics (BACKGROUND - never blocks broker execution)
         # ============================================================
-        try:
-            paper_action = action.upper()
-            print(f"🧪🧪🧪 WEBHOOK PAPER CHECK: action={paper_action}, ticker={ticker}", flush=True)
-            if paper_action in ['BUY', 'SELL', 'LONG', 'SHORT', 'CLOSE', 'FLAT', 'EXIT']:
-                paper_qty = int(quantity) if quantity else 1
-                paper_price = float(price) if price else None
-                print(f"🧪🧪🧪 CALLING record_paper_trade: rec={recorder_id}, sym={ticker}, act={paper_action}, qty={paper_qty}, price={paper_price}", flush=True)
-                paper_result = record_paper_trade_from_webhook(
-                    recorder_id=recorder_id,
-                    symbol=ticker,
-                    action=paper_action,
-                    quantity=paper_qty,
-                    price=paper_price
-                )
-                print(f"🧪🧪🧪 PAPER TRADE RESULT: {paper_result}", flush=True)
-            else:
-                print(f"🧪🧪🧪 PAPER SKIPPED: action={paper_action} not in trade list", flush=True)
-        except Exception as paper_err:
-            import traceback
-            print(f"🧪🧪🧪 PAPER TRADE ERROR: {paper_err}", flush=True)
-            print(traceback.format_exc(), flush=True)
+        paper_action = action.upper()
+        if paper_action in ['BUY', 'SELL', 'LONG', 'SHORT', 'CLOSE', 'FLAT', 'EXIT']:
+            paper_qty = int(quantity) if quantity else 1
+            paper_price = float(price) if price else None
+            import threading
+            def _bg_paper_trade(rec_id, sym, act, qty, px):
+                try:
+                    result = record_paper_trade_from_webhook(
+                        recorder_id=rec_id, symbol=sym, action=act, quantity=qty, price=px
+                    )
+                    print(f"🧪 PAPER TRADE (bg): {act} {qty} {sym} → {result}", flush=True)
+                except Exception as e:
+                    print(f"🧪 PAPER TRADE ERROR (bg): {e}", flush=True)
+            threading.Thread(
+                target=_bg_paper_trade,
+                args=(recorder_id, ticker, paper_action, paper_qty, paper_price),
+                daemon=True
+            ).start()
 
         # ============================================================
         # 📈 GET RISK SETTINGS
