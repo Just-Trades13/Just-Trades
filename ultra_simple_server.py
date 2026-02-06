@@ -1536,23 +1536,35 @@ def fast_webhook_worker(worker_id):
             token = webhook_data.get('token')
             body = webhook_data.get('body')
             received_at = webhook_data.get('received_at')
+            signal_id = webhook_data.get('signal_id', f"sig_unknown_{uuid.uuid4().hex[:8]}")
             delay = time.time() - received_at
 
+            # STEP 4: Worker picked up from queue
+            track_signal_step(signal_id, 'STEP4_WORKER_PICKED', {
+                'worker_id': worker_id,
+                'delay_seconds': round(delay, 3),
+                'queue_remaining': _fast_webhook_queue.qsize()
+            })
+
             # Log that we're processing
-            logger.info(f"⚡ Worker #{worker_id} processing webhook: token={token[:8]}... (delay: {delay:.3f}s)")
+            logger.info(f"⚡ Worker #{worker_id} processing webhook: token={token[:8]}... signal={signal_id} (delay: {delay:.3f}s)")
 
             # Process the webhook with Flask app context (needed for jsonify, db, etc.)
             try:
                 with app.app_context():
-                    result = process_webhook_with_data(token, body)
+                    result = process_webhook_with_data(token, body, signal_id)
                     if result.get('success'):
-                        logger.info(f"✅ Worker #{worker_id} completed webhook: token={token[:8]}...")
+                        logger.info(f"✅ Worker #{worker_id} completed webhook: token={token[:8]}... signal={signal_id}")
+                        complete_signal(signal_id, 'complete')
                     else:
-                        logger.warning(f"⚠️ Worker #{worker_id} webhook returned: {result.get('error', 'unknown error')}")
+                        error_msg = result.get('error', 'unknown error')
+                        logger.warning(f"⚠️ Worker #{worker_id} webhook returned: {error_msg}")
+                        complete_signal(signal_id, 'failed', error_msg)
             except Exception as proc_err:
                 logger.error(f"❌ Worker #{worker_id} error processing webhook: {proc_err}")
                 import traceback
                 logger.error(traceback.format_exc())
+                complete_signal(signal_id, 'failed', str(proc_err))
 
             _fast_webhook_queue.task_done()
 
@@ -1601,6 +1613,74 @@ _webhook_stuck_threshold = 300  # 5 minutes - if webhook received but not proces
 # ============================================================================
 _webhook_activity_log = []  # List of recent webhook activities
 _webhook_activity_max_size = 300  # Keep last 300 webhook activities (increased from 100)
+
+# ============================================================================
+# SIGNAL PIPELINE TRACKER - Track EVERY step for debugging dropped signals
+# ============================================================================
+# This tracks each signal through the entire pipeline so we can see exactly
+# where signals get lost: TradingView → Endpoint → Queue → Worker → Broker
+import uuid
+import threading
+
+_signal_pipeline = {}  # Key: signal_id -> {steps: [...], status: 'pending'|'complete'|'failed'}
+_signal_pipeline_lock = threading.Lock()
+_signal_pipeline_max_size = 500
+
+def track_signal_step(signal_id: str, step: str, details: dict = None):
+    """Track a signal's progress through the pipeline."""
+    from datetime import datetime
+    with _signal_pipeline_lock:
+        if signal_id not in _signal_pipeline:
+            _signal_pipeline[signal_id] = {
+                'created': datetime.now().isoformat(),
+                'steps': [],
+                'status': 'pending',
+                'last_update': datetime.now().isoformat()
+            }
+        _signal_pipeline[signal_id]['steps'].append({
+            'step': step,
+            'timestamp': datetime.now().isoformat(),
+            'details': details or {}
+        })
+        _signal_pipeline[signal_id]['last_update'] = datetime.now().isoformat()
+
+        # Cleanup old entries
+        if len(_signal_pipeline) > _signal_pipeline_max_size:
+            # Remove oldest entries
+            sorted_ids = sorted(_signal_pipeline.keys(),
+                key=lambda x: _signal_pipeline[x]['created'])
+            for old_id in sorted_ids[:100]:
+                del _signal_pipeline[old_id]
+
+def complete_signal(signal_id: str, status: str = 'complete', error: str = None):
+    """Mark a signal as complete or failed."""
+    with _signal_pipeline_lock:
+        if signal_id in _signal_pipeline:
+            _signal_pipeline[signal_id]['status'] = status
+            if error:
+                _signal_pipeline[signal_id]['error'] = error
+
+def get_signal_pipeline(limit: int = 50):
+    """Get recent signals and their pipeline status."""
+    with _signal_pipeline_lock:
+        # Sort by creation time, newest first
+        sorted_signals = sorted(
+            _signal_pipeline.items(),
+            key=lambda x: x[1]['created'],
+            reverse=True
+        )[:limit]
+        return {sid: data for sid, data in sorted_signals}
+
+def get_pending_signals():
+    """Get signals that are stuck (pending for more than 30 seconds)."""
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now() - timedelta(seconds=30)).isoformat()
+    with _signal_pipeline_lock:
+        pending = {}
+        for sid, data in _signal_pipeline.items():
+            if data['status'] == 'pending' and data['last_update'] < cutoff:
+                pending[sid] = data
+        return pending
 
 # RAW WEBHOOK LOG - Track ALL incoming webhooks before any processing
 _raw_webhook_log = []  # List of ALL raw webhook data
@@ -12641,8 +12721,7 @@ def broker_execution_worker(worker_id=0):
         try:
             # Get next broker execution task (blocking, but that's OK - we're in background)
             task = broker_execution_queue.get(timeout=1)
-            logger.info(f"🔔 Worker #{worker_id} received task: {task.get('action')} {task.get('quantity')} {task.get('ticker')} (recorder_id={task.get('recorder_id')})")
-            
+
             recorder_id = task.get('recorder_id')
             action = task.get('action')
             ticker = task.get('ticker')
@@ -12657,6 +12736,17 @@ def broker_execution_worker(worker_id=0):
             sl_type = task.get('sl_type', 'Fixed')  # NEW: Get sl_type
             queued_at = task.get('queued_at', 0)  # When signal was queued
             signal_price = task.get('signal_price', 0)  # Original signal price
+            signal_id = task.get('signal_id', f'sig_broker_{uuid.uuid4().hex[:8]}')  # Pipeline tracking
+
+            # STEP 7: Broker worker picked up task
+            track_signal_step(signal_id, 'STEP7_BROKER_WORKER_PICKED', {
+                'worker_id': worker_id,
+                'action': action,
+                'ticker': ticker,
+                'queue_remaining': broker_execution_queue.qsize()
+            })
+
+            logger.info(f"🔔 Worker #{worker_id} received task: {action} {quantity} {ticker} signal={signal_id} (recorder_id={recorder_id})")
 
             # STALENESS CHECK - Reject signals that are too old (price has moved)
             # This prevents executing stale signals after a processing delay
@@ -12666,6 +12756,8 @@ def broker_execution_worker(worker_id=0):
                 if signal_age > SIGNAL_MAX_AGE_SECONDS:
                     logger.warning(f"⏰ STALE SIGNAL REJECTED: {action} {ticker} was {signal_age:.1f}s old (max {SIGNAL_MAX_AGE_SECONDS}s)")
                     logger.warning(f"   Original price: {signal_price}, Signal queued at: {queued_at}")
+                    track_signal_step(signal_id, 'STEP7_STALE_REJECTED', {'age_seconds': signal_age})
+                    complete_signal(signal_id, 'failed', f'Stale signal ({signal_age:.1f}s old)')
                     _broker_execution_stats['total_failed'] += 1
                     _broker_execution_stats['last_error'] = f'Stale signal rejected ({signal_age:.1f}s old)'
                     broker_execution_queue.task_done()
@@ -12678,12 +12770,21 @@ def broker_execution_worker(worker_id=0):
 
             try:
                 from recorder_service import execute_trade_simple
-                
-                logger.info(f"📤 Broker execution: {action} {quantity} {ticker}")
+
+                # STEP 8: Calling Tradovate API
+                track_signal_step(signal_id, 'STEP8_CALLING_BROKER', {
+                    'action': action,
+                    'quantity': quantity,
+                    'ticker': ticker,
+                    'tp_ticks': tp_ticks,
+                    'sl_ticks': sl_ticks
+                })
+
+                logger.info(f"📤 Broker execution: {action} {quantity} {ticker} signal={signal_id}")
                 logger.info(f"🔧 Calling execute_trade_simple: recorder_id={recorder_id}, action={action}, ticker={ticker}, quantity={quantity}")
                 if risk_config:
                     logger.info(f"📊 Risk config: {risk_config}")
-                
+
                 result = execute_trade_simple(
                     recorder_id=recorder_id,
                     action=action,
@@ -12693,12 +12794,19 @@ def broker_execution_worker(worker_id=0):
                     sl_ticks=sl_ticks if sl_ticks > 0 else 0,
                     risk_config=risk_config  # NEW: Pass risk_config for trailing stop/break-even
                 )
-                
+
                 logger.info(f"🔧 execute_trade_simple returned: success={result.get('success')}, error={result.get('error')}, accounts_traded={result.get('accounts_traded', 0)}")
-                
+
                 if result.get('success'):
                     accounts_traded = result.get('accounts_traded', 0)
-                    logger.info(f"✅ Broker execution successful: {action} {quantity} {ticker} on {accounts_traded} account(s)")
+                    # STEP 9: Trade executed successfully
+                    track_signal_step(signal_id, 'STEP9_TRADE_SUCCESS', {
+                        'accounts_traded': accounts_traded,
+                        'fill_price': result.get('fill_price'),
+                        'tp_price': result.get('tp_price')
+                    })
+                    complete_signal(signal_id, 'complete')
+                    logger.info(f"✅ Broker execution successful: {action} {quantity} {ticker} on {accounts_traded} account(s) signal={signal_id}")
                     _broker_execution_stats['total_executed'] += 1
                     _broker_execution_stats['last_execution_time'] = time.time()
                     
@@ -12829,6 +12937,9 @@ def broker_execution_worker(worker_id=0):
                             logger.error(f"   ⚠️ Could not run diagnostics: {diag_err}")
                     
                     logger.error(f"   ⚠️ NO RETRY - task abandoned to prevent duplicate trades")
+                    # STEP 9: Trade failed
+                    track_signal_step(signal_id, 'STEP9_TRADE_FAILED', {'error': error[:200]})
+                    complete_signal(signal_id, 'failed', error)
                     _broker_execution_stats['total_failed'] += 1
                     _broker_execution_stats['last_error'] = error
 
@@ -13116,15 +13227,26 @@ def receive_webhook(webhook_token):
                 raw_body = request.get_data(as_text=True) or ''
                 received_at = time.time()
 
+                # Generate unique signal ID for pipeline tracking
+                signal_id = f"sig_{uuid.uuid4().hex[:12]}"
+                track_signal_step(signal_id, 'STEP1_RECEIVED', {
+                    'token': webhook_token[:8],
+                    'body_length': len(raw_body),
+                    'source': 'endpoint'
+                })
+
                 # Log raw webhook immediately for tracking
                 log_raw_webhook(webhook_token, raw_body)
+                track_signal_step(signal_id, 'STEP2_LOGGED_RAW', {'logged': True})
 
                 # Queue for background processing by 10 parallel workers
                 _fast_webhook_queue.put_nowait({
                     'token': webhook_token,
                     'body': raw_body,
-                    'received_at': received_at
+                    'received_at': received_at,
+                    'signal_id': signal_id  # Track through queue
                 })
+                track_signal_step(signal_id, 'STEP3_QUEUED', {'queue_size': _fast_webhook_queue.qsize()})
 
                 # Return IMMEDIATELY (<50ms) - TradingView won't timeout
                 queue_size = _fast_webhook_queue.qsize()
@@ -13150,14 +13272,14 @@ def receive_webhook(webhook_token):
     return jsonify({'error': 'Method not allowed'}), 405
 
 
-def process_webhook_with_data(webhook_token, raw_body_str):
+def process_webhook_with_data(webhook_token, raw_body_str, signal_id=None):
     """
     Process webhook with raw body data directly (no Flask request needed).
     Called by fast webhook workers. Returns a dict with success/error.
     """
     # Call the main processor with the body override
     try:
-        result = process_webhook_directly(webhook_token, raw_body_override=raw_body_str)
+        result = process_webhook_directly(webhook_token, raw_body_override=raw_body_str, signal_id=signal_id)
         # result is a Flask Response tuple or Response object
         if hasattr(result, 'get_json'):
             return result.get_json()
@@ -13171,7 +13293,7 @@ def process_webhook_with_data(webhook_token, raw_body_str):
         return {'success': False, 'error': str(e)}
 
 
-def process_webhook_directly(webhook_token, raw_body_override=None):
+def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=None):
     """
     Process webhook directly using recorder_service DCA logic.
     This is the REAL webhook handler with proper DCA, TP calculation, etc.
@@ -13210,6 +13332,13 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
     webhook_start_time = time.time()
     _webhook_last_received = webhook_start_time
 
+    # Generate signal_id if not provided (for direct calls without fast queue)
+    if not signal_id:
+        signal_id = f"sig_direct_{uuid.uuid4().hex[:8]}"
+
+    # STEP 5: Processing started
+    track_signal_step(signal_id, 'STEP5_PROCESSING_START', {'token': webhook_token[:8]})
+
     # EARLY LOGGING - Capture ALL incoming webhooks for debugging
     import hashlib
     # Use override if provided (from fast webhook worker), otherwise use Flask request
@@ -13217,7 +13346,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
         raw_body = raw_body_override
     else:
         raw_body = request.get_data(as_text=True) or ''
-    _logger.info(f"🔔 RAW WEBHOOK RECEIVED: token={webhook_token[:8]}... body={raw_body[:200]}")
+    _logger.info(f"🔔 RAW WEBHOOK RECEIVED: token={webhook_token[:8]}... signal={signal_id} body={raw_body[:200]}")
 
     # Log to raw webhook log for API access
     log_raw_webhook(webhook_token, raw_body)
@@ -13256,7 +13385,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
         _webhook_dedup_cache = {k: v for k, v in _webhook_dedup_cache.items() if v > cutoff}
 
     # Log that we're starting to process (helps track where signals get lost)
-    _logger.info(f"🚀 PROCESSING WEBHOOK: token={webhook_token[:8]}... (passed dedup check)")
+    track_signal_step(signal_id, 'STEP5_DEDUP_PASSED', {'dedup_key': dedup_key})
+    _logger.info(f"🚀 PROCESSING WEBHOOK: token={webhook_token[:8]}... signal={signal_id} (passed dedup check)")
 
     try:
         # Import helper functions (broker execution is queued, not called here)
@@ -13301,6 +13431,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
         recorder = dict(recorder_row)
         recorder_id = recorder['id']
         recorder_name = recorder['name']
+        track_signal_step(signal_id, 'STEP5_RECORDER_FOUND', {'recorder_id': recorder_id, 'name': recorder_name})
         _logger.info(f"✅ Found recorder '{recorder_name}' (ID: {recorder_id}) for {webhook_token[:8]}")
 
         # Check if recorder is enabled - if disabled, reject the signal
@@ -14850,13 +14981,21 @@ def process_webhook_directly(webhook_token, raw_body_override=None):
                 'sl_type': sl_type,  # NEW: Pass sl_type for trailing stop detection
                 'retry_count': 0,
                 'queued_at': time.time(),  # For staleness check - reject if too old
-                'signal_price': current_price  # Original signal price for staleness comparison
+                'signal_price': current_price,  # Original signal price for staleness comparison
+                'signal_id': signal_id  # Pipeline tracking
             }
 
             broker_was_queued = False  # Track if we successfully queued
             try:
+                # STEP 6: Queue to broker execution
+                track_signal_step(signal_id, 'STEP6_BROKER_QUEUING', {
+                    'action': trade_action,
+                    'quantity': quantity,
+                    'ticker': ticker
+                })
                 broker_execution_queue.put_nowait(broker_task)
                 broker_was_queued = True  # Successfully queued!
+                track_signal_step(signal_id, 'STEP6_BROKER_QUEUED', {'queue_size': broker_execution_queue.qsize()})
                 workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
                 _logger.info(f"   ✅ Queue size: {broker_execution_queue.qsize()}/{broker_execution_queue.maxsize}")
@@ -27353,6 +27492,60 @@ def api_trader_debug(trader_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/signal-pipeline', methods=['GET'])
+def api_signal_pipeline():
+    """View signal pipeline - see exactly where each signal is in the process.
+
+    This tracks signals through all 9 steps:
+    1. RECEIVED - Webhook endpoint received signal
+    2. LOGGED_RAW - Logged to raw webhooks
+    3. QUEUED - Queued for fast processing
+    4. WORKER_PICKED - Fast worker picked from queue
+    5. PROCESSING - Started processing (dedup, validation, filters)
+    6. BROKER_QUEUED - Queued for broker execution
+    7. BROKER_WORKER_PICKED - Broker worker picked task
+    8. CALLING_BROKER - Calling Tradovate/broker API
+    9. TRADE_SUCCESS/TRADE_FAILED - Final result
+    """
+    try:
+        limit = int(request.args.get('limit', 50))
+        show_pending = request.args.get('pending', 'false').lower() == 'true'
+
+        if show_pending:
+            # Show only signals stuck in pending state
+            signals = get_pending_signals()
+            return jsonify({
+                'success': True,
+                'mode': 'pending_only',
+                'pending_count': len(signals),
+                'signals': signals,
+                'note': 'These signals have been pending for >30 seconds and may be stuck'
+            })
+        else:
+            # Show recent signals with full pipeline
+            signals = get_signal_pipeline(limit)
+
+            # Calculate stats
+            completed = sum(1 for s in signals.values() if s['status'] == 'complete')
+            failed = sum(1 for s in signals.values() if s['status'] == 'failed')
+            pending = sum(1 for s in signals.values() if s['status'] == 'pending')
+
+            return jsonify({
+                'success': True,
+                'total': len(signals),
+                'stats': {
+                    'completed': completed,
+                    'failed': failed,
+                    'pending': pending,
+                    'success_rate': f"{(completed/(completed+failed)*100):.1f}%" if (completed+failed) > 0 else "N/A"
+                },
+                'signals': signals
+            })
+    except Exception as e:
+        logger.error(f"Error in signal pipeline: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/broker-execution/status', methods=['GET'])
 def api_broker_execution_status():
