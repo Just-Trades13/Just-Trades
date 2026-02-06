@@ -14124,6 +14124,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         # ============================================================
         # 📊 RECORD THE SIGNAL (after filters pass)
         # ============================================================
+        track_signal_step(signal_id, 'STEP5A_RECORDING_SIGNAL', {'recorder_id': recorder_id})
         try:
             # For PostgreSQL: created_at has DEFAULT, store quantity in raw_signal as JSON
             if is_postgres:
@@ -14218,6 +14219,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         trader_sl_type = None
         # PostgreSQL uses TRUE (boolean), SQLite uses 1 (integer)
         # CRITICAL: Include all trader risk settings (initial_position_size, add_position_size, tp_targets, sl_*, etc.)
+        track_signal_step(signal_id, 'STEP5B_LOOKING_FOR_TRADER', {'recorder_id': recorder_id, 'recorder_name': recorder_name})
         _logger.info(f"🔍 Looking for trader linked to recorder_id={recorder_id} (recorder_name='{recorder_name}')")
         
         if is_postgres:
@@ -14253,7 +14255,9 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             trader_count = cursor.fetchone()[0] if cursor.rowcount > 0 else 0
             cursor.execute(f'SELECT COUNT(*) as count FROM traders WHERE recorder_id = {placeholder} AND enabled = {1 if not is_postgres else "TRUE"}', (recorder_id,))
             enabled_count = cursor.fetchone()[0] if cursor.rowcount > 0 else 0
-            
+
+            track_signal_step(signal_id, 'STEP5C_NO_TRADER_FOUND', {'total': trader_count, 'enabled': enabled_count})
+            complete_signal(signal_id, 'failed', f'No trader linked (total: {trader_count}, enabled: {enabled_count})')
             _logger.error(f"❌ No active trader linked to recorder '{recorder_name}' (recorder_id={recorder_id})")
             _logger.error(f"   Total traders for this recorder: {trader_count}")
             _logger.error(f"   Enabled traders for this recorder: {enabled_count}")
@@ -14276,6 +14280,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 'enabled_traders': enabled_count
             }), 400
         
+        track_signal_step(signal_id, 'STEP5D_TRADER_FOUND', {'trader_id': trader.get('id'), 'account_id': trader.get('account_id')})
         _logger.info(f"✅ Found trader: id={trader.get('id')}, account_id={trader.get('account_id')}, enabled_accounts={bool(trader.get('enabled_accounts'))}")
         
         # CRITICAL: Use TRADER's risk settings (override recorder defaults)
