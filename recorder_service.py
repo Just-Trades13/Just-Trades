@@ -1161,6 +1161,10 @@ def execute_trade_simple(
                                 'break_even_enabled': trader_dict.get('break_even_enabled'),
                                 'break_even_ticks': trader_dict.get('break_even_ticks'),
                                 'break_even_offset': trader_dict.get('break_even_offset'),
+                                # Position sizes (trader overrides)
+                                'initial_position_size': trader_dict.get('initial_position_size'),
+                                'add_position_size': trader_dict.get('add_position_size'),
+                                'recorder_id': trader_dict.get('recorder_id'),
                                 # DCA and filter settings
                                 'dca_enabled': trader_dict.get('dca_enabled'),
                                 'custom_ticker': trader_dict.get('custom_ticker'),
