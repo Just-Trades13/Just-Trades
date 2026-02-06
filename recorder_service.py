@@ -1880,20 +1880,30 @@ def execute_trade_simple(
                             logger.warning(f"   Falling back to manual TP/SL placement")
                             use_apply_risk_orders = False  # Fall back to manual
                     
-                    # STEP 3: Calculate and place TP (only if tp_ticks > 0)
+                    # STEP 3: Calculate and place TP (only if tp_ticks > 0 AND we have a valid fill price)
                     tp_price = None
                     tp_action = None
                     tp_order_id = None
 
                     if tp_ticks and tp_ticks > 0:
-                        if broker_side == 'LONG':
-                            tp_price = broker_avg + (tp_ticks * tick_size)
-                            tp_action = 'Sell'
+                        # CRITICAL: Only calculate TP if we have a valid fill price
+                        if not broker_avg or broker_avg <= 0:
+                            logger.error(f"❌ [{acct_name}] CANNOT PLACE TP: No valid fill price (broker_avg={broker_avg})")
+                            logger.error(f"   Position is UNPROTECTED - manually set TP in broker!")
                         else:
-                            tp_price = broker_avg - (tp_ticks * tick_size)
-                            tp_action = 'Buy'
+                            if broker_side == 'LONG':
+                                tp_price = broker_avg + (tp_ticks * tick_size)
+                                tp_action = 'Sell'
+                            else:
+                                tp_price = broker_avg - (tp_ticks * tick_size)
+                                tp_action = 'Buy'
 
-                        logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
+                            # Validate the calculated TP price is reasonable
+                            if tp_price <= 0:
+                                logger.error(f"❌ [{acct_name}] INVALID TP PRICE: {tp_price} - skipping TP placement")
+                                tp_price = None
+                            else:
+                                logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
                     else:
                         logger.info(f"🎯 [{acct_name}] TP DISABLED (tp_ticks=0) - letting strategy handle exit")
                     
