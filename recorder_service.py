@@ -1846,11 +1846,12 @@ def execute_trade_simple(
                     # For DCA: ALWAYS fetch broker position to get NEW weighted average price
                     if broker_avg and not is_dca_local:
                         logger.info(f"📊 [{acct_name}] Using fill price from order result: {broker_side} {broker_qty} @ {broker_avg} (0 extra API calls!)")
-                    elif is_dca_local:
-                        logger.info(f"📊 [{acct_name}] DCA: Fetching broker position for new weighted average price...")
-                        broker_avg = None  # Force position fetch to get new average
                     else:
-                        # Only fetch position if we don't have fill price
+                        # Fetch position from broker - needed for DCA (weighted avg) or when no fill price
+                        if is_dca_local:
+                            logger.info(f"📊 [{acct_name}] DCA: Fetching broker position for new weighted average price...")
+                            broker_avg = None  # Force position fetch to get new average
+
                         # RETRY LOGIC: Try up to 3 times with delays to get fill price
                         # This is critical for TP/SL placement - without a valid price, orders will fail
                         max_position_retries = 3
