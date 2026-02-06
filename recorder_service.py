@@ -5431,25 +5431,137 @@ def poll_tp_sl():
 # and AUTO-PLACES missing TP orders.
 # Disabling this = broken sync = missing TPs = unprotected trades
 # ============================================================
+_auto_flat_done_today = set()  # Track which traders were already flattened today
+
+def check_auto_flat_cutoff():
+    """Check if any traders with auto_flat_after_cutoff need positions closed.
+
+    Runs inside the reconciliation loop (every 60 seconds).
+    If current time is past the trader's time filter stop time,
+    close all open positions for that trader.
+    """
+    global _auto_flat_done_today
+    from datetime import datetime, time as dtime
+
+    now = datetime.now()
+    today_str = now.strftime('%Y-%m-%d')
+
+    # Reset tracking at midnight
+    _auto_flat_done_today = {k for k in _auto_flat_done_today if k.startswith(today_str)}
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        enabled_val = 'TRUE' if is_postgres else '1'
+
+        cursor.execute(f'''
+            SELECT t.id, t.recorder_id, t.time_filter_1_stop, t.time_filter_2_stop,
+                   t.account_id, t.subaccount_id, t.subaccount_name, t.enabled_accounts
+            FROM traders t
+            WHERE t.auto_flat_after_cutoff = {enabled_val}
+              AND t.enabled = {enabled_val}
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return
+
+        current_time = now.time()
+
+        for row in rows:
+            trader = dict(row)
+            trader_id = trader['id']
+            tracker_key = f"{today_str}_{trader_id}"
+
+            if tracker_key in _auto_flat_done_today:
+                continue  # Already flattened today
+
+            # Check if past any stop time
+            past_cutoff = False
+            for stop_field in ['time_filter_1_stop', 'time_filter_2_stop']:
+                stop_str = trader.get(stop_field, '')
+                if not stop_str:
+                    continue
+                try:
+                    # Parse time strings like "3:00 PM", "15:00", "8:45 AM"
+                    stop_str = stop_str.strip()
+                    for fmt in ['%I:%M %p', '%H:%M', '%I:%M%p', '%H:%M:%S']:
+                        try:
+                            parsed = datetime.strptime(stop_str, fmt).time()
+                            if current_time > parsed:
+                                past_cutoff = True
+                            break
+                        except ValueError:
+                            continue
+                except Exception:
+                    pass
+
+            if not past_cutoff:
+                continue
+
+            # Check for open positions
+            conn2 = get_db_connection()
+            cursor2 = conn2.cursor()
+            cursor2.execute(f'''
+                SELECT id, ticker, side, quantity FROM recorded_trades
+                WHERE recorder_id = {ph} AND status = 'open'
+            ''', (trader['recorder_id'],))
+            open_trades = cursor2.fetchall()
+            conn2.close()
+
+            if not open_trades:
+                _auto_flat_done_today.add(tracker_key)
+                continue
+
+            logger.warning(f"⏰ AUTO FLAT: Trader {trader_id} past cutoff time - closing {len(open_trades)} open position(s)")
+
+            # Close each open position
+            for trade_row in open_trades:
+                trade = dict(trade_row)
+                try:
+                    close_action = 'sell' if trade['side'] == 'LONG' else 'buy'
+                    close_qty = int(trade.get('quantity', 1))
+                    execute_trade_simple(
+                        recorder_id=trader['recorder_id'],
+                        action=close_action,
+                        ticker=trade['ticker'],
+                        quantity=close_qty,
+                        tp_ticks=0,
+                        sl_ticks=0
+                    )
+                    logger.info(f"⏰ AUTO FLAT: Closed {trade['side']} {trade['ticker']} x{close_qty} for trader {trader_id}")
+                except Exception as close_err:
+                    logger.error(f"❌ AUTO FLAT: Failed to close trade {trade['id']}: {close_err}")
+
+            _auto_flat_done_today.add(tracker_key)
+    except Exception as e:
+        logger.error(f"❌ Auto flat cutoff check error: {e}")
+
+
 def start_position_reconciliation():
     """Start the position reconciliation thread (runs every 60 seconds)
-    
+
     CRITICAL: This must ALWAYS run. It:
     1. Closes DB records when broker is flat
     2. Updates DB quantity to match broker
-    3. Updates DB avg price to match broker  
+    3. Updates DB avg price to match broker
     4. AUTO-PLACES missing TP orders
+    5. Checks auto_flat_after_cutoff traders
     """
     global _position_reconciliation_thread
-    
+
     if _position_reconciliation_thread and _position_reconciliation_thread.is_alive():
         return
-    
+
     def reconciliation_loop():
         logger.info("🔄 Starting position reconciliation thread (every 60 seconds)")
         while True:
             try:
                 reconcile_positions_with_broker()
+                check_auto_flat_cutoff()
                 time.sleep(60)  # Run every 60 seconds (reduced to avoid rate limiting)
             except Exception as e:
                 logger.error(f"Error in position reconciliation loop: {e}")
