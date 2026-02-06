@@ -1146,11 +1146,36 @@ def execute_trade_simple(
                                 'api_key': creds.get('api_key'),
                                 'broker': broker_type,  # 'Tradovate' or 'ProjectX'
                                 'account_id': acct_id,
-                                'multiplier': multiplier,  # Store multiplier for this account
+                                'multiplier': multiplier,
                                 # ProjectX-specific fields for TopstepX/Apex
                                 'projectx_username': creds.get('projectx_username'),
                                 'projectx_api_key': creds.get('projectx_api_key'),
                                 'projectx_prop_firm': creds.get('projectx_prop_firm'),
+                                # Risk settings (trailing stop, break-even, TP targets)
+                                'sl_type': trader_dict.get('sl_type'),
+                                'sl_amount': trader_dict.get('sl_amount'),
+                                'sl_enabled': trader_dict.get('sl_enabled'),
+                                'trail_trigger': trader_dict.get('trail_trigger'),
+                                'trail_freq': trader_dict.get('trail_freq'),
+                                'tp_targets': trader_dict.get('tp_targets'),
+                                'break_even_enabled': trader_dict.get('break_even_enabled'),
+                                'break_even_ticks': trader_dict.get('break_even_ticks'),
+                                'break_even_offset': trader_dict.get('break_even_offset'),
+                                # DCA and filter settings
+                                'dca_enabled': trader_dict.get('dca_enabled'),
+                                'custom_ticker': trader_dict.get('custom_ticker'),
+                                'add_delay': trader_dict.get('add_delay'),
+                                'signal_cooldown': trader_dict.get('signal_cooldown'),
+                                'max_signals_per_session': trader_dict.get('max_signals_per_session'),
+                                'max_daily_loss': trader_dict.get('max_daily_loss'),
+                                'signal_count': trader_dict.get('signal_count'),
+                                # Time filter settings
+                                'time_filter_1_enabled': trader_dict.get('time_filter_1_enabled'),
+                                'time_filter_1_start': trader_dict.get('time_filter_1_start'),
+                                'time_filter_1_stop': trader_dict.get('time_filter_1_stop'),
+                                'time_filter_2_enabled': trader_dict.get('time_filter_2_enabled'),
+                                'time_filter_2_start': trader_dict.get('time_filter_2_start'),
+                                'time_filter_2_stop': trader_dict.get('time_filter_2_stop'),
                             })
                             logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type}, Env: {env})")
                 except Exception as e:
@@ -1349,11 +1374,28 @@ def execute_trade_simple(
             broker_type = trader.get('broker', 'Tradovate')  # Default to Tradovate
             is_dca_local = False  # Track if this is a DCA add (set True when same direction as existing position)
 
+            # ============================================================
+            # CUSTOM TICKER OVERRIDE - Trade different instrument than signal
+            # If trader has custom_ticker set, use that instead of signal ticker
+            # Example: Signal is MNQ but trader wants to trade ES instead
+            # ============================================================
+            custom_ticker = (trader.get('custom_ticker') or '').strip()
+            if custom_ticker:
+                logger.info(f"🔄 [{acct_name}] CUSTOM TICKER: {ticker} → {custom_ticker}")
+                effective_ticker = custom_ticker
+            else:
+                effective_ticker = ticker
+
+            # Recalculate symbol info for effective_ticker (may differ from signal ticker)
+            local_symbol_root = effective_ticker[:3].upper() if effective_ticker else 'MNQ'
+            local_tick_size = TICK_SIZES.get(local_symbol_root, 0.25)
+            local_tradovate_symbol = convert_ticker_to_tradovate(effective_ticker)
+
             # NOTE: Don't check is_account_auth_valid upfront - let auth logic handle it
             # The account might work via cached token, API Access, or OAuth fallback
             # If ALL methods fail, auth logic will return the appropriate error
-            
-            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type})")
+
+            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type}, Symbol: {local_tradovate_symbol})")
             
             # ============================================================
             # BROKER ROUTING - ProjectX vs Tradovate (Added Jan 2026)
@@ -1594,7 +1636,7 @@ def execute_trade_simple(
                     for pos in existing_positions:
                         pos_symbol = str(pos.get('symbol', '')).upper()
                         net_pos = pos.get('netPos', 0)
-                        if symbol_root in pos_symbol and net_pos != 0:
+                        if local_symbol_root in pos_symbol and net_pos != 0:
                             has_existing_position = True
                             existing_position_side = 'LONG' if net_pos > 0 else 'SHORT'
                             existing_position_qty = abs(net_pos)
@@ -1681,7 +1723,7 @@ def execute_trade_simple(
                                 if offset_ticks and activation_ticks and activation_ticks != offset_ticks:
                                     # Trail-after-profit: Use autoTrail (starts trailing after profit threshold)
                                     # freq = how often to update (in price units, not ticks)
-                                    trail_freq = (frequency_ticks * tick_size) if frequency_ticks else (tick_size * 0.25)
+                                    trail_freq = (frequency_ticks * local_tick_size) if frequency_ticks else (local_tick_size * 0.25)
                                     auto_trail = {
                                         'stopLoss': offset_ticks,  # Trailing distance
                                         'trigger': activation_ticks,  # Profit threshold to start trailing
@@ -1702,7 +1744,7 @@ def execute_trade_simple(
                         bracket_result = await tradovate.place_bracket_order(
                             account_id=tradovate_account_id,
                             account_spec=tradovate_account_spec,
-                            symbol=tradovate_symbol,
+                            symbol=local_tradovate_symbol,
                             entry_side=order_action,
                             quantity=adjusted_quantity,
                             profit_target_ticks=tp_ticks,
@@ -1753,11 +1795,11 @@ def execute_trade_simple(
                     # FALLBACK: REST API for DCA or if bracket fails
                     # STEP 1: Place market order via REST
                     order_data = tradovate.create_market_order(
-                        tradovate_account_spec, tradovate_symbol, 
+                        tradovate_account_spec, local_tradovate_symbol,
                         order_action, adjusted_quantity, tradovate_account_id
                     )
-                    
-                    logger.info(f"📤 [{acct_name}] Placing {order_action} {adjusted_quantity} {tradovate_symbol}...")
+
+                    logger.info(f"📤 [{acct_name}] Placing {order_action} {adjusted_quantity} {local_tradovate_symbol}...")
                     order_result = await tradovate.place_order_smart(order_data)
                     
                     if not order_result or not order_result.get('success'):
@@ -1818,7 +1860,7 @@ def execute_trade_simple(
 
                             for pos in positions:
                                 pos_symbol = str(pos.get('symbol', '')).upper()
-                                if symbol_root in pos_symbol:
+                                if local_symbol_root in pos_symbol:
                                     net_pos = pos.get('netPos', 0)
                                     if net_pos != 0:
                                         broker_avg = pos.get('netPrice')
@@ -1863,7 +1905,7 @@ def execute_trade_simple(
                                 tradovate=tradovate,
                                 account_spec=tradovate_account_spec,
                                 account_id=tradovate_account_id,
-                                symbol=tradovate_symbol,
+                                symbol=local_tradovate_symbol,
                                 entry_side=order_action,
                                 quantity=adjusted_quantity,
                                 risk_config=risk_config
@@ -1906,10 +1948,10 @@ def execute_trade_simple(
                             logger.error(f"   Position is UNPROTECTED - manually set TP in broker!")
                         else:
                             if broker_side == 'LONG':
-                                tp_price = broker_avg + (tp_ticks * tick_size)
+                                tp_price = broker_avg + (tp_ticks * local_tick_size)
                                 tp_action = 'Sell'
                             else:
-                                tp_price = broker_avg - (tp_ticks * tick_size)
+                                tp_price = broker_avg - (tp_ticks * local_tick_size)
                                 tp_action = 'Buy'
 
                             # Validate the calculated TP price is reasonable
@@ -1917,7 +1959,7 @@ def execute_trade_simple(
                                 logger.error(f"❌ [{acct_name}] INVALID TP PRICE: {tp_price} - skipping TP placement")
                                 tp_price = None
                             else:
-                                logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
+                                logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{local_tick_size}) = {tp_price}")
                     else:
                         logger.info(f"🎯 [{acct_name}] TP DISABLED (tp_ticks=0) - letting strategy handle exit")
                     
@@ -1940,7 +1982,7 @@ def execute_trade_simple(
                                 SELECT tp_order_id FROM recorded_trades 
                                 WHERE recorder_id = ? AND ticker LIKE ? AND status = 'open' AND tp_order_id IS NOT NULL
                                 ORDER BY entry_time DESC LIMIT 1
-                            ''', (recorder_id, f'%{symbol_root}%'))
+                            ''', (recorder_id, f'%{local_symbol_root}%'))
                             tp_row = tp_lookup_cursor.fetchone()
                             if tp_row and tp_row['tp_order_id']:
                                 existing_tp_id = int(tp_row['tp_order_id'])
@@ -2008,7 +2050,7 @@ def execute_trade_simple(
                         tp_order_data = {
                             "accountId": tradovate_account_id,
                             "accountSpec": tradovate_account_spec,
-                            "symbol": tradovate_symbol,
+                            "symbol": local_tradovate_symbol,
                             "action": tp_action,
                             "orderQty": broker_qty,
                             "orderType": "Limit",
@@ -2061,28 +2103,28 @@ def execute_trade_simple(
                         if not broker_avg or broker_avg <= 0:
                             logger.error(f"❌ [{acct_name}] CANNOT PLACE SL: broker_avg is invalid ({broker_avg})")
                             logger.error(f"   This usually means the fill price wasn't available from order result")
-                            logger.error(f"   SL would have been calculated as: {broker_avg} - ({sl_ticks} * {tick_size}) = INVALID")
+                            logger.error(f"   SL would have been calculated as: {broker_avg} - ({sl_ticks} * {local_tick_size}) = INVALID")
                             logger.error(f"   ⚠️ POSITION HAS NO STOP LOSS PROTECTION!")
                         else:
                             # Calculate SL price (opposite direction from TP)
                             if broker_side == 'LONG':
-                                sl_price = broker_avg - (sl_ticks * tick_size)
+                                sl_price = broker_avg - (sl_ticks * local_tick_size)
                                 sl_action = 'Sell'  # SL sells to close LONG
                             else:
-                                sl_price = broker_avg + (sl_ticks * tick_size)
+                                sl_price = broker_avg + (sl_ticks * local_tick_size)
                                 sl_action = 'Buy'   # SL buys to close SHORT
 
                             # Additional validation: SL price must be positive
                             if sl_price <= 0:
                                 logger.error(f"❌ [{acct_name}] CANNOT PLACE SL: calculated sl_price is invalid ({sl_price})")
-                                logger.error(f"   broker_avg={broker_avg}, sl_ticks={sl_ticks}, tick_size={tick_size}")
+                                logger.error(f"   broker_avg={broker_avg}, sl_ticks={sl_ticks}, tick_size={local_tick_size}")
                                 logger.error(f"   ⚠️ POSITION HAS NO STOP LOSS PROTECTION!")
                             else:
                                 logger.info(f"📊 [{acct_name}] PLACING SL @ {sl_price} ({sl_ticks} ticks from entry {broker_avg})")
                                 sl_order_data = {
                                     "accountId": tradovate_account_id,
                                     "accountSpec": tradovate_account_spec,
-                                    "symbol": tradovate_symbol,
+                                    "symbol": local_tradovate_symbol,
                                     "action": sl_action,
                                     "orderQty": broker_qty,
                                     "orderType": "Stop",
@@ -2115,7 +2157,7 @@ def execute_trade_simple(
                                 tp_order_id=int(tp_order_id),
                                 sl_order_id=int(sl_order_id),
                                 account_id=tradovate_account_id,
-                                symbol=tradovate_symbol.upper()
+                                symbol=local_tradovate_symbol.upper()
                             )
                             logger.info(f"🔗 [{acct_name}] OCO pair registered: TP={tp_order_id} <-> SL={sl_order_id}")
                         except ImportError as import_err:
