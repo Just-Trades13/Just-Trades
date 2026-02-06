@@ -15177,15 +15177,15 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                     _logger.warning(f"⚠️ Could not close SHORT: {close_err}")
         
         # ============================================================
-        # SIGNAL-BASED TRACKING (Like Trade Manager)
-        # Record position FIRST based on signal, THEN try broker execution
-        # This ensures P&L tracking works even without broker connection
+        # SIGNAL-BASED TRACKING (Like Trade Manager) - BACKGROUND THREAD
+        # Record position based on signal for P&L tracking
+        # Runs in background so it NEVER blocks broker execution
         # ============================================================
-        
+
         trade_side = 'LONG' if trade_action.upper() in ['BUY', 'LONG'] else 'SHORT'
         tick_size = get_tick_size(ticker) if ticker else 0.25
         tick_value = get_tick_value(ticker) if ticker else 0.50
-        
+
         # Calculate TP/SL prices based on signal price
         tp_price = None
         sl_price = None
@@ -15199,215 +15199,140 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 sl_price = current_price - (sl_ticks * tick_size)
             else:
                 sl_price = current_price + (sl_ticks * tick_size)
-        
-        # STEP 1: Record trade based on SIGNAL (not broker) - Like Trade Manager!
-        try:
-            trade_conn = get_db_connection()
-            trade_cursor = trade_conn.cursor()
-            is_pg = is_using_postgres()
-            ph = '%s' if is_pg else '?'
-            
-            # Check for existing open position to handle reversals
-            trade_cursor.execute(f'''
-                SELECT id, side, entry_price, quantity FROM recorded_trades 
-                WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
-                ORDER BY id DESC LIMIT 1
-            ''', (recorder_id, ticker))
-            existing_trade = trade_cursor.fetchone()
-            
-            recorded_trade_id = None
-            pnl_result = None
-            
-            if existing_trade:
-                existing_id, existing_side, existing_entry, existing_qty = existing_trade
-                
-                if existing_side != trade_side:
-                    # REVERSAL: Close existing position and calculate P&L
-                    if existing_side == 'LONG':
-                        pnl_ticks = (current_price - existing_entry) / tick_size
-                    else:
-                        pnl_ticks = (existing_entry - current_price) / tick_size
-                    pnl_dollars = pnl_ticks * tick_value * existing_qty
-                    
-                    trade_cursor.execute(f'''
-                        UPDATE recorded_trades 
-                        SET status = 'closed', exit_price = {ph}, pnl = {ph}, pnl_ticks = {ph},
-                            exit_reason = 'signal', exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = {ph}
-                    ''', (current_price, pnl_dollars, pnl_ticks, existing_id))
-                    
-                    _logger.info(f"📊 {existing_side} CLOSED by {trade_side} signal | Entry: {existing_entry} | Exit: {current_price} | P&L: ${pnl_dollars:.2f} ({pnl_ticks:.1f} ticks)")
-                    pnl_result = {'pnl': pnl_dollars, 'pnl_ticks': pnl_ticks, 'closed_side': existing_side}
-                    
-                    # Now open new position in opposite direction
-                    # Set broker_managed_tp_sl=TRUE if trader exists (broker will handle TP/SL)
-                    broker_managed = True if trader else False
-                    trade_cursor.execute(f'''
-                        INSERT INTO recorded_trades
-                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, broker_managed))
-                    recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
-                    if is_pg:
-                        trade_cursor.execute('SELECT lastval()')
-                        recorded_trade_id = trade_cursor.fetchone()[0]
-                    
-                    _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
-                    
-                    # Send notification for flip (closed + new) to ALL users linked to recorder
-                    try:
-                        notify_trade_execution(
-                            action=trade_side,
-                            symbol=ticker,
-                            quantity=quantity,
-                            price=current_price,
-                            recorder_name=recorder_name,
-                            tp_price=tp_price,
-                            sl_price=sl_price,
-                            recorder_id=recorder_id
-                        )
-                    except Exception as notif_err:
-                        _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
 
-                    # Track paper trade for flip (closes old, opens new)
-                    try:
-                        track_paper_trade(recorder_id, ticker, trade_side, quantity, current_price)
-                    except Exception as paper_err:
-                        _logger.debug(f"Paper trade tracking error: {paper_err}")
-                else:
-                    # SAME SIDE: DCA - Add to existing position!
-                    _logger.info(f"📈 DCA: Adding {quantity} to existing {existing_side} position")
+        # BACKGROUND: Record trade based on SIGNAL (not broker) - Like Trade Manager!
+        import threading
+        def _bg_signal_tracking(rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, t_tick_size, t_tick_value, has_trader, rec_name):
+            try:
+                trade_conn = get_db_connection()
+                trade_cursor = trade_conn.cursor()
+                is_pg = is_using_postgres()
+                ph = '%s' if is_pg else '?'
 
-                    # Create a new trade entry for DCA
-                    # Set broker_managed_tp_sl=TRUE if trader exists (broker will handle TP/SL)
-                    broker_managed = True if trader else False
-                    trade_cursor.execute(f'''
-                        INSERT INTO recorded_trades
-                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, broker_managed))
-                    recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
-                    if is_pg:
-                        trade_cursor.execute('SELECT lastval()')
-                        recorded_trade_id = trade_cursor.fetchone()[0]
-                    
-                    _logger.info(f"📈 DCA {trade_side} +{quantity} @ {current_price} | Total trades open: counting...")
-                    
-                    # Send notification for DCA to ALL users linked to recorder
-                    try:
-                        notify_trade_execution(
-                            action=f"DCA {trade_side}",
-                            symbol=ticker,
-                            quantity=quantity,
-                            price=current_price,
-                            recorder_name=recorder_name,
-                            tp_price=tp_price,
-                            sl_price=sl_price,
-                            recorder_id=recorder_id
-                        )
-                    except Exception as notif_err:
-                        _logger.warning(f"⚠️ Could not send DCA notification: {notif_err}")
-
-                    # Track paper trade DCA
-                    try:
-                        track_paper_trade(recorder_id, ticker, trade_side, quantity, current_price)
-                    except Exception as paper_err:
-                        _logger.debug(f"Paper trade tracking error: {paper_err}")
-            else:
-                # NO EXISTING POSITION: Open new trade
-                # Set broker_managed_tp_sl=TRUE if trader exists (broker will handle TP/SL)
-                broker_managed = True if trader else False
+                # Check for existing open position to handle reversals
                 trade_cursor.execute(f'''
-                    INSERT INTO recorded_trades
-                    (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, broker_managed))
-                recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
-                if is_pg:
-                    trade_cursor.execute('SELECT lastval()')
-                    recorded_trade_id = trade_cursor.fetchone()[0]
-                
-                _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
-                
-                # Send notification for new trade to ALL users linked to recorder
-                try:
-                    notify_trade_execution(
-                        action=trade_side,
-                        symbol=ticker,
-                        quantity=quantity,
-                        price=current_price,
-                        recorder_name=recorder_name,
-                        tp_price=tp_price,
-                        sl_price=sl_price,
-                        recorder_id=recorder_id
-                    )
-                except Exception as notif_err:
-                    _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
+                    SELECT id, side, entry_price, quantity FROM recorded_trades
+                    WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
+                    ORDER BY id DESC LIMIT 1
+                ''', (rec_id, tkr))
+                existing_trade = trade_cursor.fetchone()
 
-                # Track paper trade for theoretical P&L
-                try:
-                    track_paper_trade(recorder_id, ticker, trade_side, quantity, current_price)
-                except Exception as paper_err:
-                    _logger.debug(f"Paper trade tracking error: {paper_err}")
+                recorded_trade_id = None
 
-            # Also update recorder_positions for aggregate tracking
-            trade_cursor.execute(f'''
-                SELECT id, side, total_quantity, avg_entry_price FROM recorder_positions
-                WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
-            ''', (recorder_id, ticker))
-            existing_pos = trade_cursor.fetchone()
-            
-            if existing_pos:
-                pos_id, pos_side, pos_qty, pos_avg = existing_pos
-                if pos_side != trade_side:
-                    # Close position (opposite side signal)
-                    if pos_side == 'LONG':
-                        pos_pnl_ticks = (current_price - pos_avg) / tick_size
+                if existing_trade:
+                    existing_id, existing_side, existing_entry, existing_qty = existing_trade
+
+                    if existing_side != t_side:
+                        # REVERSAL: Close existing position and calculate P&L
+                        if existing_side == 'LONG':
+                            pnl_ticks = (c_price - existing_entry) / t_tick_size
+                        else:
+                            pnl_ticks = (existing_entry - c_price) / t_tick_size
+                        pnl_dollars = pnl_ticks * t_tick_value * existing_qty
+
+                        trade_cursor.execute(f'''
+                            UPDATE recorded_trades
+                            SET status = 'closed', exit_price = {ph}, pnl = {ph}, pnl_ticks = {ph},
+                                exit_reason = 'signal', exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = {ph}
+                        ''', (c_price, pnl_dollars, pnl_ticks, existing_id))
+
+                        _logger.info(f"📊 {existing_side} CLOSED by {t_side} signal | Entry: {existing_entry} | Exit: {c_price} | P&L: ${pnl_dollars:.2f} ({pnl_ticks:.1f} ticks)")
+
+                        # Now open new position in opposite direction
+                        broker_managed = True if has_trader else False
+                        trade_cursor.execute(f'''
+                            INSERT INTO recorded_trades
+                            (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ''', (rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, broker_managed))
+                        _logger.info(f"📈 NEW {t_side} opened @ {c_price} x{qty} | TP: {t_tp_price} | SL: {t_sl_price}")
+
+                        try:
+                            notify_trade_execution(action=t_side, symbol=tkr, quantity=qty, price=c_price, recorder_name=rec_name, tp_price=t_tp_price, sl_price=t_sl_price, recorder_id=rec_id)
+                        except Exception:
+                            pass
                     else:
-                        pos_pnl_ticks = (pos_avg - current_price) / tick_size
-                    pos_pnl = pos_pnl_ticks * tick_value * pos_qty
-                    
+                        # SAME SIDE: DCA - Add to existing position!
+                        broker_managed = True if has_trader else False
+                        trade_cursor.execute(f'''
+                            INSERT INTO recorded_trades
+                            (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ''', (rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, broker_managed))
+                        _logger.info(f"📈 DCA {t_side} +{qty} @ {c_price}")
+
+                        try:
+                            notify_trade_execution(action=f"DCA {t_side}", symbol=tkr, quantity=qty, price=c_price, recorder_name=rec_name, tp_price=t_tp_price, sl_price=t_sl_price, recorder_id=rec_id)
+                        except Exception:
+                            pass
+                else:
+                    # NO EXISTING POSITION: Open new trade
+                    broker_managed = True if has_trader else False
                     trade_cursor.execute(f'''
-                        UPDATE recorder_positions
-                        SET status = 'closed', exit_price = {ph}, realized_pnl = {ph}, 
-                            exit_time = CURRENT_TIMESTAMP, closed_at = CURRENT_TIMESTAMP
-                        WHERE id = {ph}
-                    ''', (current_price, pos_pnl, pos_id))
-                    
-                    # Create new position
+                        INSERT INTO recorded_trades
+                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ''', (rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, broker_managed))
+                    _logger.info(f"📈 NEW {t_side} opened @ {c_price} x{qty} | TP: {t_tp_price} | SL: {t_sl_price}")
+
+                    try:
+                        notify_trade_execution(action=t_side, symbol=tkr, quantity=qty, price=c_price, recorder_name=rec_name, tp_price=t_tp_price, sl_price=t_sl_price, recorder_id=rec_id)
+                    except Exception:
+                        pass
+
+                # Also update recorder_positions for aggregate tracking
+                trade_cursor.execute(f'''
+                    SELECT id, side, total_quantity, avg_entry_price FROM recorder_positions
+                    WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
+                ''', (rec_id, tkr))
+                existing_pos = trade_cursor.fetchone()
+
+                if existing_pos:
+                    pos_id, pos_side, pos_qty, pos_avg = existing_pos
+                    if pos_side != t_side:
+                        if pos_side == 'LONG':
+                            pos_pnl_ticks = (c_price - pos_avg) / t_tick_size
+                        else:
+                            pos_pnl_ticks = (pos_avg - c_price) / t_tick_size
+                        pos_pnl = pos_pnl_ticks * t_tick_value * pos_qty
+                        trade_cursor.execute(f'''
+                            UPDATE recorder_positions
+                            SET status = 'closed', exit_price = {ph}, realized_pnl = {ph},
+                                exit_time = CURRENT_TIMESTAMP, closed_at = CURRENT_TIMESTAMP
+                            WHERE id = {ph}
+                        ''', (c_price, pos_pnl, pos_id))
+                        trade_cursor.execute(f'''
+                            INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+                        ''', (rec_id, tkr, t_side, qty, c_price))
+                    else:
+                        new_qty = pos_qty + qty
+                        new_avg = ((pos_avg * pos_qty) + (c_price * qty)) / new_qty
+                        trade_cursor.execute(f'''
+                            UPDATE recorder_positions
+                            SET total_quantity = {ph}, avg_entry_price = {ph}, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = {ph}
+                        ''', (new_qty, new_avg, pos_id))
+                else:
                     trade_cursor.execute(f'''
                         INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
                         VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'open')
-                    ''', (recorder_id, ticker, trade_side, quantity, current_price))
-                else:
-                    # SAME SIDE: DCA - Update position with new average
-                    new_qty = pos_qty + quantity
-                    new_avg = ((pos_avg * pos_qty) + (current_price * quantity)) / new_qty
-                    
-                    trade_cursor.execute(f'''
-                        UPDATE recorder_positions
-                        SET total_quantity = {ph}, avg_entry_price = {ph}, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = {ph}
-                    ''', (new_qty, new_avg, pos_id))
-                    
-                    _logger.info(f"📈 Position DCA: {pos_side} {ticker} +{quantity} @ {current_price} | Total: {new_qty} @ avg {new_avg:.2f}")
-            else:
-                # Create new position
-                trade_cursor.execute(f'''
-                    INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'open')
-                ''', (recorder_id, ticker, trade_side, quantity, current_price))
-            
-            trade_conn.commit()
-            trade_conn.close()
-            _logger.info(f"✅ SIGNAL TRACKED: {trade_side} {ticker} @ {current_price} (Trade Manager style)")
-            
-        except Exception as track_err:
-            _logger.error(f"❌ Signal tracking error: {track_err}")
-            import traceback
-            traceback.print_exc()
-        
-        # STEP 2: Build risk_config for apply_risk_orders (includes trailing stop and break-even)
+                    ''', (rec_id, tkr, t_side, qty, c_price))
+
+                trade_conn.commit()
+                trade_conn.close()
+                _logger.info(f"✅ SIGNAL TRACKED (bg): {t_side} {tkr} @ {c_price}")
+            except Exception as track_err:
+                _logger.error(f"❌ Signal tracking error (bg): {track_err}")
+
+        threading.Thread(
+            target=_bg_signal_tracking,
+            args=(recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, tick_size, tick_value, bool(trader), recorder_name),
+            daemon=True
+        ).start()
+
+        # Build risk_config for apply_risk_orders (includes trailing stop and break-even)
         risk_config = {}
         
         # Take profit
