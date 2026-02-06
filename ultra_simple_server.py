@@ -15326,6 +15326,10 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             except Exception as track_err:
                 _logger.error(f"❌ Signal tracking error (bg): {track_err}")
 
+        # These were previously set inside signal tracking (now background) - set defaults for response
+        recorded_trade_id = None
+        pnl_result = None
+
         threading.Thread(
             target=_bg_signal_tracking,
             args=(recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, tick_size, tick_value, bool(trader), recorder_name),
