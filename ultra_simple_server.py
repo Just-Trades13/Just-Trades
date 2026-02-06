@@ -12005,14 +12005,21 @@ def api_update_trader(trader_id):
             updates.append(f'enabled = {placeholder}')
             params.append(enabled)
         
-        # Update risk settings if provided
+        # Update risk settings if provided (None/0 = fall back to recorder defaults)
         if 'initial_position_size' in data:
+            val = data['initial_position_size']
+            val = int(val) if val else None
             updates.append(f'initial_position_size = {placeholder}')
-            params.append(int(data['initial_position_size']))
-        
+            params.append(val)
+            # Also update legacy position_size column to stay in sync
+            updates.append(f'position_size = {placeholder}')
+            params.append(val)
+
         if 'add_position_size' in data:
+            val = data['add_position_size']
+            val = int(val) if val else None
             updates.append(f'add_position_size = {placeholder}')
-            params.append(int(data['add_position_size']))
+            params.append(val)
         
         if 'tp_targets' in data:
             tp_targets = data['tp_targets']
@@ -14754,9 +14761,10 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         _logger.info(f"✅ Found trader: id={trader.get('id')}, account_id={trader.get('account_id')}, enabled_accounts={bool(trader.get('enabled_accounts'))}")
         
         # CRITICAL: Use TRADER's risk settings (override recorder defaults)
-        # Trader settings take precedence - these are what the user configured on /traders/{id}
-        trader_initial_size = trader.get('initial_position_size')
-        trader_add_size = trader.get('add_position_size')
+        # Trader settings take precedence ONLY if explicitly set (not None/0)
+        # None/0 = fall back to recorder defaults
+        trader_initial_size = trader.get('initial_position_size') or None
+        trader_add_size = trader.get('add_position_size') or None
         trader_tp_targets = trader.get('tp_targets')
         trader_sl_enabled = trader.get('sl_enabled')
         trader_sl_amount = trader.get('sl_amount')
