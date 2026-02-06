@@ -1981,24 +1981,30 @@ def execute_trade_simple(
                         # OPTIMIZATION: For NEW entries (no existing position), skip order lookup - just place TP
                         logger.info(f"📊 [{acct_name}] NEW ENTRY - placing TP directly (0 extra API calls)")
                     else:
-                        # OPTIMIZATION: Check DB first for stored tp_order_id (no API call!)
-                        try:
-                            tp_lookup_conn = get_db_connection()
-                            tp_lookup_cursor = tp_lookup_conn.cursor()
-                            tp_ph = '%s' if is_postgres else '?'
-                            tp_lookup_cursor.execute(f'''
-                                SELECT tp_order_id FROM recorded_trades
-                                WHERE recorder_id = {tp_ph} AND ticker LIKE {tp_ph} AND status = 'open' AND tp_order_id IS NOT NULL
-                                ORDER BY entry_time DESC LIMIT 1
-                            ''', (recorder_id, f'%{local_symbol_root}%'))
-                            tp_row = tp_lookup_cursor.fetchone()
-                            if tp_row and tp_row['tp_order_id']:
-                                existing_tp_id = int(tp_row['tp_order_id'])
-                                logger.info(f"🔍 [{acct_name}] Found stored TP order {existing_tp_id} in DB (0 API calls!)")
-                            tp_lookup_conn.close()
-                        except Exception as e:
-                            logger.debug(f"[{acct_name}] Could not check DB for TP: {e}")
-                        
+                        # MULTI-ACCOUNT FIX: Skip DB tp_order_id lookup — recorded_trades has no
+                        # subaccount_id column, so the stored tp_order_id could belong to ANY account
+                        # trading this recorder. Instead, always use broker query (per-account correct).
+                        if is_dca_local:
+                            logger.info(f"📊 [{acct_name}] DCA: Skipping DB TP lookup (multi-account unsafe) - will cancel via broker query")
+                        else:
+                            # Non-DCA: DB lookup is still useful as a hint for single-account recorders
+                            try:
+                                tp_lookup_conn = get_db_connection()
+                                tp_lookup_cursor = tp_lookup_conn.cursor()
+                                tp_ph = '%s' if is_postgres else '?'
+                                tp_lookup_cursor.execute(f'''
+                                    SELECT tp_order_id FROM recorded_trades
+                                    WHERE recorder_id = {tp_ph} AND ticker LIKE {tp_ph} AND status = 'open' AND tp_order_id IS NOT NULL
+                                    ORDER BY entry_time DESC LIMIT 1
+                                ''', (recorder_id, f'%{local_symbol_root}%'))
+                                tp_row = tp_lookup_cursor.fetchone()
+                                if tp_row and tp_row['tp_order_id']:
+                                    existing_tp_id = int(tp_row['tp_order_id'])
+                                    logger.info(f"🔍 [{acct_name}] Found stored TP order {existing_tp_id} in DB (hint only)")
+                                tp_lookup_conn.close()
+                            except Exception as e:
+                                logger.debug(f"[{acct_name}] Could not check DB for TP: {e}")
+
                         # DCA: ALWAYS cancel and replace (modify is unreliable per Tradovate forum)
                         # Non-DCA: Try modify first
                         if existing_tp_id:
@@ -2179,7 +2185,10 @@ def execute_trade_simple(
                     elif sl_order_id:
                         logger.info(f"📊 [{acct_name}] SL placed but no TP - skipping OCO registration")
 
-                    # CRITICAL: Store tp_order_id in recorded_trades so DCA can find and cancel it
+                    # Store tp_order_id in recorded_trades (best-effort, for single-account recorders)
+                    # NOTE: recorded_trades has no subaccount_id column, so this overwrites ALL open
+                    # trades for the recorder. For multi-account recorders, DCA uses the broker query
+                    # instead of this stored value. This is kept for backward compat only.
                     if tp_order_id:
                         try:
                             tp_store_conn = get_db_connection()
@@ -2192,7 +2201,7 @@ def execute_trade_simple(
                             ''', (str(tp_order_id), tp_price, recorder_id))
                             tp_store_conn.commit()
                             tp_store_conn.close()
-                            logger.info(f"💾 [{acct_name}] Stored tp_order_id={tp_order_id} in recorded_trades")
+                            logger.info(f"💾 [{acct_name}] Stored tp_order_id={tp_order_id} in recorded_trades (note: shared across accounts)")
                         except Exception as tp_store_err:
                             logger.warning(f"⚠️ [{acct_name}] Could not store tp_order_id: {tp_store_err}")
 
@@ -3858,6 +3867,8 @@ def execute_live_trade_with_bracket(
                             logger.warning(f"⚠️ Could not check broker for existing TP: {e}")
                         
                         # FALLBACK: Check DB for stored tp_order_id (if broker check missed it)
+                        # NOTE: DB tp_order_id may belong to a DIFFERENT account (no subaccount filter
+                        # in recorded_trades). We validate by fetching the order and checking accountId.
                         if not existing_tp_order:
                             try:
                                 tp_conn = get_db_connection()
@@ -3871,12 +3882,17 @@ def execute_live_trade_with_bracket(
                                 tp_row = tp_cursor.fetchone()
                                 if tp_row and tp_row['tp_order_id']:
                                     stored_tp_order_id = tp_row['tp_order_id']
-                                    logger.info(f"🔍 Found stored TP order ID in DB: {stored_tp_order_id} - fetching details...")
+                                    logger.info(f"🔍 Found stored TP order ID in DB: {stored_tp_order_id} - validating for this account...")
                                     try:
                                         existing_tp_order = await tradovate.get_order_item(int(stored_tp_order_id))
                                         if existing_tp_order:
                                             order_status = str(existing_tp_order.get('ordStatus', '')).upper()
-                                            if order_status in ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED']:
+                                            order_acct = existing_tp_order.get('accountId')
+                                            # MULTI-ACCOUNT CHECK: Verify this TP belongs to THIS account
+                                            if order_acct and order_acct != tradovate_account_id:
+                                                logger.warning(f"⚠️ Stored TP order {stored_tp_order_id} belongs to account {order_acct}, not {tradovate_account_id} - ignoring")
+                                                existing_tp_order = None
+                                            elif order_status in ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED']:
                                                 logger.info(f"📋 Stored TP order {stored_tp_order_id} is {order_status} - will place new one")
                                                 existing_tp_order = None  # Need to place new
                                             else:
@@ -4168,19 +4184,11 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
         placeholder = '%s' if is_postgres else '?'
         enabled_val = 'true' if is_postgres else '1'
         
-        # FIRST: Get existing tp_order_id from DB
-        cursor.execute(f'''
-            SELECT tp_order_id FROM recorded_trades
-            WHERE recorder_id = {placeholder} AND status = 'open' AND tp_order_id IS NOT NULL
-            ORDER BY entry_time DESC LIMIT 1
-        ''', (recorder_id,))
-        tp_row = cursor.fetchone()
-        existing_tp_order_id = tp_row['tp_order_id'] if tp_row and tp_row['tp_order_id'] else None
-        
-        if existing_tp_order_id:
-            logger.info(f"📋 [DCA-TP] Found existing tp_order_id: {existing_tp_order_id}")
-        else:
-            logger.info(f"📋 [DCA-TP] No existing tp_order_id - will place new")
+        # NOTE: DB tp_order_id lookup skipped — recorded_trades has no subaccount_id column,
+        # so stored tp_order_id may belong to a different account. The per-account broker query
+        # below is the reliable approach for multi-account recorders.
+        existing_tp_order_id = None
+        logger.info(f"📋 [DCA-TP] Skipping DB tp_order_id lookup (multi-account unsafe) - will query broker per-account")
         
         cursor.execute(f'''
             SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
@@ -5126,9 +5134,10 @@ def reconcile_positions_with_broker():
                                 # Signal-only trades (broker_managed_tp_sl = 0) should be closed by TP/SL polling, not broker sync
                                 conn_signal_check = get_db_connection()
                                 cursor_signal_check = conn_signal_check.cursor()
-                                cursor_signal_check.execute('''
-                                    SELECT broker_managed_tp_sl, tp_order_id FROM recorded_trades 
-                                    WHERE recorder_id = ? AND status = 'open' LIMIT 1
+                                sync_ph = '%s' if is_using_postgres() else '?'
+                                cursor_signal_check.execute(f'''
+                                    SELECT broker_managed_tp_sl, tp_order_id FROM recorded_trades
+                                    WHERE recorder_id = {sync_ph} AND status = 'open' LIMIT 1
                                 ''', (recorder_id,))
                                 signal_check = cursor_signal_check.fetchone()
                                 conn_signal_check.close()
