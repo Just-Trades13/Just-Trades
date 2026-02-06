@@ -1607,21 +1607,29 @@ def execute_trade_simple(
                         signal_side = 'LONG' if action == 'BUY' else 'SHORT'
 
                         if signal_side == existing_position_side:
-                            # SAME DIRECTION = ALWAYS ADD TO POSITION (Universal DCA)
-                            # This works for ALL strategies - no more avg_down_enabled gate
-                            logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty} (universal DCA)")
-                            is_dca_local = True  # CRITICAL: Flag to trigger TP cancel+replace after execution
+                            # SAME DIRECTION - Check if trader has DCA enabled
+                            trader_dca_enabled = bool(trader.get('dca_enabled', False))
+                            if trader_dca_enabled:
+                                # DCA MODE ON: Cancel+replace TP, get new avg from broker
+                                logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty} (dca_enabled=ON)")
+                                is_dca_local = True  # PROTECTED: Triggers cancel+replace TP logic
+                            else:
+                                # DCA MODE OFF: Add to position but use standard TP handling
+                                logger.info(f"📈 [{acct_name}] Same direction - Adding to {existing_position_side} {existing_position_qty} (dca_enabled=OFF, standard TP)")
                             # Continue to execute - will add to position
                         else:
-                            # OPPOSITE DIRECTION - Two modes based on avg_down_enabled:
-                            # 1. avg_down_enabled=True: Block opposite (system TP will exit, or manual)
-                            # 2. avg_down_enabled=False: Process as CLOSE (strategy sends exit signal)
-                            if avg_down_enabled:
+                            # OPPOSITE DIRECTION - Check if DCA mode blocks opposite signals
+                            # Block if EITHER trader.dca_enabled OR recorder.avg_down_enabled is True
+                            trader_dca_enabled = bool(trader.get('dca_enabled', False))
+                            should_block_opposite = trader_dca_enabled or avg_down_enabled
+
+                            if should_block_opposite:
                                 # Block opposite signals - system TP or manual exit expected
-                                logger.warning(f"⚠️ [{acct_name}] OPPOSITE BLOCKED - In {existing_position_side} {existing_position_qty}, avg_down_enabled=True expects system/manual exit")
+                                mode_name = "dca_enabled" if trader_dca_enabled else "avg_down_enabled"
+                                logger.warning(f"⚠️ [{acct_name}] OPPOSITE BLOCKED - In {existing_position_side} {existing_position_qty}, {mode_name}=True expects system/manual exit")
                                 return {
                                     'success': False,
-                                    'error': f'Opposite signal blocked - use TP/SL or manual exit (avg_down_enabled=True)',
+                                    'error': f'Opposite signal blocked - use TP/SL or manual exit ({mode_name}=True)',
                                     'acct_name': acct_name,
                                     'skipped': True
                                 }

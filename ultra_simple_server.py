@@ -4664,6 +4664,21 @@ def init_db():
     except:
         pass  # Column already exists
 
+    # dca_enabled - When ON, trader is in DCA mode (always treat same-direction as add to position)
+    # This is a PROTECTED setting - controls DCA logic directly without code detection
+    if is_postgres:
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN dca_enabled BOOLEAN DEFAULT FALSE")
+            logger.info("✅ Added dca_enabled column to traders table (PostgreSQL)")
+        except:
+            pass  # Column already exists
+    else:
+        try:
+            cursor.execute("ALTER TABLE traders ADD COLUMN dca_enabled INTEGER DEFAULT 0")
+            logger.info("✅ Added dca_enabled column to traders table (SQLite)")
+        except:
+            pass  # Column already exists
+
     # Add inverse_signals column to recorders table (Jan 2026)
     if is_postgres:
         try:
@@ -11999,7 +12014,13 @@ def api_update_trader(trader_id):
         if 'avg_down_units' in data:
             updates.append(f'avg_down_units = {placeholder}')
             params.append(data['avg_down_units'])
-        
+
+        # DCA Mode - PROTECTED SETTING - controls DCA logic directly
+        if 'dca_enabled' in data:
+            updates.append(f'dca_enabled = {placeholder}')
+            params.append(bool(data['dca_enabled']) if is_postgres else (1 if data['dca_enabled'] else 0))
+            logger.info(f"🔄 Setting dca_enabled={data['dca_enabled']} for trader {trader_id}")
+
         # TP/Trim units
         if 'tp_units' in data:
             updates.append(f'tp_units = {placeholder}')
