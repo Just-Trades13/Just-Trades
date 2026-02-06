@@ -1480,7 +1480,8 @@
             const slEnabled = document.getElementById('editSlEnabled').checked ? 1 : 0;
             const slAmount = parseFloat(document.getElementById('editSlAmount').value) || 0;
             const slUnits = document.getElementById('editSlUnits').value || 'Ticks';
-            const maxDailyLoss = parseFloat(document.getElementById('editMaxDailyLoss').value) || 500;
+            const maxDailyLossVal = document.getElementById('editMaxDailyLoss').value;
+            const maxDailyLoss = maxDailyLossVal !== '' ? parseFloat(maxDailyLossVal) : 0;
             const enabled = document.getElementById('editTraderEnabled').checked ? 1 : 0;
             
             const saveBtn = document.getElementById('saveTraderBtn');
@@ -1760,7 +1761,8 @@
             const slEnabled = document.getElementById('slEnabled').checked ? 1 : 0;
             const slAmount = parseFloat(document.getElementById('slAmount').value) || 0;
             const slUnits = document.getElementById('slUnits').value || 'Ticks';
-            const maxDailyLoss = parseFloat(document.getElementById('maxDailyLoss').value) || 500;
+            const maxDailyLossValCreate = document.getElementById('maxDailyLoss').value;
+            const maxDailyLoss = maxDailyLossValCreate !== '' ? parseFloat(maxDailyLossValCreate) : 0;
             
             const submitBtn = document.getElementById('submitStrategyBtn');
             submitBtn.disabled = true;

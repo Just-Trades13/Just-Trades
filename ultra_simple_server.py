@@ -12035,8 +12035,10 @@ def api_update_trader(trader_id):
             params.append(data['time_filter_2_stop'])
         
         if 'max_daily_loss' in data:
+            max_daily_loss_value = float(data['max_daily_loss'])
             updates.append(f'max_daily_loss = {placeholder}')
-            params.append(float(data['max_daily_loss']))
+            params.append(max_daily_loss_value)
+            logger.info(f"💰 Setting max_daily_loss={max_daily_loss_value} for trader {trader_id}")
 
         # Signal delay (Nth signal filter) - take every Nth signal
         if 'add_delay' in data:
@@ -12176,7 +12178,23 @@ def api_update_trader(trader_id):
         # Only update the traders table, NOT the recorders table.
         
         conn.commit()
-        
+
+        # ============================================================
+        # 🔍 VERIFY max_daily_loss was saved correctly
+        # ============================================================
+        if 'max_daily_loss' in data:
+            try:
+                verify_cursor = conn.cursor()
+                verify_cursor.execute(f'SELECT max_daily_loss FROM traders WHERE id = {placeholder}', (trader_id,))
+                verify_row = verify_cursor.fetchone()
+                if verify_row:
+                    saved_value = verify_row[0] if isinstance(verify_row, tuple) else verify_row.get('max_daily_loss')
+                    logger.info(f"✅ [VERIFY] max_daily_loss saved as {saved_value} for trader {trader_id}")
+                else:
+                    logger.error(f"❌ [VERIFY] Could not read trader {trader_id} after commit!")
+            except Exception as e:
+                logger.error(f"❌ [VERIFY] Error verifying max_daily_loss: {e}")
+
         # ============================================================
         # 🔍 FINAL VERIFICATION: Read from fresh connection to confirm persistence
         # ============================================================
