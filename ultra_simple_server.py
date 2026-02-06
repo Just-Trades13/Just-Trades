@@ -13842,13 +13842,16 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             conn.close()
             return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed'})
         else:
+            _logger.error(f"❌ UNKNOWN ACTION: '{action}' - not in buy/long/sell/short/close/flat/exit")
+            track_signal_step(signal_id, 'STEP5_UNKNOWN_ACTION', {'action': action})
             conn.close()
             return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
         
         # ============================================================
         # 🛡️ RISK MANAGEMENT FILTERS - Check ALL before executing
         # ============================================================
-        
+        track_signal_step(signal_id, 'STEP5_FILTERS_START', {'about_to_check': 'direction,time,cooldown,etc'})
+
         # Get current time in Chicago timezone (Central Time)
         now = get_chicago_time()
         
