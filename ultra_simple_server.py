@@ -5045,6 +5045,22 @@ def index():
 # DATABASE MIGRATION ENDPOINT
 # ============================================================================
 
+@app.route('/api/fix-trader-sizes/<int:recorder_id>', methods=['POST', 'GET'])
+def fix_trader_sizes(recorder_id):
+    """Reset all traders for a recorder to use NULL position sizes (fall back to recorder defaults)."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_pg = is_using_postgres()
+        ph = '%s' if is_pg else '?'
+        cursor.execute(f'UPDATE traders SET initial_position_size = NULL, add_position_size = NULL WHERE recorder_id = {ph}', (recorder_id,))
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'affected': affected, 'message': f'Reset {affected} traders to use recorder defaults'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/run-migrations', methods=['POST', 'GET'])
 def run_migrations():
     """Run pending database migrations to add missing columns.
