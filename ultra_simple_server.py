@@ -12647,6 +12647,390 @@ def api_test_trader_connection(trader_id):
 
 
 # ============================================================
+# OPERATIONAL TOOLS - Broker state, order management, webhook retry
+# (Restored from backup-feb5-before-revert branch)
+# ============================================================
+
+@app.route('/api/traders/<int:trader_id>/broker-state', methods=['GET'])
+def api_get_broker_state(trader_id):
+    """Get actual broker positions and orders for a trader - for debugging"""
+    import asyncio
+
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        cursor.execute(f'''
+            SELECT t.*, a.tradovate_token, a.environment, a.name as account_name
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.id = {placeholder}
+        ''', (trader_id,))
+        trader_row = cursor.fetchone()
+        conn.close()
+
+        if not trader_row:
+            return jsonify({'success': False, 'error': 'Trader not found'}), 404
+
+        trader = dict(trader_row)
+        token = trader.get('tradovate_token')
+        env = (trader.get('environment') or 'demo').lower()
+        is_demo = env != 'live'
+        subaccount_id = trader.get('subaccount_id')
+
+        if not token:
+            return jsonify({'success': False, 'error': 'No token'})
+
+        async def query_broker():
+            from phantom_scraper.tradovate_integration import TradovateIntegration
+
+            tradovate = TradovateIntegration(demo=is_demo)
+            await tradovate.__aenter__()
+            tradovate.access_token = token
+
+            positions = await tradovate.get_positions(account_id=subaccount_id)
+            open_positions = []
+            for p in (positions or []):
+                if p.get('netPos', 0) != 0:
+                    open_positions.append({
+                        'symbol': p.get('contractId'),
+                        'side': 'LONG' if p.get('netPos') > 0 else 'SHORT',
+                        'qty': abs(p.get('netPos')),
+                        'avg_price': p.get('netPrice')
+                    })
+
+            orders = await tradovate.get_orders_with_details(account_id=str(subaccount_id))
+            working_orders = []
+            tp_count = 0
+            sl_count = 0
+            for o in (orders or []):
+                status = str(o.get('ordStatus', '')).upper()
+                if status in ['WORKING', 'ACCEPTED', 'PENDINGNEW', 'NEW']:
+                    otype = str(o.get('orderType', '')).upper()
+                    order_info = {
+                        'id': o.get('id'),
+                        'action': o.get('action'),
+                        'type': otype,
+                        'price': o.get('price'),
+                        'qty': o.get('orderQty'),
+                        'symbol': o.get('symbol')
+                    }
+                    working_orders.append(order_info)
+                    if otype == 'LIMIT':
+                        tp_count += 1
+                    elif otype in ['STOP', 'STOPLIMIT']:
+                        sl_count += 1
+
+            await tradovate.__aexit__(None, None, None)
+
+            return {
+                'positions': open_positions,
+                'orders': working_orders,
+                'tp_count': tp_count,
+                'sl_count': sl_count
+            }
+
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(query_broker())
+            loop.close()
+        except RuntimeError:
+            result = asyncio.run(query_broker())
+
+        return jsonify({
+            'success': True,
+            'trader_id': trader_id,
+            'account': trader.get('account_name'),
+            'subaccount': trader.get('subaccount_name'),
+            **result
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting broker state: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/account/<int:account_id>/broker-state', methods=['GET'])
+def api_account_broker_state(account_id):
+    """Query broker for account positions and working orders - for debugging"""
+    import requests as sync_requests
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'''
+            SELECT id, name, tradovate_token, environment, broker
+            FROM accounts WHERE id = {placeholder}
+        ''', (account_id,))
+        account = cursor.fetchone()
+
+        if not account:
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+        account = dict(account)
+        token = account.get('tradovate_token')
+        env = (account.get('environment') or 'demo').lower()
+        name = account.get('name')
+
+        if not token:
+            return jsonify({'success': False, 'error': 'No token for account'}), 400
+
+        cursor.execute(f'''
+            SELECT DISTINCT subaccount_id, subaccount_name
+            FROM traders
+            WHERE account_id = {placeholder} AND subaccount_id IS NOT NULL
+        ''', (account_id,))
+        subaccounts = cursor.fetchall()
+        conn.close()
+
+        base_url = f"https://{env}.tradovateapi.com/v1"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        result = {
+            'success': True,
+            'account_id': account_id,
+            'account_name': name,
+            'environment': env,
+            'subaccounts': []
+        }
+
+        pos_resp = sync_requests.get(f"{base_url}/position/list", headers=headers, timeout=10)
+        if pos_resp.status_code != 200:
+            return jsonify({'success': False, 'error': f'Broker auth failed: {pos_resp.status_code}'}), 401
+
+        positions = pos_resp.json()
+        orders_resp = sync_requests.get(f"{base_url}/order/list", headers=headers, timeout=10)
+        orders = orders_resp.json() if orders_resp.status_code == 200 else []
+
+        for sub in subaccounts:
+            sub = dict(sub)
+            sub_id = sub.get('subaccount_id')
+            sub_name = sub.get('subaccount_name')
+
+            sub_result = {
+                'subaccount_id': sub_id,
+                'subaccount_name': sub_name,
+                'positions': [],
+                'working_orders': []
+            }
+
+            for p in positions:
+                if p.get('accountId') == sub_id and p.get('netPos', 0) != 0:
+                    sub_result['positions'].append({
+                        'side': 'LONG' if p.get('netPos') > 0 else 'SHORT',
+                        'quantity': abs(p.get('netPos')),
+                        'avg_price': p.get('netPrice'),
+                        'contract_id': p.get('contractId')
+                    })
+
+            for o in orders:
+                if o.get('accountId') == sub_id and str(o.get('ordStatus', '')).upper() in ['WORKING', 'ACCEPTED', 'PENDINGNEW', 'NEW']:
+                    try:
+                        ver_resp = sync_requests.get(
+                            f"{base_url}/orderVersion/deps",
+                            params={"masterid": o.get('id')},
+                            headers=headers,
+                            timeout=5
+                        )
+                        if ver_resp.status_code == 200:
+                            versions = ver_resp.json()
+                            if versions:
+                                v = versions[-1]
+                                order_type = v.get('orderType', 'Unknown')
+                                label = 'TP' if order_type == 'Limit' else ('SL' if order_type in ['Stop', 'StopLimit'] else order_type)
+                                sub_result['working_orders'].append({
+                                    'id': o.get('id'),
+                                    'type': label,
+                                    'action': v.get('action'),
+                                    'qty': v.get('orderQty'),
+                                    'price': v.get('price')
+                                })
+                    except Exception:
+                        pass
+
+            result['subaccounts'].append(sub_result)
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error querying broker state: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/account/<int:account_id>/cancel-invalid-orders', methods=['POST'])
+def api_cancel_invalid_orders(account_id):
+    """Cancel all working orders with invalid prices (negative or null)"""
+    import requests as sync_requests
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'''
+            SELECT id, name, tradovate_token, environment
+            FROM accounts WHERE id = {placeholder}
+        ''', (account_id,))
+        account = cursor.fetchone()
+
+        if not account:
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+        account = dict(account)
+        token = account.get('tradovate_token')
+        env = (account.get('environment') or 'demo').lower()
+
+        if not token:
+            return jsonify({'success': False, 'error': 'No token'}), 400
+
+        cursor.execute(f'''
+            SELECT DISTINCT subaccount_id FROM traders
+            WHERE account_id = {placeholder} AND subaccount_id IS NOT NULL
+        ''', (account_id,))
+        subaccounts = [dict(r)['subaccount_id'] for r in cursor.fetchall()]
+        conn.close()
+
+        base_url = f"https://{env}.tradovateapi.com/v1"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        cancelled = []
+
+        orders_resp = sync_requests.get(f"{base_url}/order/list", headers=headers, timeout=10)
+        if orders_resp.status_code != 200:
+            return jsonify({'success': False, 'error': 'Broker auth failed'}), 401
+
+        for o in orders_resp.json():
+            if o.get('accountId') not in subaccounts:
+                continue
+            if str(o.get('ordStatus', '')).upper() not in ['WORKING', 'ACCEPTED', 'PENDINGNEW', 'NEW']:
+                continue
+
+            oid = o.get('id')
+            try:
+                ver_resp = sync_requests.get(f"{base_url}/orderVersion/deps", params={"masterid": oid}, headers=headers, timeout=5)
+                if ver_resp.status_code == 200:
+                    versions = ver_resp.json()
+                    if versions:
+                        v = versions[-1]
+                        price = v.get('price')
+                        stop_price = v.get('stopPrice')
+                        order_type = v.get('orderType', '')
+
+                        is_invalid = False
+                        if price is not None and price <= 0:
+                            is_invalid = True
+                        if stop_price is not None and stop_price <= 0:
+                            is_invalid = True
+                        if order_type == 'Limit' and price is None:
+                            is_invalid = True
+                        if order_type in ['Stop', 'StopLimit'] and stop_price is None:
+                            is_invalid = True
+
+                        if is_invalid:
+                            sync_requests.post(f"{base_url}/order/cancelorder", headers=headers, json={"orderId": oid}, timeout=10)
+                            cancelled.append({'id': oid, 'price': price, 'stop_price': stop_price})
+            except Exception:
+                pass
+
+        return jsonify({'success': True, 'cancelled_count': len(cancelled), 'cancelled': cancelled})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/account/<int:account_id>/cancel-order/<int:order_id>', methods=['POST'])
+def api_cancel_specific_order(account_id, order_id):
+    """Cancel a specific order by ID"""
+    import requests as sync_requests
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'SELECT tradovate_token, environment FROM accounts WHERE id = {placeholder}', (account_id,))
+        account = cursor.fetchone()
+        conn.close()
+
+        if not account:
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+        account = dict(account)
+        token = account.get('tradovate_token')
+        env = (account.get('environment') or 'demo').lower()
+
+        base_url = f"https://{env}.tradovateapi.com/v1"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = sync_requests.post(f"{base_url}/order/cancelorder", headers=headers, json={"orderId": order_id}, timeout=10)
+
+        if resp.status_code == 200:
+            return jsonify({'success': True, 'cancelled_order_id': order_id})
+        else:
+            return jsonify({'success': False, 'error': resp.text}), 400
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/webhooks/retry-failed', methods=['POST'])
+def api_retry_failed_webhooks():
+    """Retry recently failed webhooks by resetting them to 'pending'.
+    Optional: ?minutes=N to retry webhooks from the last N minutes (default: 30)"""
+    try:
+        minutes = request.args.get('minutes', 30, type=int)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+
+        if is_postgres:
+            cursor.execute('''
+                UPDATE incoming_webhooks
+                SET status = 'pending',
+                    retry_count = retry_count + 1,
+                    error_message = 'Retry via API',
+                    updated_at = NOW()
+                WHERE status = 'failed'
+                AND created_at > NOW() - INTERVAL '%s minutes'
+            ''' % minutes)
+        else:
+            cursor.execute('''
+                UPDATE incoming_webhooks
+                SET status = 'pending',
+                    retry_count = retry_count + 1,
+                    error_message = 'Retry via API',
+                    updated_at = datetime('now')
+                WHERE status = 'failed'
+                AND created_at > datetime('now', '-%s minutes')
+            ''' % minutes)
+
+        retry_count = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        logger.info(f"RETRY FAILED: {retry_count} failed webhooks reset to 'pending' (last {minutes} min)")
+
+        return jsonify({
+            'success': True,
+            'message': f'Retrying {retry_count} failed webhooks from last {minutes} minutes',
+            'retry_count': retry_count
+        })
+
+    except Exception as e:
+        logger.error(f"Error retrying failed webhooks: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
 # HIGH-PERFORMANCE SIGNAL PROCESSOR (Background Thread)
 # ============================================================
 
