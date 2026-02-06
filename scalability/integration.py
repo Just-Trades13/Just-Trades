@@ -133,16 +133,23 @@ def init_scalability(
             results['components']['ws_state_manager'] = 'started' if manager.is_running() else 'failed'
             logger.info("✅ Broker WS Manager started")
             
-            # Auto-load existing Tradovate accounts from database
+            # Auto-load existing Tradovate accounts in BACKGROUND THREAD
+            # This takes 10s per account and would block Flask startup / health checks
             if manager and db_connection_func:
-                accounts_loaded = _auto_load_tradovate_accounts(manager, db_connection_func)
-                results['components']['ws_accounts_loaded'] = accounts_loaded
-                logger.info(f"✅ Auto-loaded {accounts_loaded} Tradovate accounts to WS Manager")
-                
-                # Start background token refresh task
-                _start_ws_token_refresh_task(manager, db_connection_func)
-                results['components']['ws_token_refresh'] = 'started'
-                logger.info("✅ WS Token refresh task started (every 5 minutes)")
+                import threading
+                def _bg_load_accounts():
+                    try:
+                        accounts_loaded = _auto_load_tradovate_accounts(manager, db_connection_func)
+                        logger.info(f"✅ Background: Auto-loaded {accounts_loaded} Tradovate accounts to WS Manager")
+                        _start_ws_token_refresh_task(manager, db_connection_func)
+                        logger.info("✅ Background: WS Token refresh task started (every 5 minutes)")
+                    except Exception as e:
+                        logger.error(f"❌ Background account loading failed: {e}")
+                bg_thread = threading.Thread(target=_bg_load_accounts, daemon=True, name="scalability-account-loader")
+                bg_thread.start()
+                results['components']['ws_accounts_loaded'] = 'loading in background'
+                results['components']['ws_token_refresh'] = 'pending (after accounts load)'
+                logger.info("🔄 Tradovate account loading started in background thread (non-blocking)")
         elif FEATURES.get('ws_state_manager_enabled'):
             results['components']['ws_state_manager'] = 'ready (not started)'
         
@@ -284,7 +291,7 @@ def _auto_load_tradovate_accounts(manager, db_connection_func) -> int:
                 # Stagger connections to avoid rate limits
                 if connections_made > 0:
                     import time
-                    delay = 10  # 10 second delay between account connections
+                    delay = 3  # 3 second delay between account connections (rate limit protection)
                     logger.info(f"⏳ Waiting {delay}s before connecting next account (rate limit protection)")
                     time.sleep(delay)
                 
