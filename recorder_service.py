@@ -2174,7 +2174,24 @@ def execute_trade_simple(
                         logger.info(f"📊 [{acct_name}] TP placed but no SL - skipping OCO registration")
                     elif sl_order_id:
                         logger.info(f"📊 [{acct_name}] SL placed but no TP - skipping OCO registration")
-                    
+
+                    # CRITICAL: Store tp_order_id in recorded_trades so DCA can find and cancel it
+                    if tp_order_id:
+                        try:
+                            tp_store_conn = get_db_connection()
+                            tp_store_cursor = tp_store_conn.cursor()
+                            tp_store_ph = '%s' if is_postgres else '?'
+                            tp_store_cursor.execute(f'''
+                                UPDATE recorded_trades
+                                SET tp_order_id = {tp_store_ph}, tp_price = {tp_store_ph}
+                                WHERE recorder_id = {tp_store_ph} AND status = 'open'
+                            ''', (str(tp_order_id), tp_price, recorder_id))
+                            tp_store_conn.commit()
+                            tp_store_conn.close()
+                            logger.info(f"💾 [{acct_name}] Stored tp_order_id={tp_order_id} in recorded_trades")
+                        except Exception as tp_store_err:
+                            logger.warning(f"⚠️ [{acct_name}] Could not store tp_order_id: {tp_store_err}")
+
                     return {
                         'success': True,
                         'broker_avg': broker_avg,
