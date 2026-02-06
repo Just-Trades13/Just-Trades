@@ -24647,7 +24647,7 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
             JOIN recorders r ON t.recorder_id = r.id
             WHERE t.status = 'open'
               AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
-              AND COALESCE(t.broker_managed_tp_sl, 0) = 0
+              AND (t.broker_managed_tp_sl IS NULL OR t.broker_managed_tp_sl = FALSE)
         ''')
         
         open_trades = [dict(row) for row in cursor.fetchall()]

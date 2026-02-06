@@ -4791,7 +4791,7 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
                 JOIN recorders r ON t.recorder_id = r.id
                 WHERE t.status = 'open' 
                 AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
-                AND COALESCE(t.broker_managed_tp_sl, 0) = 0
+                AND (t.broker_managed_tp_sl IS NULL OR t.broker_managed_tp_sl = FALSE)
                 AND t.entry_time + INTERVAL '5 seconds' < NOW()
             ''')
         else:
@@ -4801,7 +4801,7 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
                 JOIN recorders r ON t.recorder_id = r.id
                 WHERE t.status = 'open' 
                 AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
-                AND COALESCE(t.broker_managed_tp_sl, 0) = 0
+                AND (t.broker_managed_tp_sl IS NULL OR t.broker_managed_tp_sl = FALSE)
                 AND datetime(t.entry_time, '+5 seconds') < datetime('now')
             ''')
         
