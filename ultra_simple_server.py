@@ -13860,6 +13860,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         if direction_filter:
             if direction_filter.lower() == 'long only' and side != 'LONG':
                 _logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Long Only)")
+                track_signal_step(signal_id, 'STEP5_BLOCKED_DIRECTION', {'filter': 'Long Only', 'signal_side': side})
+                complete_signal(signal_id, 'blocked', f'Direction filter: Long Only (received {side})')
                 # Log blocked signal for monitoring
                 log_webhook_activity(
                     recorder_name=recorder_name,
@@ -13872,6 +13874,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Direction filter: Long Only (received {side})'}), 200
             elif direction_filter.lower() == 'short only' and side != 'SHORT':
                 _logger.warning(f"🚫 [{recorder_name}] Direction filter BLOCKED: {side} signal (filter: Short Only)")
+                track_signal_step(signal_id, 'STEP5_BLOCKED_DIRECTION', {'filter': 'Short Only', 'signal_side': side})
+                complete_signal(signal_id, 'blocked', f'Direction filter: Short Only (received {side})')
                 # Log blocked signal for monitoring
                 log_webhook_activity(
                     recorder_name=recorder_name,
@@ -13934,6 +13938,12 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                     _logger.warning(f"   Window 1 (enabled): {time_filter_1_start} - {time_filter_1_stop}")
                 if has_time_filter_2:
                     _logger.warning(f"   Window 2 (enabled): {time_filter_2_start} - {time_filter_2_stop}")
+                track_signal_step(signal_id, 'STEP5_BLOCKED_TIME', {
+                    'current_time': now.strftime('%I:%M %p'),
+                    'window1': f"{time_filter_1_start}-{time_filter_1_stop}" if has_time_filter_1 else 'disabled',
+                    'window2': f"{time_filter_2_start}-{time_filter_2_stop}" if has_time_filter_2 else 'disabled'
+                })
+                complete_signal(signal_id, 'blocked', f'Time filter ({now.strftime("%I:%M %p")})')
                 # Log to activity so time-blocked signals appear in monitoring
                 log_webhook_activity(
                     recorder_name=recorder_name,
@@ -13962,6 +13972,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             last_signal = cursor.fetchone()
             if last_signal and last_signal[0]:
                 _logger.warning(f"🚫 [{recorder_name}] Cooldown BLOCKED: Last signal was within {signal_cooldown}s")
+                track_signal_step(signal_id, 'STEP5_BLOCKED_COOLDOWN', {'cooldown_seconds': signal_cooldown, 'last_signal': str(last_signal[0])})
+                complete_signal(signal_id, 'blocked', f'Signal cooldown ({signal_cooldown}s)')
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Signal cooldown ({signal_cooldown}s)'}), 200
             _logger.info(f"✅ Signal cooldown passed: {signal_cooldown}s")
@@ -13983,6 +13995,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             signal_count = cursor.fetchone()[0] or 0
             if signal_count >= max_signals:
                 _logger.warning(f"🚫 [{recorder_name}] Max signals BLOCKED: {signal_count}/{max_signals} signals today")
+                track_signal_step(signal_id, 'STEP5_BLOCKED_MAX_SIGNALS', {'count': signal_count, 'limit': max_signals})
+                complete_signal(signal_id, 'blocked', f'Max signals reached ({signal_count}/{max_signals})')
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Max signals reached ({signal_count}/{max_signals})'}), 200
             _logger.info(f"✅ Max signals passed: {signal_count}/{max_signals}")
@@ -14004,6 +14018,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             daily_pnl = cursor.fetchone()[0] or 0
             if daily_pnl <= -max_daily_loss:
                 _logger.warning(f"🚫 [{recorder_name}] Max daily loss BLOCKED: ${daily_pnl:.2f} (limit: -${max_daily_loss})")
+                track_signal_step(signal_id, 'STEP5_BLOCKED_MAX_DAILY_LOSS', {'daily_pnl': daily_pnl, 'limit': max_daily_loss})
+                complete_signal(signal_id, 'blocked', f'Max daily loss hit (${daily_pnl:.2f})')
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Max daily loss hit (${daily_pnl:.2f})'}), 200
             _logger.info(f"✅ Max daily loss passed: ${daily_pnl:.2f} / -${max_daily_loss}")
@@ -14026,6 +14042,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             
             if signal_premium > 0 and signal_premium < option_premium_filter:
                 _logger.warning(f"🚫 [{recorder_name}] Option premium filter BLOCKED: ${signal_premium} < ${option_premium_filter}")
+                track_signal_step(signal_id, 'STEP5_BLOCKED_OPTION_PREMIUM', {'premium': signal_premium, 'minimum': option_premium_filter})
+                complete_signal(signal_id, 'blocked', f'Premium ${signal_premium} below minimum ${option_premium_filter}')
                 conn.close()
                 return jsonify({'success': False, 'blocked': True, 'reason': f'Premium ${signal_premium} below minimum ${option_premium_filter}'}), 200
             elif signal_premium >= option_premium_filter:
@@ -14057,6 +14075,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                         # Don't block the signal if it's a close/flatten - allow it through
                         if action.upper() not in ['CLOSE', 'FLATTEN', 'EXIT', 'TP_HIT', 'SL_HIT']:
                             _logger.warning(f"🚫 [{recorder_name}] Auto-flat BLOCKING new entries after cutoff - only exits allowed")
+                            track_signal_step(signal_id, 'STEP5_BLOCKED_AUTO_FLAT', {'cutoff': str(cutoff_time), 'action': action})
+                            complete_signal(signal_id, 'blocked', 'Past cutoff time - only exits allowed')
                             conn.close()
                             return jsonify({'success': False, 'blocked': True, 'reason': f'Past cutoff time - only exits allowed'}), 200
         
@@ -14070,6 +14090,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             
             if signal_number % add_delay != 0:
                 _logger.warning(f"🚫 [{recorder_name}] Signal delay BLOCKED: Signal #{signal_number} (executing every {add_delay})")
+                track_signal_step(signal_id, 'STEP5_BLOCKED_SIGNAL_DELAY', {'signal_number': signal_number, 'every_nth': add_delay})
+                complete_signal(signal_id, 'blocked', f'Signal delay ({signal_number} mod {add_delay} != 0)')
                 # Still record the signal but don't execute
                 # For PostgreSQL: created_at has DEFAULT, store quantity in raw_signal as JSON
                 if is_postgres:
