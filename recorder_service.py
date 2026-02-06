@@ -4322,10 +4322,11 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
             try:
                 conn2 = get_db_connection()
                 cursor2 = conn2.cursor()
-                cursor2.execute('''
-                    UPDATE recorded_trades 
-                    SET tp_order_id = ?, tp_price = ?
-                    WHERE recorder_id = ? AND status = 'open'
+                tp_upd_ph = '%s' if is_postgres else '?'
+                cursor2.execute(f'''
+                    UPDATE recorded_trades
+                    SET tp_order_id = {tp_upd_ph}, tp_price = {tp_upd_ph}
+                    WHERE recorder_id = {tp_upd_ph} AND status = 'open'
                 ''', (result['order_id'], tp_price, recorder_id))
                 conn2.commit()
                 conn2.close()
@@ -5318,10 +5319,11 @@ def reconcile_positions_with_broker():
                                                     # Update DB with new TP order ID
                                                     conn_upd = get_db_connection()
                                                     cursor_upd = conn_upd.cursor()
-                                                    cursor_upd.execute('''
+                                                    tp_upd_ph2 = '%s' if is_postgres else '?'
+                                                    cursor_upd.execute(f'''
                                                         UPDATE recorded_trades
-                                                        SET tp_order_id = ?, tp_price = ?
-                                                        WHERE recorder_id = ? AND status = 'open'
+                                                        SET tp_order_id = {tp_upd_ph2}, tp_price = {tp_upd_ph2}
+                                                        WHERE recorder_id = {tp_upd_ph2} AND status = 'open'
                                                     ''', (str(new_tp_order_id), new_tp_price, recorder_id))
                                                     conn_upd.commit()
                                                     conn_upd.close()
