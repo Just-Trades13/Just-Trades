@@ -1347,7 +1347,8 @@ def execute_trade_simple(
             account_multiplier = float(trader.get('multiplier', 1.0))  # Get multiplier for this account
             adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
             broker_type = trader.get('broker', 'Tradovate')  # Default to Tradovate
-            
+            is_dca_local = False  # Track if this is a DCA add (set True when same direction as existing position)
+
             # NOTE: Don't check is_account_auth_valid upfront - let auth logic handle it
             # The account might work via cached token, API Access, or OAuth fallback
             # If ALL methods fail, auth logic will return the appropriate error
@@ -1609,6 +1610,7 @@ def execute_trade_simple(
                             # SAME DIRECTION = ALWAYS ADD TO POSITION (Universal DCA)
                             # This works for ALL strategies - no more avg_down_enabled gate
                             logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty} (universal DCA)")
+                            is_dca_local = True  # CRITICAL: Flag to trigger TP cancel+replace after execution
                             # Continue to execute - will add to position
                         else:
                             # OPPOSITE DIRECTION - Two modes based on avg_down_enabled:
@@ -1788,9 +1790,13 @@ def execute_trade_simple(
                     broker_side = 'LONG' if order_action == 'Buy' else 'SHORT'
                     contract_id = None
                     
-                    # If order result has fill price, use it directly (no API call needed!)
-                    if broker_avg:
+                    # If order result has fill price AND not DCA, use it directly (no API call needed!)
+                    # For DCA: ALWAYS fetch broker position to get NEW weighted average price
+                    if broker_avg and not is_dca_local:
                         logger.info(f"📊 [{acct_name}] Using fill price from order result: {broker_side} {broker_qty} @ {broker_avg} (0 extra API calls!)")
+                    elif is_dca_local:
+                        logger.info(f"📊 [{acct_name}] DCA: Fetching broker position for new weighted average price...")
+                        broker_avg = None  # Force position fetch to get new average
                     else:
                         # Only fetch position if we don't have fill price
                         # RETRY LOGIC: Try up to 3 times with delays to get fill price
@@ -1935,25 +1941,37 @@ def execute_trade_simple(
                         except Exception as e:
                             logger.debug(f"[{acct_name}] Could not check DB for TP: {e}")
                         
-                        # If we have stored TP, try to modify it directly (1 API call)
+                        # DCA: ALWAYS cancel and replace (modify is unreliable per Tradovate forum)
+                        # Non-DCA: Try modify first
                         if existing_tp_id:
-                            logger.info(f"🔄 [{acct_name}] MODIFYING TP {existing_tp_id} (1 API call)")
-                            modify_result = await tradovate.modify_order_smart(
-                                order_id=existing_tp_id,
-                                order_data={
-                                    "price": tp_price,
-                                    "orderQty": broker_qty,
-                                    "orderType": "Limit",
-                                    "timeInForce": "GTC"
-                                }
-                            )
-                            if modify_result and modify_result.get('success'):
-                                tp_order_id = existing_tp_id
-                                logger.info(f"✅ [{acct_name}] TP MODIFIED @ {tp_price}")
-                            else:
-                                error_msg = modify_result.get('error', 'Unknown error') if modify_result else 'No response'
-                                logger.warning(f"⚠️ [{acct_name}] TP MODIFY FAILED: {error_msg} - will place new")
+                            if is_dca_local:
+                                # DCA: Cancel existing TP and place fresh with new qty/price
+                                logger.info(f"🗑️ [{acct_name}] DCA: Cancelling old TP {existing_tp_id} to place fresh (per Tradovate best practice)")
+                                try:
+                                    await tradovate.cancel_order_smart(existing_tp_id)
+                                    logger.info(f"✅ [{acct_name}] Old TP cancelled - will place fresh @ {tp_price} qty={broker_qty}")
+                                except Exception as cancel_err:
+                                    logger.warning(f"⚠️ [{acct_name}] Could not cancel old TP: {cancel_err} - placing fresh anyway")
                                 existing_tp_id = None  # Fall through to place new
+                            else:
+                                # Non-DCA: Try modify
+                                logger.info(f"🔄 [{acct_name}] MODIFYING TP {existing_tp_id} (1 API call)")
+                                modify_result = await tradovate.modify_order_smart(
+                                    order_id=existing_tp_id,
+                                    order_data={
+                                        "price": tp_price,
+                                        "orderQty": broker_qty,
+                                        "orderType": "Limit",
+                                        "timeInForce": "GTC"
+                                    }
+                                )
+                                if modify_result and modify_result.get('success'):
+                                    tp_order_id = existing_tp_id
+                                    logger.info(f"✅ [{acct_name}] TP MODIFIED @ {tp_price}")
+                                else:
+                                    error_msg = modify_result.get('error', 'Unknown error') if modify_result else 'No response'
+                                    logger.warning(f"⚠️ [{acct_name}] TP MODIFY FAILED: {error_msg} - will place new")
+                                    existing_tp_id = None  # Fall through to place new
                     
                     # Place new TP if needed (only if TP is enabled)
                     if tp_price is not None and not tp_order_id:
