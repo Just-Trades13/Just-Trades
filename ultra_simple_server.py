@@ -16695,9 +16695,9 @@ def traders_edit(trader_id):
         'subaccount_name': trader_row['subaccount_name'],
         'is_demo': bool(trader_row['is_demo']),
         'enabled': bool(trader_row['enabled']),
-        # Position sizes - prefer recorder settings
-        'initial_position_size': trader_row['r_initial_position_size'] or trader_row['initial_position_size'] or 1,
-        'add_position_size': trader_row['r_add_position_size'] or trader_row['add_position_size'] or 1,
+        # Position sizes - prefer trader's own saved settings, fall back to recorder defaults
+        'initial_position_size': trader_row['initial_position_size'] or trader_row['r_initial_position_size'] or 1,
+        'add_position_size': trader_row['add_position_size'] or trader_row['r_add_position_size'] or 1,
         # TP settings from recorder
         'tp_targets': tp_targets,
         'tp_value': tp_value,
