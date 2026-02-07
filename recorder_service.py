@@ -1955,18 +1955,21 @@ def execute_trade_simple(
                             logger.error(f"   Position is UNPROTECTED - manually set TP in broker!")
                         else:
                             if broker_side == 'LONG':
-                                tp_price = broker_avg + (tp_ticks * local_tick_size)
+                                tp_price_raw = broker_avg + (tp_ticks * local_tick_size)
                                 tp_action = 'Sell'
                             else:
-                                tp_price = broker_avg - (tp_ticks * local_tick_size)
+                                tp_price_raw = broker_avg - (tp_ticks * local_tick_size)
                                 tp_action = 'Buy'
+                            # CRITICAL: Round to nearest valid tick increment
+                            # DCA averages produce fractional prices (e.g. 25074.805) that Tradovate rejects
+                            tp_price = round(round(tp_price_raw / local_tick_size) * local_tick_size, 10)
 
                             # Validate the calculated TP price is reasonable
                             if tp_price <= 0:
                                 logger.error(f"❌ [{acct_name}] INVALID TP PRICE: {tp_price} - skipping TP placement")
                                 tp_price = None
                             else:
-                                logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{local_tick_size}) = {tp_price}")
+                                logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{local_tick_size}) = {tp_price} (rounded from {tp_price_raw})")
                     else:
                         logger.info(f"🎯 [{acct_name}] TP DISABLED (tp_ticks=0) - letting strategy handle exit")
                     
@@ -2122,11 +2125,13 @@ def execute_trade_simple(
                         else:
                             # Calculate SL price (opposite direction from TP)
                             if broker_side == 'LONG':
-                                sl_price = broker_avg - (sl_ticks * local_tick_size)
+                                sl_price_raw = broker_avg - (sl_ticks * local_tick_size)
                                 sl_action = 'Sell'  # SL sells to close LONG
                             else:
-                                sl_price = broker_avg + (sl_ticks * local_tick_size)
+                                sl_price_raw = broker_avg + (sl_ticks * local_tick_size)
                                 sl_action = 'Buy'   # SL buys to close SHORT
+                            # CRITICAL: Round to nearest valid tick increment
+                            sl_price = round(round(sl_price_raw / local_tick_size) * local_tick_size, 10)
 
                             # Additional validation: SL price must be positive
                             if sl_price <= 0:
@@ -5324,11 +5329,13 @@ def reconcile_positions_with_broker():
                                         if tp_ticks and tp_ticks > 0:
                                             # Calculate TP price from BROKER avg (source of truth)
                                             if is_long:
-                                                new_tp_price = broker_avg + (tp_ticks * tick_size)
+                                                new_tp_price_raw = broker_avg + (tp_ticks * tick_size)
                                                 tp_action = 'Sell'
                                             else:
-                                                new_tp_price = broker_avg - (tp_ticks * tick_size)
+                                                new_tp_price_raw = broker_avg - (tp_ticks * tick_size)
                                                 tp_action = 'Buy'
+                                            # Round to nearest valid tick increment
+                                            new_tp_price = round(round(new_tp_price_raw / tick_size) * tick_size, 10)
 
                                             # Place the TP order
                                             try:
