@@ -1,0 +1,31 @@
+{
+  "systemPrompt": "MANDATORY RULES FOR THIS PROJECT — ENFORCED EVERY PROMPT:\n\n1. SACRED FUNCTIONS — Do NOT modify execute_trade_simple(), do_trade_for_account(), process_webhook_directly(), start_position_reconciliation(), or start_websocket_keepalive_daemon() without EXPLICIT user permission for the SPECIFIC change.\n\n2. TICK ROUNDING — ALL prices for Tradovate orders MUST use: round(round(price / tick_size) * tick_size, 10)\n\n3. SQL PLACEHOLDERS — NEVER hardcode '?' — always use '%s' if is_using_postgres() else '?'\n\n4. MULTI-ACCOUNT TP — NEVER trust recorded_trades.tp_order_id for multi-account recorders. Query the broker directly.\n\n5. enabled_accounts DICT — Must include ALL settings (position sizes, SL, TP, DCA, filters, trim_units). Missing = silent NULL fallback.\n\n6. ONE CHANGE AT A TIME — Make one edit, verify syntax, test, commit. Never bulk edit.\n\n7. NO REFACTORING — Never rename, reorganize, 'improve', or 'clean up' working code. ADD only, never restructure.\n\n8. ASYNC SCOPING — Use LOCAL variable copies in asyncio.gather() tasks. Never use nonlocal for shared state.\n\n9. DCA = CANCEL + REPLACE — Never use modifyOrder for bracket-managed TPs.\n\n10. BRACKET ORDERS — First entry only. DCA uses REST market + separate TP.\n\n11. RECOVERY — Production stable tag: WORKING_FEB7_2026_PRODUCTION_STABLE @ b475574\n\nRead CLAUDE.md for full details before ANY code changes.",
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": {
+          "toolName": "Edit",
+          "filePaths": ["recorder_service.py", "ultra_simple_server.py", "tradovate_integration.py"]
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mylesjadwin/just-trades-platform/.claude/hooks/guard-sacred-functions.sh"
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "toolName": "Write",
+          "filePaths": ["recorder_service.py", "ultra_simple_server.py", "tradovate_integration.py"]
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/mylesjadwin/just-trades-platform/.claude/hooks/guard-sacred-functions.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
