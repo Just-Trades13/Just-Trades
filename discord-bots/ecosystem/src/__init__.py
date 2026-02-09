@@ -1,4 +1,4 @@
-""
+"""
 Discord Trading Ecosystem - A comprehensive set of bots for trading education and analysis.
 """
 
