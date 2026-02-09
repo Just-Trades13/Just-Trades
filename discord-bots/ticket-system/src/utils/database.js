@@ -127,19 +127,20 @@ function updateGuildSettings(guildId, settings) {
 
 function incrementTicketCounter(guildId) {
     return new Promise((resolve, reject) => {
-        db.run(
-            `UPDATE settings SET ticket_counter = ticket_counter + 1 WHERE guild_id = ?`,
-            [guildId],
-            function(err) {
-                if (err) reject(err);
-                else {
-                    db.get('SELECT ticket_counter FROM settings WHERE guild_id = ?', [guildId], (err, row) => {
-                        if (err) reject(err);
-                        else resolve(row ? row.ticket_counter : 1);
-                    });
+        // Serialize to prevent race condition between UPDATE and SELECT
+        db.serialize(() => {
+            db.run(
+                `UPDATE settings SET ticket_counter = ticket_counter + 1 WHERE guild_id = ?`,
+                [guildId],
+                function(err) {
+                    if (err) return reject(err);
                 }
-            }
-        );
+            );
+            db.get('SELECT ticket_counter FROM settings WHERE guild_id = ?', [guildId], (err, row) => {
+                if (err) reject(err);
+                else resolve(row ? row.ticket_counter : 1);
+            });
+        });
     });
 }
 

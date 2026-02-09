@@ -18,6 +18,7 @@ Usage:
     )
 """
 import os
+import time
 import logging
 import threading
 import requests
@@ -270,7 +271,7 @@ def notify_trade_execution(user_id: int = None, action: str = None, symbol: str 
     logger.info(f"🔔 notify_trade_execution called: user_id={user_id}, action={action}, symbol={symbol}, qty={quantity}")
 
     # Determine if this is a DCA, open, or close
-    action_upper = action.upper()
+    action_upper = (action or 'UNKNOWN').upper()
     is_dca = 'DCA' in action_upper
     is_long = 'BUY' in action_upper or 'LONG' in action_upper
     is_close = pnl is not None
@@ -383,7 +384,7 @@ def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = 
     """
     logger.info(f"🔔 notify_tp_sl_hit called: user_id={user_id}, recorder_id={recorder_id}, type={order_type}, symbol={symbol}, pnl={pnl}")
 
-    is_tp = order_type.upper() == 'TP'
+    is_tp = (order_type or 'UNKNOWN').upper() == 'TP'
 
     # Build Discord embed
     embed_color = 0x00FF00 if (pnl and pnl >= 0) else 0xFF0000
@@ -457,6 +458,7 @@ def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = 
 def notify_error(user_id: int, error_type: str, error_message: str, details: str = None):
     """
     Send error notification to user via Discord AND push notification.
+    Runs in background thread to avoid blocking the caller.
 
     Args:
         user_id: Database user ID
@@ -464,34 +466,41 @@ def notify_error(user_id: int, error_type: str, error_message: str, details: str
         error_message: Brief error description
         details: Optional additional details
     """
-    # Discord message
-    discord_message = f"⚠️ **{error_type}**\n"
-    discord_message += f"❌ {error_message}"
-    if details:
-        discord_message += f"\n📝 {details}"
-    discord_message += f"\n⏰ {_get_chicago_time().strftime('%I:%M:%S %p CT')}"
+    def send_error_background():
+        try:
+            # Discord message
+            discord_message = f"⚠️ **{error_type}**\n"
+            discord_message += f"❌ {error_message}"
+            if details:
+                discord_message += f"\n📝 {details}"
+            discord_message += f"\n⏰ {_get_chicago_time().strftime('%I:%M:%S %p CT')}"
 
-    # Push notification
-    push_title = f"⚠️ {error_type}"
-    push_body = error_message
-    if details:
-        push_body += f" - {details[:50]}"
+            # Send Discord DM
+            if _notifications_enabled:
+                users = get_discord_enabled_users(user_id)
+                for user in users:
+                    send_discord_dm(user['discord_user_id'], discord_message)
 
-    # Send Discord DM
-    if _notifications_enabled:
-        users = get_discord_enabled_users(user_id)
-        for user in users:
-            send_discord_dm(user['discord_user_id'], discord_message)
+            # Send Push Notification
+            push_title = f"⚠️ {error_type}"
+            push_body = error_message
+            if details:
+                push_body += f" - {details[:50]}"
 
-    # Send Push Notification
-    if _push_notifications_enabled and _send_push_notification:
-        _send_push_notification(user_id, push_title, push_body, url='/recorders_list')
+            if _push_notifications_enabled and _send_push_notification:
+                _send_push_notification(user_id, push_title, push_body, url='/recorders_list')
+        except Exception as e:
+            logger.error(f"🔔 Background error notification failed: {e}")
+
+    notification_thread = threading.Thread(target=send_error_background, daemon=True)
+    notification_thread.start()
 
 
 def notify_daily_summary(user_id: int, total_trades: int, winners: int, losers: int,
                          total_pnl: float, best_trade: float = None, worst_trade: float = None):
     """
     Send daily P&L summary to user.
+    Runs in background thread to avoid blocking the caller.
 
     Args:
         user_id: Database user ID
@@ -505,32 +514,41 @@ def notify_daily_summary(user_id: int, total_trades: int, winners: int, losers: 
     if not _notifications_enabled:
         return
 
-    users = get_discord_enabled_users(user_id)
-    if not users:
-        return
+    def send_summary_background():
+        try:
+            users = get_discord_enabled_users(user_id)
+            if not users:
+                return
 
-    pnl_emoji = "📈" if total_pnl >= 0 else "📉"
-    win_rate = (winners / total_trades * 100) if total_trades > 0 else 0
+            pnl_emoji = "📈" if total_pnl >= 0 else "📉"
+            win_rate = (winners / total_trades * 100) if total_trades > 0 else 0
 
-    message = f"📊 **Daily Trading Summary**\n"
-    message += f"━━━━━━━━━━━━━━━━━━━━\n"
-    message += f"{pnl_emoji} **Total P&L: ${total_pnl:,.2f}**\n"
-    message += f"📈 Trades: {total_trades} ({winners}W / {losers}L)\n"
-    message += f"🎯 Win Rate: {win_rate:.1f}%\n"
-    if best_trade is not None:
-        message += f"🏆 Best Trade: ${best_trade:,.2f}\n"
-    if worst_trade is not None:
-        message += f"💔 Worst Trade: ${worst_trade:,.2f}\n"
-    message += f"━━━━━━━━━━━━━━━━━━━━\n"
-    message += f"📅 {_get_chicago_time().strftime('%B %d, %Y')}"
+            message = f"📊 **Daily Trading Summary**\n"
+            message += f"━━━━━━━━━━━━━━━━━━━━\n"
+            message += f"{pnl_emoji} **Total P&L: ${total_pnl:,.2f}**\n"
+            message += f"📈 Trades: {total_trades} ({winners}W / {losers}L)\n"
+            message += f"🎯 Win Rate: {win_rate:.1f}%\n"
+            if best_trade is not None:
+                message += f"🏆 Best Trade: ${best_trade:,.2f}\n"
+            if worst_trade is not None:
+                message += f"💔 Worst Trade: ${worst_trade:,.2f}\n"
+            message += f"━━━━━━━━━━━━━━━━━━━━\n"
+            message += f"📅 {_get_chicago_time().strftime('%B %d, %Y')}"
 
-    for user in users:
-        send_discord_dm(user['discord_user_id'], message)
+            for user in users:
+                send_discord_dm(user['discord_user_id'], message)
+        except Exception as e:
+            logger.error(f"🔔 Background daily summary notification failed: {e}")
+
+    notification_thread = threading.Thread(target=send_summary_background, daemon=True)
+    notification_thread.start()
 
 
 def broadcast_announcement(title: str, message: str, announcement_type: str = 'info'):
     """
     Broadcast announcement to ALL users with Discord linked and DMs enabled.
+    Runs in background thread with rate limiting (1 DM per 0.5s) to avoid Discord rate limits.
+    Returns immediately with an estimated count; actual sending happens async.
 
     Args:
         title: Announcement title
@@ -538,6 +556,10 @@ def broadcast_announcement(title: str, message: str, announcement_type: str = 'i
         announcement_type: 'info', 'success', 'warning', 'critical'
     """
     if not _notifications_enabled:
+        return 0
+
+    users = get_discord_enabled_users()
+    if not users:
         return 0
 
     type_emojis = {
@@ -548,15 +570,22 @@ def broadcast_announcement(title: str, message: str, announcement_type: str = 'i
     }
 
     emoji = type_emojis.get(announcement_type, 'ℹ️')
-
     full_message = f"{emoji} **{title}**\n\n{message}\n\n— Just.Trades Team"
+    user_count = len(users)
 
-    users = get_discord_enabled_users()
-    sent_count = 0
+    def send_broadcast_background():
+        sent_count = 0
+        for user in users:
+            try:
+                if send_discord_dm(user['discord_user_id'], full_message):
+                    sent_count += 1
+                # Rate limit: Discord allows ~50 DM creates/second but be conservative
+                time.sleep(0.5)
+            except Exception as e:
+                logger.debug(f"Broadcast DM error: {e}")
+        logger.info(f"📢 Broadcast completed: {sent_count}/{user_count} Discord users")
 
-    for user in users:
-        if send_discord_dm(user['discord_user_id'], full_message):
-            sent_count += 1
-
-    logger.info(f"📢 Broadcast sent to {sent_count}/{len(users)} Discord users")
-    return sent_count
+    broadcast_thread = threading.Thread(target=send_broadcast_background, daemon=True)
+    broadcast_thread.start()
+    logger.info(f"📢 Broadcast dispatched to background thread for {user_count} users")
+    return user_count

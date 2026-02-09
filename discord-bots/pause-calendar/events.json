@@ -1,26 +1,138 @@
 [
   {
-    "id": "evt-2025-08-20-fed-earnings",
-    "title": "Fed/Jack. Hole Anticipation + Retail Earnings",
-    "type": "FED",
-    "start_local": "2025-08-20 08:00",
-    "end_local": "2025-08-20 11:00",
-    "notes": "Heightened uncertainty; avoid running bot during AM session."
-  },
-  {
-    "id": "evt-2025-09-05-nfp",
-    "title": "NFP Jobs Report",
-    "type": "NFP",
-    "start_local": "2025-09-05 08:15",
-    "end_local": "2025-09-05 10:00",
-    "notes": "Classic 8:30 shock; pause bot around release and digestion."
-  },
-  {
-    "id": "evt-template-cpi",
-    "title": "CPI Release",
+    "id": "evt-2026-02-12-cpi",
+    "title": "CPI Report (January)",
     "type": "CPI",
-    "start_local": "2025-10-10 08:15",
-    "end_local": "2025-10-10 09:30",
-    "notes": "Template example \u2014 adjust date/time monthly."
+    "start_local": "2026-02-12 08:15",
+    "end_local": "2026-02-12 09:30",
+    "notes": "Consumer Price Index release at 8:30 ET. Pause bot 15 min before through digestion."
+  },
+  {
+    "id": "evt-2026-02-14-ppi",
+    "title": "PPI Report (January)",
+    "type": "PPI",
+    "start_local": "2026-02-14 08:15",
+    "end_local": "2026-02-14 09:30",
+    "notes": "Producer Price Index release at 8:30 ET."
+  },
+  {
+    "id": "evt-2026-02-27-gdp",
+    "title": "GDP 2nd Estimate (Q4 2025)",
+    "type": "GDP",
+    "start_local": "2026-02-27 08:15",
+    "end_local": "2026-02-27 09:30",
+    "notes": "Second estimate of Q4 GDP."
+  },
+  {
+    "id": "evt-2026-03-06-nfp",
+    "title": "NFP Jobs Report (February)",
+    "type": "NFP",
+    "start_local": "2026-03-06 08:15",
+    "end_local": "2026-03-06 10:00",
+    "notes": "Non-Farm Payrolls at 8:30 ET. High volatility expected."
+  },
+  {
+    "id": "evt-2026-03-12-cpi",
+    "title": "CPI Report (February)",
+    "type": "CPI",
+    "start_local": "2026-03-12 08:15",
+    "end_local": "2026-03-12 09:30",
+    "notes": "Consumer Price Index release at 8:30 ET."
+  },
+  {
+    "id": "evt-2026-03-18-fomc",
+    "title": "FOMC Rate Decision + Press Conference",
+    "type": "FOMC",
+    "start_local": "2026-03-18 13:45",
+    "end_local": "2026-03-18 15:30",
+    "notes": "Fed rate decision at 2:00 PM ET, press conference at 2:30 PM ET. Major market mover."
+  },
+  {
+    "id": "evt-2026-03-26-gdp",
+    "title": "GDP 3rd Estimate (Q4 2025)",
+    "type": "GDP",
+    "start_local": "2026-03-26 08:15",
+    "end_local": "2026-03-26 09:30",
+    "notes": "Final Q4 GDP estimate."
+  },
+  {
+    "id": "evt-2026-04-03-nfp",
+    "title": "NFP Jobs Report (March)",
+    "type": "NFP",
+    "start_local": "2026-04-03 08:15",
+    "end_local": "2026-04-03 10:00",
+    "notes": "Non-Farm Payrolls at 8:30 ET."
+  },
+  {
+    "id": "evt-2026-04-14-cpi",
+    "title": "CPI Report (March)",
+    "type": "CPI",
+    "start_local": "2026-04-14 08:15",
+    "end_local": "2026-04-14 09:30",
+    "notes": "Consumer Price Index release at 8:30 ET."
+  },
+  {
+    "id": "evt-2026-04-15-ppi",
+    "title": "PPI Report (March)",
+    "type": "PPI",
+    "start_local": "2026-04-15 08:15",
+    "end_local": "2026-04-15 09:30",
+    "notes": "Producer Price Index release at 8:30 ET."
+  },
+  {
+    "id": "evt-2026-04-29-gdp",
+    "title": "GDP Advance Estimate (Q1 2026)",
+    "type": "GDP",
+    "start_local": "2026-04-29 08:15",
+    "end_local": "2026-04-29 09:30",
+    "notes": "First estimate of Q1 2026 GDP. Major market mover."
+  },
+  {
+    "id": "evt-2026-05-01-nfp",
+    "title": "NFP Jobs Report (April)",
+    "type": "NFP",
+    "start_local": "2026-05-01 08:15",
+    "end_local": "2026-05-01 10:00",
+    "notes": "Non-Farm Payrolls at 8:30 ET."
+  },
+  {
+    "id": "evt-2026-05-06-fomc",
+    "title": "FOMC Rate Decision + Press Conference",
+    "type": "FOMC",
+    "start_local": "2026-05-06 13:45",
+    "end_local": "2026-05-06 15:30",
+    "notes": "Fed rate decision at 2:00 PM ET, press conference at 2:30 PM ET."
+  },
+  {
+    "id": "evt-2026-05-13-cpi",
+    "title": "CPI Report (April)",
+    "type": "CPI",
+    "start_local": "2026-05-13 08:15",
+    "end_local": "2026-05-13 09:30",
+    "notes": "Consumer Price Index release at 8:30 ET."
+  },
+  {
+    "id": "evt-2026-06-05-nfp",
+    "title": "NFP Jobs Report (May)",
+    "type": "NFP",
+    "start_local": "2026-06-05 08:15",
+    "end_local": "2026-06-05 10:00",
+    "notes": "Non-Farm Payrolls at 8:30 ET."
+  },
+  {
+    "id": "evt-2026-06-10-cpi",
+    "title": "CPI Report (May)",
+    "type": "CPI",
+    "start_local": "2026-06-10 08:15",
+    "end_local": "2026-06-10 09:30",
+    "notes": "Consumer Price Index release at 8:30 ET."
+  },
+  {
+    "id": "evt-2026-06-17-fomc",
+    "title": "FOMC Rate Decision + Press Conference",
+    "type": "FOMC",
+    "start_local": "2026-06-17 13:45",
+    "end_local": "2026-06-17 15:30",
+    "notes": "Fed rate decision at 2:00 PM ET, press conference at 2:30 PM ET."
   }
 ]

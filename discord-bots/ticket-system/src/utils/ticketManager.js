@@ -1,5 +1,5 @@
 const { PermissionFlagsBits, ChannelType, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { createTicket, getGuildSettings, incrementTicketCounter, getUserOpenTickets } = require('./database');
+const { createTicket, getGuildSettings, incrementTicketCounter, getUserOpenTickets, closeTicket, getTicket } = require('./database');
 
 // Just Trades brand colors
 const COLORS = {
@@ -224,8 +224,87 @@ async function generateTranscript(channel) {
     }
 }
 
+async function closeTicketChannel(interaction, reason = 'No reason provided') {
+    /**
+     * Shared close logic used by both the /close command and the Close button.
+     * Expects interaction to already be deferred.
+     */
+    const ticket = await getTicket(interaction.channelId);
+
+    if (!ticket) {
+        await interaction.editReply({ content: 'This is not a ticket channel.' });
+        return;
+    }
+
+    if (ticket.status === 'closed') {
+        await interaction.editReply({ content: 'This ticket is already closed.' });
+        return;
+    }
+
+    // Generate transcript
+    const transcript = await generateTranscript(interaction.channel);
+
+    // Close in database
+    await closeTicket(interaction.channelId, transcript);
+
+    // Send closing message
+    const closeEmbed = new EmbedBuilder()
+        .setColor(COLORS.DANGER)
+        .setTitle('🔒 Ticket Closed')
+        .setDescription(`This ticket has been closed by ${interaction.user}`)
+        .addFields(
+            { name: 'Reason', value: reason, inline: false },
+            { name: 'Closed At', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true }
+        )
+        .setFooter({ text: 'This channel will be deleted in 5 seconds' })
+        .setTimestamp();
+
+    await interaction.editReply({ embeds: [closeEmbed] });
+
+    // Send transcript to log channel
+    const settings = await getGuildSettings(interaction.guildId);
+    if (settings?.log_channel_id) {
+        const logChannel = interaction.guild.channels.cache.get(settings.log_channel_id);
+        if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+                .setColor(COLORS.DANGER)
+                .setTitle('🔒 Ticket Closed')
+                .addFields(
+                    { name: 'Ticket', value: interaction.channel.name, inline: true },
+                    { name: 'Closed By', value: interaction.user.tag, inline: true },
+                    { name: 'Reason', value: reason, inline: false },
+                    { name: 'Original User', value: `<@${ticket.user_id}>`, inline: true },
+                    { name: 'Category', value: ticket.category || 'Unknown', inline: true }
+                )
+                .setTimestamp();
+
+            await logChannel.send({ embeds: [logEmbed] });
+
+            // Send transcript as file
+            const buffer = Buffer.from(transcript, 'utf-8');
+            await logChannel.send({
+                content: `📋 Transcript for **${interaction.channel.name}**`,
+                files: [{
+                    attachment: buffer,
+                    name: `transcript-${interaction.channel.name}.txt`
+                }]
+            });
+        }
+    }
+
+    // Delete channel after 5 seconds
+    setTimeout(async () => {
+        try {
+            await interaction.channel.delete();
+        } catch (err) {
+            console.error('Error deleting ticket channel:', err);
+        }
+    }, 5000);
+}
+
 module.exports = {
     createTicketChannel,
+    closeTicketChannel,
     generateTranscript,
     COLORS
 };

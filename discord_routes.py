@@ -422,7 +422,7 @@ def admin_check_discord_status(user_id):
 
 @discord_bp.route('/api/admin/discord/all-users', methods=['GET'])
 def admin_list_all_discord_status():
-    """Admin: List Discord status for ALL users."""
+    """Admin: List Discord status for ALL users with pagination."""
     if not _user_auth_available or not _is_logged_in():
         return jsonify({'error': 'Not logged in'}), 401
 
@@ -430,11 +430,25 @@ def admin_list_all_discord_status():
     if not user or not user.is_admin:
         return jsonify({'error': 'Admin access required'}), 403
 
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    per_page = min(per_page, 200)  # Cap at 200
+    offset = (page - 1) * per_page
+
     try:
         conn, db_type = _get_auth_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users ORDER BY id')
+        # Get total count
+        cursor.execute('SELECT COUNT(*) FROM users')
+        count_row = cursor.fetchone()
+        total = count_row[0] if isinstance(count_row, tuple) else count_row.get('count', 0)
+
+        # Get paginated results
+        if db_type == 'postgresql':
+            cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users ORDER BY id LIMIT %s OFFSET %s', (per_page, offset))
+        else:
+            cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users ORDER BY id LIMIT ? OFFSET ?', (per_page, offset))
 
         rows = cursor.fetchall()
         cursor.close()
@@ -457,7 +471,13 @@ def admin_list_all_discord_status():
                 'notifications_work': bool(discord_id) and bool(dms_enabled)
             })
 
-        return jsonify({'users': users, 'total': len(users)})
+        return jsonify({
+            'users': users,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
