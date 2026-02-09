@@ -1,0 +1,7 @@
+{
+  "guild_id": null,
+  "channel_id": 123456789012345678,
+  "timezone": "America/Chicago",
+  "daily_post_time": "07:45",
+  "lookahead_days": 14
+}

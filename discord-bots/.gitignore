@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# Environment files with real tokens
+# .env files are tracked with PLACEHOLDER values only
+# NEVER commit real tokens — use .env.template as reference
+
+# Bot databases
+*.db
+tickets.db
+
+# Logs
+*.log
+
+# OS files
+.DS_Store

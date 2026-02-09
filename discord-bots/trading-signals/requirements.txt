@@ -1,0 +1,7 @@
+discord.py
+requests
+yfinance
+alpaca-trade-api
+python-dotenv
+websockets
+

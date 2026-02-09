@@ -1,0 +1,26 @@
+[
+  {
+    "id": "evt-2025-08-20-fed-earnings",
+    "title": "Fed/Jack. Hole Anticipation + Retail Earnings",
+    "type": "FED",
+    "start_local": "2025-08-20 08:00",
+    "end_local": "2025-08-20 11:00",
+    "notes": "Heightened uncertainty; avoid running bot during AM session."
+  },
+  {
+    "id": "evt-2025-09-05-nfp",
+    "title": "NFP Jobs Report",
+    "type": "NFP",
+    "start_local": "2025-09-05 08:15",
+    "end_local": "2025-09-05 10:00",
+    "notes": "Classic 8:30 shock; pause bot around release and digestion."
+  },
+  {
+    "id": "evt-template-cpi",
+    "title": "CPI Release",
+    "type": "CPI",
+    "start_local": "2025-10-10 08:15",
+    "end_local": "2025-10-10 09:30",
+    "notes": "Template example \u2014 adjust date/time monthly."
+  }
+]
