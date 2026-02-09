@@ -58,6 +58,17 @@ except ImportError as e:
     print(f"⚠️ User authentication module not available: {e}")
 
 # ============================================================================
+# DISCORD MODULE (extracted from this file)
+# ============================================================================
+from discord_notifications import (
+    init_discord_notifications, send_discord_dm,
+    get_discord_enabled_users, get_users_for_recorder_notifications,
+    notify_trade_execution, notify_tp_sl_hit, notify_error,
+    notify_daily_summary, broadcast_announcement, is_discord_enabled
+)
+from discord_routes import discord_bp, init_discord_routes
+
+# ============================================================================
 # SUBSCRIPTION SYSTEM
 # ============================================================================
 try:
@@ -793,294 +804,8 @@ if DISCORD_NOTIFICATIONS_ENABLED:
 else:
     print("ℹ️ Discord notifications disabled (set DISCORD_BOT_TOKEN to enable)")
 
-def send_discord_dm(discord_user_id: str, message: str, embed: dict = None) -> bool:
-    """
-    Send a direct message to a Discord user via bot.
-    
-    Args:
-        discord_user_id: The Discord user ID to send to
-        message: Text message content
-        embed: Optional rich embed dict
-    
-    Returns:
-        True if sent successfully, False otherwise
-    """
-    if not DISCORD_BOT_TOKEN or not discord_user_id:
-        return False
-    
-    try:
-        # Create DM channel with user
-        create_dm_url = "https://discord.com/api/v10/users/@me/channels"
-        headers = {
-            "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
-            "Content-Type": "application/json"
-        }
-        
-        dm_response = requests.post(create_dm_url, headers=headers, json={
-            "recipient_id": discord_user_id
-        }, timeout=10)
-        
-        if dm_response.status_code != 200:
-            logger.warning(f"⚠️ Failed to create DM channel: {dm_response.status_code}")
-            return False
-        
-        channel_id = dm_response.json().get('id')
-        if not channel_id:
-            return False
-        
-        # Send message to DM channel
-        send_url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-        payload = {"content": message}
-        if embed:
-            payload["embeds"] = [embed]
-        
-        send_response = requests.post(send_url, headers=headers, json=payload, timeout=10)
-        
-        if send_response.status_code in [200, 201]:
-            logger.info(f"✅ Discord DM sent to user {discord_user_id}")
-            return True
-        else:
-            logger.warning(f"⚠️ Failed to send Discord DM: {send_response.status_code}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"❌ Discord DM error: {e}")
-        return False
-
-
-def get_discord_enabled_users(user_id: int = None) -> list:
-    """
-    Get users who have Discord linked and DMs enabled.
-    
-    Args:
-        user_id: Optional specific user ID to check
-    
-    Returns:
-        List of dicts with user_id and discord_user_id
-    """
-    conn = None
-    cursor = None
-    try:
-        if USER_AUTH_AVAILABLE:
-            from user_auth import get_auth_db_connection
-            conn, db_type = get_auth_db_connection()
-            cursor = conn.cursor()
-            
-            # Rollback any failed transactions (PostgreSQL specific issue)
-            try:
-                conn.rollback()
-            except:
-                pass
-            
-            if user_id:
-                if db_type == 'postgresql':
-                    cursor.execute('''
-                        SELECT id, discord_user_id FROM users 
-                        WHERE id = %s AND discord_user_id IS NOT NULL AND discord_dms_enabled = TRUE
-                    ''', (user_id,))
-                else:
-                    cursor.execute('''
-                        SELECT id, discord_user_id FROM users 
-                        WHERE id = ? AND discord_user_id IS NOT NULL AND discord_dms_enabled = 1
-                    ''', (user_id,))
-            else:
-                if db_type == 'postgresql':
-                    cursor.execute('''
-                        SELECT id, discord_user_id FROM users 
-                        WHERE discord_user_id IS NOT NULL AND discord_dms_enabled = TRUE
-                    ''')
-                else:
-                    cursor.execute('''
-                        SELECT id, discord_user_id FROM users 
-                        WHERE discord_user_id IS NOT NULL AND discord_dms_enabled = 1
-                    ''')
-            
-            rows = cursor.fetchall()
-            result = []
-            for row in rows:
-                # Handle both tuple (SQLite) and dict-like (PostgreSQL RealDictRow) rows
-                if isinstance(row, tuple):
-                    result.append({'user_id': row[0], 'discord_user_id': row[1]})
-                else:
-                    result.append({'user_id': row['id'], 'discord_user_id': row['discord_user_id']})
-            logger.info(f"🔔 Discord users query returned {len(result)} users")
-            return result
-    except Exception as e:
-        logger.error(f"❌ Error getting Discord users: {e}")
-        import traceback
-        logger.error(f"❌ Traceback: {traceback.format_exc()}")
-    finally:
-        if cursor:
-            try:
-                cursor.close()
-            except:
-                pass
-        if conn:
-            try:
-                conn.close()
-            except:
-                pass
-    return []
-
-
-def get_users_for_recorder_notifications(recorder_id: int) -> list:
-    """
-    Get all users who should receive notifications for a recorder.
-    This includes the recorder owner AND anyone with traders linked to the recorder.
-    
-    Args:
-        recorder_id: The recorder ID
-    
-    Returns:
-        List of unique user_ids who should be notified
-    """
-    user_ids = set()
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        ph = '%s' if is_postgres else '?'
-        
-        # Get recorder owner
-        cursor.execute(f'SELECT user_id FROM recorders WHERE id = {ph}', (recorder_id,))
-        row = cursor.fetchone()
-        if row:
-            owner_id = row[0] if isinstance(row, tuple) else row.get('user_id')
-            if owner_id:
-                user_ids.add(owner_id)
-        
-        # Get all users with traders linked to this recorder
-        cursor.execute(f'SELECT DISTINCT user_id FROM traders WHERE recorder_id = {ph} AND user_id IS NOT NULL', (recorder_id,))
-        rows = cursor.fetchall()
-        for row in rows:
-            uid = row[0] if isinstance(row, tuple) else row.get('user_id')
-            if uid:
-                user_ids.add(uid)
-        
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"🔔 Users for recorder {recorder_id} notifications: {list(user_ids)}")
-        return list(user_ids)
-    except Exception as e:
-        logger.error(f"❌ Error getting users for recorder notifications: {e}")
-        return []
-
-
-def notify_trade_execution(user_id: int = None, action: str = None, symbol: str = None, quantity: int = None, 
-                           price: float = None, recorder_name: str = None, pnl: float = None,
-                           tp_price: float = None, sl_price: float = None, recorder_id: int = None):
-    """
-    Send trade execution notification to user via Discord AND push notification.
-    
-    Args:
-        user_id: Database user ID
-        action: 'BUY', 'SELL', 'LONG', 'SHORT', 'DCA LONG', 'DCA SHORT'
-        symbol: Trading symbol (e.g., 'MNQH5')
-        quantity: Number of contracts
-        price: Execution price
-        recorder_name: Name of the recorder/strategy
-        pnl: Realized P&L (for closing trades)
-        tp_price: Take profit price (optional)
-        sl_price: Stop loss price (optional)
-    """
-    logger.info(f"🔔 notify_trade_execution called: user_id={user_id}, action={action}, symbol={symbol}, qty={quantity}")
-    
-    # Determine if this is a DCA, open, or close
-    action_upper = action.upper()
-    is_dca = 'DCA' in action_upper
-    is_long = 'BUY' in action_upper or 'LONG' in action_upper
-    is_close = pnl is not None
-    
-    # Build Discord embed
-    if is_close:
-        # Closing trade
-        embed_color = 0x00FF00 if pnl >= 0 else 0xFF0000  # Green if profit, red if loss
-        title = f"{recorder_name or 'Trade'} {symbol}"
-        description = f"{symbol} Closed a {'LONG' if is_long else 'SHORT'}"
-        fields = [
-            {"name": "Close Price", "value": f"{price:,.2f}", "inline": True},
-            {"name": "Realized Profit", "value": f"${pnl:,.2f}", "inline": True},
-            {"name": "Drawdown", "value": "$0.00", "inline": True}
-        ]
-    else:
-        # Opening trade
-        embed_color = 0x00FF00 if is_long else 0xFF0000  # Green for long, red for short
-        action_text = "DCA" if is_dca else "Opened"
-        side_text = "LONG" if is_long else "SHORT"
-        title = f"{recorder_name or 'Trade'} {symbol}"
-        description = f"{symbol} {action_text} a {side_text}"
-        fields = [
-            {"name": "Open Price", "value": f"{price:,.2f}", "inline": True},
-            {"name": "Current Pos", "value": f"{quantity}", "inline": True},
-            {"name": "First TP", "value": f"{tp_price:,.2f}" if tp_price else "None", "inline": True},
-            {"name": "Stoploss", "value": f"{sl_price:,.2f}" if sl_price else "0.00", "inline": False}
-        ]
-    
-    embed = {
-        "title": title,
-        "description": description,
-        "color": embed_color,
-        "fields": fields,
-        "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
-        "footer": {"text": "Just.Trades Notification"},
-        "timestamp": get_chicago_time().isoformat()
-    }
-    
-    # Push notification (plain text)
-    push_title = f"{'📈' if is_long else '📉'} {recorder_name or 'Trade'}"
-    if is_close:
-        push_body = f"Closed {symbol} @ {price:,.2f} • P&L: ${pnl:,.2f}"
-    else:
-        push_body = f"{'DCA' if is_dca else 'Opened'} {'LONG' if is_long else 'SHORT'} {symbol} @ {price:,.2f}"
-    
-    # Get all users to notify
-    # If recorder_id provided, notify ALL users linked to the recorder (not just owner)
-    if recorder_id:
-        user_ids_to_notify = get_users_for_recorder_notifications(recorder_id)
-    elif user_id:
-        user_ids_to_notify = [user_id]
-    else:
-        user_ids_to_notify = []
-
-    logger.info(f"🔔 Users to notify: {user_ids_to_notify}")
-
-    # 🚀 FIRE-AND-FORGET: Send notifications in background thread to avoid blocking order execution
-    def send_notifications_background():
-        """Background thread for sending Discord and Push notifications."""
-        try:
-            # Send Discord DM with embed to ALL users
-            if DISCORD_NOTIFICATIONS_ENABLED:
-                for uid in user_ids_to_notify:
-                    try:
-                        users = get_discord_enabled_users(uid)
-                        for user in users:
-                            try:
-                                send_discord_dm(user['discord_user_id'], "", embed)
-                            except Exception as dm_err:
-                                logger.debug(f"Discord DM error: {dm_err}")
-                    except Exception as user_err:
-                        logger.debug(f"Discord user lookup error: {user_err}")
-
-            # Send Push Notification to ALL users
-            if PUSH_NOTIFICATIONS_ENABLED:
-                for uid in user_ids_to_notify:
-                    try:
-                        send_push_notification(uid, push_title, push_body, url='/dashboard')
-                    except Exception as push_err:
-                        logger.debug(f"Push notification error: {push_err}")
-
-            logger.debug(f"🔔 Background notifications completed for {len(user_ids_to_notify)} users")
-        except Exception as e:
-            logger.error(f"🔔 Background notification error: {e}")
-
-    # Start background thread (non-blocking)
-    import threading
-    notification_thread = threading.Thread(target=send_notifications_background, daemon=True)
-    notification_thread.start()
-    logger.info(f"🔔 Notifications dispatched to background thread")
-
+## Discord notification functions have been extracted to discord_notifications.py
+## They are imported at the top of this file and initialized after app creation.
 
 def track_paper_trade(recorder_id: int, symbol: str, action: str, quantity: float = 1, price: float = None):
     """
@@ -1140,205 +865,8 @@ def track_paper_trade(recorder_id: int, symbol: str, action: str, quantity: floa
     return None
 
 
-def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = None, quantity: int = None, 
-                     price: float = None, pnl: float = None, recorder_name: str = None,
-                     entry_price: float = None, side: str = None, recorder_id: int = None):
-    """
-    Send TP/SL hit notification via Discord AND push notification.
-    
-    Args:
-        user_id: Database user ID (deprecated, use recorder_id instead)
-        order_type: 'TP' or 'SL'
-        symbol: Trading symbol
-        quantity: Contracts closed
-        price: Fill price (exit price)
-        pnl: Realized P&L
-        recorder_name: Name of the recorder/strategy
-        entry_price: Original entry price
-        side: 'LONG' or 'SHORT'
-        recorder_id: Recorder ID - will notify ALL users linked to this recorder
-    """
-    logger.info(f"🔔 notify_tp_sl_hit called: user_id={user_id}, recorder_id={recorder_id}, type={order_type}, symbol={symbol}, pnl={pnl}")
-    
-    is_tp = order_type.upper() == 'TP'
-    
-    # Build Discord embed
-    embed_color = 0x00FF00 if (pnl and pnl >= 0) else 0xFF0000
-    title = f"{recorder_name or 'Trade'} {symbol}"
-    description = f"{symbol} Closed a {side or 'POSITION'}"
-    
-    fields = [
-        {"name": "Close Price", "value": f"{price:,.2f}", "inline": True},
-        {"name": "Realized Profit", "value": f"${pnl:,.2f}" if pnl else "$0.00", "inline": True},
-        {"name": "Drawdown", "value": "$0.00", "inline": True}
-    ]
-    
-    embed = {
-        "title": title,
-        "description": description,
-        "color": embed_color,
-        "fields": fields,
-        "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
-        "footer": {"text": f"Just.Trades • {'Take Profit' if is_tp else 'Stop Loss'}"},
-        "timestamp": get_chicago_time().isoformat()
-    }
-    
-    # Push notification (plain text)
-    push_title = f"{'🎯' if is_tp else '🛑'} {'TP' if is_tp else 'SL'} Hit"
-    push_body = f"{symbol} @ {price:,.2f}"
-    if pnl is not None:
-        push_body += f" • P&L: ${pnl:,.2f}"
-    
-    # Get all users to notify
-    if recorder_id:
-        user_ids_to_notify = get_users_for_recorder_notifications(recorder_id)
-    elif user_id:
-        user_ids_to_notify = [user_id]
-    else:
-        user_ids_to_notify = []
-
-    logger.info(f"🔔 Users to notify for TP/SL: {user_ids_to_notify}")
-
-    # 🚀 FIRE-AND-FORGET: Send notifications in background thread to avoid blocking
-    def send_tpsl_notifications_background():
-        """Background thread for sending TP/SL Discord and Push notifications."""
-        try:
-            if DISCORD_NOTIFICATIONS_ENABLED:
-                for uid in user_ids_to_notify:
-                    try:
-                        users = get_discord_enabled_users(uid)
-                        for user in users:
-                            try:
-                                send_discord_dm(user['discord_user_id'], "", embed)
-                            except Exception as dm_err:
-                                logger.debug(f"Discord DM error: {dm_err}")
-                    except Exception as user_err:
-                        logger.debug(f"Discord user lookup error: {user_err}")
-
-            if PUSH_NOTIFICATIONS_ENABLED:
-                for uid in user_ids_to_notify:
-                    try:
-                        send_push_notification(uid, push_title, push_body, url='/dashboard')
-                    except Exception as push_err:
-                        logger.debug(f"Push notification error: {push_err}")
-
-            logger.debug(f"🔔 Background TP/SL notifications completed")
-        except Exception as e:
-            logger.error(f"🔔 Background TP/SL notification error: {e}")
-
-    import threading
-    notification_thread = threading.Thread(target=send_tpsl_notifications_background, daemon=True)
-    notification_thread.start()
-    logger.info(f"🔔 TP/SL notifications dispatched to background thread")
-
-
-def notify_error(user_id: int, error_type: str, error_message: str, details: str = None):
-    """
-    Send error notification to user via Discord AND push notification.
-    
-    Args:
-        user_id: Database user ID
-        error_type: Type of error (e.g., 'Connection Lost', 'Webhook Failed')
-        error_message: Brief error description
-        details: Optional additional details
-    """
-    # Discord message
-    discord_message = f"⚠️ **{error_type}**\n"
-    discord_message += f"❌ {error_message}"
-    if details:
-        discord_message += f"\n📝 {details}"
-    discord_message += f"\n⏰ {get_chicago_time().strftime('%I:%M:%S %p CT')}"
-    
-    # Push notification
-    push_title = f"⚠️ {error_type}"
-    push_body = error_message
-    if details:
-        push_body += f" - {details[:50]}"
-    
-    # Send Discord DM
-    if DISCORD_NOTIFICATIONS_ENABLED:
-        users = get_discord_enabled_users(user_id)
-        for user in users:
-            send_discord_dm(user['discord_user_id'], discord_message)
-    
-    # Send Push Notification
-    if PUSH_NOTIFICATIONS_ENABLED:
-        send_push_notification(user_id, push_title, push_body, url='/recorders_list')
-
-
-def notify_daily_summary(user_id: int, total_trades: int, winners: int, losers: int,
-                         total_pnl: float, best_trade: float = None, worst_trade: float = None):
-    """
-    Send daily P&L summary to user.
-    
-    Args:
-        user_id: Database user ID
-        total_trades: Number of trades today
-        winners: Number of winning trades
-        losers: Number of losing trades
-        total_pnl: Total realized P&L
-        best_trade: Best single trade P&L
-        worst_trade: Worst single trade P&L
-    """
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return
-    
-    users = get_discord_enabled_users(user_id)
-    if not users:
-        return
-    
-    pnl_emoji = "📈" if total_pnl >= 0 else "📉"
-    win_rate = (winners / total_trades * 100) if total_trades > 0 else 0
-    
-    message = f"📊 **Daily Trading Summary**\n"
-    message += f"━━━━━━━━━━━━━━━━━━━━\n"
-    message += f"{pnl_emoji} **Total P&L: ${total_pnl:,.2f}**\n"
-    message += f"📈 Trades: {total_trades} ({winners}W / {losers}L)\n"
-    message += f"🎯 Win Rate: {win_rate:.1f}%\n"
-    if best_trade is not None:
-        message += f"🏆 Best Trade: ${best_trade:,.2f}\n"
-    if worst_trade is not None:
-        message += f"💔 Worst Trade: ${worst_trade:,.2f}\n"
-    message += f"━━━━━━━━━━━━━━━━━━━━\n"
-    message += f"📅 {get_chicago_time().strftime('%B %d, %Y')}"
-    
-    for user in users:
-        send_discord_dm(user['discord_user_id'], message)
-
-
-def broadcast_announcement(title: str, message: str, announcement_type: str = 'info'):
-    """
-    Broadcast announcement to ALL users with Discord linked and DMs enabled.
-    
-    Args:
-        title: Announcement title
-        message: Announcement content
-        announcement_type: 'info', 'success', 'warning', 'critical'
-    """
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return 0
-    
-    type_emojis = {
-        'info': 'ℹ️',
-        'success': '✅',
-        'warning': '⚠️',
-        'critical': '🚨'
-    }
-    
-    emoji = type_emojis.get(announcement_type, 'ℹ️')
-    
-    full_message = f"{emoji} **{title}**\n\n{message}\n\n— Just.Trades Team"
-    
-    users = get_discord_enabled_users()
-    sent_count = 0
-    
-    for user in users:
-        if send_discord_dm(user['discord_user_id'], full_message):
-            sent_count += 1
-    
-    logger.info(f"📢 Broadcast sent to {sent_count}/{len(users)} Discord users")
-    return sent_count
-
+## notify_tp_sl_hit, notify_error, notify_daily_summary, broadcast_announcement
+## have been extracted to discord_notifications.py
 
 # ============================================================================
 # PUSH NOTIFICATION SERVICE (Browser Push)
@@ -3356,6 +2884,38 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # Register auth context processor to make current_user available in all templates
 if USER_AUTH_AVAILABLE:
     app.context_processor(auth_context_processor)
+
+# ============================================================================
+# INITIALIZE DISCORD MODULE
+# ============================================================================
+_auth_db_fn = None
+if USER_AUTH_AVAILABLE:
+    try:
+        from user_auth import get_auth_db_connection as _auth_db_fn
+    except ImportError:
+        pass
+
+init_discord_notifications(
+    bot_token=DISCORD_BOT_TOKEN,
+    get_db_connection=get_db_connection,
+    is_using_postgres=is_using_postgres,
+    get_chicago_time=get_chicago_time,
+    send_push_notification=send_push_notification if PUSH_NOTIFICATIONS_ENABLED else None,
+    push_notifications_enabled=PUSH_NOTIFICATIONS_ENABLED,
+    user_auth_available=USER_AUTH_AVAILABLE,
+    get_auth_db_connection=_auth_db_fn
+)
+
+init_discord_routes(
+    user_auth_available=USER_AUTH_AVAILABLE,
+    is_logged_in=is_logged_in if USER_AUTH_AVAILABLE else (lambda: False),
+    get_current_user=get_current_user if USER_AUTH_AVAILABLE else (lambda: None),
+    get_auth_db_connection=_auth_db_fn,
+    discord_notifications_enabled=DISCORD_NOTIFICATIONS_ENABLED,
+    send_discord_dm_fn=send_discord_dm,
+    broadcast_announcement_fn=broadcast_announcement,
+)
+app.register_blueprint(discord_bp)
 
 # Template filter for date formatting
 @app.template_filter('format_datetime')
@@ -6619,34 +6179,7 @@ def admin_create_announcement():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/admin/discord/broadcast', methods=['POST'])
-@login_required
-def admin_discord_broadcast():
-    """Admin: Send a Discord DM broadcast to all users with Discord linked."""
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return jsonify({'error': 'Discord notifications not configured. Set DISCORD_BOT_TOKEN environment variable.'}), 400
-    
-    data = request.json
-    title = data.get('title', '').strip()
-    message = data.get('message', '').strip()
-    ann_type = data.get('type', 'info')
-    
-    if not title or not message:
-        return jsonify({'error': 'Title and message are required'}), 400
-    
-    sent_count = broadcast_announcement(title, message, ann_type)
-    logger.info(f"Admin {user.username} sent Discord broadcast: {title} (sent to {sent_count} users)")
-    
-    return jsonify({
-        'success': True,
-        'sent_count': sent_count,
-        'message': f'Broadcast sent to {sent_count} Discord users'
-    })
-
+## /api/admin/discord/broadcast route moved to discord_routes.py
 
 @app.route('/api/admin/announcements/<int:ann_id>', methods=['PUT'])
 @login_required
@@ -6834,89 +6367,7 @@ def admin_set_recorder_user(recorder_id):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/admin/discord/check/<int:user_id>', methods=['GET'])
-@login_required
-def admin_check_discord_status(user_id):
-    """Admin: Check Discord status for a specific user."""
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        if db_type == 'postgresql':
-            cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user_id,))
-        else:
-            cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user_id,))
-        
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if row:
-            # Handle both tuple and dict-like rows
-            if isinstance(row, tuple):
-                uid, uname, discord_id, dms_enabled = row
-            else:
-                uid = row['id']
-                uname = row['username']
-                discord_id = row['discord_user_id']
-                dms_enabled = row['discord_dms_enabled']
-            return jsonify({
-                'user_id': uid,
-                'username': uname,
-                'discord_user_id': discord_id,
-                'discord_dms_enabled': dms_enabled,
-                'notifications_would_work': bool(discord_id) and bool(dms_enabled)
-            })
-        return jsonify({'error': 'User not found'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/admin/discord/all-users', methods=['GET'])
-@login_required
-def admin_list_all_discord_status():
-    """Admin: List Discord status for ALL users."""
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users ORDER BY id')
-        
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        users = []
-        for row in rows:
-            if isinstance(row, tuple):
-                uid, uname, discord_id, dms_enabled = row
-            else:
-                uid = row['id']
-                uname = row['username']
-                discord_id = row['discord_user_id']
-                dms_enabled = row['discord_dms_enabled']
-            users.append({
-                'user_id': uid,
-                'username': uname,
-                'discord_linked': bool(discord_id),
-                'dms_enabled': bool(dms_enabled),
-                'notifications_work': bool(discord_id) and bool(dms_enabled)
-            })
-        
-        return jsonify({'users': users, 'total': len(users)})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+## /api/admin/discord/check and /api/admin/discord/all-users routes moved to discord_routes.py
 
 @app.route('/api/admin/max-loss-monitor/status', methods=['GET'])
 @login_required
@@ -6948,32 +6399,7 @@ def admin_max_loss_monitor_status():
     return jsonify(status)
 
 
-@app.route('/api/admin/discord/enable/<int:user_id>', methods=['POST'])
-@login_required
-def admin_enable_discord_for_user(user_id):
-    """Admin: Force enable Discord DMs for a specific user."""
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        if db_type == 'postgresql':
-            cursor.execute('UPDATE users SET discord_dms_enabled = TRUE WHERE id = %s', (user_id,))
-        else:
-            cursor.execute('UPDATE users SET discord_dms_enabled = 1 WHERE id = ?', (user_id,))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return jsonify({'success': True, 'message': f'Discord DMs enabled for user {user_id}'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+## /api/admin/discord/enable route moved to discord_routes.py
 
 @app.route('/api/admin/recorders/fix-all', methods=['POST'])
 @login_required  
@@ -21983,149 +21409,7 @@ def api_request_username_change():
         conn.close()
 
 
-@app.route('/api/settings/discord/toggle', methods=['POST'])
-def api_toggle_discord_dms():
-    """Toggle Discord DM notifications."""
-    if not USER_AUTH_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Auth system not available'}), 400
-    
-    if not is_logged_in():
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
-    
-    user = get_current_user()
-    if not user:
-        return jsonify({'success': False, 'error': 'User not found'}), 404
-    
-    from user_auth import get_auth_db_connection
-    conn, db_type = get_auth_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        # Get current state
-        if db_type == 'postgresql':
-            cursor.execute('SELECT discord_dms_enabled FROM users WHERE id = %s', (user.id,))
-        else:
-            cursor.execute('SELECT discord_dms_enabled FROM users WHERE id = ?', (user.id,))
-        row = cursor.fetchone()
-        current_state = bool(row['discord_dms_enabled'] if hasattr(row, 'keys') else row[0]) if row else False
-        
-        # Toggle
-        new_state = not current_state
-        if db_type == 'postgresql':
-            cursor.execute('UPDATE users SET discord_dms_enabled = %s WHERE id = %s', (new_state, user.id))
-        else:
-            cursor.execute('UPDATE users SET discord_dms_enabled = ? WHERE id = ?', (1 if new_state else 0, user.id))
-        
-        conn.commit()
-        return jsonify({'success': True, 'enabled': new_state, 'message': 'Discord notifications ' + ('enabled' if new_state else 'disabled')})
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"❌ Failed to toggle Discord DMs: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-
-@app.route('/api/settings/discord/status', methods=['GET'])
-def api_discord_status():
-    """Get Discord notification status for current user."""
-    if not USER_AUTH_AVAILABLE or not is_logged_in():
-        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': 'not_logged_in'})
-    
-    user = get_current_user()
-    if not user:
-        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': 'no_user'})
-    
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        if db_type == 'postgresql':
-            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user.id,))
-        else:
-            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user.id,))
-        
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if row:
-            discord_user_id = row[0] if isinstance(row, tuple) else row.get('discord_user_id')
-            dms_enabled_raw = row[1] if isinstance(row, tuple) else row.get('discord_dms_enabled')
-            discord_linked = bool(discord_user_id)
-            dms_enabled = bool(dms_enabled_raw)
-            return jsonify({
-                'linked': discord_linked,
-                'enabled': dms_enabled,
-                'bot_configured': DISCORD_NOTIFICATIONS_ENABLED,
-                'debug': {
-                    'user_id': user.id,
-                    'discord_user_id': discord_user_id,
-                    'dms_enabled_raw': dms_enabled_raw
-                }
-            })
-    except Exception as e:
-        logger.error(f"Error checking Discord status: {e}")
-        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': f'error: {str(e)}'})
-    
-    return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': 'no_row'})
-
-
-@app.route('/api/settings/discord/test', methods=['POST'])
-def api_test_discord_notification():
-    """Send a test Discord notification to the current user."""
-    if not USER_AUTH_AVAILABLE or not is_logged_in():
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
-    
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return jsonify({'success': False, 'error': 'Discord bot not configured. Set DISCORD_BOT_TOKEN in Railway.'}), 400
-    
-    user = get_current_user()
-    if not user:
-        return jsonify({'success': False, 'error': 'User not found'}), 404
-    
-    # Get user's Discord ID directly (don't require DMs enabled for test)
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        if db_type == 'postgresql':
-            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user.id,))
-        else:
-            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user.id,))
-        
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if not row:
-            return jsonify({'success': False, 'error': 'User not found in database'}), 404
-        
-        discord_user_id = row[0] if isinstance(row, tuple) else row.get('discord_user_id')
-        dms_enabled = row[1] if isinstance(row, tuple) else row.get('discord_dms_enabled')
-        
-        logger.info(f"🔍 Discord test: user_id={user.id}, discord_user_id={discord_user_id}, dms_enabled={dms_enabled}")
-        
-        if not discord_user_id:
-            return jsonify({'success': False, 'error': 'Discord not linked. Click "Link Discord" first.'}), 400
-        
-    except Exception as e:
-        logger.error(f"❌ Error checking Discord status: {e}")
-        return jsonify({'success': False, 'error': f'Database error: {str(e)}'}), 500
-    
-    # Send test message
-    test_message = "🧪 **Test Notification**\n\nThis is a test message from Just.Trades!\n\nIf you see this, Discord notifications are working correctly. ✅"
-    
-    success = send_discord_dm(discord_user_id, test_message)
-    
-    if success:
-        return jsonify({'success': True, 'message': 'Test notification sent! Check your Discord DMs.'})
-    else:
-        return jsonify({'success': False, 'error': 'Failed to send DM. Make sure your Discord DMs are open (not blocked).'}), 500
-
+## Discord toggle/status/test routes moved to discord_routes.py
 
 # ============================================================================
 # PUSH NOTIFICATION SETTINGS ROUTES
@@ -22298,146 +21582,7 @@ def api_test_push_notification():
         return jsonify({'success': False, 'error': 'No push subscriptions found. Enable notifications first.'}), 400
 
 
-@app.route('/api/settings/discord/link', methods=['GET'])
-def api_discord_oauth_start():
-    """Initiate Discord OAuth flow."""
-    if not USER_AUTH_AVAILABLE:
-        flash('Authentication system not available.', 'error')
-        return redirect(url_for('settings'))
-    
-    if not is_logged_in():
-        return redirect(url_for('login'))
-    
-    # Discord OAuth URL
-    import os
-    from urllib.parse import urlencode
-    discord_client_id = os.environ.get('DISCORD_CLIENT_ID', '')
-    discord_redirect_uri = os.environ.get('DISCORD_REDIRECT_URI', request.url_root.rstrip('/') + '/api/settings/discord/callback')
-    
-    logger.info(f"🔗 Discord OAuth: client_id exists={bool(discord_client_id)}, redirect_uri={discord_redirect_uri}")
-    
-    if not discord_client_id:
-        logger.warning("⚠️ DISCORD_CLIENT_ID environment variable not set")
-        flash('Discord OAuth is not configured. Please contact an administrator.', 'error')
-        return redirect(url_for('settings'))
-    
-    # Store state in session
-    import secrets
-    state = secrets.token_urlsafe(32)
-    session['discord_oauth_state'] = state
-    
-    oauth_params = {
-        'client_id': discord_client_id,
-        'redirect_uri': discord_redirect_uri,
-        'response_type': 'code',
-        'scope': 'identify',
-        'state': state
-    }
-    
-    oauth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(oauth_params)}"
-    return redirect(oauth_url)
-
-
-@app.route('/api/settings/discord/callback', methods=['GET'])
-def api_discord_oauth_callback():
-    """Discord OAuth callback."""
-    if not USER_AUTH_AVAILABLE:
-        flash('Authentication system not available.', 'error')
-        return redirect(url_for('settings'))
-    
-    if not is_logged_in():
-        return redirect(url_for('login'))
-    
-    user = get_current_user()
-    if not user:
-        return redirect(url_for('settings'))
-    
-    code = request.args.get('code')
-    state = request.args.get('state')
-    error = request.args.get('error')
-    
-    if error:
-        flash(f'Discord authorization failed: {error}', 'error')
-        return redirect(url_for('settings'))
-    
-    if not code or state != session.get('discord_oauth_state'):
-        flash('Invalid Discord authorization.', 'error')
-        return redirect(url_for('settings'))
-    
-    # Exchange code for token
-    import os
-    import requests
-    discord_client_id = os.environ.get('DISCORD_CLIENT_ID', '')
-    discord_client_secret = os.environ.get('DISCORD_CLIENT_SECRET', '')
-    discord_redirect_uri = os.environ.get('DISCORD_REDIRECT_URI', request.url_root.rstrip('/') + '/api/settings/discord/callback')
-    
-    if not discord_client_id or not discord_client_secret:
-        flash('Discord OAuth is not configured. Please contact an administrator.', 'error')
-        return redirect(url_for('settings'))
-    
-    try:
-        # Exchange code for access token
-        token_data = {
-            'client_id': discord_client_id,
-            'client_secret': discord_client_secret,
-            'grant_type': 'authorization_code',
-            'code': code,
-            'redirect_uri': discord_redirect_uri
-        }
-        
-        token_response = requests.post('https://discord.com/api/oauth2/token', data=token_data)
-        if token_response.status_code != 200:
-            flash('Failed to exchange Discord authorization code.', 'error')
-            return redirect(url_for('settings'))
-        
-        token_json = token_response.json()
-        access_token = token_json.get('access_token')
-        
-        # Get user info
-        user_response = requests.get('https://discord.com/api/users/@me', headers={
-            'Authorization': f'Bearer {access_token}'
-        })
-        if user_response.status_code != 200:
-            flash('Failed to get Discord user information.', 'error')
-            return redirect(url_for('settings'))
-        
-        discord_user_info = user_response.json()
-        discord_user_id = discord_user_info.get('id')
-        
-        # Store in database
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            if db_type == 'postgresql':
-                cursor.execute('''
-                    UPDATE users SET discord_user_id = %s, discord_access_token = %s
-                    WHERE id = %s
-                ''', (discord_user_id, access_token, user.id))
-            else:
-                cursor.execute('''
-                    UPDATE users SET discord_user_id = ?, discord_access_token = ?
-                    WHERE id = ?
-                ''', (discord_user_id, access_token, user.id))
-            conn.commit()
-            flash('Discord account linked successfully!', 'success')
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"❌ Failed to link Discord: {e}")
-            flash('Failed to link Discord account.', 'error')
-        finally:
-            cursor.close()
-            conn.close()
-        
-        # Clear state
-        session.pop('discord_oauth_state', None)
-        return redirect(url_for('settings'))
-    except Exception as e:
-        logger.error(f"❌ Discord OAuth error: {e}")
-        flash('Discord authorization failed.', 'error')
-        return redirect(url_for('settings'))
-
+## Discord link/callback routes moved to discord_routes.py
 
 # ============================================================================
 # COMMUNITY CHAT - Public chat room for all users
