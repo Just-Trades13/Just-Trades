@@ -1,4 +1,4 @@
-""
+"""
 Market Data Bot - Provides real-time market data, news, and financial information.
 """
 
