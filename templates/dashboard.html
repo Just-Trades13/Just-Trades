@@ -326,20 +326,100 @@
                 <span class="price-value" id="price-NQ">--</span>
                 <span class="price-change" id="change-NQ">--</span>
             </div>
-            <div class="live-price-item" data-symbol="ES">
-                <span class="price-symbol">ES</span>
-                <span class="price-value" id="price-ES">--</span>
-                <span class="price-change" id="change-ES">--</span>
-            </div>
             <div class="live-price-item" data-symbol="MNQ">
                 <span class="price-symbol">MNQ</span>
                 <span class="price-value" id="price-MNQ">--</span>
                 <span class="price-change" id="change-MNQ">--</span>
             </div>
+            <div class="live-price-item" data-symbol="ES">
+                <span class="price-symbol">ES</span>
+                <span class="price-value" id="price-ES">--</span>
+                <span class="price-change" id="change-ES">--</span>
+            </div>
             <div class="live-price-item" data-symbol="MES">
                 <span class="price-symbol">MES</span>
                 <span class="price-value" id="price-MES">--</span>
                 <span class="price-change" id="change-MES">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="QQQ">
+                <span class="price-symbol">QQQ</span>
+                <span class="price-value" id="price-QQQ">--</span>
+                <span class="price-change" id="change-QQQ">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="SPY">
+                <span class="price-symbol">SPY</span>
+                <span class="price-value" id="price-SPY">--</span>
+                <span class="price-change" id="change-SPY">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="VIX">
+                <span class="price-symbol">VIX</span>
+                <span class="price-value" id="price-VIX">--</span>
+                <span class="price-change" id="change-VIX">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="DXY">
+                <span class="price-symbol">DXY</span>
+                <span class="price-value" id="price-DXY">--</span>
+                <span class="price-change" id="change-DXY">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="AAPL">
+                <span class="price-symbol">AAPL</span>
+                <span class="price-value" id="price-AAPL">--</span>
+                <span class="price-change" id="change-AAPL">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="NVDA">
+                <span class="price-symbol">NVDA</span>
+                <span class="price-value" id="price-NVDA">--</span>
+                <span class="price-change" id="change-NVDA">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="MSFT">
+                <span class="price-symbol">MSFT</span>
+                <span class="price-value" id="price-MSFT">--</span>
+                <span class="price-change" id="change-MSFT">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="META">
+                <span class="price-symbol">META</span>
+                <span class="price-value" id="price-META">--</span>
+                <span class="price-change" id="change-META">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="GOOG">
+                <span class="price-symbol">GOOG</span>
+                <span class="price-value" id="price-GOOG">--</span>
+                <span class="price-change" id="change-GOOG">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="AMZN">
+                <span class="price-symbol">AMZN</span>
+                <span class="price-value" id="price-AMZN">--</span>
+                <span class="price-change" id="change-AMZN">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="TSLA">
+                <span class="price-symbol">TSLA</span>
+                <span class="price-value" id="price-TSLA">--</span>
+                <span class="price-change" id="change-TSLA">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="AVGO">
+                <span class="price-symbol">AVGO</span>
+                <span class="price-value" id="price-AVGO">--</span>
+                <span class="price-change" id="change-AVGO">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="GC">
+                <span class="price-symbol">GC</span>
+                <span class="price-value" id="price-GC">--</span>
+                <span class="price-change" id="change-GC">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="MGC">
+                <span class="price-symbol">MGC</span>
+                <span class="price-value" id="price-MGC">--</span>
+                <span class="price-change" id="change-MGC">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="SILVER">
+                <span class="price-symbol">SILVER</span>
+                <span class="price-value" id="price-SILVER">--</span>
+                <span class="price-change" id="change-SILVER">--</span>
+            </div>
+            <div class="live-price-item" data-symbol="BTCUSD">
+                <span class="price-symbol">BTC</span>
+                <span class="price-value" id="price-BTCUSD">--</span>
+                <span class="price-change" id="change-BTCUSD">--</span>
             </div>
         </div>
 
@@ -1425,8 +1505,8 @@
     }
     .live-prices-bar {
         display: flex;
-        gap: 1rem;
-        padding: 1rem;
+        gap: 0.5rem;
+        padding: 0.75rem;
         background: rgba(0, 0, 0, 0.3);
         border-radius: 12px;
         overflow-x: auto;
@@ -1435,12 +1515,12 @@
     .live-price-item {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        padding: 0.75rem 1.25rem;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
         background: rgba(255, 255, 255, 0.03);
         border-radius: 8px;
         border: 1px solid rgba(255, 255, 255, 0.05);
-        min-width: 180px;
+        min-width: 150px;
     }
     .price-symbol {
         font-weight: 700;
