@@ -23024,7 +23024,7 @@ def api_dashboard_calendar_data():
         # Format for frontend (date string -> {pnl, trades})
         calendar_data = {}
         for row in rows:
-            date_str = row['date']
+            date_str = str(row['date'])
             calendar_data[date_str] = {
                 'pnl': round(row['daily_pnl'] or 0, 2),
                 'trades': row['trade_count'] or 0
