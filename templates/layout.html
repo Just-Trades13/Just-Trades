@@ -1352,12 +1352,13 @@
             document.body.appendChild(modal);
         }
 
-        // Run on page load
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', checkTrialAbuse);
-        } else {
-            checkTrialAbuse();
-        }
+        // DISABLED: Trial abuse check was blocking all users on second page load
+        // Will re-enable once backend only tracks trial users (not all logged-in users)
+        // if (document.readyState === 'loading') {
+        //     document.addEventListener('DOMContentLoaded', checkTrialAbuse);
+        // } else {
+        //     checkTrialAbuse();
+        // }
 
         // Expose for manual checks
         window.JTFingerprint = {

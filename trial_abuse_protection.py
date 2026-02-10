@@ -805,6 +805,19 @@ def register_trial_abuse_routes(app):
         success = unblock_fingerprint(fp_type, fp_value)
         return jsonify({'success': success})
 
+    @app.route('/api/admin/trial-abuse/unblock-all', methods=['POST'])
+    def api_unblock_all():
+        """Unblock all flagged users and reset trial_fingerprints table (admin only)"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = _is_postgres()
+        if is_postgres:
+            cursor.execute('UPDATE trial_fingerprints SET is_blocked = FALSE, block_reason = %s, trial_count = 1', ('Reset - false positive',))
+        else:
+            cursor.execute('UPDATE trial_fingerprints SET is_blocked = 0, block_reason = ?, trial_count = 1', ('Reset - false positive',))
+        conn.commit()
+        return jsonify({'success': True, 'message': 'All users unblocked'})
+
     logger.info("✅ Trial abuse protection routes registered")
 
 
