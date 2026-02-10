@@ -4246,6 +4246,20 @@ def init_db():
         except:
             pass  # Column already exists
 
+    # Per-trader execution tracking (Feb 2026) — isolates cooldown/max_signals per trader
+    try:
+        cursor.execute("ALTER TABLE traders ADD COLUMN last_trade_time TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE traders ADD COLUMN today_signal_count INTEGER DEFAULT 0")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE traders ADD COLUMN today_signal_date TEXT DEFAULT ''")
+    except:
+        pass
+
     # Add inverse_signals column to recorders table (Jan 2026)
     if is_postgres:
         try:
@@ -4682,6 +4696,11 @@ def run_migrations():
         ('traders', 'max_signals_per_session', 'INTEGER DEFAULT 0'),
         ('traders', 'auto_flat_after_cutoff', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
         ('traders', 'inverse_signals', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        # break_even settings for traders
+        ('traders', 'break_even_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        ('traders', 'break_even_ticks', 'INTEGER DEFAULT 10'),
+        # Premium strategy flag for Just Trades Showcase
+        ('recorders', 'is_premium', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
     ]
 
     for table, column, col_type in migrations:
@@ -7386,10 +7405,18 @@ def dashboard():
             if user.is_admin:
                 has_platform_subscription = True
     
+    # Check if current user is admin (for premium showcase)
+    is_admin = False
+    if USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if user and user.is_admin:
+            is_admin = True
+
     return render_template('dashboard.html',
                           has_platform_subscription=has_platform_subscription,
                           user_tier=user_tier,
-                          platform_subscription=platform_subscription)
+                          platform_subscription=platform_subscription,
+                          is_admin=is_admin)
 
 # =============================================================================
 # INSIDER SIGNALS ROUTES (Added Dec 8, 2025)
@@ -10130,12 +10157,12 @@ def recorders_list():
         if user_id:
             # Show only recorders created by this user
             if is_postgres:
-                cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
+                cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
             else:
-                cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
+                cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
         else:
             # No user auth - show all (shouldn't happen if login required)
-            cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders ORDER BY id DESC')
+            cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders ORDER BY id DESC')
         rows = cursor.fetchall()
         recorders = []
         for row in rows:
@@ -10150,7 +10177,8 @@ def recorders_list():
                         'name': row[1],
                         'ticker': row[2],
                         'enabled': row[3],
-                        'created_at': row[4]
+                        'created_at': row[4],
+                        'is_premium': row[5] if len(row) > 5 else False
                     }
                 # Ensure template-required fields exist
                 recorders.append({
@@ -10159,13 +10187,14 @@ def recorders_list():
                     'symbol': rec.get('ticker') or rec.get('symbol', ''),
                     'is_recording': rec.get('enabled', False),
                     'enabled': rec.get('enabled', False),
-                    'created_at': str(rec.get('created_at', '')) if rec.get('created_at') else ''
+                    'created_at': str(rec.get('created_at', '')) if rec.get('created_at') else '',
+                    'is_premium': bool(rec.get('is_premium', False))
                 })
             except Exception as row_err:
                 logger.warning(f"Error processing recorder row: {row_err}")
                 continue
         conn.close()
-        
+
         # Check platform subscription
         has_platform_subscription = True
         user_tier = 'none'
@@ -10179,18 +10208,27 @@ def recorders_list():
                 if user.is_admin:
                     has_platform_subscription = True
         
-        return render_template('recorders_list.html', 
+        # Check if current user is admin
+        is_admin = False
+        if USER_AUTH_AVAILABLE:
+            user = get_current_user()
+            if user and user.is_admin:
+                is_admin = True
+
+        return render_template('recorders_list.html',
                               recorders=recorders,
                               has_platform_subscription=has_platform_subscription,
-                              user_tier=user_tier)
+                              user_tier=user_tier,
+                              is_admin=is_admin)
     except Exception as e:
         logger.error(f"Error loading recorders list: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return render_template('recorders_list.html', 
+        return render_template('recorders_list.html',
                               recorders=[],
                               has_platform_subscription=False,
-                              user_tier='none')
+                              user_tier='none',
+                              is_admin=False)
 
 @app.route('/recorders/new')
 def recorders_new():
@@ -11297,7 +11335,14 @@ def api_create_trader():
         sl_amount = data.get('sl_amount')
         sl_units = data.get('sl_units')
         max_daily_loss = data.get('max_daily_loss')
-        
+        time_filter_1_enabled = data.get('time_filter_1_enabled', False)
+        time_filter_1_start = data.get('time_filter_1_start', '')
+        time_filter_1_stop = data.get('time_filter_1_stop', '')
+        time_filter_2_enabled = data.get('time_filter_2_enabled', False)
+        time_filter_2_start = data.get('time_filter_2_start', '')
+        time_filter_2_stop = data.get('time_filter_2_stop', '')
+        inverse_signals = data.get('inverse_signals', 0)
+
         if not recorder_id or not account_id:
             return jsonify({'success': False, 'error': 'recorder_id and account_id are required'}), 400
         
@@ -11397,12 +11442,18 @@ def api_create_trader():
                 INSERT INTO traders (
                     recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
                     initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                    user_id, enabled_accounts
+                    user_id, enabled_accounts,
+                    time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
+                    time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
+                    inverse_signals
                 )
-                VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                  current_user_id, None))
+                  current_user_id, None,
+                  1 if time_filter_1_enabled else 0, time_filter_1_start, time_filter_1_stop,
+                  1 if time_filter_2_enabled else 0, time_filter_2_start, time_filter_2_stop,
+                  1 if inverse_signals else 0))
             result = cursor.fetchone()
             if result:
                 trader_id = result.get('id') if isinstance(result, dict) else result[0]
@@ -11414,12 +11465,18 @@ def api_create_trader():
                 INSERT INTO traders (
                     recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
                     initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                    user_id, enabled_accounts
+                    user_id, enabled_accounts,
+                    time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
+                    time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
+                    inverse_signals
                 )
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                  current_user_id, None))
+                  current_user_id, None,
+                  1 if time_filter_1_enabled else 0, time_filter_1_start, time_filter_1_stop,
+                  1 if time_filter_2_enabled else 0, time_filter_2_start, time_filter_2_stop,
+                  1 if inverse_signals else 0))
             trader_id = cursor.lastrowid
         
         conn.commit()
@@ -14243,6 +14300,9 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         trader_trim_units = trader.get('trim_units') if trader else None
         if trader_trim_units:
             trim_units = trader_trim_units
+        trader_tp_units = trader.get('tp_units') if trader else None
+        if trader_tp_units:
+            tp_units = trader_tp_units
         if trader_sl_enabled is not None:
             sl_enabled = trader_sl_enabled
         if trader_sl_amount is not None:
@@ -14264,6 +14324,15 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             break_even_enabled = trader_break_even_enabled
         if trader_break_even_ticks is not None:
             break_even_ticks = int(trader_break_even_ticks or 10)
+        trader_break_even_offset = trader.get('break_even_offset') if trader else None
+        if trader_break_even_offset is not None:
+            break_even_offset = int(trader_break_even_offset or 0)
+        trader_trail_trigger = trader.get('trail_trigger') if trader else None
+        if trader_trail_trigger is not None:
+            trail_trigger = int(trader_trail_trigger or 0)
+        trader_trail_freq = trader.get('trail_freq') if trader else None
+        if trader_trail_freq is not None:
+            trail_freq = int(trader_trail_freq or 0)
 
         # ============================================================
         # TP/SL CALCULATION - Priority: Webhook > Trader > Recorder
@@ -23274,34 +23343,318 @@ def api_live_price_symbol(symbol):
         logger.error(f"Error getting price for {symbol}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ============================================================================
+# Paper Trading v2 — Dashboard API (reads from paper_positions_v2 / paper_trades_v2)
+# ============================================================================
+
+class PaperDBReader:
+    """Read-only helper for paper_positions_v2 / paper_trades_v2 tables.
+    Uses the same database as the main app (get_db_connection / is_using_postgres)."""
+
+    _tables_ensured = False
+
+    @staticmethod
+    def _ensure_tables():
+        """Create v2 tables if they don't exist (safe to call multiple times)."""
+        if PaperDBReader._tables_ensured:
+            return
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            is_pg = is_using_postgres()
+            id_type = 'SERIAL PRIMARY KEY' if is_pg else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+            ts_type = 'TIMESTAMP' if is_pg else 'TEXT'
+            cursor.execute(f'''CREATE TABLE IF NOT EXISTS paper_positions_v2 (
+                id {id_type}, recorder_id INTEGER NOT NULL, trader_id INTEGER DEFAULT 0,
+                ticker TEXT NOT NULL, symbol_root TEXT, side TEXT NOT NULL, quantity REAL NOT NULL,
+                avg_entry_price REAL NOT NULL, current_price REAL, unrealized_pnl REAL DEFAULT 0,
+                tp_price REAL, sl_price REAL, tp_ticks REAL DEFAULT 0, sl_ticks REAL DEFAULT 0,
+                dca_count INTEGER DEFAULT 0, entries TEXT DEFAULT '[]',
+                max_favorable_pnl REAL DEFAULT 0, max_adverse_pnl REAL DEFAULT 0,
+                opened_at {ts_type} DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'open')''')
+            cursor.execute(f'''CREATE TABLE IF NOT EXISTS paper_trades_v2 (
+                id {id_type}, recorder_id INTEGER NOT NULL, trader_id INTEGER DEFAULT 0,
+                ticker TEXT NOT NULL, symbol_root TEXT, side TEXT NOT NULL, quantity REAL NOT NULL,
+                entry_price REAL NOT NULL, exit_price REAL, pnl REAL, pnl_ticks REAL,
+                exit_reason TEXT, dca_count INTEGER DEFAULT 0, entries TEXT DEFAULT '[]',
+                max_favorable_excursion REAL DEFAULT 0, max_adverse_excursion REAL DEFAULT 0,
+                hold_time_seconds INTEGER, opened_at {ts_type} DEFAULT CURRENT_TIMESTAMP,
+                closed_at {ts_type})''')
+            conn.commit()
+            conn.close()
+            PaperDBReader._tables_ensured = True
+        except Exception as e:
+            logger.warning(f"PaperDBReader._ensure_tables: {e}")
+
+    @staticmethod
+    def _query(sql, params=(), fetch='all'):
+        """Run a read query. Returns list of dicts."""
+        PaperDBReader._ensure_tables()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        # Replace {ph} placeholders in SQL
+        sql = sql.replace('{ph}', ph)
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            rows = cursor.fetchall() if fetch == 'all' else [cursor.fetchone()] if fetch == 'one' else []
+            if not rows or rows[0] is None:
+                return []
+            # Both SQLite (Row) and PostgreSQL (RealDictCursor/DictRow) return dict-like objects
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_open_positions(recorder_id=None):
+        sql = "SELECT * FROM paper_positions_v2 WHERE status='open'"
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " ORDER BY opened_at DESC"
+        rows = PaperDBReader._query(sql, tuple(params))
+        result = []
+        for r in rows:
+            result.append({
+                'recorder_id': r.get('recorder_id'),
+                'symbol': r.get('ticker'),
+                'side': r.get('side'),
+                'quantity': r.get('quantity'),
+                'entry_price': r.get('avg_entry_price'),
+                'current_price': r.get('current_price'),
+                'unrealized_pnl': r.get('unrealized_pnl', 0),
+                'tp_price': r.get('tp_price'),
+                'sl_price': r.get('sl_price'),
+                'dca_count': r.get('dca_count', 0),
+                'opened_at': str(r.get('opened_at', '')),
+            })
+        return result
+
+    @staticmethod
+    def get_trade_history(recorder_id=None, limit=100):
+        sql = "SELECT * FROM paper_trades_v2 WHERE 1=1"
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " ORDER BY closed_at DESC LIMIT {ph}"
+        params.append(limit)
+        rows = PaperDBReader._query(sql, tuple(params))
+        result = []
+        for r in rows:
+            result.append({
+                'id': r.get('id'),
+                'recorder_id': r.get('recorder_id'),
+                'symbol': r.get('ticker'),
+                'side': r.get('side'),
+                'quantity': r.get('quantity'),
+                'entry_price': r.get('entry_price'),
+                'exit_price': r.get('exit_price'),
+                'pnl': r.get('pnl'),
+                'pnl_ticks': r.get('pnl_ticks'),
+                'exit_reason': r.get('exit_reason'),
+                'dca_count': r.get('dca_count', 0),
+                'max_favorable_excursion': r.get('max_favorable_excursion', 0),
+                'max_adverse_excursion': r.get('max_adverse_excursion', 0),
+                'hold_time_seconds': r.get('hold_time_seconds'),
+                'opened_at': str(r.get('opened_at', '')),
+                'closed_at': str(r.get('closed_at', '')),
+            })
+        return result
+
+    @staticmethod
+    def get_analytics(recorder_id=None):
+        sql = "SELECT pnl, pnl_ticks, exit_reason, hold_time_seconds, closed_at FROM paper_trades_v2 WHERE pnl IS NOT NULL"
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " ORDER BY closed_at ASC"
+        rows = PaperDBReader._query(sql, tuple(params))
+
+        if not rows:
+            return {
+                'total_trades': 0, 'winning_trades': 0, 'losing_trades': 0,
+                'win_rate': 0, 'total_pnl': 0, 'gross_profit': 0, 'gross_loss': 0,
+                'profit_factor': 0, 'average_win': 0, 'average_loss': 0,
+                'largest_win': 0, 'largest_loss': 0, 'max_drawdown': 0,
+                'average_trade': 0, 'expectancy': 0, 'avg_hold_time_seconds': 0,
+            }
+
+        pnls = [r['pnl'] for r in rows]
+        hold_times = [r['hold_time_seconds'] for r in rows if r.get('hold_time_seconds')]
+        winners = [p for p in pnls if p > 0]
+        losers = [p for p in pnls if p < 0]
+
+        total_trades = len(pnls)
+        winning_trades = len(winners)
+        losing_trades = len(losers)
+        win_rate = (winning_trades / total_trades * 100) if total_trades else 0
+
+        total_pnl = sum(pnls)
+        gross_profit = sum(winners) if winners else 0
+        gross_loss = abs(sum(losers)) if losers else 0
+        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (999.0 if gross_profit > 0 else 0)
+
+        average_win = (gross_profit / winning_trades) if winning_trades else 0
+        average_loss = (gross_loss / losing_trades) if losing_trades else 0
+        largest_win = max(winners) if winners else 0
+        largest_loss = min(losers) if losers else 0
+        average_trade = total_pnl / total_trades if total_trades else 0
+
+        loss_rate = losing_trades / total_trades if total_trades else 0
+        expectancy = ((win_rate / 100) * average_win) - (loss_rate * average_loss)
+
+        # Max drawdown from equity curve
+        peak = 0
+        running = 0
+        max_dd = 0
+        for p in pnls:
+            running += p
+            if running > peak:
+                peak = running
+            dd = peak - running
+            if dd > max_dd:
+                max_dd = dd
+
+        avg_hold = (sum(hold_times) / len(hold_times)) if hold_times else 0
+
+        return {
+            'total_trades': total_trades,
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(total_pnl, 2),
+            'gross_profit': round(gross_profit, 2),
+            'gross_loss': round(gross_loss, 2),
+            'profit_factor': round(profit_factor, 2),
+            'average_win': round(average_win, 2),
+            'average_loss': round(average_loss, 2),
+            'largest_win': round(largest_win, 2),
+            'largest_loss': round(largest_loss, 2),
+            'max_drawdown': round(max_dd, 2),
+            'average_trade': round(average_trade, 2),
+            'expectancy': round(expectancy, 2),
+            'avg_hold_time_seconds': round(avg_hold, 0),
+        }
+
+    @staticmethod
+    def get_equity_curve(recorder_id=None, limit=500):
+        sql = "SELECT pnl, closed_at, ticker, side FROM paper_trades_v2 WHERE pnl IS NOT NULL"
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " ORDER BY closed_at ASC LIMIT {ph}"
+        params.append(limit)
+        rows = PaperDBReader._query(sql, tuple(params))
+
+        points = []
+        running = 0.0
+        for r in rows:
+            pnl_val = r['pnl']
+            running += pnl_val
+            points.append({
+                'timestamp': str(r.get('closed_at', '')),
+                'pnl': round(pnl_val, 2),
+                'cumulative_pnl': round(running, 2),
+                'symbol': r.get('ticker'),
+                'side': r.get('side'),
+            })
+        return points
+
+    @staticmethod
+    def get_daily_pnl(recorder_id=None, days=30):
+        is_postgres = is_using_postgres()
+        if is_postgres:
+            date_filter = f"closed_at >= CURRENT_DATE - INTERVAL '{days} days'"
+        else:
+            date_filter = f"closed_at >= DATE('now', '-{days} days')"
+
+        sql = f'''
+            SELECT DATE(closed_at) as trade_date,
+                   COUNT(*) as trade_count,
+                   SUM(pnl) as daily_pnl,
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+                   SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers
+            FROM paper_trades_v2
+            WHERE pnl IS NOT NULL AND {date_filter}
+        '''
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " GROUP BY DATE(closed_at) ORDER BY trade_date DESC"
+        rows = PaperDBReader._query(sql, tuple(params))
+
+        result = []
+        for r in rows:
+            count = r.get('trade_count', 0)
+            w = r.get('winners', 0) or 0
+            dpnl = r.get('daily_pnl', 0) or 0
+            result.append({
+                'date': str(r.get('trade_date', '')),
+                'trade_count': count,
+                'pnl': round(dpnl, 2),
+                'winners': w,
+                'losers': r.get('losers', 0) or 0,
+                'win_rate': round((w / count * 100), 1) if count else 0,
+            })
+        return result
+
+    @staticmethod
+    def get_symbol_stats(recorder_id=None):
+        sql = '''
+            SELECT ticker,
+                   COUNT(*) as trade_count,
+                   SUM(pnl) as total_pnl,
+                   AVG(pnl) as avg_pnl,
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+                   SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers,
+                   MAX(pnl) as best_trade,
+                   MIN(pnl) as worst_trade
+            FROM paper_trades_v2
+            WHERE pnl IS NOT NULL
+        '''
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " GROUP BY ticker ORDER BY total_pnl DESC"
+        rows = PaperDBReader._query(sql, tuple(params))
+
+        result = []
+        for r in rows:
+            count = r.get('trade_count', 0)
+            w = r.get('winners', 0) or 0
+            result.append({
+                'symbol': r.get('ticker'),
+                'trade_count': count,
+                'total_pnl': round(r.get('total_pnl', 0) or 0, 2),
+                'avg_pnl': round(r.get('avg_pnl', 0) or 0, 2),
+                'winners': w,
+                'losers': r.get('losers', 0) or 0,
+                'win_rate': round((w / count * 100), 1) if count else 0,
+                'best_trade': round(r.get('best_trade', 0) or 0, 2),
+                'worst_trade': round(r.get('worst_trade', 0) or 0, 2),
+            })
+        return result
+
+
+# --- Paper Trading v2 API Routes ---
+
 @app.route('/api/paper-trades/positions', methods=['GET'])
 def api_paper_positions():
-    """Get all open paper trading positions"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get all open paper trading positions (from paper_positions_v2)"""
     try:
-        paper_engine = get_paper_engine()
-        positions = paper_engine.get_all_positions()
-
-        # Format with current prices
-        formatted = []
-        for recorder_id, recorder_positions in positions.items():
-            for symbol, pos in recorder_positions.items():
-                formatted.append({
-                    'recorder_id': recorder_id,
-                    'symbol': symbol,
-                    'side': pos.get('side'),
-                    'quantity': pos.get('quantity'),
-                    'entry_price': pos.get('entry_price'),
-                    'current_price': pos.get('current_price'),
-                    'unrealized_pnl': pos.get('unrealized_pnl', 0)
-                })
-
+        recorder_id = request.args.get('recorder_id', type=int)
+        positions = PaperDBReader.get_open_positions(recorder_id)
         return jsonify({
             'success': True,
-            'positions': formatted,
-            'count': len(formatted)
+            'positions': positions,
+            'count': len(positions)
         })
     except Exception as e:
         logger.error(f"Error getting paper positions: {e}")
@@ -23309,17 +23662,15 @@ def api_paper_positions():
 
 @app.route('/api/paper-trades/recorder/<int:recorder_id>', methods=['GET'])
 def api_paper_recorder_pnl(recorder_id):
-    """Get P&L and positions for a specific recorder"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get P&L and positions for a specific recorder (from paper_positions_v2)"""
     try:
-        paper_engine = get_paper_engine()
-        pnl_data = paper_engine.get_recorder_pnl(recorder_id)
-
+        positions = PaperDBReader.get_open_positions(recorder_id)
+        total_unrealized = sum(p.get('unrealized_pnl', 0) or 0 for p in positions)
         return jsonify({
             'success': True,
-            **pnl_data
+            'recorder_id': recorder_id,
+            'unrealized_pnl': round(total_unrealized, 2),
+            'positions': positions
         })
     except Exception as e:
         logger.error(f"Error getting recorder {recorder_id} P&L: {e}")
@@ -23327,17 +23678,11 @@ def api_paper_recorder_pnl(recorder_id):
 
 @app.route('/api/paper-trades/history', methods=['GET'])
 def api_paper_trade_history():
-    """Get paper trade history"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get paper trade history (from paper_trades_v2)"""
     try:
         recorder_id = request.args.get('recorder_id', type=int)
         limit = request.args.get('limit', 100, type=int)
-
-        paper_engine = get_paper_engine()
-        trades = paper_engine.get_trade_history(recorder_id=recorder_id, limit=limit)
-
+        trades = PaperDBReader.get_trade_history(recorder_id=recorder_id, limit=limit)
         return jsonify({
             'success': True,
             'trades': trades,
@@ -23349,10 +23694,7 @@ def api_paper_trade_history():
 
 @app.route('/api/paper-trades/open', methods=['POST'])
 def api_paper_open_position():
-    """Open a paper trading position"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Open a paper trading position — proxies to paper service on port 5050"""
     try:
         data = request.get_json()
         if not data:
@@ -23361,29 +23703,20 @@ def api_paper_open_position():
         recorder_id = data.get('recorder_id')
         symbol = data.get('symbol')
         side = data.get('side')
-        quantity = data.get('quantity', 1)
-        entry_price = data.get('entry_price')  # Optional - uses market price if not provided
 
         if not all([recorder_id, symbol, side]):
             return jsonify({'success': False, 'error': 'Missing required fields: recorder_id, symbol, side'}), 400
 
-        paper_engine = get_paper_engine()
-        result = paper_engine.open_position(recorder_id, symbol, side, quantity, entry_price)
-
-        if result:
-            return jsonify({'success': True, 'position': result})
-        else:
-            return jsonify({'success': False, 'error': 'Failed to open position - no price available'}), 400
+        import requests as http_requests
+        resp = http_requests.post('http://127.0.0.1:5050/api/paper/open', json=data, timeout=5)
+        return jsonify(resp.json()), resp.status_code
     except Exception as e:
         logger.error(f"Error opening paper position: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/paper-trades/close', methods=['POST'])
 def api_paper_close_position():
-    """Close a paper trading position"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Close a paper trading position — proxies to paper service on port 5050"""
     try:
         data = request.get_json()
         if not data:
@@ -23391,68 +23724,63 @@ def api_paper_close_position():
 
         recorder_id = data.get('recorder_id')
         symbol = data.get('symbol')
-        exit_price = data.get('exit_price')  # Optional - uses market price if not provided
 
         if not all([recorder_id, symbol]):
             return jsonify({'success': False, 'error': 'Missing required fields: recorder_id, symbol'}), 400
 
-        paper_engine = get_paper_engine()
-        result = paper_engine.close_position(recorder_id, symbol, exit_price)
-
-        if result:
-            return jsonify({'success': True, 'trade': result})
-        else:
-            return jsonify({'success': False, 'error': 'No open position found'}), 404
+        import requests as http_requests
+        resp = http_requests.post('http://127.0.0.1:5050/api/paper/close', json=data, timeout=5)
+        return jsonify(resp.json()), resp.status_code
     except Exception as e:
         logger.error(f"Error closing paper position: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/paper-trades/service-status', methods=['GET'])
 def api_paper_service_status():
-    """Get TradingView price service status"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({
-            'success': True,
-            'available': False,
-            'reason': 'TradingView price service module not installed'
-        })
-
+    """Get paper trading service status (checks v2 DB + optional service health)"""
     try:
-        ticker = get_ticker()
-        paper_engine = get_paper_engine()
+        positions = PaperDBReader.get_open_positions()
+        service_up = False
+        try:
+            import requests as http_requests
+            resp = http_requests.get('http://127.0.0.1:5050/api/paper/health', timeout=2)
+            service_up = resp.status_code == 200
+        except Exception:
+            pass
 
-        import time
-        seconds_since_update = time.time() - ticker.last_update_time if ticker.last_update_time else None
+        # Also check TradingView ticker if available
+        tv_info = {}
+        if TV_PRICE_SERVICE_AVAILABLE:
+            try:
+                ticker = get_ticker()
+                tv_info = {
+                    'websocket_connected': ticker.connected,
+                    'symbols_tracked': len(ticker.symbols),
+                    'prices_cached': len(ticker.prices),
+                }
+            except Exception:
+                pass
+
         return jsonify({
             'success': True,
             'available': True,
-            'websocket_connected': ticker.connected,
-            'is_premium': ticker.is_premium,
-            'symbols_tracked': len(ticker.symbols),
-            'symbols': ticker.symbols,
-            'prices_cached': len(ticker.prices),
-            'seconds_since_update': round(seconds_since_update, 1) if seconds_since_update else None,
-            'reconnect_count': ticker.reconnect_count,
-            'open_positions': len(paper_engine.positions)
+            'paper_service_running': service_up,
+            'open_positions': len(positions),
+            **tv_info
         })
     except Exception as e:
         return jsonify({
             'success': False,
-            'available': True,
+            'available': False,
             'error': str(e)
         })
 
 @app.route('/api/paper-trades/analytics', methods=['GET'])
 def api_paper_analytics():
-    """Get comprehensive paper trading analytics."""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get comprehensive paper trading analytics (from paper_trades_v2)."""
     try:
-        paper_engine = get_paper_engine()
         recorder_id = request.args.get('recorder_id', type=int)
-
-        analytics = paper_engine.get_analytics(recorder_id)
+        analytics = PaperDBReader.get_analytics(recorder_id)
         return jsonify({
             'success': True,
             'recorder_id': recorder_id,
@@ -23462,18 +23790,169 @@ def api_paper_analytics():
         logger.error(f"Error getting paper analytics: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/paper-trades/equity-curve', methods=['GET'])
-def api_paper_equity_curve():
-    """Get equity curve data for charting."""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+@app.route('/api/premium-showcase', methods=['GET'])
+def api_premium_showcase():
+    """Get all data for the Premium Strategies Showcase.
+
+    Returns combined analytics for all premium recorders using paper_trades_v2
+    via PaperDBReader. Includes per-strategy stats, equity curve, recent trades.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
+        # Get all premium recorders
+        true_val = 'TRUE' if is_postgres else '1'
+        cursor.execute(f'SELECT id, name, symbol FROM recorders WHERE is_premium = {true_val}')
+
+        rows = cursor.fetchall()
+        premium_recorders = []
+        for row in rows:
+            if isinstance(row, dict) or hasattr(row, 'keys'):
+                premium_recorders.append(dict(row))
+            else:
+                premium_recorders.append({'id': row[0], 'name': row[1], 'symbol': row[2]})
+        conn.close()
+
+        if not premium_recorders:
+            return jsonify({
+                'success': True,
+                'message': 'No premium strategies configured',
+                'strategies': [],
+                'combined_stats': None,
+                'recent_trades': [],
+                'equity_curve': []
+            })
+
+        premium_ids = [r['id'] for r in premium_recorders]
+
+        # Get per-strategy stats using PaperDBReader.get_analytics()
+        strategies = []
+        for recorder in premium_recorders:
+            analytics = PaperDBReader.get_analytics(recorder['id'])
+            strategies.append({
+                'id': recorder['id'],
+                'name': recorder['name'],
+                'symbol': recorder.get('symbol', ''),
+                'trades': analytics.get('total_trades', 0),
+                'win_rate': analytics.get('win_rate', 0),
+                'pnl': analytics.get('total_pnl', 0),
+            })
+
+        # Get combined stats across all premium recorders
+        # Query paper_trades_v2 directly for combined stats
+        placeholders = ','.join(['{ph}'] * len(premium_ids))
+        combined_sql = f"""SELECT pnl FROM paper_trades_v2
+            WHERE pnl IS NOT NULL AND recorder_id IN ({placeholders})
+            ORDER BY closed_at ASC"""
+        all_trades = PaperDBReader._query(combined_sql, tuple(premium_ids))
+
+        combined_stats = {'total_trades': 0, 'win_rate': 0, 'profit_factor': 0, 'total_pnl': 0}
+        if all_trades:
+            pnls = [t['pnl'] for t in all_trades]
+            total = len(pnls)
+            winners = [p for p in pnls if p > 0]
+            losers = [p for p in pnls if p < 0]
+            gross_profit = sum(winners) if winners else 0
+            gross_loss = abs(sum(losers)) if losers else 0
+            combined_stats = {
+                'total_trades': total,
+                'win_rate': round((len(winners) / total * 100), 1) if total else 0,
+                'profit_factor': round(gross_profit / gross_loss, 2) if gross_loss > 0 else ('Infinite' if gross_profit > 0 else 0),
+                'total_pnl': round(sum(pnls), 2),
+            }
+
+        # Get equity curve from paper_trades_v2 for premium recorders
+        eq_sql = f"""SELECT pnl, closed_at FROM paper_trades_v2
+            WHERE pnl IS NOT NULL AND recorder_id IN ({placeholders})
+            ORDER BY closed_at ASC LIMIT {{ph}}"""
+        eq_rows = PaperDBReader._query(eq_sql, tuple(premium_ids) + (50,))
+        equity_curve = []
+        running = 0.0
+        for r in eq_rows:
+            running += r['pnl']
+            equity_curve.append(round(running, 2))
+
+        # Get recent trades from premium recorders
+        rt_sql = f"""SELECT ticker, side, pnl, closed_at, recorder_id FROM paper_trades_v2
+            WHERE pnl IS NOT NULL AND recorder_id IN ({placeholders})
+            ORDER BY closed_at DESC LIMIT {{ph}}"""
+        rt_rows = PaperDBReader._query(rt_sql, tuple(premium_ids) + (10,))
+        recent_trades = []
+        for r in rt_rows:
+            recent_trades.append({
+                'symbol': r.get('ticker', ''),
+                'side': r.get('side', ''),
+                'pnl': round(r.get('pnl', 0), 2),
+            })
+
+        return jsonify({
+            'success': True,
+            'strategies': strategies,
+            'combined_stats': combined_stats,
+            'recent_trades': recent_trades,
+            'equity_curve': equity_curve
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting premium showcase: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/recorders/<int:recorder_id>/premium', methods=['POST', 'DELETE'])
+@login_required
+def api_set_recorder_premium(recorder_id):
+    """Set or remove premium status for a recorder. ADMIN ONLY.
+
+    POST: Mark as premium
+    DELETE: Remove premium status
+    """
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
 
     try:
-        paper_engine = get_paper_engine()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
+        is_premium = request.method == 'POST'
+        premium_val = 'TRUE' if is_postgres else '1'
+        not_premium_val = 'FALSE' if is_postgres else '0'
+
+        cursor.execute(f'''
+            UPDATE recorders
+            SET is_premium = {premium_val if is_premium else not_premium_val}
+            WHERE id = {ph}
+        ''', (recorder_id,))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'recorder_id': recorder_id,
+            'is_premium': is_premium
+        })
+
+    except Exception as e:
+        logger.error(f"Error setting premium status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/paper-trades/equity-curve', methods=['GET'])
+def api_paper_equity_curve():
+    """Get equity curve data for charting (from paper_trades_v2)."""
+    try:
         recorder_id = request.args.get('recorder_id', type=int)
         limit = request.args.get('limit', default=500, type=int)
-
-        equity_curve = paper_engine.get_equity_curve(recorder_id, limit)
+        equity_curve = PaperDBReader.get_equity_curve(recorder_id, limit)
         return jsonify({
             'success': True,
             'recorder_id': recorder_id,
@@ -23485,16 +23964,11 @@ def api_paper_equity_curve():
 
 @app.route('/api/paper-trades/daily-pnl', methods=['GET'])
 def api_paper_daily_pnl():
-    """Get daily P&L summary."""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get daily P&L summary (from paper_trades_v2)."""
     try:
-        paper_engine = get_paper_engine()
         recorder_id = request.args.get('recorder_id', type=int)
         days = request.args.get('days', default=30, type=int)
-
-        daily_pnl = paper_engine.get_daily_pnl(recorder_id, days)
+        daily_pnl = PaperDBReader.get_daily_pnl(recorder_id, days)
         return jsonify({
             'success': True,
             'recorder_id': recorder_id,
@@ -23507,15 +23981,10 @@ def api_paper_daily_pnl():
 
 @app.route('/api/paper-trades/symbol-stats', methods=['GET'])
 def api_paper_symbol_stats():
-    """Get P&L breakdown by symbol."""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get P&L breakdown by symbol (from paper_trades_v2)."""
     try:
-        paper_engine = get_paper_engine()
         recorder_id = request.args.get('recorder_id', type=int)
-
-        symbol_stats = paper_engine.get_symbol_stats(recorder_id)
+        symbol_stats = PaperDBReader.get_symbol_stats(recorder_id)
         return jsonify({
             'success': True,
             'recorder_id': recorder_id,
@@ -23545,7 +24014,7 @@ def api_paper_test_direct():
 
 @app.route('/api/paper-trades/delete', methods=['POST'])
 def api_paper_delete_trade():
-    """Delete a specific paper trade by ID (for cleaning up bad data)"""
+    """Delete a specific paper trade by ID (from paper_trades_v2)"""
     try:
         data = request.get_json()
         if not data:
@@ -23555,20 +24024,13 @@ def api_paper_delete_trade():
         if not trade_id:
             return jsonify({'success': False, 'error': 'trade_id required'}), 400
 
-        import os
-        database_url = os.environ.get('DATABASE_URL')
-        if database_url:
-            import psycopg2
-            conn = psycopg2.connect(database_url)
-            ph = '%s'
-        else:
-            conn = sqlite3.connect('paper_trades.db')
-            ph = '?'
-
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Get trade info before deleting
-        cursor.execute(f'SELECT recorder_id, symbol, side, pnl FROM paper_trades WHERE id = {ph}', (trade_id,))
+        cursor.execute(f'SELECT recorder_id, ticker, side, pnl FROM paper_trades_v2 WHERE id = {ph}', (trade_id,))
         trade = cursor.fetchone()
 
         if not trade:
@@ -23576,7 +24038,7 @@ def api_paper_delete_trade():
             return jsonify({'success': False, 'error': f'Trade {trade_id} not found'}), 404
 
         # Delete the trade
-        cursor.execute(f'DELETE FROM paper_trades WHERE id = {ph}', (trade_id,))
+        cursor.execute(f'DELETE FROM paper_trades_v2 WHERE id = {ph}', (trade_id,))
         conn.commit()
         conn.close()
 
@@ -23591,38 +24053,34 @@ def api_paper_delete_trade():
 
 @app.route('/api/paper-trades/reset-all', methods=['POST'])
 def api_paper_reset_all():
-    """
-    Reset ALL paper trades - clears the entire paper_trades table.
-    Admin only - use for fresh start testing.
-    """
+    """Reset ALL paper trades — clears both v2 tables. Admin only."""
     try:
-        import os
-        database_url = os.environ.get('DATABASE_URL')
-        use_postgres = bool(database_url)
-
-        if use_postgres:
-            import psycopg2
-            conn = psycopg2.connect(database_url)
-        else:
-            conn = sqlite3.connect('paper_trades.db')
-
+        conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Count trades before deletion
-        cursor.execute('SELECT COUNT(*) FROM paper_trades')
-        count_before = cursor.fetchone()[0]
+        # Count before deletion
+        cursor.execute('SELECT COUNT(*) FROM paper_trades_v2')
+        row = cursor.fetchone()
+        trades_count = row[0] if isinstance(row, (tuple, list)) else (row.get('count', 0) if isinstance(row, dict) else 0)
 
-        # Delete all paper trades
-        cursor.execute('DELETE FROM paper_trades')
+        cursor.execute('SELECT COUNT(*) FROM paper_positions_v2')
+        row = cursor.fetchone()
+        positions_count = row[0] if isinstance(row, (tuple, list)) else (row.get('count', 0) if isinstance(row, dict) else 0)
+
+        # Delete from both v2 tables
+        cursor.execute('DELETE FROM paper_trades_v2')
+        cursor.execute('DELETE FROM paper_positions_v2')
         conn.commit()
         conn.close()
 
-        print(f"🗑️ RESET: Deleted {count_before} paper trades", flush=True)
+        total_deleted = trades_count + positions_count
+        print(f"RESET: Deleted {trades_count} paper trades + {positions_count} paper positions (v2)", flush=True)
 
         return jsonify({
             'success': True,
-            'deleted_count': count_before,
-            'message': f'Reset complete - deleted {count_before} paper trades'
+            'deleted_trades': trades_count,
+            'deleted_positions': positions_count,
+            'message': f'Reset complete - deleted {trades_count} trades + {positions_count} positions from v2 tables'
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -23631,8 +24089,7 @@ def api_paper_reset_all():
 @app.route('/api/paper-trades/record', methods=['POST'])
 def api_paper_record_trade():
     """
-    Record a paper trade (entry or exit).
-    Used by webhooks or manual entry.
+    Record a paper trade (entry or exit) — proxies to paper service on port 5050.
 
     POST body:
     {
@@ -23643,9 +24100,6 @@ def api_paper_record_trade():
         "price": 21500.50  (optional - uses live feed if not provided)
     }
     """
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
     try:
         data = request.get_json()
         if not data:
@@ -23654,45 +24108,52 @@ def api_paper_record_trade():
         recorder_id = data.get('recorder_id')
         symbol = data.get('symbol', '').upper()
         action = data.get('action', '').upper()
-        quantity = data.get('quantity', 1)
-        price = data.get('price')
 
         if not recorder_id or not symbol or not action:
             return jsonify({'success': False, 'error': 'Missing required fields: recorder_id, symbol, action'}), 400
 
-        paper_engine = get_paper_engine()
-        ticker = get_ticker()
+        # Try proxying to paper service
+        try:
+            import requests as http_requests
+            resp = http_requests.post('http://127.0.0.1:5050/api/paper/record', json=data, timeout=5)
+            return jsonify(resp.json()), resp.status_code
+        except Exception as proxy_err:
+            logger.warning(f"Paper service proxy failed: {proxy_err}")
 
-        # Get live price if not provided
-        if not price:
-            # Try to get from live feed
-            tv_symbol = f"CME_MINI:{symbol}1!"
-            price_data = ticker.get_price(tv_symbol)
-            if price_data:
-                if action in ['LONG', 'BUY']:
-                    price = price_data.get('ask') or price_data.get('last_price')
-                elif action in ['SHORT', 'SELL']:
-                    price = price_data.get('bid') or price_data.get('last_price')
+        # Fallback: use old engine if available
+        if TV_PRICE_SERVICE_AVAILABLE:
+            paper_engine = get_paper_engine()
+            ticker = get_ticker()
+            quantity = data.get('quantity', 1)
+            price = data.get('price')
+
+            if not price:
+                tv_symbol = f"CME_MINI:{symbol}1!"
+                price_data = ticker.get_price(tv_symbol)
+                if price_data:
+                    if action in ['LONG', 'BUY']:
+                        price = price_data.get('ask') or price_data.get('last_price')
+                    elif action in ['SHORT', 'SELL']:
+                        price = price_data.get('bid') or price_data.get('last_price')
+                    else:
+                        price = price_data.get('last_price')
+
+            if action in ['LONG', 'BUY']:
+                result = paper_engine.open_position(recorder_id, symbol, 'LONG', quantity, price)
+                return jsonify({'success': True, 'action': 'opened', 'position': result})
+            elif action in ['SHORT', 'SELL']:
+                result = paper_engine.open_position(recorder_id, symbol, 'SHORT', quantity, price)
+                return jsonify({'success': True, 'action': 'opened', 'position': result})
+            elif action in ['CLOSE', 'EXIT', 'FLAT']:
+                result = paper_engine.close_position(recorder_id, symbol, price)
+                if result:
+                    return jsonify({'success': True, 'action': 'closed', 'trade': result})
                 else:
-                    price = price_data.get('last_price')
-
-        if action in ['LONG', 'BUY']:
-            result = paper_engine.open_position(recorder_id, symbol, 'LONG', quantity, price)
-            return jsonify({'success': True, 'action': 'opened', 'position': result})
-
-        elif action in ['SHORT', 'SELL']:
-            result = paper_engine.open_position(recorder_id, symbol, 'SHORT', quantity, price)
-            return jsonify({'success': True, 'action': 'opened', 'position': result})
-
-        elif action in ['CLOSE', 'EXIT', 'FLAT']:
-            result = paper_engine.close_position(recorder_id, symbol, price)
-            if result:
-                return jsonify({'success': True, 'action': 'closed', 'trade': result})
+                    return jsonify({'success': False, 'error': 'No open position to close'}), 400
             else:
-                return jsonify({'success': False, 'error': 'No open position to close'}), 400
-
+                return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
         else:
-            return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
+            return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
 
     except Exception as e:
         logger.error(f"Error recording paper trade: {e}")

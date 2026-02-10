@@ -224,6 +224,80 @@
         </div>
     </section>
 
+    <!-- Premium Strategies Showcase -->
+    <section class="premium-showcase-section" id="premiumShowcaseSection">
+        <header class="premium-showcase-header">
+            <div class="premium-badge-wrapper">
+                <span class="premium-badge"><span class="material-icons">star</span> PREMIUM</span>
+                <h2>Just Trades Premium Monitor</h2>
+                <p class="premium-sub">Curated premium strategies performance</p>
+            </div>
+            <div class="premium-controls">
+                <div class="premium-live-indicator" id="premiumStatus">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Live</span>
+                </div>
+                <button class="btn btn-sm btn-premium" onclick="refreshPremiumShowcase()">
+                    <span class="material-icons">refresh</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Premium Stats Summary -->
+        <div class="premium-stats-bar">
+            <div class="premium-stat">
+                <span class="stat-label">Combined P&L</span>
+                <span class="stat-value positive" id="premiumTotalPnl">$0.00</span>
+            </div>
+            <div class="premium-stat">
+                <span class="stat-label">Win Rate</span>
+                <span class="stat-value" id="premiumWinRate">0%</span>
+            </div>
+            <div class="premium-stat">
+                <span class="stat-label">Profit Factor</span>
+                <span class="stat-value" id="premiumProfitFactor">0.00</span>
+            </div>
+            <div class="premium-stat">
+                <span class="stat-label">Total Trades</span>
+                <span class="stat-value" id="premiumTotalTrades">0</span>
+            </div>
+            <div class="premium-stat">
+                <span class="stat-label">Strategies</span>
+                <span class="stat-value" id="premiumStrategyCount">0</span>
+            </div>
+        </div>
+
+        <div class="premium-content-grid">
+            <!-- Premium Strategy Cards -->
+            <div class="premium-strategies-panel">
+                <div class="premium-strategies-list" id="premiumStrategiesList">
+                    <div class="premium-empty-state">
+                        <span class="material-icons">workspace_premium</span>
+                        <p>No premium strategies yet</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mini Equity Curve + Recent Trades -->
+            <div class="premium-charts-panel">
+                <div class="premium-mini-chart">
+                    <div class="mini-chart-header">
+                        <span class="material-icons">trending_up</span> Equity Curve
+                    </div>
+                    <canvas id="premiumEquityChart" height="120"></canvas>
+                </div>
+                <div class="premium-recent-trades">
+                    <div class="recent-trades-header">
+                        <span class="material-icons">history</span> Recent Trades
+                    </div>
+                    <div class="recent-trades-list" id="premiumRecentTrades">
+                        <div class="no-trades-msg">No recent trades</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Paper Trading Panel - Real-Time Strategy Performance -->
     <section class="paper-trading-section" id="paperTradingSection">
         <header class="paper-trading-header">
@@ -2625,6 +2699,332 @@
         .chart-legend { flex-wrap: wrap; }
         .trade-table { min-width: unset; }
     }
+
+    /* ============================================
+       Premium Showcase Section Styles
+       ============================================ */
+    .premium-showcase-section {
+        background: linear-gradient(135deg, rgba(255, 193, 7, 0.08), rgba(255, 152, 0, 0.04));
+        border-radius: 16px;
+        border: 1px solid rgba(255, 193, 7, 0.2);
+        padding: 1.5rem;
+        margin-top: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .premium-showcase-section::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -30%;
+        width: 60%;
+        height: 200%;
+        background: radial-gradient(ellipse, rgba(255, 193, 7, 0.05) 0%, transparent 70%);
+        pointer-events: none;
+    }
+    .premium-showcase-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+        position: relative;
+        z-index: 1;
+    }
+    .premium-badge-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    .premium-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        background: linear-gradient(135deg, #ffc107, #ff9800);
+        color: #1a1a2e;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        width: fit-content;
+        box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+    }
+    .premium-badge .material-icons {
+        font-size: 0.85rem;
+    }
+    .premium-showcase-header h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-light);
+        margin: 0.5rem 0 0 0;
+    }
+    .premium-sub {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin: 0;
+    }
+    .premium-controls {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+    }
+    .btn-premium {
+        background: rgba(255, 193, 7, 0.15);
+        border: 1px solid rgba(255, 193, 7, 0.3);
+        color: #ffc107;
+        padding: 0.4rem;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    }
+    .btn-premium:hover {
+        background: rgba(255, 193, 7, 0.25);
+        transform: translateY(-1px);
+    }
+    .btn-premium .material-icons {
+        font-size: 1rem;
+    }
+    .premium-live-indicator {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.75rem;
+        background: rgba(255, 193, 7, 0.1);
+        border-radius: 15px;
+        font-size: 0.75rem;
+        color: #ffc107;
+    }
+    .premium-live-indicator .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #ffc107;
+        animation: pulse 2s infinite;
+    }
+    .premium-stats-bar {
+        display: flex;
+        gap: 1rem;
+        padding: 1rem;
+        background: rgba(0, 0, 0, 0.25);
+        border-radius: 10px;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        position: relative;
+        z-index: 1;
+    }
+    .premium-stat {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.2rem;
+        min-width: 80px;
+        flex: 1;
+    }
+    .premium-stat .stat-label {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .premium-stat .stat-value {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text-light);
+        font-family: 'SF Mono', 'Monaco', monospace;
+    }
+    .premium-stat .stat-value.positive {
+        color: #10b981;
+    }
+    .premium-stat .stat-value.negative {
+        color: #ef4444;
+    }
+    .premium-content-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        position: relative;
+        z-index: 1;
+    }
+    @media (max-width: 900px) {
+        .premium-content-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    .premium-strategies-panel {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 10px;
+        padding: 0.75rem;
+        max-height: 280px;
+        overflow-y: auto;
+    }
+    .premium-strategies-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .premium-strategy-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 193, 7, 0.15);
+        border-radius: 8px;
+        padding: 0.75rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: all 0.2s;
+    }
+    .premium-strategy-card:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 193, 7, 0.3);
+    }
+    .premium-strategy-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+    .premium-strategy-name {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: var(--text-light);
+    }
+    .premium-strategy-meta {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+    }
+    .premium-strategy-stats {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+    }
+    .premium-mini-stat {
+        text-align: right;
+    }
+    .premium-mini-stat-value {
+        font-weight: 700;
+        font-size: 0.9rem;
+        font-family: 'SF Mono', 'Monaco', monospace;
+    }
+    .premium-mini-stat-label {
+        font-size: 0.6rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+    }
+    .premium-empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        color: var(--text-muted);
+        text-align: center;
+    }
+    .premium-empty-state .material-icons {
+        font-size: 2.5rem;
+        opacity: 0.3;
+        margin-bottom: 0.5rem;
+        color: #ffc107;
+    }
+    .premium-charts-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .premium-mini-chart {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 10px;
+        padding: 0.75rem;
+        flex: 1;
+    }
+    .mini-chart-header {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        margin-bottom: 0.5rem;
+    }
+    .mini-chart-header .material-icons {
+        font-size: 0.9rem;
+        color: #ffc107;
+    }
+    #premiumEquityChart {
+        width: 100% !important;
+        height: 120px !important;
+    }
+    .premium-recent-trades {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 10px;
+        padding: 0.75rem;
+        flex: 1;
+        max-height: 140px;
+        overflow-y: auto;
+    }
+    .recent-trades-header {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        margin-bottom: 0.5rem;
+    }
+    .recent-trades-header .material-icons {
+        font-size: 0.9rem;
+        color: #ffc107;
+    }
+    .recent-trades-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+    .recent-trade-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.4rem 0.5rem;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 5px;
+        font-size: 0.75rem;
+    }
+    .recent-trade-info {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    .recent-trade-symbol {
+        font-weight: 600;
+        color: var(--text-light);
+    }
+    .recent-trade-side {
+        font-size: 0.65rem;
+        padding: 0.1rem 0.3rem;
+        border-radius: 3px;
+        font-weight: 600;
+    }
+    .recent-trade-side.long {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+    }
+    .recent-trade-side.short {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+    .recent-trade-pnl {
+        font-weight: 700;
+        font-family: 'SF Mono', 'Monaco', monospace;
+    }
+    .no-trades-msg {
+        text-align: center;
+        padding: 1rem;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+    }
 </style>
 {% endblock %}
 {% block scripts %}
@@ -4292,6 +4692,206 @@
         }
     };
 
+    // ============================================================
+    // Premium Showcase Functions
+    // ============================================================
+    let premiumEquityChart = null;
+
+    async function refreshPremiumShowcase() {
+        try {
+            const response = await fetch('/api/premium-showcase');
+            const data = await response.json();
+
+            if (!data.success) {
+                console.log('Premium showcase: no premium strategies found');
+                return;
+            }
+
+            // Update stats bar - API returns combined_stats
+            const stats = data.combined_stats || {};
+            const totalPnl = stats.total_pnl || 0;
+            const totalPnlEl = document.getElementById('premiumTotalPnl');
+            if (totalPnlEl) {
+                totalPnlEl.textContent = (totalPnl >= 0 ? '+$' : '-$') + Math.abs(totalPnl).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                totalPnlEl.className = 'stat-value ' + (totalPnl >= 0 ? 'positive' : 'negative');
+            }
+
+            const winRateEl = document.getElementById('premiumWinRate');
+            if (winRateEl) {
+                winRateEl.textContent = (stats.win_rate || 0).toFixed(1) + '%';
+            }
+
+            const pfEl = document.getElementById('premiumProfitFactor');
+            if (pfEl) {
+                const pf = stats.profit_factor;
+                pfEl.textContent = pf === 'Infinite' ? '∞' : (pf || 0).toFixed(2);
+            }
+
+            const totalTradesEl = document.getElementById('premiumTotalTrades');
+            if (totalTradesEl) {
+                totalTradesEl.textContent = stats.total_trades || 0;
+            }
+
+            const stratCountEl = document.getElementById('premiumStrategyCount');
+            if (stratCountEl) {
+                stratCountEl.textContent = (data.strategies || []).length;
+            }
+
+            // Render strategy cards
+            renderPremiumStrategies(data.strategies || []);
+
+            // Render equity curve
+            if (data.equity_curve && data.equity_curve.length > 0) {
+                renderPremiumEquityChart(data.equity_curve);
+            }
+
+            // Render recent trades
+            renderPremiumRecentTrades(data.recent_trades || []);
+
+        } catch (error) {
+            console.error('Error loading premium showcase:', error);
+        }
+    }
+
+    function renderPremiumStrategies(strategies) {
+        const container = document.getElementById('premiumStrategiesList');
+        if (!container) return;
+
+        if (!strategies || strategies.length === 0) {
+            container.innerHTML = `
+                <div class="premium-empty-state">
+                    <span class="material-icons">workspace_premium</span>
+                    <p>No premium strategies yet</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = strategies.map(s => {
+            const pnl = s.pnl || 0;
+            const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+            return `
+                <div class="premium-strategy-card">
+                    <div class="premium-strategy-info">
+                        <span class="premium-strategy-name">${s.name || 'Unnamed'}</span>
+                        <span class="premium-strategy-meta">${s.symbol || 'Any'} &bull; ${s.trades || 0} trades &bull; ${(s.win_rate || 0).toFixed(0)}% WR</span>
+                    </div>
+                    <div class="premium-strategy-stats">
+                        <div class="premium-mini-stat">
+                            <div class="premium-mini-stat-value ${pnlClass}">${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(0)}</div>
+                            <div class="premium-mini-stat-label">P&L</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderPremiumEquityChart(equityData) {
+        const canvas = document.getElementById('premiumEquityChart');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+
+        if (premiumEquityChart) {
+            premiumEquityChart.destroy();
+        }
+
+        const labels = equityData.map((_, i) => '');
+        const values = equityData;
+
+        premiumEquityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Equity',
+                    data: values,
+                    borderColor: 'rgba(255, 193, 7, 1)',
+                    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return '$' + context.raw.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        display: true,
+                        grid: { color: 'rgba(255, 255, 255, 0.03)' },
+                        ticks: {
+                            color: 'rgba(255, 193, 7, 0.5)',
+                            font: { size: 9 },
+                            callback: function(value) {
+                                return '$' + (value / 1000).toFixed(0) + 'k';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderPremiumRecentTrades(trades) {
+        const container = document.getElementById('premiumRecentTrades');
+        if (!container) return;
+
+        if (!trades || trades.length === 0) {
+            container.innerHTML = '<div class="no-trades-msg">No recent trades</div>';
+            return;
+        }
+
+        // Show only last 5 trades
+        const recentTrades = trades.slice(0, 5);
+
+        container.innerHTML = recentTrades.map(t => {
+            const pnl = t.pnl || 0;
+            const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+            const side = (t.side || 'long').toLowerCase();
+            return `
+                <div class="recent-trade-item">
+                    <div class="recent-trade-info">
+                        <span class="recent-trade-symbol">${t.symbol || 'N/A'}</span>
+                        <span class="recent-trade-side ${side}">${side.toUpperCase()}</span>
+                    </div>
+                    <span class="recent-trade-pnl ${pnlClass}">${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Initialize premium showcase
+    async function initPremiumShowcase() {
+        if (!document.getElementById('premiumShowcaseSection')) return;
+
+        try {
+            await refreshPremiumShowcase();
+        } catch (e) {
+            console.log('Premium showcase: initial load skipped');
+        }
+
+        // Refresh every 60 seconds
+        setInterval(async () => {
+            try {
+                await refreshPremiumShowcase();
+            } catch (e) { /* silent */ }
+        }, 60000);
+    }
+
     // Initialize paper trading panel
     async function initPaperTradingPanel() {
         // Load strategy selector first
@@ -4335,6 +4935,11 @@
         if (document.getElementById('paperTradingSection')) {
             // Delay initialization by 2 seconds to let other elements load first
             setTimeout(initPaperTradingPanel, 2000);
+        }
+
+        // Initialize premium showcase (slightly delayed)
+        if (document.getElementById('premiumShowcaseSection')) {
+            setTimeout(initPremiumShowcase, 2500);
         }
     });
 
