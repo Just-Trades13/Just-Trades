@@ -11451,9 +11451,9 @@ def api_create_trader():
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
                   current_user_id, None,
-                  1 if time_filter_1_enabled else 0, time_filter_1_start, time_filter_1_stop,
-                  1 if time_filter_2_enabled else 0, time_filter_2_start, time_filter_2_stop,
-                  1 if inverse_signals else 0))
+                  bool(time_filter_1_enabled), time_filter_1_start, time_filter_1_stop,
+                  bool(time_filter_2_enabled), time_filter_2_start, time_filter_2_stop,
+                  bool(inverse_signals)))
             result = cursor.fetchone()
             if result:
                 trader_id = result.get('id') if isinstance(result, dict) else result[0]
@@ -11494,6 +11494,7 @@ def api_create_trader():
         
     except Exception as e:
         logger.error(f"Error creating trader: {e}")
+        import traceback
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
