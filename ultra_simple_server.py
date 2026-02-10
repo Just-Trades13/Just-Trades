@@ -8450,7 +8450,10 @@ def get_accounts():
             
             # Check for access token (tradovate_token is legacy name, access_token is new)
             has_token = bool(account.get('access_token') or account.get('tradovate_token'))
-            
+            # ProjectX accounts use projectx_username instead of tradovate tokens
+            has_projectx = bool(account.get('projectx_username') or account.get('projectx_api_key'))
+            is_connected = has_token or has_projectx or bool(account.get('is_connected'))
+
             accounts_list.append({
                 'id': account.get('id'),
                 'name': account.get('name'),
@@ -8458,7 +8461,7 @@ def get_accounts():
                 'enabled': bool(account.get('enabled', True)),
                 'created_at': str(account.get('created_at', '')),
                 'tradovate_token': has_token,
-                'is_connected': has_token,
+                'is_connected': is_connected,
                 'subaccounts': parsed_subaccounts,
                 'tradovate_accounts': parsed_tradovate_accounts,
                 'has_demo': has_demo,

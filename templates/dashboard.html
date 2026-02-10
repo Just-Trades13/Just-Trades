@@ -4067,7 +4067,7 @@
                         });
                     }
 
-                    if (changeEl && data.change_percent !== undefined) {
+                    if (changeEl && data.change_percent != null) {
                         const direction = data.change_percent >= 0 ? 'up' : 'down';
                         const arrow = data.change_percent >= 0 ? '\u25B2' : '\u25BC';
                         changeEl.className = 'ticker-price ' + direction;
