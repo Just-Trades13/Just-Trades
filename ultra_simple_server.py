@@ -23035,7 +23035,7 @@ def api_dashboard_calendar_data():
         logger.error(f"Error fetching calendar data: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': 'Failed to fetch calendar data', 'calendar_data': {}}), 500
+        return jsonify({'error': f'Failed to fetch calendar data: {str(e)}', 'calendar_data': {}}), 500
 
 @app.route('/api/news-feed', methods=['GET'])
 def api_news_feed():
