@@ -372,26 +372,50 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.getElementById('affiliateForm');
-        
-        form.addEventListener('submit', function(e) {
+        const submitBtn = form.querySelector('button[type="submit"]');
+
+        form.addEventListener('submit', async function(e) {
             e.preventDefault();
-            
-            // Get form data
+
             const formData = new FormData(form);
             const data = Object.fromEntries(formData);
-            
-            // Simple validation
+
             if (!data.name || !data.email || !data.audience || !data.terms) {
                 alert('Please fill in all required fields and accept the terms.');
                 return;
             }
-            
-            // Here you would typically send this to your backend
-            // For now, we'll just show a success message
-            alert('Thank you for your interest! We\'ll review your application and get back to you within 2-3 business days.');
-            
-            // Reset form
-            form.reset();
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span>Submitting...</span>';
+
+            try {
+                const response = await fetch('/api/affiliate/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: data.name,
+                        email: data.email,
+                        website: data.website || '',
+                        social: data.social || '',
+                        audience: data.audience,
+                        experience: data.experience || ''
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    form.reset();
+                    form.innerHTML = '<div style="text-align:center;padding:2rem;"><h3 style="color:#4CAF50;margin-bottom:1rem;">Application Submitted!</h3><p>Thank you for your interest! We\'ll review your application and get back to you within 2-3 business days.</p></div>';
+                } else {
+                    alert(result.error || 'Failed to submit application. Please try again.');
+                }
+            } catch (err) {
+                alert('Network error. Please check your connection and try again.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<span>Submit Application</span><i class="material-icons">arrow_forward</i>';
+            }
         });
     });
 </script>
