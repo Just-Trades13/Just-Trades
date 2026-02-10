@@ -516,6 +516,20 @@ def _get_live_price_for_symbol(symbol: str) -> float:
     if not live_price and symbol.upper() in _market_data_cache:
         live_price = _market_data_cache[symbol.upper()].get('last')
 
+    # Micro/mini contract fallbacks — same price as full-size contract
+    if not live_price:
+        PRICE_FALLBACKS = {
+            'MGC': 'GC', 'MES': 'ES', 'MNQ': 'NQ', 'M2K': 'RTY', 'MYM': 'YM',
+            'MCL': 'CL', 'SIL': 'SI', 'MGCG': 'GC', 'MGCJ': 'GC', 'MGCH': 'GC',
+        }
+        # Strip trailing contract month codes for lookup (e.g., MGCJ2026 -> MGC)
+        lookup = symbol_root
+        if lookup and len(lookup) > 3 and lookup[:3] in ('MGC', 'MES', 'MNQ', 'SIL', 'MCL'):
+            lookup = lookup[:3]
+        fallback = PRICE_FALLBACKS.get(lookup)
+        if fallback and fallback in _market_data_cache:
+            live_price = _market_data_cache[fallback].get('last')
+
     return live_price
 
 
