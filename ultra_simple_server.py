@@ -23358,7 +23358,6 @@ class PaperDBReader:
     @staticmethod
     def _query(sql, params=(), fetch='all'):
         """Run a read query. Returns list of dicts."""
-        PaperDBReader._ensure_tables()
         is_postgres = is_using_postgres()
         ph = '%s' if is_postgres else '?'
         # Replace {ph} placeholders in SQL
