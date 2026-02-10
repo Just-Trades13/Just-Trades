@@ -9393,10 +9393,20 @@ def refresh_account_subaccounts(account_id):
         if not row:
             return jsonify({'success': False, 'error': 'Account not found'}), 404
 
-        broker = (row.get('broker') or row['broker'] if isinstance(row, dict) else 'Tradovate').strip()
+        broker = ''
+        if isinstance(row, dict):
+            broker = (row.get('broker') or '').strip()
+        else:
+            broker = (row['broker'] or '').strip() if row['broker'] else ''
+
+        # Detect ProjectX accounts by broker field OR by presence of ProjectX credentials
+        px_username = row.get('projectx_username') if isinstance(row, dict) else row['projectx_username']
+        px_api_key_val = row.get('projectx_api_key') if isinstance(row, dict) else row['projectx_api_key']
+        is_projectx = (broker == 'ProjectX' or broker == 'TopstepX' or broker == 'TopStep'
+                       or bool(px_username) or bool(px_api_key_val))
 
         # ProjectX accounts - re-fetch accounts via ProjectX API
-        if broker == 'ProjectX':
+        if is_projectx:
             try:
                 import asyncio
                 from phantom_scraper.projectx_integration import ProjectXIntegration
@@ -9428,11 +9438,11 @@ def refresh_account_subaccounts(account_id):
                 if not result.get('success'):
                     return jsonify(result), 400
 
-                # Store refreshed accounts
+                # Store refreshed accounts and ensure broker is set correctly
                 px_accounts = result.get('accounts', [])
                 conn2 = get_db_connection()
                 cursor2 = conn2.cursor()
-                cursor2.execute('UPDATE accounts SET tradovate_accounts = ? WHERE id = ?', (json.dumps(px_accounts), account_id))
+                cursor2.execute("UPDATE accounts SET tradovate_accounts = ?, broker = 'ProjectX' WHERE id = ?", (json.dumps(px_accounts), account_id))
                 conn2.commit()
                 conn2.close()
 
