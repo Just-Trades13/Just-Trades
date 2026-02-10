@@ -4611,6 +4611,20 @@ def fix_trader_sizes(recorder_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/admin/trial-abuse/unblock-all', methods=['POST', 'GET'])
+def admin_unblock_all_trial_abuse():
+    """Emergency: unblock all falsely flagged users"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE trial_fingerprints SET is_blocked = FALSE, block_reason = 'Reset - false positive', trial_count = 1")
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'All users unblocked'})
+    except Exception as e:
+        return jsonify({'success': True, 'message': f'Table may not exist yet: {e}'})
+
+
 @app.route('/api/run-migrations', methods=['POST', 'GET'])
 def run_migrations():
     """Run pending database migrations to add missing columns.
