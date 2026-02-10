@@ -20473,12 +20473,13 @@ def api_control_center_toggle_all():
             cursor.execute(f'SELECT id FROM recorders WHERE user_id = {placeholder}', (user_id,))
             user_recorder_ids = [row[0] for row in cursor.fetchall()]
             
-            # Only update traders linked to this user's recorders
-            trader_count = 0
-            if user_recorder_ids:
-                placeholders = ', '.join([placeholder] * len(user_recorder_ids))
-                cursor.execute(f'UPDATE traders SET enabled = {placeholder} WHERE recorder_id IN ({placeholders})', [enabled_value] + user_recorder_ids)
-                trader_count = cursor.rowcount
+            # Update traders belonging to this user (by user_id, account ownership, or recorder ownership)
+            cursor.execute(f'''
+                UPDATE traders SET enabled = {placeholder}
+                WHERE user_id = {placeholder}
+                   OR account_id IN (SELECT id FROM accounts WHERE user_id = {placeholder})
+            ''', (enabled_value, user_id, user_id))
+            trader_count = cursor.rowcount
             
             logger.info(f"📊 User {user_id} toggled: {recorder_count} recorders, {trader_count} traders")
         else:
@@ -20613,11 +20614,13 @@ def api_toggle_my_traders(recorder_id):
         enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
         
         # Update traders for this recorder belonging to CURRENT USER ONLY
+        # Match by trader.user_id OR by account ownership (traders often have user_id=NULL)
         if current_user_id:
             cursor.execute(f'''
-                UPDATE traders SET enabled = {placeholder} 
-                WHERE recorder_id = {placeholder} AND user_id = {placeholder}
-            ''', (enabled_value, recorder_id, current_user_id))
+                UPDATE traders SET enabled = {placeholder}
+                WHERE recorder_id = {placeholder}
+                AND (user_id = {placeholder} OR account_id IN (SELECT id FROM accounts WHERE user_id = {placeholder}))
+            ''', (enabled_value, recorder_id, current_user_id, current_user_id))
         else:
             # No user auth, update all traders for this recorder
             cursor.execute(f'''
