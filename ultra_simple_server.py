@@ -24020,32 +24020,46 @@ def api_paper_delete_trade():
 
 @app.route('/api/paper-trades/reset-all', methods=['POST'])
 def api_paper_reset_all():
-    """Reset ALL paper trades — clears both v2 tables. Admin only."""
+    """Reset paper trades. Pass recorder_id to reset a single recorder, or omit for all."""
     try:
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Count before deletion
-        cursor.execute('SELECT COUNT(*) FROM paper_trades')
-        row = cursor.fetchone()
-        trades_count = row[0] if isinstance(row, (tuple, list)) else (row.get('count', 0) if isinstance(row, dict) else 0)
+        # Check for recorder_id filter (query param or JSON body)
+        recorder_id = request.args.get('recorder_id', type=int)
+        if not recorder_id:
+            data = request.get_json(silent=True) or {}
+            recorder_id = data.get('recorder_id')
 
-        positions_count = 0
-
-        # Delete all paper trades
-        cursor.execute('DELETE FROM paper_trades')
-        conn.commit()
-        conn.close()
-
-        total_deleted = trades_count
-        print(f"RESET: Deleted {trades_count} paper trades", flush=True)
-
-        return jsonify({
-            'success': True,
-            'deleted_trades': trades_count,
-            'deleted_positions': positions_count,
-            'message': f'Reset complete - deleted {trades_count} trades + {positions_count} positions from v2 tables'
-        })
+        if recorder_id:
+            cursor.execute(f'SELECT COUNT(*) FROM paper_trades WHERE recorder_id = {ph}', (recorder_id,))
+            row = cursor.fetchone()
+            trades_count = row[0] if isinstance(row, (tuple, list)) else (row.get('count', 0) if isinstance(row, dict) else 0)
+            cursor.execute(f'DELETE FROM paper_trades WHERE recorder_id = {ph}', (recorder_id,))
+            conn.commit()
+            conn.close()
+            print(f"RESET: Deleted {trades_count} paper trades for recorder {recorder_id}", flush=True)
+            return jsonify({
+                'success': True,
+                'deleted_trades': trades_count,
+                'recorder_id': recorder_id,
+                'message': f'Reset complete - deleted {trades_count} paper trades for recorder {recorder_id}'
+            })
+        else:
+            cursor.execute('SELECT COUNT(*) FROM paper_trades')
+            row = cursor.fetchone()
+            trades_count = row[0] if isinstance(row, (tuple, list)) else (row.get('count', 0) if isinstance(row, dict) else 0)
+            cursor.execute('DELETE FROM paper_trades')
+            conn.commit()
+            conn.close()
+            print(f"RESET: Deleted {trades_count} paper trades (all)", flush=True)
+            return jsonify({
+                'success': True,
+                'deleted_trades': trades_count,
+                'message': f'Reset complete - deleted {trades_count} paper trades'
+            })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
