@@ -23344,47 +23344,16 @@ def api_live_price_symbol(symbol):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ============================================================================
-# Paper Trading v2 — Dashboard API (reads from paper_positions_v2 / paper_trades_v2)
+# Paper Trading — Dashboard API (reads from legacy paper_trades table)
 # ============================================================================
 
 class PaperDBReader:
-    """Read-only helper for paper_positions_v2 / paper_trades_v2 tables.
-    Uses the same database as the main app (get_db_connection / is_using_postgres)."""
+    """Read-only helper for the paper_trades table (legacy).
+    Uses the same database as the main app (get_db_connection / is_using_postgres).
+    Open positions = paper_trades WHERE status='open'.
+    Closed trades = paper_trades WHERE status='closed'."""
 
-    _tables_ensured = False
-
-    @staticmethod
-    def _ensure_tables():
-        """Create v2 tables if they don't exist (safe to call multiple times)."""
-        if PaperDBReader._tables_ensured:
-            return
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            is_pg = is_using_postgres()
-            id_type = 'SERIAL PRIMARY KEY' if is_pg else 'INTEGER PRIMARY KEY AUTOINCREMENT'
-            ts_type = 'TIMESTAMP' if is_pg else 'TEXT'
-            cursor.execute(f'''CREATE TABLE IF NOT EXISTS paper_positions_v2 (
-                id {id_type}, recorder_id INTEGER NOT NULL, trader_id INTEGER DEFAULT 0,
-                ticker TEXT NOT NULL, symbol_root TEXT, side TEXT NOT NULL, quantity REAL NOT NULL,
-                avg_entry_price REAL NOT NULL, current_price REAL, unrealized_pnl REAL DEFAULT 0,
-                tp_price REAL, sl_price REAL, tp_ticks REAL DEFAULT 0, sl_ticks REAL DEFAULT 0,
-                dca_count INTEGER DEFAULT 0, entries TEXT DEFAULT '[]',
-                max_favorable_pnl REAL DEFAULT 0, max_adverse_pnl REAL DEFAULT 0,
-                opened_at {ts_type} DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'open')''')
-            cursor.execute(f'''CREATE TABLE IF NOT EXISTS paper_trades_v2 (
-                id {id_type}, recorder_id INTEGER NOT NULL, trader_id INTEGER DEFAULT 0,
-                ticker TEXT NOT NULL, symbol_root TEXT, side TEXT NOT NULL, quantity REAL NOT NULL,
-                entry_price REAL NOT NULL, exit_price REAL, pnl REAL, pnl_ticks REAL,
-                exit_reason TEXT, dca_count INTEGER DEFAULT 0, entries TEXT DEFAULT '[]',
-                max_favorable_excursion REAL DEFAULT 0, max_adverse_excursion REAL DEFAULT 0,
-                hold_time_seconds INTEGER, opened_at {ts_type} DEFAULT CURRENT_TIMESTAMP,
-                closed_at {ts_type})''')
-            conn.commit()
-            conn.close()
-            PaperDBReader._tables_ensured = True
-        except Exception as e:
-            logger.warning(f"PaperDBReader._ensure_tables: {e}")
+    _tables_ensured = True  # Legacy table created by _record_paper_trade_direct()
 
     @staticmethod
     def _query(sql, params=(), fetch='all'):
@@ -23408,7 +23377,7 @@ class PaperDBReader:
 
     @staticmethod
     def get_open_positions(recorder_id=None):
-        sql = "SELECT * FROM paper_positions_v2 WHERE status='open'"
+        sql = "SELECT * FROM paper_trades WHERE status='open'"
         params = []
         if recorder_id is not None:
             sql += " AND recorder_id={ph}"
@@ -23419,22 +23388,22 @@ class PaperDBReader:
         for r in rows:
             result.append({
                 'recorder_id': r.get('recorder_id'),
-                'symbol': r.get('ticker'),
+                'symbol': r.get('symbol'),
                 'side': r.get('side'),
                 'quantity': r.get('quantity'),
-                'entry_price': r.get('avg_entry_price'),
-                'current_price': r.get('current_price'),
-                'unrealized_pnl': r.get('unrealized_pnl', 0),
+                'entry_price': r.get('entry_price'),
+                'current_price': None,
+                'unrealized_pnl': 0,
                 'tp_price': r.get('tp_price'),
                 'sl_price': r.get('sl_price'),
-                'dca_count': r.get('dca_count', 0),
+                'dca_count': 0,
                 'opened_at': str(r.get('opened_at', '')),
             })
         return result
 
     @staticmethod
     def get_trade_history(recorder_id=None, limit=100):
-        sql = "SELECT * FROM paper_trades_v2 WHERE 1=1"
+        sql = "SELECT * FROM paper_trades WHERE status='closed' AND pnl IS NOT NULL"
         params = []
         if recorder_id is not None:
             sql += " AND recorder_id={ph}"
@@ -23447,18 +23416,18 @@ class PaperDBReader:
             result.append({
                 'id': r.get('id'),
                 'recorder_id': r.get('recorder_id'),
-                'symbol': r.get('ticker'),
+                'symbol': r.get('symbol'),
                 'side': r.get('side'),
                 'quantity': r.get('quantity'),
                 'entry_price': r.get('entry_price'),
                 'exit_price': r.get('exit_price'),
                 'pnl': r.get('pnl'),
-                'pnl_ticks': r.get('pnl_ticks'),
+                'pnl_ticks': None,
                 'exit_reason': r.get('exit_reason'),
-                'dca_count': r.get('dca_count', 0),
-                'max_favorable_excursion': r.get('max_favorable_excursion', 0),
-                'max_adverse_excursion': r.get('max_adverse_excursion', 0),
-                'hold_time_seconds': r.get('hold_time_seconds'),
+                'dca_count': 0,
+                'max_favorable_excursion': 0,
+                'max_adverse_excursion': 0,
+                'hold_time_seconds': None,
                 'opened_at': str(r.get('opened_at', '')),
                 'closed_at': str(r.get('closed_at', '')),
             })
@@ -23466,7 +23435,7 @@ class PaperDBReader:
 
     @staticmethod
     def get_analytics(recorder_id=None):
-        sql = "SELECT pnl, pnl_ticks, exit_reason, hold_time_seconds, closed_at FROM paper_trades_v2 WHERE pnl IS NOT NULL"
+        sql = "SELECT pnl, exit_reason, closed_at FROM paper_trades WHERE status='closed' AND pnl IS NOT NULL"
         params = []
         if recorder_id is not None:
             sql += " AND recorder_id={ph}"
@@ -23484,7 +23453,7 @@ class PaperDBReader:
             }
 
         pnls = [r['pnl'] for r in rows]
-        hold_times = [r['hold_time_seconds'] for r in rows if r.get('hold_time_seconds')]
+        hold_times = []  # Legacy table doesn't track hold time
         winners = [p for p in pnls if p > 0]
         losers = [p for p in pnls if p < 0]
 
@@ -23542,7 +23511,7 @@ class PaperDBReader:
 
     @staticmethod
     def get_equity_curve(recorder_id=None, limit=500):
-        sql = "SELECT pnl, closed_at, ticker, side FROM paper_trades_v2 WHERE pnl IS NOT NULL"
+        sql = "SELECT pnl, closed_at, symbol, side FROM paper_trades WHERE status='closed' AND pnl IS NOT NULL"
         params = []
         if recorder_id is not None:
             sql += " AND recorder_id={ph}"
@@ -23560,7 +23529,7 @@ class PaperDBReader:
                 'timestamp': str(r.get('closed_at', '')),
                 'pnl': round(pnl_val, 2),
                 'cumulative_pnl': round(running, 2),
-                'symbol': r.get('ticker'),
+                'symbol': r.get('symbol'),
                 'side': r.get('side'),
             })
         return points
@@ -23579,8 +23548,8 @@ class PaperDBReader:
                    SUM(pnl) as daily_pnl,
                    SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
                    SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers
-            FROM paper_trades_v2
-            WHERE pnl IS NOT NULL AND {date_filter}
+            FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL AND {date_filter}
         '''
         params = []
         if recorder_id is not None:
@@ -23607,7 +23576,7 @@ class PaperDBReader:
     @staticmethod
     def get_symbol_stats(recorder_id=None):
         sql = '''
-            SELECT ticker,
+            SELECT symbol,
                    COUNT(*) as trade_count,
                    SUM(pnl) as total_pnl,
                    AVG(pnl) as avg_pnl,
@@ -23615,14 +23584,14 @@ class PaperDBReader:
                    SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers,
                    MAX(pnl) as best_trade,
                    MIN(pnl) as worst_trade
-            FROM paper_trades_v2
-            WHERE pnl IS NOT NULL
+            FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL
         '''
         params = []
         if recorder_id is not None:
             sql += " AND recorder_id={ph}"
             params.append(recorder_id)
-        sql += " GROUP BY ticker ORDER BY total_pnl DESC"
+        sql += " GROUP BY symbol ORDER BY total_pnl DESC"
         rows = PaperDBReader._query(sql, tuple(params))
 
         result = []
@@ -23630,7 +23599,7 @@ class PaperDBReader:
             count = r.get('trade_count', 0)
             w = r.get('winners', 0) or 0
             result.append({
-                'symbol': r.get('ticker'),
+                'symbol': r.get('symbol'),
                 'trade_count': count,
                 'total_pnl': round(r.get('total_pnl', 0) or 0, 2),
                 'avg_pnl': round(r.get('avg_pnl', 0) or 0, 2),
@@ -23843,10 +23812,9 @@ def api_premium_showcase():
             })
 
         # Get combined stats across all premium recorders
-        # Query paper_trades_v2 directly for combined stats
         placeholders = ','.join(['{ph}'] * len(premium_ids))
-        combined_sql = f"""SELECT pnl FROM paper_trades_v2
-            WHERE pnl IS NOT NULL AND recorder_id IN ({placeholders})
+        combined_sql = f"""SELECT pnl FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL AND recorder_id IN ({placeholders})
             ORDER BY closed_at ASC"""
         all_trades = PaperDBReader._query(combined_sql, tuple(premium_ids))
 
@@ -23865,9 +23833,9 @@ def api_premium_showcase():
                 'total_pnl': round(sum(pnls), 2),
             }
 
-        # Get equity curve from paper_trades_v2 for premium recorders
-        eq_sql = f"""SELECT pnl, closed_at FROM paper_trades_v2
-            WHERE pnl IS NOT NULL AND recorder_id IN ({placeholders})
+        # Get equity curve for premium recorders
+        eq_sql = f"""SELECT pnl, closed_at FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL AND recorder_id IN ({placeholders})
             ORDER BY closed_at ASC LIMIT {{ph}}"""
         eq_rows = PaperDBReader._query(eq_sql, tuple(premium_ids) + (50,))
         equity_curve = []
@@ -23877,14 +23845,14 @@ def api_premium_showcase():
             equity_curve.append(round(running, 2))
 
         # Get recent trades from premium recorders
-        rt_sql = f"""SELECT ticker, side, pnl, closed_at, recorder_id FROM paper_trades_v2
-            WHERE pnl IS NOT NULL AND recorder_id IN ({placeholders})
+        rt_sql = f"""SELECT symbol, side, pnl, closed_at, recorder_id FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL AND recorder_id IN ({placeholders})
             ORDER BY closed_at DESC LIMIT {{ph}}"""
         rt_rows = PaperDBReader._query(rt_sql, tuple(premium_ids) + (10,))
         recent_trades = []
         for r in rt_rows:
             recent_trades.append({
-                'symbol': r.get('ticker', ''),
+                'symbol': r.get('symbol', ''),
                 'side': r.get('side', ''),
                 'pnl': round(r.get('pnl', 0), 2),
             })
@@ -24030,7 +23998,7 @@ def api_paper_delete_trade():
         cursor = conn.cursor()
 
         # Get trade info before deleting
-        cursor.execute(f'SELECT recorder_id, ticker, side, pnl FROM paper_trades_v2 WHERE id = {ph}', (trade_id,))
+        cursor.execute(f'SELECT recorder_id, symbol, side, pnl FROM paper_trades WHERE id = {ph}', (trade_id,))
         trade = cursor.fetchone()
 
         if not trade:
@@ -24038,7 +24006,7 @@ def api_paper_delete_trade():
             return jsonify({'success': False, 'error': f'Trade {trade_id} not found'}), 404
 
         # Delete the trade
-        cursor.execute(f'DELETE FROM paper_trades_v2 WHERE id = {ph}', (trade_id,))
+        cursor.execute(f'DELETE FROM paper_trades WHERE id = {ph}', (trade_id,))
         conn.commit()
         conn.close()
 
@@ -24059,22 +24027,19 @@ def api_paper_reset_all():
         cursor = conn.cursor()
 
         # Count before deletion
-        cursor.execute('SELECT COUNT(*) FROM paper_trades_v2')
+        cursor.execute('SELECT COUNT(*) FROM paper_trades')
         row = cursor.fetchone()
         trades_count = row[0] if isinstance(row, (tuple, list)) else (row.get('count', 0) if isinstance(row, dict) else 0)
 
-        cursor.execute('SELECT COUNT(*) FROM paper_positions_v2')
-        row = cursor.fetchone()
-        positions_count = row[0] if isinstance(row, (tuple, list)) else (row.get('count', 0) if isinstance(row, dict) else 0)
+        positions_count = 0
 
-        # Delete from both v2 tables
-        cursor.execute('DELETE FROM paper_trades_v2')
-        cursor.execute('DELETE FROM paper_positions_v2')
+        # Delete all paper trades
+        cursor.execute('DELETE FROM paper_trades')
         conn.commit()
         conn.close()
 
-        total_deleted = trades_count + positions_count
-        print(f"RESET: Deleted {trades_count} paper trades + {positions_count} paper positions (v2)", flush=True)
+        total_deleted = trades_count
+        print(f"RESET: Deleted {trades_count} paper trades", flush=True)
 
         return jsonify({
             'success': True,
