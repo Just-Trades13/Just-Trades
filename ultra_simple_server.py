@@ -9377,22 +9377,79 @@ def delete_account(account_id):
 
 @app.route('/api/accounts/<int:account_id>/refresh-subaccounts', methods=['POST'])
 def refresh_account_subaccounts(account_id):
-    """Refresh Tradovate subaccounts for an account using stored tokens"""
+    """Refresh subaccounts for an account (Tradovate or ProjectX)"""
     try:
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT tradovate_token 
-            FROM accounts 
+            SELECT tradovate_token, broker, username, password, api_key, environment,
+                   projectx_username, projectx_api_key, projectx_prop_firm
+            FROM accounts
             WHERE id = ?
         """, (account_id,))
         row = cursor.fetchone()
         conn.close()
-        if not row or not row['tradovate_token']:
-            return jsonify({'success': False, 'error': 'Account not connected to Tradovate'}), 400
-        
-        fetch_result = fetch_and_store_tradovate_accounts(account_id, row['tradovate_token'])
+
+        if not row:
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+        broker = (row.get('broker') or row['broker'] if isinstance(row, dict) else 'Tradovate').strip()
+
+        # ProjectX accounts - re-fetch accounts via ProjectX API
+        if broker == 'ProjectX':
+            try:
+                import asyncio
+                from phantom_scraper.projectx_integration import ProjectXIntegration
+
+                px_username = row.get('projectx_username') or row.get('username') or ''
+                px_password = row.get('password') or ''
+                px_api_key = row.get('projectx_api_key') or row.get('api_key') or ''
+                px_prop_firm = row.get('projectx_prop_firm') or 'default'
+                is_demo = (row.get('environment') or 'demo') == 'demo'
+
+                if not px_username:
+                    return jsonify({'success': False, 'error': 'No ProjectX username stored. Please reconnect.'}), 400
+
+                async def refresh_projectx():
+                    async with ProjectXIntegration(demo=is_demo, prop_firm=px_prop_firm) as projectx:
+                        login_result = await projectx.login(px_username, password=px_password if px_password else None, api_key=px_api_key if px_api_key else None)
+                        if not login_result.get('success'):
+                            return {'success': False, 'error': login_result.get('error', 'ProjectX login failed. Please reconnect.')}
+                        accounts = await projectx.get_accounts()
+                        return {'success': True, 'accounts': accounts}
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(refresh_projectx())
+                finally:
+                    loop.close()
+
+                if not result.get('success'):
+                    return jsonify(result), 400
+
+                # Store refreshed accounts
+                px_accounts = result.get('accounts', [])
+                conn2 = get_db_connection()
+                cursor2 = conn2.cursor()
+                cursor2.execute('UPDATE accounts SET tradovate_accounts = ? WHERE id = ?', (json.dumps(px_accounts), account_id))
+                conn2.commit()
+                conn2.close()
+
+                logger.info(f"Refreshed ProjectX subaccounts for account {account_id}: {len(px_accounts)} accounts")
+                return jsonify({'success': True, 'subaccounts': px_accounts})
+            except ImportError:
+                return jsonify({'success': False, 'error': 'ProjectX integration not available'}), 500
+            except Exception as px_err:
+                logger.error(f"Error refreshing ProjectX subaccounts: {px_err}")
+                return jsonify({'success': False, 'error': str(px_err)}), 500
+
+        # Tradovate / NinjaTrader accounts
+        tradovate_token = row.get('tradovate_token') if isinstance(row, dict) else row['tradovate_token']
+        if not tradovate_token:
+            return jsonify({'success': False, 'error': 'Account not connected to Tradovate. Please reconnect.'}), 400
+
+        fetch_result = fetch_and_store_tradovate_accounts(account_id, tradovate_token)
         if fetch_result.get('success'):
             return jsonify({'success': True, 'subaccounts': fetch_result.get('subaccounts', [])})
         return jsonify({'success': False, 'error': fetch_result.get('error', 'Unable to refresh subaccounts')}), 400
