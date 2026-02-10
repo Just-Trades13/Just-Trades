@@ -57,13 +57,22 @@ def get_db_connection():
     return get_conn()
 
 
+def _is_postgres():
+    """Check if using PostgreSQL - uses main app's detection"""
+    try:
+        from ultra_simple_server import is_using_postgres
+        return is_using_postgres()
+    except ImportError:
+        return False
+
+
 def init_trial_abuse_tables():
     """Create trial abuse tracking tables"""
     conn = get_db_connection()
     cursor = conn.cursor()
 
     # Check if PostgreSQL or SQLite
-    is_postgres = 'psycopg2' in str(type(conn))
+    is_postgres = _is_postgres()
 
     if is_postgres:
         # PostgreSQL schema
@@ -180,7 +189,7 @@ def record_fingerprint(
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    is_postgres = 'psycopg2' in str(type(conn))
+    is_postgres = _is_postgres()
 
     # Check if this fingerprint exists
     if is_postgres:
@@ -284,7 +293,7 @@ def check_fingerprint(fingerprint_type: str, fingerprint_value: str) -> Tuple[bo
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    is_postgres = 'psycopg2' in str(type(conn))
+    is_postgres = _is_postgres()
 
     if is_postgres:
         cursor.execute('''
@@ -323,7 +332,7 @@ def log_abuse_event(
     """Log an abuse event for auditing"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    is_postgres = 'psycopg2' in str(type(conn))
+    is_postgres = _is_postgres()
 
     details_json = json.dumps(details or {})
 
@@ -386,7 +395,7 @@ def check_similar_emails(email: str) -> List[Dict]:
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    is_postgres = 'psycopg2' in str(type(conn))
+    is_postgres = _is_postgres()
 
     # Get all emails with trials
     if is_postgres:
@@ -576,7 +585,7 @@ def get_abuse_stats() -> Dict:
     """Get trial abuse statistics"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    is_postgres = 'psycopg2' in str(type(conn))
+    is_postgres = _is_postgres()
 
     stats = {}
 
@@ -620,7 +629,7 @@ def get_flagged_users(limit: int = 50) -> List[Dict]:
     """Get list of flagged/blocked users"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    is_postgres = 'psycopg2' in str(type(conn))
+    is_postgres = _is_postgres()
 
     if is_postgres:
         cursor.execute('''
@@ -661,7 +670,7 @@ def unblock_fingerprint(fingerprint_type: str, fingerprint_value: str) -> bool:
     """Manually unblock a fingerprint (for legitimate users)"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    is_postgres = 'psycopg2' in str(type(conn))
+    is_postgres = _is_postgres()
 
     if is_postgres:
         cursor.execute('''
