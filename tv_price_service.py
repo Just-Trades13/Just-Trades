@@ -38,10 +38,30 @@ TV_WS_URL = "wss://data.tradingview.com/socket.io/websocket"
 
 # Symbols to track (TradingView format)
 DEFAULT_SYMBOLS = [
+    # Futures
     "CME_MINI:ES1!",   # E-mini S&P 500
     "CME_MINI:NQ1!",   # E-mini Nasdaq 100
     "CME_MINI:MES1!",  # Micro E-mini S&P 500
     "CME_MINI:MNQ1!",  # Micro E-mini Nasdaq 100
+    # ETFs / Indices
+    "AMEX:QQQ",        # Nasdaq 100 ETF
+    "AMEX:SPY",        # S&P 500 ETF
+    "CBOE:VIX",        # Volatility Index
+    "TVC:DXY",         # US Dollar Index
+    # Mega-cap stocks
+    "NASDAQ:AAPL",     # Apple
+    "NASDAQ:NVDA",     # Nvidia
+    "NASDAQ:MSFT",     # Microsoft
+    "NASDAQ:META",     # Meta
+    "NASDAQ:GOOG",     # Alphabet
+    "NASDAQ:AMZN",     # Amazon
+    "NASDAQ:TSLA",     # Tesla
+    "NASDAQ:AVGO",     # Broadcom
+    # Commodities / Crypto
+    "COMEX:GC1!",      # Gold futures
+    "COMEX:MGC1!",     # Micro Gold futures
+    "COMEX:SI1!",      # Silver futures
+    "BITSTAMP:BTCUSD", # Bitcoin
 ]
 
 # Futures contract specifications for P&L calculation
