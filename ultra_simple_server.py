@@ -294,57 +294,87 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
         return cumulative, drawdown
 
     try:
+        # Helper: fetch recorder TP/SL settings and calculate prices
+        def _calc_tp_sl(entry, direction):
+            _tp, _sl = None, None
+            try:
+                cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units FROM recorders WHERE id = {ph}', (recorder_id,))
+                rec_row = cursor.fetchone()
+                if rec_row:
+                    tp_targets_raw, sl_en, sl_amt, sl_un = rec_row
+                    from recorder_service import get_tick_size
+                    tick_sz = get_tick_size(symbol)
+                    if tp_targets_raw:
+                        import json
+                        try:
+                            tp_list = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
+                            if tp_list and len(tp_list) > 0:
+                                first_tp = tp_list[0]
+                                tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
+                                if tp_ticks and float(tp_ticks) > 0:
+                                    tp_off = float(tp_ticks) * tick_sz
+                                    _tp = entry + tp_off if direction == 'LONG' else entry - tp_off
+                        except:
+                            pass
+                    if sl_en and sl_amt and float(sl_amt) > 0:
+                        sl_ticks = float(sl_amt)
+                        sl_off = sl_ticks if sl_un == 'Points' else sl_ticks * tick_sz
+                        _sl = entry - sl_off if direction == 'LONG' else entry + sl_off
+            except Exception as e:
+                print(f"⚠️ Could not fetch recorder TP/SL settings: {e}", flush=True)
+            return _tp, _sl
+
+        # Helper: close a single open position with P&L
+        def _close_position(pos_id, pos_side, pos_qty, pos_entry, exit_px, reason):
+            from tv_price_service import FUTURES_SPECS
+            spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
+            pv = spec['point_value']
+            if pos_side == 'LONG':
+                _pnl = (exit_px - pos_entry) * pv * pos_qty
+            else:
+                _pnl = (pos_entry - exit_px) * pv * pos_qty
+            _cum, _dd = _calc_drawdown_stats(cursor, ph, recorder_id, _pnl)
+            cursor.execute(f'''
+                UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
+                cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
+                WHERE id = {ph}
+            ''', (exit_px, _pnl, _cum, _dd, reason, now, pos_id))
+            return _pnl
+
         if side in ['LONG', 'SHORT']:
-            # Opening a position - check if there's an existing open position to close first
+            # Fetch ALL open positions for this recorder/symbol (not just LIMIT 1)
             cursor.execute(f'''
                 SELECT id, side, quantity, entry_price FROM paper_trades
                 WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
-                ORDER BY opened_at DESC LIMIT 1
+                ORDER BY opened_at ASC
             ''', (recorder_id, symbol))
-            existing = cursor.fetchone()
+            all_open = cursor.fetchall()
 
-            if existing:
-                exist_id, exist_side, exist_qty, exist_entry = existing
+            if all_open:
+                # Separate same-direction and opposite-direction positions
+                same_dir = [r for r in all_open if r[1] == side]
+                opp_dir = [r for r in all_open if r[1] != side]
 
-                if exist_side == side:  # SAME direction = DCA (add to position)
-                    # Calculate new average entry price
+                if same_dir:
+                    # DCA into the FIRST same-direction position, close any extras as duplicates
+                    primary = same_dir[0]
+                    exist_id, exist_side, exist_qty, exist_entry = primary
+
+                    # Close duplicate same-direction positions (stacking bug cleanup)
+                    for dup in same_dir[1:]:
+                        dup_pnl = _close_position(dup[0], dup[1], dup[2], dup[3], price, 'dedup')
+                        print(f"📝 Closed duplicate {dup[1]} position #{dup[0]} (dedup), P&L: ${dup_pnl:.2f}", flush=True)
+
+                    # Also close any opposite-direction positions (stale from before)
+                    for opp in opp_dir:
+                        opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'signal')
+                        print(f"📝 Closed stale opposite {opp[1]} position #{opp[0]}, P&L: ${opp_pnl:.2f}", flush=True)
+
+                    # DCA: add to primary position
                     new_qty = exist_qty + quantity
                     avg_entry = ((exist_entry * exist_qty) + (price * quantity)) / new_qty
+                    tp_price, sl_price = _calc_tp_sl(avg_entry, side)
 
-                    # Recalculate TP/SL from new average entry
-                    tp_price = None
-                    sl_price = None
-                    try:
-                        cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units FROM recorders WHERE id = {ph}', (recorder_id,))
-                        rec_row = cursor.fetchone()
-                        if rec_row:
-                            tp_targets_raw, sl_enabled, sl_amount, sl_units = rec_row
-                            from recorder_service import get_tick_size
-                            tick_size = get_tick_size(symbol)
-
-                            # Parse TP targets
-                            if tp_targets_raw:
-                                import json
-                                try:
-                                    tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
-                                    if tp_targets and len(tp_targets) > 0:
-                                        first_tp = tp_targets[0]
-                                        tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
-                                        if tp_ticks and float(tp_ticks) > 0:
-                                            tp_offset = float(tp_ticks) * tick_size
-                                            tp_price = avg_entry + tp_offset if side == 'LONG' else avg_entry - tp_offset
-                                except:
-                                    pass
-
-                            # Calculate SL price
-                            if sl_enabled and sl_amount and float(sl_amount) > 0:
-                                sl_ticks = float(sl_amount)
-                                sl_offset = sl_ticks if sl_units == 'Points' else sl_ticks * tick_size
-                                sl_price = avg_entry - sl_offset if side == 'LONG' else avg_entry + sl_offset
-                    except Exception as e:
-                        print(f"⚠️ Could not fetch recorder TP/SL for DCA: {e}", flush=True)
-
-                    # Update existing position with DCA
                     cursor.execute(f'''
                         UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}
                         WHERE id = {ph}
@@ -357,87 +387,26 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                     conn.commit()
                     return {'success': True, 'symbol': symbol, 'action': 'DCA', 'price': price, 'avg_entry': avg_entry, 'quantity': new_qty}
 
-                else:  # Opposite direction signal
-                    # Check if this is a DCA strategy - if so, ignore opposite direction signals
+                else:
+                    # Only opposite-direction positions exist
                     cursor.execute(f'SELECT avg_down_enabled FROM recorders WHERE id = {ph}', (recorder_id,))
                     rec_check = cursor.fetchone()
                     is_dca_strategy = bool(rec_check and rec_check[0])
 
                     if is_dca_strategy:
                         # DCA strategies ignore opposite direction signals - wait for TP exit
-                        print(f"📝 DCA Strategy: Ignoring opposite direction signal ({side}) - waiting for TP exit on {exist_side} position", flush=True)
+                        print(f"📝 DCA Strategy: Ignoring opposite direction signal ({side}) - waiting for TP exit on {opp_dir[0][1]} position", flush=True)
                         conn.commit()
                         conn.close()
-                        return {'success': True, 'symbol': symbol, 'action': 'IGNORED_DCA', 'reason': f'DCA strategy ignores {side} while {exist_side} position open'}
+                        return {'success': True, 'symbol': symbol, 'action': 'IGNORED_DCA', 'reason': f'DCA strategy ignores {side} while {opp_dir[0][1]} position open'}
 
-                    # Non-DCA: close existing position and open new one
-                    # Calculate P&L for closing
-                    from tv_price_service import FUTURES_SPECS
-                    spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
-                    point_value = spec['point_value']
-
-                    if exist_side == 'LONG':
-                        pnl = (price - exist_entry) * point_value * exist_qty
-                    else:
-                        pnl = (exist_entry - price) * point_value * exist_qty
-
-                    # Calculate drawdown stats
-                    cumulative, drawdown = _calc_drawdown_stats(cursor, ph, recorder_id, pnl)
-
-                    cursor.execute(f'''
-                        UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
-                        cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
-                        WHERE id = {ph}
-                    ''', (price, pnl, cumulative, drawdown, 'signal', now, exist_id))
-                    print(f"📝 Closed existing {exist_side} position (signal), P&L: ${pnl:.2f}", flush=True)
+                    # Non-DCA: close ALL opposite positions and open new one
+                    for opp in opp_dir:
+                        opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'signal')
+                        print(f"📝 Closed {opp[1]} position #{opp[0]} (signal), P&L: ${opp_pnl:.2f}", flush=True)
 
             # Open new position with TP/SL from recorder settings
-            tp_price = None
-            sl_price = None
-
-            # Fetch recorder settings for TP/SL
-            try:
-                cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units FROM recorders WHERE id = {ph}', (recorder_id,))
-                rec_row = cursor.fetchone()
-                if rec_row:
-                    tp_targets_raw, sl_enabled, sl_amount, sl_units = rec_row
-
-                    # Get tick size for this symbol
-                    from tv_price_service import FUTURES_SPECS
-                    from recorder_service import get_tick_size
-                    tick_size = get_tick_size(symbol)
-
-                    # Parse TP targets
-                    if tp_targets_raw:
-                        import json
-                        try:
-                            tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
-                            if tp_targets and len(tp_targets) > 0:
-                                first_tp = tp_targets[0]
-                                tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
-                                if tp_ticks and float(tp_ticks) > 0:
-                                    tp_offset = float(tp_ticks) * tick_size
-                                    if side == 'LONG':
-                                        tp_price = price + tp_offset
-                                    else:
-                                        tp_price = price - tp_offset
-                        except:
-                            pass
-
-                    # Calculate SL price
-                    if sl_enabled and sl_amount and float(sl_amount) > 0:
-                        sl_ticks = float(sl_amount)
-                        if sl_units == 'Points':
-                            sl_offset = sl_ticks
-                        else:  # Ticks
-                            sl_offset = sl_ticks * tick_size
-
-                        if side == 'LONG':
-                            sl_price = price - sl_offset
-                        else:
-                            sl_price = price + sl_offset
-            except Exception as e:
-                print(f"⚠️ Could not fetch recorder TP/SL settings: {e}", flush=True)
+            tp_price, sl_price = _calc_tp_sl(price, side)
 
             cursor.execute(f'''
                 INSERT INTO paper_trades (recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, opened_at, status)
@@ -448,34 +417,17 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
             print(f"📝 Opened {side} {quantity} {symbol} @ {price} | {tp_str} | {sl_str}", flush=True)
 
         else:  # CLOSE action
-            # Find and close open position
+            # Find and close ALL open positions for this recorder/symbol
             cursor.execute(f'''
                 SELECT id, side, quantity, entry_price FROM paper_trades
                 WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
-                ORDER BY opened_at DESC LIMIT 1
+                ORDER BY opened_at ASC
             ''', (recorder_id, symbol))
-            existing = cursor.fetchone()
+            all_open = cursor.fetchall()
 
-            if existing:
-                exist_id, exist_side, exist_qty, exist_entry = existing
-                from tv_price_service import FUTURES_SPECS
-                spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
-                point_value = spec['point_value']
-
-                if exist_side == 'LONG':
-                    pnl = (price - exist_entry) * point_value * exist_qty
-                else:
-                    pnl = (exist_entry - price) * point_value * exist_qty
-
-                # Calculate drawdown stats
-                cumulative, drawdown = _calc_drawdown_stats(cursor, ph, recorder_id, pnl)
-
-                cursor.execute(f'''
-                    UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
-                    cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
-                    WHERE id = {ph}
-                ''', (price, pnl, cumulative, drawdown, 'signal', now, exist_id))
-                print(f"📝 Closed {exist_side} position (signal), P&L: ${pnl:.2f}", flush=True)
+            for pos in all_open:
+                pos_pnl = _close_position(pos[0], pos[1], pos[2], pos[3], price, 'signal')
+                print(f"📝 Closed {pos[1]} position #{pos[0]} (signal), P&L: ${pos_pnl:.2f}", flush=True)
 
         conn.commit()
         return {'success': True, 'symbol': symbol, 'action': action, 'price': price}
@@ -554,13 +506,13 @@ def _get_live_price_for_symbol(symbol: str) -> float:
     if not symbol:
         return None
 
-    # Extract symbol root (NQ1! -> NQ, CME_MINI:MNQ1! -> MNQ, etc.)
-    symbol_root = symbol.replace('1!', '').replace('CME_MINI:', '').replace('CME:', '').upper()
+    # Use extract_symbol_root for consistent parsing (handles COMEX:MGC1!, CME_MINI:NQ1!, etc.)
+    symbol_root = extract_symbol_root(symbol)
 
     live_price = None
     if symbol_root and symbol_root in _market_data_cache:
         live_price = _market_data_cache[symbol_root].get('last')
-    # Also try with just the base symbol
+    # Also try with the raw symbol uppercased
     if not live_price and symbol.upper() in _market_data_cache:
         live_price = _market_data_cache[symbol.upper()].get('last')
 
@@ -3278,6 +3230,9 @@ def extract_symbol_root(symbol: str) -> str:
     if not symbol:
         return ''
     clean = symbol.upper()
+    # Strip exchange prefix (e.g., "COMEX:MGC1!" → "MGC1!")
+    if ':' in clean:
+        clean = clean.split(':')[-1]
     clean = clean.replace('!', '')
     match = re.match(r'^([A-Z]+)', clean)
     return match.group(1) if match else clean
@@ -24065,6 +24020,88 @@ def api_paper_reset_all():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/paper-trades/cleanup-stale', methods=['POST'])
+@login_required
+def api_paper_cleanup_stale():
+    """Force-close all stale open positions, keeping only 1 per recorder/symbol.
+    Calculates P&L using live prices where available, entry price otherwise."""
+    try:
+        import os
+        from datetime import datetime
+        from tv_price_service import FUTURES_SPECS
+
+        database_url = os.environ.get('DATABASE_URL')
+        use_postgres = bool(database_url)
+        if use_postgres:
+            import psycopg2
+            conn = psycopg2.connect(database_url)
+            ph = '%s'
+        else:
+            conn = sqlite3.connect('paper_trades.db')
+            ph = '?'
+        cursor = conn.cursor()
+        now = datetime.now().isoformat()
+
+        # Get all open positions grouped by recorder_id + symbol
+        cursor.execute('SELECT id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, opened_at FROM paper_trades WHERE status = %s ORDER BY opened_at DESC' if use_postgres else "SELECT id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, opened_at FROM paper_trades WHERE status = ? ORDER BY opened_at DESC", ('open',))
+        all_open = cursor.fetchall()
+
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for row in all_open:
+            key = (row[1], row[2])  # (recorder_id, symbol)
+            groups[key].append(row)
+
+        closed_count = 0
+        kept_count = 0
+
+        for (rec_id, sym), positions in groups.items():
+            if len(positions) <= 1:
+                kept_count += 1
+                continue
+
+            # Keep the newest (first in DESC order), close the rest
+            keep = positions[0]
+            kept_count += 1
+            dupes = positions[1:]
+
+            # Get live price for P&L calc
+            live_price = _get_live_price_for_symbol(sym)
+            spec = FUTURES_SPECS.get(extract_symbol_root(sym), {'point_value': 1.0})
+            point_value = spec['point_value']
+
+            for dup in dupes:
+                dup_id, _, _, dup_side, dup_qty, dup_entry, _, _, _ = dup
+                exit_px = live_price if live_price else dup_entry  # Fallback to entry (0 P&L)
+                if dup_side == 'LONG':
+                    pnl = (exit_px - dup_entry) * point_value * dup_qty
+                else:
+                    pnl = (dup_entry - exit_px) * point_value * dup_qty
+
+                cursor.execute(f'''
+                    UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
+                    exit_reason = {ph}, closed_at = {ph}
+                    WHERE id = {ph}
+                ''', (exit_px, pnl, 'cleanup', now, dup_id))
+                closed_count += 1
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Paper cleanup: closed {closed_count} stale positions, kept {kept_count}")
+        return jsonify({
+            'success': True,
+            'closed': closed_count,
+            'kept': kept_count,
+            'message': f'Cleaned up {closed_count} stale positions, kept {kept_count} (1 per recorder/symbol)'
+        })
+    except Exception as e:
+        import traceback
+        logger.error(f"Paper cleanup error: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/paper-trades/record', methods=['POST'])
 def api_paper_record_trade():
     """
@@ -28566,6 +28603,22 @@ if __name__ == '__main__':
     if TV_PRICE_SERVICE_AVAILABLE:
         try:
             def on_price_update(symbol, price_data):
+                global _market_data_cache
+                # Update server-side price cache (used by paper trade TP/SL monitor)
+                try:
+                    last_price = price_data.get('last_price')
+                    if last_price:
+                        root = extract_symbol_root(symbol)
+                        if root:
+                            _market_data_cache[root] = {
+                                'last': float(last_price),
+                                'bid': float(price_data['bid']) if price_data.get('bid') else None,
+                                'ask': float(price_data['ask']) if price_data.get('ask') else None,
+                                'source': 'tv_websocket',
+                                'updated': time.time()
+                            }
+                except:
+                    pass
                 # Emit to connected WebSocket clients
                 try:
                     socketio.emit('price_update', {
