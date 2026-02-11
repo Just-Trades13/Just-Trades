@@ -15077,6 +15077,10 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         if trader_trail_freq is not None and int(trader_trail_freq or 0) > 0:
             trail_freq = int(trader_trail_freq)
 
+        # --- Position sizes: extract for use in quantity logic below ---
+        trader_initial_size = trader.get('initial_position_size') if trader else None
+        trader_add_size = trader.get('add_position_size') if trader else None
+
         # Log final resolved settings
         signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
         _logger.info(f"📊 {signal_type} SIGNAL resolved: tp={tp_targets_raw}, sl_enabled={sl_enabled}, sl_amount={sl_amount}, sl_type={sl_type}, be={break_even_enabled}/{break_even_ticks}, trail={trail_trigger}/{trail_freq}")
