@@ -2672,8 +2672,10 @@ def clamp_price(price: float, tick_size: float) -> float:
     """Round price to nearest tick"""
     if price is None:
         return None
-    decimals = max(3, len(str(tick_size).split('.')[-1]))
-    return round(price, decimals)
+    ticks = round(price / tick_size)
+    clamped = ticks * tick_size
+    decimals = max(2, len(str(tick_size).rstrip('0').split('.')[-1]))
+    return round(clamped, decimals)
 
 
 def calculate_pnl(entry_price: float, exit_price: float, side: str, quantity: int, ticker: str) -> Tuple[float, float]:
