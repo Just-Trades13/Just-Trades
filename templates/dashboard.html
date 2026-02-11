@@ -3441,7 +3441,7 @@
                     
                     stockEl.innerHTML = `
                         <div class="heatmap-stock-symbol">${stock.symbol}</div>
-                        <div class="heatmap-stock-price">$${stock.price.toFixed(2)}</div>
+                        <div class="heatmap-stock-price">$${stock.price != null ? stock.price.toFixed(2) : '---'}</div>
                         <div class="heatmap-stock-change">${stock.change_pct}</div>
                     `;
                     
@@ -4179,8 +4179,8 @@
                 const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
                 const sideClass = pos.side === 'LONG' ? 'side-long' : 'side-short';
 
-                // Get recorder name
-                const recorderName = await getRecorderName(pos.recorder_id);
+                // Use recorder name from API response (fallback to ID-based lookup)
+                const recorderName = pos.recorder_name || await getRecorderName(pos.recorder_id);
                 const simpleSymbol = pos.symbol.split(':').pop().replace('1!', '');
 
                 row.innerHTML = `

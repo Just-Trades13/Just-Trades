@@ -314,12 +314,14 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                                 if tp_ticks and float(tp_ticks) > 0:
                                     tp_off = float(tp_ticks) * tick_sz
                                     _tp = entry + tp_off if direction == 'LONG' else entry - tp_off
+                                    _tp = round(round(_tp / tick_sz) * tick_sz, 10)
                         except:
                             pass
                     if sl_en and sl_amt and float(sl_amt) > 0:
                         sl_ticks = float(sl_amt)
                         sl_off = sl_ticks if sl_un == 'Points' else sl_ticks * tick_sz
                         _sl = entry - sl_off if direction == 'LONG' else entry + sl_off
+                        _sl = round(round(_sl / tick_sz) * tick_sz, 10)
             except Exception as e:
                 print(f"⚠️ Could not fetch recorder TP/SL settings: {e}", flush=True)
             return _tp, _sl
@@ -327,7 +329,7 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
         # Helper: close a single open position with P&L
         def _close_position(pos_id, pos_side, pos_qty, pos_entry, exit_px, reason):
             from tv_price_service import FUTURES_SPECS
-            spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
+            spec = FUTURES_SPECS.get(extract_symbol_root(symbol), {'point_value': 1.0})
             pv = spec['point_value']
             if pos_side == 'LONG':
                 _pnl = (exit_px - pos_entry) * pv * pos_qty
@@ -538,7 +540,7 @@ def _calculate_unrealized_pnl(symbol: str, side: str, quantity: float, entry_pri
     from tv_price_service import FUTURES_SPECS
 
     # Get symbol root for specs lookup
-    symbol_root = symbol.replace('1!', '').replace('CME_MINI:', '').replace('CME:', '').upper() if symbol else 'MNQ'
+    symbol_root = extract_symbol_root(symbol) if symbol else 'MNQ'
     spec = FUTURES_SPECS.get(symbol_root, {'point_value': 2.0})  # Default to MNQ
     point_value = spec['point_value']
 
@@ -3053,7 +3055,10 @@ def get_market_price_simple(symbol: str) -> Optional[float]:
             'YM': 'YM=F',    # E-mini Dow
             'CL': 'CL=F',    # Crude Oil
             'GC': 'GC=F',    # Gold
+            'MGC': 'MGC=F',  # Micro Gold
             'MCL': 'MCL=F',  # Micro Crude
+            'SI': 'SI=F',    # Silver
+            'HG': 'HG=F',    # Copper
         }
 
         yahoo_symbol = yahoo_futures_map.get(root)
@@ -3092,6 +3097,8 @@ def get_market_price_simple(symbol: str) -> Optional[float]:
             'RTY': 'CME:RTY1!',
             'CL': 'NYMEX:CL1!',
             'GC': 'COMEX:GC1!',
+            'MGC': 'COMEX:MGC1!',
+            'SI': 'COMEX:SI1!',
         }
 
         tv_symbol = tv_symbol_map.get(root, f'CME:{clean_symbol}')
@@ -4438,7 +4445,8 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT tradovate_accounts, subaccounts FROM accounts WHERE id = ?", (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f"SELECT tradovate_accounts, subaccounts FROM accounts WHERE id = {ph}", (account_id,))
         existing_row = cursor.fetchone()
         conn.close()
         
@@ -7194,8 +7202,9 @@ def api_accounts_auth_status():
         if accounts_need_reauth:
             conn = get_db_connection()
             cursor = conn.cursor()
+            ph = '%s' if is_using_postgres() else '?'
             for acct_id in accounts_need_reauth:
-                cursor.execute('SELECT id, name FROM accounts WHERE id = ?', (acct_id,))
+                cursor.execute(f'SELECT id, name FROM accounts WHERE id = {ph}', (acct_id,))
                 row = cursor.fetchone()
                 if row:
                     account_details.append({
@@ -7233,7 +7242,8 @@ def get_account_device_info(account_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, name, device_id FROM accounts WHERE id = ?', (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT id, name, device_id FROM accounts WHERE id = {ph}', (account_id,))
         row = cursor.fetchone()
         conn.close()
         
@@ -7256,7 +7266,8 @@ def get_api_credentials(account_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT api_key FROM accounts WHERE id = ?', (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT api_key FROM accounts WHERE id = {ph}', (account_id,))
         row = cursor.fetchone()
         conn.close()
         
@@ -7285,12 +7296,13 @@ def save_api_credentials(account_id):
         cursor = conn.cursor()
         
         # Update API credentials
+        ph = '%s' if is_using_postgres() else '?'
         if api_secret:
-            cursor.execute('UPDATE accounts SET api_key = ?, api_secret = ? WHERE id = ?', 
+            cursor.execute(f'UPDATE accounts SET api_key = {ph}, api_secret = {ph} WHERE id = {ph}',
                           (api_key, api_secret, account_id))
         else:
             # Only update CID if no secret provided (preserve existing secret)
-            cursor.execute('UPDATE accounts SET api_key = ? WHERE id = ?', 
+            cursor.execute(f'UPDATE accounts SET api_key = {ph} WHERE id = {ph}',
                           (api_key, account_id))
         
         conn.commit()
@@ -7311,7 +7323,8 @@ def test_api_access(account_id):
     async def do_test():
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT name, username, password, device_id, environment, api_key, api_secret FROM accounts WHERE id = ?', (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT name, username, password, device_id, environment, api_key, api_secret FROM accounts WHERE id = {ph}', (account_id,))
         row = cursor.fetchone()
         conn.close()
         
@@ -7550,7 +7563,8 @@ def _init_insider_tables():
             # Initialize poll status if not exists
             cursor.execute('SELECT COUNT(*) FROM insider_poll_status')
             if cursor.fetchone()[0] == 0:
-                cursor.execute('INSERT INTO insider_poll_status (id, last_poll_time, filings_processed) VALUES (1, ?, 0)', (datetime.now().isoformat(),))
+                _ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f'INSERT INTO insider_poll_status (id, last_poll_time, filings_processed) VALUES (1, {_ph}, 0)', (datetime.now().isoformat(),))
         
         conn.commit()
         conn.close()
@@ -8502,10 +8516,11 @@ def create_account():
         is_postgres = is_using_postgres()
         
         # Check if account name already exists FOR THIS USER (not globally)
+        ph = '%s' if is_postgres else '?'
         if current_user_id:
-            cursor.execute("SELECT id FROM accounts WHERE name = ? AND user_id = ?", (account_name, current_user_id))
+            cursor.execute(f"SELECT id FROM accounts WHERE name = {ph} AND user_id = {ph}", (account_name, current_user_id))
         else:
-            cursor.execute("SELECT id FROM accounts WHERE name = ? AND user_id IS NULL", (account_name,))
+            cursor.execute(f"SELECT id FROM accounts WHERE name = {ph} AND user_id IS NULL", (account_name,))
         
         if cursor.fetchone():
             conn.close()
@@ -8516,7 +8531,7 @@ def create_account():
             # PostgreSQL: use RETURNING to get the ID
             cursor.execute("""
                 INSERT INTO accounts (name, broker, auth_type, enabled, created_at, user_id)
-                VALUES (?, ?, ?, ?, ?, ?) RETURNING id
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
             """, (account_name, 'Tradovate', 'oauth', True, datetime.now().isoformat(), current_user_id))
             result = cursor.fetchone()
             # Result is a dict from RealDictCursor
@@ -8563,7 +8578,8 @@ def set_broker(account_id):
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE accounts SET broker = ? WHERE id = ?", (broker_name, account_id))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f"UPDATE accounts SET broker = {ph} WHERE id = {ph}", (broker_name, account_id))
         conn.commit()
         conn.close()
         
@@ -8907,7 +8923,8 @@ def connect_account(account_id):
             try:
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                cursor.execute("SELECT tradovate_accounts, environment FROM accounts WHERE id = ?", (account_id,))
+                ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f"SELECT tradovate_accounts, environment FROM accounts WHERE id = {ph}", (account_id,))
                 row = cursor.fetchone()
                 conn.close()
                 
@@ -9385,7 +9402,8 @@ def delete_account(account_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f"DELETE FROM accounts WHERE id = {ph}", (account_id,))
         conn.commit()
         deleted = cursor.rowcount
         conn.close()
@@ -10822,26 +10840,27 @@ def api_delete_recorder(recorder_id):
         cursor = conn.cursor()
         
         # Check if recorder exists
-        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT name FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         name = row[0]
-        
+
         # CASCADE DELETE: Delete all associated data FIRST
-        cursor.execute('DELETE FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorded_trades WHERE recorder_id = {ph}', (recorder_id,))
         trades_deleted = cursor.rowcount
-        
-        cursor.execute('DELETE FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+
+        cursor.execute(f'DELETE FROM recorded_signals WHERE recorder_id = {ph}', (recorder_id,))
         signals_deleted = cursor.rowcount
-        
-        cursor.execute('DELETE FROM recorder_positions WHERE recorder_id = ?', (recorder_id,))
+
+        cursor.execute(f'DELETE FROM recorder_positions WHERE recorder_id = {ph}', (recorder_id,))
         positions_deleted = cursor.rowcount
-        
+
         # Now delete the recorder itself
-        cursor.execute('DELETE FROM recorders WHERE id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorders WHERE id = {ph}', (recorder_id,))
         conn.commit()
         conn.close()
         
@@ -10862,8 +10881,9 @@ def api_clone_recorder(recorder_id):
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+
+        cursor.execute(f'SELECT * FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
@@ -10878,7 +10898,8 @@ def api_clone_recorder(recorder_id):
         # Create cloned recorder with modified name
         new_name = f"{original['name']} (Copy)"
         
-        cursor.execute('''
+        _vals = ', '.join([ph] * 33)
+        cursor.execute(f'''
             INSERT INTO recorders (
                 name, strategy_type, symbol, demo_account_id, account_id,
                 initial_position_size, add_position_size,
@@ -10889,7 +10910,7 @@ def api_clone_recorder(recorder_id):
                 time_filter_1_start, time_filter_1_stop, time_filter_2_start, time_filter_2_stop,
                 signal_cooldown, max_signals_per_session, max_daily_loss, auto_flat_after_cutoff,
                 notes, recording_enabled, webhook_token
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ({_vals})
         ''', (
             new_name,
             original['strategy_type'],
@@ -10950,19 +10971,20 @@ def api_start_recorder(recorder_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute('SELECT name, is_recording FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+
+        cursor.execute(f'SELECT name, is_recording FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         name, is_recording = row
         if is_recording:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder is already running'}), 400
-        
-        cursor.execute('UPDATE recorders SET is_recording = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (recorder_id,))
+
+        cursor.execute(f'UPDATE recorders SET is_recording = 1, updated_at = CURRENT_TIMESTAMP WHERE id = {ph}', (recorder_id,))
         conn.commit()
         conn.close()
         
@@ -10982,19 +11004,20 @@ def api_stop_recorder(recorder_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute('SELECT name, is_recording FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+
+        cursor.execute(f'SELECT name, is_recording FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         name, is_recording = row
         if not is_recording:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder is not running'}), 400
-        
-        cursor.execute('UPDATE recorders SET is_recording = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (recorder_id,))
+
+        cursor.execute(f'UPDATE recorders SET is_recording = 0, updated_at = CURRENT_TIMESTAMP WHERE id = {ph}', (recorder_id,))
         conn.commit()
         conn.close()
         
@@ -11017,24 +11040,25 @@ def api_reset_recorder_history(recorder_id):
         cursor = conn.cursor()
         
         # Verify recorder exists
-        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT name FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         name = row['name']
-        
+
         # Delete all trades for this recorder
-        cursor.execute('DELETE FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorded_trades WHERE recorder_id = {ph}', (recorder_id,))
         trades_deleted = cursor.rowcount
-        
+
         # Delete all signals for this recorder
-        cursor.execute('DELETE FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorded_signals WHERE recorder_id = {ph}', (recorder_id,))
         signals_deleted = cursor.rowcount
-        
+
         # Delete all positions for this recorder (Trade Manager style tracking)
-        cursor.execute('DELETE FROM recorder_positions WHERE recorder_id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorder_positions WHERE recorder_id = {ph}', (recorder_id,))
         positions_deleted = cursor.rowcount
         
         conn.commit()
@@ -16104,7 +16128,7 @@ def api_get_recorder_pnl(recorder_id):
                 SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as daily_wins,
                 SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as daily_losses
             FROM recorded_trades 
-            WHERE recorder_id = ? AND status = 'closed' {date_filter}
+            WHERE recorder_id = {placeholder} AND status = 'closed' {date_filter}
             GROUP BY DATE(exit_time)
             ORDER BY DATE(exit_time) ASC
         ''', (recorder_id,))
@@ -16131,9 +16155,9 @@ def api_get_recorder_pnl(recorder_id):
         stats['max_drawdown'] = max_drawdown
         
         # Get open position if any
-        cursor.execute('''
-            SELECT * FROM recorded_trades 
-            WHERE recorder_id = ? AND status = 'open'
+        cursor.execute(f'''
+            SELECT * FROM recorded_trades
+            WHERE recorder_id = {placeholder} AND status = 'open'
             ORDER BY entry_time DESC LIMIT 1
         ''', (recorder_id,))
         
@@ -16142,7 +16166,7 @@ def api_get_recorder_pnl(recorder_id):
             stats['open_position'] = dict(open_trade)
         
         # Get recorder name
-        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        cursor.execute(f'SELECT name FROM recorders WHERE id = {placeholder}', (recorder_id,))
         recorder = cursor.fetchone()
         stats['recorder_name'] = recorder['name'] if recorder else f'Recorder {recorder_id}'
         
@@ -20667,17 +20691,18 @@ def api_close_recorder_positions(recorder_id):
         cursor = conn.cursor()
         
         # Get recorder info
-        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT name FROM recorders WHERE id = {ph}', (recorder_id,))
         recorder = cursor.fetchone()
         if not recorder:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         # Get open trades for this recorder
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT id, ticker, side, entry_price, quantity
             FROM recorded_trades
-            WHERE recorder_id = ? AND status = 'open'
+            WHERE recorder_id = {ph} AND status = 'open'
         ''', (recorder_id,))
         open_trades = cursor.fetchall()
         
@@ -20710,10 +20735,10 @@ def api_close_recorder_positions(recorder_id):
                 pnl = (trade['entry_price'] - current_price) * tick_value * trade['quantity']
             
             # Update trade to closed
-            cursor.execute('''
-                UPDATE recorded_trades 
-                SET status = 'closed', exit_price = ?, exit_time = CURRENT_TIMESTAMP, pnl = ?
-                WHERE id = ?
+            cursor.execute(f'''
+                UPDATE recorded_trades
+                SET status = 'closed', exit_price = {ph}, exit_time = CURRENT_TIMESTAMP, pnl = {ph}
+                WHERE id = {ph}
             ''', (current_price, pnl, trade['id']))
             
             closed_count += 1
@@ -23001,10 +23026,15 @@ def api_dashboard_metrics():
         wins = stats.get('wins') or 0
         losses = stats.get('losses') or 0
         total_wins_amt = stats.get('total_wins') or 0
-        total_losses_amt = stats.get('total_losses') or 1
-        
+        total_losses_amt = stats.get('total_losses') or 0
+
         win_rate_pct = round((wins / total_trades * 100), 1) if total_trades > 0 else 0
-        profit_factor = round(total_wins_amt / total_losses_amt, 2) if total_losses_amt > 0 else total_wins_amt
+        if total_losses_amt > 0:
+            profit_factor = round(total_wins_amt / total_losses_amt, 2)
+        elif total_wins_amt > 0:
+            profit_factor = 'Infinite'
+        else:
+            profit_factor = 0
         
         # Calculate time traded
         time_traded = '0D'
@@ -23629,23 +23659,48 @@ class PaperDBReader:
 
     @staticmethod
     def get_open_positions(recorder_id=None):
-        sql = "SELECT * FROM paper_trades WHERE status='open'"
+        sql = "SELECT pt.*, r.name as recorder_name FROM paper_trades pt LEFT JOIN recorders r ON pt.recorder_id = r.id WHERE pt.status='open'"
         params = []
         if recorder_id is not None:
-            sql += " AND recorder_id={ph}"
+            sql += " AND pt.recorder_id={ph}"
             params.append(recorder_id)
-        sql += " ORDER BY opened_at DESC"
+        sql += " ORDER BY pt.opened_at DESC"
         rows = PaperDBReader._query(sql, tuple(params))
         result = []
+        # Per-request price cache: avoid fetching same symbol price multiple times
+        _price_cache = {}
         for r in rows:
+            symbol = r.get('symbol', '')
+            side = r.get('side', 'LONG')
+            quantity = r.get('quantity', 0) or 0
+            entry_price = r.get('entry_price', 0) or 0
+
+            # Get live price (cache → WebSocket cache → Yahoo/TradingView API)
+            sym_root = extract_symbol_root(symbol)
+            if sym_root not in _price_cache:
+                live_price = _get_live_price_for_symbol(symbol)
+                if not live_price:
+                    # Fallback: fetch from Yahoo Finance / TradingView scanner
+                    live_price = get_market_price_simple(symbol)
+                _price_cache[sym_root] = live_price
+            live_price = _price_cache[sym_root]
+
+            unrealized = 0
+            if live_price and entry_price and quantity:
+                unrealized = _calculate_unrealized_pnl(symbol, side, quantity, entry_price, live_price)
+
+            rec_id = r.get('recorder_id')
+            rec_name = r.get('recorder_name') or f'Recorder #{rec_id}'
+
             result.append({
-                'recorder_id': r.get('recorder_id'),
-                'symbol': r.get('symbol'),
-                'side': r.get('side'),
-                'quantity': r.get('quantity'),
-                'entry_price': r.get('entry_price'),
-                'current_price': None,
-                'unrealized_pnl': 0,
+                'recorder_id': rec_id,
+                'recorder_name': rec_name,
+                'symbol': symbol,
+                'side': side,
+                'quantity': quantity,
+                'entry_price': entry_price,
+                'current_price': round(live_price, 2) if live_price else None,
+                'unrealized_pnl': round(unrealized, 2),
                 'tp_price': r.get('tp_price'),
                 'sl_price': r.get('sl_price'),
                 'dca_count': 0,
@@ -25386,25 +25441,27 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
                 pnl = pnl_ticks * tick_value * trade['quantity']
                 
                 # Close the trade
-                cursor.execute('''
-                    UPDATE recorded_trades 
-                    SET exit_price = ?, exit_time = CURRENT_TIMESTAMP, 
-                        pnl = ?, pnl_ticks = ?, status = 'closed', 
-                        exit_reason = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
+                _ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f'''
+                    UPDATE recorded_trades
+                    SET exit_price = {_ph}, exit_time = CURRENT_TIMESTAMP,
+                        pnl = {_ph}, pnl_ticks = {_ph}, status = 'closed',
+                        exit_reason = {_ph}, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = {_ph}
                 ''', (exit_price, pnl, pnl_ticks, hit_type, trade['id']))
                 
                 conn.commit()
                 
                 # Also close any open position in recorder_positions (Trade Manager style)
-                cursor.execute('''
-                    SELECT id FROM recorder_positions 
-                    WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                _ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f'''
+                    SELECT id FROM recorder_positions
+                    WHERE recorder_id = {_ph} AND ticker = {_ph} AND status = 'open'
                 ''', (trade['recorder_id'], ticker))
                 open_pos = cursor.fetchone()
                 if open_pos:
                     # Close the position with proper PnL calculation
-                    cursor.execute('SELECT * FROM recorder_positions WHERE id = ?', (open_pos[0],))
+                    cursor.execute(f'SELECT * FROM recorder_positions WHERE id = {_ph}', (open_pos[0],))
                     pos_row = cursor.fetchone()
                     if pos_row:
                         pos_columns = [desc[0] for desc in cursor.description]
@@ -25421,14 +25478,14 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
                         
                         pos_realized_pnl = pos_pnl_ticks * tick_value * pos_total_qty
                         
-                        cursor.execute('''
+                        cursor.execute(f'''
                             UPDATE recorder_positions
                             SET status = 'closed',
-                                exit_price = ?,
-                                realized_pnl = ?,
+                                exit_price = {_ph},
+                                realized_pnl = {_ph},
                                 closed_at = CURRENT_TIMESTAMP,
                                 updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ?
+                            WHERE id = {_ph}
                         ''', (exit_price, pos_realized_pnl, open_pos[0]))
                         conn.commit()
                         
@@ -26979,7 +27036,8 @@ def get_valid_tradovate_token(account_id: int) -> str | None:
                 conn = get_db_connection()
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute('SELECT tradovate_token FROM accounts WHERE id = ?', (account_id,))
+                _ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f'SELECT tradovate_token FROM accounts WHERE id = {_ph}', (account_id,))
                 new_account = cursor.fetchone()
                 conn.close()
                 if new_account and new_account['tradovate_token']:
@@ -27142,7 +27200,8 @@ def try_refresh_tradovate_token(account_id: int) -> bool:
         # API Access during trades uses username/password (bypasses refresh token issues)
         try:
             cursor = conn.cursor()
-            cursor.execute('SELECT username, password FROM accounts WHERE id = ?', (account_id,))
+            _ph = '%s' if is_using_postgres() else '?'
+            cursor.execute(f'SELECT username, password FROM accounts WHERE id = {_ph}', (account_id,))
             creds_row = cursor.fetchone()
             username = None
             password = None

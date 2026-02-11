@@ -87,6 +87,21 @@ API_CALLS_PER_MINUTE_LIMIT = 5000  # Effectively disabled - rate limits are per-
 _API_CALL_TIMES: List[float] = []
 _API_CALL_LOCK = threading.Lock()
 
+# ============================================================================
+# Paper Trading Redis Publisher (fire-and-forget)
+# ============================================================================
+_paper_redis = None
+try:
+    import redis as _redis_module
+    _paper_redis_url = os.environ.get('REDIS_URL')
+    if _paper_redis_url:
+        _paper_redis = _redis_module.from_url(_paper_redis_url, decode_responses=True)
+        _paper_redis.ping()
+        logging.getLogger('RecorderService').info("Paper trading Redis publisher connected")
+except Exception as _redis_err:
+    _paper_redis = None
+    logging.getLogger('RecorderService').info(f"Paper trading Redis not available (paper signals disabled): {_redis_err}")
+
 def check_rate_limit() -> bool:
     """Check if we're under rate limit. Returns True if safe to proceed."""
     with _API_CALL_LOCK:
@@ -953,50 +968,35 @@ def execute_trade_simple(
             # --- TRADER-LEVEL SIGNAL COOLDOWN FILTER ---
             trader_cooldown = int(trader_dict.get('signal_cooldown', 0) or 0)
             if trader_cooldown > 0:
-                try:
-                    # Check last trade time for this trader (PostgreSQL vs SQLite compatible)
-                    if is_postgres:
-                        cursor.execute(f'''
-                            SELECT MAX(entry_time) FROM recorded_trades
-                            WHERE recorder_id = %s AND entry_time > NOW() - INTERVAL '{trader_cooldown} seconds'
-                        ''', (recorder_id,))
-                    else:
-                        cursor.execute(f'''
-                            SELECT MAX(entry_time) FROM recorded_trades
-                            WHERE recorder_id = ? AND entry_time > datetime('now', '-{trader_cooldown} seconds')
-                        ''', (recorder_id,))
-                    last_trade = cursor.fetchone()
-                    if last_trade and last_trade[0]:
-                        logger.info(f"⏭️ Trader {trader_id} cooldown SKIPPED: Last trade within {trader_cooldown}s")
-                        continue
-                    logger.info(f"✅ Trader {trader_id} cooldown passed: {trader_cooldown}s")
-                except Exception as cool_err:
-                    logger.warning(f"⚠️ Trader cooldown check failed: {cool_err}")
+                last_trade_str = trader_dict.get('last_trade_time')
+                if last_trade_str:
+                    try:
+                        last_trade_dt = datetime.fromisoformat(last_trade_str)
+                        elapsed = (datetime.utcnow() - last_trade_dt).total_seconds()
+                        if elapsed < trader_cooldown:
+                            logger.info(f"⏭️ Trader {trader_id} cooldown SKIPPED: {elapsed:.0f}s / {trader_cooldown}s")
+                            continue
+                        logger.info(f"✅ Trader {trader_id} cooldown passed: {elapsed:.0f}s / {trader_cooldown}s")
+                    except Exception as cool_err:
+                        logger.warning(f"⚠️ Trader cooldown parse failed: {cool_err}")
+                else:
+                    logger.info(f"✅ Trader {trader_id} cooldown passed: no previous trade")
 
             # --- TRADER-LEVEL MAX SIGNALS PER SESSION FILTER ---
             trader_max_signals = int(trader_dict.get('max_signals_per_session', 0) or 0)
             if trader_max_signals > 0:
-                try:
-                    # PostgreSQL vs SQLite compatible date comparison
-                    if is_postgres:
-                        cursor.execute('''
-                            SELECT COUNT(*) FROM recorded_trades
-                            WHERE recorder_id = %s AND entry_time::date = CURRENT_DATE
-                        ''', (recorder_id,))
-                    else:
-                        cursor.execute('''
-                            SELECT COUNT(*) FROM recorded_trades
-                            WHERE recorder_id = ? AND DATE(entry_time) = DATE('now')
-                        ''', (recorder_id,))
-                    today_trades = cursor.fetchone()[0] or 0
-                    if today_trades >= trader_max_signals:
-                        logger.info(f"⏭️ Trader {trader_id} max signals SKIPPED: {today_trades}/{trader_max_signals} today")
-                        continue
-                    logger.info(f"✅ Trader {trader_id} max signals passed: {today_trades}/{trader_max_signals}")
-                except Exception as max_err:
-                    logger.warning(f"⚠️ Trader max signals check failed: {max_err}")
+                today_str = datetime.utcnow().strftime('%Y-%m-%d')
+                trader_today_date = trader_dict.get('today_signal_date', '') or ''
+                if trader_today_date == today_str:
+                    today_count = int(trader_dict.get('today_signal_count', 0) or 0)
+                else:
+                    today_count = 0  # New day, count resets
+                if today_count >= trader_max_signals:
+                    logger.info(f"⏭️ Trader {trader_id} max signals SKIPPED: {today_count}/{trader_max_signals} today")
+                    continue
+                logger.info(f"✅ Trader {trader_id} max signals passed: {today_count}/{trader_max_signals}")
 
-            # --- TRADER-LEVEL MAX DAILY LOSS FILTER ---
+            # --- RECORDER-LEVEL MAX DAILY LOSS FILTER (intentionally shared — strategy circuit breaker) ---
             trader_max_loss = float(trader_dict.get('max_daily_loss', 0) or 0)
             if trader_max_loss > 0:
                 try:
@@ -1066,6 +1066,21 @@ def execute_trade_simple(
                     logger.info(f"✅ Trader {trader_id} time filter passed: {now.strftime('%I:%M %p')}")
                 except Exception as time_err:
                     logger.warning(f"⚠️ Trader time filter check failed: {time_err}")
+
+            # --- UPDATE PER-TRADER TRACKING (cooldown + daily signal count) ---
+            try:
+                now_utc = datetime.utcnow().isoformat()
+                today_str = datetime.utcnow().strftime('%Y-%m-%d')
+                trader_today_date = trader_dict.get('today_signal_date', '') or ''
+                if trader_today_date == today_str:
+                    new_count = int(trader_dict.get('today_signal_count', 0) or 0) + 1
+                else:
+                    new_count = 1
+                cursor.execute(f'UPDATE traders SET last_trade_time = {placeholder}, today_signal_count = {placeholder}, today_signal_date = {placeholder} WHERE id = {placeholder}',
+                               (now_utc, new_count, today_str, trader_id))
+                conn.commit()
+            except Exception as track_err:
+                logger.warning(f"⚠️ Could not update trader tracking: {track_err}")
 
             # enabled_accounts_raw already extracted at top of loop (early exit check)
 
@@ -1167,6 +1182,12 @@ def execute_trade_simple(
                                 'recorder_id': trader_dict.get('recorder_id'),
                                 # DCA and filter settings
                                 'dca_enabled': trader_dict.get('dca_enabled'),
+                                'avg_down_amount': trader_dict.get('avg_down_amount'),
+                                'avg_down_point': trader_dict.get('avg_down_point'),
+                                'avg_down_units': trader_dict.get('avg_down_units'),
+                                'trim_units': trader_dict.get('trim_units'),
+                                'tp_units': trader_dict.get('tp_units'),
+                                'max_contracts': trader_dict.get('max_contracts'),
                                 'custom_ticker': trader_dict.get('custom_ticker'),
                                 'add_delay': trader_dict.get('add_delay'),
                                 'signal_cooldown': trader_dict.get('signal_cooldown'),
@@ -7219,6 +7240,17 @@ def receive_webhook(webhook_token):
                 if simulation_mode:
                     logger.info(f"📝 SIMULATION: Closing {open_trade['side']} position (no broker call)")
                     broker_closed = True  # Simulated close always succeeds
+                    # Publish paper signal for standalone paper trading service
+                    try:
+                        if _paper_redis:
+                            _paper_redis.publish('paper_signals', json.dumps({
+                                'recorder_id': recorder_id, 'action': 'CLOSE',
+                                'ticker': ticker, 'price': float(current_price),
+                                'quantity': int(open_trade.get('quantity', 1)),
+                                'timestamp': datetime.utcnow().isoformat()
+                            }))
+                    except Exception:
+                        logger.warning("Could not publish paper CLOSE signal")
                 else:
                     logger.info(f"🔄 CLOSE signal: Liquidating {open_trade['side']} position on broker (cancels TP orders automatically)...")
 
@@ -7385,6 +7417,19 @@ def receive_webhook(webhook_token):
             if simulation_mode:
                 broker_result = {'success': False, 'no_broker': True, 'simulation': True}
                 logger.info(f"📝 SIMULATION: Skipping broker execution for BUY {ticker}")
+                # Publish paper signal for standalone paper trading service
+                try:
+                    if _paper_redis:
+                        _paper_redis.publish('paper_signals', json.dumps({
+                            'recorder_id': recorder_id, 'action': 'BUY',
+                            'ticker': ticker, 'price': float(current_price),
+                            'quantity': int(quantity), 'tp_ticks': int(tp_ticks),
+                            'sl_enabled': int(sl_enabled), 'sl_amount': int(sl_amount),
+                            'dca_enabled': bool(recorder.get('avg_down_enabled', 0)),
+                            'timestamp': datetime.utcnow().isoformat()
+                        }))
+                except Exception:
+                    logger.warning("Could not publish paper BUY signal")
             else:
                 broker_result = execute_trade_simple(
                     recorder_id=recorder_id,
@@ -7513,6 +7558,19 @@ def receive_webhook(webhook_token):
             if simulation_mode:
                 broker_result = {'success': False, 'no_broker': True, 'simulation': True}
                 logger.info(f"📝 SIMULATION: Skipping broker execution for SELL {ticker}")
+                # Publish paper signal for standalone paper trading service
+                try:
+                    if _paper_redis:
+                        _paper_redis.publish('paper_signals', json.dumps({
+                            'recorder_id': recorder_id, 'action': 'SELL',
+                            'ticker': ticker, 'price': float(current_price),
+                            'quantity': int(quantity), 'tp_ticks': int(tp_ticks),
+                            'sl_enabled': int(sl_enabled), 'sl_amount': int(sl_amount),
+                            'dca_enabled': bool(recorder.get('avg_down_enabled', 0)),
+                            'timestamp': datetime.utcnow().isoformat()
+                        }))
+                except Exception:
+                    logger.warning("Could not publish paper SELL signal")
             else:
                 broker_result = execute_trade_simple(
                     recorder_id=recorder_id,

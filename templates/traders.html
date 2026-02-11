@@ -1051,7 +1051,7 @@
                 <div class="toggle-row">
                     <span>Inverse Strat</span>
                     <label class="switch">
-                        <input type="checkbox">
+                        <input type="checkbox" id="createInverseSignals" name="inverse_signals">
                         <span class="slider"></span>
                     </label>
                 </div>
@@ -2078,7 +2078,8 @@
                         const avgDownAmount = parseInt(document.getElementById('avgDownAmount')?.value) || 1;
                         const avgDownPoint = parseFloat(document.getElementById('avgDownPoint')?.value) || 10;
                         const avgDownUnits = document.getElementById('avgDownUnits')?.value || 'Ticks';
-                        
+                        const trimUnits = document.getElementById('trimUnits')?.value || 'Percent';
+
                         // Get time filter settings
                         const timeFilter1Enabled = document.getElementById('time_filter_1_enabled')?.checked ? true : false;
                         const timeFilter1Start = document.getElementById('timeFilter1Start')?.value || '';
@@ -2123,6 +2124,7 @@
                                 initial_position_size: initialPositionSize,
                                 add_position_size: addPositionSize,
                                 tp_units: tpUnits,
+                                trim_units: trimUnits,
                                 tp_targets: tpTargets,
                                 sl_enabled: slEnabled,
                                 sl_amount: slAmount,
@@ -2183,7 +2185,8 @@
                         let successCount = 0;
                         let errorMessages = [];
                         
-                        // Collect time filter settings for create mode
+                        // Collect create form settings
+                        const newInverseSignals = document.getElementById('createInverseSignals')?.checked ? 1 : 0;
                         const newTimeFilter1Enabled = document.getElementById('new_time_filter_1_enabled')?.checked ? true : false;
                         const newTimeFilter1Start = document.getElementById('newTimeFilter1Start')?.value || '';
                         const newTimeFilter1Stop = document.getElementById('newTimeFilter1Stop')?.value || '';
@@ -2203,6 +2206,7 @@
                                     subaccount_id: account.subaccount_id,
                                     subaccount_name: account.subaccount_name,
                                     is_demo: account.is_demo,
+                                    inverse_signals: newInverseSignals,
                                     // Time filter settings (optional overrides)
                                     time_filter_1_enabled: newTimeFilter1Enabled,
                                     time_filter_1_start: newTimeFilter1Start,
