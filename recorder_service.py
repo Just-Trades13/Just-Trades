@@ -962,6 +962,52 @@ def execute_trade_simple(
         trader_rows = cursor.fetchall()
         logger.info(f"📋 {len(trader_rows)} trader(s) with valid accounts ready for execution")
 
+        # --- BATCH PRE-FETCH: Avoid repeated identical queries inside the trader loop ---
+        # 1) Pre-fetch daily P&L for this recorder (max_daily_loss filter queries this per-trader but it's the same result)
+        _cached_daily_pnl = None
+        try:
+            if is_postgres:
+                cursor.execute('''
+                    SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                    WHERE recorder_id = %s AND exit_time::date = CURRENT_DATE AND status = 'closed'
+                ''', (recorder_id,))
+            else:
+                cursor.execute('''
+                    SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                    WHERE recorder_id = ? AND DATE(exit_time) = DATE('now') AND status = 'closed'
+                ''', (recorder_id,))
+            _cached_daily_pnl = cursor.fetchone()[0] or 0
+        except Exception:
+            pass  # Will fall back to per-trader query
+
+        # 2) Pre-fetch ALL account credentials in one query (avoid N+1 queries per account)
+        _cached_account_creds = {}
+        try:
+            all_acct_ids = set()
+            for _tr in trader_rows:
+                _trd = dict(_tr)
+                _ea_raw = _trd.get('enabled_accounts')
+                if _ea_raw and _ea_raw != '[]':
+                    try:
+                        _ea_list = json.loads(_ea_raw) if isinstance(_ea_raw, str) else _ea_raw
+                        for _a in (_ea_list if isinstance(_ea_list, list) else []):
+                            _aid = _a.get('account_id')
+                            if _aid:
+                                all_acct_ids.add(_aid)
+                    except:
+                        pass
+                _legacy_aid = _trd.get('account_id')
+                if _legacy_aid:
+                    all_acct_ids.add(_legacy_aid)
+            if all_acct_ids:
+                id_list = ','.join(str(int(x)) for x in all_acct_ids)
+                cursor.execute(f'SELECT id, tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm, tradovate_refresh_token, token_expires_at FROM accounts WHERE id IN ({id_list})')
+                for _row in cursor.fetchall():
+                    _cached_account_creds[dict(_row)['id']] = dict(_row)
+                logger.info(f"⚡ Pre-fetched {len(_cached_account_creds)} account credentials in 1 query")
+        except Exception as _pf_err:
+            logger.warning(f"⚠️ Account pre-fetch failed, will query per-account: {_pf_err}")
+
         for trader_idx, trader_row in enumerate(trader_rows):
             trader_dict = dict(trader_row)
             trader_id = trader_dict.get('id')
@@ -1031,18 +1077,21 @@ def execute_trade_simple(
             trader_max_loss = float(trader_dict.get('max_daily_loss', 0) or 0)
             if not is_close_signal and trader_max_loss > 0:
                 try:
-                    # PostgreSQL vs SQLite compatible date comparison
-                    if is_postgres:
+                    # Use pre-fetched daily P&L if available (avoids repeated identical query)
+                    if _cached_daily_pnl is not None:
+                        daily_pnl = _cached_daily_pnl
+                    elif is_postgres:
                         cursor.execute('''
                             SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
                             WHERE recorder_id = %s AND exit_time::date = CURRENT_DATE AND status = 'closed'
                         ''', (recorder_id,))
+                        daily_pnl = cursor.fetchone()[0] or 0
                     else:
                         cursor.execute('''
                             SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
                             WHERE recorder_id = ? AND DATE(exit_time) = DATE('now') AND status = 'closed'
                         ''', (recorder_id,))
-                    daily_pnl = cursor.fetchone()[0] or 0
+                        daily_pnl = cursor.fetchone()[0] or 0
                     if daily_pnl <= -trader_max_loss:
                         logger.info(f"⏭️ Trader {trader_id} max daily loss SKIPPED: ${daily_pnl:.2f} (limit: -${trader_max_loss})")
                         continue
@@ -1144,9 +1193,13 @@ def execute_trade_simple(
                         # Get credentials from accounts table (includes broker type for routing)
                         # CRITICAL: Include environment - source of truth for demo vs live
                         # Include ProjectX-specific fields for TopstepX/Apex routing
-                        placeholder = '%s' if is_postgres else '?'
-                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm FROM accounts WHERE id = {placeholder}', (acct_id,))
-                        creds_row = cursor.fetchone()
+                        # Use pre-fetched cache if available (avoids N+1 queries)
+                        if acct_id in _cached_account_creds:
+                            creds_row = _cached_account_creds[acct_id]
+                        else:
+                            placeholder = '%s' if is_postgres else '?'
+                            cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm FROM accounts WHERE id = {placeholder}', (acct_id,))
+                            creds_row = cursor.fetchone()
                         
                         if not creds_row:
                             logger.warning(f"⚠️ Account {acct_id} not found in accounts table - skipping {subaccount_name}")
@@ -1243,9 +1296,13 @@ def execute_trade_simple(
                 acct_id = trader_dict.get('account_id')
                 if subaccount_id and subaccount_id not in seen_subaccounts and acct_id:
                     # Fetch credentials from accounts table (same as enabled_accounts mode)
-                    placeholder = '%s' if is_postgres else '?'
-                    cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm, tradovate_refresh_token, token_expires_at FROM accounts WHERE id = {placeholder}', (acct_id,))
-                    creds_row = cursor.fetchone()
+                    # Use pre-fetched cache if available (avoids N+1 queries)
+                    if acct_id in _cached_account_creds:
+                        creds_row = _cached_account_creds[acct_id]
+                    else:
+                        placeholder = '%s' if is_postgres else '?'
+                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm, tradovate_refresh_token, token_expires_at FROM accounts WHERE id = {placeholder}', (acct_id,))
+                        creds_row = cursor.fetchone()
 
                     if creds_row:
                         creds = dict(creds_row)
