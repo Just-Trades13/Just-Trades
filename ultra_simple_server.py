@@ -11079,9 +11079,14 @@ def api_create_recorder():
         is_postgres = is_using_postgres()
         ph = '%s' if is_postgres else '?'
         
+        # Validate risk settings before saving
+        validation_errors = validate_trader_risk_settings(data)
+        if validation_errors:
+            return jsonify({'success': False, 'error': 'Invalid risk settings', 'validation_errors': validation_errors}), 400
+
         # Serialize TP targets
         tp_targets = json.dumps(data.get('tp_targets', []))
-        
+
         # Get current user_id for data isolation
         current_user_id = None
         if USER_AUTH_AVAILABLE and is_logged_in():
@@ -11230,7 +11235,13 @@ def api_update_recorder(recorder_id):
         if not cursor.fetchone():
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
+        # Validate risk settings before saving
+        validation_errors = validate_trader_risk_settings(data)
+        if validation_errors:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid risk settings', 'validation_errors': validation_errors}), 400
+
         # Build update query dynamically
         fields = []
         values = []
@@ -11900,6 +11911,115 @@ def api_get_traders():
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def validate_trader_risk_settings(data, context='save'):
+    """Validate risk settings for trader create/update. Returns list of error strings (empty = valid).
+    Warnings are returned as {'warnings': [...]} when settings are risky but technically allowed."""
+    errors = []
+    warnings = []
+
+    # --- TP Targets ---
+    tp_targets = data.get('tp_targets')
+    if tp_targets is not None:
+        if isinstance(tp_targets, str):
+            try:
+                tp_targets = json.loads(tp_targets)
+            except (json.JSONDecodeError, TypeError):
+                errors.append('tp_targets must be a valid JSON array')
+                tp_targets = None
+        if tp_targets is not None:
+            if not isinstance(tp_targets, list):
+                errors.append('tp_targets must be a list')
+            elif len(tp_targets) > 0:
+                for i, target in enumerate(tp_targets):
+                    if not isinstance(target, dict):
+                        errors.append(f'tp_targets[{i}] must be an object with ticks and trim')
+                        continue
+                    ticks = target.get('ticks', 0)
+                    trim = target.get('trim', 0)
+                    try:
+                        ticks = float(ticks or 0)
+                    except (ValueError, TypeError):
+                        errors.append(f'tp_targets[{i}].ticks must be a number')
+                        continue
+                    if ticks <= 0:
+                        errors.append(f'tp_targets[{i}].ticks must be greater than 0 (got {ticks})')
+                    try:
+                        trim = float(trim or 0)
+                    except (ValueError, TypeError):
+                        errors.append(f'tp_targets[{i}].trim must be a number')
+                        continue
+                    if trim <= 0 or trim > 100:
+                        errors.append(f'tp_targets[{i}].trim must be between 1 and 100 (got {trim})')
+
+    # --- Position Sizes ---
+    for field in ['initial_position_size', 'add_position_size']:
+        val = data.get(field)
+        if val is not None:
+            try:
+                val = int(val)
+                if val < 1:
+                    errors.append(f'{field} must be at least 1 (got {val})')
+            except (ValueError, TypeError):
+                errors.append(f'{field} must be a positive integer')
+
+    # --- SL Settings ---
+    sl_enabled = data.get('sl_enabled')
+    sl_amount = data.get('sl_amount')
+    sl_type = data.get('sl_type')
+
+    if sl_amount is not None:
+        try:
+            sl_amount = float(sl_amount)
+            if sl_amount < 0:
+                errors.append(f'sl_amount cannot be negative (got {sl_amount})')
+        except (ValueError, TypeError):
+            errors.append('sl_amount must be a number')
+
+    if sl_type is not None and sl_type not in ('Fixed', 'Trail', 'Trailing'):
+        errors.append(f"sl_type must be 'Fixed' or 'Trail' (got '{sl_type}')")
+
+    # --- Trailing Stop Consistency ---
+    trail_trigger = data.get('trail_trigger')
+    trail_freq = data.get('trail_freq')
+    if trail_trigger is not None:
+        try:
+            trail_trigger = int(trail_trigger)
+            if trail_trigger < 0:
+                errors.append(f'trail_trigger cannot be negative (got {trail_trigger})')
+        except (ValueError, TypeError):
+            errors.append('trail_trigger must be a non-negative integer')
+    if trail_freq is not None:
+        try:
+            trail_freq = int(trail_freq)
+            if trail_freq < 0:
+                errors.append(f'trail_freq cannot be negative (got {trail_freq})')
+        except (ValueError, TypeError):
+            errors.append('trail_freq must be a non-negative integer')
+
+    # --- Break-Even Settings ---
+    be_enabled = data.get('break_even_enabled')
+    be_ticks = data.get('break_even_ticks')
+    if be_ticks is not None:
+        try:
+            be_ticks = int(be_ticks)
+            if be_ticks < 0:
+                errors.append(f'break_even_ticks cannot be negative (got {be_ticks})')
+        except (ValueError, TypeError):
+            errors.append('break_even_ticks must be a non-negative integer')
+
+    # --- Max Daily Loss ---
+    max_loss = data.get('max_daily_loss')
+    if max_loss is not None:
+        try:
+            max_loss = float(max_loss)
+            if max_loss < 0:
+                errors.append(f'max_daily_loss cannot be negative (got {max_loss})')
+        except (ValueError, TypeError):
+            errors.append('max_daily_loss must be a non-negative number')
+
+    return errors
+
+
 @app.route('/api/traders', methods=['POST'])
 def api_create_trader():
     """Create a new trader (link recorder to account with subaccount info and risk settings)"""
@@ -11986,6 +12106,21 @@ def api_create_trader():
         if max_daily_loss is None:
             max_daily_loss = rec_max_loss
         
+        # Validate risk settings AFTER inheritance (catch bad recorder defaults too)
+        validation_data = {
+            'initial_position_size': initial_position_size,
+            'add_position_size': add_position_size,
+            'tp_targets': tp_targets,
+            'sl_enabled': sl_enabled,
+            'sl_amount': sl_amount,
+            'sl_units': sl_units,
+            'max_daily_loss': max_daily_loss,
+        }
+        validation_errors = validate_trader_risk_settings(validation_data)
+        if validation_errors:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid risk settings', 'validation_errors': validation_errors}), 400
+
         # Verify account exists
         if is_postgres:
             cursor.execute('SELECT id, name FROM accounts WHERE id = %s', (account_id,))
@@ -11995,7 +12130,7 @@ def api_create_trader():
         if not account:
             conn.close()
             return jsonify({'success': False, 'error': 'Account not found'}), 404
-        
+
         # Check if link already exists
         if is_postgres:
             if subaccount_id:
@@ -12098,7 +12233,13 @@ def api_update_trader(trader_id):
         if not cursor.fetchone():
             conn.close()
             return jsonify({'success': False, 'error': 'Trader not found'}), 404
-        
+
+        # Validate risk settings before saving
+        validation_errors = validate_trader_risk_settings(data)
+        if validation_errors:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid risk settings', 'validation_errors': validation_errors}), 400
+
         # Build dynamic update query based on provided fields
         updates = []
         params = []
