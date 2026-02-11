@@ -801,14 +801,29 @@ def get_db_connection():
             
             conn = _pg_pool.getconn()
             conn.cursor_factory = RealDictCursor
-            
+
+            # Health check: rollback any aborted transaction and verify connection
+            try:
+                conn.rollback()
+                test_cursor = conn.cursor()
+                test_cursor.execute('SELECT 1')
+                test_cursor.close()
+            except Exception:
+                # Connection is dead — discard and get fresh one
+                try:
+                    _pg_pool.putconn(conn, close=True)
+                except:
+                    pass
+                conn = psycopg2.connect(db_url, connect_timeout=5)
+                conn.cursor_factory = RealDictCursor
+
             # CRITICAL: Only set is_postgres=True AFTER successful connection
             # This ensures we use correct placeholder (? vs %s)
             if not _is_postgres_verified:
                 is_postgres = True
                 _is_postgres_verified = True
                 logger.info("✅ recorder_service: PostgreSQL verified, using %s placeholders")
-            
+
             return PostgresConnectionWrapper(conn, _pg_pool)
         except ImportError:
             logger.warning("⚠️ psycopg2 not installed, using SQLite")
