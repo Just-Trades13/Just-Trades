@@ -865,7 +865,9 @@ def execute_trade_simple(
     quantity: int,
     tp_ticks: int = 0,  # 0 = no TP (TradingView strategy may handle it)
     sl_ticks: int = 0,  # 0 = no SL (TradingView strategy may handle it)
-    risk_config: dict = None  # NEW: Full risk_config for trailing stop/break-even
+    risk_config: dict = None,  # Full risk_config for trailing stop/break-even
+    tp_targets: list = None,  # Multi-level TP targets: [{"ticks":10,"trim":50}, {"ticks":20,"trim":50}]
+    trim_units: str = 'Percent'  # "Percent" or "Contracts" for multi-level TP trim calculation
 ) -> Dict[str, Any]:
     """
     SIMPLE TRADE EXECUTION WITH TP/SL - Executes on ALL linked accounts.
@@ -1113,7 +1115,14 @@ def execute_trade_simple(
             if not is_close_signal and (has_trader_time_1 or has_trader_time_2):
                 from datetime import datetime
                 try:
-                    now = datetime.now()
+                    # Use Chicago/Central Time (exchange timezone) instead of server local time
+                    try:
+                        from zoneinfo import ZoneInfo
+                        chicago_tz = ZoneInfo('America/Chicago')
+                    except ImportError:
+                        import pytz
+                        chicago_tz = pytz.timezone('America/Chicago')
+                    now = datetime.now(chicago_tz)
                     current_time = now.time()
 
                     def parse_time_str(t_str):
@@ -1378,7 +1387,7 @@ def execute_trade_simple(
         # ============================================================
         # ProjectX Trade Execution (Added Jan 2026)
         # ============================================================
-        async def do_trade_projectx(trader, trader_idx, adjusted_quantity):
+        async def do_trade_projectx(trader, trader_idx, adjusted_quantity, risk_config_px=None):
             """Execute trade on ProjectX broker (TopstepX, Apex, etc.)"""
             from phantom_scraper.projectx_integration import ProjectXIntegration
 
@@ -1435,27 +1444,119 @@ def execute_trade_simple(
                     # Determine order side
                     # ProjectX: 0=Buy, 1=Sell
                     side = "Buy" if action.upper() == "BUY" else "Sell"
-                    
+
+                    # --- ProjectX DCA Detection ---
+                    is_projectx_dca = False
+                    positions = await projectx.get_positions(int(subaccount_id))
+                    for pos in positions:
+                        pos_contract = str(pos.get('contractId', ''))
+                        if contract_id and contract_id in pos_contract:
+                            net_qty = pos.get('qty', 0) or pos.get('netQty', 0) or pos.get('size', 0)
+                            if net_qty != 0:
+                                existing_px_side = 'LONG' if net_qty > 0 else 'SHORT'
+                                signal_px_side = 'LONG' if action.upper() == 'BUY' else 'SHORT'
+                                if signal_px_side == existing_px_side:
+                                    is_projectx_dca = True
+                                    logger.info(f"📈 [{acct_name}] ProjectX DCA: Adding to {existing_px_side} {abs(net_qty)}")
+                                break
+
+                    if is_projectx_dca:
+                        # 1. Place market order WITHOUT brackets (DCA add)
+                        market_order = projectx.create_market_order(
+                            account_id=int(subaccount_id),
+                            contract_id=contract_id,
+                            side=side,
+                            quantity=adjusted_quantity
+                        )
+                        order_result = await projectx.place_order(market_order)
+
+                        if not (order_result and order_result.get('success')):
+                            error = order_result.get('error', 'Unknown') if order_result else 'No response'
+                            logger.error(f"❌ [{acct_name}] ProjectX DCA entry failed: {error}")
+                            return {'success': False, 'error': error}
+
+                        logger.info(f"✅ [{acct_name}] ProjectX DCA entry placed")
+                        await asyncio.sleep(0.5)  # Wait for fill
+
+                        # 2. Cancel existing TP/SL orders
+                        existing_orders = await projectx.get_orders(int(subaccount_id))
+                        for ord in (existing_orders or []):
+                            ord_status = str(ord.get('status', '')).lower()
+                            if ord_status in ['working', 'new', 'pending', 'accepted']:
+                                ord_id = ord.get('id') or ord.get('orderId')
+                                if ord_id:
+                                    try:
+                                        await projectx.cancel_order(int(subaccount_id), int(ord_id))
+                                        logger.info(f"🗑️ [{acct_name}] Cancelled ProjectX order {ord_id}")
+                                    except Exception as ce:
+                                        logger.warning(f"⚠️ [{acct_name}] Could not cancel order {ord_id}: {ce}")
+
+                        # 3. Get updated position for new total qty
+                        await asyncio.sleep(0.3)
+                        updated_positions = await projectx.get_positions(int(subaccount_id))
+                        new_qty = adjusted_quantity
+                        for pos in updated_positions:
+                            if contract_id and contract_id in str(pos.get('contractId', '')):
+                                new_qty = abs(pos.get('qty', 0) or pos.get('netQty', 0) or pos.get('size', 0))
+                                break
+
+                        # 4. Place new TP/SL as bracket order on existing position
+                        # Use a limit order far ITM as a "market" with brackets to attach TP/SL
+                        # Or place separate TP and SL orders
+                        projectx_trailing_dca = (risk_config_px or {}).get('trail') is not None
+                        if tp_ticks and tp_ticks > 0 or sl_ticks and sl_ticks > 0:
+                            # Place bracket-style TP/SL using create_market_order_with_brackets
+                            # with qty = full position size (so brackets cover all contracts)
+                            bracket_order = projectx.create_market_order_with_brackets(
+                                account_id=int(subaccount_id),
+                                contract_id=contract_id,
+                                side=side,  # Same side — will add 0 if qty=0, but brackets attach
+                                quantity=0,  # Zero qty market order just to attach brackets
+                                tp_ticks=tp_ticks if tp_ticks > 0 else None,
+                                sl_ticks=sl_ticks if sl_ticks > 0 else None,
+                                trailing_stop=projectx_trailing_dca
+                            )
+                            # ProjectX may not support 0-qty orders, so use separate orders as fallback
+                            try:
+                                bracket_result = await projectx.place_order(bracket_order)
+                                if bracket_result and bracket_result.get('success'):
+                                    logger.info(f"✅ [{acct_name}] ProjectX DCA brackets placed (TP:{tp_ticks}t, SL:{sl_ticks}t)")
+                                else:
+                                    logger.warning(f"⚠️ [{acct_name}] ProjectX DCA bracket placement returned: {bracket_result}")
+                            except Exception as bracket_err:
+                                logger.warning(f"⚠️ [{acct_name}] ProjectX DCA bracket error: {bracket_err}")
+
+                        return {
+                            'success': True,
+                            'order_id': order_result.get('orderId'),
+                            'broker': 'ProjectX',
+                            'account': acct_name,
+                            'dca': True
+                        }
+
+                    # --- Normal (non-DCA) ProjectX bracket order ---
                     # Place market order WITH TP/SL brackets (ProjectX native support!)
                     # ProjectX brackets are attached directly to the order - much cleaner than Tradovate
+                    projectx_trailing = (risk_config_px or {}).get('trail') is not None
                     order_data = projectx.create_market_order_with_brackets(
                         account_id=int(subaccount_id),
                         contract_id=contract_id,
                         side=side,
                         quantity=adjusted_quantity,
                         tp_ticks=tp_ticks if tp_ticks > 0 else None,
-                        sl_ticks=sl_ticks if sl_ticks > 0 else None
+                        sl_ticks=sl_ticks if sl_ticks > 0 else None,
+                        trailing_stop=projectx_trailing
                     )
-                    
+
                     sl_info = f", SL: {sl_ticks}t" if sl_ticks > 0 else ""
                     logger.info(f"📤 [{acct_name}] Placing ProjectX bracket order: {side} {adjusted_quantity}, TP: {tp_ticks}t{sl_info}")
                     order_result = await projectx.place_order(order_data)
-                    
+
                     if order_result and order_result.get('success'):
                         order_id = order_result.get('orderId')
                         logger.info(f"✅ [{acct_name}] ProjectX bracket order placed: ID={order_id}")
                         logger.info(f"   TP/SL brackets attached automatically by ProjectX (OCO)")
-                        
+
                         return {
                             'success': True,
                             'order_id': order_id,
@@ -1486,6 +1587,8 @@ def execute_trade_simple(
             adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
             broker_type = trader.get('broker', 'Tradovate')  # Default to Tradovate
             is_dca_local = False  # Track if this is a DCA add (set True when same direction as existing position)
+            tp_targets_local = tp_targets  # LOCAL copy for async safety (Rule 8)
+            trim_units_local = trim_units  # LOCAL copy for async safety (Rule 8)
 
             # ============================================================
             # CUSTOM TICKER OVERRIDE - Trade different instrument than signal
@@ -1514,7 +1617,7 @@ def execute_trade_simple(
             # BROKER ROUTING - ProjectX vs Tradovate (Added Jan 2026)
             # ============================================================
             if broker_type == 'ProjectX':
-                return await do_trade_projectx(trader, trader_idx, adjusted_quantity)
+                return await do_trade_projectx(trader, trader_idx, adjusted_quantity, risk_config_px=risk_config)
             # Default: Continue with Tradovate execution below
             
             tradovate_account_id = trader['subaccount_id']
@@ -1803,9 +1906,12 @@ def execute_trade_simple(
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
                     # NOW SUPPORTS: Native break-even and autoTrail (trailing-after-profit) via Tradovate API
+                    # Multi-level TP: Skip bracket (need separate limit orders per level)
+                    has_multi_tp = tp_targets_local and len(tp_targets_local) > 1
                     use_bracket_order = (
-                        not has_existing_position and 
-                        tp_ticks and tp_ticks > 0
+                        not has_existing_position and
+                        tp_ticks and tp_ticks > 0 and
+                        not has_multi_tp  # Multi-level TP uses REST + separate limit orders
                     )
                     
                     if use_bracket_order:
@@ -2160,7 +2266,7 @@ def execute_trade_simple(
                                 order_status = str(order.get('ordStatus', '')).upper()
                                 order_action_check = order.get('action', '')
                                 order_id_check = order.get('id')
-                                
+
                                 # Cancel any working TP orders (same action as our TP)
                                 if order_status in ['WORKING', 'NEW', 'PENDINGNEW'] and order_action_check == tp_action and order_id_check:
                                     logger.info(f"🗑️ [{acct_name}] Cancelling existing TP {order_id_check} @ {order.get('price')} before placing new")
@@ -2171,57 +2277,135 @@ def execute_trade_simple(
                                         logger.warning(f"⚠️ [{acct_name}] Could not cancel order {order_id_check}: {cancel_err}")
                         except Exception as e:
                             logger.warning(f"⚠️ [{acct_name}] Could not check/cancel existing orders: {e}")
-                        
-                        logger.info(f"📊 [{acct_name}] PLACING NEW TP @ {tp_price}")
-                        tp_order_data = {
-                            "accountId": tradovate_account_id,
-                            "accountSpec": tradovate_account_spec,
-                            "symbol": local_tradovate_symbol,
-                            "action": tp_action,
-                            "orderQty": broker_qty,
-                            "orderType": "Limit",
-                            "price": tp_price,
-                            "timeInForce": "GTC",
-                            "isAutomated": True
-                        }
-                        
-                        # CRITICAL: NEVER GIVE UP on TP placement - keep retrying until success
-                        # TP protection is essential - positions without TP are at risk
-                        tp_result = None
-                        max_attempts = 10  # Increased from 3 to 10
-                        tp_placed = False
-                        
-                        for tp_attempt in range(max_attempts):
-                            tp_result = await tradovate.place_order_smart(tp_order_data)
-                            if tp_result and tp_result.get('success'):
-                                tp_order_id = tp_result.get('orderId') or tp_result.get('id')
-                                logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price} (order_id: {tp_order_id}) after {tp_attempt+1} attempt(s)")
-                                tp_placed = True
-                                break
-                            else:
-                                error_msg = tp_result.get('error', 'Unknown error') if tp_result else 'No response'
-                                logger.warning(f"⚠️ [{acct_name}] TP placement attempt {tp_attempt+1}/{max_attempts} failed: {error_msg}")
-                                
-                                # Exponential backoff: 1s, 2s, 4s, 8s, etc. (max 10s)
-                                wait_time = min(2 ** tp_attempt, 10)
-                                if tp_attempt < max_attempts - 1:
-                                    logger.info(f"   ⏳ Retrying in {wait_time}s...")
-                                    await asyncio.sleep(wait_time)
-                        
-                        if not tp_placed:
-                            # CRITICAL ERROR: Position has NO TP protection
-                            logger.error(f"❌❌❌ [{acct_name}] CRITICAL: FAILED to place TP after {max_attempts} attempts!")
-                            logger.error(f"   Position: {broker_side} {broker_qty} @ {broker_avg} has NO TP PROTECTION!")
-                            logger.error(f"   TP should be @ {tp_price} ({tp_action} {broker_qty})")
-                            logger.error(f"   Last error: {tp_result.get('error') if tp_result else 'No response'}")
-                            logger.error(f"   ⚠️ MANUAL INTERVENTION REQUIRED - Position is unprotected!")
-                            
-                            # Still return success for the entry, but mark TP as failed
-                            # The position monitoring system should detect this and retry
+
+                        # Multi-level TP: Place separate limit orders for each TP level
+                        if has_multi_tp and broker_avg and broker_avg > 0:
+                            logger.info(f"🎯 [{acct_name}] MULTI-LEVEL TP: {len(tp_targets_local)} levels")
+                            remaining_qty = broker_qty
+                            for target_idx, target in enumerate(tp_targets_local):
+                                target_ticks = target.get('ticks') or target.get('value') or 0
+                                target_trim = target.get('trim', 100)
+
+                                if target_ticks <= 0:
+                                    continue
+
+                                # Calculate TP price for this level
+                                if broker_side == 'LONG':
+                                    level_price_raw = broker_avg + (target_ticks * local_tick_size)
+                                    level_action = 'Sell'
+                                else:
+                                    level_price_raw = broker_avg - (target_ticks * local_tick_size)
+                                    level_action = 'Buy'
+                                # CRITICAL: Round to nearest valid tick increment (Rule 2)
+                                level_price = round(round(level_price_raw / local_tick_size) * local_tick_size, 10)
+
+                                # Calculate qty for this level
+                                if trim_units_local == 'Contracts':
+                                    level_qty = min(int(target_trim), remaining_qty)
+                                else:  # Percent
+                                    level_qty = max(1, int(broker_qty * target_trim / 100))
+
+                                # Don't exceed remaining
+                                level_qty = min(level_qty, remaining_qty)
+                                if level_qty <= 0:
+                                    continue
+                                remaining_qty -= level_qty
+
+                                logger.info(f"🎯 [{acct_name}] TP Level {target_idx+1}: {level_qty} contracts @ {level_price} ({target_ticks} ticks, {target_trim}{'%' if trim_units_local != 'Contracts' else ' contracts'})")
+
+                                level_order_data = {
+                                    "accountId": tradovate_account_id,
+                                    "accountSpec": tradovate_account_spec,
+                                    "symbol": local_tradovate_symbol,
+                                    "action": level_action,
+                                    "orderQty": level_qty,
+                                    "orderType": "Limit",
+                                    "price": level_price,
+                                    "timeInForce": "GTC",
+                                    "isAutomated": True
+                                }
+
+                                level_result = await tradovate.place_order_smart(level_order_data)
+                                if level_result and level_result.get('success'):
+                                    level_order_id = level_result.get('orderId') or level_result.get('id')
+                                    logger.info(f"✅ [{acct_name}] TP Level {target_idx+1} PLACED (order_id: {level_order_id})")
+                                    if target_idx == 0:
+                                        tp_order_id = level_order_id  # Store first for DB
+                                else:
+                                    logger.warning(f"⚠️ [{acct_name}] TP Level {target_idx+1} FAILED: {level_result}")
+                        else:
+                            # Single TP — existing behavior (UNCHANGED)
+                            logger.info(f"📊 [{acct_name}] PLACING NEW TP @ {tp_price}")
+                            tp_order_data = {
+                                "accountId": tradovate_account_id,
+                                "accountSpec": tradovate_account_spec,
+                                "symbol": local_tradovate_symbol,
+                                "action": tp_action,
+                                "orderQty": broker_qty,
+                                "orderType": "Limit",
+                                "price": tp_price,
+                                "timeInForce": "GTC",
+                                "isAutomated": True
+                            }
+
+                            # CRITICAL: NEVER GIVE UP on TP placement - keep retrying until success
+                            # TP protection is essential - positions without TP are at risk
+                            tp_result = None
+                            max_attempts = 10  # Increased from 3 to 10
+                            tp_placed = False
+
+                            for tp_attempt in range(max_attempts):
+                                tp_result = await tradovate.place_order_smart(tp_order_data)
+                                if tp_result and tp_result.get('success'):
+                                    tp_order_id = tp_result.get('orderId') or tp_result.get('id')
+                                    logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price} (order_id: {tp_order_id}) after {tp_attempt+1} attempt(s)")
+                                    tp_placed = True
+                                    break
+                                else:
+                                    error_msg = tp_result.get('error', 'Unknown error') if tp_result else 'No response'
+                                    logger.warning(f"⚠️ [{acct_name}] TP placement attempt {tp_attempt+1}/{max_attempts} failed: {error_msg}")
+
+                                    # Exponential backoff: 1s, 2s, 4s, 8s, etc. (max 10s)
+                                    wait_time = min(2 ** tp_attempt, 10)
+                                    if tp_attempt < max_attempts - 1:
+                                        logger.info(f"   ⏳ Retrying in {wait_time}s...")
+                                        await asyncio.sleep(wait_time)
+
+                            if not tp_placed:
+                                # CRITICAL ERROR: Position has NO TP protection
+                                logger.error(f"❌❌❌ [{acct_name}] CRITICAL: FAILED to place TP after {max_attempts} attempts!")
+                                logger.error(f"   Position: {broker_side} {broker_qty} @ {broker_avg} has NO TP PROTECTION!")
+                                logger.error(f"   TP should be @ {tp_price} ({tp_action} {broker_qty})")
+                                logger.error(f"   Last error: {tp_result.get('error') if tp_result else 'No response'}")
+                                logger.error(f"   ⚠️ MANUAL INTERVENTION REQUIRED - Position is unprotected!")
+
+                                # Still return success for the entry, but mark TP as failed
+                                # The position monitoring system should detect this and retry
                     
                     # STEP 5: Place SL order if configured (sl_ticks > 0)
                     sl_price = None
                     sl_order_id = None
+
+                    # DCA: Cancel existing SL orders before placing new (mirrors TP cancel at STEP 4)
+                    # Without this, old SL at wrong price stacks with new SL = double stop orders
+                    if is_dca_local and sl_ticks and sl_ticks > 0:
+                        try:
+                            all_sl_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                            sl_cancel_action = 'Sell' if broker_side == 'LONG' else 'Buy'
+                            for order in (all_sl_orders or []):
+                                order_status = str(order.get('ordStatus', '')).upper()
+                                order_type = str(order.get('orderType', '')).upper()
+                                order_action_chk = order.get('action', '')
+                                order_id_chk = order.get('id')
+                                if order_status in ['WORKING', 'NEW', 'PENDINGNEW'] and order_type == 'STOP' and order_action_chk == sl_cancel_action and order_id_chk:
+                                    logger.info(f"🗑️ [{acct_name}] DCA: Cancelling old SL {order_id_chk} @ {order.get('stopPrice')} before placing new")
+                                    try:
+                                        await tradovate.cancel_order_smart(int(order_id_chk))
+                                        await asyncio.sleep(0.1)
+                                    except Exception as cancel_err:
+                                        logger.warning(f"⚠️ [{acct_name}] Could not cancel old SL {order_id_chk}: {cancel_err}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ [{acct_name}] Could not check/cancel existing SL orders: {e}")
 
                     if sl_ticks and sl_ticks > 0:
                         # CRITICAL: Validate broker_avg before calculating SL price
