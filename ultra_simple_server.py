@@ -24375,12 +24375,15 @@ def api_paper_reset_all():
 @app.route('/api/paper-trades/cleanup-stale', methods=['POST'])
 @login_required
 def api_paper_cleanup_stale():
-    """Force-close all stale open positions, keeping only 1 per recorder/symbol.
-    Calculates P&L using live prices where available, entry price otherwise."""
+    """Force-close stale open positions with P&L calculation.
+    Pass ?close_all=true to close ALL open positions.
+    Default: keeps 1 per recorder/symbol, closes duplicates only."""
     try:
         import os
         from datetime import datetime
         from tv_price_service import FUTURES_SPECS
+
+        close_all = request.args.get('close_all', 'false').lower() == 'true'
 
         database_url = os.environ.get('DATABASE_URL')
         use_postgres = bool(database_url)
@@ -24408,44 +24411,49 @@ def api_paper_cleanup_stale():
         kept_count = 0
 
         for (rec_id, sym), positions in groups.items():
-            if len(positions) <= 1:
-                kept_count += 1
-                continue
-
-            # Keep the newest (first in DESC order), close the rest
-            keep = positions[0]
-            kept_count += 1
-            dupes = positions[1:]
-
             # Get live price for P&L calc
             live_price = _get_live_price_for_symbol(sym)
+            if not live_price:
+                live_price = get_market_price_simple(sym)
             spec = FUTURES_SPECS.get(extract_symbol_root(sym), {'point_value': 1.0})
             point_value = spec['point_value']
 
-            for dup in dupes:
-                dup_id, _, _, dup_side, dup_qty, dup_entry, _, _, _ = dup
-                exit_px = live_price if live_price else dup_entry  # Fallback to entry (0 P&L)
-                if dup_side == 'LONG':
-                    pnl = (exit_px - dup_entry) * point_value * dup_qty
+            if close_all:
+                # Close ALL open positions
+                to_close = positions
+            else:
+                # Keep newest, close duplicates only
+                if len(positions) <= 1:
+                    kept_count += 1
+                    continue
+                kept_count += 1
+                to_close = positions[1:]
+
+            for pos in to_close:
+                pos_id, _, _, pos_side, pos_qty, pos_entry, _, _, _ = pos
+                exit_px = live_price if live_price else pos_entry
+                if pos_side == 'LONG':
+                    pnl = (exit_px - pos_entry) * point_value * pos_qty
                 else:
-                    pnl = (dup_entry - exit_px) * point_value * dup_qty
+                    pnl = (pos_entry - exit_px) * point_value * pos_qty
 
                 cursor.execute(f'''
                     UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
                     exit_reason = {ph}, closed_at = {ph}
                     WHERE id = {ph}
-                ''', (exit_px, pnl, 'cleanup', now, dup_id))
+                ''', (exit_px, round(pnl, 2), 'cleanup', now, pos_id))
                 closed_count += 1
 
         conn.commit()
         conn.close()
 
-        logger.info(f"Paper cleanup: closed {closed_count} stale positions, kept {kept_count}")
+        mode = 'all positions' if close_all else 'duplicates only'
+        logger.info(f"Paper cleanup ({mode}): closed {closed_count}, kept {kept_count}")
         return jsonify({
             'success': True,
             'closed': closed_count,
             'kept': kept_count,
-            'message': f'Cleaned up {closed_count} stale positions, kept {kept_count} (1 per recorder/symbol)'
+            'message': f'Closed {closed_count} positions ({mode}), kept {kept_count}'
         })
     except Exception as e:
         import traceback
