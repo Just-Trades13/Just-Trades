@@ -11941,15 +11941,15 @@ def validate_trader_risk_settings(data, context='save'):
                     except (ValueError, TypeError):
                         errors.append(f'tp_targets[{i}].ticks must be a number')
                         continue
-                    if ticks <= 0:
-                        errors.append(f'tp_targets[{i}].ticks must be greater than 0 (got {ticks})')
+                    if ticks < 0:
+                        errors.append(f'tp_targets[{i}].ticks cannot be negative (got {ticks})')
                     try:
                         trim = float(trim or 0)
                     except (ValueError, TypeError):
                         errors.append(f'tp_targets[{i}].trim must be a number')
                         continue
-                    if trim <= 0 or trim > 100:
-                        errors.append(f'tp_targets[{i}].trim must be between 1 and 100 (got {trim})')
+                    if trim < 0 or trim > 100:
+                        errors.append(f'tp_targets[{i}].trim must be between 0 and 100 (got {trim})')
 
     # --- Position Sizes ---
     for field in ['initial_position_size', 'add_position_size']:
