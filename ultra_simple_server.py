@@ -13650,7 +13650,9 @@ def broker_execution_worker(worker_id=0):
                     'quantity': quantity,
                     'ticker': ticker,
                     'tp_ticks': tp_ticks,
-                    'sl_ticks': sl_ticks
+                    'sl_ticks': sl_ticks,
+                    'sl_type': sl_type,
+                    'risk_config': risk_config
                 })
 
                 logger.info(f"📤 Broker execution: {action} {quantity} {ticker} signal={signal_id}")
