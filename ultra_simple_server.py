@@ -17282,6 +17282,9 @@ def traders_edit(trader_id):
                    r.sl_type as r_sl_type,
                    r.break_even_enabled as r_break_even_enabled,
                    r.break_even_ticks as r_break_even_ticks,
+                   r.break_even_offset as r_break_even_offset,
+                   r.trail_trigger as r_trail_trigger,
+                   r.trail_freq as r_trail_freq,
                    r.avg_down_enabled as r_avg_down_enabled,
                    r.avg_down_amount as r_avg_down_amount,
                    r.avg_down_point as r_avg_down_point,
@@ -17332,7 +17335,19 @@ def traders_edit(trader_id):
         except:
             tp_targets = []
         
-        # Build trader object with settings (prefer recorder settings which are authoritative)
+        # Build trader object: use TRADER values first, fall back to RECORDER defaults
+        # Helper: get trader value, fall back to recorder value (r_ prefix), then default
+        def _t(field, r_field=None, default=None):
+            """Get trader field, fall back to recorder, then default."""
+            val = trader_row.get(field)
+            if val is not None and val != '' and val != '[]':
+                return val
+            if r_field:
+                rval = trader_row.get(r_field)
+                if rval is not None and rval != '' and rval != '[]':
+                    return rval
+            return default
+
         trader = {
         'id': trader_row['id'],
         'recorder_id': trader_row['recorder_id'],
@@ -17344,36 +17359,47 @@ def traders_edit(trader_id):
         'subaccount_name': trader_row['subaccount_name'],
         'is_demo': bool(trader_row['is_demo']),
         'enabled': bool(trader_row['enabled']),
-        # Position sizes - prefer trader's own saved settings, fall back to recorder defaults
-        'initial_position_size': trader_row['initial_position_size'] or trader_row['r_initial_position_size'] or 1,
-        'add_position_size': trader_row['add_position_size'] or trader_row['r_add_position_size'] or 1,
-        # TP settings from recorder
+        # Position sizes
+        'initial_position_size': _t('initial_position_size', 'r_initial_position_size', 1),
+        'add_position_size': _t('add_position_size', 'r_add_position_size', 1),
+        # TP settings — trader first, recorder fallback
         'tp_targets': tp_targets,
         'tp_value': tp_value,
         'tp_trim': tp_trim,
-        'tp_units': trader_row['r_tp_units'] or 'Ticks',
-        'trim_units': trader_row['r_trim_units'] or 'Contracts',
-        # SL settings from recorder
-        'sl_enabled': bool(trader_row['r_sl_enabled']),
-        'sl_amount': trader_row['r_sl_amount'] or 0,
-        'sl_units': trader_row['r_sl_units'] or 'Ticks',
-        'sl_type': trader_row.get('sl_type') or trader_row['r_sl_type'] or 'Fixed',  # Trader setting overrides recorder
-        # Break-Even settings (trader setting overrides recorder)
-        'break_even_enabled': bool(trader_row.get('break_even_enabled') if trader_row.get('break_even_enabled') is not None else trader_row.get('r_break_even_enabled')),
-        'break_even_ticks': int(trader_row.get('break_even_ticks') if trader_row.get('break_even_ticks') is not None else (trader_row.get('r_break_even_ticks') or 10)),
-        # DCA/Averaging Down settings from recorder
-        'avg_down_enabled': bool(trader_row['r_avg_down_enabled']),
-        'avg_down_amount': trader_row['r_avg_down_amount'] or 1,
-        'avg_down_point': trader_row['r_avg_down_point'] or 10,
-            'avg_down_units': trader_row['r_avg_down_units'] or 'Ticks',
-            'max_daily_loss': trader_row['max_daily_loss'] if trader_row['max_daily_loss'] is not None else 0,
-        # Time filters from recorder
-        'time_filter_1_enabled': bool(trader_row.get('r_time_filter_1_enabled') or trader_row.get('time_filter_1_enabled')),
-        'time_filter_1_start': trader_row.get('r_time_filter_1_start') or trader_row.get('time_filter_1_start') or '',
-        'time_filter_1_stop': trader_row.get('r_time_filter_1_stop') or trader_row.get('time_filter_1_stop') or '',
-        'time_filter_2_enabled': bool(trader_row.get('r_time_filter_2_enabled') or trader_row.get('time_filter_2_enabled')),
-        'time_filter_2_start': trader_row.get('r_time_filter_2_start') or trader_row.get('time_filter_2_start') or '',
-        'time_filter_2_stop': trader_row.get('r_time_filter_2_stop') or trader_row.get('time_filter_2_stop') or ''
+        'tp_units': _t('tp_units', 'r_tp_units', 'Ticks'),
+        'trim_units': _t('trim_units', 'r_trim_units', 'Contracts'),
+        # SL settings — trader first, recorder fallback
+        'sl_enabled': bool(_t('sl_enabled', 'r_sl_enabled', 0)),
+        'sl_amount': float(_t('sl_amount', 'r_sl_amount', 0) or 0),
+        'sl_units': _t('sl_units', 'r_sl_units', 'Ticks'),
+        'sl_type': _t('sl_type', 'r_sl_type', 'Fixed'),
+        # Break-Even — trader first, recorder fallback
+        'break_even_enabled': bool(_t('break_even_enabled', 'r_break_even_enabled', 0)),
+        'break_even_ticks': int(_t('break_even_ticks', 'r_break_even_ticks', 10) or 10),
+        'break_even_offset': int(_t('break_even_offset', 'r_break_even_offset', 0) or 0),
+        # Trail settings — trader first, recorder fallback
+        'trail_trigger': int(_t('trail_trigger', 'r_trail_trigger', 0) or 0),
+        'trail_freq': int(_t('trail_freq', 'r_trail_freq', 0) or 0),
+        # DCA/Averaging Down — trader first, recorder fallback
+        'avg_down_enabled': bool(_t('avg_down_enabled', 'r_avg_down_enabled', 0)),
+        'avg_down_amount': int(_t('avg_down_amount', 'r_avg_down_amount', 1) or 1),
+        'avg_down_point': float(_t('avg_down_point', 'r_avg_down_point', 10) or 10),
+        'avg_down_units': _t('avg_down_units', 'r_avg_down_units', 'Ticks'),
+        'dca_enabled': bool(_t('dca_enabled', 'r_dca_enabled', 0)),
+        # Risk management — trader values (these are per-trader settings)
+        'max_daily_loss': float(trader_row.get('max_daily_loss') or 0),
+        'signal_cooldown': int(trader_row.get('signal_cooldown') or 0),
+        'max_signals_per_session': int(trader_row.get('max_signals_per_session') or 0),
+        'add_delay': int(trader_row.get('add_delay') or 1),
+        'auto_flat_after_cutoff': bool(trader_row.get('auto_flat_after_cutoff') or 0),
+        'inverse_signals': bool(trader_row.get('inverse_signals') or 0),
+        # Time filters — trader first, recorder fallback
+        'time_filter_1_enabled': bool(_t('time_filter_1_enabled', 'r_time_filter_1_enabled', 0)),
+        'time_filter_1_start': _t('time_filter_1_start', 'r_time_filter_1_start', ''),
+        'time_filter_1_stop': _t('time_filter_1_stop', 'r_time_filter_1_stop', ''),
+        'time_filter_2_enabled': bool(_t('time_filter_2_enabled', 'r_time_filter_2_enabled', 0)),
+        'time_filter_2_start': _t('time_filter_2_start', 'r_time_filter_2_start', ''),
+        'time_filter_2_stop': _t('time_filter_2_stop', 'r_time_filter_2_stop', ''),
         }
         
         # Get enabled accounts from routing (if stored)
