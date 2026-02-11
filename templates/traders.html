@@ -1869,35 +1869,81 @@
             if (slUnits && recorder.sl_units) slUnits.value = recorder.sl_units;
             
             const slType = document.getElementById('createSlType');
-            if (slType && recorder.sl_type) slType.value = recorder.sl_type;
-            
+            if (slType && recorder.sl_type) {
+                // Normalize: recorder may send 'Trail' or 'Trailing'
+                slType.value = (recorder.sl_type === 'Trailing' || recorder.sl_type === 'Trail') ? 'Trail' : recorder.sl_type;
+                // Show/hide trailing settings based on populated value
+                if (typeof toggleTrailSettingsCreate === 'function') toggleTrailSettingsCreate();
+            }
+
+            // Populate Trail Settings
+            const trailTrigger = document.getElementById('createTrailTrigger');
+            if (trailTrigger) trailTrigger.value = recorder.trail_trigger || 0;
+
+            const trailFreq = document.getElementById('createTrailFreq');
+            if (trailFreq) trailFreq.value = recorder.trail_freq || 0;
+
             // Populate Break-Even Settings
             const breakEvenEnabled = document.getElementById('createBreakEvenEnabled');
             if (breakEvenEnabled) breakEvenEnabled.checked = recorder.break_even_enabled ? true : false;
-            
+
             const breakEvenTicks = document.getElementById('createBreakEvenTicks');
             if (breakEvenTicks) breakEvenTicks.value = recorder.break_even_ticks || 10;
-            
+
+            const breakEvenOffset = document.getElementById('createBreakEvenOffset');
+            if (breakEvenOffset) breakEvenOffset.value = recorder.break_even_offset || 0;
+
             // Populate DCA/Averaging Down Settings
             const avgDownEnabled = document.getElementById('createAvgDownEnabled');
             if (avgDownEnabled) avgDownEnabled.checked = recorder.avg_down_enabled ? true : false;
-            
+
             const avgDownAmount = document.getElementById('createAvgDownAmount');
             if (avgDownAmount) avgDownAmount.value = recorder.avg_down_amount || 1;
-            
+
             const avgDownPoint = document.getElementById('createAvgDownPoint');
             if (avgDownPoint) avgDownPoint.value = recorder.avg_down_point || 10;
-            
+
             // Populate Max Contracts
             const maxContracts = document.getElementById('createMaxContracts');
             if (maxContracts) maxContracts.value = recorder.max_contracts || 0;
-            
+
+            // Populate Execution Controls
+            const signalCooldown = document.getElementById('createSignalCooldown');
+            if (signalCooldown) signalCooldown.value = recorder.signal_cooldown || 0;
+
+            const maxSignalsPerSession = document.getElementById('createMaxSignalsPerSession');
+            if (maxSignalsPerSession) maxSignalsPerSession.value = recorder.max_signals_per_session || 0;
+
+            const maxDailyLoss = document.getElementById('createMaxDailyLoss');
+            if (maxDailyLoss) maxDailyLoss.value = recorder.max_daily_loss || 0;
+
+            const addDelay = document.getElementById('createAddDelay');
+            if (addDelay) addDelay.value = recorder.add_delay || 1;
+
+            // Populate Time Filters
+            const tf1Enabled = document.getElementById('new_time_filter_1_enabled');
+            if (tf1Enabled) tf1Enabled.checked = recorder.time_filter_1_enabled ? true : false;
+            const tf1Start = document.getElementById('newTimeFilter1Start');
+            if (tf1Start) tf1Start.value = recorder.time_filter_1_start || '';
+            const tf1Stop = document.getElementById('newTimeFilter1Stop');
+            if (tf1Stop) tf1Stop.value = recorder.time_filter_1_stop || '';
+
+            const tf2Enabled = document.getElementById('new_time_filter_2_enabled');
+            if (tf2Enabled) tf2Enabled.checked = recorder.time_filter_2_enabled ? true : false;
+            const tf2Start = document.getElementById('newTimeFilter2Start');
+            if (tf2Start) tf2Start.value = recorder.time_filter_2_start || '';
+            const tf2Stop = document.getElementById('newTimeFilter2Stop');
+            if (tf2Stop) tf2Stop.value = recorder.time_filter_2_stop || '';
+
             // Flash highlight on populated fields to show what changed
             const fieldsToHighlight = [
-                '#createInitialPositionSize', '#createAddPositionSize', 
+                '#createInitialPositionSize', '#createAddPositionSize',
                 '#createTpValue', '#createTpTrim',
                 '#createSlAmount', '#createAvgDownAmount', '#createAvgDownPoint',
-                '#createMaxContracts'
+                '#createMaxContracts', '#createTrailTrigger', '#createTrailFreq',
+                '#createBreakEvenTicks', '#createBreakEvenOffset',
+                '#createSignalCooldown', '#createMaxSignalsPerSession',
+                '#createMaxDailyLoss', '#createAddDelay'
             ];
             
             fieldsToHighlight.forEach(selector => {
