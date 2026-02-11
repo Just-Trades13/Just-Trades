@@ -1652,11 +1652,21 @@ def get_db_connection():
             try:
                 conn = _pg_pool.getconn()
                 conn.cursor_factory = RealDictCursor
-                # Ensure clean state
+                # Ensure clean state — rollback any aborted transaction
                 try:
                     conn.rollback()
-                except:
-                    pass
+                    # Verify connection is actually alive
+                    test_cursor = conn.cursor()
+                    test_cursor.execute('SELECT 1')
+                    test_cursor.close()
+                except Exception:
+                    # Connection is dead — discard it and get a fresh one
+                    try:
+                        _pg_pool.putconn(conn, close=True)
+                    except:
+                        pass
+                    conn = psycopg2.connect(_db_url, connect_timeout=5)
+                    conn.cursor_factory = RealDictCursor
                 return PostgresConnectionWrapper(conn, _pg_pool)  # Returns to pool on close
             except Exception as pool_err:
                 print(f"⚠️ Pool getconn failed, creating fresh connection: {pool_err}")
