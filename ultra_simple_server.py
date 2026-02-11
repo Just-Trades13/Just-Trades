@@ -3175,15 +3175,65 @@ SYMBOL_CONVERSION_CACHE: dict[tuple[str, bool], tuple[str, datetime]] = {}
 SYMBOL_CACHE_TTL = timedelta(hours=1)
 
 TICK_INFO = {
-    'MNQ': {'tick_size': 0.25, 'tick_value': 0.5},
-    'NQ': {'tick_size': 0.25, 'tick_value': 5.0},
+    # === INDEX FUTURES ===
     'MES': {'tick_size': 0.25, 'tick_value': 1.25},
     'ES': {'tick_size': 0.25, 'tick_value': 12.5},
+    'MNQ': {'tick_size': 0.25, 'tick_value': 0.5},
+    'NQ': {'tick_size': 0.25, 'tick_value': 5.0},
+    'MYM': {'tick_size': 1.0, 'tick_value': 0.5},
+    'YM': {'tick_size': 1.0, 'tick_value': 5.0},
     'M2K': {'tick_size': 0.1, 'tick_value': 0.5},
     'RTY': {'tick_size': 0.1, 'tick_value': 5.0},
+
+    # === METALS ===
+    'GC': {'tick_size': 0.1, 'tick_value': 10.0},
+    'MGC': {'tick_size': 0.1, 'tick_value': 1.0},
+    'SI': {'tick_size': 0.005, 'tick_value': 25.0},
+    'SIL': {'tick_size': 0.005, 'tick_value': 5.0},
+    'HG': {'tick_size': 0.0005, 'tick_value': 12.5},
+    'PL': {'tick_size': 0.1, 'tick_value': 5.0},
+
+    # === ENERGIES ===
     'CL': {'tick_size': 0.01, 'tick_value': 10.0},
     'MCL': {'tick_size': 0.01, 'tick_value': 1.0},
-    'GC': {'tick_size': 0.1, 'tick_value': 10.0}
+    'NG': {'tick_size': 0.001, 'tick_value': 10.0},
+    'HO': {'tick_size': 0.0001, 'tick_value': 4.2},
+    'RB': {'tick_size': 0.0001, 'tick_value': 4.2},
+
+    # === TREASURIES ===
+    'ZB': {'tick_size': 0.03125, 'tick_value': 31.25},
+    'ZN': {'tick_size': 0.015625, 'tick_value': 15.625},
+    'ZF': {'tick_size': 0.0078125, 'tick_value': 7.8125},
+    'ZT': {'tick_size': 0.0078125, 'tick_value': 15.625},
+
+    # === CURRENCIES ===
+    '6E': {'tick_size': 0.00005, 'tick_value': 6.25},
+    '6J': {'tick_size': 0.0000005, 'tick_value': 6.25},
+    '6B': {'tick_size': 0.0001, 'tick_value': 6.25},
+    '6A': {'tick_size': 0.0001, 'tick_value': 10.0},
+    '6C': {'tick_size': 0.00005, 'tick_value': 5.0},
+    '6S': {'tick_size': 0.0001, 'tick_value': 12.5},
+    '6N': {'tick_size': 0.0001, 'tick_value': 10.0},
+    '6M': {'tick_size': 0.00001, 'tick_value': 5.0},
+    'DX': {'tick_size': 0.005, 'tick_value': 5.0},
+
+    # === CRYPTO ===
+    'BTC': {'tick_size': 5.0, 'tick_value': 25.0},
+    'MBT': {'tick_size': 5.0, 'tick_value': 0.5},
+    'ETH': {'tick_size': 0.25, 'tick_value': 12.5},
+    'MET': {'tick_size': 0.25, 'tick_value': 0.025},
+
+    # === GRAINS ===
+    'ZC': {'tick_size': 0.25, 'tick_value': 12.5},
+    'ZS': {'tick_size': 0.25, 'tick_value': 12.5},
+    'ZW': {'tick_size': 0.25, 'tick_value': 12.5},
+    'ZM': {'tick_size': 0.1, 'tick_value': 10.0},
+    'ZL': {'tick_size': 0.01, 'tick_value': 6.0},
+
+    # === SOFTS ===
+    'KC': {'tick_size': 0.05, 'tick_value': 18.75},
+    'CT': {'tick_size': 0.01, 'tick_value': 5.0},
+    'SB': {'tick_size': 0.01, 'tick_value': 11.2},
 }
 
 
