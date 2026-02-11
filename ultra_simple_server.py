@@ -3322,8 +3322,10 @@ async def wait_for_position_fill(tradovate, account_id: int, symbol: str, expect
 def clamp_price(price: float, tick_size: float) -> float:
     if price is None:
         return None
-    decimals = max(3, len(str(tick_size).split('.')[-1]))
-    return round(price, decimals)
+    ticks = round(price / tick_size)
+    clamped = ticks * tick_size
+    decimals = max(2, len(str(tick_size).rstrip('0').split('.')[-1]))
+    return round(clamped, decimals)
 
 
 async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbol: str, entry_side: str, quantity: int, risk_config: dict):
