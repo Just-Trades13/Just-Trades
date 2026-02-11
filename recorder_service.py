@@ -3200,28 +3200,62 @@ def get_front_month_contract(root_symbol: str) -> str:
     current_month = today.month
     current_year = today.year
 
-    # Find the 3rd Friday of a given month/year (common expiration day)
+    # Find the 3rd Friday of a given month/year (equity index expiration)
     def get_third_friday(year: int, month: int) -> datetime:
-        """Get the 3rd Friday of the month (expiration day)"""
+        """Get the 3rd Friday of the month"""
         first_day = datetime(year, month, 1)
         days_until_friday = (4 - first_day.weekday()) % 7
         first_friday = first_day + timedelta(days=days_until_friday)
         third_friday = first_friday + timedelta(days=14)
         return third_friday
 
-    # Roll date is typically 8 days before expiration
+    def get_expiration_date(year: int, month: int) -> datetime:
+        """Get estimated expiration date based on product type.
+
+        - Equity index futures (ES, NQ, etc.): 3rd Friday of contract month
+        - Metals (GC, MGC, SI, etc.): ~3rd-to-last business day of month BEFORE contract month
+        - Energies (CL, NG, etc.): ~3 business days before 25th of month BEFORE contract month
+        - Grains (ZC, ZS, etc.): Mid-month before contract month
+        - Default: 1st of the contract month (safe early roll)
+        """
+        if root_upper in ['ES', 'MES', 'NQ', 'MNQ', 'YM', 'MYM', 'RTY', 'M2K',
+                          'ZB', 'ZN', 'ZF', 'ZT', '6E', '6J', '6A', '6B', '6C']:
+            # Equity/treasury/currency: 3rd Friday of contract month
+            return get_third_friday(year, month)
+        elif root_upper in ['GC', 'MGC', 'SI', 'SIL', 'HG', 'PL']:
+            # Metals: last trading day is ~3rd-to-last business day of month BEFORE contract month
+            # Use 25th of prior month as approximation
+            prior_month = month - 1
+            prior_year = year
+            if prior_month < 1:
+                prior_month = 12
+                prior_year -= 1
+            return datetime(prior_year, prior_month, 25)
+        elif root_upper in ['CL', 'MCL', 'NG', 'HO', 'RB']:
+            # Energies: ~3 business days before 25th of month BEFORE contract month
+            prior_month = month - 1
+            prior_year = year
+            if prior_month < 1:
+                prior_month = 12
+                prior_year -= 1
+            return datetime(prior_year, prior_month, 20)
+        else:
+            # Safe default: 1st of contract month (roll early rather than late)
+            return datetime(year, month, 1)
+
+    # Roll date: 8 days before expiration for equity, 5 days for others
     ROLL_DAYS_BEFORE_EXPIRY = 8
 
     # Find the current front month
     for exp_month, month_code in CONTRACT_MONTHS:
         exp_year = current_year
 
-        # If we're past this month, skip to next
+        # If we're past this month entirely, skip to next
         if current_month > exp_month:
             continue
 
-        # Get expiration date for this contract
-        expiration = get_third_friday(exp_year, exp_month)
+        # Get expiration date for this contract (product-specific)
+        expiration = get_expiration_date(exp_year, exp_month)
         roll_date = expiration - timedelta(days=ROLL_DAYS_BEFORE_EXPIRY)
 
         # If today is before the roll date, this is the front month
@@ -3273,9 +3307,10 @@ def convert_ticker_to_tradovate(ticker: str) -> str:
             return front_month
         return clean_ticker.replace('!', '')
     
-    # Check if ticker already has a month code (e.g., MNQZ5, ESH5)
+    # Check if ticker already has a month code (e.g., MNQZ5, ESH5, MGCJ6)
     # Pattern: ROOT + MONTH_CODE + YEAR_DIGIT(S)
-    month_pattern = re.match(r'^([A-Z]+)([HMUZ])(\d{1,2})$', clean_ticker)
+    # All month codes: F(Jan) G(Feb) H(Mar) J(Apr) K(May) M(Jun) N(Jul) Q(Aug) U(Sep) V(Oct) X(Nov) Z(Dec)
+    month_pattern = re.match(r'^([A-Z]+)([FGHJKMNQUVXZ])(\d{1,2})$', clean_ticker)
     if month_pattern:
         # Already has month code, return as-is
         return clean_ticker
