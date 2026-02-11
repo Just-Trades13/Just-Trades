@@ -22446,6 +22446,7 @@ def settings():
     user = None
     discord_linked = False
     discord_dms_enabled = False
+    user_timezone = 'America/Chicago'
     if USER_AUTH_AVAILABLE and is_logged_in():
         user = get_current_user()
         if user:
@@ -22454,28 +22455,77 @@ def settings():
             cursor = conn.cursor()
             try:
                 if db_type == 'postgresql':
-                    cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user.id,))
+                    cursor.execute('SELECT discord_user_id, discord_dms_enabled, settings_json FROM users WHERE id = %s', (user.id,))
                 else:
-                    cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user.id,))
+                    cursor.execute('SELECT discord_user_id, discord_dms_enabled, settings_json FROM users WHERE id = ?', (user.id,))
                 row = cursor.fetchone()
                 if row:
                     discord_linked = bool(row['discord_user_id'] if hasattr(row, 'keys') else row[0])
                     discord_dms_enabled = bool(row['discord_dms_enabled'] if hasattr(row, 'keys') else row[1])
+                    _sj = row['settings_json'] if hasattr(row, 'keys') else row[2]
+                    if _sj:
+                        _sj_parsed = json.loads(_sj) if isinstance(_sj, str) else _sj
+                        user_timezone = _sj_parsed.get('timezone', 'America/Chicago')
             except:
                 pass
             finally:
                 cursor.close()
                 conn.close()
-    
+
     return render_template('settings.html',
                           user=user,
                           discord_linked=discord_linked,
-                          discord_dms_enabled=discord_dms_enabled)
+                          discord_dms_enabled=discord_dms_enabled,
+                          user_timezone=user_timezone)
 
 
 # ============================================================================
 # SETTINGS API ROUTES
 # ============================================================================
+
+@app.route('/api/settings/timezone', methods=['POST'])
+def api_save_timezone():
+    """Save user timezone preference."""
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    VALID_TIMEZONES = {
+        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+        'America/Anchorage', 'Pacific/Honolulu', 'Europe/London', 'Europe/Berlin',
+        'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney', 'UTC'
+    }
+    data = request.get_json() or {}
+    tz = data.get('timezone', '').strip()
+    if tz not in VALID_TIMEZONES:
+        return jsonify({'success': False, 'error': f'Invalid timezone: {tz}'}), 400
+
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        ph = '%s' if db_type == 'postgresql' else '?'
+
+        # Read existing settings_json
+        cursor.execute(f'SELECT settings_json FROM users WHERE id = {ph}', (user.id,))
+        row = cursor.fetchone()
+        existing = {}
+        if row:
+            raw = row['settings_json'] if hasattr(row, 'keys') else row[0]
+            if raw:
+                existing = json.loads(raw) if isinstance(raw, str) else raw
+
+        existing['timezone'] = tz
+        cursor.execute(f'UPDATE users SET settings_json = {ph} WHERE id = {ph}', (json.dumps(existing), user.id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'success': True, 'timezone': tz})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/settings/password', methods=['POST'])
 def api_change_password():

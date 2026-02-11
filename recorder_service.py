@@ -46,6 +46,12 @@ import secrets
 import uuid
 from datetime import datetime
 from typing import Optional, Dict, List, Set, Any, Tuple
+try:
+    from zoneinfo import ZoneInfo
+    DEFAULT_USER_TZ = ZoneInfo('America/Chicago')
+except ImportError:
+    import pytz
+    DEFAULT_USER_TZ = pytz.timezone('America/Chicago')
 from flask import Flask, request, jsonify, render_template
 from async_utils import run_async  # Safe async execution - avoids "Event loop is closed" errors
 
@@ -1008,6 +1014,21 @@ def execute_trade_simple(
         except Exception as _pf_err:
             logger.warning(f"⚠️ Account pre-fetch failed, will query per-account: {_pf_err}")
 
+        # 3) Pre-fetch user timezone for time filter (1 query)
+        _cached_user_tz = DEFAULT_USER_TZ
+        try:
+            cursor.execute(f'SELECT u.settings_json FROM recorders r JOIN users u ON r.user_id = u.id WHERE r.id = {placeholder}', (recorder_id,))
+            _tz_row = cursor.fetchone()
+            if _tz_row:
+                _tz_json = _tz_row['settings_json'] if hasattr(_tz_row, 'keys') else _tz_row[0]
+                if _tz_json:
+                    _tz_settings = json.loads(_tz_json) if isinstance(_tz_json, str) else _tz_json
+                    _tz_name = _tz_settings.get('timezone')
+                    if _tz_name:
+                        _cached_user_tz = ZoneInfo(_tz_name)
+        except Exception:
+            pass  # Default to Chicago
+
         for trader_idx, trader_row in enumerate(trader_rows):
             trader_dict = dict(trader_row)
             trader_id = trader_dict.get('id')
@@ -1113,7 +1134,7 @@ def execute_trade_simple(
             if not is_close_signal and (has_trader_time_1 or has_trader_time_2):
                 from datetime import datetime
                 try:
-                    now = datetime.now()
+                    now = datetime.now(_cached_user_tz)
                     current_time = now.time()
 
                     def parse_time_str(t_str):
@@ -5701,6 +5722,73 @@ def check_auto_flat_cutoff():
         logger.error(f"❌ Auto flat cutoff check error: {e}")
 
 
+def start_daily_state_reset():
+    """Reset stale position tracking state daily at CME market close (4:15 PM CT).
+    Clears recorder_positions and stale open recorded_trades for LIVE recorders only.
+    Paper/simulation recorders are untouched — their trade history is preserved for analytics."""
+
+    _reset_done_date = [None]  # mutable container for closure
+
+    def reset_loop():
+        while True:
+            try:
+                time.sleep(60)  # Check every minute
+                now_ct = datetime.now(ZoneInfo('America/Chicago'))
+                today_str = now_ct.strftime('%Y-%m-%d')
+
+                # Only run once per day, during the 4:15-4:30 PM CT window
+                if _reset_done_date[0] == today_str:
+                    continue
+                if not (now_ct.hour == 16 and 15 <= now_ct.minute <= 30):
+                    continue
+                # Skip weekends (Sat=5, Sun=6)
+                if now_ct.weekday() >= 5:
+                    continue
+
+                logger.info("🧹 Daily state reset starting (market close cleanup)...")
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                is_postgres = is_using_postgres()
+                ph = '%s' if is_postgres else '?'
+
+                # Get all LIVE (non-simulation) recorder IDs
+                cursor.execute('SELECT id FROM recorders WHERE simulation_mode = 0 OR simulation_mode IS NULL')
+                live_ids = [row['id'] if hasattr(row, 'keys') else row[0] for row in cursor.fetchall()]
+
+                if not live_ids:
+                    logger.info("🧹 No live recorders found — skipping reset")
+                    conn.close()
+                    _reset_done_date[0] = today_str
+                    continue
+
+                id_list = ','.join(str(int(x)) for x in live_ids)
+
+                # 1) Clear recorder_positions for live recorders
+                cursor.execute(f'DELETE FROM recorder_positions WHERE recorder_id IN ({id_list})')
+                pos_deleted = cursor.rowcount
+                logger.info(f"🧹 Cleared {pos_deleted} recorder_positions rows (live recorders)")
+
+                # 2) Close stale open recorded_trades for live recorders
+                cursor.execute(f"UPDATE recorded_trades SET status = 'closed' WHERE status = 'open' AND recorder_id IN ({id_list})")
+                trades_closed = cursor.rowcount
+                logger.info(f"🧹 Closed {trades_closed} stale open recorded_trades (live recorders)")
+
+                # 3) Zero signal counters on traders for live recorders
+                cursor.execute(f'UPDATE traders SET signal_count = 0, today_signal_count = 0 WHERE recorder_id IN ({id_list})')
+                traders_reset = cursor.rowcount
+                logger.info(f"🧹 Reset signal counters on {traders_reset} traders")
+
+                conn.commit()
+                conn.close()
+                _reset_done_date[0] = today_str
+                logger.info(f"✅ Daily state reset complete — next reset tomorrow")
+            except Exception as e:
+                logger.error(f"❌ Daily state reset error: {e}")
+
+    _reset_thread = threading.Thread(target=reset_loop, daemon=True, name="DailyStateReset")
+    _reset_thread.start()
+
+
 def start_position_reconciliation():
     """Start the position reconciliation thread (runs every 60 seconds)
 
@@ -7913,6 +8001,10 @@ def initialize():
     # Start TP/SL polling thread (fallback when WebSocket not available)
     start_tp_sl_polling()
     logger.info("✅ TP/SL monitoring active")
+
+    # Start daily state reset daemon (clears stale position tracking at market close)
+    start_daily_state_reset()
+    logger.info("✅ Daily state reset active (4:15 PM CT, skips paper recorders)")
 
     # ============================================================
     # 🚨🚨🚨 CRITICAL: BROKER SYNC - DO NOT DISABLE 🚨🚨🚨

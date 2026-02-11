@@ -27,6 +27,33 @@
     </section>
 
     <section class="settings-row">
+        <article class="settings-card">
+            <header>
+                <h2>Timezone</h2>
+            </header>
+            <p>Used for time filter windows. Defaults to Central Time (CME futures standard).</p>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <select id="timezoneSelect" style="background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.25); border-radius: 12px; color: #e2e8f0; padding: 0.65rem 0.85rem; font-size: 0.95rem; flex: 1; min-width: 220px;">
+                    <option value="America/New_York" {% if user_timezone == 'America/New_York' %}selected{% endif %}>Eastern (ET)</option>
+                    <option value="America/Chicago" {% if user_timezone == 'America/Chicago' or not user_timezone %}selected{% endif %}>Central (CT) — CME Default</option>
+                    <option value="America/Denver" {% if user_timezone == 'America/Denver' %}selected{% endif %}>Mountain (MT)</option>
+                    <option value="America/Los_Angeles" {% if user_timezone == 'America/Los_Angeles' %}selected{% endif %}>Pacific (PT)</option>
+                    <option value="America/Anchorage" {% if user_timezone == 'America/Anchorage' %}selected{% endif %}>Alaska (AKT)</option>
+                    <option value="Pacific/Honolulu" {% if user_timezone == 'Pacific/Honolulu' %}selected{% endif %}>Hawaii (HST)</option>
+                    <option value="Europe/London" {% if user_timezone == 'Europe/London' %}selected{% endif %}>London (GMT/BST)</option>
+                    <option value="Europe/Berlin" {% if user_timezone == 'Europe/Berlin' %}selected{% endif %}>Central Europe (CET)</option>
+                    <option value="Asia/Tokyo" {% if user_timezone == 'Asia/Tokyo' %}selected{% endif %}>Tokyo (JST)</option>
+                    <option value="Asia/Shanghai" {% if user_timezone == 'Asia/Shanghai' %}selected{% endif %}>China (CST)</option>
+                    <option value="Australia/Sydney" {% if user_timezone == 'Australia/Sydney' %}selected{% endif %}>Sydney (AEST)</option>
+                    <option value="UTC" {% if user_timezone == 'UTC' %}selected{% endif %}>UTC</option>
+                </select>
+                <button class="btn btn-primary" onclick="saveTimezone()">Save</button>
+            </div>
+            <small id="tzStatus" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 8px; display: block;"></small>
+        </article>
+    </section>
+
+    <section class="settings-row">
         <article class="settings-card linked">
             <div>
                 <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--text-light);">Discord Account</h3>
@@ -224,6 +251,33 @@
         .catch(error => {
             messageDiv.textContent = 'Error: ' + error;
             messageDiv.className = 'message-error';
+        });
+    }
+
+    // Save timezone
+    function saveTimezone() {
+        const tz = document.getElementById('timezoneSelect').value;
+        const statusEl = document.getElementById('tzStatus');
+        statusEl.textContent = 'Saving...';
+        statusEl.style.color = 'var(--text-muted)';
+        fetch('/api/settings/timezone', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timezone: tz })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                statusEl.textContent = 'Timezone saved!';
+                statusEl.style.color = '#22c55e';
+            } else {
+                statusEl.textContent = data.error || 'Failed to save timezone';
+                statusEl.style.color = '#ef4444';
+            }
+        })
+        .catch(err => {
+            statusEl.textContent = 'Error: ' + err;
+            statusEl.style.color = '#ef4444';
         });
     }
 
