@@ -1868,9 +1868,24 @@ class TradovateIntegration:
             # Tradovate bracket API wants POINTS, not ticks!
             symbol_root = ''.join(c for c in symbol if c.isalpha())[:3].upper()
             tick_sizes = {
-                'MNQ': 0.25, 'NQ': 0.25, 'MES': 0.25, 'ES': 0.25,
-                'M2K': 0.1, 'RTY': 0.1, 'MYM': 1.0, 'YM': 1.0,
-                'CL': 0.01, 'MCL': 0.01, 'GC': 0.1, 'MGC': 0.1
+                # Index futures
+                'MES': 0.25, 'ES': 0.25, 'MNQ': 0.25, 'NQ': 0.25,
+                'MYM': 1.0, 'YM': 1.0, 'M2K': 0.1, 'RTY': 0.1,
+                # Metals
+                'GC': 0.1, 'MGC': 0.1, 'SI': 0.005, 'SIL': 0.005,
+                'HG': 0.0005, 'PL': 0.1,
+                # Energies
+                'CL': 0.01, 'MCL': 0.01, 'NG': 0.001, 'HO': 0.0001, 'RB': 0.0001,
+                # Treasuries
+                'ZB': 0.03125, 'ZN': 0.015625, 'ZF': 0.0078125, 'ZT': 0.0078125,
+                # Currencies (6E/6J etc: root extraction strips digits, so won't match here)
+                'DX': 0.005,
+                # Crypto
+                'BTC': 5.0, 'MBT': 5.0, 'ETH': 0.25, 'MET': 0.25,
+                # Grains
+                'ZC': 0.25, 'ZS': 0.25, 'ZW': 0.25, 'ZM': 0.1, 'ZL': 0.01,
+                # Softs
+                'KC': 0.05, 'CT': 0.01, 'SB': 0.01,
             }
             tick_size = tick_sizes.get(symbol_root, 0.25)
             
