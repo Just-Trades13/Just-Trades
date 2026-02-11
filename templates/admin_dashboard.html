@@ -1,0 +1,691 @@
+{% extends "layout.html" %}
+
+{% block title %}System Dashboard - Just.Trades{% endblock %}
+
+{% block page_title %}SYSTEM DASHBOARD{% endblock %}
+
+{% block content %}
+<div class="admin-dashboard">
+    <!-- System Health Cards -->
+    <div class="health-grid">
+        <div class="health-card" id="webhookWorkerCard">
+            <div class="health-header">
+                <span class="material-icons">webhook</span>
+                <span class="health-title">Webhook Workers</span>
+                <span class="health-dot" id="webhookDot"></span>
+            </div>
+            <div class="health-value" id="webhookWorkerCount">--/--</div>
+            <div class="health-sub">Queue: <span id="webhookQueueSize">0</span></div>
+        </div>
+        <div class="health-card" id="brokerWorkerCard">
+            <div class="health-header">
+                <span class="material-icons">precision_manufacturing</span>
+                <span class="health-title">Broker Workers</span>
+                <span class="health-dot" id="brokerDot"></span>
+            </div>
+            <div class="health-value" id="brokerWorkerCount">--/--</div>
+            <div class="health-sub">Queue: <span id="brokerQueueSize">0</span></div>
+        </div>
+        <div class="health-card" id="signalsCard">
+            <div class="health-header">
+                <span class="material-icons">show_chart</span>
+                <span class="health-title">Signals Processed</span>
+            </div>
+            <div class="health-value" id="signalsExecuted">--</div>
+            <div class="health-sub">Queued: <span id="signalsQueued">0</span> | Failed: <span id="signalsFailed" class="text-red">0</span></div>
+        </div>
+        <div class="health-card" id="dbCard">
+            <div class="health-header">
+                <span class="material-icons">storage</span>
+                <span class="health-title">DB Pool</span>
+                <span class="health-dot healthy" id="dbDot"></span>
+            </div>
+            <div class="health-value" id="dbStatus">Healthy</div>
+            <div class="health-sub">PostgreSQL</div>
+        </div>
+    </div>
+
+    <!-- User & Trade Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon"><span class="material-icons">people</span></div>
+            <div class="stat-info">
+                <div class="stat-value" id="totalUsers">--</div>
+                <div class="stat-label">Users</div>
+                <div class="stat-badge" id="pendingBadge" style="display:none;"><span id="pendingCount">0</span> pending</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><span class="material-icons">radio_button_checked</span></div>
+            <div class="stat-info">
+                <div class="stat-value"><span id="activeRecorders">--</span><span class="stat-of">/<span id="totalRecorders">--</span></span></div>
+                <div class="stat-label">Active Recorders</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><span class="material-icons">smart_toy</span></div>
+            <div class="stat-info">
+                <div class="stat-value"><span id="enabledTraders">--</span><span class="stat-of">/<span id="totalTraders">--</span></span></div>
+                <div class="stat-label">Enabled Traders</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><span class="material-icons">today</span></div>
+            <div class="stat-info">
+                <div class="stat-value" id="todaysTrades">--</div>
+                <div class="stat-label">Today's Trades</div>
+                <div class="stat-pnl" id="todaysPnl">$0.00</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content: Signal Flow + Failures -->
+    <div class="dashboard-panels">
+        <div class="panel signal-panel">
+            <div class="panel-header">
+                <h3><span class="material-icons">timeline</span> Signal Flow</h3>
+                <span class="panel-refresh" id="lastRefresh">--</span>
+            </div>
+            <div class="panel-body">
+                <table class="dash-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Recorder</th>
+                            <th>Action</th>
+                            <th>Symbol</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="signalTableBody">
+                        <tr><td colspan="5" class="empty-row">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="panel failure-panel">
+            <div class="panel-header">
+                <h3><span class="material-icons">error_outline</span> Recent Failures</h3>
+                <a href="/api/broker-execution/failures?limit=50" target="_blank" class="panel-link">View All</a>
+            </div>
+            <div class="panel-body">
+                <table class="dash-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Recorder</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="failureTableBody">
+                        <tr><td colspan="3" class="empty-row">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <h3><span class="material-icons">bolt</span> Quick Actions</h3>
+        <div class="actions-row">
+            <button class="action-btn" onclick="quickAction('/api/reset-db-pool', 'POST', 'Reset DB Pool?')">
+                <span class="material-icons">restart_alt</span> Reset DB Pool
+            </button>
+            <button class="action-btn" onclick="quickAction('/api/run-migrations', 'GET', 'Run Migrations?')">
+                <span class="material-icons">upgrade</span> Run Migrations
+            </button>
+            <button class="action-btn warn" onclick="quickAction('/api/paper-trades/cleanup-stale', 'POST', 'Cleanup stale paper trades?')">
+                <span class="material-icons">cleaning_services</span> Cleanup Paper Trades
+            </button>
+            <button class="action-btn" onclick="window.open('/api/broker-execution/failures?limit=50', '_blank')">
+                <span class="material-icons">bug_report</span> Full Failure Log
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .admin-dashboard {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 1.5rem;
+    }
+
+    /* Health Grid */
+    .health-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .health-card {
+        background: var(--background-light);
+        border-radius: 12px;
+        padding: 1.25rem;
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .health-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .health-header .material-icons {
+        font-size: 1.2rem;
+        color: var(--accent-teal, #2dd4bf);
+    }
+
+    .health-title {
+        font-size: 0.8rem;
+        color: var(--text-muted, #888);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        flex: 1;
+    }
+
+    .health-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #666;
+    }
+
+    .health-dot.healthy {
+        background: #22c55e;
+        box-shadow: 0 0 6px rgba(34,197,94,0.5);
+        animation: pulse-green 2s infinite;
+    }
+
+    .health-dot.warning {
+        background: #f59e0b;
+        box-shadow: 0 0 6px rgba(245,158,11,0.5);
+    }
+
+    .health-dot.error {
+        background: #ef4444;
+        box-shadow: 0 0 6px rgba(239,68,68,0.5);
+        animation: pulse-red 1s infinite;
+    }
+
+    @keyframes pulse-green {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+
+    @keyframes pulse-red {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+    }
+
+    .health-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--text-light, #fff);
+        margin-bottom: 0.25rem;
+    }
+
+    .health-sub {
+        font-size: 0.8rem;
+        color: var(--text-muted, #888);
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+        background: var(--background-light);
+        border-radius: 12px;
+        padding: 1.25rem;
+        border: 1px solid rgba(255,255,255,0.05);
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .stat-icon .material-icons {
+        font-size: 2rem;
+        color: var(--accent-teal, #2dd4bf);
+        opacity: 0.7;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-light, #fff);
+    }
+
+    .stat-of {
+        font-size: 1rem;
+        font-weight: 400;
+        color: var(--text-muted, #888);
+    }
+
+    .stat-label {
+        font-size: 0.8rem;
+        color: var(--text-muted, #888);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .stat-badge {
+        display: inline-block;
+        background: #f59e0b;
+        color: #000;
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-top: 4px;
+    }
+
+    .stat-pnl {
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-top: 2px;
+    }
+
+    .stat-pnl.positive { color: #22c55e; }
+    .stat-pnl.negative { color: #ef4444; }
+
+    /* Panels */
+    .dashboard-panels {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .panel {
+        background: var(--background-light);
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.05);
+        overflow: hidden;
+    }
+
+    .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .panel-header h3 {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-light, #fff);
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .panel-header h3 .material-icons {
+        font-size: 1.1rem;
+        color: var(--accent-teal, #2dd4bf);
+    }
+
+    .panel-refresh {
+        font-size: 0.75rem;
+        color: var(--text-muted, #888);
+    }
+
+    .panel-link {
+        font-size: 0.75rem;
+        color: var(--accent-teal, #2dd4bf);
+        text-decoration: none;
+    }
+
+    .panel-link:hover { text-decoration: underline; }
+
+    .panel-body {
+        padding: 0;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .failure-panel .panel-header {
+        border-bottom-color: rgba(239,68,68,0.2);
+    }
+
+    .failure-panel .panel-header h3 .material-icons {
+        color: #ef4444;
+    }
+
+    /* Tables */
+    .dash-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+    }
+
+    .dash-table thead th {
+        position: sticky;
+        top: 0;
+        background: var(--background-light);
+        padding: 0.6rem 0.75rem;
+        text-align: left;
+        font-weight: 600;
+        color: var(--text-muted, #888);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-size: 0.7rem;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .dash-table tbody td {
+        padding: 0.5rem 0.75rem;
+        color: var(--text-light, #ccc);
+        border-bottom: 1px solid rgba(255,255,255,0.03);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+
+    .dash-table tbody tr:hover {
+        background: rgba(255,255,255,0.02);
+    }
+
+    .empty-row {
+        text-align: center;
+        color: var(--text-muted, #888);
+        padding: 2rem !important;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .status-badge.success { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .status-badge.queued { background: rgba(59,130,246,0.15); color: #3b82f6; }
+    .status-badge.failed { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .status-badge.processing { background: rgba(245,158,11,0.15); color: #f59e0b; }
+
+    .text-red { color: #ef4444; }
+
+    .error-text {
+        color: #ef4444;
+        font-size: 0.75rem;
+        max-width: 250px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Quick Actions */
+    .quick-actions {
+        background: var(--background-light);
+        border-radius: 12px;
+        padding: 1.25rem;
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .quick-actions h3 {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-light, #fff);
+        margin: 0 0 1rem 0;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .quick-actions h3 .material-icons {
+        font-size: 1.1rem;
+        color: var(--accent-teal, #2dd4bf);
+    }
+
+    .actions-row {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .action-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.6rem 1.2rem;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.1);
+        background: rgba(255,255,255,0.05);
+        color: var(--text-light, #ccc);
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+        background: rgba(255,255,255,0.1);
+        border-color: var(--accent-teal, #2dd4bf);
+        color: #fff;
+    }
+
+    .action-btn.warn:hover {
+        border-color: #f59e0b;
+    }
+
+    .action-btn .material-icons {
+        font-size: 1rem;
+    }
+
+    .action-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* Toast */
+    .dash-toast {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        color: #fff;
+        z-index: 9999;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.3s;
+    }
+
+    .dash-toast.show {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .dash-toast.success { background: #22c55e; }
+    .dash-toast.error { background: #ef4444; }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+        .health-grid, .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        .dashboard-panels { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+        .health-grid, .stats-grid { grid-template-columns: 1fr; }
+        .admin-dashboard { padding: 1rem; }
+        .actions-row { flex-direction: column; }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    let refreshTimer = null;
+
+    function refreshDashboard() {
+        fetch('/api/admin/dashboard-stats')
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) return;
+                updateHealth(data.system_health);
+                updateStats(data.user_trade_stats);
+                updateSignals(data.recent_signals);
+                updateFailures(data.recent_failures);
+                document.getElementById('lastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+            })
+            .catch(err => console.error('Dashboard refresh failed:', err));
+    }
+
+    function updateHealth(h) {
+        // Webhook workers
+        const wh = h.webhook_workers;
+        document.getElementById('webhookWorkerCount').textContent = wh.alive + '/' + wh.configured;
+        setDot('webhookDot', wh.alive === wh.configured ? 'healthy' : wh.alive > 0 ? 'warning' : 'error');
+        document.getElementById('webhookQueueSize').textContent = h.webhook_queue;
+
+        // Broker workers
+        const bw = h.broker_workers;
+        document.getElementById('brokerWorkerCount').textContent = bw.alive + '/' + bw.configured;
+        setDot('brokerDot', bw.alive === bw.configured ? 'healthy' : bw.alive > 0 ? 'warning' : 'error');
+        document.getElementById('brokerQueueSize').textContent = h.broker_queue;
+
+        // Queue warning coloring
+        document.getElementById('webhookQueueSize').style.color = h.webhook_queue > 10 ? '#f59e0b' : '';
+        document.getElementById('brokerQueueSize').style.color = h.broker_queue > 10 ? '#f59e0b' : '';
+
+        // Signals
+        const stats = h.broker_stats || {};
+        document.getElementById('signalsExecuted').textContent = (stats.total_executed || 0).toLocaleString();
+        document.getElementById('signalsQueued').textContent = stats.total_queued || 0;
+        document.getElementById('signalsFailed').textContent = stats.total_failed || 0;
+
+        // DB
+        document.getElementById('dbStatus').textContent = h.db_pool === 'healthy' ? 'Healthy' : h.db_pool;
+        setDot('dbDot', h.db_pool === 'healthy' ? 'healthy' : 'error');
+    }
+
+    function updateStats(s) {
+        if (s.error) {
+            document.getElementById('totalUsers').textContent = 'ERR';
+            return;
+        }
+        document.getElementById('totalUsers').textContent = s.total_users;
+        const badge = document.getElementById('pendingBadge');
+        if (s.pending_users > 0) {
+            badge.style.display = 'inline-block';
+            document.getElementById('pendingCount').textContent = s.pending_users;
+        } else {
+            badge.style.display = 'none';
+        }
+        document.getElementById('activeRecorders').textContent = s.active_recorders;
+        document.getElementById('totalRecorders').textContent = s.total_recorders;
+        document.getElementById('enabledTraders').textContent = s.enabled_traders;
+        document.getElementById('totalTraders').textContent = s.total_traders;
+        document.getElementById('todaysTrades').textContent = s.todays_trades;
+
+        const pnlEl = document.getElementById('todaysPnl');
+        const pnl = s.todays_pnl || 0;
+        pnlEl.textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
+        pnlEl.className = 'stat-pnl ' + (pnl >= 0 ? 'positive' : 'negative');
+    }
+
+    function updateSignals(signals) {
+        const tbody = document.getElementById('signalTableBody');
+        if (!signals || signals.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No recent signals</td></tr>';
+            return;
+        }
+        tbody.innerHTML = signals.map(function(s) {
+            const time = s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : '--';
+            const statusClass = (s.status || '').toLowerCase().includes('fail') ? 'failed'
+                : (s.status || '').toLowerCase().includes('queue') ? 'queued'
+                : (s.status || '').toLowerCase().includes('process') ? 'processing'
+                : 'success';
+            return '<tr>'
+                + '<td>' + escHtml(time) + '</td>'
+                + '<td>' + escHtml(s.recorder || '--') + '</td>'
+                + '<td>' + escHtml(s.action || '--') + '</td>'
+                + '<td>' + escHtml(s.symbol || '--') + '</td>'
+                + '<td><span class="status-badge ' + statusClass + '">' + escHtml(s.status || '--') + '</span></td>'
+                + '</tr>';
+        }).join('');
+    }
+
+    function updateFailures(failures) {
+        const tbody = document.getElementById('failureTableBody');
+        if (!failures || failures.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="empty-row">No recent failures</td></tr>';
+            return;
+        }
+        tbody.innerHTML = failures.map(function(f) {
+            const time = f.timestamp ? new Date(f.timestamp).toLocaleTimeString() : '--';
+            const err = f.error || f.message || 'Unknown error';
+            return '<tr>'
+                + '<td>' + escHtml(time) + '</td>'
+                + '<td>' + escHtml(f.recorder || f.ticker || '--') + '</td>'
+                + '<td class="error-text" title="' + escAttr(err) + '">' + escHtml(err) + '</td>'
+                + '</tr>';
+        }).join('');
+    }
+
+    function setDot(id, state) {
+        const el = document.getElementById(id);
+        el.className = 'health-dot ' + state;
+    }
+
+    function escHtml(str) {
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    function escAttr(str) {
+        return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    window.quickAction = function(url, method, confirmMsg) {
+        if (!confirm(confirmMsg)) return;
+        fetch(url, { method: method })
+            .then(r => r.json())
+            .then(data => {
+                showToast(data.success ? 'success' : 'error',
+                    data.message || data.error || (data.success ? 'Done' : 'Failed'));
+                if (data.success) refreshDashboard();
+            })
+            .catch(err => showToast('error', 'Request failed: ' + err.message));
+    };
+
+    function showToast(type, msg) {
+        let toast = document.querySelector('.dash-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.className = 'dash-toast';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = msg;
+        toast.className = 'dash-toast ' + type;
+        requestAnimationFrame(() => toast.classList.add('show'));
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // Init
+    refreshDashboard();
+    refreshTimer = setInterval(refreshDashboard, 5000);
+})();
+</script>
+{% endblock %}

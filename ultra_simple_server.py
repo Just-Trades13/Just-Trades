@@ -5015,6 +5015,126 @@ def logout():
 
 
 # ============================================================================
+# ADMIN ROUTES - System Dashboard
+# ============================================================================
+@app.route('/admin/dashboard')
+@login_required
+def admin_dashboard():
+    """Admin system dashboard — real-time platform health overview."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return redirect('/login')
+    return render_template('admin_dashboard.html')
+
+
+@app.route('/api/admin/dashboard-stats')
+@login_required
+def admin_dashboard_stats():
+    """Aggregate endpoint for admin dashboard — single fetch for all stats."""
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    # --- Section 1: System Health (from existing globals) ---
+    webhook_workers_alive = sum(1 for t in _fast_webhook_threads if t.is_alive())
+    broker_workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive())
+
+    system_health = {
+        'webhook_workers': {'alive': webhook_workers_alive, 'configured': _fast_webhook_worker_count},
+        'broker_workers': {'alive': broker_workers_alive, 'configured': _broker_execution_worker_count},
+        'webhook_queue': _fast_webhook_queue.qsize() if _fast_webhook_queue else 0,
+        'broker_queue': broker_execution_queue.qsize(),
+        'broker_stats': dict(_broker_execution_stats),
+        'db_pool': 'healthy',
+    }
+
+    # --- Section 2: Signal Flow (from existing logs) ---
+    activity = get_webhook_activity_log(50)
+    recent_signals = []
+    for a in activity[:20]:
+        recent_signals.append({
+            'timestamp': a.get('timestamp', ''),
+            'recorder': a.get('recorder', ''),
+            'action': a.get('action', ''),
+            'symbol': a.get('symbol', ''),
+            'status': a.get('status', ''),
+            'error': a.get('error'),
+        })
+
+    # --- Section 3: User & Trade Stats (DB query) ---
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+
+        cursor.execute('SELECT COUNT(*) FROM users')
+        total_users = cursor.fetchone()[0]
+
+        if is_postgres:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE is_approved = FALSE AND is_admin = FALSE")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE is_approved = 0 AND is_admin = 0")
+        pending_users = cursor.fetchone()[0]
+
+        if is_postgres:
+            cursor.execute("SELECT COUNT(*) FROM recorders WHERE is_recording = TRUE")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM recorders WHERE is_recording = 1")
+        active_recorders = cursor.fetchone()[0]
+
+        cursor.execute('SELECT COUNT(*) FROM recorders')
+        total_recorders = cursor.fetchone()[0]
+
+        cursor.execute('SELECT COUNT(*) FROM traders')
+        total_traders = cursor.fetchone()[0]
+
+        if is_postgres:
+            cursor.execute("SELECT COUNT(*) FROM traders WHERE enabled = TRUE")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM traders WHERE enabled = 1")
+        enabled_traders = cursor.fetchone()[0]
+
+        if is_postgres:
+            cursor.execute("SELECT COUNT(*) FROM recorded_trades WHERE created_at::date = CURRENT_DATE")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM recorded_trades WHERE DATE(created_at) = DATE('now')")
+        todays_trades = cursor.fetchone()[0]
+
+        if is_postgres:
+            cursor.execute("SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades WHERE exit_time::date = CURRENT_DATE AND status = 'closed'")
+        else:
+            cursor.execute("SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades WHERE DATE(exit_time) = DATE('now') AND status = 'closed'")
+        todays_pnl = round(cursor.fetchone()[0] or 0, 2)
+
+        cursor.close()
+        conn.close()
+
+        user_trade_stats = {
+            'total_users': total_users,
+            'pending_users': pending_users,
+            'active_recorders': active_recorders,
+            'total_recorders': total_recorders,
+            'total_traders': total_traders,
+            'enabled_traders': enabled_traders,
+            'todays_trades': todays_trades,
+            'todays_pnl': todays_pnl,
+        }
+    except Exception as e:
+        user_trade_stats = {'error': str(e)}
+
+    # --- Section 4: Recent Failures ---
+    failures = get_broker_failures(10)
+
+    return jsonify({
+        'success': True,
+        'system_health': system_health,
+        'recent_signals': recent_signals,
+        'user_trade_stats': user_trade_stats,
+        'recent_failures': failures,
+    })
+
+
+# ============================================================================
 # ADMIN ROUTES - User Management
 # ============================================================================
 @app.route('/admin/users')
