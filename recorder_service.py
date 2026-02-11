@@ -1832,6 +1832,7 @@ def execute_trade_simple(
                     if use_bracket_order:
                         # Extract native break-even and autoTrail settings from risk_config
                         break_even_ticks = None
+                        break_even_offset = None
                         auto_trail = None
                         trailing_stop_bool = False
                         
