@@ -15786,6 +15786,12 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         })
             
     except NameError as name_err:
+        # CRITICAL: Close DB connection to prevent pool poisoning
+        try:
+            if 'conn' in locals() and conn:
+                conn.close()
+        except:
+            pass
         # Track webhook error
         _webhook_error_count += 1
         # Log to webhook activity for monitoring
@@ -15811,6 +15817,12 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             error_msg = "Internal error: logger configuration issue. Please check server logs."
         return jsonify({'success': False, 'error': error_msg}), 500
     except Exception as e:
+        # CRITICAL: Close DB connection to prevent pool poisoning
+        try:
+            if 'conn' in locals() and conn:
+                conn.close()
+        except:
+            pass
         # Track webhook error
         _webhook_error_count += 1
         # Log to webhook activity for monitoring
