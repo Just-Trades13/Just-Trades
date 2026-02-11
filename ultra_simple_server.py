@@ -15196,9 +15196,11 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         if trader_sl_units and trader_sl_units.strip():
             sl_units = trader_sl_units
 
-        # --- SL Type: only override if trader has an explicit type set ---
+        # --- SL Type: only override if trader has an explicit NON-DEFAULT type ---
+        # 'Fixed' is the DB default on traders — it doesn't mean the user chose Fixed.
+        # Only override if the trader explicitly set a non-default value (e.g. 'Trail').
         trader_sl_type = trader.get('sl_type') if trader else None
-        if trader_sl_type and trader_sl_type.strip():
+        if trader_sl_type and trader_sl_type.strip() and trader_sl_type != 'Fixed':
             sl_type = trader_sl_type
             _logger.info(f"📊 Using TRADER's sl_type: {sl_type}")
 
