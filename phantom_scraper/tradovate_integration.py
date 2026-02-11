@@ -1833,12 +1833,13 @@ class TradovateIntegration:
             order["accountId"] = account_id
         return order
     
-    async def place_bracket_order(self, account_id: int, account_spec: str, symbol: str, 
+    async def place_bracket_order(self, account_id: int, account_spec: str, symbol: str,
                                    entry_side: str, quantity: int,
-                                   profit_target_ticks: int = None, 
+                                   profit_target_ticks: int = None,
                                    stop_loss_ticks: int = None,
                                    trailing_stop: bool = False,
                                    break_even_ticks: int = None,
+                                   break_even_offset: int = None,
                                    auto_trail: dict = None) -> Optional[Dict[str, Any]]:
         """
         Place a market entry order with bracket (TP/SL) as an order strategy using Tradovate's native ATM features.
@@ -1904,8 +1905,8 @@ class TradovateIntegration:
             if break_even_ticks and break_even_ticks > 0:
                 break_even_points = break_even_ticks * tick_size
                 bracket["breakeven"] = float(break_even_points)
-                bracket["breakevenPlus"] = 0  # Optional offset beyond entry
-                logger.info(f"📊 Native break-even: {break_even_ticks} ticks ({break_even_points} points)")
+                bracket["breakevenPlus"] = float(break_even_offset * tick_size) if break_even_offset else 0
+                logger.info(f"📊 Native break-even: {break_even_ticks} ticks ({break_even_points} points), plus={bracket['breakevenPlus']} points")
             
             # Add native autoTrail (trailing-after-profit)
             if auto_trail:

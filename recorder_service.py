@@ -1887,6 +1887,7 @@ def execute_trade_simple(
                             stop_loss_ticks=sl_ticks if sl_ticks > 0 else None,  # Only place SL if configured
                             trailing_stop=trailing_stop_bool,  # Immediate trailing (boolean)
                             break_even_ticks=break_even_ticks,  # Native break-even
+                            break_even_offset=break_even_offset,  # Offset beyond entry for breakevenPlus
                             auto_trail=auto_trail  # Native trailing-after-profit
                         )
                         
