@@ -4642,6 +4642,24 @@ def admin_unblock_all_trial_abuse():
         return jsonify({'success': True, 'message': f'Table may not exist yet: {e}'})
 
 
+@app.route('/api/reset-db-pool', methods=['POST', 'GET'])
+def reset_db_pool():
+    """Flush and recreate the PostgreSQL connection pool to clear poisoned connections."""
+    global _pg_pool
+    import psycopg2.pool
+    try:
+        if _pg_pool:
+            _pg_pool.closeall()
+            _pg_pool = None
+        if _using_postgres and _db_url:
+            _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=20, maxconn=100, dsn=_db_url, connect_timeout=5
+            )
+            return jsonify({'success': True, 'message': 'DB pool reset — 20 fresh connections ready'})
+        return jsonify({'success': False, 'message': 'Not using PostgreSQL'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/run-migrations', methods=['POST', 'GET'])
 def run_migrations():
     """Run pending database migrations to add missing columns.
