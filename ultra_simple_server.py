@@ -1099,7 +1099,7 @@ def start_fast_webhook_workers():
 # Webhook handler queues broker execution here, returns immediately.
 # Background worker processes queue with retries.
 # This ensures webhooks NEVER fail due to broker issues.
-broker_execution_queue = Queue(maxsize=1000)
+broker_execution_queue = Queue(maxsize=5000)
 _broker_execution_worker_count = 10  # Number of parallel workers for HIVE MIND instant execution
 
 # ============================================================================
@@ -1607,11 +1607,11 @@ def _init_db_once():
             _init_postgres_tables()
 
             # Create connection pool for fast parallel processing
-            # min=20 connections ready, max=100 for burst traffic
+            # min=20 connections ready, max=200 for 5000+ user burst traffic
             try:
                 _pg_pool = psycopg2.pool.ThreadedConnectionPool(
                     minconn=20,
-                    maxconn=100,
+                    maxconn=200,
                     dsn=_db_url,
                     connect_timeout=5
                 )
@@ -1652,15 +1652,11 @@ def get_db_connection():
             try:
                 conn = _pg_pool.getconn()
                 conn.cursor_factory = RealDictCursor
-                # Ensure clean state — rollback any aborted transaction
+                # Clear any aborted transaction state (no round-trip query needed)
                 try:
                     conn.rollback()
-                    # Verify connection is actually alive
-                    test_cursor = conn.cursor()
-                    test_cursor.execute('SELECT 1')
-                    test_cursor.close()
                 except Exception:
-                    # Connection is dead — discard it and get a fresh one
+                    # Connection is truly dead — discard it and get a fresh one
                     try:
                         _pg_pool.putconn(conn, close=True)
                     except:
@@ -4663,7 +4659,7 @@ def reset_db_pool():
             _pg_pool = None
         if _using_postgres and _db_url:
             _pg_pool = psycopg2.pool.ThreadedConnectionPool(
-                minconn=20, maxconn=100, dsn=_db_url, connect_timeout=5
+                minconn=20, maxconn=200, dsn=_db_url, connect_timeout=5
             )
             return jsonify({'success': True, 'message': 'DB pool reset — 20 fresh connections ready'})
         return jsonify({'success': False, 'message': 'Not using PostgreSQL'})

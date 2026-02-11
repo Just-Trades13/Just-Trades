@@ -795,21 +795,18 @@ def get_db_connection():
             db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
             
             if _pg_pool is None:
-                # HIVE MIND: Pool sized for 500+ concurrent account executions
-                _pg_pool = psycopg2.pool.ThreadedConnectionPool(10, 100, dsn=db_url)
-                logger.info("✅ recorder_service: PostgreSQL pool initialized (10-100 connections) - HIVE MIND ready")
+                # HIVE MIND: Pool sized for 5000+ users with concurrent account executions
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(20, 200, dsn=db_url)
+                logger.info("✅ recorder_service: PostgreSQL pool initialized (20-200 connections) - HIVE MIND ready")
             
             conn = _pg_pool.getconn()
             conn.cursor_factory = RealDictCursor
 
-            # Health check: rollback any aborted transaction and verify connection
+            # Clear any aborted transaction state (no round-trip query needed)
             try:
                 conn.rollback()
-                test_cursor = conn.cursor()
-                test_cursor.execute('SELECT 1')
-                test_cursor.close()
             except Exception:
-                # Connection is dead — discard and get fresh one
+                # Connection is truly dead — discard and get fresh one
                 try:
                     _pg_pool.putconn(conn, close=True)
                 except:
