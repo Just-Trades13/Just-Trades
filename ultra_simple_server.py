@@ -15020,9 +15020,17 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         _logger.info(f"📊 {signal_type} SIGNAL: Will apply {settings_source} settings")
         
         # Override TP/SL settings with trader settings if available
+        # CRITICAL: '[]' is truthy in Python but means "no targets" — must parse before checking
         if trader_tp_targets:
-            tp_targets_raw = trader_tp_targets
-            _logger.info(f"📊 Using TRADER's TP targets (override recorder)")
+            try:
+                _parsed_trader_tp = json.loads(trader_tp_targets) if isinstance(trader_tp_targets, str) else trader_tp_targets
+            except (json.JSONDecodeError, TypeError):
+                _parsed_trader_tp = []
+            if _parsed_trader_tp and len(_parsed_trader_tp) > 0:
+                tp_targets_raw = trader_tp_targets
+                _logger.info(f"📊 Using TRADER's TP targets (override recorder): {trader_tp_targets}")
+            else:
+                _logger.info(f"📊 Trader TP targets empty, falling back to RECORDER TP: {tp_targets_raw}")
         trader_trim_units = trader.get('trim_units') if trader else None
         if trader_trim_units:
             trim_units = trader_trim_units
