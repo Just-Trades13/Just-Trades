@@ -946,9 +946,16 @@ def execute_trade_simple(
             acct_id = trader_dict.get('account_id')
             logger.info(f"📋 Processing Trader #{trader_idx + 1}: ID={trader_id}, Name={trader_dict.get('name', 'unnamed')}")
 
+            # --- CLOSE/EXIT signals BYPASS ALL filters ---
+            # A CLOSE must always go through to protect the user's capital.
+            # Filters only apply to new entries (BUY/SELL).
+            is_close_signal = action.upper() in ('CLOSE', 'FLATTEN', 'EXIT', 'FLAT')
+            if is_close_signal:
+                logger.info(f"🚨 Trader {trader_id}: CLOSE signal — bypassing all filters")
+
             # --- TRADER-LEVEL DELAY FILTER (Nth Signal) ---
             trader_add_delay = int(trader_dict.get('add_delay', 1) or 1)
-            if trader_add_delay > 1:
+            if not is_close_signal and trader_add_delay > 1:
                 # Get and increment signal count for this trader
                 trader_signal_count = int(trader_dict.get('signal_count', 0) or 0) + 1
                 # Update the signal count in database and commit immediately
@@ -967,7 +974,7 @@ def execute_trade_simple(
 
             # --- TRADER-LEVEL SIGNAL COOLDOWN FILTER ---
             trader_cooldown = int(trader_dict.get('signal_cooldown', 0) or 0)
-            if trader_cooldown > 0:
+            if not is_close_signal and trader_cooldown > 0:
                 last_trade_str = trader_dict.get('last_trade_time')
                 if last_trade_str:
                     try:
@@ -984,7 +991,7 @@ def execute_trade_simple(
 
             # --- TRADER-LEVEL MAX SIGNALS PER SESSION FILTER ---
             trader_max_signals = int(trader_dict.get('max_signals_per_session', 0) or 0)
-            if trader_max_signals > 0:
+            if not is_close_signal and trader_max_signals > 0:
                 today_str = datetime.utcnow().strftime('%Y-%m-%d')
                 trader_today_date = trader_dict.get('today_signal_date', '') or ''
                 if trader_today_date == today_str:
@@ -998,7 +1005,7 @@ def execute_trade_simple(
 
             # --- RECORDER-LEVEL MAX DAILY LOSS FILTER (intentionally shared — strategy circuit breaker) ---
             trader_max_loss = float(trader_dict.get('max_daily_loss', 0) or 0)
-            if trader_max_loss > 0:
+            if not is_close_signal and trader_max_loss > 0:
                 try:
                     # PostgreSQL vs SQLite compatible date comparison
                     if is_postgres:
@@ -1030,7 +1037,7 @@ def execute_trade_simple(
             has_trader_time_1 = trader_time_1_enabled and trader_time_1_start and trader_time_1_stop
             has_trader_time_2 = trader_time_2_enabled and trader_time_2_start and trader_time_2_stop
 
-            if has_trader_time_1 or has_trader_time_2:
+            if not is_close_signal and (has_trader_time_1 or has_trader_time_2):
                 from datetime import datetime
                 try:
                     now = datetime.now()
