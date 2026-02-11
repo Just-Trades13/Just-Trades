@@ -42,11 +42,12 @@ class ProjectXIntegration:
     Token valid for 24 hours, refresh via /api/Auth/validate
     """
     
-    # Order Types (per ProjectX API)
+    # Order Types (per ProjectX Swagger spec: https://api.topstepx.com/swagger/v1/swagger.json)
     ORDER_TYPE_LIMIT = 1
     ORDER_TYPE_MARKET = 2
-    ORDER_TYPE_STOP = 3
-    ORDER_TYPE_STOP_LIMIT = 4
+    ORDER_TYPE_STOP_LIMIT = 3   # StopLimit
+    ORDER_TYPE_STOP = 4         # Stop (market stop) — required for SL brackets
+    ORDER_TYPE_TRAILING_STOP = 5
     
     # Order Sides (per ProjectX API)
     SIDE_BUY = 0
@@ -630,24 +631,67 @@ class ProjectXIntegration:
             logger.error(f"Get contracts exception: {e}")
             return []
     
+    async def search_contracts(self, search_text: str, live: bool = False) -> List[Dict[str, Any]]:
+        """
+        Search for contracts by text (e.g., "NQ", "MNQ", "ES").
+        Uses the Contract/search endpoint which is supported by TopStepX and all ProjectX firms.
+
+        Args:
+            search_text: Symbol or text to search for (e.g., "NQ")
+            live: If True, search live contracts
+
+        Returns:
+            List of matching contract dictionaries
+        """
+        try:
+            await self._ensure_valid_token()
+
+            async with self.session.post(
+                self._build_url("Contract/search"),
+                json={"searchText": search_text, "live": live},
+                headers=self._get_headers()
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+
+                    if data.get("success"):
+                        contracts = data.get("contracts", [])
+                        # Cache contracts by symbol for quick lookup
+                        for contract in contracts:
+                            symbol = contract.get("name") or contract.get("symbol")
+                            if symbol:
+                                self.contracts_cache[symbol] = contract
+                        logger.info(f"Contract search '{search_text}' returned {len(contracts)} results")
+                        return contracts
+                    else:
+                        logger.error(f"Contract search failed: {data.get('errorMessage')}")
+                        return []
+                else:
+                    logger.error(f"Contract search HTTP error: {response.status}")
+                    return []
+
+        except Exception as e:
+            logger.error(f"Contract search exception: {e}")
+            return []
+
     async def get_contract_by_symbol(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
         Get contract details by symbol.
-        
+
         Args:
             symbol: Contract symbol (e.g., "MNQ", "ES")
-        
+
         Returns:
             Contract dictionary or None
         """
         # Check cache first
         if symbol in self.contracts_cache:
             return self.contracts_cache[symbol]
-        
+
         # Fetch contracts if cache is empty
         if not self.contracts_cache:
             await self.get_available_contracts()
-        
+
         return self.contracts_cache.get(symbol)
     
     async def get_positions(self, account_id: int) -> List[Dict[str, Any]]:
@@ -664,7 +708,7 @@ class ProjectXIntegration:
             await self._ensure_valid_token()
             
             async with self.session.post(
-                self._build_url("Position/search"),
+                self._build_url("Position/searchOpen"),
                 json={"accountId": account_id},
                 headers=self._get_headers()
             ) as response:
@@ -701,12 +745,11 @@ class ProjectXIntegration:
             await self._ensure_valid_token()
             
             search_params = {"accountId": account_id}
-            if not include_filled:
-                # Only get working orders (pending, working)
-                search_params["statuses"] = [self.STATUS_PENDING, self.STATUS_WORKING]
-            
+            # Use Order/searchOpen for active orders, Order/search for historical
+            endpoint = "Order/search" if include_filled else "Order/searchOpen"
+
             async with self.session.post(
-                self._build_url("Order/search"),
+                self._build_url(endpoint),
                 json=search_params,
                 headers=self._get_headers()
             ) as response:
@@ -786,24 +829,25 @@ class ProjectXIntegration:
             logger.error(f"Place order exception: {e}")
             return {"success": False, "error": str(e)}
     
-    async def cancel_order(self, order_id: int) -> bool:
+    async def cancel_order(self, account_id: int, order_id: int) -> bool:
         """
         Cancel an existing order.
-        
+
         Args:
+            account_id: The account ID (required by ProjectX API)
             order_id: The order ID to cancel
-        
+
         Returns:
             True if cancelled successfully, False otherwise
         """
         try:
             await self._ensure_valid_token()
-            
-            logger.info(f"Cancelling ProjectX order: {order_id}")
-            
+
+            logger.info(f"Cancelling ProjectX order: {order_id} on account {account_id}")
+
             async with self.session.post(
                 self._build_url("Order/cancel"),
-                json={"orderId": order_id},
+                json={"accountId": account_id, "orderId": order_id},
                 headers=self._get_headers()
             ) as response:
                 if response.status == 200:
@@ -889,7 +933,7 @@ class ProjectXIntegration:
             logger.info(f"Liquidating ProjectX position: account={account_id}, contract={contract_id}")
             
             async with self.session.post(
-                self._build_url("Position/close"),
+                self._build_url("Position/closeContract"),
                 json={
                     "accountId": account_id,
                     "contractId": contract_id
@@ -1020,48 +1064,60 @@ class ProjectXIntegration:
     
     def create_market_order_with_brackets(self, account_id: int, contract_id: str,
                                           side: str, quantity: int,
-                                          tp_ticks: int = None, sl_ticks: int = None) -> Dict[str, Any]:
+                                          tp_ticks: int = None, sl_ticks: int = None,
+                                          trailing_stop: bool = False) -> Dict[str, Any]:
         """
         Create a market order with take-profit and/or stop-loss brackets.
-        
+
         This is the ProjectX equivalent of Tradovate bracket orders.
         Brackets are attached directly to the entry order and managed as OCO.
-        
+
         Args:
             account_id: Account ID
             contract_id: Contract ID (e.g., "CON.F.US.MNQM5.M25")
             side: "Buy" or "Sell"
             quantity: Number of contracts
             tp_ticks: Take profit in ticks (None = no TP)
-            sl_ticks: Stop loss in ticks (None = no SL)
-        
+            sl_ticks: Stop loss in ticks (None = no SL), or trailing distance if trailing_stop=True
+            trailing_stop: If True, SL bracket uses TrailingStop type (5) instead of Stop (4)
+
         Returns:
             Order dictionary ready for place_order() with brackets attached
         """
+        is_buy = side.lower() == "buy"
         order = {
             "accountId": account_id,
             "contractId": contract_id,
             "type": self.ORDER_TYPE_MARKET,
-            "side": self.SIDE_BUY if side.lower() == "buy" else self.SIDE_SELL,
+            "side": self.SIDE_BUY if is_buy else self.SIDE_SELL,
             "size": int(quantity)
         }
-        
+
+        # ProjectX requires signed ticks:
+        #   Buy:  TP = +ticks (price up),   SL = -ticks (price down)
+        #   Sell: TP = -ticks (price down),  SL = +ticks (price up)
+        # Users always pass positive values; we apply the correct sign.
+        tp_sign = 1 if is_buy else -1
+        sl_sign = -1 if is_buy else 1
+
         # Add take profit bracket if specified
-        if tp_ticks and tp_ticks > 0:
+        if tp_ticks and int(tp_ticks) > 0:
             order["takeProfitBracket"] = {
-                "ticks": int(tp_ticks),
+                "ticks": tp_sign * abs(int(tp_ticks)),
                 "type": self.ORDER_TYPE_LIMIT  # TP is always a limit order
             }
-            logger.info(f"📊 TP bracket: {tp_ticks} ticks")
-        
-        # Add stop loss bracket if specified
-        if sl_ticks and sl_ticks > 0:
+            logger.info(f"📊 TP bracket: {tp_sign * abs(int(tp_ticks))} ticks (side={'Buy' if is_buy else 'Sell'})")
+
+        # Add stop loss bracket if specified (supports trailing stop)
+        if sl_ticks and int(sl_ticks) > 0:
+            sl_type = self.ORDER_TYPE_TRAILING_STOP if trailing_stop else self.ORDER_TYPE_STOP
+            sl_label = "Trailing SL" if trailing_stop else "SL"
             order["stopLossBracket"] = {
-                "ticks": int(sl_ticks),
-                "type": self.ORDER_TYPE_STOP  # SL is a stop order
+                "ticks": sl_sign * abs(int(sl_ticks)),
+                "type": sl_type
             }
-            logger.info(f"📊 SL bracket: {sl_ticks} ticks")
-        
+            logger.info(f"📊 {sl_label} bracket: {sl_sign * abs(int(sl_ticks))} ticks (type={sl_type}, side={'Buy' if is_buy else 'Sell'})")
+
         return order
     
     def create_limit_order_with_brackets(self, account_id: int, contract_id: str,
@@ -1082,27 +1138,31 @@ class ProjectXIntegration:
         Returns:
             Order dictionary ready for place_order() with brackets attached
         """
+        is_buy = side.lower() == "buy"
         order = {
             "accountId": account_id,
             "contractId": contract_id,
             "type": self.ORDER_TYPE_LIMIT,
-            "side": self.SIDE_BUY if side.lower() == "buy" else self.SIDE_SELL,
+            "side": self.SIDE_BUY if is_buy else self.SIDE_SELL,
             "size": int(quantity),
             "price": float(price)
         }
-        
-        if tp_ticks and tp_ticks > 0:
+
+        tp_sign = 1 if is_buy else -1
+        sl_sign = -1 if is_buy else 1
+
+        if tp_ticks and int(tp_ticks) > 0:
             order["takeProfitBracket"] = {
-                "ticks": int(tp_ticks),
+                "ticks": tp_sign * abs(int(tp_ticks)),
                 "type": self.ORDER_TYPE_LIMIT
             }
-        
-        if sl_ticks and sl_ticks > 0:
+
+        if sl_ticks and int(sl_ticks) > 0:
             order["stopLossBracket"] = {
-                "ticks": int(sl_ticks),
+                "ticks": sl_sign * abs(int(sl_ticks)),
                 "type": self.ORDER_TYPE_STOP
             }
-        
+
         return order
     
     async def place_bracket_order(self, account_id: int, contract_id: str,

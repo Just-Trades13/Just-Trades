@@ -294,4 +294,26 @@ async def on_ready():
         await asyncio.sleep(300)  # Run every 5 minutes
 
 
-client.run(TOKEN)
+import time
+
+max_retries = 5
+for attempt in range(max_retries):
+    try:
+        client.run(TOKEN)
+        break  # Clean shutdown
+    except discord.errors.HTTPException as e:
+        if e.status == 429:
+            wait = min(30 * (2 ** attempt), 300)  # 30s, 60s, 120s, 240s, 300s
+            logger.warning(f"Rate limited by Discord (attempt {attempt+1}/{max_retries}). Waiting {wait}s...")
+            time.sleep(wait)
+            # Recreate client — old one's internal session is dead after failed login
+            client = discord.Client(intents=intents)
+            client.event(on_ready)
+        else:
+            logger.error(f"Discord HTTP error: {e}")
+            break
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        break
+else:
+    logger.error("Max retries exceeded. Exiting.")

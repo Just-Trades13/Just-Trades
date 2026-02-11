@@ -3247,9 +3247,18 @@ def extract_symbol_root(symbol: str) -> str:
     # Strip exchange prefix (e.g., "COMEX:MGC1!" → "MGC1!")
     if ':' in clean:
         clean = clean.split(':')[-1]
-    clean = clean.replace('!', '')
-    match = re.match(r'^([A-Z]+)', clean)
-    return match.group(1) if match else clean
+    clean = clean.replace('1!', '').replace('!', '')
+
+    # Check for known symbols FIRST (matches recorder_service.py approach)
+    KNOWN_ROOTS = ['MNQ', 'MES', 'M2K', 'MYM', 'MCL', 'MGC', 'NQ', 'ES', 'YM', 'RTY', 'CL', 'GC', 'SI', 'HG', 'PL', 'NG', 'ZB', 'ZN', 'ZF', 'ZT', 'ZC', 'ZS', 'ZW', 'ZL', 'KC', 'SB', 'CT', 'HE', 'LE', 'SIL']
+    for known in sorted(KNOWN_ROOTS, key=len, reverse=True):  # Longest first (MNQ before NQ)
+        if clean.startswith(known):
+            return known
+
+    # Fallback: remove trailing month code + digits
+    clean = re.sub(r'[0-9]+', '', clean)
+    clean = re.sub(r'[FGHJKMNQUVXZ]$', '', clean)
+    return clean if clean else symbol.upper()
 
 
 def get_tick_info(symbol: str) -> dict:
@@ -20875,14 +20884,25 @@ def manual_trade():
         placeholder = '%s' if is_postgres else '?'
         cursor.execute(f"""
             SELECT name, tradovate_token, tradovate_refresh_token, md_access_token,
-                   token_expires_at, tradovate_accounts, environment
-            FROM accounts 
-            WHERE id = {placeholder} AND tradovate_token IS NOT NULL
+                   token_expires_at, tradovate_accounts, environment, broker,
+                   projectx_username, projectx_api_key, projectx_prop_firm, password, username
+            FROM accounts
+            WHERE id = {placeholder}
         """, (account_id,))
         account = cursor.fetchone()
         if not account:
             conn.close()
-            return jsonify({'success': False, 'error': 'Account not found or not connected'}), 400
+            return jsonify({'success': False, 'error': 'Account not found'}), 400
+
+        # Detect broker type
+        account_broker = (account.get('broker') if isinstance(account, dict) else (account['broker'] if account['broker'] else '')).strip() if account['broker'] else ''
+        px_user = account.get('projectx_username') if isinstance(account, dict) else account['projectx_username']
+        px_key = account.get('projectx_api_key') if isinstance(account, dict) else account['projectx_api_key']
+        is_projectx = (account_broker == 'ProjectX' or bool(px_user) or bool(px_key))
+
+        if not is_projectx and not account['tradovate_token']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Account not connected. Please connect via Tradovate or ProjectX.'}), 400
         
         tradovate_accounts = []
         try:
@@ -20922,40 +20942,215 @@ def manual_trade():
                 if datetime.utcnow() >= exp_dt - timedelta(minutes=5):
                     needs_refresh = True
             except Exception:
-                needs_refresh = False
-        
-        async def refresh_tokens(force=False):
+                needs_refresh = True  # If we can't parse, assume expired
+        else:
+            needs_refresh = True  # No expiry stored, always try refresh
+
+        def _run_async(coro):
+            """Run async code safely — handles existing event loops."""
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+
+        def do_refresh_tokens():
+            """Refresh Tradovate tokens and save to DB."""
             if not token_container.get('refresh_token'):
                 return False
-            if not force and not needs_refresh:
-                return False
-            from phantom_scraper.tradovate_integration import TradovateIntegration
-            async with TradovateIntegration(demo=demo) as tradovate:
-                tradovate.access_token = token_container['access_token']
-                tradovate.refresh_token = token_container['refresh_token']
-                tradovate.md_access_token = token_container['md_access_token']
-                refreshed = await tradovate.refresh_access_token()
-                if refreshed:
-                    token_container['access_token'] = tradovate.access_token
-                    token_container['refresh_token'] = tradovate.refresh_token
-                return refreshed
-        
-        if needs_refresh and token_container['refresh_token']:
-            refreshed = asyncio.run(refresh_tokens())
+            async def _refresh():
+                from phantom_scraper.tradovate_integration import TradovateIntegration
+                async with TradovateIntegration(demo=demo) as tradovate:
+                    tradovate.access_token = token_container['access_token']
+                    tradovate.refresh_token = token_container['refresh_token']
+                    tradovate.md_access_token = token_container.get('md_access_token')
+                    refreshed = await tradovate.refresh_access_token()
+                    if refreshed:
+                        token_container['access_token'] = tradovate.access_token
+                        token_container['refresh_token'] = tradovate.refresh_token
+                    return refreshed
+            refreshed = _run_async(_refresh())
             if refreshed:
-                new_expiry = (datetime.utcnow() + timedelta(hours=24)).isoformat()
-                cursor.execute("""
-                    UPDATE accounts
-                    SET tradovate_token = ?, tradovate_refresh_token = ?, token_expires_at = ?
-                    WHERE id = ?
-                """, (token_container['access_token'], token_container['refresh_token'], new_expiry, account_id))
-                conn.commit()
+                # Save new tokens to DB
+                try:
+                    save_conn = get_db_connection()
+                    save_cursor = save_conn.cursor()
+                    new_expiry = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+                    save_cursor.execute(f"""
+                        UPDATE accounts
+                        SET tradovate_token = {placeholder}, tradovate_refresh_token = {placeholder}, token_expires_at = {placeholder}
+                        WHERE id = {placeholder}
+                    """, (token_container['access_token'], token_container['refresh_token'], new_expiry, account_id))
+                    save_conn.commit()
+                    save_conn.close()
+                    logger.info(f"✅ Refreshed and saved tokens for account {account_id}")
+                except Exception as save_err:
+                    logger.warning(f"Token save error (non-fatal): {save_err}")
+            return refreshed
+
+        if needs_refresh and token_container.get('refresh_token'):
+            do_refresh_tokens()
         conn.close()
-        
-        tradovate_symbol = convert_tradingview_to_tradovate_symbol(symbol, access_token=token_container['access_token'], demo=demo)
+
         trade_side = side.lower()
         if trade_side not in ('buy', 'sell', 'close'):
             return jsonify({'success': False, 'error': 'Invalid side supplied'}), 400
+
+        # asyncio imported at top of file (line 19)
+
+        # === ProjectX execution path ===
+        if is_projectx:
+            try:
+                from phantom_scraper.projectx_integration import ProjectXIntegration
+
+                px_username = account.get('projectx_username') or account.get('username') or ''
+                px_password = account.get('password') or ''
+                px_api_key_val = account.get('projectx_api_key') or ''
+                px_prop_firm = account.get('projectx_prop_firm') or 'default'
+
+                if not px_username:
+                    return jsonify({'success': False, 'error': 'No ProjectX username. Please reconnect.'}), 400
+
+                async def place_projectx_trade():
+                    async with ProjectXIntegration(demo=demo, prop_firm=px_prop_firm) as projectx:
+                        login_result = await projectx.login(
+                            px_username,
+                            password=px_password if px_password else None,
+                            api_key=px_api_key_val if px_api_key_val else None
+                        )
+                        if not login_result.get('success'):
+                            return {'success': False, 'error': login_result.get('error', 'ProjectX login failed')}
+
+                        # Find contract for symbol
+                        symbol_root = extract_symbol_root(symbol)
+                        symbol_upper = symbol.strip().upper() if symbol else ''
+                        contract_id = None
+                        contract_match_name = None
+
+                        # Try Contract/search first (works on TopStepX and all ProjectX firms)
+                        contracts = await projectx.search_contracts(symbol_root)
+                        if not contracts:
+                            # Fallback: try Contract/available (older ProjectX endpoint)
+                            contracts = await projectx.get_available_contracts()
+
+                        logger.info(f"ProjectX manual trade: looking for symbol_root='{symbol_root}' full='{symbol_upper}' in {len(contracts)} contracts")
+                        for c in contracts:
+                            c_name = (c.get('name') or c.get('symbol') or '').upper()
+                            c_id_str = str(c.get('id') or '').upper()
+                            # Strategy 1: Full Tradovate symbol in contract name/id (MNQH6 in CON.F.US.MNQH6.H26)
+                            if symbol_upper and (symbol_upper in c_name or symbol_upper in c_id_str):
+                                contract_id = c.get('id')
+                                contract_match_name = c_name or c_id_str
+                                break
+                            # Strategy 2: Root symbol match (MNQ in contract)
+                            if symbol_root and (symbol_root in c_name or symbol_root in c_id_str):
+                                contract_id = c.get('id')
+                                contract_match_name = c_name or c_id_str
+                                break
+
+                        if contract_id:
+                            logger.info(f"ProjectX contract matched: {contract_match_name} (ID: {contract_id})")
+                        else:
+                            # Log all available contracts for debugging
+                            contract_names = [f"{c.get('name') or c.get('symbol') or 'N/A'} (id={c.get('id')})" for c in contracts[:20]]
+                            logger.warning(f"ProjectX contract not found for '{symbol}' (root='{symbol_root}'). {len(contracts)} contracts returned: {contract_names}")
+                            return {'success': False, 'error': f'Contract not found for {symbol}. Available: {", ".join(contract_names[:10])}'}
+
+                        px_account_id = int(subaccount_id) if subaccount_id else None
+                        if not px_account_id:
+                            # Try to get first account
+                            accts = await projectx.get_accounts()
+                            if accts:
+                                px_account_id = accts[0].get('id')
+                        if not px_account_id:
+                            return {'success': False, 'error': 'No ProjectX account found'}
+
+                        if trade_side == 'close':
+                            # Step 1: Cancel ALL resting orders for this contract
+                            cancelled_count = 0
+                            try:
+                                open_orders = await projectx.get_orders(px_account_id)
+                                for order in open_orders:
+                                    o_contract = str(order.get('contractId') or '').upper()
+                                    o_id = order.get('id')
+                                    if o_id and (symbol_root in o_contract or symbol_upper in o_contract or o_contract == str(contract_id).upper()):
+                                        ok = await projectx.cancel_order(px_account_id, int(o_id))
+                                        if ok:
+                                            cancelled_count += 1
+                                logger.info(f"ProjectX close: cancelled {cancelled_count} resting orders")
+                            except Exception as cancel_err:
+                                logger.warning(f"ProjectX cancel orders error (non-fatal): {cancel_err}")
+
+                            # Step 2: Close position via Position/closeContract
+                            positions = await projectx.get_positions(px_account_id)
+                            logger.info(f"ProjectX close: {len(positions)} positions for account {px_account_id}")
+                            for pos in positions:
+                                pos_contract = str(pos.get('contractId') or pos.get('contract_id') or '')
+                                pos_size = pos.get('size') or pos.get('qty') or 0
+                                pos_type = pos.get('type', 0)  # 1=Long, 2=Short
+                                logger.info(f"  Position: contractId={pos_contract}, size={pos_size}, type={pos_type}")
+                                contract_match = (pos_contract == str(contract_id)
+                                                  or symbol_root in pos_contract.upper()
+                                                  or symbol_upper in pos_contract.upper())
+                                if contract_match and pos_size != 0:
+                                    result = await projectx.liquidate_position(px_account_id, pos_contract)
+                                    if result and result.get('success'):
+                                        return {'success': True, 'message': f'Closed {pos_size} {symbol} + cancelled {cancelled_count} orders', 'order': result}
+                                    # Fallback: counter market order
+                                    close_side = 'Sell' if pos_type == 1 else 'Buy'
+                                    order_data = projectx.create_market_order_with_brackets(
+                                        px_account_id, pos_contract, close_side, abs(int(pos_size))
+                                    )
+                                    result = await projectx.place_order(order_data)
+                                    return {'success': True, 'message': f'Closed {pos_size} {symbol} + cancelled {cancelled_count} orders', 'order': result}
+                            if cancelled_count > 0:
+                                return {'success': True, 'message': f'No position found but cancelled {cancelled_count} resting orders for {symbol}'}
+                            return {'success': False, 'error': f'No open position found for {symbol}'}
+                        else:
+                            # Buy or Sell
+                            px_side = 'Buy' if trade_side == 'buy' else 'Sell'
+                            # Parse risk settings: frontend sends take_profit/stop_loss/trail
+                            tp_list = risk_settings.get('take_profit') or []
+                            sl_cfg = risk_settings.get('stop_loss') or {}
+                            trail_cfg = risk_settings.get('trail') or {}
+                            tp_ticks = tp_list[0].get('gain_ticks', 0) if tp_list else 0
+                            sl_ticks = sl_cfg.get('loss_ticks', 0) if sl_cfg else 0
+                            trail_ticks = trail_cfg.get('activation_ticks', 0) or trail_cfg.get('offset_ticks', 0) if trail_cfg else 0
+                            # If trailing stop enabled, use it as the SL bracket with TrailingStop type
+                            use_trailing = bool(trail_ticks and int(trail_ticks) > 0)
+                            logger.info(f"ProjectX order: {px_side} {quantity} contract_id={contract_id} tp={tp_ticks} sl={sl_ticks} trail={trail_ticks}")
+                            order_data = projectx.create_market_order_with_brackets(
+                                px_account_id, contract_id, px_side, quantity,
+                                tp_ticks=int(tp_ticks) if tp_ticks else None,
+                                sl_ticks=int(trail_ticks if use_trailing else sl_ticks) if (trail_ticks or sl_ticks) else None,
+                                trailing_stop=use_trailing
+                            )
+                            result = await projectx.place_order(order_data)
+                            if result and (result.get('success') or result.get('id')):
+                                return {'success': True, 'message': f'{px_side} {quantity} {symbol} on ProjectX', 'order': result}
+                            return {'success': False, 'error': result.get('error', 'Order placement failed'), 'details': result}
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(place_projectx_trade())
+                finally:
+                    loop.close()
+
+                if result.get('success'):
+                    return jsonify(result)
+                return jsonify(result), 400
+
+            except ImportError:
+                return jsonify({'success': False, 'error': 'ProjectX integration not available'}), 500
+            except Exception as px_err:
+                logger.error(f"ProjectX manual trade error: {px_err}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return jsonify({'success': False, 'error': str(px_err)}), 500
+
+        # === Tradovate execution path ===
+        tradovate_symbol = convert_tradingview_to_tradovate_symbol(symbol, access_token=token_container['access_token'], demo=demo)
         order_side = 'Buy' if trade_side == 'buy' else 'Sell'
         if trade_side == 'close':
             order_side = 'Sell'
@@ -21146,13 +21341,14 @@ def manual_trade():
                         )
                     return result or {'success': False, 'error': 'Failed to place order'}
         
-        result = asyncio.run(place_trade())
+        result = _run_async(place_trade())
         if not result.get('success'):
             error_text = str(result.get('error', '')).lower()
             if any(msg in error_text for msg in ['access is denied', 'expired access token']):
-                refreshed = asyncio.run(refresh_tokens(force=True))
+                logger.info(f"🔄 Token expired for account {account_id}, refreshing...")
+                refreshed = do_refresh_tokens()
                 if refreshed:
-                    result = asyncio.run(place_trade())
+                    result = _run_async(place_trade())
         if not result.get('success'):
             return jsonify({'success': False, 'error': result.get('error', 'Failed to place order')}), 400
 
