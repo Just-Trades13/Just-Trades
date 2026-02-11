@@ -752,35 +752,47 @@ class PostgresConnectionWrapper:
     def __init__(self, conn, pool):
         self._conn = conn
         self._pool = pool
-    
+        self._closed = False
+
     def cursor(self):
         # Return wrapped cursor that auto-converts ? to %s
         return PostgresCursorWrapper(self._conn.cursor())
-    
+
     def execute(self, sql, params=None):
         sql = sql.replace('?', '%s')
         cursor = self._conn.cursor()
         cursor.execute(sql, params or ())
         return PostgresCursorWrapper(cursor)
-    
+
     def commit(self):
         self._conn.commit()
-    
+
     def rollback(self):
         self._conn.rollback()
-    
+
     def close(self):
+        if self._closed:
+            return
+        self._closed = True
         try:
             self._conn.rollback()  # Clear any pending transaction
         except:
             pass
-        self._pool.putconn(self._conn)
-    
+        try:
+            self._pool.putconn(self._conn)
+        except:
+            pass
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, *args):
         self.close()
+
+    def __del__(self):
+        """Safety net: if connection is garbage collected without close(), return to pool cleanly."""
+        if not self._closed:
+            self.close()
 
 def get_db_connection():
     """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite"""
