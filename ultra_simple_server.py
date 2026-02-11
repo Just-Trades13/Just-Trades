@@ -15004,69 +15004,82 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         track_signal_step(signal_id, 'STEP5D_TRADER_FOUND', {'trader_id': trader.get('id'), 'account_id': trader.get('account_id')})
         _logger.info(f"✅ Found trader: id={trader.get('id')}, account_id={trader.get('account_id')}, enabled_accounts={bool(trader.get('enabled_accounts'))}")
         
-        # CRITICAL: Use TRADER's risk settings (override recorder defaults)
-        # Trader settings take precedence ONLY if explicitly set (not None/0)
-        # None/0 = fall back to recorder defaults
-        trader_initial_size = trader.get('initial_position_size') or None
-        trader_add_size = trader.get('add_position_size') or None
-        trader_tp_targets = trader.get('tp_targets')
-        trader_sl_enabled = trader.get('sl_enabled')
-        trader_sl_amount = trader.get('sl_amount')
-        trader_sl_units = trader.get('sl_units')
+        # CRITICAL: Use TRADER's risk settings to override recorder defaults
+        # A trader setting should ONLY override the recorder when the trader
+        # has a REAL value — not a DB default like '[]', 0, or NULL.
+        # Helper: check if a trader field has a meaningful (non-default) value
+        def _has_real_value(val, empty_vals=(None, '', '[]', '{}', 0, 0.0, False)):
+            """Return True only if val is explicitly set and not a DB default."""
+            return val is not None and val not in empty_vals
 
-        # Log the mode - TP/SL from trader settings (override recorder) or recorder settings
-        signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
-        settings_source = "TRADER" if (trader_tp_targets or trader_sl_enabled is not None) else "RECORDER"
-        _logger.info(f"📊 {signal_type} SIGNAL: Will apply {settings_source} settings")
-        
-        # Override TP/SL settings with trader settings if available
-        # CRITICAL: '[]' is truthy in Python but means "no targets" — must parse before checking
-        if trader_tp_targets:
+        def _parse_tp_targets(raw):
+            """Parse tp_targets to a list, returns [] if empty/invalid."""
+            if not raw:
+                return []
             try:
-                _parsed_trader_tp = json.loads(trader_tp_targets) if isinstance(trader_tp_targets, str) else trader_tp_targets
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                return parsed if isinstance(parsed, list) else []
             except (json.JSONDecodeError, TypeError):
-                _parsed_trader_tp = []
-            if _parsed_trader_tp and len(_parsed_trader_tp) > 0:
-                tp_targets_raw = trader_tp_targets
-                _logger.info(f"📊 Using TRADER's TP targets (override recorder): {trader_tp_targets}")
-            else:
-                _logger.info(f"📊 Trader TP targets empty, falling back to RECORDER TP: {tp_targets_raw}")
-        trader_trim_units = trader.get('trim_units') if trader else None
-        if trader_trim_units:
+                return []
+
+        # --- TP Targets: only override if trader has real, non-empty targets ---
+        trader_tp_targets = trader.get('tp_targets')
+        parsed_trader_tp = _parse_tp_targets(trader_tp_targets)
+        if parsed_trader_tp and len(parsed_trader_tp) > 0:
+            tp_targets_raw = trader_tp_targets
+            _logger.info(f"📊 Using TRADER's TP targets: {trader_tp_targets}")
+        else:
+            _logger.info(f"📊 Using RECORDER TP targets (trader has none): {tp_targets_raw}")
+
+        # --- TP/Trim units: only override if trader has a non-empty string ---
+        trader_trim_units = trader.get('trim_units')
+        if trader_trim_units and trader_trim_units.strip():
             trim_units = trader_trim_units
-        trader_tp_units = trader.get('tp_units') if trader else None
-        if trader_tp_units:
+        trader_tp_units = trader.get('tp_units')
+        if trader_tp_units and trader_tp_units.strip():
             tp_units = trader_tp_units
+
+        # --- SL settings: override if trader has explicitly different values ---
+        # sl_enabled is a boolean toggle — None means "use recorder", 0/False means "explicitly off"
+        trader_sl_enabled = trader.get('sl_enabled')
         if trader_sl_enabled is not None:
             sl_enabled = trader_sl_enabled
-        if trader_sl_amount is not None:
-            sl_amount = float(trader_sl_amount or 0)
-        if trader_sl_units:
+        trader_sl_amount = trader.get('sl_amount')
+        if trader_sl_amount is not None and float(trader_sl_amount or 0) > 0:
+            sl_amount = float(trader_sl_amount)
+            _logger.info(f"📊 Using TRADER's SL amount: {sl_amount}")
+        trader_sl_units = trader.get('sl_units')
+        if trader_sl_units and trader_sl_units.strip():
             sl_units = trader_sl_units
-        
-        # Get trader's sl_type if available (check trader object)
-        if trader:
-            trader_sl_type = trader.get('sl_type')
-            if trader_sl_type:
-                sl_type = trader_sl_type
-                _logger.info(f"📊 Using TRADER's sl_type: {sl_type} (override recorder)")
-        
-        # Get trader's break-even settings if available
+
+        # --- SL Type: only override if trader has an explicit type set ---
+        trader_sl_type = trader.get('sl_type') if trader else None
+        if trader_sl_type and trader_sl_type.strip():
+            sl_type = trader_sl_type
+            _logger.info(f"📊 Using TRADER's sl_type: {sl_type}")
+
+        # --- Break-even: only override if trader has real values ---
         trader_break_even_enabled = trader.get('break_even_enabled') if trader else None
-        trader_break_even_ticks = trader.get('break_even_ticks') if trader else None
         if trader_break_even_enabled is not None:
             break_even_enabled = trader_break_even_enabled
-        if trader_break_even_ticks is not None:
-            break_even_ticks = int(trader_break_even_ticks or 10)
+        trader_break_even_ticks = trader.get('break_even_ticks') if trader else None
+        if trader_break_even_ticks is not None and int(trader_break_even_ticks or 0) > 0:
+            break_even_ticks = int(trader_break_even_ticks)
         trader_break_even_offset = trader.get('break_even_offset') if trader else None
-        if trader_break_even_offset is not None:
-            break_even_offset = int(trader_break_even_offset or 0)
+        if trader_break_even_offset is not None and int(trader_break_even_offset or 0) > 0:
+            break_even_offset = int(trader_break_even_offset)
+
+        # --- Trail settings: only override if trader has real (>0) values ---
         trader_trail_trigger = trader.get('trail_trigger') if trader else None
-        if trader_trail_trigger is not None:
-            trail_trigger = int(trader_trail_trigger or 0)
+        if trader_trail_trigger is not None and int(trader_trail_trigger or 0) > 0:
+            trail_trigger = int(trader_trail_trigger)
         trader_trail_freq = trader.get('trail_freq') if trader else None
-        if trader_trail_freq is not None:
-            trail_freq = int(trader_trail_freq or 0)
+        if trader_trail_freq is not None and int(trader_trail_freq or 0) > 0:
+            trail_freq = int(trader_trail_freq)
+
+        # Log final resolved settings
+        signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
+        _logger.info(f"📊 {signal_type} SIGNAL resolved: tp={tp_targets_raw}, sl_enabled={sl_enabled}, sl_amount={sl_amount}, sl_type={sl_type}, be={break_even_enabled}/{break_even_ticks}, trail={trail_trigger}/{trail_freq}")
 
         # ============================================================
         # TP/SL CALCULATION - Priority: Webhook > Trader > Recorder
