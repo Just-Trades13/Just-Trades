@@ -13607,8 +13607,6 @@ def broker_execution_worker(worker_id=0):
             is_long = task.get('is_long', True)
             risk_config = task.get('risk_config', {})  # NEW: Get risk_config for trailing stop/break-even
             sl_type = task.get('sl_type', 'Fixed')  # NEW: Get sl_type
-            task_tp_targets = task.get('tp_targets', None)  # Full TP targets array for multi-level
-            task_trim_units = task.get('trim_units', 'Percent')  # Trim units for multi-level TP
             queued_at = task.get('queued_at', 0)  # When signal was queued
             signal_price = task.get('signal_price', 0)  # Original signal price
             signal_id = task.get('signal_id', f'sig_broker_{uuid.uuid4().hex[:8]}')  # Pipeline tracking
@@ -13667,9 +13665,7 @@ def broker_execution_worker(worker_id=0):
                     quantity=quantity,
                     tp_ticks=tp_ticks,
                     sl_ticks=sl_ticks if sl_ticks > 0 else 0,
-                    risk_config=risk_config,  # Pass risk_config for trailing stop/break-even
-                    tp_targets=task_tp_targets,  # Multi-level TP targets array
-                    trim_units=task_trim_units  # Trim units for multi-level TP
+                    risk_config=risk_config  # NEW: Pass risk_config for trailing stop/break-even
                 )
 
                 logger.info(f"🔧 execute_trade_simple returned: success={result.get('success')}, error={result.get('error')}, accounts_traded={result.get('accounts_traded', 0)}")
@@ -13781,7 +13777,7 @@ def broker_execution_worker(worker_id=0):
                     logger.error(f"   Full result: {result}")
                     
                     # Enhanced diagnostics for common failures
-                    if error and ('No accounts to trade on' in error or 'No trader linked' in error):
+                    if 'No accounts to trade on' in error or 'No trader linked' in error:
                         logger.error(f"   🔍 DIAGNOSTIC: Checking trader configuration for recorder {recorder_id}...")
                         try:
                             conn = get_db_connection()
@@ -15861,8 +15857,6 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 'is_long': trade_side == 'LONG',
                 'risk_config': risk_config,  # NEW: Pass full risk_config for trailing stop/break-even
                 'sl_type': sl_type,  # NEW: Pass sl_type for trailing stop detection
-                'tp_targets': tp_targets,  # Full array: [{"ticks":10,"trim":50}, {"ticks":20,"trim":50}]
-                'trim_units': trim_units,  # "Percent" or "Contracts"
                 'retry_count': 0,
                 'queued_at': time.time(),  # For staleness check - reject if too old
                 'signal_price': current_price,  # Original signal price for staleness comparison
