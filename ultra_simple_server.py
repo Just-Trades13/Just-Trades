@@ -11985,6 +11985,10 @@ def api_get_traders():
                     ORDER BY t.created_at DESC
                 ''', (user_id, user_id))
         else:
+            # If auth is available but user isn't logged in, reject — don't leak all traders
+            if USER_AUTH_AVAILABLE:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
             if is_postgres:
                 cursor.execute('''
                     SELECT
@@ -12916,35 +12920,54 @@ def api_cleanup_duplicate_traders():
 def api_toggle_trader(trader_id):
     """Toggle a single trader's enabled status (per-account control)."""
     try:
+        # Auth check: require login when auth is available
+        current_user_id = None
+        if USER_AUTH_AVAILABLE:
+            if not is_logged_in():
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+            current_user_id = get_current_user_id()
+
         data = request.get_json() or {}
         enabled = data.get('enabled', False)
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         placeholder = '%s' if is_postgres else '?'
-        
-        # Get trader info
+
+        # Get trader info with ownership check
         cursor.execute(f'''
-            SELECT t.id, r.name as recorder_name, a.name as account_name
+            SELECT t.id, t.user_id, r.name as recorder_name, a.name as account_name, a.user_id as account_owner_id
             FROM traders t
             JOIN recorders r ON t.recorder_id = r.id
             JOIN accounts a ON t.account_id = a.id
             WHERE t.id = {placeholder}
         ''', (trader_id,))
-        
+
         trader = cursor.fetchone()
         if not trader:
             conn.close()
             return jsonify({'success': False, 'error': 'Trader not found'}), 404
+
+        # Ownership check: user must own the trader or the account
+        if current_user_id:
+            if hasattr(trader, 'keys'):
+                trader_owner = trader['user_id']
+                account_owner = trader['account_owner_id']
+            else:
+                trader_owner = trader[1]
+                account_owner = trader[4]
+            if current_user_id != trader_owner and current_user_id != account_owner:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Not authorized'}), 403
         
         # Get names for logging
         if hasattr(trader, 'keys'):
             recorder_name = trader['recorder_name']
             account_name = trader['account_name']
         else:
-            recorder_name = trader[1]
-            account_name = trader[2]
+            recorder_name = trader[2]
+            account_name = trader[3]
         
         # Update trader enabled status
         enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
@@ -21026,9 +21049,13 @@ def api_control_center_stats():
                     ORDER BY r.name
                 ''', (current_user_id, current_user_id))
         else:
-            # No user auth, show all recorders
+            # If auth is available but user isn't logged in, reject — don't leak all data
+            if USER_AUTH_AVAILABLE:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+            # No auth module (local dev only), show all recorders
             cursor.execute('''
-                SELECT 
+                SELECT
                     r.id,
                     r.name,
                     r.symbol,
@@ -21240,6 +21267,10 @@ def api_control_center_stats():
 def api_control_center_close_all():
     """Close all open positions on broker for all recorders and all enabled accounts"""
     try:
+        # Auth check: require login when auth is available
+        if USER_AUTH_AVAILABLE and not is_logged_in():
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -21340,6 +21371,10 @@ def api_control_center_close_all():
 def api_control_center_clear_all():
     """Clear all trade records from database (does NOT close broker positions)"""
     try:
+        # Auth check: require login when auth is available
+        if USER_AUTH_AVAILABLE and not is_logged_in():
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -21418,8 +21453,12 @@ def api_control_center_toggle_all():
             
             logger.info(f"📊 User {user_id} toggled: {recorder_count} recorders, {trader_count} traders")
         else:
-            # Fallback for non-authenticated access (legacy behavior, but log warning)
-            logger.warning("⚠️ toggle-all called without user authentication - updating ALL recorders")
+            # If auth is available but user isn't logged in, reject — don't toggle everyone's traders
+            if USER_AUTH_AVAILABLE:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+            # No auth module (local dev only), toggle all
+            logger.warning("toggle-all called without user authentication - updating ALL recorders")
             cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder}', (enabled_value,))
             recorder_count = cursor.rowcount
             cursor.execute(f'UPDATE traders SET enabled = {placeholder}', (enabled_value,))
