@@ -46,37 +46,14 @@ import secrets
 import uuid
 from datetime import datetime
 from typing import Optional, Dict, List, Set, Any, Tuple
+try:
+    from zoneinfo import ZoneInfo
+    DEFAULT_USER_TZ = ZoneInfo('America/Chicago')
+except ImportError:
+    import pytz
+    DEFAULT_USER_TZ = pytz.timezone('America/Chicago')
 from flask import Flask, request, jsonify, render_template
 from async_utils import run_async  # Safe async execution - avoids "Event loop is closed" errors
-from contextlib import contextmanager
-
-# Define logger early to be available for helper functions
-logger = logging.getLogger('trading_engine')
-
-class StepTimeout(Exception): ...
-class StepFailed(Exception): ...
-
-async def with_timeout(coro, timeout: float, step: str, meta: dict = None):
-    meta = meta or {}
-    t0 = time.perf_counter()
-    try:
-        return await asyncio.wait_for(coro, timeout=timeout)
-    except asyncio.TimeoutError as e:
-        dt = (time.perf_counter() - t0) * 1000
-        logger.error(f"TIMEOUT step={step} ms={dt:.1f} meta={meta}")
-        raise StepTimeout(f"{step} timed out after {timeout}s") from e
-    except Exception as e:
-        dt = (time.perf_counter() - t0) * 1000
-        logger.exception(f"FAILED step={step} ms={dt:.1f} meta={meta}")
-        raise StepFailed(f"{step} failed: {e}") from e
-
-@contextmanager
-def step_timer(name: str, meta: dict = None):
-    meta = meta or {}
-    t0 = time.perf_counter()
-    yield
-    dt = (time.perf_counter() - t0) * 1000
-    logger.info(f"STEP step={name} ms={dt:.1f} meta={meta}")
 
 # ============================================================================
 # Configuration
@@ -115,6 +92,21 @@ API_CALLS_PER_MINUTE_LIMIT = 5000  # Effectively disabled - rate limits are per-
 # Rate limit tracking
 _API_CALL_TIMES: List[float] = []
 _API_CALL_LOCK = threading.Lock()
+
+# ============================================================================
+# Paper Trading Redis Publisher (fire-and-forget)
+# ============================================================================
+_paper_redis = None
+try:
+    import redis as _redis_module
+    _paper_redis_url = os.environ.get('REDIS_URL')
+    if _paper_redis_url:
+        _paper_redis = _redis_module.from_url(_paper_redis_url, decode_responses=True)
+        _paper_redis.ping()
+        logging.getLogger('RecorderService').info("Paper trading Redis publisher connected")
+except Exception as _redis_err:
+    _paper_redis = None
+    logging.getLogger('RecorderService').info(f"Paper trading Redis not available (paper signals disabled): {_redis_err}")
 
 def check_rate_limit() -> bool:
     """Check if we're under rate limit. Returns True if safe to proceed."""
@@ -766,35 +758,47 @@ class PostgresConnectionWrapper:
     def __init__(self, conn, pool):
         self._conn = conn
         self._pool = pool
-    
+        self._closed = False
+
     def cursor(self):
         # Return wrapped cursor that auto-converts ? to %s
         return PostgresCursorWrapper(self._conn.cursor())
-    
+
     def execute(self, sql, params=None):
         sql = sql.replace('?', '%s')
         cursor = self._conn.cursor()
         cursor.execute(sql, params or ())
         return PostgresCursorWrapper(cursor)
-    
+
     def commit(self):
         self._conn.commit()
-    
+
     def rollback(self):
         self._conn.rollback()
-    
+
     def close(self):
+        if self._closed:
+            return
+        self._closed = True
         try:
             self._conn.rollback()  # Clear any pending transaction
         except:
             pass
-        self._pool.putconn(self._conn)
-    
+        try:
+            self._pool.putconn(self._conn)
+        except:
+            pass
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, *args):
         self.close()
+
+    def __del__(self):
+        """Safety net: if connection is garbage collected without close(), return to pool cleanly."""
+        if not self._closed:
+            self.close()
 
 def get_db_connection():
     """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite"""
@@ -809,20 +813,32 @@ def get_db_connection():
             db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
             
             if _pg_pool is None:
-                # HIVE MIND: Pool sized for 500+ concurrent account executions
-                _pg_pool = psycopg2.pool.ThreadedConnectionPool(10, 100, dsn=db_url)
-                logger.info("✅ recorder_service: PostgreSQL pool initialized (10-100 connections) - HIVE MIND ready")
+                # HIVE MIND: Pool sized for 5000+ users with concurrent account executions
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(20, 200, dsn=db_url)
+                logger.info("✅ recorder_service: PostgreSQL pool initialized (20-200 connections) - HIVE MIND ready")
             
             conn = _pg_pool.getconn()
             conn.cursor_factory = RealDictCursor
-            
+
+            # Clear any aborted transaction state (no round-trip query needed)
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection is truly dead — discard and get fresh one
+                try:
+                    _pg_pool.putconn(conn, close=True)
+                except:
+                    pass
+                conn = psycopg2.connect(db_url, connect_timeout=5)
+                conn.cursor_factory = RealDictCursor
+
             # CRITICAL: Only set is_postgres=True AFTER successful connection
             # This ensures we use correct placeholder (? vs %s)
             if not _is_postgres_verified:
                 is_postgres = True
                 _is_postgres_verified = True
                 logger.info("✅ recorder_service: PostgreSQL verified, using %s placeholders")
-            
+
             return PostgresConnectionWrapper(conn, _pg_pool)
         except ImportError:
             logger.warning("⚠️ psycopg2 not installed, using SQLite")
@@ -890,24 +906,6 @@ def execute_trade_simple(
     sl_info = f", SL: {sl_ticks} ticks" if sl_ticks > 0 else " (no SL)"
     logger.info(f"🎯 SIMPLE EXECUTE: {action} {quantity} {ticker} (TP: {tp_ticks} ticks{sl_info})")
     
-    # DIAGNOSTIC LOGGING: Log EXACTLY what settings are being used
-    logger.info(f"📊 EXECUTING: recorder_id={recorder_id}, action={action}, ticker={ticker}")
-    logger.info(f"   TP: {tp_ticks} ticks")
-    logger.info(f"   SL: {sl_ticks} ticks")
-    logger.info(f"   Quantity: {quantity}")
-    
-    if risk_config:
-        trail_cfg = risk_config.get('trail')
-        break_even_cfg = risk_config.get('break_even')
-        logger.info(f"   Trailing: {trail_cfg}")
-        logger.info(f"   Break-even: {break_even_cfg}")
-    else:
-        logger.info(f"   Risk Config: None (Trailing/Break-even disabled)")
-    
-    # Generate unique execution ID for idempotency and tracing
-    execution_uuid = str(uuid.uuid4())
-    logger.info(f"🆔 Execution UUID: {execution_uuid}")
-    
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -970,6 +968,67 @@ def execute_trade_simple(
         trader_rows = cursor.fetchall()
         logger.info(f"📋 {len(trader_rows)} trader(s) with valid accounts ready for execution")
 
+        # --- BATCH PRE-FETCH: Avoid repeated identical queries inside the trader loop ---
+        # 1) Pre-fetch daily P&L for this recorder (max_daily_loss filter queries this per-trader but it's the same result)
+        _cached_daily_pnl = None
+        try:
+            if is_postgres:
+                cursor.execute('''
+                    SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                    WHERE recorder_id = %s AND exit_time::date = CURRENT_DATE AND status = 'closed'
+                ''', (recorder_id,))
+            else:
+                cursor.execute('''
+                    SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                    WHERE recorder_id = ? AND DATE(exit_time) = DATE('now') AND status = 'closed'
+                ''', (recorder_id,))
+            _cached_daily_pnl = cursor.fetchone()[0] or 0
+        except Exception:
+            pass  # Will fall back to per-trader query
+
+        # 2) Pre-fetch ALL account credentials in one query (avoid N+1 queries per account)
+        _cached_account_creds = {}
+        try:
+            all_acct_ids = set()
+            for _tr in trader_rows:
+                _trd = dict(_tr)
+                _ea_raw = _trd.get('enabled_accounts')
+                if _ea_raw and _ea_raw != '[]':
+                    try:
+                        _ea_list = json.loads(_ea_raw) if isinstance(_ea_raw, str) else _ea_raw
+                        for _a in (_ea_list if isinstance(_ea_list, list) else []):
+                            _aid = _a.get('account_id')
+                            if _aid:
+                                all_acct_ids.add(_aid)
+                    except:
+                        pass
+                _legacy_aid = _trd.get('account_id')
+                if _legacy_aid:
+                    all_acct_ids.add(_legacy_aid)
+            if all_acct_ids:
+                id_list = ','.join(str(int(x)) for x in all_acct_ids)
+                cursor.execute(f'SELECT id, tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm, tradovate_refresh_token, token_expires_at FROM accounts WHERE id IN ({id_list})')
+                for _row in cursor.fetchall():
+                    _cached_account_creds[dict(_row)['id']] = dict(_row)
+                logger.info(f"⚡ Pre-fetched {len(_cached_account_creds)} account credentials in 1 query")
+        except Exception as _pf_err:
+            logger.warning(f"⚠️ Account pre-fetch failed, will query per-account: {_pf_err}")
+
+        # 3) Pre-fetch user timezone for time filter (1 query)
+        _cached_user_tz = DEFAULT_USER_TZ
+        try:
+            cursor.execute(f'SELECT u.settings_json FROM recorders r JOIN users u ON r.user_id = u.id WHERE r.id = {placeholder}', (recorder_id,))
+            _tz_row = cursor.fetchone()
+            if _tz_row:
+                _tz_json = _tz_row['settings_json'] if hasattr(_tz_row, 'keys') else _tz_row[0]
+                if _tz_json:
+                    _tz_settings = json.loads(_tz_json) if isinstance(_tz_json, str) else _tz_json
+                    _tz_name = _tz_settings.get('timezone')
+                    if _tz_name:
+                        _cached_user_tz = ZoneInfo(_tz_name)
+        except Exception:
+            pass  # Default to Chicago
+
         for trader_idx, trader_row in enumerate(trader_rows):
             trader_dict = dict(trader_row)
             trader_id = trader_dict.get('id')
@@ -978,9 +1037,16 @@ def execute_trade_simple(
             acct_id = trader_dict.get('account_id')
             logger.info(f"📋 Processing Trader #{trader_idx + 1}: ID={trader_id}, Name={trader_dict.get('name', 'unnamed')}")
 
+            # --- CLOSE/EXIT signals BYPASS ALL filters ---
+            # A CLOSE must always go through to protect the user's capital.
+            # Filters only apply to new entries (BUY/SELL).
+            is_close_signal = action.upper() in ('CLOSE', 'FLATTEN', 'EXIT', 'FLAT')
+            if is_close_signal:
+                logger.info(f"🚨 Trader {trader_id}: CLOSE signal — bypassing all filters")
+
             # --- TRADER-LEVEL DELAY FILTER (Nth Signal) ---
             trader_add_delay = int(trader_dict.get('add_delay', 1) or 1)
-            if trader_add_delay > 1:
+            if not is_close_signal and trader_add_delay > 1:
                 # Get and increment signal count for this trader
                 trader_signal_count = int(trader_dict.get('signal_count', 0) or 0) + 1
                 # Update the signal count in database and commit immediately
@@ -999,66 +1065,54 @@ def execute_trade_simple(
 
             # --- TRADER-LEVEL SIGNAL COOLDOWN FILTER ---
             trader_cooldown = int(trader_dict.get('signal_cooldown', 0) or 0)
-            if trader_cooldown > 0:
-                try:
-                    # Check last trade time for this trader (PostgreSQL vs SQLite compatible)
-                    if is_postgres:
-                        cursor.execute(f'''
-                            SELECT MAX(entry_time) FROM recorded_trades
-                            WHERE recorder_id = %s AND entry_time > NOW() - INTERVAL '{trader_cooldown} seconds'
-                        ''', (recorder_id,))
-                    else:
-                        cursor.execute(f'''
-                            SELECT MAX(entry_time) FROM recorded_trades
-                            WHERE recorder_id = ? AND entry_time > datetime('now', '-{trader_cooldown} seconds')
-                        ''', (recorder_id,))
-                    last_trade = cursor.fetchone()
-                    if last_trade and last_trade[0]:
-                        logger.info(f"⏭️ Trader {trader_id} cooldown SKIPPED: Last trade within {trader_cooldown}s")
-                        continue
-                    logger.info(f"✅ Trader {trader_id} cooldown passed: {trader_cooldown}s")
-                except Exception as cool_err:
-                    logger.warning(f"⚠️ Trader cooldown check failed: {cool_err}")
+            if not is_close_signal and trader_cooldown > 0:
+                last_trade_str = trader_dict.get('last_trade_time')
+                if last_trade_str:
+                    try:
+                        last_trade_dt = datetime.fromisoformat(last_trade_str)
+                        elapsed = (datetime.utcnow() - last_trade_dt).total_seconds()
+                        if elapsed < trader_cooldown:
+                            logger.info(f"⏭️ Trader {trader_id} cooldown SKIPPED: {elapsed:.0f}s / {trader_cooldown}s")
+                            continue
+                        logger.info(f"✅ Trader {trader_id} cooldown passed: {elapsed:.0f}s / {trader_cooldown}s")
+                    except Exception as cool_err:
+                        logger.warning(f"⚠️ Trader cooldown parse failed: {cool_err}")
+                else:
+                    logger.info(f"✅ Trader {trader_id} cooldown passed: no previous trade")
 
             # --- TRADER-LEVEL MAX SIGNALS PER SESSION FILTER ---
             trader_max_signals = int(trader_dict.get('max_signals_per_session', 0) or 0)
-            if trader_max_signals > 0:
-                try:
-                    # PostgreSQL vs SQLite compatible date comparison
-                    if is_postgres:
-                        cursor.execute('''
-                            SELECT COUNT(*) FROM recorded_trades
-                            WHERE recorder_id = %s AND entry_time::date = CURRENT_DATE
-                        ''', (recorder_id,))
-                    else:
-                        cursor.execute('''
-                            SELECT COUNT(*) FROM recorded_trades
-                            WHERE recorder_id = ? AND DATE(entry_time) = DATE('now')
-                        ''', (recorder_id,))
-                    today_trades = cursor.fetchone()[0] or 0
-                    if today_trades >= trader_max_signals:
-                        logger.info(f"⏭️ Trader {trader_id} max signals SKIPPED: {today_trades}/{trader_max_signals} today")
-                        continue
-                    logger.info(f"✅ Trader {trader_id} max signals passed: {today_trades}/{trader_max_signals}")
-                except Exception as max_err:
-                    logger.warning(f"⚠️ Trader max signals check failed: {max_err}")
+            if not is_close_signal and trader_max_signals > 0:
+                today_str = datetime.utcnow().strftime('%Y-%m-%d')
+                trader_today_date = trader_dict.get('today_signal_date', '') or ''
+                if trader_today_date == today_str:
+                    today_count = int(trader_dict.get('today_signal_count', 0) or 0)
+                else:
+                    today_count = 0  # New day, count resets
+                if today_count >= trader_max_signals:
+                    logger.info(f"⏭️ Trader {trader_id} max signals SKIPPED: {today_count}/{trader_max_signals} today")
+                    continue
+                logger.info(f"✅ Trader {trader_id} max signals passed: {today_count}/{trader_max_signals}")
 
-            # --- TRADER-LEVEL MAX DAILY LOSS FILTER ---
+            # --- RECORDER-LEVEL MAX DAILY LOSS FILTER (intentionally shared — strategy circuit breaker) ---
             trader_max_loss = float(trader_dict.get('max_daily_loss', 0) or 0)
-            if trader_max_loss > 0:
+            if not is_close_signal and trader_max_loss > 0:
                 try:
-                    # PostgreSQL vs SQLite compatible date comparison
-                    if is_postgres:
+                    # Use pre-fetched daily P&L if available (avoids repeated identical query)
+                    if _cached_daily_pnl is not None:
+                        daily_pnl = _cached_daily_pnl
+                    elif is_postgres:
                         cursor.execute('''
                             SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
                             WHERE recorder_id = %s AND exit_time::date = CURRENT_DATE AND status = 'closed'
                         ''', (recorder_id,))
+                        daily_pnl = cursor.fetchone()[0] or 0
                     else:
                         cursor.execute('''
                             SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
                             WHERE recorder_id = ? AND DATE(exit_time) = DATE('now') AND status = 'closed'
                         ''', (recorder_id,))
-                    daily_pnl = cursor.fetchone()[0] or 0
+                        daily_pnl = cursor.fetchone()[0] or 0
                     if daily_pnl <= -trader_max_loss:
                         logger.info(f"⏭️ Trader {trader_id} max daily loss SKIPPED: ${daily_pnl:.2f} (limit: -${trader_max_loss})")
                         continue
@@ -1077,10 +1131,10 @@ def execute_trade_simple(
             has_trader_time_1 = trader_time_1_enabled and trader_time_1_start and trader_time_1_stop
             has_trader_time_2 = trader_time_2_enabled and trader_time_2_start and trader_time_2_stop
 
-            if has_trader_time_1 or has_trader_time_2:
+            if not is_close_signal and (has_trader_time_1 or has_trader_time_2):
                 from datetime import datetime
                 try:
-                    now = datetime.now()
+                    now = datetime.now(_cached_user_tz)
                     current_time = now.time()
 
                     def parse_time_str(t_str):
@@ -1114,6 +1168,21 @@ def execute_trade_simple(
                 except Exception as time_err:
                     logger.warning(f"⚠️ Trader time filter check failed: {time_err}")
 
+            # --- UPDATE PER-TRADER TRACKING (cooldown + daily signal count) ---
+            try:
+                now_utc = datetime.utcnow().isoformat()
+                today_str = datetime.utcnow().strftime('%Y-%m-%d')
+                trader_today_date = trader_dict.get('today_signal_date', '') or ''
+                if trader_today_date == today_str:
+                    new_count = int(trader_dict.get('today_signal_count', 0) or 0) + 1
+                else:
+                    new_count = 1
+                cursor.execute(f'UPDATE traders SET last_trade_time = {placeholder}, today_signal_count = {placeholder}, today_signal_date = {placeholder} WHERE id = {placeholder}',
+                               (now_utc, new_count, today_str, trader_id))
+                conn.commit()
+            except Exception as track_err:
+                logger.warning(f"⚠️ Could not update trader tracking: {track_err}")
+
             # enabled_accounts_raw already extracted at top of loop (early exit check)
 
             # Check if this trader has enabled_accounts JSON (multi-account feature)
@@ -1145,9 +1214,13 @@ def execute_trade_simple(
                         # Get credentials from accounts table (includes broker type for routing)
                         # CRITICAL: Include environment - source of truth for demo vs live
                         # Include ProjectX-specific fields for TopstepX/Apex routing
-                        placeholder = '%s' if is_postgres else '?'
-                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm FROM accounts WHERE id = {placeholder}', (acct_id,))
-                        creds_row = cursor.fetchone()
+                        # Use pre-fetched cache if available (avoids N+1 queries)
+                        if acct_id in _cached_account_creds:
+                            creds_row = _cached_account_creds[acct_id]
+                        else:
+                            placeholder = '%s' if is_postgres else '?'
+                            cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm FROM accounts WHERE id = {placeholder}', (acct_id,))
+                            creds_row = cursor.fetchone()
                         
                         if not creds_row:
                             logger.warning(f"⚠️ Account {acct_id} not found in accounts table - skipping {subaccount_name}")
@@ -1193,11 +1266,46 @@ def execute_trade_simple(
                                 'api_key': creds.get('api_key'),
                                 'broker': broker_type,  # 'Tradovate' or 'ProjectX'
                                 'account_id': acct_id,
-                                'multiplier': multiplier,  # Store multiplier for this account
+                                'multiplier': multiplier,
                                 # ProjectX-specific fields for TopstepX/Apex
                                 'projectx_username': creds.get('projectx_username'),
                                 'projectx_api_key': creds.get('projectx_api_key'),
                                 'projectx_prop_firm': creds.get('projectx_prop_firm'),
+                                # Risk settings (trailing stop, break-even, TP targets)
+                                'sl_type': trader_dict.get('sl_type'),
+                                'sl_amount': trader_dict.get('sl_amount'),
+                                'sl_enabled': trader_dict.get('sl_enabled'),
+                                'trail_trigger': trader_dict.get('trail_trigger'),
+                                'trail_freq': trader_dict.get('trail_freq'),
+                                'tp_targets': trader_dict.get('tp_targets'),
+                                'break_even_enabled': trader_dict.get('break_even_enabled'),
+                                'break_even_ticks': trader_dict.get('break_even_ticks'),
+                                'break_even_offset': trader_dict.get('break_even_offset'),
+                                # Position sizes (trader overrides)
+                                'initial_position_size': trader_dict.get('initial_position_size'),
+                                'add_position_size': trader_dict.get('add_position_size'),
+                                'recorder_id': trader_dict.get('recorder_id'),
+                                # DCA and filter settings
+                                'dca_enabled': trader_dict.get('dca_enabled'),
+                                'avg_down_amount': trader_dict.get('avg_down_amount'),
+                                'avg_down_point': trader_dict.get('avg_down_point'),
+                                'avg_down_units': trader_dict.get('avg_down_units'),
+                                'trim_units': trader_dict.get('trim_units'),
+                                'tp_units': trader_dict.get('tp_units'),
+                                'max_contracts': trader_dict.get('max_contracts'),
+                                'custom_ticker': trader_dict.get('custom_ticker'),
+                                'add_delay': trader_dict.get('add_delay'),
+                                'signal_cooldown': trader_dict.get('signal_cooldown'),
+                                'max_signals_per_session': trader_dict.get('max_signals_per_session'),
+                                'max_daily_loss': trader_dict.get('max_daily_loss'),
+                                'signal_count': trader_dict.get('signal_count'),
+                                # Time filter settings
+                                'time_filter_1_enabled': trader_dict.get('time_filter_1_enabled'),
+                                'time_filter_1_start': trader_dict.get('time_filter_1_start'),
+                                'time_filter_1_stop': trader_dict.get('time_filter_1_stop'),
+                                'time_filter_2_enabled': trader_dict.get('time_filter_2_enabled'),
+                                'time_filter_2_start': trader_dict.get('time_filter_2_start'),
+                                'time_filter_2_stop': trader_dict.get('time_filter_2_stop'),
                             })
                             logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type}, Env: {env})")
                 except Exception as e:
@@ -1209,9 +1317,13 @@ def execute_trade_simple(
                 acct_id = trader_dict.get('account_id')
                 if subaccount_id and subaccount_id not in seen_subaccounts and acct_id:
                     # Fetch credentials from accounts table (same as enabled_accounts mode)
-                    placeholder = '%s' if is_postgres else '?'
-                    cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm, tradovate_refresh_token, token_expires_at FROM accounts WHERE id = {placeholder}', (acct_id,))
-                    creds_row = cursor.fetchone()
+                    # Use pre-fetched cache if available (avoids N+1 queries)
+                    if acct_id in _cached_account_creds:
+                        creds_row = _cached_account_creds[acct_id]
+                    else:
+                        placeholder = '%s' if is_postgres else '?'
+                        cursor.execute(f'SELECT tradovate_token, username, password, broker, api_key, environment, projectx_username, projectx_api_key, projectx_prop_firm, tradovate_refresh_token, token_expires_at FROM accounts WHERE id = {placeholder}', (acct_id,))
+                        creds_row = cursor.fetchone()
 
                     if creds_row:
                         creds = dict(creds_row)
@@ -1395,13 +1507,29 @@ def execute_trade_simple(
             adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
             broker_type = trader.get('broker', 'Tradovate')  # Default to Tradovate
             is_dca_local = False  # Track if this is a DCA add (set True when same direction as existing position)
-            meta = {"acct": acct_name, "ticker": ticker, "action": action}  # Timing metadata for step_timer/with_timeout
+
+            # ============================================================
+            # CUSTOM TICKER OVERRIDE - Trade different instrument than signal
+            # If trader has custom_ticker set, use that instead of signal ticker
+            # Example: Signal is MNQ but trader wants to trade ES instead
+            # ============================================================
+            custom_ticker = (trader.get('custom_ticker') or '').strip()
+            if custom_ticker:
+                logger.info(f"🔄 [{acct_name}] CUSTOM TICKER: {ticker} → {custom_ticker}")
+                effective_ticker = custom_ticker
+            else:
+                effective_ticker = ticker
+
+            # Recalculate symbol info for effective_ticker (may differ from signal ticker)
+            local_symbol_root = effective_ticker[:3].upper() if effective_ticker else 'MNQ'
+            local_tick_size = TICK_SIZES.get(local_symbol_root, 0.25)
+            local_tradovate_symbol = convert_ticker_to_tradovate(effective_ticker)
 
             # NOTE: Don't check is_account_auth_valid upfront - let auth logic handle it
             # The account might work via cached token, API Access, or OAuth fallback
             # If ALL methods fail, auth logic will return the appropriate error
-            
-            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type})")
+
+            logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type}, Symbol: {local_tradovate_symbol})")
             
             # ============================================================
             # BROKER ROUTING - ProjectX vs Tradovate (Added Jan 2026)
@@ -1609,15 +1737,7 @@ def execute_trade_simple(
                 pooled_conn = None
                 try:
                     # Try to get pooled WebSocket connection
-                    # FIX: Add timeout and timer
-                    with step_timer("get_connection", meta):
-                        pooled_conn = await with_timeout(
-                            get_pooled_connection(tradovate_account_id, is_demo, access_token),
-                            timeout=5.0,
-                            step="get_pooled_connection",
-                            meta=meta
-                        )
-                    
+                    pooled_conn = await get_pooled_connection(tradovate_account_id, is_demo, access_token)
                     if pooled_conn:
                         tradovate = pooled_conn
                         logger.debug(f"⚡ [{acct_name}] Using POOLED WebSocket connection")
@@ -1634,9 +1754,6 @@ def execute_trade_simple(
                     tradovate.access_token = access_token
                 
                 try:
-                    # Generate Idempotency Key
-                    idempo_key = f"exec:{execution_uuid}:acct:{acct_id}:act:{action}"
-                    
                     # STEP 0: Check if this is a new entry or DCA (adding to position)
                     order_action = 'Buy' if action == 'BUY' else 'Sell'
                     record_api_call()  # Track API calls for rate limiting
@@ -1646,22 +1763,14 @@ def execute_trade_simple(
                         logger.info(f"📊 [{acct_name}] Applying multiplier: {quantity} × {account_multiplier} = {adjusted_quantity} contracts")
                     
                     # Check existing position first
-                    # FIX: Add timeout and timer
-                    with step_timer("check_position", meta):
-                        existing_positions = await with_timeout(
-                            tradovate.get_positions(account_id=tradovate_account_id),
-                            timeout=8.0,
-                            step="get_positions",
-                            meta=meta
-                        )
-                    
+                    existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
                     has_existing_position = False
                     existing_position_side = None
                     existing_position_qty = 0
                     for pos in existing_positions:
                         pos_symbol = str(pos.get('symbol', '')).upper()
                         net_pos = pos.get('netPos', 0)
-                        if symbol_root in pos_symbol and net_pos != 0:
+                        if local_symbol_root in pos_symbol and net_pos != 0:
                             has_existing_position = True
                             existing_position_side = 'LONG' if net_pos > 0 else 'SHORT'
                             existing_position_qty = abs(net_pos)
@@ -1675,7 +1784,9 @@ def execute_trade_simple(
 
                         if signal_side == existing_position_side:
                             # SAME DIRECTION - Check if trader has DCA enabled
-                            trader_dca_enabled = bool(trader.get('dca_enabled', False))
+                            # If trader.dca_enabled is None (not explicitly set), inherit from recorder.avg_down_enabled
+                            raw_dca = trader.get('dca_enabled')
+                            trader_dca_enabled = bool(raw_dca) if raw_dca is not None else avg_down_enabled
                             if trader_dca_enabled:
                                 # DCA MODE ON: Cancel+replace TP, get new avg from broker
                                 logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty} (dca_enabled=ON)")
@@ -1721,6 +1832,7 @@ def execute_trade_simple(
                     if use_bracket_order:
                         # Extract native break-even and autoTrail settings from risk_config
                         break_even_ticks = None
+                        break_even_offset = None
                         auto_trail = None
                         trailing_stop_bool = False
                         
@@ -1748,7 +1860,7 @@ def execute_trade_simple(
                                 if offset_ticks and activation_ticks and activation_ticks != offset_ticks:
                                     # Trail-after-profit: Use autoTrail (starts trailing after profit threshold)
                                     # freq = how often to update (in price units, not ticks)
-                                    trail_freq = (frequency_ticks * tick_size) if frequency_ticks else (tick_size * 0.25)
+                                    trail_freq = (frequency_ticks * local_tick_size) if frequency_ticks else (local_tick_size * 0.25)
                                     auto_trail = {
                                         'stopLoss': offset_ticks,  # Trailing distance
                                         'trigger': activation_ticks,  # Profit threshold to start trailing
@@ -1766,30 +1878,19 @@ def execute_trade_simple(
                         trail_log = f" + Trail" if auto_trail or trailing_stop_bool else ""
                         logger.info(f"📤 [{acct_name}] Using NATIVE BRACKET ORDER (WebSocket) - Entry + TP{sl_log}{be_log}{trail_log} in one call")
                         
-                        # Trailing Stop Safety Check
-                        if sl_type == 'Trailing' and not risk_config.get('trail'):
-                            # Fail loudly as requested to prevent silent skipping
-                            raise ValueError(f"Trailing stop requested (sl_type=Trailing) but risk_config['trail'] is missing! RecID={recorder_id}")
-
-                        # Add timeout to place_bracket_order
-                        with step_timer("place_bracket", meta):
-                            bracket_result = await with_timeout(
-                                tradovate.place_bracket_order(
-                                    account_id=tradovate_account_id,
-                                    account_spec=tradovate_account_spec,
-                                    symbol=tradovate_symbol,
-                                    entry_side=order_action,
-                                    quantity=adjusted_quantity,
-                                    profit_target_ticks=tp_ticks,
-                                    stop_loss_ticks=sl_ticks if sl_ticks > 0 else None,  # Only place SL if configured
-                                    trailing_stop=trailing_stop_bool,  # Immediate trailing (boolean)
-                                    break_even_ticks=break_even_ticks,  # Native break-even
-                                    auto_trail=auto_trail  # Native trailing-after-profit
-                                ),
-                                timeout=15.0,
-                                step="place_bracket_order",
-                                meta=meta
-                            )
+                        bracket_result = await tradovate.place_bracket_order(
+                            account_id=tradovate_account_id,
+                            account_spec=tradovate_account_spec,
+                            symbol=local_tradovate_symbol,
+                            entry_side=order_action,
+                            quantity=adjusted_quantity,
+                            profit_target_ticks=tp_ticks,
+                            stop_loss_ticks=sl_ticks if sl_ticks > 0 else None,  # Only place SL if configured
+                            trailing_stop=trailing_stop_bool,  # Immediate trailing (boolean)
+                            break_even_ticks=break_even_ticks,  # Native break-even
+                            break_even_offset=break_even_offset,  # Offset beyond entry for breakevenPlus
+                            auto_trail=auto_trail  # Native trailing-after-profit
+                        )
                         
                         if bracket_result and bracket_result.get('success'):
                             strategy_id = bracket_result.get('orderStrategyId') or bracket_result.get('id')
@@ -1832,23 +1933,12 @@ def execute_trade_simple(
                     # FALLBACK: REST API for DCA or if bracket fails
                     # STEP 1: Place market order via REST
                     order_data = tradovate.create_market_order(
-                        tradovate_account_spec, tradovate_symbol, 
+                        tradovate_account_spec, local_tradovate_symbol,
                         order_action, adjusted_quantity, tradovate_account_id
                     )
-                    
-                    logger.info(f"📤 [{acct_name}] Placing {order_action} {adjusted_quantity} {tradovate_symbol}...")
-                    
-                    # Add idempotency key to prevent double-firing on retry
-                    order_data['clientOrderId'] = idempo_key
-                    
-                    # Add timeout to place_order_smart
-                    with step_timer("place_market_order", meta):
-                        order_result = await with_timeout(
-                            tradovate.place_order_smart(order_data),
-                            timeout=10.0,
-                            step="place_market_order",
-                            meta=meta
-                        )
+
+                    logger.info(f"📤 [{acct_name}] Placing {order_action} {adjusted_quantity} {local_tradovate_symbol}...")
+                    order_result = await tradovate.place_order_smart(order_data)
                     
                     if not order_result or not order_result.get('success'):
                         error = order_result.get('error', 'Order failed') if order_result else 'No response'
@@ -1892,11 +1982,12 @@ def execute_trade_simple(
                     # For DCA: ALWAYS fetch broker position to get NEW weighted average price
                     if broker_avg and not is_dca_local:
                         logger.info(f"📊 [{acct_name}] Using fill price from order result: {broker_side} {broker_qty} @ {broker_avg} (0 extra API calls!)")
-                    elif is_dca_local:
-                        logger.info(f"📊 [{acct_name}] DCA: Fetching broker position for new weighted average price...")
-                        broker_avg = None  # Force position fetch to get new average
                     else:
-                        # Only fetch position if we don't have fill price
+                        # Fetch position from broker - needed for DCA (weighted avg) or when no fill price
+                        if is_dca_local:
+                            logger.info(f"📊 [{acct_name}] DCA: Fetching broker position for new weighted average price...")
+                            broker_avg = None  # Force position fetch to get new average
+
                         # RETRY LOGIC: Try up to 3 times with delays to get fill price
                         # This is critical for TP/SL placement - without a valid price, orders will fail
                         max_position_retries = 3
@@ -1908,7 +1999,7 @@ def execute_trade_simple(
 
                             for pos in positions:
                                 pos_symbol = str(pos.get('symbol', '')).upper()
-                                if symbol_root in pos_symbol:
+                                if local_symbol_root in pos_symbol:
                                     net_pos = pos.get('netPos', 0)
                                     if net_pos != 0:
                                         broker_avg = pos.get('netPrice')
@@ -1949,21 +2040,15 @@ def execute_trade_simple(
                             from ultra_simple_server import apply_risk_orders
                             
                             # Call apply_risk_orders (it will handle TP, SL, trailing stop, break-even)
-                            with step_timer("apply_risk_orders", meta):
-                                await with_timeout(
-                                    apply_risk_orders(
-                                        tradovate=tradovate,
-                                        account_spec=tradovate_account_spec,
-                                        account_id=tradovate_account_id,
-                                        symbol=tradovate_symbol,
-                                        entry_side=order_action,
-                                        quantity=adjusted_quantity,
-                                        risk_config=risk_config
-                                    ),
-                                    timeout=20.0,  # Longer timeout for multi-step risk orders
-                                    step="apply_risk_orders",
-                                    meta=meta
-                                )
+                            await apply_risk_orders(
+                                tradovate=tradovate,
+                                account_spec=tradovate_account_spec,
+                                account_id=tradovate_account_id,
+                                symbol=local_tradovate_symbol,
+                                entry_side=order_action,
+                                quantity=adjusted_quantity,
+                                risk_config=risk_config
+                            )
                             logger.info(f"✅ [{acct_name}] apply_risk_orders completed (trailing stop/break-even configured)")
                             
                             # Skip manual TP/SL placement since apply_risk_orders handled it
@@ -2002,18 +2087,21 @@ def execute_trade_simple(
                             logger.error(f"   Position is UNPROTECTED - manually set TP in broker!")
                         else:
                             if broker_side == 'LONG':
-                                tp_price = broker_avg + (tp_ticks * tick_size)
+                                tp_price_raw = broker_avg + (tp_ticks * local_tick_size)
                                 tp_action = 'Sell'
                             else:
-                                tp_price = broker_avg - (tp_ticks * tick_size)
+                                tp_price_raw = broker_avg - (tp_ticks * local_tick_size)
                                 tp_action = 'Buy'
+                            # CRITICAL: Round to nearest valid tick increment
+                            # DCA averages produce fractional prices (e.g. 25074.805) that Tradovate rejects
+                            tp_price = round(round(tp_price_raw / local_tick_size) * local_tick_size, 10)
 
                             # Validate the calculated TP price is reasonable
                             if tp_price <= 0:
                                 logger.error(f"❌ [{acct_name}] INVALID TP PRICE: {tp_price} - skipping TP placement")
                                 tp_price = None
                             else:
-                                logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{tick_size}) = {tp_price}")
+                                logger.info(f"🎯 [{acct_name}] TP: {broker_avg} {'+' if broker_side=='LONG' else '-'} ({tp_ticks}×{local_tick_size}) = {tp_price} (rounded from {tp_price_raw})")
                     else:
                         logger.info(f"🎯 [{acct_name}] TP DISABLED (tp_ticks=0) - letting strategy handle exit")
                     
@@ -2028,23 +2116,30 @@ def execute_trade_simple(
                         # OPTIMIZATION: For NEW entries (no existing position), skip order lookup - just place TP
                         logger.info(f"📊 [{acct_name}] NEW ENTRY - placing TP directly (0 extra API calls)")
                     else:
-                        # OPTIMIZATION: Check DB first for stored tp_order_id (no API call!)
-                        try:
-                            tp_lookup_conn = get_db_connection()
-                            tp_lookup_cursor = tp_lookup_conn.cursor()
-                            tp_lookup_cursor.execute('''
-                                SELECT tp_order_id FROM recorded_trades 
-                                WHERE recorder_id = ? AND ticker LIKE ? AND status = 'open' AND tp_order_id IS NOT NULL
-                                ORDER BY entry_time DESC LIMIT 1
-                            ''', (recorder_id, f'%{symbol_root}%'))
-                            tp_row = tp_lookup_cursor.fetchone()
-                            if tp_row and tp_row['tp_order_id']:
-                                existing_tp_id = int(tp_row['tp_order_id'])
-                                logger.info(f"🔍 [{acct_name}] Found stored TP order {existing_tp_id} in DB (0 API calls!)")
-                            tp_lookup_conn.close()
-                        except Exception as e:
-                            logger.debug(f"[{acct_name}] Could not check DB for TP: {e}")
-                        
+                        # MULTI-ACCOUNT FIX: Skip DB tp_order_id lookup — recorded_trades has no
+                        # subaccount_id column, so the stored tp_order_id could belong to ANY account
+                        # trading this recorder. Instead, always use broker query (per-account correct).
+                        if is_dca_local:
+                            logger.info(f"📊 [{acct_name}] DCA: Skipping DB TP lookup (multi-account unsafe) - will cancel via broker query")
+                        else:
+                            # Non-DCA: DB lookup is still useful as a hint for single-account recorders
+                            try:
+                                tp_lookup_conn = get_db_connection()
+                                tp_lookup_cursor = tp_lookup_conn.cursor()
+                                tp_ph = '%s' if is_postgres else '?'
+                                tp_lookup_cursor.execute(f'''
+                                    SELECT tp_order_id FROM recorded_trades
+                                    WHERE recorder_id = {tp_ph} AND ticker LIKE {tp_ph} AND status = 'open' AND tp_order_id IS NOT NULL
+                                    ORDER BY entry_time DESC LIMIT 1
+                                ''', (recorder_id, f'%{local_symbol_root}%'))
+                                tp_row = tp_lookup_cursor.fetchone()
+                                if tp_row and tp_row['tp_order_id']:
+                                    existing_tp_id = int(tp_row['tp_order_id'])
+                                    logger.info(f"🔍 [{acct_name}] Found stored TP order {existing_tp_id} in DB (hint only)")
+                                tp_lookup_conn.close()
+                            except Exception as e:
+                                logger.debug(f"[{acct_name}] Could not check DB for TP: {e}")
+
                         # DCA: ALWAYS cancel and replace (modify is unreliable per Tradovate forum)
                         # Non-DCA: Try modify first
                         if existing_tp_id:
@@ -2083,8 +2178,7 @@ def execute_trade_simple(
                         # This prevents duplicates (especially after bracket orders where strategy ID != order ID)
                         logger.info(f"🗑️ [{acct_name}] Checking for existing TPs on broker before placing new...")
                         try:
-                            # Add timeout to get_orders
-                            all_orders = await asyncio.wait_for(tradovate.get_orders(account_id=str(tradovate_account_id)), timeout=10.0)
+                            all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
                             for order in (all_orders or []):
                                 order_status = str(order.get('ordStatus', '')).upper()
                                 order_action_check = order.get('action', '')
@@ -2094,14 +2188,7 @@ def execute_trade_simple(
                                 if order_status in ['WORKING', 'NEW', 'PENDINGNEW'] and order_action_check == tp_action and order_id_check:
                                     logger.info(f"🗑️ [{acct_name}] Cancelling existing TP {order_id_check} @ {order.get('price')} before placing new")
                                     try:
-                                        # Add timeout to cancel_order_smart
-                                        with step_timer("cancel_old_tp", meta):
-                                            await with_timeout(
-                                                tradovate.cancel_order_smart(int(order_id_check)),
-                                                timeout=5.0,
-                                                step="cancel_old_tp",
-                                                meta=meta
-                                            )
+                                        await tradovate.cancel_order_smart(int(order_id_check))
                                         await asyncio.sleep(0.1)
                                     except Exception as cancel_err:
                                         logger.warning(f"⚠️ [{acct_name}] Could not cancel order {order_id_check}: {cancel_err}")
@@ -2112,7 +2199,7 @@ def execute_trade_simple(
                         tp_order_data = {
                             "accountId": tradovate_account_id,
                             "accountSpec": tradovate_account_spec,
-                            "symbol": tradovate_symbol,
+                            "symbol": local_tradovate_symbol,
                             "action": tp_action,
                             "orderQty": broker_qty,
                             "orderType": "Limit",
@@ -2128,34 +2215,21 @@ def execute_trade_simple(
                         tp_placed = False
                         
                         for tp_attempt in range(max_attempts):
-                            try:
-                                # Add timeout to place_order_smart
-                                with step_timer(f"place_tp_attempt_{tp_attempt}", meta):
-                                    tp_result = await with_timeout(
-                                        tradovate.place_order_smart(tp_order_data),
-                                        timeout=10.0,
-                                        step=f"place_tp_{tp_attempt}",
-                                        meta=meta
-                                    )
+                            tp_result = await tradovate.place_order_smart(tp_order_data)
+                            if tp_result and tp_result.get('success'):
+                                tp_order_id = tp_result.get('orderId') or tp_result.get('id')
+                                logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price} (order_id: {tp_order_id}) after {tp_attempt+1} attempt(s)")
+                                tp_placed = True
+                                break
+                            else:
+                                error_msg = tp_result.get('error', 'Unknown error') if tp_result else 'No response'
+                                logger.warning(f"⚠️ [{acct_name}] TP placement attempt {tp_attempt+1}/{max_attempts} failed: {error_msg}")
                                 
-                                if tp_result and tp_result.get('success'):
-                                    tp_order_id = tp_result.get('orderId') or tp_result.get('id')
-                                    logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price} (order_id: {tp_order_id}) after {tp_attempt+1} attempt(s)")
-                                    tp_placed = True
-                                    break
-                                else:
-                                    error_msg = tp_result.get('error', 'Unknown error') if tp_result else 'No response'
-                                    logger.warning(f"⚠️ [{acct_name}] TP placement attempt {tp_attempt+1}/{max_attempts} failed: {error_msg}")
-                            except Exception as tp_err:
-                                logger.warning(f"⚠️ [{acct_name}] TP placement attempt {tp_attempt+1}/{max_attempts} error: {tp_err}")
-                                if tp_attempt == max_attempts - 1:
-                                    tp_result = {'error': str(tp_err)}
-                            
-                            # Exponential backoff: 1s, 2s, 4s, 8s, etc. (max 10s)
-                            wait_time = min(2 ** tp_attempt, 10)
-                            if tp_attempt < max_attempts - 1:
-                                logger.info(f"   ⏳ Retrying in {wait_time}s...")
-                                await asyncio.sleep(wait_time)
+                                # Exponential backoff: 1s, 2s, 4s, 8s, etc. (max 10s)
+                                wait_time = min(2 ** tp_attempt, 10)
+                                if tp_attempt < max_attempts - 1:
+                                    logger.info(f"   ⏳ Retrying in {wait_time}s...")
+                                    await asyncio.sleep(wait_time)
                         
                         if not tp_placed:
                             # CRITICAL ERROR: Position has NO TP protection
@@ -2178,28 +2252,30 @@ def execute_trade_simple(
                         if not broker_avg or broker_avg <= 0:
                             logger.error(f"❌ [{acct_name}] CANNOT PLACE SL: broker_avg is invalid ({broker_avg})")
                             logger.error(f"   This usually means the fill price wasn't available from order result")
-                            logger.error(f"   SL would have been calculated as: {broker_avg} - ({sl_ticks} * {tick_size}) = INVALID")
+                            logger.error(f"   SL would have been calculated as: {broker_avg} - ({sl_ticks} * {local_tick_size}) = INVALID")
                             logger.error(f"   ⚠️ POSITION HAS NO STOP LOSS PROTECTION!")
                         else:
                             # Calculate SL price (opposite direction from TP)
                             if broker_side == 'LONG':
-                                sl_price = broker_avg - (sl_ticks * tick_size)
+                                sl_price_raw = broker_avg - (sl_ticks * local_tick_size)
                                 sl_action = 'Sell'  # SL sells to close LONG
                             else:
-                                sl_price = broker_avg + (sl_ticks * tick_size)
+                                sl_price_raw = broker_avg + (sl_ticks * local_tick_size)
                                 sl_action = 'Buy'   # SL buys to close SHORT
+                            # CRITICAL: Round to nearest valid tick increment
+                            sl_price = round(round(sl_price_raw / local_tick_size) * local_tick_size, 10)
 
                             # Additional validation: SL price must be positive
                             if sl_price <= 0:
                                 logger.error(f"❌ [{acct_name}] CANNOT PLACE SL: calculated sl_price is invalid ({sl_price})")
-                                logger.error(f"   broker_avg={broker_avg}, sl_ticks={sl_ticks}, tick_size={tick_size}")
+                                logger.error(f"   broker_avg={broker_avg}, sl_ticks={sl_ticks}, tick_size={local_tick_size}")
                                 logger.error(f"   ⚠️ POSITION HAS NO STOP LOSS PROTECTION!")
                             else:
                                 logger.info(f"📊 [{acct_name}] PLACING SL @ {sl_price} ({sl_ticks} ticks from entry {broker_avg})")
                                 sl_order_data = {
                                     "accountId": tradovate_account_id,
                                     "accountSpec": tradovate_account_spec,
-                                    "symbol": tradovate_symbol,
+                                    "symbol": local_tradovate_symbol,
                                     "action": sl_action,
                                     "orderQty": broker_qty,
                                     "orderType": "Stop",
@@ -2232,7 +2308,7 @@ def execute_trade_simple(
                                 tp_order_id=int(tp_order_id),
                                 sl_order_id=int(sl_order_id),
                                 account_id=tradovate_account_id,
-                                symbol=tradovate_symbol.upper()
+                                symbol=local_tradovate_symbol.upper()
                             )
                             logger.info(f"🔗 [{acct_name}] OCO pair registered: TP={tp_order_id} <-> SL={sl_order_id}")
                         except ImportError as import_err:
@@ -2245,7 +2321,27 @@ def execute_trade_simple(
                         logger.info(f"📊 [{acct_name}] TP placed but no SL - skipping OCO registration")
                     elif sl_order_id:
                         logger.info(f"📊 [{acct_name}] SL placed but no TP - skipping OCO registration")
-                    
+
+                    # Store tp_order_id in recorded_trades (best-effort, for single-account recorders)
+                    # NOTE: recorded_trades has no subaccount_id column, so this overwrites ALL open
+                    # trades for the recorder. For multi-account recorders, DCA uses the broker query
+                    # instead of this stored value. This is kept for backward compat only.
+                    if tp_order_id:
+                        try:
+                            tp_store_conn = get_db_connection()
+                            tp_store_cursor = tp_store_conn.cursor()
+                            tp_store_ph = '%s' if is_postgres else '?'
+                            tp_store_cursor.execute(f'''
+                                UPDATE recorded_trades
+                                SET tp_order_id = {tp_store_ph}, tp_price = {tp_store_ph}
+                                WHERE recorder_id = {tp_store_ph} AND status = 'open'
+                            ''', (str(tp_order_id), tp_price, recorder_id))
+                            tp_store_conn.commit()
+                            tp_store_conn.close()
+                            logger.info(f"💾 [{acct_name}] Stored tp_order_id={tp_order_id} in recorded_trades (note: shared across accounts)")
+                        except Exception as tp_store_err:
+                            logger.warning(f"⚠️ [{acct_name}] Could not store tp_order_id: {tp_store_err}")
+
                     return {
                         'success': True,
                         'broker_avg': broker_avg,
@@ -2264,12 +2360,6 @@ def execute_trade_simple(
                             await tradovate.__aexit__(None, None, None)
                         except:
                             pass
-            except StepTimeout as e:
-                logger.error(f"❌ [{acct_name}] STEP TIMEOUT: {e}")
-                return {'success': False, 'error': f"TIMEOUT: {e}", 'acct_name': acct_name, 'step_timeout': True}
-            except StepFailed as e:
-                logger.error(f"❌ [{acct_name}] STEP FAILED: {e}")
-                return {'success': False, 'error': f"FAILED: {e}", 'acct_name': acct_name}
             except Exception as e:
                 logger.error(f"❌ [{acct_name}] Exception: {e}")
                 return {'success': False, 'error': str(e), 'acct_name': acct_name}
@@ -2466,20 +2556,12 @@ def init_trading_engine_db():
             position_size REAL,
             market_position TEXT,
             raw_payload TEXT,
-            settings_snapshot TEXT,
             processed INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (recorder_id) REFERENCES recorders(id) ON DELETE CASCADE
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_signals_recorder ON recorded_signals(recorder_id)')
-
-    # Migration: Add settings_snapshot column if it doesn't exist
-    try:
-        cursor.execute('ALTER TABLE recorded_signals ADD COLUMN settings_snapshot TEXT')
-        logger.info("✅ Added settings_snapshot column to recorded_signals table")
-    except:
-        pass  # Column already exists
     
     # Recorded trades table - individual trades
     cursor.execute('''
@@ -2592,8 +2674,10 @@ def clamp_price(price: float, tick_size: float) -> float:
     """Round price to nearest tick"""
     if price is None:
         return None
-    decimals = max(3, len(str(tick_size).split('.')[-1]))
-    return round(price, decimals)
+    ticks = round(price / tick_size)
+    clamped = ticks * tick_size
+    decimals = max(2, len(str(tick_size).rstrip('0').split('.')[-1]))
+    return round(clamped, decimals)
 
 
 def calculate_pnl(entry_price: float, exit_price: float, side: str, quantity: int, ticker: str) -> Tuple[float, float]:
@@ -2695,8 +2779,7 @@ def sync_position_with_broker(recorder_id: int, ticker: str) -> Dict[str, Any]:
             
             async with TradovateIntegration(demo=is_demo) as tradovate:
                 tradovate.access_token = current_token
-                # Add timeout to get_positions to prevent hanging
-                positions = await asyncio.wait_for(tradovate.get_positions(account_id=tradovate_account_id), timeout=10.0)
+                positions = await tradovate.get_positions(account_id=tradovate_account_id)
                 
                 broker_pos = None
                 for pos in positions:
@@ -3230,28 +3313,62 @@ def get_front_month_contract(root_symbol: str) -> str:
     current_month = today.month
     current_year = today.year
 
-    # Find the 3rd Friday of a given month/year (common expiration day)
+    # Find the 3rd Friday of a given month/year (equity index expiration)
     def get_third_friday(year: int, month: int) -> datetime:
-        """Get the 3rd Friday of the month (expiration day)"""
+        """Get the 3rd Friday of the month"""
         first_day = datetime(year, month, 1)
         days_until_friday = (4 - first_day.weekday()) % 7
         first_friday = first_day + timedelta(days=days_until_friday)
         third_friday = first_friday + timedelta(days=14)
         return third_friday
 
-    # Roll date is typically 8 days before expiration
+    def get_expiration_date(year: int, month: int) -> datetime:
+        """Get estimated expiration date based on product type.
+
+        - Equity index futures (ES, NQ, etc.): 3rd Friday of contract month
+        - Metals (GC, MGC, SI, etc.): ~3rd-to-last business day of month BEFORE contract month
+        - Energies (CL, NG, etc.): ~3 business days before 25th of month BEFORE contract month
+        - Grains (ZC, ZS, etc.): Mid-month before contract month
+        - Default: 1st of the contract month (safe early roll)
+        """
+        if root_upper in ['ES', 'MES', 'NQ', 'MNQ', 'YM', 'MYM', 'RTY', 'M2K',
+                          'ZB', 'ZN', 'ZF', 'ZT', '6E', '6J', '6A', '6B', '6C']:
+            # Equity/treasury/currency: 3rd Friday of contract month
+            return get_third_friday(year, month)
+        elif root_upper in ['GC', 'MGC', 'SI', 'SIL', 'HG', 'PL']:
+            # Metals: last trading day is ~3rd-to-last business day of month BEFORE contract month
+            # Use 25th of prior month as approximation
+            prior_month = month - 1
+            prior_year = year
+            if prior_month < 1:
+                prior_month = 12
+                prior_year -= 1
+            return datetime(prior_year, prior_month, 25)
+        elif root_upper in ['CL', 'MCL', 'NG', 'HO', 'RB']:
+            # Energies: ~3 business days before 25th of month BEFORE contract month
+            prior_month = month - 1
+            prior_year = year
+            if prior_month < 1:
+                prior_month = 12
+                prior_year -= 1
+            return datetime(prior_year, prior_month, 20)
+        else:
+            # Safe default: 1st of contract month (roll early rather than late)
+            return datetime(year, month, 1)
+
+    # Roll date: 8 days before expiration for equity, 5 days for others
     ROLL_DAYS_BEFORE_EXPIRY = 8
 
     # Find the current front month
     for exp_month, month_code in CONTRACT_MONTHS:
         exp_year = current_year
 
-        # If we're past this month, skip to next
+        # If we're past this month entirely, skip to next
         if current_month > exp_month:
             continue
 
-        # Get expiration date for this contract
-        expiration = get_third_friday(exp_year, exp_month)
+        # Get expiration date for this contract (product-specific)
+        expiration = get_expiration_date(exp_year, exp_month)
         roll_date = expiration - timedelta(days=ROLL_DAYS_BEFORE_EXPIRY)
 
         # If today is before the roll date, this is the front month
@@ -3303,9 +3420,10 @@ def convert_ticker_to_tradovate(ticker: str) -> str:
             return front_month
         return clean_ticker.replace('!', '')
     
-    # Check if ticker already has a month code (e.g., MNQZ5, ESH5)
+    # Check if ticker already has a month code (e.g., MNQZ5, ESH5, MGCJ6)
     # Pattern: ROOT + MONTH_CODE + YEAR_DIGIT(S)
-    month_pattern = re.match(r'^([A-Z]+)([HMUZ])(\d{1,2})$', clean_ticker)
+    # All month codes: F(Jan) G(Feb) H(Mar) J(Apr) K(May) M(Jun) N(Jul) Q(Aug) U(Sep) V(Oct) X(Nov) Z(Dec)
+    month_pattern = re.match(r'^([A-Z]+)([FGHJKMNQUVXZ])(\d{1,2})$', clean_ticker)
     if month_pattern:
         # Already has month code, return as-is
         return clean_ticker
@@ -3923,24 +4041,32 @@ def execute_live_trade_with_bracket(
                             logger.warning(f"⚠️ Could not check broker for existing TP: {e}")
                         
                         # FALLBACK: Check DB for stored tp_order_id (if broker check missed it)
+                        # NOTE: DB tp_order_id may belong to a DIFFERENT account (no subaccount filter
+                        # in recorded_trades). We validate by fetching the order and checking accountId.
                         if not existing_tp_order:
                             try:
                                 tp_conn = get_db_connection()
                                 tp_cursor = tp_conn.cursor()
-                                tp_cursor.execute('''
-                                    SELECT tp_order_id FROM recorded_trades 
-                                    WHERE recorder_id = ? AND status = 'open' AND tp_order_id IS NOT NULL
+                                tp_ph2 = '%s' if is_postgres else '?'
+                                tp_cursor.execute(f'''
+                                    SELECT tp_order_id FROM recorded_trades
+                                    WHERE recorder_id = {tp_ph2} AND status = 'open' AND tp_order_id IS NOT NULL
                                     ORDER BY entry_time DESC LIMIT 1
                                 ''', (trading_account.get('recorder_id', recorder_id),))
                                 tp_row = tp_cursor.fetchone()
                                 if tp_row and tp_row['tp_order_id']:
                                     stored_tp_order_id = tp_row['tp_order_id']
-                                    logger.info(f"🔍 Found stored TP order ID in DB: {stored_tp_order_id} - fetching details...")
+                                    logger.info(f"🔍 Found stored TP order ID in DB: {stored_tp_order_id} - validating for this account...")
                                     try:
                                         existing_tp_order = await tradovate.get_order_item(int(stored_tp_order_id))
                                         if existing_tp_order:
                                             order_status = str(existing_tp_order.get('ordStatus', '')).upper()
-                                            if order_status in ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED']:
+                                            order_acct = existing_tp_order.get('accountId')
+                                            # MULTI-ACCOUNT CHECK: Verify this TP belongs to THIS account
+                                            if order_acct and order_acct != tradovate_account_id:
+                                                logger.warning(f"⚠️ Stored TP order {stored_tp_order_id} belongs to account {order_acct}, not {tradovate_account_id} - ignoring")
+                                                existing_tp_order = None
+                                            elif order_status in ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED']:
                                                 logger.info(f"📋 Stored TP order {stored_tp_order_id} is {order_status} - will place new one")
                                                 existing_tp_order = None  # Need to place new
                                             else:
@@ -4232,19 +4358,11 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
         placeholder = '%s' if is_postgres else '?'
         enabled_val = 'true' if is_postgres else '1'
         
-        # FIRST: Get existing tp_order_id from DB
-        cursor.execute(f'''
-            SELECT tp_order_id FROM recorded_trades
-            WHERE recorder_id = {placeholder} AND status = 'open' AND tp_order_id IS NOT NULL
-            ORDER BY entry_time DESC LIMIT 1
-        ''', (recorder_id,))
-        tp_row = cursor.fetchone()
-        existing_tp_order_id = tp_row['tp_order_id'] if tp_row and tp_row['tp_order_id'] else None
-        
-        if existing_tp_order_id:
-            logger.info(f"📋 [DCA-TP] Found existing tp_order_id: {existing_tp_order_id}")
-        else:
-            logger.info(f"📋 [DCA-TP] No existing tp_order_id - will place new")
+        # NOTE: DB tp_order_id lookup skipped — recorded_trades has no subaccount_id column,
+        # so stored tp_order_id may belong to a different account. The per-account broker query
+        # below is the reliable approach for multi-account recorders.
+        existing_tp_order_id = None
+        logger.info(f"📋 [DCA-TP] Skipping DB tp_order_id lookup (multi-account unsafe) - will query broker per-account")
         
         cursor.execute(f'''
             SELECT t.subaccount_id, t.subaccount_name, t.is_demo,
@@ -4407,10 +4525,11 @@ def update_exit_brackets(recorder_id: int, ticker: str, side: str,
             try:
                 conn2 = get_db_connection()
                 cursor2 = conn2.cursor()
-                cursor2.execute('''
-                    UPDATE recorded_trades 
-                    SET tp_order_id = ?, tp_price = ?
-                    WHERE recorder_id = ? AND status = 'open'
+                tp_upd_ph = '%s' if is_postgres else '?'
+                cursor2.execute(f'''
+                    UPDATE recorded_trades
+                    SET tp_order_id = {tp_upd_ph}, tp_price = {tp_upd_ph}
+                    WHERE recorder_id = {tp_upd_ph} AND status = 'open'
                 ''', (result['order_id'], tp_price, recorder_id))
                 conn2.commit()
                 conn2.close()
@@ -4923,7 +5042,7 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
                 JOIN recorders r ON t.recorder_id = r.id
                 WHERE t.status = 'open' 
                 AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
-                AND COALESCE(t.broker_managed_tp_sl, 0) = 0
+                AND (t.broker_managed_tp_sl IS NULL OR t.broker_managed_tp_sl = FALSE)
                 AND t.entry_time + INTERVAL '5 seconds' < NOW()
             ''')
         else:
@@ -4933,7 +5052,7 @@ def check_tp_sl_for_symbol(symbol_root: str, current_price: float):
                 JOIN recorders r ON t.recorder_id = r.id
                 WHERE t.status = 'open' 
                 AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
-                AND COALESCE(t.broker_managed_tp_sl, 0) = 0
+                AND (t.broker_managed_tp_sl IS NULL OR t.broker_managed_tp_sl = FALSE)
                 AND datetime(t.entry_time, '+5 seconds') < datetime('now')
             ''')
         
@@ -5189,9 +5308,10 @@ def reconcile_positions_with_broker():
                                 # Signal-only trades (broker_managed_tp_sl = 0) should be closed by TP/SL polling, not broker sync
                                 conn_signal_check = get_db_connection()
                                 cursor_signal_check = conn_signal_check.cursor()
-                                cursor_signal_check.execute('''
-                                    SELECT broker_managed_tp_sl, tp_order_id FROM recorded_trades 
-                                    WHERE recorder_id = ? AND status = 'open' LIMIT 1
+                                sync_ph = '%s' if is_using_postgres() else '?'
+                                cursor_signal_check.execute(f'''
+                                    SELECT broker_managed_tp_sl, tp_order_id FROM recorded_trades
+                                    WHERE recorder_id = {sync_ph} AND status = 'open' LIMIT 1
                                 ''', (recorder_id,))
                                 signal_check = cursor_signal_check.fetchone()
                                 conn_signal_check.close()
@@ -5378,11 +5498,13 @@ def reconcile_positions_with_broker():
                                         if tp_ticks and tp_ticks > 0:
                                             # Calculate TP price from BROKER avg (source of truth)
                                             if is_long:
-                                                new_tp_price = broker_avg + (tp_ticks * tick_size)
+                                                new_tp_price_raw = broker_avg + (tp_ticks * tick_size)
                                                 tp_action = 'Sell'
                                             else:
-                                                new_tp_price = broker_avg - (tp_ticks * tick_size)
+                                                new_tp_price_raw = broker_avg - (tp_ticks * tick_size)
                                                 tp_action = 'Buy'
+                                            # Round to nearest valid tick increment
+                                            new_tp_price = round(round(new_tp_price_raw / tick_size) * tick_size, 10)
 
                                             # Place the TP order
                                             try:
@@ -5403,10 +5525,11 @@ def reconcile_positions_with_broker():
                                                     # Update DB with new TP order ID
                                                     conn_upd = get_db_connection()
                                                     cursor_upd = conn_upd.cursor()
-                                                    cursor_upd.execute('''
+                                                    tp_upd_ph2 = '%s' if is_postgres else '?'
+                                                    cursor_upd.execute(f'''
                                                         UPDATE recorded_trades
-                                                        SET tp_order_id = ?, tp_price = ?
-                                                        WHERE recorder_id = ? AND status = 'open'
+                                                        SET tp_order_id = {tp_upd_ph2}, tp_price = {tp_upd_ph2}
+                                                        WHERE recorder_id = {tp_upd_ph2} AND status = 'open'
                                                     ''', (str(new_tp_order_id), new_tp_price, recorder_id))
                                                     conn_upd.commit()
                                                     conn_upd.close()
@@ -5493,25 +5616,204 @@ def poll_tp_sl():
 # and AUTO-PLACES missing TP orders.
 # Disabling this = broken sync = missing TPs = unprotected trades
 # ============================================================
+_auto_flat_done_today = set()  # Track which traders were already flattened today
+
+def check_auto_flat_cutoff():
+    """Check if any traders with auto_flat_after_cutoff need positions closed.
+
+    Runs inside the reconciliation loop (every 60 seconds).
+    If current time is past the trader's time filter stop time,
+    close all open positions for that trader.
+    """
+    global _auto_flat_done_today
+    from datetime import datetime, time as dtime
+
+    now = datetime.now()
+    today_str = now.strftime('%Y-%m-%d')
+
+    # Reset tracking at midnight
+    _auto_flat_done_today = {k for k in _auto_flat_done_today if k.startswith(today_str)}
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        enabled_val = 'TRUE' if is_postgres else '1'
+
+        cursor.execute(f'''
+            SELECT t.id, t.recorder_id, t.time_filter_1_stop, t.time_filter_2_stop,
+                   t.account_id, t.subaccount_id, t.subaccount_name, t.enabled_accounts
+            FROM traders t
+            WHERE t.auto_flat_after_cutoff = {enabled_val}
+              AND t.enabled = {enabled_val}
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return
+
+        current_time = now.time()
+
+        for row in rows:
+            trader = dict(row)
+            trader_id = trader['id']
+            tracker_key = f"{today_str}_{trader_id}"
+
+            if tracker_key in _auto_flat_done_today:
+                continue  # Already flattened today
+
+            # Check if past any stop time
+            past_cutoff = False
+            for stop_field in ['time_filter_1_stop', 'time_filter_2_stop']:
+                stop_str = trader.get(stop_field, '')
+                if not stop_str:
+                    continue
+                try:
+                    # Parse time strings like "3:00 PM", "15:00", "8:45 AM"
+                    stop_str = stop_str.strip()
+                    for fmt in ['%I:%M %p', '%H:%M', '%I:%M%p', '%H:%M:%S']:
+                        try:
+                            parsed = datetime.strptime(stop_str, fmt).time()
+                            if current_time > parsed:
+                                past_cutoff = True
+                            break
+                        except ValueError:
+                            continue
+                except Exception:
+                    pass
+
+            if not past_cutoff:
+                continue
+
+            # Check for open positions
+            conn2 = get_db_connection()
+            cursor2 = conn2.cursor()
+            cursor2.execute(f'''
+                SELECT id, ticker, side, quantity FROM recorded_trades
+                WHERE recorder_id = {ph} AND status = 'open'
+            ''', (trader['recorder_id'],))
+            open_trades = cursor2.fetchall()
+            conn2.close()
+
+            if not open_trades:
+                _auto_flat_done_today.add(tracker_key)
+                continue
+
+            logger.warning(f"⏰ AUTO FLAT: Trader {trader_id} past cutoff time - closing {len(open_trades)} open position(s)")
+
+            # Close each open position
+            for trade_row in open_trades:
+                trade = dict(trade_row)
+                try:
+                    close_action = 'sell' if trade['side'] == 'LONG' else 'buy'
+                    close_qty = int(trade.get('quantity', 1))
+                    execute_trade_simple(
+                        recorder_id=trader['recorder_id'],
+                        action=close_action,
+                        ticker=trade['ticker'],
+                        quantity=close_qty,
+                        tp_ticks=0,
+                        sl_ticks=0
+                    )
+                    logger.info(f"⏰ AUTO FLAT: Closed {trade['side']} {trade['ticker']} x{close_qty} for trader {trader_id}")
+                except Exception as close_err:
+                    logger.error(f"❌ AUTO FLAT: Failed to close trade {trade['id']}: {close_err}")
+
+            _auto_flat_done_today.add(tracker_key)
+    except Exception as e:
+        logger.error(f"❌ Auto flat cutoff check error: {e}")
+
+
+def start_daily_state_reset():
+    """Reset stale position tracking state daily at CME market close (4:15 PM CT).
+    Clears recorder_positions and stale open recorded_trades for LIVE recorders only.
+    Paper/simulation recorders are untouched — their trade history is preserved for analytics."""
+
+    _reset_done_date = [None]  # mutable container for closure
+
+    def reset_loop():
+        while True:
+            try:
+                time.sleep(60)  # Check every minute
+                now_ct = datetime.now(ZoneInfo('America/Chicago'))
+                today_str = now_ct.strftime('%Y-%m-%d')
+
+                # Only run once per day, during the 4:15-4:30 PM CT window
+                if _reset_done_date[0] == today_str:
+                    continue
+                if not (now_ct.hour == 16 and 15 <= now_ct.minute <= 30):
+                    continue
+                # Skip weekends (Sat=5, Sun=6)
+                if now_ct.weekday() >= 5:
+                    continue
+
+                logger.info("🧹 Daily state reset starting (market close cleanup)...")
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                is_postgres = is_using_postgres()
+                ph = '%s' if is_postgres else '?'
+
+                # Get all LIVE (non-simulation) recorder IDs
+                cursor.execute('SELECT id FROM recorders WHERE simulation_mode = 0 OR simulation_mode IS NULL')
+                live_ids = [row['id'] if hasattr(row, 'keys') else row[0] for row in cursor.fetchall()]
+
+                if not live_ids:
+                    logger.info("🧹 No live recorders found — skipping reset")
+                    conn.close()
+                    _reset_done_date[0] = today_str
+                    continue
+
+                id_list = ','.join(str(int(x)) for x in live_ids)
+
+                # 1) Clear recorder_positions for live recorders
+                cursor.execute(f'DELETE FROM recorder_positions WHERE recorder_id IN ({id_list})')
+                pos_deleted = cursor.rowcount
+                logger.info(f"🧹 Cleared {pos_deleted} recorder_positions rows (live recorders)")
+
+                # 2) Close stale open recorded_trades for live recorders
+                cursor.execute(f"UPDATE recorded_trades SET status = 'closed' WHERE status = 'open' AND recorder_id IN ({id_list})")
+                trades_closed = cursor.rowcount
+                logger.info(f"🧹 Closed {trades_closed} stale open recorded_trades (live recorders)")
+
+                # 3) Zero signal counters on traders for live recorders
+                cursor.execute(f'UPDATE traders SET signal_count = 0, today_signal_count = 0 WHERE recorder_id IN ({id_list})')
+                traders_reset = cursor.rowcount
+                logger.info(f"🧹 Reset signal counters on {traders_reset} traders")
+
+                conn.commit()
+                conn.close()
+                _reset_done_date[0] = today_str
+                logger.info(f"✅ Daily state reset complete — next reset tomorrow")
+            except Exception as e:
+                logger.error(f"❌ Daily state reset error: {e}")
+
+    _reset_thread = threading.Thread(target=reset_loop, daemon=True, name="DailyStateReset")
+    _reset_thread.start()
+
+
 def start_position_reconciliation():
     """Start the position reconciliation thread (runs every 60 seconds)
-    
+
     CRITICAL: This must ALWAYS run. It:
     1. Closes DB records when broker is flat
     2. Updates DB quantity to match broker
-    3. Updates DB avg price to match broker  
+    3. Updates DB avg price to match broker
     4. AUTO-PLACES missing TP orders
+    5. Checks auto_flat_after_cutoff traders
     """
     global _position_reconciliation_thread
-    
+
     if _position_reconciliation_thread and _position_reconciliation_thread.is_alive():
         return
-    
+
     def reconciliation_loop():
         logger.info("🔄 Starting position reconciliation thread (every 60 seconds)")
         while True:
             try:
                 reconcile_positions_with_broker()
+                check_auto_flat_cutoff()
                 time.sleep(60)  # Run every 60 seconds (reduced to avoid rate limiting)
             except Exception as e:
                 logger.error(f"Error in position reconciliation loop: {e}")
@@ -7153,6 +7455,17 @@ def receive_webhook(webhook_token):
                 if simulation_mode:
                     logger.info(f"📝 SIMULATION: Closing {open_trade['side']} position (no broker call)")
                     broker_closed = True  # Simulated close always succeeds
+                    # Publish paper signal for standalone paper trading service
+                    try:
+                        if _paper_redis:
+                            _paper_redis.publish('paper_signals', json.dumps({
+                                'recorder_id': recorder_id, 'action': 'CLOSE',
+                                'ticker': ticker, 'price': float(current_price),
+                                'quantity': int(open_trade.get('quantity', 1)),
+                                'timestamp': datetime.utcnow().isoformat()
+                            }))
+                    except Exception:
+                        logger.warning("Could not publish paper CLOSE signal")
                 else:
                     logger.info(f"🔄 CLOSE signal: Liquidating {open_trade['side']} position on broker (cancels TP orders automatically)...")
 
@@ -7319,6 +7632,19 @@ def receive_webhook(webhook_token):
             if simulation_mode:
                 broker_result = {'success': False, 'no_broker': True, 'simulation': True}
                 logger.info(f"📝 SIMULATION: Skipping broker execution for BUY {ticker}")
+                # Publish paper signal for standalone paper trading service
+                try:
+                    if _paper_redis:
+                        _paper_redis.publish('paper_signals', json.dumps({
+                            'recorder_id': recorder_id, 'action': 'BUY',
+                            'ticker': ticker, 'price': float(current_price),
+                            'quantity': int(quantity), 'tp_ticks': int(tp_ticks),
+                            'sl_enabled': int(sl_enabled), 'sl_amount': int(sl_amount),
+                            'dca_enabled': bool(recorder.get('avg_down_enabled', 0)),
+                            'timestamp': datetime.utcnow().isoformat()
+                        }))
+                except Exception:
+                    logger.warning("Could not publish paper BUY signal")
             else:
                 broker_result = execute_trade_simple(
                     recorder_id=recorder_id,
@@ -7447,6 +7773,19 @@ def receive_webhook(webhook_token):
             if simulation_mode:
                 broker_result = {'success': False, 'no_broker': True, 'simulation': True}
                 logger.info(f"📝 SIMULATION: Skipping broker execution for SELL {ticker}")
+                # Publish paper signal for standalone paper trading service
+                try:
+                    if _paper_redis:
+                        _paper_redis.publish('paper_signals', json.dumps({
+                            'recorder_id': recorder_id, 'action': 'SELL',
+                            'ticker': ticker, 'price': float(current_price),
+                            'quantity': int(quantity), 'tp_ticks': int(tp_ticks),
+                            'sl_enabled': int(sl_enabled), 'sl_amount': int(sl_amount),
+                            'dca_enabled': bool(recorder.get('avg_down_enabled', 0)),
+                            'timestamp': datetime.utcnow().isoformat()
+                        }))
+                except Exception:
+                    logger.warning("Could not publish paper SELL signal")
             else:
                 broker_result = execute_trade_simple(
                     recorder_id=recorder_id,
@@ -7666,6 +8005,10 @@ def initialize():
     # Start TP/SL polling thread (fallback when WebSocket not available)
     start_tp_sl_polling()
     logger.info("✅ TP/SL monitoring active")
+
+    # Start daily state reset daemon (clears stale position tracking at market close)
+    start_daily_state_reset()
+    logger.info("✅ Daily state reset active (4:15 PM CT, skips paper recorders)")
 
     # ============================================================
     # 🚨🚨🚨 CRITICAL: BROKER SYNC - DO NOT DISABLE 🚨🚨🚨
