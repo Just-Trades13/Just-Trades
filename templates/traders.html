@@ -42,6 +42,9 @@
                     <button class="action-btn bulk-toggle" onclick="bulkToggleStrategy({{ strategy.recorder_id }}, this)" title="Toggle all accounts">
                         <span class="material-icons">power_settings_new</span>
                     </button>
+                    <button class="action-btn bulk-delete" onclick="bulkDeleteStrategy('{{ strategy.recorder_name }}', this)" title="Delete all accounts">
+                        <span class="material-icons">delete_sweep</span>
+                    </button>
                     <a href="/recorders/{{ strategy.recorder_id }}" class="action-btn" title="Edit Strategy Settings">
                         <span class="material-icons">settings</span>
                     </a>
@@ -1130,6 +1133,7 @@
     .active-pill-off { background: rgba(100,116,139,0.15); color: #64748b; border: 1px solid rgba(100,116,139,0.3); }
     .strategy-actions { display: flex; gap: 0.5rem; }
     .bulk-toggle:hover { background: rgba(168,85,247,0.2); color: #a855f7; border-color: rgba(168,85,247,0.4); }
+    .bulk-delete:hover { background: rgba(239,68,68,0.2); color: #ef4444; border-color: rgba(239,68,68,0.4); }
     .toggle-expand .material-icons { transition: transform 0.2s ease; }
     .strategy-card.collapsed .toggle-expand .material-icons { transform: rotate(-90deg); }
     .strategy-card.collapsed .strategy-accounts { display: none; }
@@ -1701,6 +1705,36 @@
         }
 
         showToast(`${success}/${rows.length} accounts ${action}d`, 'success');
+        setTimeout(() => location.reload(), 1000);
+    }
+
+    async function bulkDeleteStrategy(strategyName, btn) {
+        const card = btn.closest('.strategy-card');
+        const rows = card.querySelectorAll('tbody tr[data-trader-id]');
+        if (rows.length === 0) return;
+
+        if (!confirm(`DELETE all ${rows.length} trader accounts under "${strategyName}"?\n\nThis removes the trader links — your recorder and recorded trades are NOT affected.`)) return;
+
+        btn.disabled = true;
+        btn.querySelector('.material-icons').style.opacity = '0.4';
+        let success = 0;
+
+        for (const row of rows) {
+            const id = row.dataset.traderId;
+            try {
+                const r = await fetch(`/api/traders/${id}`, { method: 'DELETE' });
+                const d = await r.json();
+                if (d.success) {
+                    success++;
+                    row.style.transition = 'opacity 0.3s ease';
+                    row.style.opacity = '0';
+                }
+            } catch(e) {
+                console.error('Bulk delete error for trader', id, e);
+            }
+        }
+
+        showToast(`${success}/${rows.length} accounts deleted`, 'success');
         setTimeout(() => location.reload(), 1000);
     }
 
