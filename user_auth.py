@@ -82,10 +82,11 @@ def init_users_table():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP,
-                    settings_json TEXT DEFAULT '{}'
+                    settings_json TEXT DEFAULT '{}',
+                    referred_by VARCHAR(20)
                 )
             ''')
-            
+
             # Create index on email for fast lookups
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)
@@ -108,10 +109,11 @@ def init_users_table():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP,
-                    settings_json TEXT DEFAULT '{}'
+                    settings_json TEXT DEFAULT '{}',
+                    referred_by TEXT
                 )
             ''')
-            
+
             # Create indexes
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
@@ -290,17 +292,18 @@ class User:
 
 
 def create_user(username: str, email: str, password: str, display_name: str = None,
-                is_admin: bool = False) -> Optional[User]:
+                is_admin: bool = False, referred_by: str = None) -> Optional[User]:
     """
     Create a new user account.
-    
+
     Args:
         username: Unique username (alphanumeric, 3-50 chars)
         email: Unique email address
         password: Plain text password (will be hashed)
         display_name: Optional display name
         is_admin: Whether user has admin privileges
-        
+        referred_by: Affiliate code that referred this user
+
     Returns:
         User object if created, None if failed
     """
@@ -324,16 +327,16 @@ def create_user(username: str, email: str, password: str, display_name: str = No
     try:
         if db_type == 'postgresql':
             cursor.execute('''
-                INSERT INTO users (username, email, password_hash, display_name, is_admin)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO users (username, email, password_hash, display_name, is_admin, referred_by)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
-            ''', (username.lower(), email.lower(), password_hash, display_name or username, is_admin))
+            ''', (username.lower(), email.lower(), password_hash, display_name or username, is_admin, referred_by))
             user_id = cursor.fetchone()['id']
         else:
             cursor.execute('''
-                INSERT INTO users (username, email, password_hash, display_name, is_admin)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (username.lower(), email.lower(), password_hash, display_name or username, int(is_admin)))
+                INSERT INTO users (username, email, password_hash, display_name, is_admin, referred_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (username.lower(), email.lower(), password_hash, display_name or username, int(is_admin), referred_by))
             user_id = cursor.lastrowid
         
         conn.commit()

@@ -431,6 +431,7 @@
             {% endwith %}
             
             <form method="POST" action="{{ url_for('register') }}" id="registerForm">
+                <input type="hidden" name="referral_code" value="{{ referral_code or '' }}">
                 <div class="form-row">
                     <div class="form-group">
                         <label for="username">Username</label>

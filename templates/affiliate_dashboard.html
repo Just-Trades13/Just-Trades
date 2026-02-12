@@ -1,0 +1,194 @@
+{% extends "layout.html" %}
+{% block title %}Affiliate Dashboard - Just.Trades.{% endblock %}
+{% block page_title %}AFFILIATE DASHBOARD{% endblock %}
+
+{% block styles %}
+<style>
+    .aff-container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+    .aff-header { margin-bottom: 2rem; }
+    .aff-header h1 { font-size: 1.8rem; font-weight: 700; margin: 0 0 0.5rem; }
+    .aff-header p { color: var(--text-muted); margin: 0; }
+
+    .aff-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem; margin-bottom: 2.5rem; }
+    .stat-card {
+        background: var(--background-light);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 16px;
+        padding: 1.5rem;
+        text-align: center;
+    }
+    .stat-card .stat-value { font-size: 2.5rem; font-weight: 700; color: var(--primary-color); }
+    .stat-card .stat-label { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0.25rem; }
+
+    .referral-link-box {
+        background: var(--background-light);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 2.5rem;
+    }
+    .referral-link-box h3 { font-size: 1rem; margin: 0 0 1rem; color: var(--text-light); }
+    .link-row { display: flex; gap: 0.75rem; align-items: center; }
+    .link-row input {
+        flex: 1;
+        background: rgba(148,163,184,0.08);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        color: var(--text-light);
+        font-family: monospace;
+        font-size: 0.9rem;
+    }
+    .btn-copy {
+        background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+        border: none;
+        border-radius: 8px;
+        color: white;
+        padding: 0.75rem 1.25rem;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: transform 0.2s;
+    }
+    .btn-copy:hover { transform: translateY(-2px); }
+    .btn-copy.copied { background: var(--green); }
+
+    .referred-section {
+        background: var(--background-light);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 16px;
+        padding: 1.5rem;
+    }
+    .referred-section h3 { font-size: 1rem; margin: 0 0 1rem; color: var(--text-light); }
+    .referred-table { width: 100%; border-collapse: collapse; }
+    .referred-table th {
+        text-align: left;
+        padding: 0.75rem 1rem;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--text-muted);
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .referred-table td {
+        padding: 0.75rem 1rem;
+        font-size: 0.9rem;
+        border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+    .empty-state { text-align: center; padding: 3rem; color: var(--text-muted); }
+    .empty-state i { font-size: 3rem; margin-bottom: 1rem; display: block; opacity: 0.5; }
+
+    .loading-state { text-align: center; padding: 4rem; color: var(--text-muted); }
+    .error-state { text-align: center; padding: 3rem; color: var(--red); }
+    .aff-code { font-family: monospace; font-size: 1.25rem; color: var(--accent-teal); font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="aff-container">
+    <div class="aff-header">
+        <h1>Affiliate Dashboard</h1>
+        <p>Track your referrals and share your link</p>
+    </div>
+
+    <div id="dashboardContent">
+        <div class="loading-state">
+            <i class="material-icons" style="font-size:2rem;animation:spin 1s linear infinite;">sync</i>
+            <p>Loading dashboard...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/affiliate/dashboard')
+        .then(r => r.json())
+        .then(data => {
+            const container = document.getElementById('dashboardContent');
+            if (data.error) {
+                container.innerHTML = `
+                    <div class="error-state">
+                        <i class="material-icons" style="font-size:3rem;margin-bottom:1rem;display:block;">info</i>
+                        <p>${data.error}</p>
+                        <p style="margin-top:1rem;color:var(--text-muted);">
+                            <a href="/affiliate" style="color:var(--primary-color);">Apply to become an affiliate</a>
+                        </p>
+                    </div>`;
+                return;
+            }
+            renderDashboard(data, container);
+        })
+        .catch(() => {
+            document.getElementById('dashboardContent').innerHTML =
+                '<div class="error-state"><p>Failed to load dashboard. Please try again.</p></div>';
+        });
+});
+
+function renderDashboard(data, container) {
+    const usersHtml = data.referred_users.length > 0
+        ? `<table class="referred-table">
+            <thead><tr><th>User</th><th>Joined</th></tr></thead>
+            <tbody>${data.referred_users.map(u => `
+                <tr>
+                    <td>${escapeHtml(u.display_name || u.username)}</td>
+                    <td>${new Date(u.joined).toLocaleDateString()}</td>
+                </tr>`).join('')}
+            </tbody>
+           </table>`
+        : `<div class="empty-state">
+                <i class="material-icons">people_outline</i>
+                <p>No referrals yet. Share your link to get started!</p>
+           </div>`;
+
+    container.innerHTML = `
+        <div class="aff-stats">
+            <div class="stat-card">
+                <div class="stat-value">${escapeHtml(data.affiliate_code)}</div>
+                <div class="stat-label">Your Code</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${data.referral_count}</div>
+                <div class="stat-label">Total Referrals</div>
+            </div>
+        </div>
+
+        <div class="referral-link-box">
+            <h3>Your Referral Link</h3>
+            <div class="link-row">
+                <input type="text" id="refLink" value="${escapeHtml(data.referral_link)}" readonly>
+                <button class="btn-copy" id="copyBtn" onclick="copyLink()">
+                    <i class="material-icons" style="font-size:18px;vertical-align:middle;">content_copy</i> Copy
+                </button>
+            </div>
+        </div>
+
+        <div class="referred-section">
+            <h3>Referred Users</h3>
+            ${usersHtml}
+        </div>
+    `;
+}
+
+function copyLink() {
+    const input = document.getElementById('refLink');
+    navigator.clipboard.writeText(input.value).then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.classList.add('copied');
+        btn.innerHTML = '<i class="material-icons" style="font-size:18px;vertical-align:middle;">check</i> Copied!';
+        setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = '<i class="material-icons" style="font-size:18px;vertical-align:middle;">content_copy</i> Copy';
+        }, 2000);
+    });
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}
