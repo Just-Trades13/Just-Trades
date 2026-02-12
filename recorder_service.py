@@ -1395,6 +1395,7 @@ def execute_trade_simple(
             adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
             broker_type = trader.get('broker', 'Tradovate')  # Default to Tradovate
             is_dca_local = False  # Track if this is a DCA add (set True when same direction as existing position)
+            meta = {"acct": acct_name, "ticker": ticker, "action": action}  # Timing metadata for step_timer/with_timeout
 
             # NOTE: Don't check is_account_auth_valid upfront - let auth logic handle it
             # The account might work via cached token, API Access, or OAuth fallback
