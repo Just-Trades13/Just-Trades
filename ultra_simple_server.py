@@ -29219,22 +29219,28 @@ def api_trader_debug(trader_id):
         placeholder = '%s' if is_postgres else '?'
         
         cursor.execute(f'''
-            SELECT id, recorder_id, enabled, enabled_accounts, initial_position_size, add_position_size
+            SELECT id, recorder_id, enabled, enabled_accounts, initial_position_size, add_position_size,
+                   multiplier, account_id, subaccount_id, subaccount_name, user_id
             FROM traders WHERE id = {placeholder}
         ''', (trader_id,))
         trader = cursor.fetchone()
         conn.close()
-        
+
         if not trader:
             return jsonify({'success': False, 'error': 'Trader not found'}), 404
-        
+
         trader_dict = dict(trader) if hasattr(trader, 'keys') else {
             'id': trader[0],
             'recorder_id': trader[1],
             'enabled': trader[2],
             'enabled_accounts': trader[3],
             'initial_position_size': trader[4] if len(trader) > 4 else None,
-            'add_position_size': trader[5] if len(trader) > 5 else None
+            'add_position_size': trader[5] if len(trader) > 5 else None,
+            'multiplier': trader[6] if len(trader) > 6 else None,
+            'account_id': trader[7] if len(trader) > 7 else None,
+            'subaccount_id': trader[8] if len(trader) > 8 else None,
+            'subaccount_name': trader[9] if len(trader) > 9 else None,
+            'user_id': trader[10] if len(trader) > 10 else None
         }
         
         # Parse enabled_accounts
@@ -29252,6 +29258,11 @@ def api_trader_debug(trader_id):
             'enabled': trader_dict.get('enabled'),
             'initial_position_size': trader_dict.get('initial_position_size'),
             'add_position_size': trader_dict.get('add_position_size'),
+            'multiplier': trader_dict.get('multiplier'),
+            'account_id': trader_dict.get('account_id'),
+            'subaccount_id': trader_dict.get('subaccount_id'),
+            'subaccount_name': trader_dict.get('subaccount_name'),
+            'user_id': trader_dict.get('user_id'),
             'enabled_accounts_raw': str(enabled_accounts_raw)[:500] if enabled_accounts_raw else None,
             'enabled_accounts_parsed': enabled_accounts_parsed,
             'multipliers': [
