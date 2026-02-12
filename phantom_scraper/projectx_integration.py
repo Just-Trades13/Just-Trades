@@ -1112,11 +1112,17 @@ class ProjectXIntegration:
         if sl_ticks and int(sl_ticks) > 0:
             sl_type = self.ORDER_TYPE_TRAILING_STOP if trailing_stop else self.ORDER_TYPE_STOP
             sl_label = "Trailing SL" if trailing_stop else "SL"
+            if trailing_stop:
+                # Trailing stop: unsigned distance — platform determines direction from position side
+                bracket_ticks = abs(int(sl_ticks))
+            else:
+                # Fixed stop: signed offset from entry (Buy=-ticks below, Sell=+ticks above)
+                bracket_ticks = sl_sign * abs(int(sl_ticks))
             order["stopLossBracket"] = {
-                "ticks": sl_sign * abs(int(sl_ticks)),
+                "ticks": bracket_ticks,
                 "type": sl_type
             }
-            logger.info(f"📊 {sl_label} bracket: {sl_sign * abs(int(sl_ticks))} ticks (type={sl_type}, side={'Buy' if is_buy else 'Sell'})")
+            logger.info(f"📊 {sl_label} bracket: {bracket_ticks} ticks (type={sl_type}, side={'Buy' if is_buy else 'Sell'})")
 
         return order
     
