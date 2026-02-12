@@ -23440,6 +23440,96 @@ def update_affiliate_status(app_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/admin/affiliates/<int:app_id>/approve', methods=['POST'])
+def approve_affiliate(app_id):
+    """Approve an affiliate application (admin only) — called by admin_affiliates.html"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        data = request.get_json() or {}
+        custom_code = (data.get('affiliate_code') or '').strip().upper()
+        admin_notes = (data.get('admin_notes') or '').strip()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        # Generate code if not provided
+        if not custom_code:
+            import random
+            import string
+            cursor.execute(f'SELECT name FROM affiliate_applications WHERE id = {placeholder}', (app_id,))
+            name_row = cursor.fetchone()
+            name = (name_row['name'] if isinstance(name_row, dict) else name_row[0]) if name_row else 'USER'
+            name_part = ''.join(c for c in name.upper() if c.isalpha())[:3].ljust(3, 'X')
+            random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+            custom_code = f"JT-{name_part}{random_part}"
+            for _ in range(10):
+                cursor.execute(f'SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder}', (custom_code,))
+                if not cursor.fetchone():
+                    break
+                random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                custom_code = f"JT-{name_part}{random_part}"
+        else:
+            # Check code uniqueness
+            cursor.execute(f'SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder} AND id != {placeholder}', (custom_code, app_id))
+            if cursor.fetchone():
+                conn.close()
+                return jsonify({'error': 'This affiliate code is already in use'}), 409
+
+        cursor.execute(f'''
+            UPDATE affiliate_applications
+            SET status = 'approved', affiliate_code = {placeholder}, admin_notes = {placeholder},
+                reviewed_by = {placeholder}, reviewed_at = CURRENT_TIMESTAMP
+            WHERE id = {placeholder}
+        ''', (custom_code, admin_notes, user.id, app_id))
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Affiliate application {app_id} approved with code {custom_code} by {user.username}")
+        return jsonify({'success': True, 'affiliate_code': custom_code})
+
+    except Exception as e:
+        logger.error(f"Error approving affiliate: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/affiliates/<int:app_id>/reject', methods=['POST'])
+def reject_affiliate(app_id):
+    """Reject an affiliate application (admin only) — called by admin_affiliates.html"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        data = request.get_json() or {}
+        admin_notes = (data.get('admin_notes') or '').strip()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'''
+            UPDATE affiliate_applications
+            SET status = 'rejected', admin_notes = {placeholder}, reviewed_by = {placeholder},
+                reviewed_at = CURRENT_TIMESTAMP
+            WHERE id = {placeholder}
+        ''', (admin_notes, user.id, app_id))
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Affiliate application {app_id} rejected by {user.username}")
+        return jsonify({'success': True})
+
+    except Exception as e:
+        logger.error(f"Error rejecting affiliate: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/admin/affiliates/<int:app_id>/code', methods=['POST'])
 def update_affiliate_code(app_id):
     """Update affiliate code for an application (admin only)"""
