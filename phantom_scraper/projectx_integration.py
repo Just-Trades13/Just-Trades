@@ -6,13 +6,13 @@ https://gateway.docs.projectx.com/
 
 This integration supports TopstepX, Apex, and other ProjectX-powered prop firms.
 
-API Endpoints:
-- Demo: https://gateway-api-demo.s2f.projectx.com
-- Live: https://gateway-api.s2f.projectx.com
+API Endpoints (demo URLs work for ALL accounts - demo AND live/funded):
+- API: https://gateway-api-demo.s2f.projectx.com
+- NOTE: gateway-api.s2f.projectx.com (live) is DEAD as of Feb 2026
 
 WebSocket (SignalR):
-- User Hub (demo): https://gateway-rtc-demo.s2f.projectx.com/hubs/user
-- Market Hub (demo): https://gateway-rtc-demo.s2f.projectx.com/hubs/market
+- User Hub: https://gateway-rtc-demo.s2f.projectx.com/hubs/user
+- Market Hub: https://gateway-rtc-demo.s2f.projectx.com/hubs/market
 """
 
 import asyncio
@@ -36,8 +36,7 @@ class ProjectXIntegration:
     
     Endpoints by Firm:
     - TopstepX: https://api.topstepx.com
-    - Other ProjectX firms: https://gateway-api-demo.s2f.projectx.com (demo)
-                           https://gateway-api.s2f.projectx.com (live)
+    - Other ProjectX firms: https://gateway-api-demo.s2f.projectx.com (ALL accounts)
     
     Token valid for 24 hours, refresh via /api/Auth/validate
     """
@@ -74,16 +73,18 @@ class ProjectXIntegration:
             'ws_market': 'wss://rtc.topstepx.com/hubs/market',
         },
         'default': {
+            # IMPORTANT: ProjectX uses demo gateway URLs for ALL accounts (demo AND live/funded)
+            # gateway-api.s2f.projectx.com (live) is DEAD (DNS NXDOMAIN as of Feb 2026)
+            # gateway-rtc.s2f.projectx.com (live WS) is also DEAD
+            # Official docs only list demo endpoints: https://gateway.docs.projectx.com/docs/getting-started/connection-urls/
             'demo': 'https://gateway-api-demo.s2f.projectx.com',
-            'live': 'https://gateway-api.s2f.projectx.com',
-            # IMPORTANT: userapi-demo works for ALL accounts (demo AND live/funded)
-            # userapi.s2f.projectx.com does NOT exist (DNS NXDOMAIN)
-            'user_api_demo': 'https://userapi-demo.s2f.projectx.com',  # Password auth - works for ALL
-            'user_api_live': 'https://userapi-demo.s2f.projectx.com',  # Same endpoint works for live too
+            'live': 'https://gateway-api-demo.s2f.projectx.com',
+            'user_api_demo': 'https://userapi-demo.s2f.projectx.com',
+            'user_api_live': 'https://userapi-demo.s2f.projectx.com',
             'ws_user_demo': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/user',
-            'ws_user_live': 'https://gateway-rtc.s2f.projectx.com/hubs/user',
+            'ws_user_live': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/user',
             'ws_market_demo': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/market',
-            'ws_market_live': 'https://gateway-rtc.s2f.projectx.com/hubs/market',
+            'ws_market_live': 'https://gateway-rtc-demo.s2f.projectx.com/hubs/market',
         }
     }
     
@@ -1323,10 +1324,8 @@ class ProjectXWebSocket:
         self.session_token = session_token
         self.demo = demo
         
-        if demo:
-            self.hub_url = "https://gateway-rtc-demo.s2f.projectx.com/hubs/user"
-        else:
-            self.hub_url = "https://gateway-rtc.s2f.projectx.com/hubs/user"
+        # ProjectX uses demo URLs for all accounts (live gateway DNS is dead)
+        self.hub_url = "https://gateway-rtc-demo.s2f.projectx.com/hubs/user"
         
         self.connection = None
         self.is_connected = False
