@@ -58,6 +58,17 @@ except ImportError as e:
     print(f"⚠️ User authentication module not available: {e}")
 
 # ============================================================================
+# DISCORD MODULE (extracted from this file)
+# ============================================================================
+from discord_notifications import (
+    init_discord_notifications, send_discord_dm,
+    get_discord_enabled_users, get_users_for_recorder_notifications,
+    notify_trade_execution, notify_tp_sl_hit, notify_error,
+    notify_daily_summary, broadcast_announcement, is_discord_enabled
+)
+from discord_routes import discord_bp, init_discord_routes
+
+# ============================================================================
 # SUBSCRIPTION SYSTEM
 # ============================================================================
 try:
@@ -283,57 +294,89 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
         return cumulative, drawdown
 
     try:
+        # Helper: fetch recorder TP/SL settings and calculate prices
+        def _calc_tp_sl(entry, direction):
+            _tp, _sl = None, None
+            try:
+                cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units FROM recorders WHERE id = {ph}', (recorder_id,))
+                rec_row = cursor.fetchone()
+                if rec_row:
+                    tp_targets_raw, sl_en, sl_amt, sl_un = rec_row
+                    from recorder_service import get_tick_size
+                    tick_sz = get_tick_size(symbol)
+                    if tp_targets_raw:
+                        import json
+                        try:
+                            tp_list = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
+                            if tp_list and len(tp_list) > 0:
+                                first_tp = tp_list[0]
+                                tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
+                                if tp_ticks and float(tp_ticks) > 0:
+                                    tp_off = float(tp_ticks) * tick_sz
+                                    _tp = entry + tp_off if direction == 'LONG' else entry - tp_off
+                                    _tp = round(round(_tp / tick_sz) * tick_sz, 10)
+                        except:
+                            pass
+                    if sl_en and sl_amt and float(sl_amt) > 0:
+                        sl_ticks = float(sl_amt)
+                        sl_off = sl_ticks if sl_un == 'Points' else sl_ticks * tick_sz
+                        _sl = entry - sl_off if direction == 'LONG' else entry + sl_off
+                        _sl = round(round(_sl / tick_sz) * tick_sz, 10)
+            except Exception as e:
+                print(f"⚠️ Could not fetch recorder TP/SL settings: {e}", flush=True)
+            return _tp, _sl
+
+        # Helper: close a single open position with P&L
+        def _close_position(pos_id, pos_side, pos_qty, pos_entry, exit_px, reason):
+            from tv_price_service import FUTURES_SPECS
+            spec = FUTURES_SPECS.get(extract_symbol_root(symbol), {'point_value': 1.0})
+            pv = spec['point_value']
+            if pos_side == 'LONG':
+                _pnl = (exit_px - pos_entry) * pv * pos_qty
+            else:
+                _pnl = (pos_entry - exit_px) * pv * pos_qty
+            _cum, _dd = _calc_drawdown_stats(cursor, ph, recorder_id, _pnl)
+            cursor.execute(f'''
+                UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
+                cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
+                WHERE id = {ph}
+            ''', (exit_px, _pnl, _cum, _dd, reason, now, pos_id))
+            return _pnl
+
         if side in ['LONG', 'SHORT']:
-            # Opening a position - check if there's an existing open position to close first
+            # Fetch ALL open positions for this recorder/symbol (not just LIMIT 1)
             cursor.execute(f'''
                 SELECT id, side, quantity, entry_price FROM paper_trades
                 WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
-                ORDER BY opened_at DESC LIMIT 1
+                ORDER BY opened_at ASC
             ''', (recorder_id, symbol))
-            existing = cursor.fetchone()
+            all_open = cursor.fetchall()
 
-            if existing:
-                exist_id, exist_side, exist_qty, exist_entry = existing
+            if all_open:
+                # Separate same-direction and opposite-direction positions
+                same_dir = [r for r in all_open if r[1] == side]
+                opp_dir = [r for r in all_open if r[1] != side]
 
-                if exist_side == side:  # SAME direction = DCA (add to position)
-                    # Calculate new average entry price
+                if same_dir:
+                    # DCA into the FIRST same-direction position, close any extras as duplicates
+                    primary = same_dir[0]
+                    exist_id, exist_side, exist_qty, exist_entry = primary
+
+                    # Close duplicate same-direction positions (stacking bug cleanup)
+                    for dup in same_dir[1:]:
+                        dup_pnl = _close_position(dup[0], dup[1], dup[2], dup[3], price, 'dedup')
+                        print(f"📝 Closed duplicate {dup[1]} position #{dup[0]} (dedup), P&L: ${dup_pnl:.2f}", flush=True)
+
+                    # Also close any opposite-direction positions (stale from before)
+                    for opp in opp_dir:
+                        opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'signal')
+                        print(f"📝 Closed stale opposite {opp[1]} position #{opp[0]}, P&L: ${opp_pnl:.2f}", flush=True)
+
+                    # DCA: add to primary position
                     new_qty = exist_qty + quantity
                     avg_entry = ((exist_entry * exist_qty) + (price * quantity)) / new_qty
+                    tp_price, sl_price = _calc_tp_sl(avg_entry, side)
 
-                    # Recalculate TP/SL from new average entry
-                    tp_price = None
-                    sl_price = None
-                    try:
-                        cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units FROM recorders WHERE id = {ph}', (recorder_id,))
-                        rec_row = cursor.fetchone()
-                        if rec_row:
-                            tp_targets_raw, sl_enabled, sl_amount, sl_units = rec_row
-                            from recorder_service import get_tick_size
-                            tick_size = get_tick_size(symbol)
-
-                            # Parse TP targets
-                            if tp_targets_raw:
-                                import json
-                                try:
-                                    tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
-                                    if tp_targets and len(tp_targets) > 0:
-                                        first_tp = tp_targets[0]
-                                        tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
-                                        if tp_ticks and float(tp_ticks) > 0:
-                                            tp_offset = float(tp_ticks) * tick_size
-                                            tp_price = avg_entry + tp_offset if side == 'LONG' else avg_entry - tp_offset
-                                except:
-                                    pass
-
-                            # Calculate SL price
-                            if sl_enabled and sl_amount and float(sl_amount) > 0:
-                                sl_ticks = float(sl_amount)
-                                sl_offset = sl_ticks if sl_units == 'Points' else sl_ticks * tick_size
-                                sl_price = avg_entry - sl_offset if side == 'LONG' else avg_entry + sl_offset
-                    except Exception as e:
-                        print(f"⚠️ Could not fetch recorder TP/SL for DCA: {e}", flush=True)
-
-                    # Update existing position with DCA
                     cursor.execute(f'''
                         UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}
                         WHERE id = {ph}
@@ -346,87 +389,26 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                     conn.commit()
                     return {'success': True, 'symbol': symbol, 'action': 'DCA', 'price': price, 'avg_entry': avg_entry, 'quantity': new_qty}
 
-                else:  # Opposite direction signal
-                    # Check if this is a DCA strategy - if so, ignore opposite direction signals
+                else:
+                    # Only opposite-direction positions exist
                     cursor.execute(f'SELECT avg_down_enabled FROM recorders WHERE id = {ph}', (recorder_id,))
                     rec_check = cursor.fetchone()
                     is_dca_strategy = bool(rec_check and rec_check[0])
 
                     if is_dca_strategy:
                         # DCA strategies ignore opposite direction signals - wait for TP exit
-                        print(f"📝 DCA Strategy: Ignoring opposite direction signal ({side}) - waiting for TP exit on {exist_side} position", flush=True)
+                        print(f"📝 DCA Strategy: Ignoring opposite direction signal ({side}) - waiting for TP exit on {opp_dir[0][1]} position", flush=True)
                         conn.commit()
                         conn.close()
-                        return {'success': True, 'symbol': symbol, 'action': 'IGNORED_DCA', 'reason': f'DCA strategy ignores {side} while {exist_side} position open'}
+                        return {'success': True, 'symbol': symbol, 'action': 'IGNORED_DCA', 'reason': f'DCA strategy ignores {side} while {opp_dir[0][1]} position open'}
 
-                    # Non-DCA: close existing position and open new one
-                    # Calculate P&L for closing
-                    from tv_price_service import FUTURES_SPECS
-                    spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
-                    point_value = spec['point_value']
-
-                    if exist_side == 'LONG':
-                        pnl = (price - exist_entry) * point_value * exist_qty
-                    else:
-                        pnl = (exist_entry - price) * point_value * exist_qty
-
-                    # Calculate drawdown stats
-                    cumulative, drawdown = _calc_drawdown_stats(cursor, ph, recorder_id, pnl)
-
-                    cursor.execute(f'''
-                        UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
-                        cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
-                        WHERE id = {ph}
-                    ''', (price, pnl, cumulative, drawdown, 'signal', now, exist_id))
-                    print(f"📝 Closed existing {exist_side} position (signal), P&L: ${pnl:.2f}", flush=True)
+                    # Non-DCA: close ALL opposite positions and open new one
+                    for opp in opp_dir:
+                        opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'signal')
+                        print(f"📝 Closed {opp[1]} position #{opp[0]} (signal), P&L: ${opp_pnl:.2f}", flush=True)
 
             # Open new position with TP/SL from recorder settings
-            tp_price = None
-            sl_price = None
-
-            # Fetch recorder settings for TP/SL
-            try:
-                cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units FROM recorders WHERE id = {ph}', (recorder_id,))
-                rec_row = cursor.fetchone()
-                if rec_row:
-                    tp_targets_raw, sl_enabled, sl_amount, sl_units = rec_row
-
-                    # Get tick size for this symbol
-                    from tv_price_service import FUTURES_SPECS
-                    from recorder_service import get_tick_size
-                    tick_size = get_tick_size(symbol)
-
-                    # Parse TP targets
-                    if tp_targets_raw:
-                        import json
-                        try:
-                            tp_targets = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
-                            if tp_targets and len(tp_targets) > 0:
-                                first_tp = tp_targets[0]
-                                tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
-                                if tp_ticks and float(tp_ticks) > 0:
-                                    tp_offset = float(tp_ticks) * tick_size
-                                    if side == 'LONG':
-                                        tp_price = price + tp_offset
-                                    else:
-                                        tp_price = price - tp_offset
-                        except:
-                            pass
-
-                    # Calculate SL price
-                    if sl_enabled and sl_amount and float(sl_amount) > 0:
-                        sl_ticks = float(sl_amount)
-                        if sl_units == 'Points':
-                            sl_offset = sl_ticks
-                        else:  # Ticks
-                            sl_offset = sl_ticks * tick_size
-
-                        if side == 'LONG':
-                            sl_price = price - sl_offset
-                        else:
-                            sl_price = price + sl_offset
-            except Exception as e:
-                print(f"⚠️ Could not fetch recorder TP/SL settings: {e}", flush=True)
+            tp_price, sl_price = _calc_tp_sl(price, side)
 
             cursor.execute(f'''
                 INSERT INTO paper_trades (recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, opened_at, status)
@@ -437,34 +419,17 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
             print(f"📝 Opened {side} {quantity} {symbol} @ {price} | {tp_str} | {sl_str}", flush=True)
 
         else:  # CLOSE action
-            # Find and close open position
+            # Find and close ALL open positions for this recorder/symbol
             cursor.execute(f'''
                 SELECT id, side, quantity, entry_price FROM paper_trades
                 WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
-                ORDER BY opened_at DESC LIMIT 1
+                ORDER BY opened_at ASC
             ''', (recorder_id, symbol))
-            existing = cursor.fetchone()
+            all_open = cursor.fetchall()
 
-            if existing:
-                exist_id, exist_side, exist_qty, exist_entry = existing
-                from tv_price_service import FUTURES_SPECS
-                spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
-                point_value = spec['point_value']
-
-                if exist_side == 'LONG':
-                    pnl = (price - exist_entry) * point_value * exist_qty
-                else:
-                    pnl = (exist_entry - price) * point_value * exist_qty
-
-                # Calculate drawdown stats
-                cumulative, drawdown = _calc_drawdown_stats(cursor, ph, recorder_id, pnl)
-
-                cursor.execute(f'''
-                    UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
-                    cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
-                    WHERE id = {ph}
-                ''', (price, pnl, cumulative, drawdown, 'signal', now, exist_id))
-                print(f"📝 Closed {exist_side} position (signal), P&L: ${pnl:.2f}", flush=True)
+            for pos in all_open:
+                pos_pnl = _close_position(pos[0], pos[1], pos[2], pos[3], price, 'signal')
+                print(f"📝 Closed {pos[1]} position #{pos[0]} (signal), P&L: ${pos_pnl:.2f}", flush=True)
 
         conn.commit()
         return {'success': True, 'symbol': symbol, 'action': action, 'price': price}
@@ -543,15 +508,29 @@ def _get_live_price_for_symbol(symbol: str) -> float:
     if not symbol:
         return None
 
-    # Extract symbol root (NQ1! -> NQ, CME_MINI:MNQ1! -> MNQ, etc.)
-    symbol_root = symbol.replace('1!', '').replace('CME_MINI:', '').replace('CME:', '').upper()
+    # Use extract_symbol_root for consistent parsing (handles COMEX:MGC1!, CME_MINI:NQ1!, etc.)
+    symbol_root = extract_symbol_root(symbol)
 
     live_price = None
     if symbol_root and symbol_root in _market_data_cache:
         live_price = _market_data_cache[symbol_root].get('last')
-    # Also try with just the base symbol
+    # Also try with the raw symbol uppercased
     if not live_price and symbol.upper() in _market_data_cache:
         live_price = _market_data_cache[symbol.upper()].get('last')
+
+    # Micro/mini contract fallbacks — same price as full-size contract
+    if not live_price:
+        PRICE_FALLBACKS = {
+            'MGC': 'GC', 'MES': 'ES', 'MNQ': 'NQ', 'M2K': 'RTY', 'MYM': 'YM',
+            'MCL': 'CL', 'SIL': 'SI', 'MGCG': 'GC', 'MGCJ': 'GC', 'MGCH': 'GC',
+        }
+        # Strip trailing contract month codes for lookup (e.g., MGCJ2026 -> MGC)
+        lookup = symbol_root
+        if lookup and len(lookup) > 3 and lookup[:3] in ('MGC', 'MES', 'MNQ', 'SIL', 'MCL'):
+            lookup = lookup[:3]
+        fallback = PRICE_FALLBACKS.get(lookup)
+        if fallback and fallback in _market_data_cache:
+            live_price = _market_data_cache[fallback].get('last')
 
     return live_price
 
@@ -561,7 +540,7 @@ def _calculate_unrealized_pnl(symbol: str, side: str, quantity: float, entry_pri
     from tv_price_service import FUTURES_SPECS
 
     # Get symbol root for specs lookup
-    symbol_root = symbol.replace('1!', '').replace('CME_MINI:', '').replace('CME:', '').upper() if symbol else 'MNQ'
+    symbol_root = extract_symbol_root(symbol) if symbol else 'MNQ'
     spec = FUTURES_SPECS.get(symbol_root, {'point_value': 2.0})  # Default to MNQ
     point_value = spec['point_value']
 
@@ -793,294 +772,8 @@ if DISCORD_NOTIFICATIONS_ENABLED:
 else:
     print("ℹ️ Discord notifications disabled (set DISCORD_BOT_TOKEN to enable)")
 
-def send_discord_dm(discord_user_id: str, message: str, embed: dict = None) -> bool:
-    """
-    Send a direct message to a Discord user via bot.
-    
-    Args:
-        discord_user_id: The Discord user ID to send to
-        message: Text message content
-        embed: Optional rich embed dict
-    
-    Returns:
-        True if sent successfully, False otherwise
-    """
-    if not DISCORD_BOT_TOKEN or not discord_user_id:
-        return False
-    
-    try:
-        # Create DM channel with user
-        create_dm_url = "https://discord.com/api/v10/users/@me/channels"
-        headers = {
-            "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
-            "Content-Type": "application/json"
-        }
-        
-        dm_response = requests.post(create_dm_url, headers=headers, json={
-            "recipient_id": discord_user_id
-        }, timeout=10)
-        
-        if dm_response.status_code != 200:
-            logger.warning(f"⚠️ Failed to create DM channel: {dm_response.status_code}")
-            return False
-        
-        channel_id = dm_response.json().get('id')
-        if not channel_id:
-            return False
-        
-        # Send message to DM channel
-        send_url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-        payload = {"content": message}
-        if embed:
-            payload["embeds"] = [embed]
-        
-        send_response = requests.post(send_url, headers=headers, json=payload, timeout=10)
-        
-        if send_response.status_code in [200, 201]:
-            logger.info(f"✅ Discord DM sent to user {discord_user_id}")
-            return True
-        else:
-            logger.warning(f"⚠️ Failed to send Discord DM: {send_response.status_code}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"❌ Discord DM error: {e}")
-        return False
-
-
-def get_discord_enabled_users(user_id: int = None) -> list:
-    """
-    Get users who have Discord linked and DMs enabled.
-    
-    Args:
-        user_id: Optional specific user ID to check
-    
-    Returns:
-        List of dicts with user_id and discord_user_id
-    """
-    conn = None
-    cursor = None
-    try:
-        if USER_AUTH_AVAILABLE:
-            from user_auth import get_auth_db_connection
-            conn, db_type = get_auth_db_connection()
-            cursor = conn.cursor()
-            
-            # Rollback any failed transactions (PostgreSQL specific issue)
-            try:
-                conn.rollback()
-            except:
-                pass
-            
-            if user_id:
-                if db_type == 'postgresql':
-                    cursor.execute('''
-                        SELECT id, discord_user_id FROM users 
-                        WHERE id = %s AND discord_user_id IS NOT NULL AND discord_dms_enabled = TRUE
-                    ''', (user_id,))
-                else:
-                    cursor.execute('''
-                        SELECT id, discord_user_id FROM users 
-                        WHERE id = ? AND discord_user_id IS NOT NULL AND discord_dms_enabled = 1
-                    ''', (user_id,))
-            else:
-                if db_type == 'postgresql':
-                    cursor.execute('''
-                        SELECT id, discord_user_id FROM users 
-                        WHERE discord_user_id IS NOT NULL AND discord_dms_enabled = TRUE
-                    ''')
-                else:
-                    cursor.execute('''
-                        SELECT id, discord_user_id FROM users 
-                        WHERE discord_user_id IS NOT NULL AND discord_dms_enabled = 1
-                    ''')
-            
-            rows = cursor.fetchall()
-            result = []
-            for row in rows:
-                # Handle both tuple (SQLite) and dict-like (PostgreSQL RealDictRow) rows
-                if isinstance(row, tuple):
-                    result.append({'user_id': row[0], 'discord_user_id': row[1]})
-                else:
-                    result.append({'user_id': row['id'], 'discord_user_id': row['discord_user_id']})
-            logger.info(f"🔔 Discord users query returned {len(result)} users")
-            return result
-    except Exception as e:
-        logger.error(f"❌ Error getting Discord users: {e}")
-        import traceback
-        logger.error(f"❌ Traceback: {traceback.format_exc()}")
-    finally:
-        if cursor:
-            try:
-                cursor.close()
-            except:
-                pass
-        if conn:
-            try:
-                conn.close()
-            except:
-                pass
-    return []
-
-
-def get_users_for_recorder_notifications(recorder_id: int) -> list:
-    """
-    Get all users who should receive notifications for a recorder.
-    This includes the recorder owner AND anyone with traders linked to the recorder.
-    
-    Args:
-        recorder_id: The recorder ID
-    
-    Returns:
-        List of unique user_ids who should be notified
-    """
-    user_ids = set()
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        ph = '%s' if is_postgres else '?'
-        
-        # Get recorder owner
-        cursor.execute(f'SELECT user_id FROM recorders WHERE id = {ph}', (recorder_id,))
-        row = cursor.fetchone()
-        if row:
-            owner_id = row[0] if isinstance(row, tuple) else row.get('user_id')
-            if owner_id:
-                user_ids.add(owner_id)
-        
-        # Get all users with traders linked to this recorder
-        cursor.execute(f'SELECT DISTINCT user_id FROM traders WHERE recorder_id = {ph} AND user_id IS NOT NULL', (recorder_id,))
-        rows = cursor.fetchall()
-        for row in rows:
-            uid = row[0] if isinstance(row, tuple) else row.get('user_id')
-            if uid:
-                user_ids.add(uid)
-        
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"🔔 Users for recorder {recorder_id} notifications: {list(user_ids)}")
-        return list(user_ids)
-    except Exception as e:
-        logger.error(f"❌ Error getting users for recorder notifications: {e}")
-        return []
-
-
-def notify_trade_execution(user_id: int = None, action: str = None, symbol: str = None, quantity: int = None, 
-                           price: float = None, recorder_name: str = None, pnl: float = None,
-                           tp_price: float = None, sl_price: float = None, recorder_id: int = None):
-    """
-    Send trade execution notification to user via Discord AND push notification.
-    
-    Args:
-        user_id: Database user ID
-        action: 'BUY', 'SELL', 'LONG', 'SHORT', 'DCA LONG', 'DCA SHORT'
-        symbol: Trading symbol (e.g., 'MNQH5')
-        quantity: Number of contracts
-        price: Execution price
-        recorder_name: Name of the recorder/strategy
-        pnl: Realized P&L (for closing trades)
-        tp_price: Take profit price (optional)
-        sl_price: Stop loss price (optional)
-    """
-    logger.info(f"🔔 notify_trade_execution called: user_id={user_id}, action={action}, symbol={symbol}, qty={quantity}")
-    
-    # Determine if this is a DCA, open, or close
-    action_upper = action.upper()
-    is_dca = 'DCA' in action_upper
-    is_long = 'BUY' in action_upper or 'LONG' in action_upper
-    is_close = pnl is not None
-    
-    # Build Discord embed
-    if is_close:
-        # Closing trade
-        embed_color = 0x00FF00 if pnl >= 0 else 0xFF0000  # Green if profit, red if loss
-        title = f"{recorder_name or 'Trade'} {symbol}"
-        description = f"{symbol} Closed a {'LONG' if is_long else 'SHORT'}"
-        fields = [
-            {"name": "Close Price", "value": f"{price:,.2f}", "inline": True},
-            {"name": "Realized Profit", "value": f"${pnl:,.2f}", "inline": True},
-            {"name": "Drawdown", "value": "$0.00", "inline": True}
-        ]
-    else:
-        # Opening trade
-        embed_color = 0x00FF00 if is_long else 0xFF0000  # Green for long, red for short
-        action_text = "DCA" if is_dca else "Opened"
-        side_text = "LONG" if is_long else "SHORT"
-        title = f"{recorder_name or 'Trade'} {symbol}"
-        description = f"{symbol} {action_text} a {side_text}"
-        fields = [
-            {"name": "Open Price", "value": f"{price:,.2f}", "inline": True},
-            {"name": "Current Pos", "value": f"{quantity}", "inline": True},
-            {"name": "First TP", "value": f"{tp_price:,.2f}" if tp_price else "None", "inline": True},
-            {"name": "Stoploss", "value": f"{sl_price:,.2f}" if sl_price else "0.00", "inline": False}
-        ]
-    
-    embed = {
-        "title": title,
-        "description": description,
-        "color": embed_color,
-        "fields": fields,
-        "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
-        "footer": {"text": "Just.Trades Notification"},
-        "timestamp": get_chicago_time().isoformat()
-    }
-    
-    # Push notification (plain text)
-    push_title = f"{'📈' if is_long else '📉'} {recorder_name or 'Trade'}"
-    if is_close:
-        push_body = f"Closed {symbol} @ {price:,.2f} • P&L: ${pnl:,.2f}"
-    else:
-        push_body = f"{'DCA' if is_dca else 'Opened'} {'LONG' if is_long else 'SHORT'} {symbol} @ {price:,.2f}"
-    
-    # Get all users to notify
-    # If recorder_id provided, notify ALL users linked to the recorder (not just owner)
-    if recorder_id:
-        user_ids_to_notify = get_users_for_recorder_notifications(recorder_id)
-    elif user_id:
-        user_ids_to_notify = [user_id]
-    else:
-        user_ids_to_notify = []
-
-    logger.info(f"🔔 Users to notify: {user_ids_to_notify}")
-
-    # 🚀 FIRE-AND-FORGET: Send notifications in background thread to avoid blocking order execution
-    def send_notifications_background():
-        """Background thread for sending Discord and Push notifications."""
-        try:
-            # Send Discord DM with embed to ALL users
-            if DISCORD_NOTIFICATIONS_ENABLED:
-                for uid in user_ids_to_notify:
-                    try:
-                        users = get_discord_enabled_users(uid)
-                        for user in users:
-                            try:
-                                send_discord_dm(user['discord_user_id'], "", embed)
-                            except Exception as dm_err:
-                                logger.debug(f"Discord DM error: {dm_err}")
-                    except Exception as user_err:
-                        logger.debug(f"Discord user lookup error: {user_err}")
-
-            # Send Push Notification to ALL users
-            if PUSH_NOTIFICATIONS_ENABLED:
-                for uid in user_ids_to_notify:
-                    try:
-                        send_push_notification(uid, push_title, push_body, url='/dashboard')
-                    except Exception as push_err:
-                        logger.debug(f"Push notification error: {push_err}")
-
-            logger.debug(f"🔔 Background notifications completed for {len(user_ids_to_notify)} users")
-        except Exception as e:
-            logger.error(f"🔔 Background notification error: {e}")
-
-    # Start background thread (non-blocking)
-    import threading
-    notification_thread = threading.Thread(target=send_notifications_background, daemon=True)
-    notification_thread.start()
-    logger.info(f"🔔 Notifications dispatched to background thread")
-
+## Discord notification functions have been extracted to discord_notifications.py
+## They are imported at the top of this file and initialized after app creation.
 
 def track_paper_trade(recorder_id: int, symbol: str, action: str, quantity: float = 1, price: float = None):
     """
@@ -1140,205 +833,8 @@ def track_paper_trade(recorder_id: int, symbol: str, action: str, quantity: floa
     return None
 
 
-def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = None, quantity: int = None, 
-                     price: float = None, pnl: float = None, recorder_name: str = None,
-                     entry_price: float = None, side: str = None, recorder_id: int = None):
-    """
-    Send TP/SL hit notification via Discord AND push notification.
-    
-    Args:
-        user_id: Database user ID (deprecated, use recorder_id instead)
-        order_type: 'TP' or 'SL'
-        symbol: Trading symbol
-        quantity: Contracts closed
-        price: Fill price (exit price)
-        pnl: Realized P&L
-        recorder_name: Name of the recorder/strategy
-        entry_price: Original entry price
-        side: 'LONG' or 'SHORT'
-        recorder_id: Recorder ID - will notify ALL users linked to this recorder
-    """
-    logger.info(f"🔔 notify_tp_sl_hit called: user_id={user_id}, recorder_id={recorder_id}, type={order_type}, symbol={symbol}, pnl={pnl}")
-    
-    is_tp = order_type.upper() == 'TP'
-    
-    # Build Discord embed
-    embed_color = 0x00FF00 if (pnl and pnl >= 0) else 0xFF0000
-    title = f"{recorder_name or 'Trade'} {symbol}"
-    description = f"{symbol} Closed a {side or 'POSITION'}"
-    
-    fields = [
-        {"name": "Close Price", "value": f"{price:,.2f}", "inline": True},
-        {"name": "Realized Profit", "value": f"${pnl:,.2f}" if pnl else "$0.00", "inline": True},
-        {"name": "Drawdown", "value": "$0.00", "inline": True}
-    ]
-    
-    embed = {
-        "title": title,
-        "description": description,
-        "color": embed_color,
-        "fields": fields,
-        "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
-        "footer": {"text": f"Just.Trades • {'Take Profit' if is_tp else 'Stop Loss'}"},
-        "timestamp": get_chicago_time().isoformat()
-    }
-    
-    # Push notification (plain text)
-    push_title = f"{'🎯' if is_tp else '🛑'} {'TP' if is_tp else 'SL'} Hit"
-    push_body = f"{symbol} @ {price:,.2f}"
-    if pnl is not None:
-        push_body += f" • P&L: ${pnl:,.2f}"
-    
-    # Get all users to notify
-    if recorder_id:
-        user_ids_to_notify = get_users_for_recorder_notifications(recorder_id)
-    elif user_id:
-        user_ids_to_notify = [user_id]
-    else:
-        user_ids_to_notify = []
-
-    logger.info(f"🔔 Users to notify for TP/SL: {user_ids_to_notify}")
-
-    # 🚀 FIRE-AND-FORGET: Send notifications in background thread to avoid blocking
-    def send_tpsl_notifications_background():
-        """Background thread for sending TP/SL Discord and Push notifications."""
-        try:
-            if DISCORD_NOTIFICATIONS_ENABLED:
-                for uid in user_ids_to_notify:
-                    try:
-                        users = get_discord_enabled_users(uid)
-                        for user in users:
-                            try:
-                                send_discord_dm(user['discord_user_id'], "", embed)
-                            except Exception as dm_err:
-                                logger.debug(f"Discord DM error: {dm_err}")
-                    except Exception as user_err:
-                        logger.debug(f"Discord user lookup error: {user_err}")
-
-            if PUSH_NOTIFICATIONS_ENABLED:
-                for uid in user_ids_to_notify:
-                    try:
-                        send_push_notification(uid, push_title, push_body, url='/dashboard')
-                    except Exception as push_err:
-                        logger.debug(f"Push notification error: {push_err}")
-
-            logger.debug(f"🔔 Background TP/SL notifications completed")
-        except Exception as e:
-            logger.error(f"🔔 Background TP/SL notification error: {e}")
-
-    import threading
-    notification_thread = threading.Thread(target=send_tpsl_notifications_background, daemon=True)
-    notification_thread.start()
-    logger.info(f"🔔 TP/SL notifications dispatched to background thread")
-
-
-def notify_error(user_id: int, error_type: str, error_message: str, details: str = None):
-    """
-    Send error notification to user via Discord AND push notification.
-    
-    Args:
-        user_id: Database user ID
-        error_type: Type of error (e.g., 'Connection Lost', 'Webhook Failed')
-        error_message: Brief error description
-        details: Optional additional details
-    """
-    # Discord message
-    discord_message = f"⚠️ **{error_type}**\n"
-    discord_message += f"❌ {error_message}"
-    if details:
-        discord_message += f"\n📝 {details}"
-    discord_message += f"\n⏰ {get_chicago_time().strftime('%I:%M:%S %p CT')}"
-    
-    # Push notification
-    push_title = f"⚠️ {error_type}"
-    push_body = error_message
-    if details:
-        push_body += f" - {details[:50]}"
-    
-    # Send Discord DM
-    if DISCORD_NOTIFICATIONS_ENABLED:
-        users = get_discord_enabled_users(user_id)
-        for user in users:
-            send_discord_dm(user['discord_user_id'], discord_message)
-    
-    # Send Push Notification
-    if PUSH_NOTIFICATIONS_ENABLED:
-        send_push_notification(user_id, push_title, push_body, url='/recorders_list')
-
-
-def notify_daily_summary(user_id: int, total_trades: int, winners: int, losers: int,
-                         total_pnl: float, best_trade: float = None, worst_trade: float = None):
-    """
-    Send daily P&L summary to user.
-    
-    Args:
-        user_id: Database user ID
-        total_trades: Number of trades today
-        winners: Number of winning trades
-        losers: Number of losing trades
-        total_pnl: Total realized P&L
-        best_trade: Best single trade P&L
-        worst_trade: Worst single trade P&L
-    """
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return
-    
-    users = get_discord_enabled_users(user_id)
-    if not users:
-        return
-    
-    pnl_emoji = "📈" if total_pnl >= 0 else "📉"
-    win_rate = (winners / total_trades * 100) if total_trades > 0 else 0
-    
-    message = f"📊 **Daily Trading Summary**\n"
-    message += f"━━━━━━━━━━━━━━━━━━━━\n"
-    message += f"{pnl_emoji} **Total P&L: ${total_pnl:,.2f}**\n"
-    message += f"📈 Trades: {total_trades} ({winners}W / {losers}L)\n"
-    message += f"🎯 Win Rate: {win_rate:.1f}%\n"
-    if best_trade is not None:
-        message += f"🏆 Best Trade: ${best_trade:,.2f}\n"
-    if worst_trade is not None:
-        message += f"💔 Worst Trade: ${worst_trade:,.2f}\n"
-    message += f"━━━━━━━━━━━━━━━━━━━━\n"
-    message += f"📅 {get_chicago_time().strftime('%B %d, %Y')}"
-    
-    for user in users:
-        send_discord_dm(user['discord_user_id'], message)
-
-
-def broadcast_announcement(title: str, message: str, announcement_type: str = 'info'):
-    """
-    Broadcast announcement to ALL users with Discord linked and DMs enabled.
-    
-    Args:
-        title: Announcement title
-        message: Announcement content
-        announcement_type: 'info', 'success', 'warning', 'critical'
-    """
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return 0
-    
-    type_emojis = {
-        'info': 'ℹ️',
-        'success': '✅',
-        'warning': '⚠️',
-        'critical': '🚨'
-    }
-    
-    emoji = type_emojis.get(announcement_type, 'ℹ️')
-    
-    full_message = f"{emoji} **{title}**\n\n{message}\n\n— Just.Trades Team"
-    
-    users = get_discord_enabled_users()
-    sent_count = 0
-    
-    for user in users:
-        if send_discord_dm(user['discord_user_id'], full_message):
-            sent_count += 1
-    
-    logger.info(f"📢 Broadcast sent to {sent_count}/{len(users)} Discord users")
-    return sent_count
-
+## notify_tp_sl_hit, notify_error, notify_daily_summary, broadcast_announcement
+## have been extracted to discord_notifications.py
 
 # ============================================================================
 # PUSH NOTIFICATION SERVICE (Browser Push)
@@ -1603,7 +1099,7 @@ def start_fast_webhook_workers():
 # Webhook handler queues broker execution here, returns immediately.
 # Background worker processes queue with retries.
 # This ensures webhooks NEVER fail due to broker issues.
-broker_execution_queue = Queue(maxsize=1000)
+broker_execution_queue = Queue(maxsize=5000)
 _broker_execution_worker_count = 10  # Number of parallel workers for HIVE MIND instant execution
 
 # ============================================================================
@@ -2111,11 +1607,11 @@ def _init_db_once():
             _init_postgres_tables()
 
             # Create connection pool for fast parallel processing
-            # min=20 connections ready, max=100 for burst traffic
+            # min=20 connections ready, max=200 for 5000+ user burst traffic
             try:
                 _pg_pool = psycopg2.pool.ThreadedConnectionPool(
                     minconn=20,
-                    maxconn=100,
+                    maxconn=200,
                     dsn=_db_url,
                     connect_timeout=5
                 )
@@ -2156,11 +1652,17 @@ def get_db_connection():
             try:
                 conn = _pg_pool.getconn()
                 conn.cursor_factory = RealDictCursor
-                # Ensure clean state
+                # Clear any aborted transaction state (no round-trip query needed)
                 try:
                     conn.rollback()
-                except:
-                    pass
+                except Exception:
+                    # Connection is truly dead — discard it and get a fresh one
+                    try:
+                        _pg_pool.putconn(conn, close=True)
+                    except:
+                        pass
+                    conn = psycopg2.connect(_db_url, connect_timeout=5)
+                    conn.cursor_factory = RealDictCursor
                 return PostgresConnectionWrapper(conn, _pg_pool)  # Returns to pool on close
             except Exception as pool_err:
                 print(f"⚠️ Pool getconn failed, creating fresh connection: {pool_err}")
@@ -3357,6 +2859,38 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 if USER_AUTH_AVAILABLE:
     app.context_processor(auth_context_processor)
 
+# ============================================================================
+# INITIALIZE DISCORD MODULE
+# ============================================================================
+_auth_db_fn = None
+if USER_AUTH_AVAILABLE:
+    try:
+        from user_auth import get_auth_db_connection as _auth_db_fn
+    except ImportError:
+        pass
+
+init_discord_notifications(
+    bot_token=DISCORD_BOT_TOKEN,
+    get_db_connection=get_db_connection,
+    is_using_postgres=is_using_postgres,
+    get_chicago_time=get_chicago_time,
+    send_push_notification=send_push_notification if PUSH_NOTIFICATIONS_ENABLED else None,
+    push_notifications_enabled=PUSH_NOTIFICATIONS_ENABLED,
+    user_auth_available=USER_AUTH_AVAILABLE,
+    get_auth_db_connection=_auth_db_fn
+)
+
+init_discord_routes(
+    user_auth_available=USER_AUTH_AVAILABLE,
+    is_logged_in=is_logged_in if USER_AUTH_AVAILABLE else (lambda: False),
+    get_current_user=get_current_user if USER_AUTH_AVAILABLE else (lambda: None),
+    get_auth_db_connection=_auth_db_fn,
+    discord_notifications_enabled=DISCORD_NOTIFICATIONS_ENABLED,
+    send_discord_dm_fn=send_discord_dm,
+    broadcast_announcement_fn=broadcast_announcement,
+)
+app.register_blueprint(discord_bp)
+
 # Template filter for date formatting
 @app.template_filter('format_datetime')
 def format_datetime_filter(value):
@@ -3527,7 +3061,10 @@ def get_market_price_simple(symbol: str) -> Optional[float]:
             'YM': 'YM=F',    # E-mini Dow
             'CL': 'CL=F',    # Crude Oil
             'GC': 'GC=F',    # Gold
+            'MGC': 'MGC=F',  # Micro Gold
             'MCL': 'MCL=F',  # Micro Crude
+            'SI': 'SI=F',    # Silver
+            'HG': 'HG=F',    # Copper
         }
 
         yahoo_symbol = yahoo_futures_map.get(root)
@@ -3566,6 +3103,8 @@ def get_market_price_simple(symbol: str) -> Optional[float]:
             'RTY': 'CME:RTY1!',
             'CL': 'NYMEX:CL1!',
             'GC': 'COMEX:GC1!',
+            'MGC': 'COMEX:MGC1!',
+            'SI': 'COMEX:SI1!',
         }
 
         tv_symbol = tv_symbol_map.get(root, f'CME:{clean_symbol}')
@@ -3636,15 +3175,65 @@ SYMBOL_CONVERSION_CACHE: dict[tuple[str, bool], tuple[str, datetime]] = {}
 SYMBOL_CACHE_TTL = timedelta(hours=1)
 
 TICK_INFO = {
-    'MNQ': {'tick_size': 0.25, 'tick_value': 0.5},
-    'NQ': {'tick_size': 0.25, 'tick_value': 5.0},
+    # === INDEX FUTURES ===
     'MES': {'tick_size': 0.25, 'tick_value': 1.25},
     'ES': {'tick_size': 0.25, 'tick_value': 12.5},
+    'MNQ': {'tick_size': 0.25, 'tick_value': 0.5},
+    'NQ': {'tick_size': 0.25, 'tick_value': 5.0},
+    'MYM': {'tick_size': 1.0, 'tick_value': 0.5},
+    'YM': {'tick_size': 1.0, 'tick_value': 5.0},
     'M2K': {'tick_size': 0.1, 'tick_value': 0.5},
     'RTY': {'tick_size': 0.1, 'tick_value': 5.0},
+
+    # === METALS ===
+    'GC': {'tick_size': 0.1, 'tick_value': 10.0},
+    'MGC': {'tick_size': 0.1, 'tick_value': 1.0},
+    'SI': {'tick_size': 0.005, 'tick_value': 25.0},
+    'SIL': {'tick_size': 0.005, 'tick_value': 5.0},
+    'HG': {'tick_size': 0.0005, 'tick_value': 12.5},
+    'PL': {'tick_size': 0.1, 'tick_value': 5.0},
+
+    # === ENERGIES ===
     'CL': {'tick_size': 0.01, 'tick_value': 10.0},
     'MCL': {'tick_size': 0.01, 'tick_value': 1.0},
-    'GC': {'tick_size': 0.1, 'tick_value': 10.0}
+    'NG': {'tick_size': 0.001, 'tick_value': 10.0},
+    'HO': {'tick_size': 0.0001, 'tick_value': 4.2},
+    'RB': {'tick_size': 0.0001, 'tick_value': 4.2},
+
+    # === TREASURIES ===
+    'ZB': {'tick_size': 0.03125, 'tick_value': 31.25},
+    'ZN': {'tick_size': 0.015625, 'tick_value': 15.625},
+    'ZF': {'tick_size': 0.0078125, 'tick_value': 7.8125},
+    'ZT': {'tick_size': 0.0078125, 'tick_value': 15.625},
+
+    # === CURRENCIES ===
+    '6E': {'tick_size': 0.00005, 'tick_value': 6.25},
+    '6J': {'tick_size': 0.0000005, 'tick_value': 6.25},
+    '6B': {'tick_size': 0.0001, 'tick_value': 6.25},
+    '6A': {'tick_size': 0.0001, 'tick_value': 10.0},
+    '6C': {'tick_size': 0.00005, 'tick_value': 5.0},
+    '6S': {'tick_size': 0.0001, 'tick_value': 12.5},
+    '6N': {'tick_size': 0.0001, 'tick_value': 10.0},
+    '6M': {'tick_size': 0.00001, 'tick_value': 5.0},
+    'DX': {'tick_size': 0.005, 'tick_value': 5.0},
+
+    # === CRYPTO ===
+    'BTC': {'tick_size': 5.0, 'tick_value': 25.0},
+    'MBT': {'tick_size': 5.0, 'tick_value': 0.5},
+    'ETH': {'tick_size': 0.25, 'tick_value': 12.5},
+    'MET': {'tick_size': 0.25, 'tick_value': 0.025},
+
+    # === GRAINS ===
+    'ZC': {'tick_size': 0.25, 'tick_value': 12.5},
+    'ZS': {'tick_size': 0.25, 'tick_value': 12.5},
+    'ZW': {'tick_size': 0.25, 'tick_value': 12.5},
+    'ZM': {'tick_size': 0.1, 'tick_value': 10.0},
+    'ZL': {'tick_size': 0.01, 'tick_value': 6.0},
+
+    # === SOFTS ===
+    'KC': {'tick_size': 0.05, 'tick_value': 18.75},
+    'CT': {'tick_size': 0.01, 'tick_value': 5.0},
+    'SB': {'tick_size': 0.01, 'tick_value': 11.2},
 }
 
 
@@ -3718,9 +3307,21 @@ def extract_symbol_root(symbol: str) -> str:
     if not symbol:
         return ''
     clean = symbol.upper()
-    clean = clean.replace('!', '')
-    match = re.match(r'^([A-Z]+)', clean)
-    return match.group(1) if match else clean
+    # Strip exchange prefix (e.g., "COMEX:MGC1!" → "MGC1!")
+    if ':' in clean:
+        clean = clean.split(':')[-1]
+    clean = clean.replace('1!', '').replace('!', '')
+
+    # Check for known symbols FIRST (matches recorder_service.py approach)
+    KNOWN_ROOTS = ['MNQ', 'MES', 'M2K', 'MYM', 'MCL', 'MGC', 'NQ', 'ES', 'YM', 'RTY', 'CL', 'GC', 'SI', 'HG', 'PL', 'NG', 'ZB', 'ZN', 'ZF', 'ZT', 'ZC', 'ZS', 'ZW', 'ZL', 'KC', 'SB', 'CT', 'HE', 'LE', 'SIL']
+    for known in sorted(KNOWN_ROOTS, key=len, reverse=True):  # Longest first (MNQ before NQ)
+        if clean.startswith(known):
+            return known
+
+    # Fallback: remove trailing month code + digits
+    clean = re.sub(r'[0-9]+', '', clean)
+    clean = re.sub(r'[FGHJKMNQUVXZ]$', '', clean)
+    return clean if clean else symbol.upper()
 
 
 def get_tick_info(symbol: str) -> dict:
@@ -3743,8 +3344,7 @@ async def wait_for_position_fill(tradovate, account_id: int, symbol: str, expect
     while time.time() < deadline:
         attempt += 1
         try:
-            # Add timeout to get_positions to prevent hanging
-            positions = await asyncio.wait_for(tradovate.get_positions(account_id), timeout=5.0)
+            positions = await tradovate.get_positions(account_id)
             logger.debug(f"  Attempt {attempt}: Found {len(positions)} positions")
             
             for pos in positions:
@@ -3772,8 +3372,10 @@ async def wait_for_position_fill(tradovate, account_id: int, symbol: str, expect
 def clamp_price(price: float, tick_size: float) -> float:
     if price is None:
         return None
-    decimals = max(3, len(str(tick_size).split('.')[-1]))
-    return round(price, decimals)
+    ticks = round(price / tick_size)
+    clamped = ticks * tick_size
+    decimals = max(2, len(str(tick_size).rstrip('0').split('.')[-1]))
+    return round(clamped, decimals)
 
 
 async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbol: str, entry_side: str, quantity: int, risk_config: dict):
@@ -3847,23 +3449,15 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
         logger.info(f"   Entry: {entry_price}, TP ticks: {tp_ticks}, SL ticks: {sl_ticks}")
         
         # Use the new OCO exit method
-        try:
-            # Add timeout to place_exit_oco
-            result = await asyncio.wait_for(
-                tradovate.place_exit_oco(
-                    account_id=account_id,
-                    account_spec=account_spec,
-                    symbol=symbol_upper,
-                    exit_side=exit_action,
-                    quantity=quantity,
-                    take_profit_price=tp_price,
-                    stop_loss_price=sl_price
-                ),
-                timeout=10.0
-            )
-        except Exception as oco_err:
-            logger.warning(f"⚠️ OCO exit timeout/error: {oco_err}")
-            result = None
+        result = await tradovate.place_exit_oco(
+            account_id=account_id,
+            account_spec=account_spec,
+            symbol=symbol_upper,
+            exit_side=exit_action,
+            quantity=quantity,
+            take_profit_price=tp_price,
+            stop_loss_price=sl_price
+        )
         
         if result and result.get('success'):
             logger.info(f"✅ OCO exit orders placed successfully")
@@ -3881,24 +3475,16 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
             if tp_price:
                 logger.info(f"📊 Placing TP individually @ {tp_price}, Qty: {quantity}")
                 tp_order_data = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, quantity, tp_price, account_id)
-                try:
-                    # Add timeout to place_order
-                    tp_result = await asyncio.wait_for(tradovate.place_order(tp_order_data), timeout=10.0)
-                    if tp_result and tp_result.get('success'):
-                        tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
-                except Exception as tp_err:
-                    logger.warning(f"⚠️ Failed to place individual TP: {tp_err}")
+                tp_result = await tradovate.place_order(tp_order_data)
+                if tp_result and tp_result.get('success'):
+                    tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
             
             if sl_price:
                 logger.info(f"📊 Placing SL individually @ {sl_price}, Qty: {quantity}")
                 sl_order_data = tradovate.create_stop_order(account_spec, symbol_upper, exit_action, quantity, sl_price, account_id)
-                try:
-                    # Add timeout to place_order
-                    sl_result = await asyncio.wait_for(tradovate.place_order(sl_order_data), timeout=10.0)
-                    if sl_result and sl_result.get('success'):
-                        sl_order_id = sl_result.get('orderId') or sl_result.get('data', {}).get('orderId')
-                except Exception as sl_err:
-                    logger.warning(f"⚠️ Failed to place individual SL: {sl_err}")
+                sl_result = await tradovate.place_order(sl_order_data)
+                if sl_result and sl_result.get('success'):
+                    sl_order_id = sl_result.get('orderId') or sl_result.get('data', {}).get('orderId')
             
             # Register as OCO pair if both were placed
             if tp_order_id and sl_order_id:
@@ -3909,25 +3495,17 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
     elif tp_price:
         logger.info(f"📊 Placing Take Profit only @ {tp_price}, Qty: {quantity}")
         tp_order_data = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, quantity, tp_price, account_id)
-        try:
-            # Add timeout to place_order
-            tp_result = await asyncio.wait_for(tradovate.place_order(tp_order_data), timeout=10.0)
-            if tp_result and tp_result.get('success'):
-                tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
-        except Exception as tp_err:
-            logger.warning(f"⚠️ Failed to place TP only: {tp_err}")
+        tp_result = await tradovate.place_order(tp_order_data)
+        if tp_result and tp_result.get('success'):
+            tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
     
     # If only SL (no TP)
     elif sl_price:
         logger.info(f"📊 Placing Stop Loss only @ {sl_price}, Qty: {quantity}")
         sl_order_data = tradovate.create_stop_order(account_spec, symbol_upper, exit_action, quantity, sl_price, account_id)
-        try:
-            # Add timeout to place_order
-            sl_result = await asyncio.wait_for(tradovate.place_order(sl_order_data), timeout=10.0)
-            if sl_result and sl_result.get('success'):
-                sl_order_id = sl_result.get('orderId') or sl_result.get('data', {}).get('orderId')
-        except Exception as sl_err:
-            logger.warning(f"⚠️ Failed to place SL only: {sl_err}")
+        sl_result = await tradovate.place_order(sl_order_data)
+        if sl_result and sl_result.get('success'):
+            sl_order_id = sl_result.get('orderId') or sl_result.get('data', {}).get('orderId')
     
     # Handle trailing stop (can be used with or instead of fixed SL)
     if trail_cfg and trail_cfg.get('offset_ticks'):
@@ -3946,12 +3524,7 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
             account_spec, symbol_upper, exit_action, quantity, 
             float(trail_offset), account_id, initial_stop_price
         )
-        try:
-            # Add timeout to place_order
-            trail_result = await asyncio.wait_for(tradovate.place_order(trail_order), timeout=10.0)
-        except Exception as trail_err:
-            logger.warning(f"⚠️ Failed to place trailing stop: {trail_err}")
-            trail_result = None
+        trail_result = await tradovate.place_order(trail_order)
         
         if trail_result and trail_result.get('success'):
             trail_order_id = trail_result.get('orderId') or trail_result.get('data', {}).get('orderId')
@@ -3992,16 +3565,23 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
     
     # Handle multiple TP levels (if any beyond the first)
     if len(take_profit_list) > 1:
-        logger.info(f"📊 Processing {len(take_profit_list) - 1} additional TP levels")
-        first_tp_percent = take_profit_list[0].get('trim_percent', 100)
-        first_tp_qty = int(round(quantity * (first_tp_percent / 100.0))) if first_tp_percent else quantity
+        trim_units = risk_config.get('trim_units', 'Percent')
+        logger.info(f"📊 Processing {len(take_profit_list) - 1} additional TP levels (trim_units={trim_units})")
+        first_tp_trim = take_profit_list[0].get('trim_percent', 100)
+        if trim_units == 'Contracts':
+            first_tp_qty = min(int(first_tp_trim), quantity) if first_tp_trim else quantity
+        else:
+            first_tp_qty = int(round(quantity * (first_tp_trim / 100.0))) if first_tp_trim else quantity
         remaining_qty = quantity - first_tp_qty
-        
+
         for idx, tp in enumerate(take_profit_list[1:], start=1):
             ticks = tp.get('gain_ticks')
-            trim_percent = tp.get('trim_percent', 0)
-            
-            level_qty = int(round(quantity * (trim_percent / 100.0))) if trim_percent else 0
+            trim_value = tp.get('trim_percent', 0)
+
+            if trim_units == 'Contracts':
+                level_qty = min(int(trim_value), remaining_qty) if trim_value else 0
+            else:
+                level_qty = int(round(quantity * (trim_value / 100.0))) if trim_value else 0
             if idx == len(take_profit_list) - 1 and level_qty == 0:
                 level_qty = remaining_qty  # Last level gets remaining
             
@@ -4709,6 +4289,20 @@ def init_db():
         except:
             pass  # Column already exists
 
+    # Per-trader execution tracking (Feb 2026) — isolates cooldown/max_signals per trader
+    try:
+        cursor.execute("ALTER TABLE traders ADD COLUMN last_trade_time TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE traders ADD COLUMN today_signal_count INTEGER DEFAULT 0")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE traders ADD COLUMN today_signal_date TEXT DEFAULT ''")
+    except:
+        pass
+
     # Add inverse_signals column to recorders table (Jan 2026)
     if is_postgres:
         try:
@@ -4836,10 +4430,66 @@ def init_db():
         ON traders(recorder_id)
     ''')
     cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_traders_account 
+        CREATE INDEX IF NOT EXISTS idx_traders_account
         ON traders(account_id)
     ''')
-    
+
+    # Affiliate applications table
+    if is_postgres:
+        try:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS affiliate_applications (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    email VARCHAR(255) NOT NULL,
+                    website TEXT,
+                    social_handle VARCHAR(255),
+                    audience_description TEXT NOT NULL,
+                    trading_experience TEXT,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    affiliate_code VARCHAR(20) UNIQUE,
+                    admin_notes TEXT,
+                    reviewed_by INTEGER REFERENCES users(id),
+                    reviewed_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+        except:
+            pass  # Table already exists
+    else:
+        try:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS affiliate_applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL,
+                    website TEXT,
+                    social_handle TEXT,
+                    audience_description TEXT NOT NULL,
+                    trading_experience TEXT,
+                    status TEXT DEFAULT 'pending',
+                    affiliate_code TEXT UNIQUE,
+                    admin_notes TEXT,
+                    reviewed_by INTEGER REFERENCES users(id),
+                    reviewed_at TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+        except:
+            pass  # Table already exists
+
+    # Add affiliate_code column if table was created before it was added
+    try:
+        cursor.execute('ALTER TABLE affiliate_applications ADD COLUMN affiliate_code VARCHAR(20) UNIQUE' if is_postgres else 'ALTER TABLE affiliate_applications ADD COLUMN affiliate_code TEXT UNIQUE')
+    except:
+        pass  # Column already exists
+
+    # Add referred_by column to users table for affiliate referral tracking
+    try:
+        cursor.execute('ALTER TABLE users ADD COLUMN referred_by VARCHAR(20)' if is_postgres else 'ALTER TABLE users ADD COLUMN referred_by TEXT')
+    except:
+        pass  # Column already exists
+
     conn.commit()
     conn.close()
 
@@ -4859,7 +4509,8 @@ def fetch_and_store_tradovate_accounts(account_id: int, access_token: str, base_
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT tradovate_accounts, subaccounts FROM accounts WHERE id = ?", (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f"SELECT tradovate_accounts, subaccounts FROM accounts WHERE id = {ph}", (account_id,))
         existing_row = cursor.fetchone()
         conn.close()
         
@@ -5025,6 +4676,54 @@ def index():
 # DATABASE MIGRATION ENDPOINT
 # ============================================================================
 
+@app.route('/api/fix-trader-sizes/<int:recorder_id>', methods=['POST', 'GET'])
+def fix_trader_sizes(recorder_id):
+    """Reset all traders for a recorder to use NULL position sizes (fall back to recorder defaults)."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_pg = is_using_postgres()
+        ph = '%s' if is_pg else '?'
+        cursor.execute(f'UPDATE traders SET initial_position_size = NULL, add_position_size = NULL WHERE recorder_id = {ph}', (recorder_id,))
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'affected': affected, 'message': f'Reset {affected} traders to use recorder defaults'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/admin/trial-abuse/unblock-all', methods=['POST', 'GET'])
+def admin_unblock_all_trial_abuse():
+    """Emergency: unblock all falsely flagged users"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE trial_fingerprints SET is_blocked = FALSE, block_reason = 'Reset - false positive', trial_count = 1")
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'All users unblocked'})
+    except Exception as e:
+        return jsonify({'success': True, 'message': f'Table may not exist yet: {e}'})
+
+
+@app.route('/api/reset-db-pool', methods=['POST', 'GET'])
+def reset_db_pool():
+    """Flush and recreate the PostgreSQL connection pool to clear poisoned connections."""
+    global _pg_pool
+    import psycopg2.pool
+    try:
+        if _pg_pool:
+            _pg_pool.closeall()
+            _pg_pool = None
+        if _using_postgres and _db_url:
+            _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=20, maxconn=200, dsn=_db_url, connect_timeout=5
+            )
+            return jsonify({'success': True, 'message': 'DB pool reset — 20 fresh connections ready'})
+        return jsonify({'success': False, 'message': 'Not using PostgreSQL'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/run-migrations', methods=['POST', 'GET'])
 def run_migrations():
     """Run pending database migrations to add missing columns.
@@ -5079,6 +4778,11 @@ def run_migrations():
         ('traders', 'max_signals_per_session', 'INTEGER DEFAULT 0'),
         ('traders', 'auto_flat_after_cutoff', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
         ('traders', 'inverse_signals', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        # break_even settings for traders
+        ('traders', 'break_even_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        ('traders', 'break_even_ticks', 'INTEGER DEFAULT 10'),
+        # Premium strategy flag for Just Trades Showcase
+        ('recorders', 'is_premium', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
     ]
 
     for table, column, col_type in migrations:
@@ -5092,60 +4796,6 @@ def run_migrations():
                 results.append(f"⏭️ {table}.{column} already exists")
             else:
                 results.append(f"❌ {table}.{column}: {str(e)[:100]}")
-
-    # Add referred_by column to users table
-    try:
-        cursor.execute('ALTER TABLE users ADD COLUMN referred_by VARCHAR(20)')
-        conn.commit()
-        results.append("✅ Added users.referred_by")
-    except Exception as e:
-        conn.rollback()
-        if 'already exists' in str(e).lower() or 'duplicate column' in str(e).lower():
-            results.append("⏭️ users.referred_by already exists")
-        else:
-            results.append(f"❌ users.referred_by: {str(e)[:100]}")
-
-    # Create affiliate_applications table
-    try:
-        if is_postgres:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS affiliate_applications (
-                    id SERIAL PRIMARY KEY,
-                    name VARCHAR(200) NOT NULL,
-                    email VARCHAR(255) NOT NULL UNIQUE,
-                    website TEXT,
-                    social TEXT,
-                    audience TEXT,
-                    experience TEXT,
-                    status VARCHAR(20) DEFAULT 'pending',
-                    affiliate_code VARCHAR(20) UNIQUE,
-                    admin_notes TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-        else:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS affiliate_applications (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    email TEXT NOT NULL UNIQUE,
-                    website TEXT,
-                    social TEXT,
-                    audience TEXT,
-                    experience TEXT,
-                    status TEXT DEFAULT 'pending',
-                    affiliate_code TEXT UNIQUE,
-                    admin_notes TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-        conn.commit()
-        results.append("✅ affiliate_applications table ready")
-    except Exception as e:
-        conn.rollback()
-        results.append(f"❌ affiliate_applications table: {str(e)[:100]}")
 
     # Fix NULL values for traders.add_delay and traders.signal_count
     try:
@@ -5365,71 +5015,71 @@ def register():
     # If already logged in, redirect to dashboard
     if USER_AUTH_AVAILABLE and is_logged_in():
         return redirect(url_for('dashboard'))
-
-    # Capture referral code from URL (?ref=CODE)
-    referral_code = request.args.get('ref', '').strip()
-
+    
     if request.method == 'POST':
         if not USER_AUTH_AVAILABLE:
             flash('Authentication system not available.', 'error')
-            return render_template('register.html', referral_code=referral_code)
-
+            return render_template('register.html')
+        
         username = request.form.get('username', '').strip().lower()
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         confirm_password = request.form.get('confirm_password', '')
         display_name = request.form.get('display_name', '').strip() or username
         terms = request.form.get('terms')
-        referral_code = request.form.get('referral_code', '').strip()
-
+        
         # Validation
         errors = []
-
+        
         if not username or len(username) < 3:
             errors.append('Username must be at least 3 characters.')
-
+        
         if not email or '@' not in email:
             errors.append('Please enter a valid email address.')
-
+        
         if not password or len(password) < 6:
             errors.append('Password must be at least 6 characters.')
-
+        
         if password != confirm_password:
             errors.append('Passwords do not match.')
-
+        
         if not terms:
             errors.append('You must agree to the Terms of Service.')
-
+        
         if errors:
             for error in errors:
                 flash(error, 'error')
-            return render_template('register.html', referral_code=referral_code)
-
-        # Validate referral code if provided
-        validated_referral = None
-        if referral_code:
-            try:
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                placeholder = '%s' if is_using_postgres() else '?'
-                cursor.execute(f"SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder} AND status = 'approved'", (referral_code,))
-                if cursor.fetchone():
-                    validated_referral = referral_code
-                cursor.close()
-                conn.close()
-            except Exception as e:
-                logger.warning(f"Could not validate referral code: {e}")
-
+            return render_template('register.html')
+        
         # Try to create user (new users are NOT approved by default - admin must approve)
-        user = create_user(username, email, password, display_name, referred_by=validated_referral)
+        user = create_user(username, email, password, display_name)
         if user:
+            # Track affiliate referral if ref code was provided
+            ref_code = request.form.get('ref', '') or request.args.get('ref', '')
+            if ref_code:
+                try:
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    is_postgres = is_using_postgres()
+                    placeholder = '%s' if is_postgres else '?'
+                    # Verify the affiliate code exists and is approved
+                    cursor.execute(f"SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder} AND status = 'approved'", (ref_code.strip().upper(),))
+                    if cursor.fetchone():
+                        cursor.execute(f"UPDATE users SET referred_by = {placeholder} WHERE username = {placeholder}", (ref_code.strip().upper(), username))
+                        conn.commit()
+                        logger.info(f"Referral tracked: {username} referred by {ref_code}")
+                    conn.close()
+                except Exception as ref_err:
+                    logger.error(f"Error tracking referral: {ref_err}")
             # Do NOT auto-login - account needs admin approval first
             flash(f'Your account has been created! Please wait for an administrator to approve your account before you can log in.', 'info')
             return redirect(url_for('login'))
         else:
             flash('Username or email already exists. Please try different credentials.', 'error')
 
-    return render_template('register.html', referral_code=referral_code)
+    # Pass ref code to template so it can be included in form
+    ref_code = request.args.get('ref', '')
+    return render_template('register.html', ref_code=ref_code)
 
 
 @app.route('/logout')
@@ -6769,34 +6419,7 @@ def admin_create_announcement():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/admin/discord/broadcast', methods=['POST'])
-@login_required
-def admin_discord_broadcast():
-    """Admin: Send a Discord DM broadcast to all users with Discord linked."""
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return jsonify({'error': 'Discord notifications not configured. Set DISCORD_BOT_TOKEN environment variable.'}), 400
-    
-    data = request.json
-    title = data.get('title', '').strip()
-    message = data.get('message', '').strip()
-    ann_type = data.get('type', 'info')
-    
-    if not title or not message:
-        return jsonify({'error': 'Title and message are required'}), 400
-    
-    sent_count = broadcast_announcement(title, message, ann_type)
-    logger.info(f"Admin {user.username} sent Discord broadcast: {title} (sent to {sent_count} users)")
-    
-    return jsonify({
-        'success': True,
-        'sent_count': sent_count,
-        'message': f'Broadcast sent to {sent_count} Discord users'
-    })
-
+## /api/admin/discord/broadcast route moved to discord_routes.py
 
 @app.route('/api/admin/announcements/<int:ann_id>', methods=['PUT'])
 @login_required
@@ -6984,89 +6607,7 @@ def admin_set_recorder_user(recorder_id):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/admin/discord/check/<int:user_id>', methods=['GET'])
-@login_required
-def admin_check_discord_status(user_id):
-    """Admin: Check Discord status for a specific user."""
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        if db_type == 'postgresql':
-            cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user_id,))
-        else:
-            cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user_id,))
-        
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if row:
-            # Handle both tuple and dict-like rows
-            if isinstance(row, tuple):
-                uid, uname, discord_id, dms_enabled = row
-            else:
-                uid = row['id']
-                uname = row['username']
-                discord_id = row['discord_user_id']
-                dms_enabled = row['discord_dms_enabled']
-            return jsonify({
-                'user_id': uid,
-                'username': uname,
-                'discord_user_id': discord_id,
-                'discord_dms_enabled': dms_enabled,
-                'notifications_would_work': bool(discord_id) and bool(dms_enabled)
-            })
-        return jsonify({'error': 'User not found'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/admin/discord/all-users', methods=['GET'])
-@login_required
-def admin_list_all_discord_status():
-    """Admin: List Discord status for ALL users."""
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT id, username, discord_user_id, discord_dms_enabled FROM users ORDER BY id')
-        
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        users = []
-        for row in rows:
-            if isinstance(row, tuple):
-                uid, uname, discord_id, dms_enabled = row
-            else:
-                uid = row['id']
-                uname = row['username']
-                discord_id = row['discord_user_id']
-                dms_enabled = row['discord_dms_enabled']
-            users.append({
-                'user_id': uid,
-                'username': uname,
-                'discord_linked': bool(discord_id),
-                'dms_enabled': bool(dms_enabled),
-                'notifications_work': bool(discord_id) and bool(dms_enabled)
-            })
-        
-        return jsonify({'users': users, 'total': len(users)})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+## /api/admin/discord/check and /api/admin/discord/all-users routes moved to discord_routes.py
 
 @app.route('/api/admin/max-loss-monitor/status', methods=['GET'])
 @login_required
@@ -7098,32 +6639,7 @@ def admin_max_loss_monitor_status():
     return jsonify(status)
 
 
-@app.route('/api/admin/discord/enable/<int:user_id>', methods=['POST'])
-@login_required
-def admin_enable_discord_for_user(user_id):
-    """Admin: Force enable Discord DMs for a specific user."""
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        if db_type == 'postgresql':
-            cursor.execute('UPDATE users SET discord_dms_enabled = TRUE WHERE id = %s', (user_id,))
-        else:
-            cursor.execute('UPDATE users SET discord_dms_enabled = 1 WHERE id = ?', (user_id,))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return jsonify({'success': True, 'message': f'Discord DMs enabled for user {user_id}'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+## /api/admin/discord/enable route moved to discord_routes.py
 
 @app.route('/api/admin/recorders/fix-all', methods=['POST'])
 @login_required  
@@ -7907,8 +7423,9 @@ def api_accounts_auth_status():
         if accounts_need_reauth:
             conn = get_db_connection()
             cursor = conn.cursor()
+            ph = '%s' if is_using_postgres() else '?'
             for acct_id in accounts_need_reauth:
-                cursor.execute('SELECT id, name FROM accounts WHERE id = ?', (acct_id,))
+                cursor.execute(f'SELECT id, name FROM accounts WHERE id = {ph}', (acct_id,))
                 row = cursor.fetchone()
                 if row:
                     account_details.append({
@@ -7946,7 +7463,8 @@ def get_account_device_info(account_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, name, device_id FROM accounts WHERE id = ?', (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT id, name, device_id FROM accounts WHERE id = {ph}', (account_id,))
         row = cursor.fetchone()
         conn.close()
         
@@ -7969,7 +7487,8 @@ def get_api_credentials(account_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT api_key FROM accounts WHERE id = ?', (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT api_key FROM accounts WHERE id = {ph}', (account_id,))
         row = cursor.fetchone()
         conn.close()
         
@@ -7998,12 +7517,13 @@ def save_api_credentials(account_id):
         cursor = conn.cursor()
         
         # Update API credentials
+        ph = '%s' if is_using_postgres() else '?'
         if api_secret:
-            cursor.execute('UPDATE accounts SET api_key = ?, api_secret = ? WHERE id = ?', 
+            cursor.execute(f'UPDATE accounts SET api_key = {ph}, api_secret = {ph} WHERE id = {ph}',
                           (api_key, api_secret, account_id))
         else:
             # Only update CID if no secret provided (preserve existing secret)
-            cursor.execute('UPDATE accounts SET api_key = ? WHERE id = ?', 
+            cursor.execute(f'UPDATE accounts SET api_key = {ph} WHERE id = {ph}',
                           (api_key, account_id))
         
         conn.commit()
@@ -8024,7 +7544,8 @@ def test_api_access(account_id):
     async def do_test():
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT name, username, password, device_id, environment, api_key, api_secret FROM accounts WHERE id = ?', (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT name, username, password, device_id, environment, api_key, api_secret FROM accounts WHERE id = {ph}', (account_id,))
         row = cursor.fetchone()
         conn.close()
         
@@ -8110,10 +7631,18 @@ def dashboard():
             if user.is_admin:
                 has_platform_subscription = True
     
+    # Check if current user is admin (for premium showcase)
+    is_admin = False
+    if USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if user and user.is_admin:
+            is_admin = True
+
     return render_template('dashboard.html',
                           has_platform_subscription=has_platform_subscription,
                           user_tier=user_tier,
-                          platform_subscription=platform_subscription)
+                          platform_subscription=platform_subscription,
+                          is_admin=is_admin)
 
 # =============================================================================
 # INSIDER SIGNALS ROUTES (Added Dec 8, 2025)
@@ -8255,7 +7784,8 @@ def _init_insider_tables():
             # Initialize poll status if not exists
             cursor.execute('SELECT COUNT(*) FROM insider_poll_status')
             if cursor.fetchone()[0] == 0:
-                cursor.execute('INSERT INTO insider_poll_status (id, last_poll_time, filings_processed) VALUES (1, ?, 0)', (datetime.now().isoformat(),))
+                _ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f'INSERT INTO insider_poll_status (id, last_poll_time, filings_processed) VALUES (1, {_ph}, 0)', (datetime.now().isoformat(),))
         
         conn.commit()
         conn.close()
@@ -9164,7 +8694,10 @@ def get_accounts():
             
             # Check for access token (tradovate_token is legacy name, access_token is new)
             has_token = bool(account.get('access_token') or account.get('tradovate_token'))
-            
+            # ProjectX accounts use projectx_username instead of tradovate tokens
+            has_projectx = bool(account.get('projectx_username') or account.get('projectx_api_key'))
+            is_connected = has_token or has_projectx or bool(account.get('is_connected'))
+
             accounts_list.append({
                 'id': account.get('id'),
                 'name': account.get('name'),
@@ -9172,7 +8705,7 @@ def get_accounts():
                 'enabled': bool(account.get('enabled', True)),
                 'created_at': str(account.get('created_at', '')),
                 'tradovate_token': has_token,
-                'is_connected': has_token,
+                'is_connected': is_connected,
                 'subaccounts': parsed_subaccounts,
                 'tradovate_accounts': parsed_tradovate_accounts,
                 'has_demo': has_demo,
@@ -9204,10 +8737,11 @@ def create_account():
         is_postgres = is_using_postgres()
         
         # Check if account name already exists FOR THIS USER (not globally)
+        ph = '%s' if is_postgres else '?'
         if current_user_id:
-            cursor.execute("SELECT id FROM accounts WHERE name = ? AND user_id = ?", (account_name, current_user_id))
+            cursor.execute(f"SELECT id FROM accounts WHERE name = {ph} AND user_id = {ph}", (account_name, current_user_id))
         else:
-            cursor.execute("SELECT id FROM accounts WHERE name = ? AND user_id IS NULL", (account_name,))
+            cursor.execute(f"SELECT id FROM accounts WHERE name = {ph} AND user_id IS NULL", (account_name,))
         
         if cursor.fetchone():
             conn.close()
@@ -9218,7 +8752,7 @@ def create_account():
             # PostgreSQL: use RETURNING to get the ID
             cursor.execute("""
                 INSERT INTO accounts (name, broker, auth_type, enabled, created_at, user_id)
-                VALUES (?, ?, ?, ?, ?, ?) RETURNING id
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
             """, (account_name, 'Tradovate', 'oauth', True, datetime.now().isoformat(), current_user_id))
             result = cursor.fetchone()
             # Result is a dict from RealDictCursor
@@ -9265,7 +8799,8 @@ def set_broker(account_id):
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE accounts SET broker = ? WHERE id = ?", (broker_name, account_id))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f"UPDATE accounts SET broker = {ph} WHERE id = {ph}", (broker_name, account_id))
         conn.commit()
         conn.close()
         
@@ -9273,6 +8808,504 @@ def set_broker(account_id):
     except Exception as e:
         logger.error(f"Error setting broker: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# Broker Agreement Page
+# ============================================================
+
+# Feature configurations for each broker
+BROKER_FEATURES = {
+    'tradovate': {
+        'broker_name': 'Tradovate',
+        'asset_tag': 'Futures',
+        'broker_icon': 'show_chart',
+        'features': {
+            'stocks': '<span class="dash">—</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="dash">—</span>',
+            'crypto': '<span class="dash">—</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="dash">—</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="dash">—</span>',
+            'stop_loss_legs': '<span class="check">✓</span>',
+            'take_profit_legs': '<span class="check">✓</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/credentials'
+    },
+    'ninjatrader': {
+        'broker_name': 'NinjaTrader',
+        'asset_tag': 'Futures',
+        'broker_icon': 'insights',
+        'features': {
+            'stocks': '<span class="dash">—</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="dash">—</span>',
+            'crypto': '<span class="dash">—</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="dash">—</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="dash">—</span>',
+            'stop_loss_legs': '<span class="check">✓</span>',
+            'take_profit_legs': '<span class="check">✓</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/credentials'
+    },
+    'projectx': {
+        'broker_name': 'ProjectX / TopstepX',
+        'asset_tag': 'Futures (Prop Firm)',
+        'broker_icon': 'trending_up',
+        'features': {
+            'stocks': '<span class="dash">—</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="dash">—</span>',
+            'crypto': '<span class="dash">—</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="dash">—</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="dash">—</span>',
+            'stop_loss_legs': '<span class="dash">—</span>',
+            'take_profit_legs': '<span class="dash">—</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/projectx-credentials'
+    },
+    'webull': {
+        'broker_name': 'Webull',
+        'asset_tag': 'Stocks & Options',
+        'broker_icon': 'account_balance',
+        'features': {
+            'stocks': '<span class="check">✓</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="check">✓</span>',
+            'crypto': '<span class="check">✓</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="dash">—</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="check">✓</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="dash">—</span>',
+            'take_profit_legs': '<span class="dash">—</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/webull-credentials'
+    },
+    'rithmic': {
+        'broker_name': 'Rithmic',
+        'asset_tag': 'Futures (Pro Infrastructure)',
+        'broker_icon': 'speed',
+        'features': {
+            'stocks': '<span class="dash">—</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="dash">—</span>',
+            'crypto': '<span class="dash">—</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="dash">—</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="check">✓</span>',
+            'take_profit_legs': '<span class="check">✓</span>',
+            'trailing_stop_legs': '<span class="check">✓</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/rithmic-credentials'
+    },
+    'tradestation': {
+        'broker_name': 'TradeStation',
+        'asset_tag': 'Stocks, Futures & Options',
+        'broker_icon': 'timeline',
+        'features': {
+            'stocks': '<span class="check">✓</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="check">✓</span>',
+            'crypto': '<span class="dash">—</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="dash">—</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="check">✓</span>',
+            'take_profit_legs': '<span class="check">✓</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/tradestation-credentials'
+    },
+    'alpaca': {
+        'broker_name': 'Alpaca',
+        'asset_tag': 'Stocks & Crypto',
+        'broker_icon': 'code',
+        'features': {
+            'stocks': '<span class="check">✓</span>',
+            'futures': '<span class="dash">—</span>',
+            'options': '<span class="dash">—</span>',
+            'crypto': '<span class="check">✓</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="check">✓</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="dash">—</span>',
+            'take_profit_legs': '<span class="dash">—</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="check">✓</span>',
+        },
+        'continue_path': '/accounts/{account_id}/alpaca-credentials'
+    },
+    'robinhood': {
+        'broker_name': 'Robinhood',
+        'asset_tag': 'Stocks, Options & Crypto',
+        'broker_icon': 'local_florist',
+        'features': {
+            'stocks': '<span class="check">✓</span>',
+            'futures': '<span class="dash">—</span>',
+            'options': '<span class="check">✓</span>',
+            'crypto': '<span class="check">✓</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="dash">—</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="dash">—</span>',
+            'shorting': '<span class="dash">—</span>',
+            'fractional': '<span class="check">✓</span>',
+            'multiple_orders': '<span class="dash">—</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="dash">—</span>',
+            'take_profit_legs': '<span class="dash">—</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/robinhood-credentials'
+    },
+    'interactivebrokers': {
+        'broker_name': 'Interactive Brokers',
+        'asset_tag': 'Multi-Asset Global',
+        'broker_icon': 'public',
+        'features': {
+            'stocks': '<span class="check">✓</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="check">✓</span>',
+            'crypto': '<span class="check">✓</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="check">✓</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="check">✓</span>',
+            'take_profit_legs': '<span class="check">✓</span>',
+            'trailing_stop_legs': '<span class="check">✓</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="check">✓</span>',
+        },
+        'continue_path': '/accounts/{account_id}/ibkr-credentials'
+    },
+    'etrade': {
+        'broker_name': 'E*TRADE',
+        'asset_tag': 'Stocks & Options',
+        'broker_icon': 'star',
+        'features': {
+            'stocks': '<span class="check">✓</span>',
+            'futures': '<span class="dash">—</span>',
+            'options': '<span class="check">✓</span>',
+            'crypto': '<span class="dash">—</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="dash">—</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="dash">—</span>',
+            'take_profit_legs': '<span class="dash">—</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/etrade-credentials'
+    },
+    'tastytrade': {
+        'broker_name': 'tastytrade',
+        'asset_tag': 'Options & Futures',
+        'broker_icon': 'restaurant',
+        'features': {
+            'stocks': '<span class="check">✓</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="check">✓</span>',
+            'crypto': '<span class="dash">—</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="dash">—</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="check">✓</span>',
+            'take_profit_legs': '<span class="check">✓</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/tastytrade-credentials'
+    },
+    'tradier': {
+        'broker_name': 'Tradier',
+        'asset_tag': 'Stocks & Options',
+        'broker_icon': 'api',
+        'features': {
+            'stocks': '<span class="check">✓</span>',
+            'futures': '<span class="dash">—</span>',
+            'options': '<span class="check">✓</span>',
+            'crypto': '<span class="dash">—</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="dash">—</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="dash">—</span>',
+            'take_profit_legs': '<span class="dash">—</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/tradier-credentials'
+    },
+    'coinbase': {
+        'broker_name': 'Coinbase',
+        'asset_tag': 'Crypto',
+        'broker_icon': 'currency_bitcoin',
+        'features': {
+            'stocks': '<span class="dash">—</span>',
+            'futures': '<span class="dash">—</span>',
+            'options': '<span class="dash">—</span>',
+            'crypto': '<span class="check">✓</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="dash">—</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="dash">—</span>',
+            'fractional': '<span class="check">✓</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="dash">—</span>',
+            'stop_loss_legs': '<span class="dash">—</span>',
+            'take_profit_legs': '<span class="dash">—</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/coinbase-credentials'
+    },
+    'kraken': {
+        'broker_name': 'Kraken',
+        'asset_tag': 'Crypto',
+        'broker_icon': 'waves',
+        'features': {
+            'stocks': '<span class="dash">—</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="dash">—</span>',
+            'crypto': '<span class="check">✓</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="dash">—</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="check">✓</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="dash">—</span>',
+            'take_profit_legs': '<span class="dash">—</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/kraken-credentials'
+    },
+    'binance': {
+        'broker_name': 'Binance',
+        'asset_tag': 'Crypto',
+        'broker_icon': 'diamond',
+        'features': {
+            'stocks': '<span class="dash">—</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="check">✓</span>',
+            'crypto': '<span class="check">✓</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="check">✓</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="check">✓</span>',
+            'take_profit_legs': '<span class="check">✓</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="check">✓</span>',
+        },
+        'continue_path': '/accounts/{account_id}/binance-credentials'
+    },
+    'bybit': {
+        'broker_name': 'Bybit',
+        'asset_tag': 'Crypto Derivatives',
+        'broker_icon': 'bolt',
+        'features': {
+            'stocks': '<span class="dash">—</span>',
+            'futures': '<span class="check">✓</span>',
+            'options': '<span class="check">✓</span>',
+            'crypto': '<span class="check">✓</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="check">✓</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="check">✓</span>',
+            'fractional': '<span class="check">✓</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="check">✓</span>',
+            'stop_loss_legs': '<span class="check">✓</span>',
+            'take_profit_legs': '<span class="check">✓</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="check">✓</span>',
+        },
+        'continue_path': '/accounts/{account_id}/bybit-credentials'
+    },
+    'cryptocom': {
+        'broker_name': 'Crypto.com',
+        'asset_tag': 'Crypto',
+        'broker_icon': 'hexagon',
+        'features': {
+            'stocks': '<span class="dash">—</span>',
+            'futures': '<span class="dash">—</span>',
+            'options': '<span class="dash">—</span>',
+            'crypto': '<span class="check">✓</span>',
+            'live': '<span class="check">✓</span>',
+            'paper': '<span class="dash">—</span>',
+            'auto_submit': '<span class="check">✓</span>',
+            'side_swapping': '<span class="check">✓</span>',
+            'shorting': '<span class="dash">—</span>',
+            'fractional': '<span class="check">✓</span>',
+            'multiple_orders': '<span class="check">✓</span>',
+            'stop_losses': '<span class="check">✓</span>',
+            'take_profits': '<span class="check">✓</span>',
+            'trailing_stops': '<span class="dash">—</span>',
+            'stop_loss_legs': '<span class="dash">—</span>',
+            'take_profit_legs': '<span class="dash">—</span>',
+            'trailing_stop_legs': '<span class="dash">—</span>',
+            'market_data': '<span class="check">✓</span>',
+            'paper_market_data_source': '<span class="dash">—</span>',
+        },
+        'continue_path': '/accounts/{account_id}/cryptocom-credentials'
+    },
+}
+
+
+@app.route('/accounts/<int:account_id>/connect/<broker_slug>/agreement')
+def broker_agreement(account_id, broker_slug):
+    """Render the broker agreement page before connecting.
+
+    Shows disclaimer, terms, feature support matrix, and requires checkbox agreement.
+    Flow: Broker Selection -> Agreement -> Credentials/OAuth
+    """
+    # Get broker config or use defaults
+    broker_config = BROKER_FEATURES.get(broker_slug.lower(), {})
+
+    # Build context
+    broker_name = broker_config.get('broker_name', broker_slug.title())
+    asset_tag = broker_config.get('asset_tag', 'Trading')
+    broker_icon = broker_config.get('broker_icon', 'account_balance')
+    features = broker_config.get('features', {})
+    continue_path = broker_config.get('continue_path', '/accounts/{account_id}/credentials')
+    continue_url = continue_path.format(account_id=account_id)
+
+    return render_template('broker_agreement.html',
+        broker_name=broker_name,
+        broker_slug=broker_slug.lower(),
+        account_id=account_id,
+        asset_tag=asset_tag,
+        broker_icon=broker_icon,
+        features=features,
+        continue_url=continue_url
+    )
+
 
 @app.route('/accounts/<int:account_id>/credentials')
 def collect_credentials(account_id):
@@ -9609,7 +9642,8 @@ def connect_account(account_id):
             try:
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                cursor.execute("SELECT tradovate_accounts, environment FROM accounts WHERE id = ?", (account_id,))
+                ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f"SELECT tradovate_accounts, environment FROM accounts WHERE id = {ph}", (account_id,))
                 row = cursor.fetchone()
                 conn.close()
                 
@@ -10087,7 +10121,8 @@ def delete_account(account_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f"DELETE FROM accounts WHERE id = {ph}", (account_id,))
         conn.commit()
         deleted = cursor.rowcount
         conn.close()
@@ -10105,22 +10140,89 @@ def delete_account(account_id):
 
 @app.route('/api/accounts/<int:account_id>/refresh-subaccounts', methods=['POST'])
 def refresh_account_subaccounts(account_id):
-    """Refresh Tradovate subaccounts for an account using stored tokens"""
+    """Refresh subaccounts for an account (Tradovate or ProjectX)"""
     try:
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT tradovate_token 
-            FROM accounts 
+            SELECT tradovate_token, broker, username, password, api_key, environment,
+                   projectx_username, projectx_api_key, projectx_prop_firm
+            FROM accounts
             WHERE id = ?
         """, (account_id,))
         row = cursor.fetchone()
         conn.close()
-        if not row or not row['tradovate_token']:
-            return jsonify({'success': False, 'error': 'Account not connected to Tradovate'}), 400
-        
-        fetch_result = fetch_and_store_tradovate_accounts(account_id, row['tradovate_token'])
+
+        if not row:
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+        broker = ''
+        if isinstance(row, dict):
+            broker = (row.get('broker') or '').strip()
+        else:
+            broker = (row['broker'] or '').strip() if row['broker'] else ''
+
+        # Detect ProjectX accounts by broker field OR by presence of ProjectX credentials
+        px_username = row.get('projectx_username') if isinstance(row, dict) else row['projectx_username']
+        px_api_key_val = row.get('projectx_api_key') if isinstance(row, dict) else row['projectx_api_key']
+        is_projectx = (broker == 'ProjectX' or broker == 'TopstepX' or broker == 'TopStep'
+                       or bool(px_username) or bool(px_api_key_val))
+
+        # ProjectX accounts - re-fetch accounts via ProjectX API
+        if is_projectx:
+            try:
+                import asyncio
+                from phantom_scraper.projectx_integration import ProjectXIntegration
+
+                px_username = row.get('projectx_username') or row.get('username') or ''
+                px_password = row.get('password') or ''
+                px_api_key = row.get('projectx_api_key') or row.get('api_key') or ''
+                px_prop_firm = row.get('projectx_prop_firm') or 'default'
+                is_demo = (row.get('environment') or 'demo') == 'demo'
+
+                if not px_username:
+                    return jsonify({'success': False, 'error': 'No ProjectX username stored. Please reconnect.'}), 400
+
+                async def refresh_projectx():
+                    async with ProjectXIntegration(demo=is_demo, prop_firm=px_prop_firm) as projectx:
+                        login_result = await projectx.login(px_username, password=px_password if px_password else None, api_key=px_api_key if px_api_key else None)
+                        if not login_result.get('success'):
+                            return {'success': False, 'error': login_result.get('error', 'ProjectX login failed. Please reconnect.')}
+                        accounts = await projectx.get_accounts()
+                        return {'success': True, 'accounts': accounts}
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(refresh_projectx())
+                finally:
+                    loop.close()
+
+                if not result.get('success'):
+                    return jsonify(result), 400
+
+                # Store refreshed accounts and ensure broker is set correctly
+                px_accounts = result.get('accounts', [])
+                conn2 = get_db_connection()
+                cursor2 = conn2.cursor()
+                cursor2.execute("UPDATE accounts SET tradovate_accounts = ?, broker = 'ProjectX' WHERE id = ?", (json.dumps(px_accounts), account_id))
+                conn2.commit()
+                conn2.close()
+
+                logger.info(f"Refreshed ProjectX subaccounts for account {account_id}: {len(px_accounts)} accounts")
+                return jsonify({'success': True, 'subaccounts': px_accounts})
+            except ImportError:
+                return jsonify({'success': False, 'error': 'ProjectX integration not available'}), 500
+            except Exception as px_err:
+                logger.error(f"Error refreshing ProjectX subaccounts: {px_err}")
+                return jsonify({'success': False, 'error': str(px_err)}), 500
+
+        # Tradovate / NinjaTrader accounts
+        tradovate_token = row.get('tradovate_token') if isinstance(row, dict) else row['tradovate_token']
+        if not tradovate_token:
+            return jsonify({'success': False, 'error': 'Account not connected to Tradovate. Please reconnect.'}), 400
+
+        fetch_result = fetch_and_store_tradovate_accounts(account_id, tradovate_token)
         if fetch_result.get('success'):
             return jsonify({'success': True, 'subaccounts': fetch_result.get('subaccounts', [])})
         return jsonify({'success': False, 'error': fetch_result.get('error', 'Unable to refresh subaccounts')}), 400
@@ -10854,12 +10956,12 @@ def recorders_list():
         if user_id:
             # Show only recorders created by this user
             if is_postgres:
-                cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
+                cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = %s ORDER BY id DESC', (user_id,))
             else:
-                cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
+                cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders WHERE user_id = ? ORDER BY id DESC', (user_id,))
         else:
             # No user auth - show all (shouldn't happen if login required)
-            cursor.execute('SELECT id, name, ticker, enabled, created_at FROM recorders ORDER BY id DESC')
+            cursor.execute('SELECT id, name, ticker, enabled, created_at, is_premium FROM recorders ORDER BY id DESC')
         rows = cursor.fetchall()
         recorders = []
         for row in rows:
@@ -10874,7 +10976,8 @@ def recorders_list():
                         'name': row[1],
                         'ticker': row[2],
                         'enabled': row[3],
-                        'created_at': row[4]
+                        'created_at': row[4],
+                        'is_premium': row[5] if len(row) > 5 else False
                     }
                 # Ensure template-required fields exist
                 recorders.append({
@@ -10883,13 +10986,14 @@ def recorders_list():
                     'symbol': rec.get('ticker') or rec.get('symbol', ''),
                     'is_recording': rec.get('enabled', False),
                     'enabled': rec.get('enabled', False),
-                    'created_at': str(rec.get('created_at', '')) if rec.get('created_at') else ''
+                    'created_at': str(rec.get('created_at', '')) if rec.get('created_at') else '',
+                    'is_premium': bool(rec.get('is_premium', False))
                 })
             except Exception as row_err:
                 logger.warning(f"Error processing recorder row: {row_err}")
                 continue
         conn.close()
-        
+
         # Check platform subscription
         has_platform_subscription = True
         user_tier = 'none'
@@ -10903,18 +11007,27 @@ def recorders_list():
                 if user.is_admin:
                     has_platform_subscription = True
         
-        return render_template('recorders_list.html', 
+        # Check if current user is admin
+        is_admin = False
+        if USER_AUTH_AVAILABLE:
+            user = get_current_user()
+            if user and user.is_admin:
+                is_admin = True
+
+        return render_template('recorders_list.html',
                               recorders=recorders,
                               has_platform_subscription=has_platform_subscription,
-                              user_tier=user_tier)
+                              user_tier=user_tier,
+                              is_admin=is_admin)
     except Exception as e:
         logger.error(f"Error loading recorders list: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return render_template('recorders_list.html', 
+        return render_template('recorders_list.html',
                               recorders=[],
                               has_platform_subscription=False,
-                              user_tier='none')
+                              user_tier='none',
+                              is_admin=False)
 
 @app.route('/recorders/new')
 def recorders_new():
@@ -11187,9 +11300,14 @@ def api_create_recorder():
         is_postgres = is_using_postgres()
         ph = '%s' if is_postgres else '?'
         
+        # Validate risk settings before saving
+        validation_errors = validate_trader_risk_settings(data)
+        if validation_errors:
+            return jsonify({'success': False, 'error': 'Invalid risk settings', 'validation_errors': validation_errors}), 400
+
         # Serialize TP targets
         tp_targets = json.dumps(data.get('tp_targets', []))
-        
+
         # Get current user_id for data isolation
         current_user_id = None
         if USER_AUTH_AVAILABLE and is_logged_in():
@@ -11338,7 +11456,13 @@ def api_update_recorder(recorder_id):
         if not cursor.fetchone():
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
+        # Validate risk settings before saving
+        validation_errors = validate_trader_risk_settings(data)
+        if validation_errors:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid risk settings', 'validation_errors': validation_errors}), 400
+
         # Build update query dynamically
         fields = []
         values = []
@@ -11446,26 +11570,27 @@ def api_delete_recorder(recorder_id):
         cursor = conn.cursor()
         
         # Check if recorder exists
-        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT name FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         name = row[0]
-        
+
         # CASCADE DELETE: Delete all associated data FIRST
-        cursor.execute('DELETE FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorded_trades WHERE recorder_id = {ph}', (recorder_id,))
         trades_deleted = cursor.rowcount
-        
-        cursor.execute('DELETE FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+
+        cursor.execute(f'DELETE FROM recorded_signals WHERE recorder_id = {ph}', (recorder_id,))
         signals_deleted = cursor.rowcount
-        
-        cursor.execute('DELETE FROM recorder_positions WHERE recorder_id = ?', (recorder_id,))
+
+        cursor.execute(f'DELETE FROM recorder_positions WHERE recorder_id = {ph}', (recorder_id,))
         positions_deleted = cursor.rowcount
-        
+
         # Now delete the recorder itself
-        cursor.execute('DELETE FROM recorders WHERE id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorders WHERE id = {ph}', (recorder_id,))
         conn.commit()
         conn.close()
         
@@ -11486,8 +11611,9 @@ def api_clone_recorder(recorder_id):
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+
+        cursor.execute(f'SELECT * FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
@@ -11502,7 +11628,8 @@ def api_clone_recorder(recorder_id):
         # Create cloned recorder with modified name
         new_name = f"{original['name']} (Copy)"
         
-        cursor.execute('''
+        _vals = ', '.join([ph] * 33)
+        cursor.execute(f'''
             INSERT INTO recorders (
                 name, strategy_type, symbol, demo_account_id, account_id,
                 initial_position_size, add_position_size,
@@ -11513,7 +11640,7 @@ def api_clone_recorder(recorder_id):
                 time_filter_1_start, time_filter_1_stop, time_filter_2_start, time_filter_2_stop,
                 signal_cooldown, max_signals_per_session, max_daily_loss, auto_flat_after_cutoff,
                 notes, recording_enabled, webhook_token
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ({_vals})
         ''', (
             new_name,
             original['strategy_type'],
@@ -11574,19 +11701,20 @@ def api_start_recorder(recorder_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute('SELECT name, is_recording FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+
+        cursor.execute(f'SELECT name, is_recording FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         name, is_recording = row
         if is_recording:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder is already running'}), 400
-        
-        cursor.execute('UPDATE recorders SET is_recording = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (recorder_id,))
+
+        cursor.execute(f'UPDATE recorders SET is_recording = 1, updated_at = CURRENT_TIMESTAMP WHERE id = {ph}', (recorder_id,))
         conn.commit()
         conn.close()
         
@@ -11606,19 +11734,20 @@ def api_stop_recorder(recorder_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute('SELECT name, is_recording FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+
+        cursor.execute(f'SELECT name, is_recording FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         name, is_recording = row
         if not is_recording:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder is not running'}), 400
-        
-        cursor.execute('UPDATE recorders SET is_recording = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (recorder_id,))
+
+        cursor.execute(f'UPDATE recorders SET is_recording = 0, updated_at = CURRENT_TIMESTAMP WHERE id = {ph}', (recorder_id,))
         conn.commit()
         conn.close()
         
@@ -11641,24 +11770,25 @@ def api_reset_recorder_history(recorder_id):
         cursor = conn.cursor()
         
         # Verify recorder exists
-        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT name FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         name = row['name']
-        
+
         # Delete all trades for this recorder
-        cursor.execute('DELETE FROM recorded_trades WHERE recorder_id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorded_trades WHERE recorder_id = {ph}', (recorder_id,))
         trades_deleted = cursor.rowcount
-        
+
         # Delete all signals for this recorder
-        cursor.execute('DELETE FROM recorded_signals WHERE recorder_id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorded_signals WHERE recorder_id = {ph}', (recorder_id,))
         signals_deleted = cursor.rowcount
-        
+
         # Delete all positions for this recorder (Trade Manager style tracking)
-        cursor.execute('DELETE FROM recorder_positions WHERE recorder_id = ?', (recorder_id,))
+        cursor.execute(f'DELETE FROM recorder_positions WHERE recorder_id = {ph}', (recorder_id,))
         positions_deleted = cursor.rowcount
         
         conn.commit()
@@ -11826,11 +11956,18 @@ def api_get_traders():
                         t.enabled,
                         t.created_at,
                         t.user_id,
-                        t.max_contracts as trader_position_size,
+                        t.initial_position_size as trader_position_size,
+                        t.add_position_size as trader_add_position_size,
+                        t.tp_targets as trader_tp_targets,
+                        t.sl_enabled as trader_sl_enabled,
+                        t.sl_amount as trader_sl_amount,
+                        t.sl_units as trader_sl_units,
+                        t.max_daily_loss as trader_max_daily_loss,
                         t.add_delay,
                         t.signal_count,
                         r.name as recorder_name,
                         r.ticker as symbol,
+                        r.initial_position_size as recorder_position_size,
                         a.name as account_name,
                         a.broker
                     FROM traders t
@@ -11873,6 +12010,10 @@ def api_get_traders():
                     ORDER BY t.created_at DESC
                 ''', (user_id, user_id))
         else:
+            # If auth is available but user isn't logged in, reject — don't leak all traders
+            if USER_AUTH_AVAILABLE:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
             if is_postgres:
                 cursor.execute('''
                     SELECT
@@ -11884,11 +12025,18 @@ def api_get_traders():
                         t.is_demo,
                         t.enabled,
                         t.created_at,
-                        t.max_contracts as trader_position_size,
+                        t.initial_position_size as trader_position_size,
+                        t.add_position_size as trader_add_position_size,
+                        t.tp_targets as trader_tp_targets,
+                        t.sl_enabled as trader_sl_enabled,
+                        t.sl_amount as trader_sl_amount,
+                        t.sl_units as trader_sl_units,
+                        t.max_daily_loss as trader_max_daily_loss,
                         t.add_delay,
                         t.signal_count,
                         r.name as recorder_name,
                         r.ticker as symbol,
+                        r.initial_position_size as recorder_position_size,
                         a.name as account_name,
                         a.broker
                     FROM traders t
@@ -11988,6 +12136,115 @@ def api_get_traders():
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def validate_trader_risk_settings(data, context='save'):
+    """Validate risk settings for trader create/update. Returns list of error strings (empty = valid).
+    Warnings are returned as {'warnings': [...]} when settings are risky but technically allowed."""
+    errors = []
+    warnings = []
+
+    # --- TP Targets ---
+    tp_targets = data.get('tp_targets')
+    if tp_targets is not None:
+        if isinstance(tp_targets, str):
+            try:
+                tp_targets = json.loads(tp_targets)
+            except (json.JSONDecodeError, TypeError):
+                errors.append('tp_targets must be a valid JSON array')
+                tp_targets = None
+        if tp_targets is not None:
+            if not isinstance(tp_targets, list):
+                errors.append('tp_targets must be a list')
+            elif len(tp_targets) > 0:
+                for i, target in enumerate(tp_targets):
+                    if not isinstance(target, dict):
+                        errors.append(f'tp_targets[{i}] must be an object with ticks and trim')
+                        continue
+                    ticks = target.get('ticks', 0)
+                    trim = target.get('trim', 0)
+                    try:
+                        ticks = float(ticks or 0)
+                    except (ValueError, TypeError):
+                        errors.append(f'tp_targets[{i}].ticks must be a number')
+                        continue
+                    if ticks < 0:
+                        errors.append(f'tp_targets[{i}].ticks cannot be negative (got {ticks})')
+                    try:
+                        trim = float(trim or 0)
+                    except (ValueError, TypeError):
+                        errors.append(f'tp_targets[{i}].trim must be a number')
+                        continue
+                    if trim < 0 or trim > 100:
+                        errors.append(f'tp_targets[{i}].trim must be between 0 and 100 (got {trim})')
+
+    # --- Position Sizes ---
+    for field in ['initial_position_size', 'add_position_size']:
+        val = data.get(field)
+        if val is not None:
+            try:
+                val = int(val)
+                if val < 1:
+                    errors.append(f'{field} must be at least 1 (got {val})')
+            except (ValueError, TypeError):
+                errors.append(f'{field} must be a positive integer')
+
+    # --- SL Settings ---
+    sl_enabled = data.get('sl_enabled')
+    sl_amount = data.get('sl_amount')
+    sl_type = data.get('sl_type')
+
+    if sl_amount is not None:
+        try:
+            sl_amount = float(sl_amount)
+            if sl_amount < 0:
+                errors.append(f'sl_amount cannot be negative (got {sl_amount})')
+        except (ValueError, TypeError):
+            errors.append('sl_amount must be a number')
+
+    if sl_type is not None and sl_type not in ('Fixed', 'Trail', 'Trailing'):
+        errors.append(f"sl_type must be 'Fixed' or 'Trail' (got '{sl_type}')")
+
+    # --- Trailing Stop Consistency ---
+    trail_trigger = data.get('trail_trigger')
+    trail_freq = data.get('trail_freq')
+    if trail_trigger is not None:
+        try:
+            trail_trigger = int(trail_trigger)
+            if trail_trigger < 0:
+                errors.append(f'trail_trigger cannot be negative (got {trail_trigger})')
+        except (ValueError, TypeError):
+            errors.append('trail_trigger must be a non-negative integer')
+    if trail_freq is not None:
+        try:
+            trail_freq = int(trail_freq)
+            if trail_freq < 0:
+                errors.append(f'trail_freq cannot be negative (got {trail_freq})')
+        except (ValueError, TypeError):
+            errors.append('trail_freq must be a non-negative integer')
+
+    # --- Break-Even Settings ---
+    be_enabled = data.get('break_even_enabled')
+    be_ticks = data.get('break_even_ticks')
+    if be_ticks is not None:
+        try:
+            be_ticks = int(be_ticks)
+            if be_ticks < 0:
+                errors.append(f'break_even_ticks cannot be negative (got {be_ticks})')
+        except (ValueError, TypeError):
+            errors.append('break_even_ticks must be a non-negative integer')
+
+    # --- Max Daily Loss ---
+    max_loss = data.get('max_daily_loss')
+    if max_loss is not None:
+        try:
+            max_loss = float(max_loss)
+            if max_loss < 0:
+                errors.append(f'max_daily_loss cannot be negative (got {max_loss})')
+        except (ValueError, TypeError):
+            errors.append('max_daily_loss must be a non-negative number')
+
+    return errors
+
+
 @app.route('/api/traders', methods=['POST'])
 def api_create_trader():
     """Create a new trader (link recorder to account with subaccount info and risk settings)"""
@@ -12007,7 +12264,14 @@ def api_create_trader():
         sl_amount = data.get('sl_amount')
         sl_units = data.get('sl_units')
         max_daily_loss = data.get('max_daily_loss')
-        
+        time_filter_1_enabled = data.get('time_filter_1_enabled', False)
+        time_filter_1_start = data.get('time_filter_1_start', '')
+        time_filter_1_stop = data.get('time_filter_1_stop', '')
+        time_filter_2_enabled = data.get('time_filter_2_enabled', False)
+        time_filter_2_start = data.get('time_filter_2_start', '')
+        time_filter_2_stop = data.get('time_filter_2_stop', '')
+        inverse_signals = data.get('inverse_signals', 0)
+
         if not recorder_id or not account_id:
             return jsonify({'success': False, 'error': 'recorder_id and account_id are required'}), 400
         
@@ -12067,6 +12331,21 @@ def api_create_trader():
         if max_daily_loss is None:
             max_daily_loss = rec_max_loss
         
+        # Validate risk settings AFTER inheritance (catch bad recorder defaults too)
+        validation_data = {
+            'initial_position_size': initial_position_size,
+            'add_position_size': add_position_size,
+            'tp_targets': tp_targets,
+            'sl_enabled': sl_enabled,
+            'sl_amount': sl_amount,
+            'sl_units': sl_units,
+            'max_daily_loss': max_daily_loss,
+        }
+        validation_errors = validate_trader_risk_settings(validation_data)
+        if validation_errors:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid risk settings', 'validation_errors': validation_errors}), 400
+
         # Verify account exists
         if is_postgres:
             cursor.execute('SELECT id, name FROM accounts WHERE id = %s', (account_id,))
@@ -12076,7 +12355,7 @@ def api_create_trader():
         if not account:
             conn.close()
             return jsonify({'success': False, 'error': 'Account not found'}), 404
-        
+
         # Check if link already exists
         if is_postgres:
             if subaccount_id:
@@ -12107,12 +12386,18 @@ def api_create_trader():
                 INSERT INTO traders (
                     recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
                     initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                    user_id, enabled_accounts
+                    user_id, enabled_accounts,
+                    time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
+                    time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
+                    inverse_signals
                 )
-                VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                  current_user_id, None))
+                  current_user_id, None,
+                  bool(time_filter_1_enabled), time_filter_1_start, time_filter_1_stop,
+                  bool(time_filter_2_enabled), time_filter_2_start, time_filter_2_stop,
+                  bool(inverse_signals)))
             result = cursor.fetchone()
             if result:
                 trader_id = result.get('id') if isinstance(result, dict) else result[0]
@@ -12124,12 +12409,18 @@ def api_create_trader():
                 INSERT INTO traders (
                     recorder_id, account_id, subaccount_id, subaccount_name, is_demo, enabled,
                     initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                    user_id, enabled_accounts
+                    user_id, enabled_accounts,
+                    time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
+                    time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
+                    inverse_signals
                 )
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                  current_user_id, None))
+                  current_user_id, None,
+                  1 if time_filter_1_enabled else 0, time_filter_1_start, time_filter_1_stop,
+                  1 if time_filter_2_enabled else 0, time_filter_2_start, time_filter_2_stop,
+                  1 if inverse_signals else 0))
             trader_id = cursor.lastrowid
         
         conn.commit()
@@ -12147,6 +12438,7 @@ def api_create_trader():
         
     except Exception as e:
         logger.error(f"Error creating trader: {e}")
+        import traceback
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -12166,7 +12458,13 @@ def api_update_trader(trader_id):
         if not cursor.fetchone():
             conn.close()
             return jsonify({'success': False, 'error': 'Trader not found'}), 404
-        
+
+        # Validate risk settings before saving
+        validation_errors = validate_trader_risk_settings(data)
+        if validation_errors:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid risk settings', 'validation_errors': validation_errors}), 400
+
         # Build dynamic update query based on provided fields
         updates = []
         params = []
@@ -12178,14 +12476,18 @@ def api_update_trader(trader_id):
             updates.append(f'enabled = {placeholder}')
             params.append(enabled)
         
-        # Update risk settings if provided
+        # Update risk settings if provided (None/0 = fall back to recorder defaults)
         if 'initial_position_size' in data:
+            val = data['initial_position_size']
+            val = int(val) if val else None
             updates.append(f'initial_position_size = {placeholder}')
-            params.append(int(data['initial_position_size']))
-        
+            params.append(val)
+
         if 'add_position_size' in data:
+            val = data['add_position_size']
+            val = int(val) if val else None
             updates.append(f'add_position_size = {placeholder}')
-            params.append(int(data['add_position_size']))
+            params.append(val)
         
         if 'tp_targets' in data:
             tp_targets = data['tp_targets']
@@ -12643,35 +12945,54 @@ def api_cleanup_duplicate_traders():
 def api_toggle_trader(trader_id):
     """Toggle a single trader's enabled status (per-account control)."""
     try:
+        # Auth check: require login when auth is available
+        current_user_id = None
+        if USER_AUTH_AVAILABLE:
+            if not is_logged_in():
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+            current_user_id = get_current_user_id()
+
         data = request.get_json() or {}
         enabled = data.get('enabled', False)
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         placeholder = '%s' if is_postgres else '?'
-        
-        # Get trader info
+
+        # Get trader info with ownership check
         cursor.execute(f'''
-            SELECT t.id, r.name as recorder_name, a.name as account_name
+            SELECT t.id, t.user_id, r.name as recorder_name, a.name as account_name, a.user_id as account_owner_id
             FROM traders t
             JOIN recorders r ON t.recorder_id = r.id
             JOIN accounts a ON t.account_id = a.id
             WHERE t.id = {placeholder}
         ''', (trader_id,))
-        
+
         trader = cursor.fetchone()
         if not trader:
             conn.close()
             return jsonify({'success': False, 'error': 'Trader not found'}), 404
+
+        # Ownership check: user must own the trader or the account
+        if current_user_id:
+            if hasattr(trader, 'keys'):
+                trader_owner = trader['user_id']
+                account_owner = trader['account_owner_id']
+            else:
+                trader_owner = trader[1]
+                account_owner = trader[4]
+            if current_user_id != trader_owner and current_user_id != account_owner:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Not authorized'}), 403
         
         # Get names for logging
         if hasattr(trader, 'keys'):
             recorder_name = trader['recorder_name']
             account_name = trader['account_name']
         else:
-            recorder_name = trader[1]
-            account_name = trader[2]
+            recorder_name = trader[2]
+            account_name = trader[3]
         
         # Update trader enabled status
         enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
@@ -12870,6 +13191,390 @@ def api_test_trader_connection(trader_id):
 
 
 # ============================================================
+# OPERATIONAL TOOLS - Broker state, order management, webhook retry
+# (Restored from backup-feb5-before-revert branch)
+# ============================================================
+
+@app.route('/api/traders/<int:trader_id>/broker-state', methods=['GET'])
+def api_get_broker_state(trader_id):
+    """Get actual broker positions and orders for a trader - for debugging"""
+    import asyncio
+
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        cursor.execute(f'''
+            SELECT t.*, a.tradovate_token, a.environment, a.name as account_name
+            FROM traders t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE t.id = {placeholder}
+        ''', (trader_id,))
+        trader_row = cursor.fetchone()
+        conn.close()
+
+        if not trader_row:
+            return jsonify({'success': False, 'error': 'Trader not found'}), 404
+
+        trader = dict(trader_row)
+        token = trader.get('tradovate_token')
+        env = (trader.get('environment') or 'demo').lower()
+        is_demo = env != 'live'
+        subaccount_id = trader.get('subaccount_id')
+
+        if not token:
+            return jsonify({'success': False, 'error': 'No token'})
+
+        async def query_broker():
+            from phantom_scraper.tradovate_integration import TradovateIntegration
+
+            tradovate = TradovateIntegration(demo=is_demo)
+            await tradovate.__aenter__()
+            tradovate.access_token = token
+
+            positions = await tradovate.get_positions(account_id=subaccount_id)
+            open_positions = []
+            for p in (positions or []):
+                if p.get('netPos', 0) != 0:
+                    open_positions.append({
+                        'symbol': p.get('contractId'),
+                        'side': 'LONG' if p.get('netPos') > 0 else 'SHORT',
+                        'qty': abs(p.get('netPos')),
+                        'avg_price': p.get('netPrice')
+                    })
+
+            orders = await tradovate.get_orders_with_details(account_id=str(subaccount_id))
+            working_orders = []
+            tp_count = 0
+            sl_count = 0
+            for o in (orders or []):
+                status = str(o.get('ordStatus', '')).upper()
+                if status in ['WORKING', 'ACCEPTED', 'PENDINGNEW', 'NEW']:
+                    otype = str(o.get('orderType', '')).upper()
+                    order_info = {
+                        'id': o.get('id'),
+                        'action': o.get('action'),
+                        'type': otype,
+                        'price': o.get('price'),
+                        'qty': o.get('orderQty'),
+                        'symbol': o.get('symbol')
+                    }
+                    working_orders.append(order_info)
+                    if otype == 'LIMIT':
+                        tp_count += 1
+                    elif otype in ['STOP', 'STOPLIMIT']:
+                        sl_count += 1
+
+            await tradovate.__aexit__(None, None, None)
+
+            return {
+                'positions': open_positions,
+                'orders': working_orders,
+                'tp_count': tp_count,
+                'sl_count': sl_count
+            }
+
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(query_broker())
+            loop.close()
+        except RuntimeError:
+            result = asyncio.run(query_broker())
+
+        return jsonify({
+            'success': True,
+            'trader_id': trader_id,
+            'account': trader.get('account_name'),
+            'subaccount': trader.get('subaccount_name'),
+            **result
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting broker state: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/account/<int:account_id>/broker-state', methods=['GET'])
+def api_account_broker_state(account_id):
+    """Query broker for account positions and working orders - for debugging"""
+    import requests as sync_requests
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'''
+            SELECT id, name, tradovate_token, environment, broker
+            FROM accounts WHERE id = {placeholder}
+        ''', (account_id,))
+        account = cursor.fetchone()
+
+        if not account:
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+        account = dict(account)
+        token = account.get('tradovate_token')
+        env = (account.get('environment') or 'demo').lower()
+        name = account.get('name')
+
+        if not token:
+            return jsonify({'success': False, 'error': 'No token for account'}), 400
+
+        cursor.execute(f'''
+            SELECT DISTINCT subaccount_id, subaccount_name
+            FROM traders
+            WHERE account_id = {placeholder} AND subaccount_id IS NOT NULL
+        ''', (account_id,))
+        subaccounts = cursor.fetchall()
+        conn.close()
+
+        base_url = f"https://{env}.tradovateapi.com/v1"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        result = {
+            'success': True,
+            'account_id': account_id,
+            'account_name': name,
+            'environment': env,
+            'subaccounts': []
+        }
+
+        pos_resp = sync_requests.get(f"{base_url}/position/list", headers=headers, timeout=10)
+        if pos_resp.status_code != 200:
+            return jsonify({'success': False, 'error': f'Broker auth failed: {pos_resp.status_code}'}), 401
+
+        positions = pos_resp.json()
+        orders_resp = sync_requests.get(f"{base_url}/order/list", headers=headers, timeout=10)
+        orders = orders_resp.json() if orders_resp.status_code == 200 else []
+
+        for sub in subaccounts:
+            sub = dict(sub)
+            sub_id = sub.get('subaccount_id')
+            sub_name = sub.get('subaccount_name')
+
+            sub_result = {
+                'subaccount_id': sub_id,
+                'subaccount_name': sub_name,
+                'positions': [],
+                'working_orders': []
+            }
+
+            for p in positions:
+                if p.get('accountId') == sub_id and p.get('netPos', 0) != 0:
+                    sub_result['positions'].append({
+                        'side': 'LONG' if p.get('netPos') > 0 else 'SHORT',
+                        'quantity': abs(p.get('netPos')),
+                        'avg_price': p.get('netPrice'),
+                        'contract_id': p.get('contractId')
+                    })
+
+            for o in orders:
+                if o.get('accountId') == sub_id and str(o.get('ordStatus', '')).upper() in ['WORKING', 'ACCEPTED', 'PENDINGNEW', 'NEW']:
+                    try:
+                        ver_resp = sync_requests.get(
+                            f"{base_url}/orderVersion/deps",
+                            params={"masterid": o.get('id')},
+                            headers=headers,
+                            timeout=5
+                        )
+                        if ver_resp.status_code == 200:
+                            versions = ver_resp.json()
+                            if versions:
+                                v = versions[-1]
+                                order_type = v.get('orderType', 'Unknown')
+                                label = 'TP' if order_type == 'Limit' else ('SL' if order_type in ['Stop', 'StopLimit'] else order_type)
+                                sub_result['working_orders'].append({
+                                    'id': o.get('id'),
+                                    'type': label,
+                                    'action': v.get('action'),
+                                    'qty': v.get('orderQty'),
+                                    'price': v.get('price')
+                                })
+                    except Exception:
+                        pass
+
+            result['subaccounts'].append(sub_result)
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error querying broker state: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/account/<int:account_id>/cancel-invalid-orders', methods=['POST'])
+def api_cancel_invalid_orders(account_id):
+    """Cancel all working orders with invalid prices (negative or null)"""
+    import requests as sync_requests
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'''
+            SELECT id, name, tradovate_token, environment
+            FROM accounts WHERE id = {placeholder}
+        ''', (account_id,))
+        account = cursor.fetchone()
+
+        if not account:
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+        account = dict(account)
+        token = account.get('tradovate_token')
+        env = (account.get('environment') or 'demo').lower()
+
+        if not token:
+            return jsonify({'success': False, 'error': 'No token'}), 400
+
+        cursor.execute(f'''
+            SELECT DISTINCT subaccount_id FROM traders
+            WHERE account_id = {placeholder} AND subaccount_id IS NOT NULL
+        ''', (account_id,))
+        subaccounts = [dict(r)['subaccount_id'] for r in cursor.fetchall()]
+        conn.close()
+
+        base_url = f"https://{env}.tradovateapi.com/v1"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        cancelled = []
+
+        orders_resp = sync_requests.get(f"{base_url}/order/list", headers=headers, timeout=10)
+        if orders_resp.status_code != 200:
+            return jsonify({'success': False, 'error': 'Broker auth failed'}), 401
+
+        for o in orders_resp.json():
+            if o.get('accountId') not in subaccounts:
+                continue
+            if str(o.get('ordStatus', '')).upper() not in ['WORKING', 'ACCEPTED', 'PENDINGNEW', 'NEW']:
+                continue
+
+            oid = o.get('id')
+            try:
+                ver_resp = sync_requests.get(f"{base_url}/orderVersion/deps", params={"masterid": oid}, headers=headers, timeout=5)
+                if ver_resp.status_code == 200:
+                    versions = ver_resp.json()
+                    if versions:
+                        v = versions[-1]
+                        price = v.get('price')
+                        stop_price = v.get('stopPrice')
+                        order_type = v.get('orderType', '')
+
+                        is_invalid = False
+                        if price is not None and price <= 0:
+                            is_invalid = True
+                        if stop_price is not None and stop_price <= 0:
+                            is_invalid = True
+                        if order_type == 'Limit' and price is None:
+                            is_invalid = True
+                        if order_type in ['Stop', 'StopLimit'] and stop_price is None:
+                            is_invalid = True
+
+                        if is_invalid:
+                            sync_requests.post(f"{base_url}/order/cancelorder", headers=headers, json={"orderId": oid}, timeout=10)
+                            cancelled.append({'id': oid, 'price': price, 'stop_price': stop_price})
+            except Exception:
+                pass
+
+        return jsonify({'success': True, 'cancelled_count': len(cancelled), 'cancelled': cancelled})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/account/<int:account_id>/cancel-order/<int:order_id>', methods=['POST'])
+def api_cancel_specific_order(account_id, order_id):
+    """Cancel a specific order by ID"""
+    import requests as sync_requests
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'SELECT tradovate_token, environment FROM accounts WHERE id = {placeholder}', (account_id,))
+        account = cursor.fetchone()
+        conn.close()
+
+        if not account:
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+        account = dict(account)
+        token = account.get('tradovate_token')
+        env = (account.get('environment') or 'demo').lower()
+
+        base_url = f"https://{env}.tradovateapi.com/v1"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = sync_requests.post(f"{base_url}/order/cancelorder", headers=headers, json={"orderId": order_id}, timeout=10)
+
+        if resp.status_code == 200:
+            return jsonify({'success': True, 'cancelled_order_id': order_id})
+        else:
+            return jsonify({'success': False, 'error': resp.text}), 400
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/webhooks/retry-failed', methods=['POST'])
+def api_retry_failed_webhooks():
+    """Retry recently failed webhooks by resetting them to 'pending'.
+    Optional: ?minutes=N to retry webhooks from the last N minutes (default: 30)"""
+    try:
+        minutes = request.args.get('minutes', 30, type=int)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+
+        if is_postgres:
+            cursor.execute('''
+                UPDATE incoming_webhooks
+                SET status = 'pending',
+                    retry_count = retry_count + 1,
+                    error_message = 'Retry via API',
+                    updated_at = NOW()
+                WHERE status = 'failed'
+                AND created_at > NOW() - INTERVAL '%s minutes'
+            ''' % minutes)
+        else:
+            cursor.execute('''
+                UPDATE incoming_webhooks
+                SET status = 'pending',
+                    retry_count = retry_count + 1,
+                    error_message = 'Retry via API',
+                    updated_at = datetime('now')
+                WHERE status = 'failed'
+                AND created_at > datetime('now', '-%s minutes')
+            ''' % minutes)
+
+        retry_count = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        logger.info(f"RETRY FAILED: {retry_count} failed webhooks reset to 'pending' (last {minutes} min)")
+
+        return jsonify({
+            'success': True,
+            'message': f'Retrying {retry_count} failed webhooks from last {minutes} minutes',
+            'retry_count': retry_count
+        })
+
+    except Exception as e:
+        logger.error(f"Error retrying failed webhooks: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
 # HIGH-PERFORMANCE SIGNAL PROCESSOR (Background Thread)
 # ============================================================
 
@@ -13045,7 +13750,9 @@ def broker_execution_worker(worker_id=0):
                     'quantity': quantity,
                     'ticker': ticker,
                     'tp_ticks': tp_ticks,
-                    'sl_ticks': sl_ticks
+                    'sl_ticks': sl_ticks,
+                    'sl_type': sl_type,
+                    'risk_config': risk_config
                 })
 
                 logger.info(f"📤 Broker execution: {action} {quantity} {ticker} signal={signal_id}")
@@ -13261,11 +13968,6 @@ def broker_execution_worker(worker_id=0):
             logger.error(f"Broker execution worker error: {e}")
             import traceback
             traceback.print_exc()
-            # Ensure task is marked done even on error to prevent queue issues
-            try:
-                broker_execution_queue.task_done()
-            except ValueError:
-                pass  # Ignore if called too many times
             time.sleep(1)  # Brief pause before retrying
 
 # HIVE MIND: Start multiple broker execution workers for parallel execution
@@ -14047,9 +14749,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 'exit_price': current_price,
                 'broker_queued': True,
                 'tracking': 'signal-based',
-                'processing_time_ms': int(processing_time * 1000),
-                'recorder_id': recorder_id,
-                'recorder_name': recorder_name
+                'processing_time_ms': int(processing_time * 1000)
             })
         
         # Determine side early (needed for filters)
@@ -14402,44 +15102,38 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 cursor.execute(f'''
                     INSERT INTO recorded_signals (recorder_id, action, ticker, price, raw_signal, processed)
                     VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, true)
-                    RETURNING id
                 ''', (recorder_id, action, ticker, price, raw_signal))
-                signal_id = cursor.fetchone()[0]
             else:
                 timestamp_fn = "datetime('now')"
                 cursor.execute(f'''
                     INSERT INTO recorded_signals (recorder_id, action, ticker, price, created_at, processed)
                     VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {timestamp_fn}, 1)
                 ''', (recorder_id, action, ticker, price))
-                signal_id = cursor.lastrowid
             conn.commit()
         except Exception as e:
             _logger.warning(f"Could not record signal: {e}")
 
         # ============================================================
-        # 📄 PAPER TRADING: Record trade for analytics
+        # 📄 PAPER TRADING: Record trade for analytics (BACKGROUND - never blocks broker execution)
         # ============================================================
-        try:
-            paper_action = action.upper()
-            print(f"🧪🧪🧪 WEBHOOK PAPER CHECK: action={paper_action}, ticker={ticker}", flush=True)
-            if paper_action in ['BUY', 'SELL', 'LONG', 'SHORT', 'CLOSE', 'FLAT', 'EXIT']:
-                paper_qty = int(quantity) if quantity else 1
-                paper_price = float(price) if price else None
-                print(f"🧪🧪🧪 CALLING record_paper_trade: rec={recorder_id}, sym={ticker}, act={paper_action}, qty={paper_qty}, price={paper_price}", flush=True)
-                paper_result = record_paper_trade_from_webhook(
-                    recorder_id=recorder_id,
-                    symbol=ticker,
-                    action=paper_action,
-                    quantity=paper_qty,
-                    price=paper_price
-                )
-                print(f"🧪🧪🧪 PAPER TRADE RESULT: {paper_result}", flush=True)
-            else:
-                print(f"🧪🧪🧪 PAPER SKIPPED: action={paper_action} not in trade list", flush=True)
-        except Exception as paper_err:
-            import traceback
-            print(f"🧪🧪🧪 PAPER TRADE ERROR: {paper_err}", flush=True)
-            print(traceback.format_exc(), flush=True)
+        paper_action = action.upper()
+        if paper_action in ['BUY', 'SELL', 'LONG', 'SHORT', 'CLOSE', 'FLAT', 'EXIT']:
+            paper_qty = int(quantity) if quantity else 1
+            paper_price = float(price) if price else None
+            import threading
+            def _bg_paper_trade(rec_id, sym, act, qty, px):
+                try:
+                    result = record_paper_trade_from_webhook(
+                        recorder_id=rec_id, symbol=sym, action=act, quantity=qty, price=px
+                    )
+                    print(f"🧪 PAPER TRADE (bg): {act} {qty} {sym} → {result}", flush=True)
+                except Exception as e:
+                    print(f"🧪 PAPER TRADE ERROR (bg): {e}", flush=True)
+            threading.Thread(
+                target=_bg_paper_trade,
+                args=(recorder_id, ticker, paper_action, paper_qty, paper_price),
+                daemon=True
+            ).start()
 
         # ============================================================
         # 📈 GET RISK SETTINGS
@@ -14475,6 +15169,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         # For now, get recorder defaults (will be overridden if trader has settings)
         tp_targets_raw = recorder.get('tp_targets', '[]')
         tp_units = recorder.get('tp_units', 'Ticks')
+        trim_units = recorder.get('trim_units', 'Percent')
         sl_enabled = recorder.get('sl_enabled', 0)
         sl_amount = float(recorder.get('sl_amount', 0) or 0)
         sl_units = recorder.get('sl_units', 'Ticks')
@@ -14555,45 +15250,88 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         track_signal_step(signal_id, 'STEP5D_TRADER_FOUND', {'trader_id': trader.get('id'), 'account_id': trader.get('account_id')})
         _logger.info(f"✅ Found trader: id={trader.get('id')}, account_id={trader.get('account_id')}, enabled_accounts={bool(trader.get('enabled_accounts'))}")
         
-        # CRITICAL: Use TRADER's risk settings (override recorder defaults)
-        # Trader settings take precedence - these are what the user configured on /traders/{id}
-        trader_initial_size = trader.get('initial_position_size')
-        trader_add_size = trader.get('add_position_size')
-        trader_tp_targets = trader.get('tp_targets')
-        trader_sl_enabled = trader.get('sl_enabled')
-        trader_sl_amount = trader.get('sl_amount')
-        trader_sl_units = trader.get('sl_units')
+        # CRITICAL: Use TRADER's risk settings to override recorder defaults
+        # A trader setting should ONLY override the recorder when the trader
+        # has a REAL value — not a DB default like '[]', 0, or NULL.
+        # Helper: check if a trader field has a meaningful (non-default) value
+        def _has_real_value(val, empty_vals=(None, '', '[]', '{}', 0, 0.0, False)):
+            """Return True only if val is explicitly set and not a DB default."""
+            return val is not None and val not in empty_vals
 
-        # Log the mode - TP/SL from trader settings (override recorder) or recorder settings
-        signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
-        settings_source = "TRADER" if (trader_tp_targets or trader_sl_enabled is not None) else "RECORDER"
-        _logger.info(f"📊 {signal_type} SIGNAL: Will apply {settings_source} settings")
-        
-        # Override TP/SL settings with trader settings if available
-        if trader_tp_targets:
+        def _parse_tp_targets(raw):
+            """Parse tp_targets to a list, returns [] if empty/invalid."""
+            if not raw:
+                return []
+            try:
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                return parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+                return []
+
+        # --- TP Targets: only override if trader has real, non-empty targets ---
+        trader_tp_targets = trader.get('tp_targets')
+        parsed_trader_tp = _parse_tp_targets(trader_tp_targets)
+        if parsed_trader_tp and len(parsed_trader_tp) > 0:
             tp_targets_raw = trader_tp_targets
-            _logger.info(f"📊 Using TRADER's TP targets (override recorder)")
+            _logger.info(f"📊 Using TRADER's TP targets: {trader_tp_targets}")
+        else:
+            _logger.info(f"📊 Using RECORDER TP targets (trader has none): {tp_targets_raw}")
+
+        # --- TP/Trim units: only override if trader has a non-empty string ---
+        trader_trim_units = trader.get('trim_units')
+        if trader_trim_units and trader_trim_units.strip():
+            trim_units = trader_trim_units
+        trader_tp_units = trader.get('tp_units')
+        if trader_tp_units and trader_tp_units.strip():
+            tp_units = trader_tp_units
+
+        # --- SL settings: override if trader has explicitly different values ---
+        # sl_enabled is a boolean toggle — None means "use recorder", 0/False means "explicitly off"
+        trader_sl_enabled = trader.get('sl_enabled')
         if trader_sl_enabled is not None:
             sl_enabled = trader_sl_enabled
-        if trader_sl_amount is not None:
-            sl_amount = float(trader_sl_amount or 0)
-        if trader_sl_units:
+        trader_sl_amount = trader.get('sl_amount')
+        if trader_sl_amount is not None and float(trader_sl_amount or 0) > 0:
+            sl_amount = float(trader_sl_amount)
+            _logger.info(f"📊 Using TRADER's SL amount: {sl_amount}")
+        trader_sl_units = trader.get('sl_units')
+        if trader_sl_units and trader_sl_units.strip():
             sl_units = trader_sl_units
-        
-        # Get trader's sl_type if available (check trader object)
-        if trader:
-            trader_sl_type = trader.get('sl_type')
-            if trader_sl_type:
-                sl_type = trader_sl_type
-                _logger.info(f"📊 Using TRADER's sl_type: {sl_type} (override recorder)")
-        
-        # Get trader's break-even settings if available
+
+        # --- SL Type: only override if trader has an explicit NON-DEFAULT type ---
+        # 'Fixed' is the DB default on traders — it doesn't mean the user chose Fixed.
+        # Only override if the trader explicitly set a non-default value (e.g. 'Trail').
+        trader_sl_type = trader.get('sl_type') if trader else None
+        if trader_sl_type and trader_sl_type.strip() and trader_sl_type != 'Fixed':
+            sl_type = trader_sl_type
+            _logger.info(f"📊 Using TRADER's sl_type: {sl_type}")
+
+        # --- Break-even: only override if trader has real values ---
         trader_break_even_enabled = trader.get('break_even_enabled') if trader else None
-        trader_break_even_ticks = trader.get('break_even_ticks') if trader else None
         if trader_break_even_enabled is not None:
             break_even_enabled = trader_break_even_enabled
-        if trader_break_even_ticks is not None:
-            break_even_ticks = int(trader_break_even_ticks or 10)
+        trader_break_even_ticks = trader.get('break_even_ticks') if trader else None
+        if trader_break_even_ticks is not None and int(trader_break_even_ticks or 0) > 0:
+            break_even_ticks = int(trader_break_even_ticks)
+        trader_break_even_offset = trader.get('break_even_offset') if trader else None
+        if trader_break_even_offset is not None and int(trader_break_even_offset or 0) > 0:
+            break_even_offset = int(trader_break_even_offset)
+
+        # --- Trail settings: only override if trader has real (>0) values ---
+        trader_trail_trigger = trader.get('trail_trigger') if trader else None
+        if trader_trail_trigger is not None and int(trader_trail_trigger or 0) > 0:
+            trail_trigger = int(trader_trail_trigger)
+        trader_trail_freq = trader.get('trail_freq') if trader else None
+        if trader_trail_freq is not None and int(trader_trail_freq or 0) > 0:
+            trail_freq = int(trader_trail_freq)
+
+        # --- Position sizes: extract for use in quantity logic below ---
+        trader_initial_size = trader.get('initial_position_size') if trader else None
+        trader_add_size = trader.get('add_position_size') if trader else None
+
+        # Log final resolved settings
+        signal_type = "STRATEGY" if is_strategy_alert else "INDICATOR"
+        _logger.info(f"📊 {signal_type} SIGNAL resolved: tp={tp_targets_raw}, sl_enabled={sl_enabled}, sl_amount={sl_amount}, sl_type={sl_type}, be={break_even_enabled}/{break_even_ticks}, trail={trail_trigger}/{trail_freq}")
 
         # ============================================================
         # TP/SL CALCULATION - Priority: Webhook > Trader > Recorder
@@ -14979,15 +15717,15 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                     _logger.warning(f"⚠️ Could not close SHORT: {close_err}")
         
         # ============================================================
-        # SIGNAL-BASED TRACKING (Like Trade Manager)
-        # Record position FIRST based on signal, THEN try broker execution
-        # This ensures P&L tracking works even without broker connection
+        # SIGNAL-BASED TRACKING (Like Trade Manager) - BACKGROUND THREAD
+        # Record position based on signal for P&L tracking
+        # Runs in background so it NEVER blocks broker execution
         # ============================================================
-        
+
         trade_side = 'LONG' if trade_action.upper() in ['BUY', 'LONG'] else 'SHORT'
         tick_size = get_tick_size(ticker) if ticker else 0.25
         tick_value = get_tick_value(ticker) if ticker else 0.50
-        
+
         # Calculate TP/SL prices based on signal price
         tp_price = None
         sl_price = None
@@ -15001,215 +15739,144 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 sl_price = current_price - (sl_ticks * tick_size)
             else:
                 sl_price = current_price + (sl_ticks * tick_size)
-        
-        # STEP 1: Record trade based on SIGNAL (not broker) - Like Trade Manager!
-        try:
-            trade_conn = get_db_connection()
-            trade_cursor = trade_conn.cursor()
-            is_pg = is_using_postgres()
-            ph = '%s' if is_pg else '?'
-            
-            # Check for existing open position to handle reversals
-            trade_cursor.execute(f'''
-                SELECT id, side, entry_price, quantity FROM recorded_trades 
-                WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
-                ORDER BY id DESC LIMIT 1
-            ''', (recorder_id, ticker))
-            existing_trade = trade_cursor.fetchone()
-            
-            recorded_trade_id = None
-            pnl_result = None
-            
-            if existing_trade:
-                existing_id, existing_side, existing_entry, existing_qty = existing_trade
-                
-                if existing_side != trade_side:
-                    # REVERSAL: Close existing position and calculate P&L
-                    if existing_side == 'LONG':
-                        pnl_ticks = (current_price - existing_entry) / tick_size
-                    else:
-                        pnl_ticks = (existing_entry - current_price) / tick_size
-                    pnl_dollars = pnl_ticks * tick_value * existing_qty
-                    
-                    trade_cursor.execute(f'''
-                        UPDATE recorded_trades 
-                        SET status = 'closed', exit_price = {ph}, pnl = {ph}, pnl_ticks = {ph},
-                            exit_reason = 'signal', exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = {ph}
-                    ''', (current_price, pnl_dollars, pnl_ticks, existing_id))
-                    
-                    _logger.info(f"📊 {existing_side} CLOSED by {trade_side} signal | Entry: {existing_entry} | Exit: {current_price} | P&L: ${pnl_dollars:.2f} ({pnl_ticks:.1f} ticks)")
-                    pnl_result = {'pnl': pnl_dollars, 'pnl_ticks': pnl_ticks, 'closed_side': existing_side}
-                    
-                    # Now open new position in opposite direction
-                    # Set broker_managed_tp_sl=TRUE if trader exists (broker will handle TP/SL)
-                    broker_managed = True if trader else False
-                    trade_cursor.execute(f'''
-                        INSERT INTO recorded_trades
-                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, broker_managed))
-                    recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
-                    if is_pg:
-                        trade_cursor.execute('SELECT lastval()')
-                        recorded_trade_id = trade_cursor.fetchone()[0]
-                    
-                    _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
-                    
-                    # Send notification for flip (closed + new) to ALL users linked to recorder
-                    try:
-                        notify_trade_execution(
-                            action=trade_side,
-                            symbol=ticker,
-                            quantity=quantity,
-                            price=current_price,
-                            recorder_name=recorder_name,
-                            tp_price=tp_price,
-                            sl_price=sl_price,
-                            recorder_id=recorder_id
-                        )
-                    except Exception as notif_err:
-                        _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
 
-                    # Track paper trade for flip (closes old, opens new)
-                    try:
-                        track_paper_trade(recorder_id, ticker, trade_side, quantity, current_price)
-                    except Exception as paper_err:
-                        _logger.debug(f"Paper trade tracking error: {paper_err}")
-                else:
-                    # SAME SIDE: DCA - Add to existing position!
-                    _logger.info(f"📈 DCA: Adding {quantity} to existing {existing_side} position")
+        # BACKGROUND: Record trade based on SIGNAL (not broker) - Like Trade Manager!
+        import threading
+        def _bg_signal_tracking(rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, t_tick_size, t_tick_value, has_trader, rec_name):
+            try:
+                trade_conn = get_db_connection()
+                trade_cursor = trade_conn.cursor()
+                is_pg = is_using_postgres()
+                ph = '%s' if is_pg else '?'
 
-                    # Create a new trade entry for DCA
-                    # Set broker_managed_tp_sl=TRUE if trader exists (broker will handle TP/SL)
-                    broker_managed = True if trader else False
-                    trade_cursor.execute(f'''
-                        INSERT INTO recorded_trades
-                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, broker_managed))
-                    recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
-                    if is_pg:
-                        trade_cursor.execute('SELECT lastval()')
-                        recorded_trade_id = trade_cursor.fetchone()[0]
-                    
-                    _logger.info(f"📈 DCA {trade_side} +{quantity} @ {current_price} | Total trades open: counting...")
-                    
-                    # Send notification for DCA to ALL users linked to recorder
-                    try:
-                        notify_trade_execution(
-                            action=f"DCA {trade_side}",
-                            symbol=ticker,
-                            quantity=quantity,
-                            price=current_price,
-                            recorder_name=recorder_name,
-                            tp_price=tp_price,
-                            sl_price=sl_price,
-                            recorder_id=recorder_id
-                        )
-                    except Exception as notif_err:
-                        _logger.warning(f"⚠️ Could not send DCA notification: {notif_err}")
-
-                    # Track paper trade DCA
-                    try:
-                        track_paper_trade(recorder_id, ticker, trade_side, quantity, current_price)
-                    except Exception as paper_err:
-                        _logger.debug(f"Paper trade tracking error: {paper_err}")
-            else:
-                # NO EXISTING POSITION: Open new trade
-                # Set broker_managed_tp_sl=TRUE if trader exists (broker will handle TP/SL)
-                broker_managed = True if trader else False
+                # Check for existing open position to handle reversals
                 trade_cursor.execute(f'''
-                    INSERT INTO recorded_trades
-                    (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ''', (recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, broker_managed))
-                recorded_trade_id = trade_cursor.lastrowid if not is_pg else None
-                if is_pg:
-                    trade_cursor.execute('SELECT lastval()')
-                    recorded_trade_id = trade_cursor.fetchone()[0]
-                
-                _logger.info(f"📈 NEW {trade_side} opened @ {current_price} x{quantity} | TP: {tp_price} | SL: {sl_price}")
-                
-                # Send notification for new trade to ALL users linked to recorder
-                try:
-                    notify_trade_execution(
-                        action=trade_side,
-                        symbol=ticker,
-                        quantity=quantity,
-                        price=current_price,
-                        recorder_name=recorder_name,
-                        tp_price=tp_price,
-                        sl_price=sl_price,
-                        recorder_id=recorder_id
-                    )
-                except Exception as notif_err:
-                    _logger.warning(f"⚠️ Could not send trade notification: {notif_err}")
+                    SELECT id, side, entry_price, quantity FROM recorded_trades
+                    WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
+                    ORDER BY id DESC LIMIT 1
+                ''', (rec_id, tkr))
+                existing_trade = trade_cursor.fetchone()
 
-                # Track paper trade for theoretical P&L
-                try:
-                    track_paper_trade(recorder_id, ticker, trade_side, quantity, current_price)
-                except Exception as paper_err:
-                    _logger.debug(f"Paper trade tracking error: {paper_err}")
+                recorded_trade_id = None
 
-            # Also update recorder_positions for aggregate tracking
-            trade_cursor.execute(f'''
-                SELECT id, side, total_quantity, avg_entry_price FROM recorder_positions
-                WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
-            ''', (recorder_id, ticker))
-            existing_pos = trade_cursor.fetchone()
-            
-            if existing_pos:
-                pos_id, pos_side, pos_qty, pos_avg = existing_pos
-                if pos_side != trade_side:
-                    # Close position (opposite side signal)
-                    if pos_side == 'LONG':
-                        pos_pnl_ticks = (current_price - pos_avg) / tick_size
+                if existing_trade:
+                    existing_id, existing_side, existing_entry, existing_qty = existing_trade
+
+                    if existing_side != t_side:
+                        # REVERSAL: Close existing position and calculate P&L
+                        if existing_side == 'LONG':
+                            pnl_ticks = (c_price - existing_entry) / t_tick_size
+                        else:
+                            pnl_ticks = (existing_entry - c_price) / t_tick_size
+                        pnl_dollars = pnl_ticks * t_tick_value * existing_qty
+
+                        trade_cursor.execute(f'''
+                            UPDATE recorded_trades
+                            SET status = 'closed', exit_price = {ph}, pnl = {ph}, pnl_ticks = {ph},
+                                exit_reason = 'signal', exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = {ph}
+                        ''', (c_price, pnl_dollars, pnl_ticks, existing_id))
+
+                        _logger.info(f"📊 {existing_side} CLOSED by {t_side} signal | Entry: {existing_entry} | Exit: {c_price} | P&L: ${pnl_dollars:.2f} ({pnl_ticks:.1f} ticks)")
+
+                        # Now open new position in opposite direction
+                        broker_managed = True if has_trader else False
+                        trade_cursor.execute(f'''
+                            INSERT INTO recorded_trades
+                            (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ''', (rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, broker_managed))
+                        _logger.info(f"📈 NEW {t_side} opened @ {c_price} x{qty} | TP: {t_tp_price} | SL: {t_sl_price}")
+
+                        try:
+                            notify_trade_execution(action=t_side, symbol=tkr, quantity=qty, price=c_price, recorder_name=rec_name, tp_price=t_tp_price, sl_price=t_sl_price, recorder_id=rec_id)
+                        except Exception:
+                            pass
                     else:
-                        pos_pnl_ticks = (pos_avg - current_price) / tick_size
-                    pos_pnl = pos_pnl_ticks * tick_value * pos_qty
-                    
+                        # SAME SIDE: DCA - Add to existing position!
+                        broker_managed = True if has_trader else False
+                        trade_cursor.execute(f'''
+                            INSERT INTO recorded_trades
+                            (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ''', (rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, broker_managed))
+                        _logger.info(f"📈 DCA {t_side} +{qty} @ {c_price}")
+
+                        try:
+                            notify_trade_execution(action=f"DCA {t_side}", symbol=tkr, quantity=qty, price=c_price, recorder_name=rec_name, tp_price=t_tp_price, sl_price=t_sl_price, recorder_id=rec_id)
+                        except Exception:
+                            pass
+                else:
+                    # NO EXISTING POSITION: Open new trade
+                    broker_managed = True if has_trader else False
                     trade_cursor.execute(f'''
-                        UPDATE recorder_positions
-                        SET status = 'closed', exit_price = {ph}, realized_pnl = {ph}, 
-                            exit_time = CURRENT_TIMESTAMP, closed_at = CURRENT_TIMESTAMP
-                        WHERE id = {ph}
-                    ''', (current_price, pos_pnl, pos_id))
-                    
-                    # Create new position
+                        INSERT INTO recorded_trades
+                        (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ''', (rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, broker_managed))
+                    _logger.info(f"📈 NEW {t_side} opened @ {c_price} x{qty} | TP: {t_tp_price} | SL: {t_sl_price}")
+
+                    try:
+                        notify_trade_execution(action=t_side, symbol=tkr, quantity=qty, price=c_price, recorder_name=rec_name, tp_price=t_tp_price, sl_price=t_sl_price, recorder_id=rec_id)
+                    except Exception:
+                        pass
+
+                # Also update recorder_positions for aggregate tracking
+                trade_cursor.execute(f'''
+                    SELECT id, side, total_quantity, avg_entry_price FROM recorder_positions
+                    WHERE recorder_id = {ph} AND ticker = {ph} AND status = 'open'
+                ''', (rec_id, tkr))
+                existing_pos = trade_cursor.fetchone()
+
+                if existing_pos:
+                    pos_id, pos_side, pos_qty, pos_avg = existing_pos
+                    if pos_side != t_side:
+                        if pos_side == 'LONG':
+                            pos_pnl_ticks = (c_price - pos_avg) / t_tick_size
+                        else:
+                            pos_pnl_ticks = (pos_avg - c_price) / t_tick_size
+                        pos_pnl = pos_pnl_ticks * t_tick_value * pos_qty
+                        trade_cursor.execute(f'''
+                            UPDATE recorder_positions
+                            SET status = 'closed', exit_price = {ph}, realized_pnl = {ph},
+                                exit_time = CURRENT_TIMESTAMP, closed_at = CURRENT_TIMESTAMP
+                            WHERE id = {ph}
+                        ''', (c_price, pos_pnl, pos_id))
+                        trade_cursor.execute(f'''
+                            INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+                        ''', (rec_id, tkr, t_side, qty, c_price))
+                    else:
+                        new_qty = pos_qty + qty
+                        new_avg = ((pos_avg * pos_qty) + (c_price * qty)) / new_qty
+                        trade_cursor.execute(f'''
+                            UPDATE recorder_positions
+                            SET total_quantity = {ph}, avg_entry_price = {ph}, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = {ph}
+                        ''', (new_qty, new_avg, pos_id))
+                else:
                     trade_cursor.execute(f'''
                         INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
                         VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'open')
-                    ''', (recorder_id, ticker, trade_side, quantity, current_price))
-                else:
-                    # SAME SIDE: DCA - Update position with new average
-                    new_qty = pos_qty + quantity
-                    new_avg = ((pos_avg * pos_qty) + (current_price * quantity)) / new_qty
-                    
-                    trade_cursor.execute(f'''
-                        UPDATE recorder_positions
-                        SET total_quantity = {ph}, avg_entry_price = {ph}, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = {ph}
-                    ''', (new_qty, new_avg, pos_id))
-                    
-                    _logger.info(f"📈 Position DCA: {pos_side} {ticker} +{quantity} @ {current_price} | Total: {new_qty} @ avg {new_avg:.2f}")
-            else:
-                # Create new position
-                trade_cursor.execute(f'''
-                    INSERT INTO recorder_positions (recorder_id, ticker, side, total_quantity, avg_entry_price, status)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'open')
-                ''', (recorder_id, ticker, trade_side, quantity, current_price))
-            
-            trade_conn.commit()
-            trade_conn.close()
-            _logger.info(f"✅ SIGNAL TRACKED: {trade_side} {ticker} @ {current_price} (Trade Manager style)")
-            
-        except Exception as track_err:
-            _logger.error(f"❌ Signal tracking error: {track_err}")
-            import traceback
-            traceback.print_exc()
-        
-        # STEP 2: Build risk_config for apply_risk_orders (includes trailing stop and break-even)
+                    ''', (rec_id, tkr, t_side, qty, c_price))
+
+                trade_conn.commit()
+                trade_conn.close()
+                _logger.info(f"✅ SIGNAL TRACKED (bg): {t_side} {tkr} @ {c_price}")
+            except Exception as track_err:
+                _logger.error(f"❌ Signal tracking error (bg): {track_err}")
+
+        # These were previously set inside signal tracking (now background) - set defaults for response
+        recorded_trade_id = None
+        pnl_result = None
+
+        threading.Thread(
+            target=_bg_signal_tracking,
+            args=(recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, tick_size, tick_value, bool(trader), recorder_name),
+            daemon=True
+        ).start()
+
+        # Build risk_config for apply_risk_orders (includes trailing stop and break-even)
         risk_config = {}
         
         # Take profit
@@ -15218,6 +15885,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 'gain_ticks': tp_ticks,
                 'trim_percent': 100
             }]
+            risk_config['trim_units'] = trim_units  # 'Percent' or 'Contracts'
         
         # Stop loss (fixed or trailing)
         # Priority: Webhook trail settings > SL type from settings
@@ -15277,36 +15945,6 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             else:
                 _logger.info(f"📊 Break-even from SETTINGS: activation={break_even_ticks} ticks (true BE)")
         
-        # Save settings snapshot to DB (Fix #2)
-        if signal_id:
-            try:
-                import json as _json
-                settings_snapshot = {
-                    'tp_ticks': tp_ticks,
-                    'sl_ticks': sl_ticks,
-                    'sl_type': sl_type,
-                    'quantity': quantity,
-                    'risk_config': risk_config,
-                    'sources': {
-                        'tp': tp_source if 'tp_source' in locals() else 'unknown',
-                        'sl': sl_source if 'sl_source' in locals() else 'unknown'
-                    }
-                }
-                
-                snap_conn = get_db_connection()
-                snap_cursor = snap_conn.cursor()
-                snap_ph = '%s' if is_postgres else '?'
-                snap_cursor.execute(f'''
-                    UPDATE recorded_signals 
-                    SET settings_snapshot = {snap_ph}
-                    WHERE id = {snap_ph}
-                ''', (_json.dumps(settings_snapshot), signal_id))
-                snap_conn.commit()
-                snap_conn.close()
-                _logger.info(f"✅ Settings snapshot saved for signal {signal_id}")
-            except Exception as snap_err:
-                _logger.warning(f"⚠️ Could not save settings snapshot: {snap_err}")
-
         # STEP 3: Queue broker execution (Trade Manager style - async, non-blocking)
         # Webhook returns immediately, broker execution happens in background
         try:
@@ -15396,6 +16034,12 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         })
             
     except NameError as name_err:
+        # CRITICAL: Close DB connection to prevent pool poisoning
+        try:
+            if 'conn' in locals() and conn:
+                conn.close()
+        except:
+            pass
         # Track webhook error
         _webhook_error_count += 1
         # Log to webhook activity for monitoring
@@ -15421,6 +16065,12 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             error_msg = "Internal error: logger configuration issue. Please check server logs."
         return jsonify({'success': False, 'error': error_msg}), 500
     except Exception as e:
+        # CRITICAL: Close DB connection to prevent pool poisoning
+        try:
+            if 'conn' in locals() and conn:
+                conn.close()
+        except:
+            pass
         # Track webhook error
         _webhook_error_count += 1
         # Log to webhook activity for monitoring
@@ -16402,7 +17052,7 @@ def api_get_recorder_pnl(recorder_id):
                 SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as daily_wins,
                 SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as daily_losses
             FROM recorded_trades 
-            WHERE recorder_id = ? AND status = 'closed' {date_filter}
+            WHERE recorder_id = {placeholder} AND status = 'closed' {date_filter}
             GROUP BY DATE(exit_time)
             ORDER BY DATE(exit_time) ASC
         ''', (recorder_id,))
@@ -16429,9 +17079,9 @@ def api_get_recorder_pnl(recorder_id):
         stats['max_drawdown'] = max_drawdown
         
         # Get open position if any
-        cursor.execute('''
-            SELECT * FROM recorded_trades 
-            WHERE recorder_id = ? AND status = 'open'
+        cursor.execute(f'''
+            SELECT * FROM recorded_trades
+            WHERE recorder_id = {placeholder} AND status = 'open'
             ORDER BY entry_time DESC LIMIT 1
         ''', (recorder_id,))
         
@@ -16440,7 +17090,7 @@ def api_get_recorder_pnl(recorder_id):
             stats['open_position'] = dict(open_trade)
         
         # Get recorder name
-        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        cursor.execute(f'SELECT name FROM recorders WHERE id = {placeholder}', (recorder_id,))
         recorder = cursor.fetchone()
         stats['recorder_name'] = recorder['name'] if recorder else f'Recorder {recorder_id}'
         
@@ -16896,6 +17546,9 @@ def traders_edit(trader_id):
                    r.sl_type as r_sl_type,
                    r.break_even_enabled as r_break_even_enabled,
                    r.break_even_ticks as r_break_even_ticks,
+                   r.break_even_offset as r_break_even_offset,
+                   r.trail_trigger as r_trail_trigger,
+                   r.trail_freq as r_trail_freq,
                    r.avg_down_enabled as r_avg_down_enabled,
                    r.avg_down_amount as r_avg_down_amount,
                    r.avg_down_point as r_avg_down_point,
@@ -16946,7 +17599,19 @@ def traders_edit(trader_id):
         except:
             tp_targets = []
         
-        # Build trader object with settings (prefer recorder settings which are authoritative)
+        # Build trader object: use TRADER values first, fall back to RECORDER defaults
+        # Helper: get trader value, fall back to recorder value (r_ prefix), then default
+        def _t(field, r_field=None, default=None):
+            """Get trader field, fall back to recorder, then default."""
+            val = trader_row.get(field)
+            if val is not None and val != '' and val != '[]':
+                return val
+            if r_field:
+                rval = trader_row.get(r_field)
+                if rval is not None and rval != '' and rval != '[]':
+                    return rval
+            return default
+
         trader = {
         'id': trader_row['id'],
         'recorder_id': trader_row['recorder_id'],
@@ -16958,36 +17623,47 @@ def traders_edit(trader_id):
         'subaccount_name': trader_row['subaccount_name'],
         'is_demo': bool(trader_row['is_demo']),
         'enabled': bool(trader_row['enabled']),
-        # Position sizes - prefer trader's own saved settings, fall back to recorder defaults
-        'initial_position_size': trader_row['initial_position_size'] or trader_row['r_initial_position_size'] or 1,
-        'add_position_size': trader_row['add_position_size'] or trader_row['r_add_position_size'] or 1,
-        # TP settings from recorder
+        # Position sizes
+        'initial_position_size': _t('initial_position_size', 'r_initial_position_size', 1),
+        'add_position_size': _t('add_position_size', 'r_add_position_size', 1),
+        # TP settings — trader first, recorder fallback
         'tp_targets': tp_targets,
         'tp_value': tp_value,
         'tp_trim': tp_trim,
-        'tp_units': trader_row['r_tp_units'] or 'Ticks',
-        'trim_units': trader_row['r_trim_units'] or 'Contracts',
-        # SL settings from recorder
-        'sl_enabled': bool(trader_row['r_sl_enabled']),
-        'sl_amount': trader_row['r_sl_amount'] or 0,
-        'sl_units': trader_row['r_sl_units'] or 'Ticks',
-        'sl_type': trader_row.get('sl_type') or trader_row['r_sl_type'] or 'Fixed',  # Trader setting overrides recorder
-        # Break-Even settings (trader setting overrides recorder)
-        'break_even_enabled': bool(trader_row.get('break_even_enabled') if trader_row.get('break_even_enabled') is not None else trader_row.get('r_break_even_enabled')),
-        'break_even_ticks': int(trader_row.get('break_even_ticks') if trader_row.get('break_even_ticks') is not None else (trader_row.get('r_break_even_ticks') or 10)),
-        # DCA/Averaging Down settings from recorder
-        'avg_down_enabled': bool(trader_row['r_avg_down_enabled']),
-        'avg_down_amount': trader_row['r_avg_down_amount'] or 1,
-        'avg_down_point': trader_row['r_avg_down_point'] or 10,
-            'avg_down_units': trader_row['r_avg_down_units'] or 'Ticks',
-            'max_daily_loss': trader_row['max_daily_loss'] if trader_row['max_daily_loss'] is not None else 0,
-        # Time filters from recorder
-        'time_filter_1_enabled': bool(trader_row.get('r_time_filter_1_enabled') or trader_row.get('time_filter_1_enabled')),
-        'time_filter_1_start': trader_row.get('r_time_filter_1_start') or trader_row.get('time_filter_1_start') or '',
-        'time_filter_1_stop': trader_row.get('r_time_filter_1_stop') or trader_row.get('time_filter_1_stop') or '',
-        'time_filter_2_enabled': bool(trader_row.get('r_time_filter_2_enabled') or trader_row.get('time_filter_2_enabled')),
-        'time_filter_2_start': trader_row.get('r_time_filter_2_start') or trader_row.get('time_filter_2_start') or '',
-        'time_filter_2_stop': trader_row.get('r_time_filter_2_stop') or trader_row.get('time_filter_2_stop') or ''
+        'tp_units': _t('tp_units', 'r_tp_units', 'Ticks'),
+        'trim_units': _t('trim_units', 'r_trim_units', 'Contracts'),
+        # SL settings — trader first, recorder fallback
+        'sl_enabled': bool(_t('sl_enabled', 'r_sl_enabled', 0)),
+        'sl_amount': float(_t('sl_amount', 'r_sl_amount', 0) or 0),
+        'sl_units': _t('sl_units', 'r_sl_units', 'Ticks'),
+        'sl_type': _t('sl_type', 'r_sl_type', 'Fixed'),
+        # Break-Even — trader first, recorder fallback
+        'break_even_enabled': bool(_t('break_even_enabled', 'r_break_even_enabled', 0)),
+        'break_even_ticks': int(_t('break_even_ticks', 'r_break_even_ticks', 10) or 10),
+        'break_even_offset': int(_t('break_even_offset', 'r_break_even_offset', 0) or 0),
+        # Trail settings — trader first, recorder fallback
+        'trail_trigger': int(_t('trail_trigger', 'r_trail_trigger', 0) or 0),
+        'trail_freq': int(_t('trail_freq', 'r_trail_freq', 0) or 0),
+        # DCA/Averaging Down — trader first, recorder fallback
+        'avg_down_enabled': bool(_t('avg_down_enabled', 'r_avg_down_enabled', 0)),
+        'avg_down_amount': int(_t('avg_down_amount', 'r_avg_down_amount', 1) or 1),
+        'avg_down_point': float(_t('avg_down_point', 'r_avg_down_point', 10) or 10),
+        'avg_down_units': _t('avg_down_units', 'r_avg_down_units', 'Ticks'),
+        'dca_enabled': bool(_t('dca_enabled', 'r_dca_enabled', 0)),
+        # Risk management — trader values (these are per-trader settings)
+        'max_daily_loss': float(trader_row.get('max_daily_loss') or 0),
+        'signal_cooldown': int(trader_row.get('signal_cooldown') or 0),
+        'max_signals_per_session': int(trader_row.get('max_signals_per_session') or 0),
+        'add_delay': int(trader_row.get('add_delay') or 1),
+        'auto_flat_after_cutoff': bool(trader_row.get('auto_flat_after_cutoff') or 0),
+        'inverse_signals': bool(trader_row.get('inverse_signals') or 0),
+        # Time filters — trader first, recorder fallback
+        'time_filter_1_enabled': bool(_t('time_filter_1_enabled', 'r_time_filter_1_enabled', 0)),
+        'time_filter_1_start': _t('time_filter_1_start', 'r_time_filter_1_start', ''),
+        'time_filter_1_stop': _t('time_filter_1_stop', 'r_time_filter_1_stop', ''),
+        'time_filter_2_enabled': bool(_t('time_filter_2_enabled', 'r_time_filter_2_enabled', 0)),
+        'time_filter_2_start': _t('time_filter_2_start', 'r_time_filter_2_start', ''),
+        'time_filter_2_stop': _t('time_filter_2_stop', 'r_time_filter_2_stop', ''),
         }
         
         # Get enabled accounts from routing (if stored)
@@ -20398,9 +21074,13 @@ def api_control_center_stats():
                     ORDER BY r.name
                 ''', (current_user_id, current_user_id))
         else:
-            # No user auth, show all recorders
+            # If auth is available but user isn't logged in, reject — don't leak all data
+            if USER_AUTH_AVAILABLE:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+            # No auth module (local dev only), show all recorders
             cursor.execute('''
-                SELECT 
+                SELECT
                     r.id,
                     r.name,
                     r.symbol,
@@ -20612,6 +21292,10 @@ def api_control_center_stats():
 def api_control_center_close_all():
     """Close all open positions on broker for all recorders and all enabled accounts"""
     try:
+        # Auth check: require login when auth is available
+        if USER_AUTH_AVAILABLE and not is_logged_in():
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -20712,6 +21396,10 @@ def api_control_center_close_all():
 def api_control_center_clear_all():
     """Clear all trade records from database (does NOT close broker positions)"""
     try:
+        # Auth check: require login when auth is available
+        if USER_AUTH_AVAILABLE and not is_logged_in():
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -20780,17 +21468,22 @@ def api_control_center_toggle_all():
             cursor.execute(f'SELECT id FROM recorders WHERE user_id = {placeholder}', (user_id,))
             user_recorder_ids = [row[0] for row in cursor.fetchall()]
             
-            # Only update traders linked to this user's recorders
-            trader_count = 0
-            if user_recorder_ids:
-                placeholders = ', '.join([placeholder] * len(user_recorder_ids))
-                cursor.execute(f'UPDATE traders SET enabled = {placeholder} WHERE recorder_id IN ({placeholders})', [enabled_value] + user_recorder_ids)
-                trader_count = cursor.rowcount
+            # Update traders belonging to this user (by user_id, account ownership, or recorder ownership)
+            cursor.execute(f'''
+                UPDATE traders SET enabled = {placeholder}
+                WHERE user_id = {placeholder}
+                   OR account_id IN (SELECT id FROM accounts WHERE user_id = {placeholder})
+            ''', (enabled_value, user_id, user_id))
+            trader_count = cursor.rowcount
             
             logger.info(f"📊 User {user_id} toggled: {recorder_count} recorders, {trader_count} traders")
         else:
-            # Fallback for non-authenticated access (legacy behavior, but log warning)
-            logger.warning("⚠️ toggle-all called without user authentication - updating ALL recorders")
+            # If auth is available but user isn't logged in, reject — don't toggle everyone's traders
+            if USER_AUTH_AVAILABLE:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+            # No auth module (local dev only), toggle all
+            logger.warning("toggle-all called without user authentication - updating ALL recorders")
             cursor.execute(f'UPDATE recorders SET recording_enabled = {placeholder}', (enabled_value,))
             recorder_count = cursor.rowcount
             cursor.execute(f'UPDATE traders SET enabled = {placeholder}', (enabled_value,))
@@ -20920,11 +21613,13 @@ def api_toggle_my_traders(recorder_id):
         enabled_value = bool(enabled) if is_postgres else (1 if enabled else 0)
         
         # Update traders for this recorder belonging to CURRENT USER ONLY
+        # Match by trader.user_id OR by account ownership (traders often have user_id=NULL)
         if current_user_id:
             cursor.execute(f'''
-                UPDATE traders SET enabled = {placeholder} 
-                WHERE recorder_id = {placeholder} AND user_id = {placeholder}
-            ''', (enabled_value, recorder_id, current_user_id))
+                UPDATE traders SET enabled = {placeholder}
+                WHERE recorder_id = {placeholder}
+                AND (user_id = {placeholder} OR account_id IN (SELECT id FROM accounts WHERE user_id = {placeholder}))
+            ''', (enabled_value, recorder_id, current_user_id, current_user_id))
         else:
             # No user auth, update all traders for this recorder
             cursor.execute(f'''
@@ -20962,17 +21657,18 @@ def api_close_recorder_positions(recorder_id):
         cursor = conn.cursor()
         
         # Get recorder info
-        cursor.execute('SELECT name FROM recorders WHERE id = ?', (recorder_id,))
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT name FROM recorders WHERE id = {ph}', (recorder_id,))
         recorder = cursor.fetchone()
         if not recorder:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
         # Get open trades for this recorder
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT id, ticker, side, entry_price, quantity
             FROM recorded_trades
-            WHERE recorder_id = ? AND status = 'open'
+            WHERE recorder_id = {ph} AND status = 'open'
         ''', (recorder_id,))
         open_trades = cursor.fetchall()
         
@@ -21005,10 +21701,10 @@ def api_close_recorder_positions(recorder_id):
                 pnl = (trade['entry_price'] - current_price) * tick_value * trade['quantity']
             
             # Update trade to closed
-            cursor.execute('''
-                UPDATE recorded_trades 
-                SET status = 'closed', exit_price = ?, exit_time = CURRENT_TIMESTAMP, pnl = ?
-                WHERE id = ?
+            cursor.execute(f'''
+                UPDATE recorded_trades
+                SET status = 'closed', exit_price = {ph}, exit_time = CURRENT_TIMESTAMP, pnl = {ph}
+                WHERE id = {ph}
             ''', (current_price, pnl, trade['id']))
             
             closed_count += 1
@@ -21179,14 +21875,25 @@ def manual_trade():
         placeholder = '%s' if is_postgres else '?'
         cursor.execute(f"""
             SELECT name, tradovate_token, tradovate_refresh_token, md_access_token,
-                   token_expires_at, tradovate_accounts, environment
-            FROM accounts 
-            WHERE id = {placeholder} AND tradovate_token IS NOT NULL
+                   token_expires_at, tradovate_accounts, environment, broker,
+                   projectx_username, projectx_api_key, projectx_prop_firm, password, username
+            FROM accounts
+            WHERE id = {placeholder}
         """, (account_id,))
         account = cursor.fetchone()
         if not account:
             conn.close()
-            return jsonify({'success': False, 'error': 'Account not found or not connected'}), 400
+            return jsonify({'success': False, 'error': 'Account not found'}), 400
+
+        # Detect broker type
+        account_broker = (account.get('broker') if isinstance(account, dict) else (account['broker'] if account['broker'] else '')).strip() if account['broker'] else ''
+        px_user = account.get('projectx_username') if isinstance(account, dict) else account['projectx_username']
+        px_key = account.get('projectx_api_key') if isinstance(account, dict) else account['projectx_api_key']
+        is_projectx = (account_broker == 'ProjectX' or bool(px_user) or bool(px_key))
+
+        if not is_projectx and not account['tradovate_token']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Account not connected. Please connect via Tradovate or ProjectX.'}), 400
         
         tradovate_accounts = []
         try:
@@ -21226,40 +21933,215 @@ def manual_trade():
                 if datetime.utcnow() >= exp_dt - timedelta(minutes=5):
                     needs_refresh = True
             except Exception:
-                needs_refresh = False
-        
-        async def refresh_tokens(force=False):
+                needs_refresh = True  # If we can't parse, assume expired
+        else:
+            needs_refresh = True  # No expiry stored, always try refresh
+
+        def _run_async(coro):
+            """Run async code safely — handles existing event loops."""
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+
+        def do_refresh_tokens():
+            """Refresh Tradovate tokens and save to DB."""
             if not token_container.get('refresh_token'):
                 return False
-            if not force and not needs_refresh:
-                return False
-            from phantom_scraper.tradovate_integration import TradovateIntegration
-            async with TradovateIntegration(demo=demo) as tradovate:
-                tradovate.access_token = token_container['access_token']
-                tradovate.refresh_token = token_container['refresh_token']
-                tradovate.md_access_token = token_container['md_access_token']
-                refreshed = await tradovate.refresh_access_token()
-                if refreshed:
-                    token_container['access_token'] = tradovate.access_token
-                    token_container['refresh_token'] = tradovate.refresh_token
-                return refreshed
-        
-        if needs_refresh and token_container['refresh_token']:
-            refreshed = asyncio.run(refresh_tokens())
+            async def _refresh():
+                from phantom_scraper.tradovate_integration import TradovateIntegration
+                async with TradovateIntegration(demo=demo) as tradovate:
+                    tradovate.access_token = token_container['access_token']
+                    tradovate.refresh_token = token_container['refresh_token']
+                    tradovate.md_access_token = token_container.get('md_access_token')
+                    refreshed = await tradovate.refresh_access_token()
+                    if refreshed:
+                        token_container['access_token'] = tradovate.access_token
+                        token_container['refresh_token'] = tradovate.refresh_token
+                    return refreshed
+            refreshed = _run_async(_refresh())
             if refreshed:
-                new_expiry = (datetime.utcnow() + timedelta(hours=24)).isoformat()
-                cursor.execute("""
-                    UPDATE accounts
-                    SET tradovate_token = ?, tradovate_refresh_token = ?, token_expires_at = ?
-                    WHERE id = ?
-                """, (token_container['access_token'], token_container['refresh_token'], new_expiry, account_id))
-                conn.commit()
+                # Save new tokens to DB
+                try:
+                    save_conn = get_db_connection()
+                    save_cursor = save_conn.cursor()
+                    new_expiry = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+                    save_cursor.execute(f"""
+                        UPDATE accounts
+                        SET tradovate_token = {placeholder}, tradovate_refresh_token = {placeholder}, token_expires_at = {placeholder}
+                        WHERE id = {placeholder}
+                    """, (token_container['access_token'], token_container['refresh_token'], new_expiry, account_id))
+                    save_conn.commit()
+                    save_conn.close()
+                    logger.info(f"✅ Refreshed and saved tokens for account {account_id}")
+                except Exception as save_err:
+                    logger.warning(f"Token save error (non-fatal): {save_err}")
+            return refreshed
+
+        if needs_refresh and token_container.get('refresh_token'):
+            do_refresh_tokens()
         conn.close()
-        
-        tradovate_symbol = convert_tradingview_to_tradovate_symbol(symbol, access_token=token_container['access_token'], demo=demo)
+
         trade_side = side.lower()
         if trade_side not in ('buy', 'sell', 'close'):
             return jsonify({'success': False, 'error': 'Invalid side supplied'}), 400
+
+        # asyncio imported at top of file (line 19)
+
+        # === ProjectX execution path ===
+        if is_projectx:
+            try:
+                from phantom_scraper.projectx_integration import ProjectXIntegration
+
+                px_username = account.get('projectx_username') or account.get('username') or ''
+                px_password = account.get('password') or ''
+                px_api_key_val = account.get('projectx_api_key') or ''
+                px_prop_firm = account.get('projectx_prop_firm') or 'default'
+
+                if not px_username:
+                    return jsonify({'success': False, 'error': 'No ProjectX username. Please reconnect.'}), 400
+
+                async def place_projectx_trade():
+                    async with ProjectXIntegration(demo=demo, prop_firm=px_prop_firm) as projectx:
+                        login_result = await projectx.login(
+                            px_username,
+                            password=px_password if px_password else None,
+                            api_key=px_api_key_val if px_api_key_val else None
+                        )
+                        if not login_result.get('success'):
+                            return {'success': False, 'error': login_result.get('error', 'ProjectX login failed')}
+
+                        # Find contract for symbol
+                        symbol_root = extract_symbol_root(symbol)
+                        symbol_upper = symbol.strip().upper() if symbol else ''
+                        contract_id = None
+                        contract_match_name = None
+
+                        # Try Contract/search first (works on TopStepX and all ProjectX firms)
+                        contracts = await projectx.search_contracts(symbol_root)
+                        if not contracts:
+                            # Fallback: try Contract/available (older ProjectX endpoint)
+                            contracts = await projectx.get_available_contracts()
+
+                        logger.info(f"ProjectX manual trade: looking for symbol_root='{symbol_root}' full='{symbol_upper}' in {len(contracts)} contracts")
+                        for c in contracts:
+                            c_name = (c.get('name') or c.get('symbol') or '').upper()
+                            c_id_str = str(c.get('id') or '').upper()
+                            # Strategy 1: Full Tradovate symbol in contract name/id (MNQH6 in CON.F.US.MNQH6.H26)
+                            if symbol_upper and (symbol_upper in c_name or symbol_upper in c_id_str):
+                                contract_id = c.get('id')
+                                contract_match_name = c_name or c_id_str
+                                break
+                            # Strategy 2: Root symbol match (MNQ in contract)
+                            if symbol_root and (symbol_root in c_name or symbol_root in c_id_str):
+                                contract_id = c.get('id')
+                                contract_match_name = c_name or c_id_str
+                                break
+
+                        if contract_id:
+                            logger.info(f"ProjectX contract matched: {contract_match_name} (ID: {contract_id})")
+                        else:
+                            # Log all available contracts for debugging
+                            contract_names = [f"{c.get('name') or c.get('symbol') or 'N/A'} (id={c.get('id')})" for c in contracts[:20]]
+                            logger.warning(f"ProjectX contract not found for '{symbol}' (root='{symbol_root}'). {len(contracts)} contracts returned: {contract_names}")
+                            return {'success': False, 'error': f'Contract not found for {symbol}. Available: {", ".join(contract_names[:10])}'}
+
+                        px_account_id = int(subaccount_id) if subaccount_id else None
+                        if not px_account_id:
+                            # Try to get first account
+                            accts = await projectx.get_accounts()
+                            if accts:
+                                px_account_id = accts[0].get('id')
+                        if not px_account_id:
+                            return {'success': False, 'error': 'No ProjectX account found'}
+
+                        if trade_side == 'close':
+                            # Step 1: Cancel ALL resting orders for this contract
+                            cancelled_count = 0
+                            try:
+                                open_orders = await projectx.get_orders(px_account_id)
+                                for order in open_orders:
+                                    o_contract = str(order.get('contractId') or '').upper()
+                                    o_id = order.get('id')
+                                    if o_id and (symbol_root in o_contract or symbol_upper in o_contract or o_contract == str(contract_id).upper()):
+                                        ok = await projectx.cancel_order(px_account_id, int(o_id))
+                                        if ok:
+                                            cancelled_count += 1
+                                logger.info(f"ProjectX close: cancelled {cancelled_count} resting orders")
+                            except Exception as cancel_err:
+                                logger.warning(f"ProjectX cancel orders error (non-fatal): {cancel_err}")
+
+                            # Step 2: Close position via Position/closeContract
+                            positions = await projectx.get_positions(px_account_id)
+                            logger.info(f"ProjectX close: {len(positions)} positions for account {px_account_id}")
+                            for pos in positions:
+                                pos_contract = str(pos.get('contractId') or pos.get('contract_id') or '')
+                                pos_size = pos.get('size') or pos.get('qty') or 0
+                                pos_type = pos.get('type', 0)  # 1=Long, 2=Short
+                                logger.info(f"  Position: contractId={pos_contract}, size={pos_size}, type={pos_type}")
+                                contract_match = (pos_contract == str(contract_id)
+                                                  or symbol_root in pos_contract.upper()
+                                                  or symbol_upper in pos_contract.upper())
+                                if contract_match and pos_size != 0:
+                                    result = await projectx.liquidate_position(px_account_id, pos_contract)
+                                    if result and result.get('success'):
+                                        return {'success': True, 'message': f'Closed {pos_size} {symbol} + cancelled {cancelled_count} orders', 'order': result}
+                                    # Fallback: counter market order
+                                    close_side = 'Sell' if pos_type == 1 else 'Buy'
+                                    order_data = projectx.create_market_order_with_brackets(
+                                        px_account_id, pos_contract, close_side, abs(int(pos_size))
+                                    )
+                                    result = await projectx.place_order(order_data)
+                                    return {'success': True, 'message': f'Closed {pos_size} {symbol} + cancelled {cancelled_count} orders', 'order': result}
+                            if cancelled_count > 0:
+                                return {'success': True, 'message': f'No position found but cancelled {cancelled_count} resting orders for {symbol}'}
+                            return {'success': False, 'error': f'No open position found for {symbol}'}
+                        else:
+                            # Buy or Sell
+                            px_side = 'Buy' if trade_side == 'buy' else 'Sell'
+                            # Parse risk settings: frontend sends take_profit/stop_loss/trail
+                            tp_list = risk_settings.get('take_profit') or []
+                            sl_cfg = risk_settings.get('stop_loss') or {}
+                            trail_cfg = risk_settings.get('trail') or {}
+                            tp_ticks = tp_list[0].get('gain_ticks', 0) if tp_list else 0
+                            sl_ticks = sl_cfg.get('loss_ticks', 0) if sl_cfg else 0
+                            trail_ticks = trail_cfg.get('activation_ticks', 0) or trail_cfg.get('offset_ticks', 0) if trail_cfg else 0
+                            # If trailing stop enabled, use it as the SL bracket with TrailingStop type
+                            use_trailing = bool(trail_ticks and int(trail_ticks) > 0)
+                            logger.info(f"ProjectX order: {px_side} {quantity} contract_id={contract_id} tp={tp_ticks} sl={sl_ticks} trail={trail_ticks}")
+                            order_data = projectx.create_market_order_with_brackets(
+                                px_account_id, contract_id, px_side, quantity,
+                                tp_ticks=int(tp_ticks) if tp_ticks else None,
+                                sl_ticks=int(trail_ticks if use_trailing else sl_ticks) if (trail_ticks or sl_ticks) else None,
+                                trailing_stop=use_trailing
+                            )
+                            result = await projectx.place_order(order_data)
+                            if result and (result.get('success') or result.get('id')):
+                                return {'success': True, 'message': f'{px_side} {quantity} {symbol} on ProjectX', 'order': result}
+                            return {'success': False, 'error': result.get('error', 'Order placement failed'), 'details': result}
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(place_projectx_trade())
+                finally:
+                    loop.close()
+
+                if result.get('success'):
+                    return jsonify(result)
+                return jsonify(result), 400
+
+            except ImportError:
+                return jsonify({'success': False, 'error': 'ProjectX integration not available'}), 500
+            except Exception as px_err:
+                logger.error(f"ProjectX manual trade error: {px_err}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return jsonify({'success': False, 'error': str(px_err)}), 500
+
+        # === Tradovate execution path ===
+        tradovate_symbol = convert_tradingview_to_tradovate_symbol(symbol, access_token=token_container['access_token'], demo=demo)
         order_side = 'Buy' if trade_side == 'buy' else 'Sell'
         if trade_side == 'close':
             order_side = 'Sell'
@@ -21450,13 +22332,14 @@ def manual_trade():
                         )
                     return result or {'success': False, 'error': 'Failed to place order'}
         
-        result = asyncio.run(place_trade())
+        result = _run_async(place_trade())
         if not result.get('success'):
             error_text = str(result.get('error', '')).lower()
             if any(msg in error_text for msg in ['access is denied', 'expired access token']):
-                refreshed = asyncio.run(refresh_tokens(force=True))
+                logger.info(f"🔄 Token expired for account {account_id}, refreshing...")
+                refreshed = do_refresh_tokens()
                 if refreshed:
-                    result = asyncio.run(place_trade())
+                    result = _run_async(place_trade())
         if not result.get('success'):
             return jsonify({'success': False, 'error': result.get('error', 'Failed to place order')}), 400
 
@@ -21683,6 +22566,7 @@ def settings():
     user = None
     discord_linked = False
     discord_dms_enabled = False
+    user_timezone = 'America/Chicago'
     if USER_AUTH_AVAILABLE and is_logged_in():
         user = get_current_user()
         if user:
@@ -21691,28 +22575,77 @@ def settings():
             cursor = conn.cursor()
             try:
                 if db_type == 'postgresql':
-                    cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user.id,))
+                    cursor.execute('SELECT discord_user_id, discord_dms_enabled, settings_json FROM users WHERE id = %s', (user.id,))
                 else:
-                    cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user.id,))
+                    cursor.execute('SELECT discord_user_id, discord_dms_enabled, settings_json FROM users WHERE id = ?', (user.id,))
                 row = cursor.fetchone()
                 if row:
                     discord_linked = bool(row['discord_user_id'] if hasattr(row, 'keys') else row[0])
                     discord_dms_enabled = bool(row['discord_dms_enabled'] if hasattr(row, 'keys') else row[1])
+                    _sj = row['settings_json'] if hasattr(row, 'keys') else row[2]
+                    if _sj:
+                        _sj_parsed = json.loads(_sj) if isinstance(_sj, str) else _sj
+                        user_timezone = _sj_parsed.get('timezone', 'America/Chicago')
             except:
                 pass
             finally:
                 cursor.close()
                 conn.close()
-    
+
     return render_template('settings.html',
                           user=user,
                           discord_linked=discord_linked,
-                          discord_dms_enabled=discord_dms_enabled)
+                          discord_dms_enabled=discord_dms_enabled,
+                          user_timezone=user_timezone)
 
 
 # ============================================================================
 # SETTINGS API ROUTES
 # ============================================================================
+
+@app.route('/api/settings/timezone', methods=['POST'])
+def api_save_timezone():
+    """Save user timezone preference."""
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    VALID_TIMEZONES = {
+        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+        'America/Anchorage', 'Pacific/Honolulu', 'Europe/London', 'Europe/Berlin',
+        'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney', 'UTC'
+    }
+    data = request.get_json() or {}
+    tz = data.get('timezone', '').strip()
+    if tz not in VALID_TIMEZONES:
+        return jsonify({'success': False, 'error': f'Invalid timezone: {tz}'}), 400
+
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+        ph = '%s' if db_type == 'postgresql' else '?'
+
+        # Read existing settings_json
+        cursor.execute(f'SELECT settings_json FROM users WHERE id = {ph}', (user.id,))
+        row = cursor.fetchone()
+        existing = {}
+        if row:
+            raw = row['settings_json'] if hasattr(row, 'keys') else row[0]
+            if raw:
+                existing = json.loads(raw) if isinstance(raw, str) else raw
+
+        existing['timezone'] = tz
+        cursor.execute(f'UPDATE users SET settings_json = {ph} WHERE id = {ph}', (json.dumps(existing), user.id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'success': True, 'timezone': tz})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/settings/password', methods=['POST'])
 def api_change_password():
@@ -21839,149 +22772,7 @@ def api_request_username_change():
         conn.close()
 
 
-@app.route('/api/settings/discord/toggle', methods=['POST'])
-def api_toggle_discord_dms():
-    """Toggle Discord DM notifications."""
-    if not USER_AUTH_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Auth system not available'}), 400
-    
-    if not is_logged_in():
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
-    
-    user = get_current_user()
-    if not user:
-        return jsonify({'success': False, 'error': 'User not found'}), 404
-    
-    from user_auth import get_auth_db_connection
-    conn, db_type = get_auth_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        # Get current state
-        if db_type == 'postgresql':
-            cursor.execute('SELECT discord_dms_enabled FROM users WHERE id = %s', (user.id,))
-        else:
-            cursor.execute('SELECT discord_dms_enabled FROM users WHERE id = ?', (user.id,))
-        row = cursor.fetchone()
-        current_state = bool(row['discord_dms_enabled'] if hasattr(row, 'keys') else row[0]) if row else False
-        
-        # Toggle
-        new_state = not current_state
-        if db_type == 'postgresql':
-            cursor.execute('UPDATE users SET discord_dms_enabled = %s WHERE id = %s', (new_state, user.id))
-        else:
-            cursor.execute('UPDATE users SET discord_dms_enabled = ? WHERE id = ?', (1 if new_state else 0, user.id))
-        
-        conn.commit()
-        return jsonify({'success': True, 'enabled': new_state, 'message': 'Discord notifications ' + ('enabled' if new_state else 'disabled')})
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"❌ Failed to toggle Discord DMs: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-
-@app.route('/api/settings/discord/status', methods=['GET'])
-def api_discord_status():
-    """Get Discord notification status for current user."""
-    if not USER_AUTH_AVAILABLE or not is_logged_in():
-        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': 'not_logged_in'})
-    
-    user = get_current_user()
-    if not user:
-        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': 'no_user'})
-    
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        if db_type == 'postgresql':
-            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user.id,))
-        else:
-            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user.id,))
-        
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if row:
-            discord_user_id = row[0] if isinstance(row, tuple) else row.get('discord_user_id')
-            dms_enabled_raw = row[1] if isinstance(row, tuple) else row.get('discord_dms_enabled')
-            discord_linked = bool(discord_user_id)
-            dms_enabled = bool(dms_enabled_raw)
-            return jsonify({
-                'linked': discord_linked,
-                'enabled': dms_enabled,
-                'bot_configured': DISCORD_NOTIFICATIONS_ENABLED,
-                'debug': {
-                    'user_id': user.id,
-                    'discord_user_id': discord_user_id,
-                    'dms_enabled_raw': dms_enabled_raw
-                }
-            })
-    except Exception as e:
-        logger.error(f"Error checking Discord status: {e}")
-        return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': f'error: {str(e)}'})
-    
-    return jsonify({'linked': False, 'enabled': False, 'bot_configured': DISCORD_NOTIFICATIONS_ENABLED, 'debug': 'no_row'})
-
-
-@app.route('/api/settings/discord/test', methods=['POST'])
-def api_test_discord_notification():
-    """Send a test Discord notification to the current user."""
-    if not USER_AUTH_AVAILABLE or not is_logged_in():
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
-    
-    if not DISCORD_NOTIFICATIONS_ENABLED:
-        return jsonify({'success': False, 'error': 'Discord bot not configured. Set DISCORD_BOT_TOKEN in Railway.'}), 400
-    
-    user = get_current_user()
-    if not user:
-        return jsonify({'success': False, 'error': 'User not found'}), 404
-    
-    # Get user's Discord ID directly (don't require DMs enabled for test)
-    try:
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        if db_type == 'postgresql':
-            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = %s', (user.id,))
-        else:
-            cursor.execute('SELECT discord_user_id, discord_dms_enabled FROM users WHERE id = ?', (user.id,))
-        
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if not row:
-            return jsonify({'success': False, 'error': 'User not found in database'}), 404
-        
-        discord_user_id = row[0] if isinstance(row, tuple) else row.get('discord_user_id')
-        dms_enabled = row[1] if isinstance(row, tuple) else row.get('discord_dms_enabled')
-        
-        logger.info(f"🔍 Discord test: user_id={user.id}, discord_user_id={discord_user_id}, dms_enabled={dms_enabled}")
-        
-        if not discord_user_id:
-            return jsonify({'success': False, 'error': 'Discord not linked. Click "Link Discord" first.'}), 400
-        
-    except Exception as e:
-        logger.error(f"❌ Error checking Discord status: {e}")
-        return jsonify({'success': False, 'error': f'Database error: {str(e)}'}), 500
-    
-    # Send test message
-    test_message = "🧪 **Test Notification**\n\nThis is a test message from Just.Trades!\n\nIf you see this, Discord notifications are working correctly. ✅"
-    
-    success = send_discord_dm(discord_user_id, test_message)
-    
-    if success:
-        return jsonify({'success': True, 'message': 'Test notification sent! Check your Discord DMs.'})
-    else:
-        return jsonify({'success': False, 'error': 'Failed to send DM. Make sure your Discord DMs are open (not blocked).'}), 500
-
+## Discord toggle/status/test routes moved to discord_routes.py
 
 # ============================================================================
 # PUSH NOTIFICATION SETTINGS ROUTES
@@ -22154,146 +22945,7 @@ def api_test_push_notification():
         return jsonify({'success': False, 'error': 'No push subscriptions found. Enable notifications first.'}), 400
 
 
-@app.route('/api/settings/discord/link', methods=['GET'])
-def api_discord_oauth_start():
-    """Initiate Discord OAuth flow."""
-    if not USER_AUTH_AVAILABLE:
-        flash('Authentication system not available.', 'error')
-        return redirect(url_for('settings'))
-    
-    if not is_logged_in():
-        return redirect(url_for('login'))
-    
-    # Discord OAuth URL
-    import os
-    from urllib.parse import urlencode
-    discord_client_id = os.environ.get('DISCORD_CLIENT_ID', '')
-    discord_redirect_uri = os.environ.get('DISCORD_REDIRECT_URI', request.url_root.rstrip('/') + '/api/settings/discord/callback')
-    
-    logger.info(f"🔗 Discord OAuth: client_id exists={bool(discord_client_id)}, redirect_uri={discord_redirect_uri}")
-    
-    if not discord_client_id:
-        logger.warning("⚠️ DISCORD_CLIENT_ID environment variable not set")
-        flash('Discord OAuth is not configured. Please contact an administrator.', 'error')
-        return redirect(url_for('settings'))
-    
-    # Store state in session
-    import secrets
-    state = secrets.token_urlsafe(32)
-    session['discord_oauth_state'] = state
-    
-    oauth_params = {
-        'client_id': discord_client_id,
-        'redirect_uri': discord_redirect_uri,
-        'response_type': 'code',
-        'scope': 'identify',
-        'state': state
-    }
-    
-    oauth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(oauth_params)}"
-    return redirect(oauth_url)
-
-
-@app.route('/api/settings/discord/callback', methods=['GET'])
-def api_discord_oauth_callback():
-    """Discord OAuth callback."""
-    if not USER_AUTH_AVAILABLE:
-        flash('Authentication system not available.', 'error')
-        return redirect(url_for('settings'))
-    
-    if not is_logged_in():
-        return redirect(url_for('login'))
-    
-    user = get_current_user()
-    if not user:
-        return redirect(url_for('settings'))
-    
-    code = request.args.get('code')
-    state = request.args.get('state')
-    error = request.args.get('error')
-    
-    if error:
-        flash(f'Discord authorization failed: {error}', 'error')
-        return redirect(url_for('settings'))
-    
-    if not code or state != session.get('discord_oauth_state'):
-        flash('Invalid Discord authorization.', 'error')
-        return redirect(url_for('settings'))
-    
-    # Exchange code for token
-    import os
-    import requests
-    discord_client_id = os.environ.get('DISCORD_CLIENT_ID', '')
-    discord_client_secret = os.environ.get('DISCORD_CLIENT_SECRET', '')
-    discord_redirect_uri = os.environ.get('DISCORD_REDIRECT_URI', request.url_root.rstrip('/') + '/api/settings/discord/callback')
-    
-    if not discord_client_id or not discord_client_secret:
-        flash('Discord OAuth is not configured. Please contact an administrator.', 'error')
-        return redirect(url_for('settings'))
-    
-    try:
-        # Exchange code for access token
-        token_data = {
-            'client_id': discord_client_id,
-            'client_secret': discord_client_secret,
-            'grant_type': 'authorization_code',
-            'code': code,
-            'redirect_uri': discord_redirect_uri
-        }
-        
-        token_response = requests.post('https://discord.com/api/oauth2/token', data=token_data)
-        if token_response.status_code != 200:
-            flash('Failed to exchange Discord authorization code.', 'error')
-            return redirect(url_for('settings'))
-        
-        token_json = token_response.json()
-        access_token = token_json.get('access_token')
-        
-        # Get user info
-        user_response = requests.get('https://discord.com/api/users/@me', headers={
-            'Authorization': f'Bearer {access_token}'
-        })
-        if user_response.status_code != 200:
-            flash('Failed to get Discord user information.', 'error')
-            return redirect(url_for('settings'))
-        
-        discord_user_info = user_response.json()
-        discord_user_id = discord_user_info.get('id')
-        
-        # Store in database
-        from user_auth import get_auth_db_connection
-        conn, db_type = get_auth_db_connection()
-        cursor = conn.cursor()
-        
-        try:
-            if db_type == 'postgresql':
-                cursor.execute('''
-                    UPDATE users SET discord_user_id = %s, discord_access_token = %s
-                    WHERE id = %s
-                ''', (discord_user_id, access_token, user.id))
-            else:
-                cursor.execute('''
-                    UPDATE users SET discord_user_id = ?, discord_access_token = ?
-                    WHERE id = ?
-                ''', (discord_user_id, access_token, user.id))
-            conn.commit()
-            flash('Discord account linked successfully!', 'success')
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"❌ Failed to link Discord: {e}")
-            flash('Failed to link Discord account.', 'error')
-        finally:
-            cursor.close()
-            conn.close()
-        
-        # Clear state
-        session.pop('discord_oauth_state', None)
-        return redirect(url_for('settings'))
-    except Exception as e:
-        logger.error(f"❌ Discord OAuth error: {e}")
-        flash('Discord authorization failed.', 'error')
-        return redirect(url_for('settings'))
-
+## Discord link/callback routes moved to discord_routes.py
 
 # ============================================================================
 # COMMUNITY CHAT - Public chat room for all users
@@ -22532,74 +23184,74 @@ def affiliate():
     return render_template('affiliate.html')
 
 
-# ============================================================================
-# AFFILIATE PROGRAM ROUTES
-# ============================================================================
+# ============================================================
+# AFFILIATE APPLICATION SYSTEM (Restored from backup branch)
+# ============================================================
+
+@app.route('/admin/affiliates')
+def admin_affiliates_page():
+    """Admin affiliate applications dashboard"""
+    if USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if not user or not user.is_admin:
+            return redirect('/login?next=/admin/affiliates')
+    return render_template('admin_affiliates.html')
+
 
 @app.route('/api/affiliate/apply', methods=['POST'])
-def affiliate_apply():
-    """Submit an affiliate application."""
+def submit_affiliate_application():
+    """Submit a new affiliate application (public endpoint)"""
     try:
         data = request.get_json()
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
         name = (data.get('name') or '').strip()
-        email = (data.get('email') or '').strip().lower()
-        website = (data.get('website') or '').strip()
-        social = (data.get('social') or '').strip()
+        email = (data.get('email') or '').strip()
         audience = (data.get('audience') or '').strip()
-        experience = (data.get('experience') or '').strip()
 
         if not name or not email or not audience:
             return jsonify({'error': 'Name, email, and audience description are required'}), 400
+
+        website = (data.get('website') or '').strip() or None
+        social = (data.get('social') or '').strip() or None
+        experience = (data.get('experience') or '').strip() or None
 
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
         placeholder = '%s' if is_postgres else '?'
 
-        # Check for duplicate email
-        cursor.execute(f"SELECT id FROM affiliate_applications WHERE email = {placeholder}", (email,))
-        if cursor.fetchone():
-            cursor.close()
+        cursor.execute(f'SELECT id FROM affiliate_applications WHERE email = {placeholder}', (email,))
+        existing = cursor.fetchone()
+        if existing:
             conn.close()
             return jsonify({'error': 'An application with this email already exists'}), 409
 
-        if is_postgres:
-            cursor.execute(f'''
-                INSERT INTO affiliate_applications (name, email, website, social, audience, experience)
-                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-            ''', (name, email, website, social, audience, experience))
-            app_id = cursor.fetchone()['id'] if is_postgres else cursor.lastrowid
-        else:
-            cursor.execute('''
-                INSERT INTO affiliate_applications (name, email, website, social, audience, experience)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (name, email, website, social, audience, experience))
-            app_id = cursor.lastrowid
+        cursor.execute(f'''
+            INSERT INTO affiliate_applications
+            (name, email, website, social_handle, audience_description, trading_experience)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        ''', (name, email, website, social, audience, experience))
 
         conn.commit()
-        cursor.close()
         conn.close()
 
-        logger.info(f"✅ New affiliate application from {email} (id={app_id})")
-        return jsonify({'success': True, 'message': 'Application submitted successfully!', 'id': app_id})
+        logger.info(f"New affiliate application from: {name} <{email}>")
+        return jsonify({'success': True, 'message': 'Application submitted successfully'}), 201
 
     except Exception as e:
-        logger.error(f"❌ Affiliate apply error: {e}")
+        logger.error(f"Error submitting affiliate application: {e}")
         return jsonify({'error': 'Failed to submit application'}), 500
 
 
 @app.route('/api/affiliate/status', methods=['POST'])
-def affiliate_status():
-    """Check affiliate application status by email."""
+def check_affiliate_status():
+    """Check affiliate application status by email (public endpoint)"""
     try:
         data = request.get_json()
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
+        email = data.get('email', '').strip().lower() if data else ''
 
-        email = (data.get('email') or '').strip().lower()
         if not email:
             return jsonify({'error': 'Email is required'}), 400
 
@@ -22608,38 +23260,240 @@ def affiliate_status():
         is_postgres = is_using_postgres()
         placeholder = '%s' if is_postgres else '?'
 
-        cursor.execute(f"SELECT * FROM affiliate_applications WHERE email = {placeholder}", (email,))
+        cursor.execute(f'''
+            SELECT name, email, status, affiliate_code, created_at, reviewed_at
+            FROM affiliate_applications
+            WHERE LOWER(email) = {placeholder}
+            ORDER BY created_at DESC LIMIT 1
+        ''', (email,))
+
         row = cursor.fetchone()
+        conn.close()
 
         if not row:
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'No application found for this email'}), 404
+            return jsonify({'found': False, 'message': 'No application found with this email'}), 404
 
-        app_data = dict(row)
-        result = {
-            'status': app_data['status'],
-            'name': app_data['name'],
-            'created_at': str(app_data.get('created_at', '')),
-        }
+        if isinstance(row, dict):
+            result = {
+                'found': True, 'name': row['name'], 'email': row['email'],
+                'status': row['status'],
+                'affiliate_code': row['affiliate_code'] if row['status'] == 'approved' else None,
+                'applied_at': row['created_at'], 'reviewed_at': row['reviewed_at']
+            }
+        else:
+            result = {
+                'found': True, 'name': row[0], 'email': row[1], 'status': row[2],
+                'affiliate_code': row[3] if row[2] == 'approved' else None,
+                'applied_at': row[4], 'reviewed_at': row[5]
+            }
 
-        if app_data['status'] == 'approved' and app_data.get('affiliate_code'):
-            code = app_data['affiliate_code']
-            result['affiliate_code'] = code
-            result['referral_link'] = f"https://justtrades-production.up.railway.app/register?ref={code}"
-
-            # Get referral count
-            cursor.execute(f"SELECT COUNT(*) FROM users WHERE referred_by = {placeholder}", (code,))
-            count_row = cursor.fetchone()
-            result['referral_count'] = count_row[0] if count_row else 0
-
-        cursor.close()
-        conn.close()
         return jsonify(result)
 
     except Exception as e:
-        logger.error(f"❌ Affiliate status error: {e}")
+        logger.error(f"Error checking affiliate status: {e}")
         return jsonify({'error': 'Failed to check status'}), 500
+
+
+@app.route('/api/admin/affiliates', methods=['GET'])
+def get_affiliate_applications():
+    """Get all affiliate applications (admin only)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        status_filter = request.args.get('status', None)
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        if status_filter:
+            cursor.execute(f'''
+                SELECT id, name, email, website, social_handle, audience_description,
+                       trading_experience, status, affiliate_code, admin_notes, reviewed_at, created_at
+                FROM affiliate_applications WHERE status = {placeholder}
+                ORDER BY created_at DESC
+            ''', (status_filter,))
+        else:
+            cursor.execute('''
+                SELECT id, name, email, website, social_handle, audience_description,
+                       trading_experience, status, affiliate_code, admin_notes, reviewed_at, created_at
+                FROM affiliate_applications ORDER BY created_at DESC
+            ''')
+
+        rows = cursor.fetchall()
+
+        # Get counts by status
+        cursor.execute('''
+            SELECT status, COUNT(*) as count FROM affiliate_applications GROUP BY status
+        ''')
+        status_rows = cursor.fetchall()
+        conn.close()
+
+        applications = []
+        for row in rows:
+            if isinstance(row, dict):
+                applications.append(row)
+            else:
+                applications.append({
+                    'id': row[0], 'name': row[1], 'email': row[2], 'website': row[3],
+                    'social_handle': row[4], 'audience_description': row[5],
+                    'trading_experience': row[6], 'status': row[7], 'affiliate_code': row[8],
+                    'admin_notes': row[9], 'reviewed_at': row[10], 'created_at': row[11]
+                })
+
+        counts = {'pending': 0, 'approved': 0, 'rejected': 0}
+        for row in status_rows:
+            status = row['status'] if isinstance(row, dict) else row[0]
+            count = row['count'] if isinstance(row, dict) else row[1]
+            counts[status] = count
+
+        return jsonify({'applications': applications, 'counts': counts})
+
+    except Exception as e:
+        logger.error(f"Error fetching affiliate applications: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/affiliates/<int:app_id>/status', methods=['POST'])
+def update_affiliate_status(app_id):
+    """Update affiliate application status (admin only)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        data = request.get_json()
+        new_status = data.get('status')
+        admin_notes = data.get('notes', '')
+        custom_code = data.get('custom_code', '').strip().upper() if data.get('custom_code') else None
+
+        if new_status not in ['pending', 'approved', 'rejected']:
+            return jsonify({'error': 'Invalid status'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        affiliate_code = None
+
+        if new_status == 'approved':
+            cursor.execute(f'SELECT name, email, affiliate_code FROM affiliate_applications WHERE id = {placeholder}', (app_id,))
+            app_row = cursor.fetchone()
+            existing_code = app_row['affiliate_code'] if isinstance(app_row, dict) else app_row[2]
+
+            if custom_code:
+                cursor.execute(f'SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder} AND id != {placeholder}', (custom_code, app_id))
+                if cursor.fetchone():
+                    conn.close()
+                    return jsonify({'error': f'Affiliate code "{custom_code}" is already in use'}), 409
+                affiliate_code = custom_code
+            elif not existing_code:
+                import random
+                import string
+                name = (app_row['name'] if isinstance(app_row, dict) else app_row[0]) or 'USER'
+                name_part = ''.join(c for c in name.upper() if c.isalpha())[:3].ljust(3, 'X')
+                random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                affiliate_code = f"JT-{name_part}{random_part}"
+
+                for _ in range(10):
+                    cursor.execute(f'SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder}', (affiliate_code,))
+                    if not cursor.fetchone():
+                        break
+                    random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                    affiliate_code = f"JT-{name_part}{random_part}"
+
+                cursor.execute(f'''
+                    UPDATE affiliate_applications
+                    SET status = {placeholder}, affiliate_code = {placeholder}, admin_notes = {placeholder},
+                        reviewed_by = {placeholder}, reviewed_at = CURRENT_TIMESTAMP
+                    WHERE id = {placeholder}
+                ''', (new_status, affiliate_code, admin_notes, user.id, app_id))
+            else:
+                affiliate_code = existing_code
+                cursor.execute(f'''
+                    UPDATE affiliate_applications
+                    SET status = {placeholder}, admin_notes = {placeholder}, reviewed_by = {placeholder},
+                        reviewed_at = CURRENT_TIMESTAMP
+                    WHERE id = {placeholder}
+                ''', (new_status, admin_notes, user.id, app_id))
+        else:
+            cursor.execute(f'''
+                UPDATE affiliate_applications
+                SET status = {placeholder}, admin_notes = {placeholder}, reviewed_by = {placeholder},
+                    reviewed_at = CURRENT_TIMESTAMP
+                WHERE id = {placeholder}
+            ''', (new_status, admin_notes, user.id, app_id))
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Affiliate application {app_id} marked as {new_status} by admin {user.username}" +
+                    (f" - Code: {affiliate_code}" if affiliate_code else ""))
+        return jsonify({'success': True, 'affiliate_code': affiliate_code})
+
+    except Exception as e:
+        logger.error(f"Error updating affiliate status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/affiliates/<int:app_id>/code', methods=['POST'])
+def update_affiliate_code(app_id):
+    """Update affiliate code for an application (admin only)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+
+        data = request.get_json()
+        new_code = data.get('affiliate_code', '').strip().upper() if data else ''
+
+        if not new_code:
+            return jsonify({'error': 'Affiliate code is required'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(f'SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder} AND id != {placeholder}', (new_code, app_id))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': f'Affiliate code "{new_code}" is already in use'}), 409
+
+        cursor.execute(f'UPDATE affiliate_applications SET affiliate_code = {placeholder} WHERE id = {placeholder}', (new_code, app_id))
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Affiliate code updated for application {app_id} to: {new_code} by admin {user.username}")
+        return jsonify({'success': True, 'affiliate_code': new_code})
+
+    except Exception as e:
+        logger.error(f"Error updating affiliate code: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/affiliates/count')
+def get_affiliate_count():
+    """Get count of pending affiliate applications (for nav badge)"""
+    try:
+        user = get_current_user() if USER_AUTH_AVAILABLE and is_logged_in() else None
+        if not user or not user.is_admin:
+            return jsonify({'count': 0})
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM affiliate_applications WHERE status = 'pending'")
+        result = cursor.fetchone()
+        count = result['cnt'] if isinstance(result, dict) else result[0]
+        conn.close()
+
+        return jsonify({'count': count})
+    except Exception:
+        return jsonify({'count': 0})
 
 
 @app.route('/affiliate/dashboard')
@@ -22712,157 +23566,8 @@ def api_affiliate_dashboard():
         })
 
     except Exception as e:
-        logger.error(f"❌ Affiliate dashboard API error: {e}")
+        logger.error(f"Affiliate dashboard API error: {e}")
         return jsonify({'error': 'Failed to load dashboard data'}), 500
-
-
-@app.route('/api/admin/affiliates', methods=['GET'])
-def admin_affiliates_api():
-    """Admin API — list all affiliate applications with referral counts."""
-    if not USER_AUTH_AVAILABLE or not is_logged_in():
-        return jsonify({'error': 'Not logged in'}), 401
-
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        placeholder = '%s' if is_postgres else '?'
-
-        cursor.execute("SELECT * FROM affiliate_applications ORDER BY created_at DESC")
-        rows = cursor.fetchall()
-
-        applications = []
-        for row in rows:
-            app_data = dict(row)
-            referral_count = 0
-            if app_data.get('affiliate_code') and app_data['status'] == 'approved':
-                cursor.execute(f"SELECT COUNT(*) FROM users WHERE referred_by = {placeholder}", (app_data['affiliate_code'],))
-                count_row = cursor.fetchone()
-                referral_count = count_row[0] if count_row else 0
-
-            applications.append({
-                'id': app_data['id'],
-                'name': app_data['name'],
-                'email': app_data['email'],
-                'website': app_data.get('website', ''),
-                'social': app_data.get('social', ''),
-                'audience': app_data.get('audience', ''),
-                'experience': app_data.get('experience', ''),
-                'status': app_data['status'],
-                'affiliate_code': app_data.get('affiliate_code', ''),
-                'admin_notes': app_data.get('admin_notes', ''),
-                'referral_count': referral_count,
-                'created_at': str(app_data.get('created_at', '')),
-            })
-
-        cursor.close()
-        conn.close()
-        return jsonify({'applications': applications})
-
-    except Exception as e:
-        logger.error(f"❌ Admin affiliates API error: {e}")
-        return jsonify({'error': 'Failed to load affiliates'}), 500
-
-
-@app.route('/api/admin/affiliates/<int:app_id>/approve', methods=['POST'])
-def admin_affiliate_approve(app_id):
-    """Admin action — approve an affiliate application and assign a code."""
-    if not USER_AUTH_AVAILABLE or not is_logged_in():
-        return jsonify({'error': 'Not logged in'}), 401
-
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-
-    try:
-        data = request.get_json() or {}
-        custom_code = (data.get('affiliate_code') or '').strip().upper()
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        placeholder = '%s' if is_postgres else '?'
-
-        # Generate code if not provided
-        if not custom_code:
-            import random
-            import string
-            custom_code = 'JT-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-
-        # Check code uniqueness
-        cursor.execute(f"SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder} AND id != {placeholder}", (custom_code, app_id))
-        if cursor.fetchone():
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'This affiliate code is already in use'}), 409
-
-        admin_notes = (data.get('admin_notes') or '').strip()
-
-        cursor.execute(f"UPDATE affiliate_applications SET status = 'approved', affiliate_code = {placeholder}, admin_notes = {placeholder}, updated_at = CURRENT_TIMESTAMP WHERE id = {placeholder}",
-                       (custom_code, admin_notes, app_id))
-        conn.commit()
-
-        cursor.close()
-        conn.close()
-
-        logger.info(f"✅ Affiliate application {app_id} approved with code {custom_code}")
-        return jsonify({'success': True, 'affiliate_code': custom_code})
-
-    except Exception as e:
-        logger.error(f"❌ Admin affiliate approve error: {e}")
-        return jsonify({'error': 'Failed to approve application'}), 500
-
-
-@app.route('/api/admin/affiliates/<int:app_id>/reject', methods=['POST'])
-def admin_affiliate_reject(app_id):
-    """Admin action — reject an affiliate application."""
-    if not USER_AUTH_AVAILABLE or not is_logged_in():
-        return jsonify({'error': 'Not logged in'}), 401
-
-    user = get_current_user()
-    if not user or not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-
-    try:
-        data = request.get_json() or {}
-        admin_notes = (data.get('admin_notes') or '').strip()
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgres = is_using_postgres()
-        placeholder = '%s' if is_postgres else '?'
-
-        cursor.execute(f"UPDATE affiliate_applications SET status = 'rejected', admin_notes = {placeholder}, updated_at = CURRENT_TIMESTAMP WHERE id = {placeholder}",
-                       (admin_notes, app_id))
-        conn.commit()
-
-        cursor.close()
-        conn.close()
-
-        logger.info(f"❌ Affiliate application {app_id} rejected")
-        return jsonify({'success': True})
-
-    except Exception as e:
-        logger.error(f"❌ Admin affiliate reject error: {e}")
-        return jsonify({'error': 'Failed to reject application'}), 500
-
-
-@app.route('/admin/affiliates')
-def admin_affiliates_page():
-    """Admin page for managing affiliates."""
-    if not USER_AUTH_AVAILABLE or not is_logged_in():
-        return redirect(url_for('login'))
-
-    user = get_current_user()
-    if not user or not user.is_admin:
-        flash('You do not have permission to access this page.', 'error')
-        return redirect(url_for('dashboard'))
-
-    return render_template('admin_affiliates.html')
 
 
 # API Endpoints for Dashboard Filters
@@ -23411,10 +24116,15 @@ def api_dashboard_metrics():
         wins = stats.get('wins') or 0
         losses = stats.get('losses') or 0
         total_wins_amt = stats.get('total_wins') or 0
-        total_losses_amt = stats.get('total_losses') or 1
-        
+        total_losses_amt = stats.get('total_losses') or 0
+
         win_rate_pct = round((wins / total_trades * 100), 1) if total_trades > 0 else 0
-        profit_factor = round(total_wins_amt / total_losses_amt, 2) if total_losses_amt > 0 else total_wins_amt
+        if total_losses_amt > 0:
+            profit_factor = round(total_wins_amt / total_losses_amt, 2)
+        elif total_wins_amt > 0:
+            profit_factor = 'Infinite'
+        else:
+            profit_factor = 0
         
         # Calculate time traded
         time_traded = '0D'
@@ -23633,7 +24343,7 @@ def api_dashboard_calendar_data():
         # Format for frontend (date string -> {pnl, trades})
         calendar_data = {}
         for row in rows:
-            date_str = row['date']
+            date_str = str(row['date'])
             calendar_data[date_str] = {
                 'pnl': round(row['daily_pnl'] or 0, 2),
                 'trades': row['trade_count'] or 0
@@ -23644,7 +24354,7 @@ def api_dashboard_calendar_data():
         logger.error(f"Error fetching calendar data: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': 'Failed to fetch calendar data', 'calendar_data': {}}), 500
+        return jsonify({'error': f'Failed to fetch calendar data: {str(e)}', 'calendar_data': {}}), 500
 
 @app.route('/api/news-feed', methods=['GET'])
 def api_news_feed():
@@ -24006,34 +24716,311 @@ def api_live_price_symbol(symbol):
         logger.error(f"Error getting price for {symbol}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ============================================================================
+# Paper Trading — Dashboard API (reads from legacy paper_trades table)
+# ============================================================================
+
+class PaperDBReader:
+    """Read-only helper for the paper_trades table (legacy).
+    Uses the same database as the main app (get_db_connection / is_using_postgres).
+    Open positions = paper_trades WHERE status='open'.
+    Closed trades = paper_trades WHERE status='closed'."""
+
+    _tables_ensured = True  # Legacy table created by _record_paper_trade_direct()
+
+    @staticmethod
+    def _query(sql, params=(), fetch='all'):
+        """Run a read query. Returns list of dicts."""
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        # Replace {ph} placeholders in SQL
+        sql = sql.replace('{ph}', ph)
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            rows = cursor.fetchall() if fetch == 'all' else [cursor.fetchone()] if fetch == 'one' else []
+            if not rows or rows[0] is None:
+                return []
+            # Both SQLite (Row) and PostgreSQL (RealDictCursor/DictRow) return dict-like objects
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_open_positions(recorder_id=None):
+        sql = "SELECT pt.*, r.name as recorder_name FROM paper_trades pt LEFT JOIN recorders r ON pt.recorder_id = r.id WHERE pt.status='open'"
+        params = []
+        if recorder_id is not None:
+            sql += " AND pt.recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " ORDER BY pt.opened_at DESC"
+        rows = PaperDBReader._query(sql, tuple(params))
+        result = []
+        # Per-request price cache: avoid fetching same symbol price multiple times
+        _price_cache = {}
+        for r in rows:
+            symbol = r.get('symbol', '')
+            side = r.get('side', 'LONG')
+            quantity = r.get('quantity', 0) or 0
+            entry_price = r.get('entry_price', 0) or 0
+
+            # Get live price (cache → WebSocket cache → Yahoo/TradingView API)
+            sym_root = extract_symbol_root(symbol)
+            if sym_root not in _price_cache:
+                live_price = _get_live_price_for_symbol(symbol)
+                if not live_price:
+                    # Fallback: fetch from Yahoo Finance / TradingView scanner
+                    live_price = get_market_price_simple(symbol)
+                _price_cache[sym_root] = live_price
+            live_price = _price_cache[sym_root]
+
+            unrealized = 0
+            if live_price and entry_price and quantity:
+                unrealized = _calculate_unrealized_pnl(symbol, side, quantity, entry_price, live_price)
+
+            rec_id = r.get('recorder_id')
+            rec_name = r.get('recorder_name') or f'Recorder #{rec_id}'
+
+            result.append({
+                'recorder_id': rec_id,
+                'recorder_name': rec_name,
+                'symbol': symbol,
+                'side': side,
+                'quantity': quantity,
+                'entry_price': entry_price,
+                'current_price': round(live_price, 2) if live_price else None,
+                'unrealized_pnl': round(unrealized, 2),
+                'tp_price': r.get('tp_price'),
+                'sl_price': r.get('sl_price'),
+                'dca_count': 0,
+                'opened_at': str(r.get('opened_at', '')),
+            })
+        return result
+
+    @staticmethod
+    def get_trade_history(recorder_id=None, limit=100):
+        sql = "SELECT * FROM paper_trades WHERE status='closed' AND pnl IS NOT NULL"
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " ORDER BY closed_at DESC LIMIT {ph}"
+        params.append(limit)
+        rows = PaperDBReader._query(sql, tuple(params))
+        result = []
+        for r in rows:
+            result.append({
+                'id': r.get('id'),
+                'recorder_id': r.get('recorder_id'),
+                'symbol': r.get('symbol'),
+                'side': r.get('side'),
+                'quantity': r.get('quantity'),
+                'entry_price': r.get('entry_price'),
+                'exit_price': r.get('exit_price'),
+                'pnl': r.get('pnl'),
+                'pnl_ticks': None,
+                'exit_reason': r.get('exit_reason'),
+                'dca_count': 0,
+                'max_favorable_excursion': 0,
+                'max_adverse_excursion': 0,
+                'hold_time_seconds': None,
+                'opened_at': str(r.get('opened_at', '')),
+                'closed_at': str(r.get('closed_at', '')),
+            })
+        return result
+
+    @staticmethod
+    def get_analytics(recorder_id=None):
+        sql = "SELECT pnl, exit_reason, closed_at FROM paper_trades WHERE status='closed' AND pnl IS NOT NULL"
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " ORDER BY closed_at ASC"
+        rows = PaperDBReader._query(sql, tuple(params))
+
+        if not rows:
+            return {
+                'total_trades': 0, 'winning_trades': 0, 'losing_trades': 0,
+                'win_rate': 0, 'total_pnl': 0, 'gross_profit': 0, 'gross_loss': 0,
+                'profit_factor': 0, 'average_win': 0, 'average_loss': 0,
+                'largest_win': 0, 'largest_loss': 0, 'max_drawdown': 0,
+                'average_trade': 0, 'expectancy': 0, 'avg_hold_time_seconds': 0,
+            }
+
+        pnls = [r['pnl'] for r in rows]
+        hold_times = []  # Legacy table doesn't track hold time
+        winners = [p for p in pnls if p > 0]
+        losers = [p for p in pnls if p < 0]
+
+        total_trades = len(pnls)
+        winning_trades = len(winners)
+        losing_trades = len(losers)
+        win_rate = (winning_trades / total_trades * 100) if total_trades else 0
+
+        total_pnl = sum(pnls)
+        gross_profit = sum(winners) if winners else 0
+        gross_loss = abs(sum(losers)) if losers else 0
+        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (999.0 if gross_profit > 0 else 0)
+
+        average_win = (gross_profit / winning_trades) if winning_trades else 0
+        average_loss = (gross_loss / losing_trades) if losing_trades else 0
+        largest_win = max(winners) if winners else 0
+        largest_loss = min(losers) if losers else 0
+        average_trade = total_pnl / total_trades if total_trades else 0
+
+        loss_rate = losing_trades / total_trades if total_trades else 0
+        expectancy = ((win_rate / 100) * average_win) - (loss_rate * average_loss)
+
+        # Max drawdown from equity curve
+        peak = 0
+        running = 0
+        max_dd = 0
+        for p in pnls:
+            running += p
+            if running > peak:
+                peak = running
+            dd = peak - running
+            if dd > max_dd:
+                max_dd = dd
+
+        avg_hold = (sum(hold_times) / len(hold_times)) if hold_times else 0
+
+        return {
+            'total_trades': total_trades,
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(total_pnl, 2),
+            'gross_profit': round(gross_profit, 2),
+            'gross_loss': round(gross_loss, 2),
+            'profit_factor': round(profit_factor, 2),
+            'average_win': round(average_win, 2),
+            'average_loss': round(average_loss, 2),
+            'largest_win': round(largest_win, 2),
+            'largest_loss': round(largest_loss, 2),
+            'max_drawdown': round(max_dd, 2),
+            'average_trade': round(average_trade, 2),
+            'expectancy': round(expectancy, 2),
+            'avg_hold_time_seconds': round(avg_hold, 0),
+        }
+
+    @staticmethod
+    def get_equity_curve(recorder_id=None, limit=500):
+        sql = "SELECT pnl, closed_at, symbol, side FROM paper_trades WHERE status='closed' AND pnl IS NOT NULL"
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " ORDER BY closed_at ASC LIMIT {ph}"
+        params.append(limit)
+        rows = PaperDBReader._query(sql, tuple(params))
+
+        points = []
+        running = 0.0
+        for r in rows:
+            pnl_val = r['pnl']
+            running += pnl_val
+            points.append({
+                'timestamp': str(r.get('closed_at', '')),
+                'pnl': round(pnl_val, 2),
+                'cumulative_pnl': round(running, 2),
+                'symbol': r.get('symbol'),
+                'side': r.get('side'),
+            })
+        return points
+
+    @staticmethod
+    def get_daily_pnl(recorder_id=None, days=30):
+        is_postgres = is_using_postgres()
+        if is_postgres:
+            date_filter = f"closed_at >= CURRENT_DATE - INTERVAL '{days} days'"
+        else:
+            date_filter = f"closed_at >= DATE('now', '-{days} days')"
+
+        sql = f'''
+            SELECT DATE(closed_at) as trade_date,
+                   COUNT(*) as trade_count,
+                   SUM(pnl) as daily_pnl,
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+                   SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers
+            FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL AND {date_filter}
+        '''
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " GROUP BY DATE(closed_at) ORDER BY trade_date DESC"
+        rows = PaperDBReader._query(sql, tuple(params))
+
+        result = []
+        for r in rows:
+            count = r.get('trade_count', 0)
+            w = r.get('winners', 0) or 0
+            dpnl = r.get('daily_pnl', 0) or 0
+            result.append({
+                'date': str(r.get('trade_date', '')),
+                'trade_count': count,
+                'pnl': round(dpnl, 2),
+                'winners': w,
+                'losers': r.get('losers', 0) or 0,
+                'win_rate': round((w / count * 100), 1) if count else 0,
+            })
+        return result
+
+    @staticmethod
+    def get_symbol_stats(recorder_id=None):
+        sql = '''
+            SELECT symbol,
+                   COUNT(*) as trade_count,
+                   SUM(pnl) as total_pnl,
+                   AVG(pnl) as avg_pnl,
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winners,
+                   SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losers,
+                   MAX(pnl) as best_trade,
+                   MIN(pnl) as worst_trade
+            FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL
+        '''
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " GROUP BY symbol ORDER BY total_pnl DESC"
+        rows = PaperDBReader._query(sql, tuple(params))
+
+        result = []
+        for r in rows:
+            count = r.get('trade_count', 0)
+            w = r.get('winners', 0) or 0
+            result.append({
+                'symbol': r.get('symbol'),
+                'trade_count': count,
+                'total_pnl': round(r.get('total_pnl', 0) or 0, 2),
+                'avg_pnl': round(r.get('avg_pnl', 0) or 0, 2),
+                'winners': w,
+                'losers': r.get('losers', 0) or 0,
+                'win_rate': round((w / count * 100), 1) if count else 0,
+                'best_trade': round(r.get('best_trade', 0) or 0, 2),
+                'worst_trade': round(r.get('worst_trade', 0) or 0, 2),
+            })
+        return result
+
+
+# --- Paper Trading v2 API Routes ---
+
 @app.route('/api/paper-trades/positions', methods=['GET'])
 def api_paper_positions():
-    """Get all open paper trading positions"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get all open paper trading positions (from paper_positions_v2)"""
     try:
-        paper_engine = get_paper_engine()
-        positions = paper_engine.get_all_positions()
-
-        # Format with current prices
-        formatted = []
-        for recorder_id, recorder_positions in positions.items():
-            for symbol, pos in recorder_positions.items():
-                formatted.append({
-                    'recorder_id': recorder_id,
-                    'symbol': symbol,
-                    'side': pos.get('side'),
-                    'quantity': pos.get('quantity'),
-                    'entry_price': pos.get('entry_price'),
-                    'current_price': pos.get('current_price'),
-                    'unrealized_pnl': pos.get('unrealized_pnl', 0)
-                })
-
+        recorder_id = request.args.get('recorder_id', type=int)
+        positions = PaperDBReader.get_open_positions(recorder_id)
         return jsonify({
             'success': True,
-            'positions': formatted,
-            'count': len(formatted)
+            'positions': positions,
+            'count': len(positions)
         })
     except Exception as e:
         logger.error(f"Error getting paper positions: {e}")
@@ -24041,17 +25028,15 @@ def api_paper_positions():
 
 @app.route('/api/paper-trades/recorder/<int:recorder_id>', methods=['GET'])
 def api_paper_recorder_pnl(recorder_id):
-    """Get P&L and positions for a specific recorder"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get P&L and positions for a specific recorder (from paper_positions_v2)"""
     try:
-        paper_engine = get_paper_engine()
-        pnl_data = paper_engine.get_recorder_pnl(recorder_id)
-
+        positions = PaperDBReader.get_open_positions(recorder_id)
+        total_unrealized = sum(p.get('unrealized_pnl', 0) or 0 for p in positions)
         return jsonify({
             'success': True,
-            **pnl_data
+            'recorder_id': recorder_id,
+            'unrealized_pnl': round(total_unrealized, 2),
+            'positions': positions
         })
     except Exception as e:
         logger.error(f"Error getting recorder {recorder_id} P&L: {e}")
@@ -24059,17 +25044,11 @@ def api_paper_recorder_pnl(recorder_id):
 
 @app.route('/api/paper-trades/history', methods=['GET'])
 def api_paper_trade_history():
-    """Get paper trade history"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get paper trade history (from paper_trades_v2)"""
     try:
         recorder_id = request.args.get('recorder_id', type=int)
         limit = request.args.get('limit', 100, type=int)
-
-        paper_engine = get_paper_engine()
-        trades = paper_engine.get_trade_history(recorder_id=recorder_id, limit=limit)
-
+        trades = PaperDBReader.get_trade_history(recorder_id=recorder_id, limit=limit)
         return jsonify({
             'success': True,
             'trades': trades,
@@ -24081,10 +25060,7 @@ def api_paper_trade_history():
 
 @app.route('/api/paper-trades/open', methods=['POST'])
 def api_paper_open_position():
-    """Open a paper trading position"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Open a paper trading position — proxies to paper service on port 5050"""
     try:
         data = request.get_json()
         if not data:
@@ -24093,29 +25069,20 @@ def api_paper_open_position():
         recorder_id = data.get('recorder_id')
         symbol = data.get('symbol')
         side = data.get('side')
-        quantity = data.get('quantity', 1)
-        entry_price = data.get('entry_price')  # Optional - uses market price if not provided
 
         if not all([recorder_id, symbol, side]):
             return jsonify({'success': False, 'error': 'Missing required fields: recorder_id, symbol, side'}), 400
 
-        paper_engine = get_paper_engine()
-        result = paper_engine.open_position(recorder_id, symbol, side, quantity, entry_price)
-
-        if result:
-            return jsonify({'success': True, 'position': result})
-        else:
-            return jsonify({'success': False, 'error': 'Failed to open position - no price available'}), 400
+        import requests as http_requests
+        resp = http_requests.post('http://127.0.0.1:5050/api/paper/open', json=data, timeout=5)
+        return jsonify(resp.json()), resp.status_code
     except Exception as e:
         logger.error(f"Error opening paper position: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/paper-trades/close', methods=['POST'])
 def api_paper_close_position():
-    """Close a paper trading position"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Close a paper trading position — proxies to paper service on port 5050"""
     try:
         data = request.get_json()
         if not data:
@@ -24123,68 +25090,63 @@ def api_paper_close_position():
 
         recorder_id = data.get('recorder_id')
         symbol = data.get('symbol')
-        exit_price = data.get('exit_price')  # Optional - uses market price if not provided
 
         if not all([recorder_id, symbol]):
             return jsonify({'success': False, 'error': 'Missing required fields: recorder_id, symbol'}), 400
 
-        paper_engine = get_paper_engine()
-        result = paper_engine.close_position(recorder_id, symbol, exit_price)
-
-        if result:
-            return jsonify({'success': True, 'trade': result})
-        else:
-            return jsonify({'success': False, 'error': 'No open position found'}), 404
+        import requests as http_requests
+        resp = http_requests.post('http://127.0.0.1:5050/api/paper/close', json=data, timeout=5)
+        return jsonify(resp.json()), resp.status_code
     except Exception as e:
         logger.error(f"Error closing paper position: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/paper-trades/service-status', methods=['GET'])
 def api_paper_service_status():
-    """Get TradingView price service status"""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({
-            'success': True,
-            'available': False,
-            'reason': 'TradingView price service module not installed'
-        })
-
+    """Get paper trading service status (checks v2 DB + optional service health)"""
     try:
-        ticker = get_ticker()
-        paper_engine = get_paper_engine()
+        positions = PaperDBReader.get_open_positions()
+        service_up = False
+        try:
+            import requests as http_requests
+            resp = http_requests.get('http://127.0.0.1:5050/api/paper/health', timeout=2)
+            service_up = resp.status_code == 200
+        except Exception:
+            pass
 
-        import time
-        seconds_since_update = time.time() - ticker.last_update_time if ticker.last_update_time else None
+        # Also check TradingView ticker if available
+        tv_info = {}
+        if TV_PRICE_SERVICE_AVAILABLE:
+            try:
+                ticker = get_ticker()
+                tv_info = {
+                    'websocket_connected': ticker.connected,
+                    'symbols_tracked': len(ticker.symbols),
+                    'prices_cached': len(ticker.prices),
+                }
+            except Exception:
+                pass
+
         return jsonify({
             'success': True,
             'available': True,
-            'websocket_connected': ticker.connected,
-            'is_premium': ticker.is_premium,
-            'symbols_tracked': len(ticker.symbols),
-            'symbols': ticker.symbols,
-            'prices_cached': len(ticker.prices),
-            'seconds_since_update': round(seconds_since_update, 1) if seconds_since_update else None,
-            'reconnect_count': ticker.reconnect_count,
-            'open_positions': len(paper_engine.positions)
+            'paper_service_running': service_up,
+            'open_positions': len(positions),
+            **tv_info
         })
     except Exception as e:
         return jsonify({
             'success': False,
-            'available': True,
+            'available': False,
             'error': str(e)
         })
 
 @app.route('/api/paper-trades/analytics', methods=['GET'])
 def api_paper_analytics():
-    """Get comprehensive paper trading analytics."""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get comprehensive paper trading analytics (from paper_trades_v2)."""
     try:
-        paper_engine = get_paper_engine()
         recorder_id = request.args.get('recorder_id', type=int)
-
-        analytics = paper_engine.get_analytics(recorder_id)
+        analytics = PaperDBReader.get_analytics(recorder_id)
         return jsonify({
             'success': True,
             'recorder_id': recorder_id,
@@ -24194,18 +25156,168 @@ def api_paper_analytics():
         logger.error(f"Error getting paper analytics: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/paper-trades/equity-curve', methods=['GET'])
-def api_paper_equity_curve():
-    """Get equity curve data for charting."""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
+
+@app.route('/api/premium-showcase', methods=['GET'])
+def api_premium_showcase():
+    """Get all data for the Premium Strategies Showcase.
+
+    Returns combined analytics for all premium recorders using paper_trades_v2
+    via PaperDBReader. Includes per-strategy stats, equity curve, recent trades.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
+        # Get all premium recorders
+        true_val = 'TRUE' if is_postgres else '1'
+        cursor.execute(f'SELECT id, name, symbol FROM recorders WHERE is_premium = {true_val}')
+
+        rows = cursor.fetchall()
+        premium_recorders = []
+        for row in rows:
+            if isinstance(row, dict) or hasattr(row, 'keys'):
+                premium_recorders.append(dict(row))
+            else:
+                premium_recorders.append({'id': row[0], 'name': row[1], 'symbol': row[2]})
+        conn.close()
+
+        if not premium_recorders:
+            return jsonify({
+                'success': True,
+                'message': 'No premium strategies configured',
+                'strategies': [],
+                'combined_stats': None,
+                'recent_trades': [],
+                'equity_curve': []
+            })
+
+        premium_ids = [r['id'] for r in premium_recorders]
+
+        # Get per-strategy stats using PaperDBReader.get_analytics()
+        strategies = []
+        for recorder in premium_recorders:
+            analytics = PaperDBReader.get_analytics(recorder['id'])
+            strategies.append({
+                'id': recorder['id'],
+                'name': recorder['name'],
+                'symbol': recorder.get('symbol', ''),
+                'trades': analytics.get('total_trades', 0),
+                'win_rate': analytics.get('win_rate', 0),
+                'pnl': analytics.get('total_pnl', 0),
+            })
+
+        # Get combined stats across all premium recorders
+        placeholders = ','.join(['{ph}'] * len(premium_ids))
+        combined_sql = f"""SELECT pnl FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL AND recorder_id IN ({placeholders})
+            ORDER BY closed_at ASC"""
+        all_trades = PaperDBReader._query(combined_sql, tuple(premium_ids))
+
+        combined_stats = {'total_trades': 0, 'win_rate': 0, 'profit_factor': 0, 'total_pnl': 0}
+        if all_trades:
+            pnls = [t['pnl'] for t in all_trades]
+            total = len(pnls)
+            winners = [p for p in pnls if p > 0]
+            losers = [p for p in pnls if p < 0]
+            gross_profit = sum(winners) if winners else 0
+            gross_loss = abs(sum(losers)) if losers else 0
+            combined_stats = {
+                'total_trades': total,
+                'win_rate': round((len(winners) / total * 100), 1) if total else 0,
+                'profit_factor': round(gross_profit / gross_loss, 2) if gross_loss > 0 else ('Infinite' if gross_profit > 0 else 0),
+                'total_pnl': round(sum(pnls), 2),
+            }
+
+        # Get equity curve for premium recorders
+        eq_sql = f"""SELECT pnl, closed_at FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL AND recorder_id IN ({placeholders})
+            ORDER BY closed_at ASC LIMIT {{ph}}"""
+        eq_rows = PaperDBReader._query(eq_sql, tuple(premium_ids) + (50,))
+        equity_curve = []
+        running = 0.0
+        for r in eq_rows:
+            running += r['pnl']
+            equity_curve.append(round(running, 2))
+
+        # Get recent trades from premium recorders
+        rt_sql = f"""SELECT symbol, side, pnl, closed_at, recorder_id FROM paper_trades
+            WHERE status='closed' AND pnl IS NOT NULL AND recorder_id IN ({placeholders})
+            ORDER BY closed_at DESC LIMIT {{ph}}"""
+        rt_rows = PaperDBReader._query(rt_sql, tuple(premium_ids) + (10,))
+        recent_trades = []
+        for r in rt_rows:
+            recent_trades.append({
+                'symbol': r.get('symbol', ''),
+                'side': r.get('side', ''),
+                'pnl': round(r.get('pnl', 0), 2),
+            })
+
+        return jsonify({
+            'success': True,
+            'strategies': strategies,
+            'combined_stats': combined_stats,
+            'recent_trades': recent_trades,
+            'equity_curve': equity_curve
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting premium showcase: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/recorders/<int:recorder_id>/premium', methods=['POST', 'DELETE'])
+@login_required
+def api_set_recorder_premium(recorder_id):
+    """Set or remove premium status for a recorder. ADMIN ONLY.
+
+    POST: Mark as premium
+    DELETE: Remove premium status
+    """
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
 
     try:
-        paper_engine = get_paper_engine()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+
+        is_premium = request.method == 'POST'
+        premium_val = 'TRUE' if is_postgres else '1'
+        not_premium_val = 'FALSE' if is_postgres else '0'
+
+        cursor.execute(f'''
+            UPDATE recorders
+            SET is_premium = {premium_val if is_premium else not_premium_val}
+            WHERE id = {ph}
+        ''', (recorder_id,))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'recorder_id': recorder_id,
+            'is_premium': is_premium
+        })
+
+    except Exception as e:
+        logger.error(f"Error setting premium status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/paper-trades/equity-curve', methods=['GET'])
+def api_paper_equity_curve():
+    """Get equity curve data for charting (from paper_trades_v2)."""
+    try:
         recorder_id = request.args.get('recorder_id', type=int)
         limit = request.args.get('limit', default=500, type=int)
-
-        equity_curve = paper_engine.get_equity_curve(recorder_id, limit)
+        equity_curve = PaperDBReader.get_equity_curve(recorder_id, limit)
         return jsonify({
             'success': True,
             'recorder_id': recorder_id,
@@ -24217,16 +25329,11 @@ def api_paper_equity_curve():
 
 @app.route('/api/paper-trades/daily-pnl', methods=['GET'])
 def api_paper_daily_pnl():
-    """Get daily P&L summary."""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get daily P&L summary (from paper_trades_v2)."""
     try:
-        paper_engine = get_paper_engine()
         recorder_id = request.args.get('recorder_id', type=int)
         days = request.args.get('days', default=30, type=int)
-
-        daily_pnl = paper_engine.get_daily_pnl(recorder_id, days)
+        daily_pnl = PaperDBReader.get_daily_pnl(recorder_id, days)
         return jsonify({
             'success': True,
             'recorder_id': recorder_id,
@@ -24239,15 +25346,10 @@ def api_paper_daily_pnl():
 
 @app.route('/api/paper-trades/symbol-stats', methods=['GET'])
 def api_paper_symbol_stats():
-    """Get P&L breakdown by symbol."""
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
+    """Get P&L breakdown by symbol (from paper_trades_v2)."""
     try:
-        paper_engine = get_paper_engine()
         recorder_id = request.args.get('recorder_id', type=int)
-
-        symbol_stats = paper_engine.get_symbol_stats(recorder_id)
+        symbol_stats = PaperDBReader.get_symbol_stats(recorder_id)
         return jsonify({
             'success': True,
             'recorder_id': recorder_id,
@@ -24277,7 +25379,7 @@ def api_paper_test_direct():
 
 @app.route('/api/paper-trades/delete', methods=['POST'])
 def api_paper_delete_trade():
-    """Delete a specific paper trade by ID (for cleaning up bad data)"""
+    """Delete a specific paper trade by ID (from paper_trades_v2)"""
     try:
         data = request.get_json()
         if not data:
@@ -24287,16 +25389,9 @@ def api_paper_delete_trade():
         if not trade_id:
             return jsonify({'success': False, 'error': 'trade_id required'}), 400
 
-        import os
-        database_url = os.environ.get('DATABASE_URL')
-        if database_url:
-            import psycopg2
-            conn = psycopg2.connect(database_url)
-            ph = '%s'
-        else:
-            conn = sqlite3.connect('paper_trades.db')
-            ph = '?'
-
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Get trade info before deleting
@@ -24323,48 +25418,144 @@ def api_paper_delete_trade():
 
 @app.route('/api/paper-trades/reset-all', methods=['POST'])
 def api_paper_reset_all():
-    """
-    Reset ALL paper trades - clears the entire paper_trades table.
-    Admin only - use for fresh start testing.
-    """
+    """Reset paper trades. Pass recorder_id to reset a single recorder, or omit for all."""
+    try:
+        is_postgres = is_using_postgres()
+        ph = '%s' if is_postgres else '?'
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check for recorder_id filter (query param or JSON body)
+        recorder_id = request.args.get('recorder_id', type=int)
+        if not recorder_id:
+            data = request.get_json(silent=True) or {}
+            recorder_id = data.get('recorder_id')
+
+        if recorder_id:
+            cursor.execute(f'SELECT COUNT(*) FROM paper_trades WHERE recorder_id = {ph}', (recorder_id,))
+            row = cursor.fetchone()
+            trades_count = row[0] if isinstance(row, (tuple, list)) else (row.get('count', 0) if isinstance(row, dict) else 0)
+            cursor.execute(f'DELETE FROM paper_trades WHERE recorder_id = {ph}', (recorder_id,))
+            conn.commit()
+            conn.close()
+            print(f"RESET: Deleted {trades_count} paper trades for recorder {recorder_id}", flush=True)
+            return jsonify({
+                'success': True,
+                'deleted_trades': trades_count,
+                'recorder_id': recorder_id,
+                'message': f'Reset complete - deleted {trades_count} paper trades for recorder {recorder_id}'
+            })
+        else:
+            cursor.execute('SELECT COUNT(*) FROM paper_trades')
+            row = cursor.fetchone()
+            trades_count = row[0] if isinstance(row, (tuple, list)) else (row.get('count', 0) if isinstance(row, dict) else 0)
+            cursor.execute('DELETE FROM paper_trades')
+            conn.commit()
+            conn.close()
+            print(f"RESET: Deleted {trades_count} paper trades (all)", flush=True)
+            return jsonify({
+                'success': True,
+                'deleted_trades': trades_count,
+                'message': f'Reset complete - deleted {trades_count} paper trades'
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/paper-trades/cleanup-stale', methods=['POST'])
+@login_required
+def api_paper_cleanup_stale():
+    """Force-close stale open positions with P&L calculation.
+    Pass ?close_all=true to close ALL open positions.
+    Default: keeps 1 per recorder/symbol, closes duplicates only."""
     try:
         import os
+        from datetime import datetime
+        from tv_price_service import FUTURES_SPECS
+
+        close_all = request.args.get('close_all', 'false').lower() == 'true'
+
         database_url = os.environ.get('DATABASE_URL')
         use_postgres = bool(database_url)
-
         if use_postgres:
             import psycopg2
             conn = psycopg2.connect(database_url)
+            ph = '%s'
         else:
             conn = sqlite3.connect('paper_trades.db')
-
+            ph = '?'
         cursor = conn.cursor()
+        now = datetime.now().isoformat()
 
-        # Count trades before deletion
-        cursor.execute('SELECT COUNT(*) FROM paper_trades')
-        count_before = cursor.fetchone()[0]
+        # Get all open positions grouped by recorder_id + symbol
+        cursor.execute('SELECT id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, opened_at FROM paper_trades WHERE status = %s ORDER BY opened_at DESC' if use_postgres else "SELECT id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, opened_at FROM paper_trades WHERE status = ? ORDER BY opened_at DESC", ('open',))
+        all_open = cursor.fetchall()
 
-        # Delete all paper trades
-        cursor.execute('DELETE FROM paper_trades')
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for row in all_open:
+            key = (row[1], row[2])  # (recorder_id, symbol)
+            groups[key].append(row)
+
+        closed_count = 0
+        kept_count = 0
+
+        for (rec_id, sym), positions in groups.items():
+            # Get live price for P&L calc
+            live_price = _get_live_price_for_symbol(sym)
+            if not live_price:
+                live_price = get_market_price_simple(sym)
+            spec = FUTURES_SPECS.get(extract_symbol_root(sym), {'point_value': 1.0})
+            point_value = spec['point_value']
+
+            if close_all:
+                # Close ALL open positions
+                to_close = positions
+            else:
+                # Keep newest, close duplicates only
+                if len(positions) <= 1:
+                    kept_count += 1
+                    continue
+                kept_count += 1
+                to_close = positions[1:]
+
+            for pos in to_close:
+                pos_id, _, _, pos_side, pos_qty, pos_entry, _, _, _ = pos
+                exit_px = live_price if live_price else pos_entry
+                if pos_side == 'LONG':
+                    pnl = (exit_px - pos_entry) * point_value * pos_qty
+                else:
+                    pnl = (pos_entry - exit_px) * point_value * pos_qty
+
+                cursor.execute(f'''
+                    UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
+                    exit_reason = {ph}, closed_at = {ph}
+                    WHERE id = {ph}
+                ''', (exit_px, round(pnl, 2), 'cleanup', now, pos_id))
+                closed_count += 1
+
         conn.commit()
         conn.close()
 
-        print(f"🗑️ RESET: Deleted {count_before} paper trades", flush=True)
-
+        mode = 'all positions' if close_all else 'duplicates only'
+        logger.info(f"Paper cleanup ({mode}): closed {closed_count}, kept {kept_count}")
         return jsonify({
             'success': True,
-            'deleted_count': count_before,
-            'message': f'Reset complete - deleted {count_before} paper trades'
+            'closed': closed_count,
+            'kept': kept_count,
+            'message': f'Closed {closed_count} positions ({mode}), kept {kept_count}'
         })
     except Exception as e:
+        import traceback
+        logger.error(f"Paper cleanup error: {e}")
+        logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/paper-trades/record', methods=['POST'])
 def api_paper_record_trade():
     """
-    Record a paper trade (entry or exit).
-    Used by webhooks or manual entry.
+    Record a paper trade (entry or exit) — proxies to paper service on port 5050.
 
     POST body:
     {
@@ -24375,9 +25566,6 @@ def api_paper_record_trade():
         "price": 21500.50  (optional - uses live feed if not provided)
     }
     """
-    if not TV_PRICE_SERVICE_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
-
     try:
         data = request.get_json()
         if not data:
@@ -24386,45 +25574,52 @@ def api_paper_record_trade():
         recorder_id = data.get('recorder_id')
         symbol = data.get('symbol', '').upper()
         action = data.get('action', '').upper()
-        quantity = data.get('quantity', 1)
-        price = data.get('price')
 
         if not recorder_id or not symbol or not action:
             return jsonify({'success': False, 'error': 'Missing required fields: recorder_id, symbol, action'}), 400
 
-        paper_engine = get_paper_engine()
-        ticker = get_ticker()
+        # Try proxying to paper service
+        try:
+            import requests as http_requests
+            resp = http_requests.post('http://127.0.0.1:5050/api/paper/record', json=data, timeout=5)
+            return jsonify(resp.json()), resp.status_code
+        except Exception as proxy_err:
+            logger.warning(f"Paper service proxy failed: {proxy_err}")
 
-        # Get live price if not provided
-        if not price:
-            # Try to get from live feed
-            tv_symbol = f"CME_MINI:{symbol}1!"
-            price_data = ticker.get_price(tv_symbol)
-            if price_data:
-                if action in ['LONG', 'BUY']:
-                    price = price_data.get('ask') or price_data.get('last_price')
-                elif action in ['SHORT', 'SELL']:
-                    price = price_data.get('bid') or price_data.get('last_price')
+        # Fallback: use old engine if available
+        if TV_PRICE_SERVICE_AVAILABLE:
+            paper_engine = get_paper_engine()
+            ticker = get_ticker()
+            quantity = data.get('quantity', 1)
+            price = data.get('price')
+
+            if not price:
+                tv_symbol = f"CME_MINI:{symbol}1!"
+                price_data = ticker.get_price(tv_symbol)
+                if price_data:
+                    if action in ['LONG', 'BUY']:
+                        price = price_data.get('ask') or price_data.get('last_price')
+                    elif action in ['SHORT', 'SELL']:
+                        price = price_data.get('bid') or price_data.get('last_price')
+                    else:
+                        price = price_data.get('last_price')
+
+            if action in ['LONG', 'BUY']:
+                result = paper_engine.open_position(recorder_id, symbol, 'LONG', quantity, price)
+                return jsonify({'success': True, 'action': 'opened', 'position': result})
+            elif action in ['SHORT', 'SELL']:
+                result = paper_engine.open_position(recorder_id, symbol, 'SHORT', quantity, price)
+                return jsonify({'success': True, 'action': 'opened', 'position': result})
+            elif action in ['CLOSE', 'EXIT', 'FLAT']:
+                result = paper_engine.close_position(recorder_id, symbol, price)
+                if result:
+                    return jsonify({'success': True, 'action': 'closed', 'trade': result})
                 else:
-                    price = price_data.get('last_price')
-
-        if action in ['LONG', 'BUY']:
-            result = paper_engine.open_position(recorder_id, symbol, 'LONG', quantity, price)
-            return jsonify({'success': True, 'action': 'opened', 'position': result})
-
-        elif action in ['SHORT', 'SELL']:
-            result = paper_engine.open_position(recorder_id, symbol, 'SHORT', quantity, price)
-            return jsonify({'success': True, 'action': 'opened', 'position': result})
-
-        elif action in ['CLOSE', 'EXIT', 'FLAT']:
-            result = paper_engine.close_position(recorder_id, symbol, price)
-            if result:
-                return jsonify({'success': True, 'action': 'closed', 'trade': result})
+                    return jsonify({'success': False, 'error': 'No open position to close'}), 400
             else:
-                return jsonify({'success': False, 'error': 'No open position to close'}), 400
-
+                return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
         else:
-            return jsonify({'success': False, 'error': f'Unknown action: {action}'}), 400
+            return jsonify({'success': False, 'error': 'Paper trading service not available'}), 503
 
     except Exception as e:
         logger.error(f"Error recording paper trade: {e}")
@@ -25244,7 +26439,7 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
             JOIN recorders r ON t.recorder_id = r.id
             WHERE t.status = 'open'
               AND (t.tp_price IS NOT NULL OR t.sl_price IS NOT NULL)
-              AND COALESCE(t.broker_managed_tp_sl, 0) = 0
+              AND (t.broker_managed_tp_sl IS NULL OR t.broker_managed_tp_sl = FALSE)
         ''')
         
         open_trades = [dict(row) for row in cursor.fetchall()]
@@ -25344,25 +26539,27 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
                 pnl = pnl_ticks * tick_value * trade['quantity']
                 
                 # Close the trade
-                cursor.execute('''
-                    UPDATE recorded_trades 
-                    SET exit_price = ?, exit_time = CURRENT_TIMESTAMP, 
-                        pnl = ?, pnl_ticks = ?, status = 'closed', 
-                        exit_reason = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
+                _ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f'''
+                    UPDATE recorded_trades
+                    SET exit_price = {_ph}, exit_time = CURRENT_TIMESTAMP,
+                        pnl = {_ph}, pnl_ticks = {_ph}, status = 'closed',
+                        exit_reason = {_ph}, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = {_ph}
                 ''', (exit_price, pnl, pnl_ticks, hit_type, trade['id']))
                 
                 conn.commit()
                 
                 # Also close any open position in recorder_positions (Trade Manager style)
-                cursor.execute('''
-                    SELECT id FROM recorder_positions 
-                    WHERE recorder_id = ? AND ticker = ? AND status = 'open'
+                _ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f'''
+                    SELECT id FROM recorder_positions
+                    WHERE recorder_id = {_ph} AND ticker = {_ph} AND status = 'open'
                 ''', (trade['recorder_id'], ticker))
                 open_pos = cursor.fetchone()
                 if open_pos:
                     # Close the position with proper PnL calculation
-                    cursor.execute('SELECT * FROM recorder_positions WHERE id = ?', (open_pos[0],))
+                    cursor.execute(f'SELECT * FROM recorder_positions WHERE id = {_ph}', (open_pos[0],))
                     pos_row = cursor.fetchone()
                     if pos_row:
                         pos_columns = [desc[0] for desc in cursor.description]
@@ -25379,14 +26576,14 @@ def check_recorder_trades_tp_sl(symbols_updated: set):
                         
                         pos_realized_pnl = pos_pnl_ticks * tick_value * pos_total_qty
                         
-                        cursor.execute('''
+                        cursor.execute(f'''
                             UPDATE recorder_positions
                             SET status = 'closed',
-                                exit_price = ?,
-                                realized_pnl = ?,
+                                exit_price = {_ph},
+                                realized_pnl = {_ph},
                                 closed_at = CURRENT_TIMESTAMP,
                                 updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ?
+                            WHERE id = {_ph}
                         ''', (exit_price, pos_realized_pnl, open_pos[0]))
                         conn.commit()
                         
@@ -26937,7 +28134,8 @@ def get_valid_tradovate_token(account_id: int) -> str | None:
                 conn = get_db_connection()
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute('SELECT tradovate_token FROM accounts WHERE id = ?', (account_id,))
+                _ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f'SELECT tradovate_token FROM accounts WHERE id = {_ph}', (account_id,))
                 new_account = cursor.fetchone()
                 conn.close()
                 if new_account and new_account['tradovate_token']:
@@ -27100,7 +28298,8 @@ def try_refresh_tradovate_token(account_id: int) -> bool:
         # API Access during trades uses username/password (bypasses refresh token issues)
         try:
             cursor = conn.cursor()
-            cursor.execute('SELECT username, password FROM accounts WHERE id = ?', (account_id,))
+            _ph = '%s' if is_using_postgres() else '?'
+            cursor.execute(f'SELECT username, password FROM accounts WHERE id = {_ph}', (account_id,))
             creds_row = cursor.fetchone()
             username = None
             password = None
@@ -28119,22 +29318,28 @@ def api_trader_debug(trader_id):
         placeholder = '%s' if is_postgres else '?'
         
         cursor.execute(f'''
-            SELECT id, recorder_id, enabled, enabled_accounts, initial_position_size, add_position_size
+            SELECT id, recorder_id, enabled, enabled_accounts, initial_position_size, add_position_size,
+                   multiplier, account_id, subaccount_id, subaccount_name, user_id
             FROM traders WHERE id = {placeholder}
         ''', (trader_id,))
         trader = cursor.fetchone()
         conn.close()
-        
+
         if not trader:
             return jsonify({'success': False, 'error': 'Trader not found'}), 404
-        
+
         trader_dict = dict(trader) if hasattr(trader, 'keys') else {
             'id': trader[0],
             'recorder_id': trader[1],
             'enabled': trader[2],
             'enabled_accounts': trader[3],
             'initial_position_size': trader[4] if len(trader) > 4 else None,
-            'add_position_size': trader[5] if len(trader) > 5 else None
+            'add_position_size': trader[5] if len(trader) > 5 else None,
+            'multiplier': trader[6] if len(trader) > 6 else None,
+            'account_id': trader[7] if len(trader) > 7 else None,
+            'subaccount_id': trader[8] if len(trader) > 8 else None,
+            'subaccount_name': trader[9] if len(trader) > 9 else None,
+            'user_id': trader[10] if len(trader) > 10 else None
         }
         
         # Parse enabled_accounts
@@ -28152,6 +29357,11 @@ def api_trader_debug(trader_id):
             'enabled': trader_dict.get('enabled'),
             'initial_position_size': trader_dict.get('initial_position_size'),
             'add_position_size': trader_dict.get('add_position_size'),
+            'multiplier': trader_dict.get('multiplier'),
+            'account_id': trader_dict.get('account_id'),
+            'subaccount_id': trader_dict.get('subaccount_id'),
+            'subaccount_name': trader_dict.get('subaccount_name'),
+            'user_id': trader_dict.get('user_id'),
             'enabled_accounts_raw': str(enabled_accounts_raw)[:500] if enabled_accounts_raw else None,
             'enabled_accounts_parsed': enabled_accounts_parsed,
             'multipliers': [
@@ -28858,6 +30068,22 @@ if __name__ == '__main__':
     if TV_PRICE_SERVICE_AVAILABLE:
         try:
             def on_price_update(symbol, price_data):
+                global _market_data_cache
+                # Update server-side price cache (used by paper trade TP/SL monitor)
+                try:
+                    last_price = price_data.get('last_price')
+                    if last_price:
+                        root = extract_symbol_root(symbol)
+                        if root:
+                            _market_data_cache[root] = {
+                                'last': float(last_price),
+                                'bid': float(price_data['bid']) if price_data.get('bid') else None,
+                                'ask': float(price_data['ask']) if price_data.get('ask') else None,
+                                'source': 'tv_websocket',
+                                'updated': time.time()
+                            }
+                except:
+                    pass
                 # Emit to connected WebSocket clients
                 try:
                     socketio.emit('price_update', {

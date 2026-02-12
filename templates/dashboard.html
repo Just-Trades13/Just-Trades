@@ -142,87 +142,65 @@
 </style>
 {% endif %}
 
-<div class="dashboard-grid">
-    <section class="hero-card">
-        <div class="hero-ticker-full">
-            <div class="ticker-left">
-                <div class="ticker-label">LIVE</div>
-                <div class="ticker-content" id="tickerContent">
-                    <span class="ticker-item">Loading market data...</span>
-                </div>
+<!-- Welcome Modal -->
+<div class="dashboard-modal-overlay" id="welcomeModal">
+    <div class="dashboard-modal">
+        <button class="modal-close-btn" onclick="dismissModal('welcomeModal', 'jt_dismiss_welcome')">
+            <span class="material-icons">close</span>
+        </button>
+        <p class="modal-kicker">Automation Control Center</p>
+        <div class="modal-title-row">
+            <div class="modal-text-content">
+                <h2 class="modal-title">Turn trading signals into executed orders, effortlessly</h2>
             </div>
-            <div class="ticker-right">
-                <div class="ticker-label">NEWS</div>
-                <div class="ticker-content" id="newsContent">
-                    <span class="ticker-item">Loading financial news...</span>
-                </div>
-            </div>
-        </div>
-        <div class="hero-body">
-            <div class="hero-meta">
-                <p class="hero-kicker">Automation Control Center</p>
-                <div class="hero-title-row">
-                    <div class="hero-text-content">
-                        <h1 class="hero-title">Turn trading signals into executed orders, effortlessly</h1>
-                    </div>
-                    <div class="hero-logo-inline">
-                        <img src="/static/img/just_trades_logo.png" alt="Just.Trades." class="hero-logo-img">
-                    </div>
-                </div>
-                <p class="hero-copy">Just.Trades. mirrors the cloud-based, no-code, event-driven workflow your team relies on: connect brokers once, stream signals in real time, and keep strategies synchronized while you're offline.</p>
-                <div class="hero-actions">
-                    <a href="/accounts" class="btn btn-primary">Connect Broker</a>
-                    <a href="/strategies" class="btn btn-secondary">Explore Strategies</a>
-                </div>
-            </div>
-            <div class="hero-visual">
-                <div class="affiliate-card">
-                    <div class="affiliate-content">
-                        <h3 class="affiliate-title">Become an Affiliate Today!</h3>
-                        <p class="affiliate-text">Join our partner program and earn commissions by referring traders to Just.Trades.</p>
-                        <a href="/affiliate" class="btn btn-primary btn-affiliate">Learn More</a>
-                    </div>
-                </div>
+            <div class="modal-logo-wrap">
+                <img src="/static/img/just_trades_logo.png" alt="Just.Trades." class="modal-logo-img">
             </div>
         </div>
-    </section>
+        <p class="modal-copy">Just.Trades. mirrors the cloud-based, no-code, event-driven workflow your team relies on: connect brokers once, stream signals in real time, and keep strategies synchronized while you're offline.</p>
+        <div class="modal-actions">
+            <a href="/accounts" class="btn btn-primary">Connect Broker</a>
+            <a href="/strategies" class="btn btn-secondary">Explore Strategies</a>
+        </div>
+        <div class="dont-show-row">
+            <label class="dont-show-label"><input type="checkbox" class="dont-show-checkbox"> Don't show this again</label>
+        </div>
+    </div>
+</div>
 
-    <!-- Getting Started / Onboarding -->
-    <section class="onboarding-strip">
-        <header class="onboarding-header">
-            <div>
-                <h2>Getting started in four steps</h2>
-                <p class="onboarding-sub">Mirror the TradersPost-style workflow: link connections, define strategies, attach traders, and route live webhooks.</p>
-            </div>
-            <a href="/strategies" class="link-button">View setup guide</a>
-        </header>
-        <div class="onboarding-cards">
-            <article class="onboarding-card">
-                <span class="step-index">1</span>
-                <h3>Connect a broker</h3>
-                <p>Securely authorize live, paper, or prop firm accounts so executions stay cloud-based.</p>
-                <a href="/accounts" class="inline-link">Manage connections</a>
-            </article>
-            <article class="onboarding-card">
-                <span class="step-index">2</span>
-                <h3>Create a strategy</h3>
-                <p>Define asset class, tickers, risk guardrails, and receive your unique webhook endpoint.</p>
-                <a href="/recorders/new" class="inline-link">Open strategy builder</a>
-            </article>
-            <article class="onboarding-card">
-                <span class="step-index">3</span>
-                <h3>Attach traders</h3>
-                <p>Map each broker account to a strategy with sizing overrides and auto-submit rules.</p>
-                <a href="/traders" class="inline-link">Review traders</a>
-            </article>
-            <article class="onboarding-card">
-                <span class="step-index">4</span>
-                <h3>Send trade webhooks</h3>
-                <p>Stream JSON signals from TradingView, TrendSpider, or custom sources—execution stays event-driven.</p>
-                <a href="/strategies" class="inline-link">Copy webhook URL</a>
-            </article>
+<!-- Affiliate Modal -->
+<div class="dashboard-modal-overlay" id="affiliateModal">
+    <div class="dashboard-modal affiliate-modal">
+        <button class="modal-close-btn" onclick="dismissModal('affiliateModal', 'jt_dismiss_affiliate')">
+            <span class="material-icons">close</span>
+        </button>
+        <div class="affiliate-modal-content">
+            <h2 class="affiliate-title">Become an Affiliate Today!</h2>
+            <p class="affiliate-text">Join our partner program and earn commissions by referring traders to Just.Trades.</p>
+            <a href="/affiliate" class="btn btn-primary btn-affiliate">Learn More</a>
         </div>
-    </section>
+        <div class="dont-show-row">
+            <label class="dont-show-label"><input type="checkbox" class="dont-show-checkbox"> Don't show this again</label>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <!-- Ticker Bar - always visible -->
+    <div class="hero-ticker-full standalone-ticker">
+        <div class="ticker-left">
+            <div class="ticker-label">LIVE</div>
+            <div class="ticker-content" id="tickerContent">
+                <span class="ticker-item">Loading market data...</span>
+            </div>
+        </div>
+        <div class="ticker-right">
+            <div class="ticker-label">NEWS</div>
+            <div class="ticker-content" id="newsContent">
+                <span class="ticker-item">Loading financial news...</span>
+            </div>
+        </div>
+    </div>
 
     <!-- Premium Strategies Showcase -->
     <section class="premium-showcase-section" id="premiumShowcaseSection">
@@ -2773,8 +2751,6 @@
         }
     }
     @media (max-width: 768px) {
-        .hero-body { flex-direction: column; align-items: flex-start; }
-        .hero-title { font-size: 2rem; }
         .chart-header { flex-direction: column; align-items: flex-start; }
         .chart-legend { flex-wrap: wrap; }
         .trade-table { min-width: unset; }
@@ -2788,7 +2764,7 @@
         border-radius: 16px;
         border: 1px solid rgba(255, 193, 7, 0.2);
         padding: 1.5rem;
-        margin-top: 2rem;
+        margin-top: 0;
         display: flex;
         flex-direction: column;
         gap: 1rem;
@@ -3104,6 +3080,163 @@
         padding: 1rem;
         color: var(--text-muted);
         font-size: 0.75rem;
+    }
+
+    /* ============================================
+       Dismissable Modal Overlays
+       ============================================ */
+    .dashboard-modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(11, 18, 33, 0.85);
+        z-index: 500;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+    }
+    .dashboard-modal {
+        background: linear-gradient(135deg, rgba(30,41,59,0.98), rgba(15,23,42,0.99));
+        border: 1px solid rgba(59,130,246,0.25);
+        border-radius: 20px;
+        padding: 2.5rem;
+        max-width: 560px;
+        width: 100%;
+        position: relative;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.5), 0 0 40px rgba(59,130,246,0.1);
+        animation: modalFadeIn 0.3s ease-out;
+    }
+    @keyframes modalFadeIn {
+        from { opacity: 0; transform: scale(0.95) translateY(10px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .modal-close-btn {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: rgba(148, 163, 184, 0.15);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: var(--text-muted);
+        transition: all 0.2s ease;
+    }
+    .modal-close-btn:hover {
+        background: rgba(239, 68, 68, 0.2);
+        border-color: rgba(239, 68, 68, 0.4);
+        color: #f87171;
+    }
+    .modal-close-btn .material-icons {
+        font-size: 18px;
+    }
+    .modal-kicker {
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+        font-size: 0.75rem;
+    }
+    .modal-title-row {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    .modal-text-content {
+        flex: 1;
+    }
+    .modal-title {
+        font-size: 1.6rem;
+        line-height: 1.3;
+        margin: 0;
+        color: var(--text-light);
+    }
+    .modal-logo-wrap {
+        flex-shrink: 0;
+    }
+    .modal-logo-img {
+        max-height: 80px;
+        max-width: 80px;
+        border-radius: 16px;
+        box-shadow: 0 0 20px rgba(25, 184, 255, 0.3);
+    }
+    .modal-copy {
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
+        line-height: 1.6;
+        font-size: 0.95rem;
+    }
+    .modal-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+    }
+    .affiliate-modal {
+        max-width: 460px;
+        text-align: center;
+    }
+    .affiliate-modal-content {
+        padding: 1rem 0;
+    }
+    .affiliate-modal .affiliate-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #e2e8f0;
+        margin: 0 0 0.75rem;
+    }
+    .affiliate-modal .affiliate-text {
+        font-size: 1rem;
+        color: #cbd5f5;
+        margin: 0 0 1.5rem;
+        max-width: 400px;
+        display: inline-block;
+    }
+    .dont-show-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .dont-show-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+    .dont-show-checkbox {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--primary-color);
+        cursor: pointer;
+    }
+    .standalone-ticker {
+        margin-bottom: 0;
+    }
+    @media (max-width: 480px) {
+        .dashboard-modal {
+            padding: 1.5rem;
+        }
+        .modal-title-row {
+            flex-direction: column;
+            text-align: center;
+        }
+        .modal-title {
+            font-size: 1.3rem;
+        }
+        .modal-actions {
+            justify-content: center;
+        }
     }
 </style>
 {% endblock %}
@@ -5009,8 +5142,45 @@
         }, 60000);
     }
 
+    // Dismissable modal logic
+    function dismissModal(modalId, storageKey) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+        const checkbox = modal.querySelector('.dont-show-checkbox');
+        if (checkbox && checkbox.checked) {
+            localStorage.setItem(storageKey, '1');
+        }
+        modal.style.display = 'none';
+    }
+
+    // Close modal on overlay click (outside the modal card)
+    document.querySelectorAll('.dashboard-modal-overlay').forEach(function(overlay) {
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) {
+                const modalId = overlay.id;
+                const storageKey = modalId === 'welcomeModal' ? 'jt_dismiss_welcome' : 'jt_dismiss_affiliate';
+                dismissModal(modalId, storageKey);
+            }
+        });
+    });
+
     // Start paper trading panel when page loads (delayed to prevent initial flash)
     document.addEventListener('DOMContentLoaded', function() {
+        // Show dismissable modals if not previously dismissed
+        if (!localStorage.getItem('jt_dismiss_welcome')) {
+            var welcomeModal = document.getElementById('welcomeModal');
+            if (welcomeModal) welcomeModal.style.display = 'flex';
+        }
+        if (!localStorage.getItem('jt_dismiss_affiliate')) {
+            // Slight delay so affiliate appears after welcome
+            setTimeout(function() {
+                var affiliateModal = document.getElementById('affiliateModal');
+                if (affiliateModal && !localStorage.getItem('jt_dismiss_affiliate')) {
+                    affiliateModal.style.display = 'flex';
+                }
+            }, 500);
+        }
+
         // Check if paper trading section exists before initializing
         if (document.getElementById('paperTradingSection')) {
             // Delay initialization by 2 seconds to let other elements load first

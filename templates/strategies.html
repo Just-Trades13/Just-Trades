@@ -20,6 +20,42 @@
         </div>
     </section>
 
+    <!-- Getting Started in 4 Steps -->
+    <section class="getting-started-section">
+        <header class="getting-started-header">
+            <div>
+                <h2>Getting started in four steps</h2>
+                <p class="getting-started-sub">Link connections, define strategies, attach traders, and route live webhooks.</p>
+            </div>
+        </header>
+        <div class="getting-started-cards">
+            <article class="getting-started-card">
+                <span class="gs-step-index">1</span>
+                <h3>Connect a broker</h3>
+                <p>Securely authorize live, paper, or prop firm accounts so executions stay cloud-based.</p>
+                <a href="/accounts" class="gs-inline-link">Manage connections</a>
+            </article>
+            <article class="getting-started-card">
+                <span class="gs-step-index">2</span>
+                <h3>Create a strategy</h3>
+                <p>Define asset class, tickers, risk guardrails, and receive your unique webhook endpoint.</p>
+                <a href="/recorders/new" class="gs-inline-link">Open strategy builder</a>
+            </article>
+            <article class="getting-started-card">
+                <span class="gs-step-index">3</span>
+                <h3>Attach traders</h3>
+                <p>Map each broker account to a strategy with sizing overrides and auto-submit rules.</p>
+                <a href="/traders" class="gs-inline-link">Review traders</a>
+            </article>
+            <article class="getting-started-card">
+                <span class="gs-step-index">4</span>
+                <h3>Send trade webhooks</h3>
+                <p>Stream JSON signals from TradingView, TrendSpider, or custom sources—execution stays event-driven.</p>
+                <a href="/strategies" class="gs-inline-link">Copy webhook URL</a>
+            </article>
+        </div>
+    </section>
+
     <section class="examples-grid instructions-grid">
         <article class="example-card">
             <header>
@@ -218,6 +254,19 @@
     .faq-card { background: rgba(7,12,23,0.92); border: 1px solid rgba(148,163,184,0.12); border-radius: 18px; padding: 1.75rem; display: grid; gap: 1rem; }
     .faq-card h2 { margin: 0; }
     .faq-card ul { margin: 0; padding-left: 1.25rem; color: var(--text-muted); display: grid; gap: 0.5rem; }
+
+    /* Getting Started Section */
+    .getting-started-section { background: var(--background-light, rgba(11,18,33,0.92)); border-radius: 18px; border: 1px solid rgba(148,163,184,0.12); padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
+    .getting-started-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+    .getting-started-header h2 { margin: 0 0 0.5rem; font-size: 1.4rem; }
+    .getting-started-sub { margin: 0; color: var(--text-muted); max-width: 540px; }
+    .getting-started-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .getting-started-card { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    .gs-step-index { width: 36px; height: 36px; border-radius: 50%; background: rgba(94,114,228,0.25); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; color: var(--primary-color, #60a5fa); }
+    .getting-started-card h3 { margin: 0; font-size: 1.05rem; }
+    .getting-started-card p { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
+    .gs-inline-link { background: none; border: none; color: var(--primary-color, #60a5fa); font-weight: 600; cursor: pointer; text-decoration: none; padding: 0; font-size: 0.9rem; margin-top: 0.5rem; display: inline-block; }
+    .gs-inline-link:hover { text-decoration: underline; }
 
     @media (max-width: 900px) {
         .examples-hero { flex-direction: column; align-items: flex-start; }
