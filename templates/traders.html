@@ -5,24 +5,43 @@
 <div class="traders-wrapper">
     {% if mode == 'list' %}
     <section class="list-header">
-        <input type="text" placeholder="Search strategy..." id="searchInput" onkeyup="filterStrategies()">
+        <input type="text" placeholder="Search strategy..." id="searchInput" onkeyup="applyFilters()">
+        <div class="filter-controls">
+            <select id="filterEnv" onchange="applyFilters()">
+                <option value="all">All Environments</option>
+                <option value="demo">Demo Only</option>
+                <option value="live">Live Only</option>
+            </select>
+            <select id="filterStatus" onchange="applyFilters()">
+                <option value="all">All Status</option>
+                <option value="enabled">Enabled Only</option>
+                <option value="paused">Paused Only</option>
+            </select>
+            <select id="sortBy" onchange="applyFilters()">
+                <option value="name">Sort: Name A-Z</option>
+                <option value="name-desc">Sort: Name Z-A</option>
+                <option value="accounts">Sort: Most Accounts</option>
+                <option value="active">Sort: Most Active</option>
+            </select>
+        </div>
         <a class="btn btn-primary" href="/traders/new">Create Trader</a>
     </section>
 
     <div class="strategies-container" id="strategiesContainer">
         {% for strategy in strategies %}
-        <div class="strategy-card" data-strategy-name="{{ strategy.recorder_name }}">
+        <div class="strategy-card" data-strategy-name="{{ strategy.recorder_name }}" data-total-accounts="{{ strategy.total_accounts }}" data-live-accounts="{{ strategy.live_accounts }}">
             <div class="strategy-header">
                 <div class="strategy-info">
-                    <h3 class="strategy-name">{{ strategy.recorder_name }}</h3>
+                    <h3 class="strategy-name"><span class="material-icons">show_chart</span>{{ strategy.recorder_name }}</h3>
                     <div class="strategy-meta">
                         <span class="account-count">{{ strategy.total_accounts }} account{{ 's' if strategy.total_accounts != 1 else '' }}</span>
-                        <span class="live-count {{ 'has-live' if strategy.live_accounts > 0 else '' }}">
-                            {{ strategy.live_accounts }} live
-                        </span>
+                        <span class="active-pill {{ 'active-pill-good' if strategy.live_accounts == strategy.total_accounts else ('active-pill-warn' if strategy.live_accounts > 0 else 'active-pill-off') }}">{{ strategy.live_accounts }}/{{ strategy.total_accounts }} active</span>
                     </div>
                 </div>
                 <div class="strategy-actions">
+                    <button class="action-btn bulk-toggle" onclick="bulkToggleStrategy({{ strategy.recorder_id }}, this)" title="Toggle all accounts">
+                        <span class="material-icons">power_settings_new</span>
+                    </button>
                     <a href="/recorders/{{ strategy.recorder_id }}" class="action-btn" title="Edit Strategy Settings">
                         <span class="material-icons">settings</span>
                     </a>
@@ -1065,8 +1084,12 @@
 {% block styles %}
 <style>
     .traders-wrapper { display: grid; gap: 1.5rem; }
-    .list-header { display: flex; align-items: center; gap: 1rem; background: rgba(11,18,33,0.9); border: 1px solid rgba(148,163,184,0.12); border-radius: 16px; padding: 1rem 1.25rem; }
-    .list-header input { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.2); border-radius: 10px; color: #e2e8f0; padding: 0.65rem 0.85rem; flex: 1; }
+    .list-header { display: flex; align-items: center; gap: 1rem; background: rgba(11,18,33,0.9); border: 1px solid rgba(148,163,184,0.12); border-radius: 16px; padding: 1rem 1.25rem; flex-wrap: wrap; }
+    .list-header input { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.2); border-radius: 10px; color: #e2e8f0; padding: 0.65rem 0.85rem; flex: 1; min-width: 160px; }
+    .filter-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .filter-controls select { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.2); border-radius: 10px; color: #e2e8f0; padding: 0.5rem 0.75rem; font-size: 0.8rem; cursor: pointer; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.6rem center; padding-right: 1.8rem; }
+    .filter-controls select:hover { border-color: rgba(59,130,246,0.4); }
+    .filter-controls select:focus { outline: none; border-color: rgba(59,130,246,0.5); box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
     .btn { border: none; border-radius: 12px; padding: 0.65rem 1.4rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
     .btn-primary { background: linear-gradient(135deg, #60a5fa, #2563eb); color: #0b1120; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
     .trader-table { width: 100%; border-collapse: collapse; background: rgba(7,12,23,0.92); border: 1px solid rgba(148,163,184,0.12); border-radius: 16px; overflow: hidden; }
@@ -1093,16 +1116,20 @@
 
     /* Grouped Strategy Cards View */
     .strategies-container { display: flex; flex-direction: column; gap: 1rem; }
-    .strategy-card { background: rgba(7,12,23,0.92); border: 1px solid rgba(148,163,184,0.12); border-radius: 16px; overflow: hidden; transition: border-color 0.2s ease; }
-    .strategy-card:hover { border-color: rgba(59,130,246,0.3); }
-    .strategy-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem; background: rgba(15,23,42,0.5); border-bottom: 1px solid rgba(148,163,184,0.08); }
-    .strategy-info { display: flex; flex-direction: column; gap: 0.25rem; }
-    .strategy-name { margin: 0; font-size: 1.1rem; color: #60a5fa; font-weight: 600; }
-    .strategy-meta { display: flex; gap: 1rem; font-size: 0.8rem; }
+    .strategy-card { background: rgba(7,12,23,0.92); border: 1px solid rgba(148,163,184,0.12); border-left: 3px solid rgba(59,130,246,0.5); border-radius: 16px; overflow: hidden; transition: all 0.25s ease; }
+    .strategy-card:hover { border-color: rgba(59,130,246,0.3); border-left-color: rgba(59,130,246,0.8); box-shadow: 0 4px 20px rgba(59,130,246,0.1); }
+    .strategy-header { display: flex; justify-content: space-between; align-items: center; padding: 1.15rem 1.5rem; background: rgba(15,23,42,0.5); border-bottom: 1px solid rgba(148,163,184,0.08); }
+    .strategy-info { display: flex; flex-direction: column; gap: 0.35rem; }
+    .strategy-name { margin: 0; font-size: 1.15rem; color: #60a5fa; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+    .strategy-name .material-icons { font-size: 1.2rem; opacity: 0.7; }
+    .strategy-meta { display: flex; gap: 0.75rem; font-size: 0.8rem; align-items: center; }
     .account-count { color: #94a3b8; }
-    .live-count { color: #64748b; }
-    .live-count.has-live { color: #10b981; font-weight: 600; }
+    .active-pill { padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; }
+    .active-pill-good { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+    .active-pill-warn { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+    .active-pill-off { background: rgba(100,116,139,0.15); color: #64748b; border: 1px solid rgba(100,116,139,0.3); }
     .strategy-actions { display: flex; gap: 0.5rem; }
+    .bulk-toggle:hover { background: rgba(168,85,247,0.2); color: #a855f7; border-color: rgba(168,85,247,0.4); }
     .toggle-expand .material-icons { transition: transform 0.2s ease; }
     .strategy-card.collapsed .toggle-expand .material-icons { transform: rotate(-90deg); }
     .strategy-card.collapsed .strategy-accounts { display: none; }
@@ -1580,19 +1607,101 @@
         }
     }
     
-    function filterStrategies() {
-        const input = document.getElementById('searchInput');
-        const filter = input.value.toLowerCase();
-        const cards = document.querySelectorAll('.strategy-card');
+    function applyFilters() {
+        const searchVal = (document.getElementById('searchInput').value || '').toLowerCase();
+        const envFilter = document.getElementById('filterEnv').value;
+        const statusFilter = document.getElementById('filterStatus').value;
+        const sortBy = document.getElementById('sortBy').value;
+        const container = document.getElementById('strategiesContainer');
+        const cards = [...container.querySelectorAll('.strategy-card')];
 
         cards.forEach(card => {
-            const name = card.dataset.strategyName;
-            if (name && name.toLowerCase().includes(filter)) {
-                card.style.display = '';
-            } else {
-                card.style.display = 'none';
+            const name = (card.dataset.strategyName || '').toLowerCase();
+            const nameMatch = !searchVal || name.includes(searchVal);
+
+            const rows = card.querySelectorAll('tbody tr[data-trader-id]');
+            let visibleRows = 0;
+
+            rows.forEach(row => {
+                let show = true;
+                // Environment filter
+                if (envFilter !== 'all') {
+                    const envBadge = row.querySelector('.env-badge');
+                    const isDemo = envBadge && envBadge.classList.contains('env-demo');
+                    if (envFilter === 'demo' && !isDemo) show = false;
+                    if (envFilter === 'live' && isDemo) show = false;
+                }
+                // Status filter
+                if (statusFilter !== 'all') {
+                    const statusBadge = row.querySelector('.status-badge');
+                    const isEnabled = statusBadge && statusBadge.classList.contains('status-live');
+                    if (statusFilter === 'enabled' && !isEnabled) show = false;
+                    if (statusFilter === 'paused' && isEnabled) show = false;
+                }
+                row.style.display = show ? '' : 'none';
+                if (show) visibleRows++;
+            });
+
+            // Hide card if name doesn't match or no visible rows
+            card.style.display = (nameMatch && visibleRows > 0) ? '' : 'none';
+        });
+
+        // Sort visible cards
+        const sortedCards = cards.filter(c => c.style.display !== 'none');
+        sortedCards.sort((a, b) => {
+            const nameA = (a.dataset.strategyName || '').toLowerCase();
+            const nameB = (b.dataset.strategyName || '').toLowerCase();
+            const totalA = parseInt(a.dataset.totalAccounts) || 0;
+            const totalB = parseInt(b.dataset.totalAccounts) || 0;
+            const liveA = parseInt(a.dataset.liveAccounts) || 0;
+            const liveB = parseInt(b.dataset.liveAccounts) || 0;
+
+            switch (sortBy) {
+                case 'name': return nameA.localeCompare(nameB);
+                case 'name-desc': return nameB.localeCompare(nameA);
+                case 'accounts': return totalB - totalA;
+                case 'active': return liveB - liveA;
+                default: return 0;
             }
         });
+        // Reorder DOM
+        sortedCards.forEach(card => container.appendChild(card));
+        // Also re-append hidden cards at the end so they stay in DOM
+        cards.filter(c => c.style.display === 'none').forEach(card => container.appendChild(card));
+    }
+
+    async function bulkToggleStrategy(recorderId, btn) {
+        const card = btn.closest('.strategy-card');
+        const rows = card.querySelectorAll('tbody tr[data-trader-id]');
+        if (rows.length === 0) return;
+
+        const anyEnabled = [...rows].some(r => r.querySelector('.status-live'));
+        const newState = anyEnabled ? 0 : 1;
+        const action = newState ? 'enable' : 'pause';
+
+        if (!confirm(`${action.toUpperCase()} all ${rows.length} accounts in this strategy?`)) return;
+
+        btn.disabled = true;
+        btn.querySelector('.material-icons').style.opacity = '0.4';
+        let success = 0;
+
+        for (const row of rows) {
+            const id = row.dataset.traderId;
+            try {
+                const r = await fetch(`/api/traders/${id}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({enabled: newState})
+                });
+                const d = await r.json();
+                if (d.success) success++;
+            } catch(e) {
+                console.error('Bulk toggle error for trader', id, e);
+            }
+        }
+
+        showToast(`${success}/${rows.length} accounts ${action}d`, 'success');
+        setTimeout(() => location.reload(), 1000);
     }
 
     function toggleStrategyExpand(btn) {
