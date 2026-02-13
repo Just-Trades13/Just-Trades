@@ -1446,17 +1446,20 @@ def execute_trade_simple(
                     logger.info(f"📋 [{acct_name}] Looking for symbol_root='{symbol_root}' full='{symbol_upper}' in {len(contracts)} contracts")
 
                     contract_id = None
+                    matched_contract = None
                     for contract in contracts:
                         c_name = (contract.get('name') or contract.get('symbol') or '').upper()
                         c_id_str = str(contract.get('id') or '').upper()
                         # Strategy 1: Full symbol match (MNQH6 in CON.F.US.MNQH6.H26)
                         if symbol_upper and (symbol_upper in c_name or symbol_upper in c_id_str):
                             contract_id = contract.get('id')
+                            matched_contract = contract
                             logger.info(f"📋 [{acct_name}] Found contract (full match): {c_name} (ID: {contract_id})")
                             break
                         # Strategy 2: Root symbol match (MNQ in contract)
                         if symbol_root and (symbol_root in c_name or symbol_root in c_id_str):
                             contract_id = contract.get('id')
+                            matched_contract = contract
                             logger.info(f"📋 [{acct_name}] Found contract (root match): {c_name} (ID: {contract_id})")
                             break
 
@@ -1468,39 +1471,161 @@ def execute_trade_simple(
                     # Determine order side
                     # ProjectX: 0=Buy, 1=Sell
                     side = "Buy" if action.upper() == "BUY" else "Sell"
-                    
-                    # Place market order WITH TP/SL brackets (ProjectX native support!)
-                    # ProjectX brackets are attached directly to the order - much cleaner than Tradovate
-                    order_data = projectx.create_market_order_with_brackets(
-                        account_id=int(subaccount_id),
-                        contract_id=contract_id,
-                        side=side,
-                        quantity=adjusted_quantity,
-                        tp_ticks=tp_ticks if tp_ticks > 0 else None,
-                        sl_ticks=sl_ticks if sl_ticks > 0 else None
-                    )
-                    
-                    sl_info = f", SL: {sl_ticks}t" if sl_ticks > 0 else ""
-                    logger.info(f"📤 [{acct_name}] Placing ProjectX bracket order: {side} {adjusted_quantity}, TP: {tp_ticks}t{sl_info}")
-                    order_result = await projectx.place_order(order_data)
-                    
-                    if order_result and order_result.get('success'):
-                        order_id = order_result.get('orderId')
-                        logger.info(f"✅ [{acct_name}] ProjectX bracket order placed: ID={order_id}")
-                        logger.info(f"   TP/SL brackets attached automatically by ProjectX (OCO)")
-                        
+
+                    # ---- Check for existing position (DCA detection) ----
+                    positions = await projectx.get_positions(int(subaccount_id))
+                    existing_pos = None
+                    for pos in positions:
+                        if pos.get('contractId') == contract_id:
+                            if pos.get('netPos', 0) != 0:
+                                existing_pos = pos
+                                break
+
+                    has_existing = existing_pos is not None
+                    existing_side = 'LONG' if existing_pos and existing_pos.get('netPos', 0) > 0 else 'SHORT'
+                    signal_side = 'LONG' if action.upper() == 'BUY' else 'SHORT'
+
+                    is_dca = False
+                    if has_existing and signal_side == existing_side:
+                        raw_dca = trader.get('dca_enabled')
+                        trader_dca_enabled = bool(raw_dca) if raw_dca is not None else avg_down_enabled
+                        if trader_dca_enabled:
+                            is_dca = True
+                            logger.info(f"📈 [{acct_name}] ProjectX DCA ADD — existing {existing_side} "
+                                        f"{abs(existing_pos.get('netPos', 0))}, adding {adjusted_quantity}")
+
+                    if is_dca:
+                        # ---- DCA: Plain market order (no brackets) ----
+                        order_data = projectx.create_market_order(
+                            account_id=int(subaccount_id),
+                            contract_id=contract_id,
+                            side=side,
+                            quantity=adjusted_quantity
+                        )
+                        logger.info(f"📤 [{acct_name}] Placing ProjectX DCA market order: {side} {adjusted_quantity}")
+                        order_result = await projectx.place_order(order_data)
+
+                        if not (order_result and order_result.get('success')):
+                            error = order_result.get('error', 'Unknown error') if order_result else 'No response'
+                            logger.error(f"❌ [{acct_name}] ProjectX DCA order failed: {error}")
+                            return {'success': False, 'error': error}
+
+                        dca_order_id = order_result.get('orderId')
+                        logger.info(f"✅ [{acct_name}] ProjectX DCA order filled: ID={dca_order_id}")
+
+                        # ---- Fetch updated position for weighted average ----
+                        await asyncio.sleep(0.5)
+                        broker_avg = None
+                        broker_qty = None
+                        for retry in range(3):
+                            updated_positions = await projectx.get_positions(int(subaccount_id))
+                            for pos in updated_positions:
+                                if pos.get('contractId') == contract_id and pos.get('netPos', 0) != 0:
+                                    broker_avg = pos.get('netPrice')
+                                    broker_qty = abs(pos.get('netPos', 0))
+                                    break
+                            if broker_avg and broker_avg > 0:
+                                break
+                            await asyncio.sleep(0.5 * (retry + 1))
+
+                        if not broker_avg or broker_avg <= 0:
+                            logger.warning(f"⚠️ [{acct_name}] Could not get updated avg price after DCA, skipping TP update")
+                            return {
+                                'success': True,
+                                'order_id': dca_order_id,
+                                'broker': 'ProjectX',
+                                'account': acct_name,
+                                'warning': 'DCA filled but TP not updated (no avg price)'
+                            }
+
+                        logger.info(f"📊 [{acct_name}] ProjectX DCA position: avg={broker_avg}, qty={broker_qty}")
+
+                        # ---- Cancel ALL existing orders on this contract (bracket OCO pairs) ----
+                        open_orders = await projectx.get_orders(int(subaccount_id))
+                        cancelled_count = 0
+                        for order in (open_orders or []):
+                            if order.get('contractId') == contract_id:
+                                oid = order.get('id') or order.get('orderId')
+                                if oid:
+                                    await projectx.cancel_order(int(subaccount_id), int(oid))
+                                    cancelled_count += 1
+                                    await asyncio.sleep(0.1)
+                        if cancelled_count > 0:
+                            logger.info(f"🗑️ [{acct_name}] Cancelled {cancelled_count} existing orders on {ticker}")
+
+                        # ---- Place new TP at tick-rounded price for FULL position ----
+                        if tp_ticks and tp_ticks > 0:
+                            tick_size = float(matched_contract.get('tickSize', 0.25))
+                            if signal_side == 'LONG':
+                                tp_price_raw = broker_avg + (tp_ticks * tick_size)
+                                tp_side = "Sell"
+                            else:
+                                tp_price_raw = broker_avg - (tp_ticks * tick_size)
+                                tp_side = "Buy"
+
+                            tp_price = round(round(tp_price_raw / tick_size) * tick_size, 10)
+
+                            tp_order = projectx.create_limit_order(
+                                account_id=int(subaccount_id),
+                                contract_id=contract_id,
+                                side=tp_side,
+                                quantity=broker_qty,
+                                price=tp_price
+                            )
+                            tp_result = await projectx.place_order(tp_order)
+
+                            if tp_result and tp_result.get('success'):
+                                logger.info(f"✅ [{acct_name}] ProjectX DCA TP placed: {tp_side} {broker_qty} @ {tp_price} (avg={broker_avg})")
+                            else:
+                                tp_error = tp_result.get('error', 'Unknown') if tp_result else 'No response'
+                                logger.error(f"❌ [{acct_name}] ProjectX DCA TP failed: {tp_error}")
+                        else:
+                            logger.info(f"ℹ️ [{acct_name}] No TP ticks configured, skipping TP placement")
+
                         return {
                             'success': True,
-                            'order_id': order_id,
+                            'order_id': dca_order_id,
                             'broker': 'ProjectX',
                             'account': acct_name,
+                            'is_dca': True,
+                            'avg_price': broker_avg,
+                            'total_qty': broker_qty,
                             'tp_ticks': tp_ticks,
                             'sl_ticks': sl_ticks
                         }
+
                     else:
-                        error = order_result.get('error', 'Unknown error') if order_result else 'No response'
-                        logger.error(f"❌ [{acct_name}] ProjectX order failed: {error}")
-                        return {'success': False, 'error': error}
+                        # ---- First entry: bracket order (entry + TP/SL in one call) ----
+                        order_data = projectx.create_market_order_with_brackets(
+                            account_id=int(subaccount_id),
+                            contract_id=contract_id,
+                            side=side,
+                            quantity=adjusted_quantity,
+                            tp_ticks=tp_ticks if tp_ticks > 0 else None,
+                            sl_ticks=sl_ticks if sl_ticks > 0 else None
+                        )
+
+                        sl_info = f", SL: {sl_ticks}t" if sl_ticks > 0 else ""
+                        logger.info(f"📤 [{acct_name}] Placing ProjectX bracket order: {side} {adjusted_quantity}, TP: {tp_ticks}t{sl_info}")
+                        order_result = await projectx.place_order(order_data)
+
+                        if order_result and order_result.get('success'):
+                            order_id = order_result.get('orderId')
+                            logger.info(f"✅ [{acct_name}] ProjectX bracket order placed: ID={order_id}")
+                            logger.info(f"   TP/SL brackets attached automatically by ProjectX (OCO)")
+
+                            return {
+                                'success': True,
+                                'order_id': order_id,
+                                'broker': 'ProjectX',
+                                'account': acct_name,
+                                'tp_ticks': tp_ticks,
+                                'sl_ticks': sl_ticks
+                            }
+                        else:
+                            error = order_result.get('error', 'Unknown error') if order_result else 'No response'
+                            logger.error(f"❌ [{acct_name}] ProjectX order failed: {error}")
+                            return {'success': False, 'error': error}
                         
             except Exception as e:
                 logger.error(f"❌ [{acct_name}] ProjectX execution error: {e}")
