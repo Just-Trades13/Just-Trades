@@ -1498,6 +1498,30 @@ def execute_trade_simple(
                             logger.info(f"📈 [{acct_name}] ProjectX DCA ADD — existing {existing_side} "
                                         f"{abs(existing_pos.get('netPos', 0))}, adding {adjusted_quantity}")
 
+                    # ---- Opposite signal handling (feature parity with Tradovate) ----
+                    if has_existing and signal_side != existing_side:
+                        raw_dca_check = trader.get('dca_enabled')
+                        dca_on = bool(raw_dca_check) if raw_dca_check is not None else avg_down_enabled
+                        should_block = dca_on or avg_down_enabled
+                        if should_block:
+                            mode = "dca_enabled" if dca_on else "avg_down_enabled"
+                            logger.warning(f"⚠️ [{acct_name}] ProjectX OPPOSITE BLOCKED — "
+                                           f"In {existing_side} {abs(existing_pos.get('netPos', 0))}, "
+                                           f"{mode}=True expects system/manual exit")
+                            return {
+                                'success': False,
+                                'error': f'Opposite signal blocked ({mode}=True)',
+                                'acct_name': acct_name,
+                                'skipped': True
+                            }
+                        else:
+                            # Close signal — cap quantity to prevent flip
+                            existing_qty = abs(existing_pos.get('netPos', 0))
+                            if adjusted_quantity > existing_qty:
+                                logger.info(f"🔄 [{acct_name}] ProjectX CLOSE — "
+                                            f"Adjusting qty {adjusted_quantity} → {existing_qty} (prevent flip)")
+                                adjusted_quantity = existing_qty
+
                     if is_dca:
                         # ---- DCA: Plain market order (no brackets) ----
                         order_data = projectx.create_market_order(
@@ -1557,9 +1581,9 @@ def execute_trade_simple(
                         if cancelled_count > 0:
                             logger.info(f"🗑️ [{acct_name}] Cancelled {cancelled_count} existing orders on {ticker}")
 
-                        # ---- Place new TP at tick-rounded price for FULL position ----
+                        # ---- Place new TP for FULL position, then SL ----
+                        tick_size = float(matched_contract.get('tickSize', 0.25))
                         if tp_ticks and tp_ticks > 0:
-                            tick_size = float(matched_contract.get('tickSize', 0.25))
                             if signal_side == 'LONG':
                                 tp_price_raw = broker_avg + (tp_ticks * tick_size)
                                 tp_side = "Sell"
@@ -1586,6 +1610,53 @@ def execute_trade_simple(
                         else:
                             logger.info(f"ℹ️ [{acct_name}] No TP ticks configured, skipping TP placement")
 
+                        # ---- Place new SL for FULL position after DCA ----
+                        if sl_ticks and sl_ticks > 0 and broker_avg and broker_avg > 0:
+                            if signal_side == 'LONG':
+                                sl_price_raw = broker_avg - (sl_ticks * tick_size)
+                                sl_side = "Sell"
+                            else:
+                                sl_price_raw = broker_avg + (sl_ticks * tick_size)
+                                sl_side = "Buy"
+
+                            sl_price = round(round(sl_price_raw / tick_size) * tick_size, 10)
+
+                            # Detect trailing stop
+                            use_trailing = False
+                            if risk_config and risk_config.get('trail'):
+                                use_trailing = True
+                            elif trader.get('sl_type') in ('Trail', 'Trailing'):
+                                use_trailing = True
+
+                            if sl_price > 0:
+                                if use_trailing:
+                                    sl_order_data = {
+                                        "accountId": int(subaccount_id),
+                                        "contractId": contract_id,
+                                        "type": 5,  # ORDER_TYPE_TRAILING_STOP
+                                        "side": 0 if sl_side.lower() == "buy" else 1,
+                                        "size": broker_qty,
+                                        "stopPrice": float(sl_price)
+                                    }
+                                    sl_label = "TRAILING SL"
+                                else:
+                                    sl_order_data = projectx.create_stop_order(
+                                        account_id=int(subaccount_id),
+                                        contract_id=contract_id,
+                                        side=sl_side,
+                                        quantity=broker_qty,
+                                        stop_price=sl_price
+                                    )
+                                    sl_label = "SL"
+
+                                sl_result = await projectx.place_order(sl_order_data)
+                                if sl_result and sl_result.get('success'):
+                                    logger.info(f"✅ [{acct_name}] ProjectX DCA {sl_label} placed: "
+                                                f"{sl_side} {broker_qty} @ {sl_price}")
+                                else:
+                                    sl_err = sl_result.get('error', 'Unknown') if sl_result else 'No response'
+                                    logger.error(f"❌ [{acct_name}] ProjectX DCA {sl_label} failed: {sl_err}")
+
                         return {
                             'success': True,
                             'order_id': dca_order_id,
@@ -1600,17 +1671,28 @@ def execute_trade_simple(
 
                     else:
                         # ---- First entry: bracket order (entry + TP/SL in one call) ----
+                        # Detect trailing stop for bracket
+                        use_trailing_for_bracket = False
+                        if risk_config and risk_config.get('trail'):
+                            use_trailing_for_bracket = True
+                            logger.info(f"📊 [{acct_name}] ProjectX: trailing stop enabled (risk_config)")
+                        elif trader.get('sl_type') in ('Trail', 'Trailing'):
+                            use_trailing_for_bracket = True
+                            logger.info(f"📊 [{acct_name}] ProjectX: trailing stop enabled (sl_type)")
+
                         order_data = projectx.create_market_order_with_brackets(
                             account_id=int(subaccount_id),
                             contract_id=contract_id,
                             side=side,
                             quantity=adjusted_quantity,
                             tp_ticks=tp_ticks if tp_ticks > 0 else None,
-                            sl_ticks=sl_ticks if sl_ticks > 0 else None
+                            sl_ticks=sl_ticks if sl_ticks > 0 else None,
+                            trailing_stop=use_trailing_for_bracket
                         )
 
                         sl_info = f", SL: {sl_ticks}t" if sl_ticks > 0 else ""
-                        logger.info(f"📤 [{acct_name}] Placing ProjectX bracket order: {side} {adjusted_quantity}, TP: {tp_ticks}t{sl_info}")
+                        trail_info = " (trailing)" if use_trailing_for_bracket else ""
+                        logger.info(f"📤 [{acct_name}] Placing ProjectX bracket order: {side} {adjusted_quantity}, TP: {tp_ticks}t{sl_info}{trail_info}")
                         order_result = await projectx.place_order(order_data)
 
                         if order_result and order_result.get('success'):
