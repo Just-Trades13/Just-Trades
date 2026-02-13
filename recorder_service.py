@@ -1479,7 +1479,7 @@ def execute_trade_simple(
                         logger.info(f"   Position: contractId={pos.get('contractId')} (type={type(pos.get('contractId')).__name__}) netPos={pos.get('netPos')} netPrice={pos.get('netPrice')}")
                     existing_pos = None
                     for pos in positions:
-                        if pos.get('contractId') == contract_id:
+                        if str(pos.get('contractId', '')) == str(contract_id):
                             if pos.get('netPos', 0) != 0:
                                 existing_pos = pos
                                 break
@@ -1524,7 +1524,7 @@ def execute_trade_simple(
                         for retry in range(3):
                             updated_positions = await projectx.get_positions(int(subaccount_id))
                             for pos in updated_positions:
-                                if pos.get('contractId') == contract_id and pos.get('netPos', 0) != 0:
+                                if str(pos.get('contractId', '')) == str(contract_id) and pos.get('netPos', 0) != 0:
                                     broker_avg = pos.get('netPrice')
                                     broker_qty = abs(pos.get('netPos', 0))
                                     break
@@ -1548,7 +1548,7 @@ def execute_trade_simple(
                         open_orders = await projectx.get_orders(int(subaccount_id))
                         cancelled_count = 0
                         for order in (open_orders or []):
-                            if order.get('contractId') == contract_id:
+                            if str(order.get('contractId', '')) == str(contract_id):
                                 oid = order.get('id') or order.get('orderId')
                                 if oid:
                                     await projectx.cancel_order(int(subaccount_id), int(oid))
