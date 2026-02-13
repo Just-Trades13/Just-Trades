@@ -13873,11 +13873,11 @@ def broker_execution_worker(worker_id=0):
                             import traceback
                             logger.warning(traceback.format_exc())
                 else:
-                    error = result.get('error', 'Unknown error')
+                    error = result.get('error') or 'Unknown error'
                     logger.error(f"❌ Broker execution FAILED: {error}")
                     logger.error(f"   Recorder ID: {recorder_id}, Action: {action}, Quantity: {quantity}, Ticker: {ticker}")
                     logger.error(f"   Full result: {result}")
-                    
+
                     # Enhanced diagnostics for common failures
                     if 'No accounts to trade on' in error or 'No trader linked' in error:
                         logger.error(f"   🔍 DIAGNOSTIC: Checking trader configuration for recorder {recorder_id}...")
