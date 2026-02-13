@@ -1474,6 +1474,9 @@ def execute_trade_simple(
 
                     # ---- Check for existing position (DCA detection) ----
                     positions = await projectx.get_positions(int(subaccount_id))
+                    logger.info(f"🔍 [{acct_name}] Position check: {len(positions)} positions, looking for contractId={contract_id} (type={type(contract_id).__name__})")
+                    for pos in positions:
+                        logger.info(f"   Position: contractId={pos.get('contractId')} (type={type(pos.get('contractId')).__name__}) netPos={pos.get('netPos')} netPrice={pos.get('netPrice')}")
                     existing_pos = None
                     for pos in positions:
                         if pos.get('contractId') == contract_id:
@@ -1482,6 +1485,7 @@ def execute_trade_simple(
                                 break
 
                     has_existing = existing_pos is not None
+                    logger.info(f"🔍 [{acct_name}] DCA check: has_existing={has_existing}, signal_side={'LONG' if action.upper() == 'BUY' else 'SHORT'}, is_dca will be evaluated next")
                     existing_side = 'LONG' if existing_pos and existing_pos.get('netPos', 0) > 0 else 'SHORT'
                     signal_side = 'LONG' if action.upper() == 'BUY' else 'SHORT'
 
