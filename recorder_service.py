@@ -2088,9 +2088,11 @@ def execute_trade_simple(
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
                     # NOW SUPPORTS: Native break-even and autoTrail (trailing-after-profit) via Tradovate API
+                    has_multi_tp = risk_config and len(risk_config.get('take_profit', [])) > 1
                     use_bracket_order = (
-                        not has_existing_position and 
-                        tp_ticks and tp_ticks > 0
+                        not has_existing_position and
+                        tp_ticks and tp_ticks > 0 and
+                        not has_multi_tp  # Multi-TP needs apply_risk_orders for individual levels
                     )
                     
                     if use_bracket_order:
@@ -2176,7 +2178,45 @@ def execute_trade_simple(
                                 sl_price = None
                             
                             logger.info(f"📊 [{acct_name}] BRACKET: {broker_side} {broker_qty} with TP @ +{tp_ticks} ticks (1 API call!)")
-                            
+
+                            # Auto-trail diagnostic: log when autoTrail was sent so we can verify in Railway logs
+                            if auto_trail:
+                                logger.info(f"📊 [{acct_name}] autoTrail sent in bracket: "
+                                            f"trigger={auto_trail.get('trigger')}, distance={auto_trail.get('stopLoss')}")
+
+                            # Register break-even monitor if configured (safety net)
+                            # If Tradovate handles BE natively → monitor sees SL already moved, does nothing
+                            # If Tradovate ignores it → monitor catches it and moves SL to entry at profit threshold
+                            if break_even_ticks and break_even_ticks > 0:
+                                try:
+                                    await asyncio.sleep(0.3)
+                                    be_positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                                    be_entry_price = None
+                                    for pos in be_positions:
+                                        pos_symbol = str(pos.get('symbol', '')).upper()
+                                        if local_symbol_root in pos_symbol and pos.get('netPos', 0) != 0:
+                                            be_entry_price = pos.get('netPrice')
+                                            break
+                                    if be_entry_price and be_entry_price > 0:
+                                        from ultra_simple_server import register_break_even_monitor
+                                        register_break_even_monitor(
+                                            account_id=tradovate_account_id,
+                                            symbol=local_tradovate_symbol,
+                                            entry_price=be_entry_price,
+                                            is_long=(order_action == 'Buy'),
+                                            activation_ticks=break_even_ticks,
+                                            tick_size=local_tick_size,
+                                            sl_order_id=strategy_id,
+                                            quantity=adjusted_quantity,
+                                            account_spec=tradovate_account_spec
+                                        )
+                                        logger.info(f"📊 [{acct_name}] Break-even monitor registered "
+                                                    f"(activation={break_even_ticks} ticks, entry={be_entry_price})")
+                                    else:
+                                        logger.warning(f"⚠️ [{acct_name}] Could not get entry price for break-even monitor")
+                                except Exception as be_err:
+                                    logger.warning(f"⚠️ [{acct_name}] Break-even monitor registration failed: {be_err}")
+
                             return {
                                 'success': True,
                                 'broker_avg': None,  # Not fetched - saves API call
