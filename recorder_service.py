@@ -1434,23 +1434,35 @@ def execute_trade_simple(
                     
                     logger.info(f"✅ [{acct_name}] ProjectX authenticated successfully")
                     
-                    # Get available contracts to find the contract ID
-                    contracts = await projectx.get_available_contracts()
-                    
-                    # Find the contract matching our ticker
-                    # ProjectX uses contract IDs like "CON.F.US.MNQM5.M25"
+                    # Get contracts — use extract_symbol_root() for proper symbol handling
+                    symbol_root = extract_symbol_root(ticker) if ticker else 'MNQ'
+                    symbol_upper = ticker.strip().upper() if ticker else ''
+
+                    # Try Contract/search first (works on TopStepX), fallback to available
+                    contracts = await projectx.search_contracts(symbol_root)
+                    if not contracts:
+                        contracts = await projectx.get_available_contracts()
+
+                    logger.info(f"📋 [{acct_name}] Looking for symbol_root='{symbol_root}' full='{symbol_upper}' in {len(contracts)} contracts")
+
                     contract_id = None
-                    symbol_root = ticker[:3].upper() if ticker else 'MNQ'
-                    
                     for contract in contracts:
-                        contract_name = contract.get('name', '') or contract.get('symbol', '')
-                        if symbol_root in contract_name.upper():
+                        c_name = (contract.get('name') or contract.get('symbol') or '').upper()
+                        c_id_str = str(contract.get('id') or '').upper()
+                        # Strategy 1: Full symbol match (MNQH6 in CON.F.US.MNQH6.H26)
+                        if symbol_upper and (symbol_upper in c_name or symbol_upper in c_id_str):
                             contract_id = contract.get('id')
-                            logger.info(f"📋 [{acct_name}] Found contract: {contract_name} (ID: {contract_id})")
+                            logger.info(f"📋 [{acct_name}] Found contract (full match): {c_name} (ID: {contract_id})")
                             break
-                    
+                        # Strategy 2: Root symbol match (MNQ in contract)
+                        if symbol_root and (symbol_root in c_name or symbol_root in c_id_str):
+                            contract_id = contract.get('id')
+                            logger.info(f"📋 [{acct_name}] Found contract (root match): {c_name} (ID: {contract_id})")
+                            break
+
                     if not contract_id:
-                        logger.error(f"❌ [{acct_name}] Contract not found for {ticker}")
+                        contract_names = [f"{c.get('name') or c.get('symbol') or 'N/A'} (id={c.get('id')})" for c in contracts[:20]]
+                        logger.error(f"❌ [{acct_name}] Contract not found for {ticker} (root='{symbol_root}'). Available: {contract_names}")
                         return {'success': False, 'error': f'Contract not found for {ticker}'}
                     
                     # Determine order side
