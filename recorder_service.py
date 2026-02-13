@@ -2043,7 +2043,42 @@ def execute_trade_simple(
                                 logger.info(f"🔄 [{acct_name}] CLOSE SIGNAL - Opposite {signal_side} signal closes {existing_position_side} {existing_position_qty}")
                                 logger.info(f"   Adjusting quantity from {adjusted_quantity} to {existing_position_qty} (close exact position size)")
                                 adjusted_quantity = existing_position_qty
-                    
+
+                                # FLIP CLOSE: Cancel all resting exit orders before closing position
+                                # Without this, trailing stops / TPs from the old entry survive the close
+                                logger.info(f"🔄 [{acct_name}] FLIP CLOSE: Cancelling resting orders on {local_tradovate_symbol}...")
+                                try:
+                                    flip_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                                    cancelled_count = 0
+                                    for fo in (flip_orders or []):
+                                        fo_symbol = str(fo.get('symbol', '')).upper()
+                                        fo_status = str(fo.get('ordStatus', '')).upper()
+                                        fo_id = fo.get('id')
+                                        if (local_symbol_root in fo_symbol and
+                                            fo_status in ['WORKING', 'NEW', 'PENDINGNEW'] and fo_id):
+                                            try:
+                                                await tradovate.cancel_order_smart(int(fo_id))
+                                                cancelled_count += 1
+                                                # Clean up OCO pair if this order was registered
+                                                try:
+                                                    from ultra_simple_server import unregister_oco_pair
+                                                    unregister_oco_pair(int(fo_id))
+                                                except Exception:
+                                                    pass
+                                            except Exception as cancel_err:
+                                                logger.warning(f"⚠️ [{acct_name}] Could not cancel order {fo_id}: {cancel_err}")
+                                    if cancelled_count > 0:
+                                        logger.info(f"🗑️ [{acct_name}] Cancelled {cancelled_count} resting orders before close")
+                                    # Unregister break-even monitor for this account+symbol
+                                    try:
+                                        from ultra_simple_server import unregister_break_even_monitor
+                                        be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
+                                        unregister_break_even_monitor(be_key)
+                                    except Exception:
+                                        pass
+                                except Exception as cleanup_err:
+                                    logger.warning(f"⚠️ [{acct_name}] Flip close order cleanup failed: {cleanup_err}")
+
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
                     # NOW SUPPORTS: Native break-even and autoTrail (trailing-after-profit) via Tradovate API
