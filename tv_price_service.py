@@ -874,6 +874,161 @@ class PaperTradingEngine:
             logger.error(f"Error getting trade history: {e}")
             return []
 
+    def get_chart_data(self, recorder_id: int = None, limit: int = 500) -> dict:
+        """Get PnL chart data: cumulative profit + drawdown arrays for Chart.js"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
+
+            if recorder_id:
+                cursor.execute(f'''
+                    SELECT pnl, closed_at
+                    FROM paper_trades
+                    WHERE recorder_id = {ph} AND status = 'closed' AND pnl IS NOT NULL
+                    ORDER BY closed_at ASC
+                    LIMIT {ph}
+                ''', (recorder_id, limit))
+            else:
+                cursor.execute(f'''
+                    SELECT pnl, closed_at
+                    FROM paper_trades
+                    WHERE status = 'closed' AND pnl IS NOT NULL
+                    ORDER BY closed_at ASC
+                    LIMIT {ph}
+                ''', (limit,))
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            if not rows:
+                return {'labels': [], 'profit': [], 'drawdown': []}
+
+            labels = []
+            profit = []
+            drawdown = []
+            running_pnl = 0.0
+            peak_pnl = 0.0
+
+            for row in rows:
+                pnl_val = row[0]
+                closed_at = row[1] or ''
+                running_pnl += pnl_val
+
+                if running_pnl > peak_pnl:
+                    peak_pnl = running_pnl
+
+                dd = peak_pnl - running_pnl
+
+                # Format label from closed_at
+                if closed_at:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(str(closed_at).replace('Z', '+00:00'))
+                        labels.append(dt.strftime('%b %d'))
+                    except Exception:
+                        labels.append(str(closed_at)[:10])
+                else:
+                    labels.append(f'Trade {len(labels) + 1}')
+
+                profit.append(round(running_pnl, 2))
+                drawdown.append(round(-dd, 2))  # Negative for chart display
+
+            return {'labels': labels, 'profit': profit, 'drawdown': drawdown}
+
+        except Exception as e:
+            logger.error(f"Error getting chart data: {e}")
+            return {'labels': [], 'profit': [], 'drawdown': []}
+
+    def get_trade_history_paginated(self, page: int = 1, per_page: int = 20,
+                                     result_filter: str = None, recorder_id: int = None) -> dict:
+        """Get paginated trade history with optional win/loss filter."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            ph = self._get_placeholder()
+
+            # Build WHERE clause
+            conditions = ["pt.status = 'closed'", "pt.pnl IS NOT NULL"]
+            params = []
+
+            if recorder_id:
+                conditions.append(f"pt.recorder_id = {ph}")
+                params.append(recorder_id)
+
+            if result_filter == 'win':
+                conditions.append("pt.pnl >= 0")
+            elif result_filter == 'loss':
+                conditions.append("pt.pnl < 0")
+
+            where_clause = ' AND '.join(conditions)
+
+            # Count total
+            cursor.execute(f"SELECT COUNT(*) FROM paper_trades pt WHERE {where_clause}", tuple(params))
+            total = cursor.fetchone()[0]
+
+            total_pages = max(1, (total + per_page - 1) // per_page)
+            page = max(1, min(page, total_pages))
+            offset = (page - 1) * per_page
+
+            # Fetch trades - LEFT JOIN recorders for name
+            cursor.execute(f'''
+                SELECT pt.id, pt.recorder_id, pt.symbol, pt.side, pt.quantity,
+                       pt.entry_price, pt.exit_price, pt.pnl, pt.opened_at, pt.closed_at,
+                       pt.status
+                FROM paper_trades pt
+                WHERE {where_clause}
+                ORDER BY pt.closed_at DESC
+                LIMIT {ph} OFFSET {ph}
+            ''', tuple(params) + (per_page, offset))
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            trades = []
+            for row in rows:
+                pnl = row[7] or 0
+                if pnl > 0:
+                    status = 'WIN'
+                elif pnl < 0:
+                    status = 'LOSS'
+                else:
+                    status = 'FLAT'
+
+                trades.append({
+                    'id': row[0],
+                    'recorder_id': row[1],
+                    'symbol': row[2],
+                    'side': row[3],
+                    'quantity': row[4],
+                    'entry_price': row[5],
+                    'exit_price': row[6],
+                    'pnl': pnl,
+                    'opened_at': str(row[8]) if row[8] else None,
+                    'closed_at': str(row[9]) if row[9] else None,
+                    'trade_status': row[10],
+                    'result_status': status,
+                })
+
+            return {
+                'trades': trades,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total_pages': total_pages,
+                    'total': total,
+                    'has_prev': page > 1,
+                    'has_next': page < total_pages,
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting paginated trade history: {e}")
+            return {
+                'trades': [],
+                'pagination': {'page': 1, 'per_page': per_page, 'total_pages': 0, 'total': 0, 'has_prev': False, 'has_next': False}
+            }
+
     def get_analytics(self, recorder_id: int = None) -> dict:
         """
         Get comprehensive trading analytics.

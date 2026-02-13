@@ -441,13 +441,15 @@
             <!-- P&L vs Drawdown Chart -->
             <div class="equity-curve-container">
                 <div class="equity-curve-header">
-                    <h3><span class="material-icons">show_chart</span> P&L vs Drawdown</h3>
+                    <h3><span class="material-icons">show_chart</span> Profit vs Drawdown</h3>
                     <div class="chart-legend-inline">
-                        <span class="legend-item"><span class="legend-dot" style="background: #10b981;"></span>Cumulative P&L</span>
-                        <span class="legend-item"><span class="legend-dot" style="background: #ef4444;"></span>Drawdown</span>
+                        <span class="legend-item"><span class="legend-dot" style="background: #22c55e;"></span>Cumulative Profit</span>
+                        <span class="legend-item"><span class="legend-dot" style="background: #f87171;"></span>Cumulative Drawdown</span>
                     </div>
                 </div>
-                <canvas id="equityCurveChart" height="200"></canvas>
+                <div style="height: 350px; position: relative;">
+                    <canvas id="equityCurveChart"></canvas>
+                </div>
             </div>
 
             <!-- P&L Calendar -->
@@ -524,34 +526,45 @@
         <!-- Paper Trade History -->
         <div class="paper-panel paper-history-panel">
             <div class="panel-header">
-                <h3><span class="material-icons">history</span> Recent Paper Trades</h3>
-                <select id="historyRecorderFilter" onchange="loadPaperHistory()">
-                    <option value="">All Recorders</option>
-                </select>
+                <h3><span class="material-icons">history</span> Trade History <span class="trade-count-badge" id="tradeCountBadge"></span></h3>
+                <div class="history-filter-bar">
+                    <button class="history-filter-btn active" data-filter="" onclick="setHistoryFilter(null, this)">All</button>
+                    <button class="history-filter-btn filter-win" data-filter="win" onclick="setHistoryFilter('win', this)">Wins</button>
+                    <button class="history-filter-btn filter-loss" data-filter="loss" onclick="setHistoryFilter('loss', this)">Losses</button>
+                </div>
             </div>
-            <div class="panel-content">
-                <table class="history-table" id="paperHistoryTable">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Recorder</th>
-                            <th>Symbol</th>
-                            <th>Qty</th>
-                            <th>Side</th>
-                            <th>Entry</th>
-                            <th>TP/SL</th>
-                            <th>Exit</th>
-                            <th>P&L</th>
-                            <th>DD</th>
-                            <th>Reason</th>
-                        </tr>
-                    </thead>
-                    <tbody id="paperHistoryBody">
-                        <tr class="empty-row">
-                            <td colspan="11">No paper trades yet</td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div class="panel-content" style="max-height: none; overflow: visible;">
+                <div class="trade-table-wrapper">
+                    <table class="history-table" id="paperHistoryTable">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Open Time</th>
+                                <th>Closed Time</th>
+                                <th>Strategy</th>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Size</th>
+                                <th>Entry</th>
+                                <th>Exit</th>
+                                <th>Profit</th>
+                                <th>Drawdown</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paperHistoryBody">
+                            <tr class="empty-row">
+                                <td colspan="11">No paper trades yet</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination-controls" id="paginationControls" style="display: none;">
+                    <button class="pagination-btn" id="paginFirst" onclick="loadPaperHistoryPaginated(1)">First</button>
+                    <button class="pagination-btn" id="paginPrev" onclick="loadPaperHistoryPaginated(currentHistoryPage - 1)">&laquo; Prev</button>
+                    <span class="pagination-info" id="paginInfo">Page 1 of 1</span>
+                    <button class="pagination-btn" id="paginNext" onclick="loadPaperHistoryPaginated(currentHistoryPage + 1)">Next &raquo;</button>
+                    <button class="pagination-btn" id="paginLast" onclick="loadPaperHistoryPaginated(totalHistoryPages)">Last</button>
+                </div>
             </div>
         </div>
 
@@ -1998,6 +2011,130 @@
     }
     .paper-history-panel {
         margin-top: 0;
+    }
+    .paper-history-panel .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    .trade-count-badge {
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: rgba(148, 163, 184, 0.15);
+        color: #94a3b8;
+        padding: 2px 10px;
+        border-radius: 9999px;
+        margin-left: 0.5rem;
+    }
+    .history-filter-bar {
+        display: flex;
+        gap: 0.5rem;
+    }
+    .history-filter-btn {
+        padding: 5px 16px;
+        border-radius: 9999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: transparent;
+        color: #94a3b8;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .history-filter-btn:hover {
+        border-color: rgba(148, 163, 184, 0.4);
+        color: #e2e8f0;
+    }
+    .history-filter-btn.active {
+        background: rgba(59, 130, 246, 0.2);
+        border-color: #3b82f6;
+        color: #3b82f6;
+    }
+    .history-filter-btn.filter-win.active {
+        background: rgba(34, 197, 94, 0.15);
+        border-color: #22c55e;
+        color: #22c55e;
+    }
+    .history-filter-btn.filter-loss.active {
+        background: rgba(248, 113, 113, 0.15);
+        border-color: #f87171;
+        color: #f87171;
+    }
+    /* Status pills */
+    .status-pill {
+        padding: 3px 10px;
+        border-radius: 9999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        display: inline-block;
+    }
+    .status-pill--win {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+    .status-pill--loss {
+        background: rgba(248, 113, 113, 0.15);
+        color: #f87171;
+    }
+    .status-pill--flat {
+        background: rgba(148, 163, 184, 0.15);
+        color: #94a3b8;
+    }
+    /* Side badges */
+    .side-badge {
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .side-badge--long {
+        background: rgba(34, 197, 94, 0.2);
+        color: #22c55e;
+    }
+    .side-badge--short {
+        background: rgba(248, 113, 113, 0.2);
+        color: #f87171;
+    }
+    /* Trade table wrapper */
+    .trade-table-wrapper {
+        overflow-x: auto;
+    }
+    /* Pagination */
+    .pagination-controls {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 1rem 0 0.5rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.1);
+        margin-top: 0.75rem;
+    }
+    .pagination-btn {
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: transparent;
+        color: #94a3b8;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .pagination-btn:hover:not(:disabled) {
+        border-color: #3b82f6;
+        color: #3b82f6;
+    }
+    .pagination-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+    }
+    .pagination-info {
+        font-size: 0.8rem;
+        color: #94a3b8;
+        padding: 0 0.5rem;
     }
     .paper-summary-stats {
         display: flex;
@@ -4357,106 +4494,135 @@
         return `Recorder #${recorderId}`;
     }
 
-    // Load paper trade history
-    async function loadPaperHistory() {
-        try {
-            const filterEl = document.getElementById('historyRecorderFilter');
-            // Use global strategy selector if set, otherwise use local filter
-            const recorderId = selectedStrategyId || (filterEl ? filterEl.value : '');
+    // ============================================================
+    // Paper Trade History — Paginated with Win/Loss Filter
+    // ============================================================
+    let currentHistoryPage = 1;
+    let totalHistoryPages = 1;
+    let currentHistoryFilter = null; // null = all, 'win', 'loss'
 
-            let url = '/api/paper-trades/history?limit=50';
-            if (recorderId) {
-                url += `&recorder_id=${recorderId}`;
-            }
+    function setHistoryFilter(filter, btn) {
+        currentHistoryFilter = filter;
+        // Update active button state
+        document.querySelectorAll('.history-filter-btn').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        loadPaperHistoryPaginated(1);
+    }
+
+    async function loadPaperHistoryPaginated(page) {
+        page = page || 1;
+        try {
+            const recorderId = selectedStrategyId || '';
+            let url = `/api/paper-trades/history?page=${page}&per_page=20`;
+            if (recorderId) url += `&recorder_id=${recorderId}`;
+            if (currentHistoryFilter) url += `&filter=${currentHistoryFilter}`;
 
             const response = await fetch(url);
             const data = await response.json();
 
             const tbody = document.getElementById('paperHistoryBody');
+            const paginEl = document.getElementById('paginationControls');
+            const badgeEl = document.getElementById('tradeCountBadge');
 
             if (!data.success || !data.trades || data.trades.length === 0) {
-                tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No paper trades yet</td></tr>';
+                tbody.innerHTML = '<tr class="empty-row"><td colspan="11">No paper trades yet</td></tr>';
+                if (paginEl) paginEl.style.display = 'none';
+                if (badgeEl) badgeEl.textContent = '';
                 return;
             }
 
+            const pagination = data.pagination || {};
+            currentHistoryPage = pagination.page || 1;
+            totalHistoryPages = pagination.total_pages || 1;
+
+            // Update trade count badge
+            if (badgeEl) badgeEl.textContent = `${pagination.total} trades`;
+
             tbody.innerHTML = '';
-            let wins = 0, losses = 0, totalPnl = 0, tradesToday = 0;
-            const today = new Date().toISOString().split('T')[0];
 
             for (const trade of data.trades) {
                 const row = document.createElement('tr');
                 const pnl = trade.pnl || 0;
-                const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
-                const sideClass = trade.side === 'LONG' ? 'side-long' : 'side-short';
-                const statusClass = trade.status === 'open' ? 'status-open' : 'status-closed';
 
+                // Status pill
+                const status = trade.result_status || (pnl >= 0 ? 'WIN' : 'LOSS');
+                const statusPillClass = status === 'WIN' ? 'status-pill--win' : status === 'LOSS' ? 'status-pill--loss' : 'status-pill--flat';
+
+                // Side badge
+                const sideUpper = (trade.side || '').toUpperCase();
+                const sideBadgeClass = (sideUpper === 'LONG' || sideUpper === 'BUY') ? 'side-badge--long' : 'side-badge--short';
+                const sideLabel = (sideUpper === 'BUY' || sideUpper === 'LONG') ? 'LONG' : 'SHORT';
+
+                // Recorder/strategy name
                 const recorderName = await getRecorderName(trade.recorder_id);
-                const simpleSymbol = trade.symbol.split(':').pop().replace('1!', '');
+                const simpleSymbol = (trade.symbol || '').split(':').pop().replace('1!', '');
 
-                // Format time
-                const openTime = trade.opened_at ? new Date(trade.opened_at).toLocaleString() : '--';
+                // Format times
+                const openTime = trade.opened_at ? formatTradeDateTime(trade.opened_at) : '--';
+                const closedTime = trade.closed_at ? formatTradeDateTime(trade.closed_at) : '--';
 
-                // Calculate stats for closed trades
-                if (trade.status === 'closed') {
-                    totalPnl += pnl;
-                    if (pnl >= 0) wins++;
-                    else losses++;
-                }
+                // Profit formatting
+                const profitSign = pnl >= 0 ? '+' : '';
+                const profitClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                const profitStr = `${profitSign}$${pnl.toFixed(2)}`;
 
-                if (trade.opened_at && trade.opened_at.startsWith(today)) {
-                    tradesToday++;
-                }
-
-                // Format TP/SL display
-                const tpStr = trade.tp_price ? trade.tp_price.toFixed(2) : '--';
-                const slStr = trade.sl_price ? trade.sl_price.toFixed(2) : '--';
-                const tpslDisplay = `${tpStr} / ${slStr}`;
-
-                // Exit reason badge
-                const exitReason = trade.exit_reason || (trade.status === 'open' ? 'open' : 'signal');
-                const reasonClass = exitReason === 'tp' ? 'status-tp' : exitReason === 'sl' ? 'status-sl' : exitReason === 'open' ? 'status-open' : 'status-closed';
-                const reasonLabel = exitReason === 'tp' ? '🎯 TP' : exitReason === 'sl' ? '🛑 SL' : exitReason === 'open' ? 'open' : 'signal';
-
-                const drawdown = trade.drawdown || 0;
-                const ddDisplay = trade.status === 'closed' && drawdown > 0 ? '-$' + drawdown.toFixed(0) : '--';
+                // Drawdown placeholder (server doesn't track per-trade drawdown yet)
+                const ddStr = '--';
 
                 row.innerHTML = `
-                    <td>${openTime}</td>
+                    <td><span class="status-pill ${statusPillClass}">${status}</span></td>
+                    <td style="white-space:nowrap;">${openTime}</td>
+                    <td style="white-space:nowrap;">${closedTime}</td>
                     <td>${recorderName}</td>
                     <td>${simpleSymbol}</td>
+                    <td><span class="side-badge ${sideBadgeClass}">${sideLabel}</span></td>
                     <td>${trade.quantity || 1}</td>
-                    <td class="${sideClass}">${trade.side}</td>
-                    <td>$${trade.entry_price?.toFixed(2) || '--'}</td>
-                    <td style="font-size: 0.85em; opacity: 0.8;">${tpslDisplay}</td>
-                    <td>${trade.exit_price ? '$' + trade.exit_price.toFixed(2) : '--'}</td>
-                    <td class="${pnlClass}">${trade.status === 'closed' ? (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) : '--'}</td>
-                    <td class="${drawdown > 0 ? 'pnl-negative' : ''}">${ddDisplay}</td>
-                    <td><span class="status-badge ${reasonClass}">${reasonLabel}</span></td>
+                    <td>${trade.entry_price ? trade.entry_price.toFixed(2) : '--'}</td>
+                    <td>${trade.exit_price ? trade.exit_price.toFixed(2) : '--'}</td>
+                    <td class="${profitClass}">${profitStr}</td>
+                    <td>${ddStr}</td>
                 `;
                 tbody.appendChild(row);
             }
 
-            // Update summary stats
-            const totalPnlEl = document.getElementById('totalPnl');
-            if (totalPnlEl) {
-                totalPnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
-                totalPnlEl.className = 'stat-value ' + (totalPnl >= 0 ? 'positive' : 'negative');
-            }
+            // Update pagination controls
+            updatePaperPagination(currentHistoryPage, totalHistoryPages, pagination.total);
 
-            const winRateEl = document.getElementById('winRate');
-            if (winRateEl && (wins + losses) > 0) {
-                const winRate = (wins / (wins + losses) * 100).toFixed(1);
-                winRateEl.textContent = winRate + '%';
-            }
-
-            const tradesTodayEl = document.getElementById('tradesToday');
-            if (tradesTodayEl) {
-                tradesTodayEl.textContent = tradesToday;
-            }
         } catch (error) {
             console.error('Error loading paper history:', error);
         }
     }
+
+    function updatePaperPagination(page, totalPages, total) {
+        const paginEl = document.getElementById('paginationControls');
+        if (!paginEl) return;
+
+        if (totalPages <= 1) {
+            paginEl.style.display = 'none';
+            return;
+        }
+
+        paginEl.style.display = 'flex';
+        document.getElementById('paginFirst').disabled = page <= 1;
+        document.getElementById('paginPrev').disabled = page <= 1;
+        document.getElementById('paginNext').disabled = page >= totalPages;
+        document.getElementById('paginLast').disabled = page >= totalPages;
+        document.getElementById('paginInfo').textContent = `Page ${page} of ${totalPages}`;
+    }
+
+    function formatTradeDateTime(dateStr) {
+        if (!dateStr) return 'N/A';
+        try {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-US', {month: 'short', day: '2-digit', year: 'numeric'}) + ' ' +
+                   d.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+        } catch (e) {
+            return dateStr;
+        }
+    }
+
+    // Legacy alias for backwards compatibility
+    const loadPaperHistory = () => loadPaperHistoryPaginated(currentHistoryPage);
 
     // Load recorder performance cards
     async function loadRecorderCards() {
@@ -4546,9 +4712,10 @@
             loadPaperServiceStatus(),
             loadLivePrices(),
             loadPaperPositions(),
-            loadPaperHistory(),
+            loadPaperHistoryPaginated(currentHistoryPage),
             loadRecorderCards(),
-            loadPaperAnalytics()
+            loadPaperAnalytics(),
+            loadPnlChart()
         ]);
     }
 
@@ -4586,17 +4753,49 @@
                 expectancyEl.textContent = (expectancy >= 0 ? '$' : '-$') + Math.abs(expectancy).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 expectancyEl.className = 'analytics-value ' + (expectancy >= 0 ? 'positive' : 'negative');
 
-                // Render equity curve if data exists
-                if (a.equity_curve && a.equity_curve.length > 0) {
-                    renderEquityCurve(a.equity_curve);
-                }
+                // Chart rendering moved to loadPnlChart()
             }
         } catch (error) {
             console.error('Error loading paper analytics:', error);
         }
     }
 
+    // Load PnL chart from dedicated chart-data endpoint
+    async function loadPnlChart() {
+        try {
+            let url = '/api/paper-trades/chart-data?limit=500';
+            if (selectedStrategyId) url += `&recorder_id=${selectedStrategyId}`;
+
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.success && data.profit && data.profit.length > 0) {
+                renderEquityCurve(data);
+            } else {
+                // Clear chart when no data
+                if (equityChart) {
+                    equityChart.destroy();
+                    equityChart = null;
+                }
+                const canvas = document.getElementById('equityCurveChart');
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                    ctx.font = '14px Inter, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('No trades for this strategy', canvas.width / 2, canvas.height / 2);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading PnL chart:', error);
+        }
+    }
+
     // Render P&L vs Drawdown chart (two lines)
+    // Accepts EITHER:
+    //   - {labels[], profit[], drawdown[]} from /api/paper-trades/chart-data
+    //   - flat number[] (legacy equity_curve from analytics) — backwards compatible
     function renderEquityCurve(equityData) {
         const canvas = document.getElementById('equityCurveChart');
         if (!canvas) return;
@@ -4608,22 +4807,26 @@
             equityChart.destroy();
         }
 
-        // Prepare data - calculate drawdown from equity curve
-        const labels = equityData.map((_, i) => 'Trade ' + (i + 1));
-        const pnlValues = equityData;
+        let labels, pnlValues, drawdownValues;
 
-        // Calculate drawdown at each point
-        const drawdownValues = [];
-        let peak = 0;
-        for (let i = 0; i < pnlValues.length; i++) {
-            const pnl = pnlValues[i];
-            if (pnl > peak) {
-                peak = pnl;
+        if (Array.isArray(equityData)) {
+            // Legacy flat array format
+            pnlValues = equityData;
+            labels = equityData.map((_, i) => 'Trade ' + (i + 1));
+            drawdownValues = [];
+            let peak = 0;
+            for (let i = 0; i < pnlValues.length; i++) {
+                if (pnlValues[i] > peak) peak = pnlValues[i];
+                drawdownValues.push(peak > 0 ? -(peak - pnlValues[i]) : 0);
             }
-            // Drawdown is shown as negative (below zero line)
-            const dd = peak > 0 ? -(peak - pnl) : 0;
-            drawdownValues.push(dd);
+        } else {
+            // New {labels, profit, drawdown} format
+            labels = equityData.labels || [];
+            pnlValues = equityData.profit || [];
+            drawdownValues = equityData.drawdown || [];
         }
+
+        const pointCount = pnlValues.length;
 
         equityChart = new Chart(ctx, {
             type: 'line',
@@ -4631,26 +4834,28 @@
                 labels: labels,
                 datasets: [
                     {
-                        label: 'Cumulative P&L',
+                        label: 'Cumulative Profit',
                         data: pnlValues,
-                        borderColor: 'rgba(16, 185, 129, 1)',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderColor: '#22c55e',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
                         fill: true,
                         tension: 0.2,
-                        pointRadius: pnlValues.length > 50 ? 0 : 2,
-                        pointHoverRadius: 4,
+                        pointRadius: pointCount > 50 ? 0 : 3,
+                        pointHoverRadius: 5,
+                        pointBackgroundColor: '#ffffff',
                         borderWidth: 2,
                         order: 1
                     },
                     {
                         label: 'Drawdown',
                         data: drawdownValues,
-                        borderColor: 'rgba(239, 68, 68, 0.8)',
-                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                        fill: true,
+                        borderColor: '#f87171',
+                        borderDash: [5, 3],
+                        fill: false,
                         tension: 0.2,
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
+                        pointRadius: pointCount > 50 ? 0 : 3,
+                        pointHoverRadius: 5,
+                        pointBackgroundColor: '#ffffff',
                         borderWidth: 1.5,
                         order: 2
                     }
@@ -4660,14 +4865,17 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        display: false
-                    },
+                    legend: { display: false },
                     tooltip: {
+                        backgroundColor: '#0f172a',
+                        borderColor: 'rgba(148,163,184,0.2)',
+                        borderWidth: 1,
+                        padding: 12,
+                        displayColors: false,
                         callbacks: {
                             label: function(context) {
                                 const value = context.raw;
-                                const prefix = context.dataset.label === 'Drawdown' ? 'DD: ' : 'P&L: ';
+                                const prefix = context.dataset.label === 'Drawdown' ? 'DD: ' : 'Profit: ';
                                 return prefix + '$' + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                             }
                         }
@@ -4675,14 +4883,18 @@
                 },
                 scales: {
                     x: {
-                        display: false
+                        grid: { color: 'rgba(148,163,184,0.1)' },
+                        ticks: {
+                            color: '#94a3b8',
+                            maxRotation: 45,
+                            minRotation: 45,
+                            maxTicksLimit: 15
+                        }
                     },
                     y: {
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.05)'
-                        },
+                        grid: { color: 'rgba(148,163,184,0.1)' },
                         ticks: {
-                            color: 'rgba(255, 255, 255, 0.5)',
+                            color: '#94a3b8',
                             callback: function(value) {
                                 return '$' + value.toLocaleString();
                             }
@@ -4739,7 +4951,8 @@
 
         // Refresh all filtered data
         loadPaperAnalytics();
-        loadPaperHistory();
+        loadPnlChart();
+        loadPaperHistoryPaginated(1);
         loadPnlCalendar();
     }
 
@@ -4842,6 +5055,7 @@
     }
 
     // Update loadPaperAnalytics to use selectedStrategyId
+    // Chart rendering removed — now handled by loadPnlChart()
     const originalLoadPaperAnalytics = loadPaperAnalytics;
     loadPaperAnalytics = async function() {
         try {
@@ -4862,7 +5076,6 @@
                 totalPnlEl.textContent = '$' + totalPnl.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 totalPnlEl.className = 'analytics-value ' + (totalPnl >= 0 ? 'positive' : 'negative');
 
-                // Update the card background too
                 const totalPnlCard = totalPnlEl.closest('.analytics-card');
                 if (totalPnlCard) {
                     totalPnlCard.classList.toggle('negative', totalPnl < 0);
@@ -4879,26 +5092,6 @@
                 const expectancyEl = document.getElementById('analyticsExpectancy');
                 expectancyEl.textContent = (expectancy >= 0 ? '$' : '-$') + Math.abs(expectancy).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 expectancyEl.className = 'analytics-value ' + (expectancy >= 0 ? 'positive' : 'negative');
-
-                // Render equity curve - clear if no data
-                if (a.equity_curve && a.equity_curve.length > 0) {
-                    renderEquityCurve(a.equity_curve);
-                } else {
-                    // Clear the chart when no data
-                    if (equityChart) {
-                        equityChart.destroy();
-                        equityChart = null;
-                    }
-                    const canvas = document.getElementById('equityCurveChart');
-                    if (canvas) {
-                        const ctx = canvas.getContext('2d');
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                        ctx.font = '14px Inter, sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.fillText('No trades for this strategy', canvas.width / 2, canvas.height / 2);
-                    }
-                }
             }
         } catch (error) {
             console.error('Error loading paper analytics:', error);
@@ -5133,11 +5326,12 @@
             } catch (e) { /* silent */ }
         }, 5000);
 
-        // Refresh history and cards every 60 seconds (reduced from 30s)
+        // Refresh history, cards, and chart every 60 seconds (reduced from 30s)
         setInterval(async () => {
             try {
-                await loadPaperHistory();
+                await loadPaperHistoryPaginated(currentHistoryPage);
                 await loadRecorderCards();
+                await loadPnlChart();
             } catch (e) { /* silent */ }
         }, 60000);
     }

@@ -25098,6 +25098,129 @@ class PaperDBReader:
             })
         return result
 
+    @staticmethod
+    def get_chart_data(recorder_id=None, limit=500):
+        """Get PnL chart data: cumulative profit + drawdown arrays for Chart.js"""
+        sql = "SELECT pnl, closed_at FROM paper_trades WHERE status='closed' AND pnl IS NOT NULL"
+        params = []
+        if recorder_id is not None:
+            sql += " AND recorder_id={ph}"
+            params.append(recorder_id)
+        sql += " ORDER BY closed_at ASC LIMIT {ph}"
+        params.append(limit)
+        rows = PaperDBReader._query(sql, tuple(params))
+
+        if not rows:
+            return {'labels': [], 'profit': [], 'drawdown': []}
+
+        labels = []
+        profit = []
+        drawdown = []
+        running_pnl = 0.0
+        peak_pnl = 0.0
+
+        for r in rows:
+            pnl_val = r.get('pnl', 0) or 0
+            closed_at = str(r.get('closed_at', ''))
+            running_pnl += pnl_val
+
+            if running_pnl > peak_pnl:
+                peak_pnl = running_pnl
+
+            dd = peak_pnl - running_pnl
+
+            # Format label from closed_at
+            if closed_at:
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+                    labels.append(dt.strftime('%b %d'))
+                except Exception:
+                    labels.append(closed_at[:10])
+            else:
+                labels.append(f'Trade {len(labels) + 1}')
+
+            profit.append(round(running_pnl, 2))
+            drawdown.append(round(-dd, 2))  # Negative for chart display
+
+        return {'labels': labels, 'profit': profit, 'drawdown': drawdown}
+
+    @staticmethod
+    def get_trade_history_paginated(page=1, per_page=20, result_filter=None, recorder_id=None):
+        """Get paginated trade history with optional win/loss filter."""
+        # Build WHERE clause
+        conditions = ["pt.status = 'closed'", "pt.pnl IS NOT NULL"]
+        params = []
+
+        if recorder_id is not None:
+            conditions.append("pt.recorder_id={ph}")
+            params.append(recorder_id)
+
+        if result_filter == 'win':
+            conditions.append("pt.pnl >= 0")
+        elif result_filter == 'loss':
+            conditions.append("pt.pnl < 0")
+
+        where_clause = ' AND '.join(conditions)
+
+        # Count total
+        count_sql = f"SELECT COUNT(*) as cnt FROM paper_trades pt WHERE {where_clause}"
+        count_rows = PaperDBReader._query(count_sql, tuple(params))
+        total = count_rows[0]['cnt'] if count_rows else 0
+
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = max(1, min(page, total_pages))
+        offset = (page - 1) * per_page
+
+        # Fetch trades with recorder name
+        sql = f'''
+            SELECT pt.*, r.name as recorder_name
+            FROM paper_trades pt
+            LEFT JOIN recorders r ON pt.recorder_id = r.id
+            WHERE {where_clause}
+            ORDER BY pt.closed_at DESC
+            LIMIT {{ph}} OFFSET {{ph}}
+        '''
+        rows = PaperDBReader._query(sql, tuple(params) + (per_page, offset))
+
+        trades = []
+        for r in rows:
+            pnl = r.get('pnl', 0) or 0
+            if pnl > 0:
+                status = 'WIN'
+            elif pnl < 0:
+                status = 'LOSS'
+            else:
+                status = 'FLAT'
+
+            trades.append({
+                'id': r.get('id'),
+                'recorder_id': r.get('recorder_id'),
+                'recorder_name': r.get('recorder_name') or f"Recorder #{r.get('recorder_id')}",
+                'symbol': r.get('symbol'),
+                'side': r.get('side'),
+                'quantity': r.get('quantity'),
+                'entry_price': r.get('entry_price'),
+                'exit_price': r.get('exit_price'),
+                'pnl': pnl,
+                'opened_at': str(r.get('opened_at', '')) if r.get('opened_at') else None,
+                'closed_at': str(r.get('closed_at', '')) if r.get('closed_at') else None,
+                'trade_status': r.get('status'),
+                'result_status': status,
+            })
+
+        return {
+            'trades': trades,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total_pages': total_pages,
+                'total': total,
+                'has_prev': page > 1,
+                'has_next': page < total_pages,
+            }
+        }
+
 
 # --- Paper Trading v2 API Routes ---
 
@@ -25132,13 +25255,46 @@ def api_paper_recorder_pnl(recorder_id):
         logger.error(f"Error getting recorder {recorder_id} P&L: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/paper-trades/history', methods=['GET'])
-def api_paper_trade_history():
-    """Get paper trade history (from paper_trades_v2)"""
+@app.route('/api/paper-trades/chart-data', methods=['GET'])
+def api_paper_chart_data():
+    """Get PnL chart data (cumulative profit + drawdown) for Chart.js"""
     try:
         recorder_id = request.args.get('recorder_id', type=int)
+        limit = request.args.get('limit', 500, type=int)
+
+        chart_data = PaperDBReader.get_chart_data(recorder_id=recorder_id, limit=limit)
+
+        return jsonify({
+            'success': True,
+            'labels': chart_data['labels'],
+            'profit': chart_data['profit'],
+            'drawdown': chart_data['drawdown']
+        })
+    except Exception as e:
+        logger.error(f"Error getting chart data: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/paper-trades/history', methods=['GET'])
+def api_paper_trade_history():
+    """Get paper trade history — supports legacy and paginated modes"""
+    try:
+        recorder_id = request.args.get('recorder_id', type=int)
+        page = request.args.get('page', type=int)
+
+        # Paginated mode: if page param is present
+        if page is not None:
+            per_page = request.args.get('per_page', 20, type=int)
+            result_filter = request.args.get('filter', type=str)  # win, loss, or None
+            result = PaperDBReader.get_trade_history_paginated(
+                page=page, per_page=per_page,
+                result_filter=result_filter, recorder_id=recorder_id
+            )
+            return jsonify({'success': True, **result})
+
+        # Legacy mode: flat list
         limit = request.args.get('limit', 100, type=int)
         trades = PaperDBReader.get_trade_history(recorder_id=recorder_id, limit=limit)
+
         return jsonify({
             'success': True,
             'trades': trades,
