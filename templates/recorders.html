@@ -181,6 +181,14 @@
                 </div>
                 <div class="separator"></div>
                 <div class="toggle-row">
+                    <span>Signal Blocking</span>
+                    <label class="switch">
+                        <input type="checkbox" id="signal_blocking" {{ 'checked' if recorder and recorder.signal_blocking else '' }}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="separator"></div>
+                <div class="toggle-row">
                     <span>Averaging Down (DCA)</span>
                     <label class="switch">
                         <input type="checkbox" id="avg_down_enabled" {{ 'checked' if recorder and recorder.avg_down_enabled else '' }}>
@@ -1130,6 +1138,7 @@
             trail_trigger: parseInt(document.getElementById('trail_trigger').value) || 0,
             trail_freq: parseInt(document.getElementById('trail_freq').value) || 0,
             avg_down_enabled: document.getElementById('avg_down_enabled').checked,
+            signal_blocking: document.getElementById('signal_blocking').checked,
             avg_down_amount: parseInt(document.getElementById('avg_down_amount').value) || 0,
             avg_down_point: parseFloat(document.getElementById('avg_down_point').value) || 0,
             avg_down_units: document.getElementById('avg_down_units').value,

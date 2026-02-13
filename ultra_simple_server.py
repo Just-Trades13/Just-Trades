@@ -4835,6 +4835,8 @@ def run_migrations():
         ('traders', 'break_even_ticks', 'INTEGER DEFAULT 10'),
         # Premium strategy flag for Just Trades Showcase
         ('recorders', 'is_premium', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        # Signal blocking - instant reject while position is open (broker-managed exits)
+        ('recorders', 'signal_blocking', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
     ]
 
     for table, column, col_type in migrations:
@@ -11258,6 +11260,7 @@ def api_get_recorder(recorder_id):
             'break_even_enabled': False,
             'break_even_ticks': 10,
             'avg_down_enabled': False,
+            'signal_blocking': False,
             'avg_down_amount': 1,
             'avg_down_point': 10,
             'avg_down_units': 'Ticks',
@@ -11330,7 +11333,7 @@ def api_create_recorder():
                 sl_enabled, sl_amount, sl_units, sl_type, trailing_sl,
                 break_even_enabled, break_even_ticks, break_even_offset,
                 trail_trigger, trail_freq,
-                avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
+                avg_down_enabled, signal_blocking, avg_down_amount, avg_down_point, avg_down_units,
                 add_delay, max_contracts_per_trade, option_premium_filter, direction_filter,
                 time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
                 time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
@@ -11343,7 +11346,7 @@ def api_create_recorder():
                 {ph}, {ph}, {ph}, {ph}, {ph},
                 {ph}, {ph}, {ph},
                 {ph}, {ph},
-                {ph}, {ph}, {ph}, {ph},
+                {ph}, {ph}, {ph}, {ph}, {ph},
                 {ph}, {ph}, {ph}, {ph},
                 {ph}, {ph}, {ph},
                 {ph}, {ph}, {ph},
@@ -11385,6 +11388,7 @@ def api_create_recorder():
             data.get('trail_freq', 0),
             # Avg Down
             to_bool(data.get('avg_down_enabled', False)),
+            to_bool(data.get('signal_blocking', False)),
             data.get('avg_down_amount', 0),
             data.get('avg_down_point', 0),
             data.get('avg_down_units', 'Ticks'),
@@ -11510,6 +11514,7 @@ def api_update_recorder(recorder_id):
             'sl_enabled',
             'break_even_enabled',  # FIXED: Was missing!
             'avg_down_enabled',
+            'signal_blocking',
             'auto_flat_after_cutoff',
             'recording_enabled',
             'is_private',
@@ -13785,7 +13790,14 @@ def broker_execution_worker(worker_id=0):
                     logger.info(f"✅ Broker execution successful: {action} {quantity} {ticker} on {accounts_traded} account(s) signal={signal_id}")
                     _broker_execution_stats['total_executed'] += 1
                     _broker_execution_stats['last_execution_time'] = time.time()
-                    
+
+                    # Signal blocking: track position after successful entry
+                    if task.get('signal_blocking') and action not in ('close', 'flat', 'exit'):
+                        try:
+                            set_signal_blocking_position(recorder_id, extract_symbol_root(ticker), 'LONG' if task.get('is_long') else 'SHORT')
+                        except Exception as sb_err:
+                            logger.warning(f"⚠️ Signal blocking SET failed: {sb_err}")
+
                     # Discord notification for successful trade
                     try:
                         logger.info(f"🔔 Discord notification check: DISCORD_NOTIFICATIONS_ENABLED={DISCORD_NOTIFICATIONS_ENABLED}")
@@ -14648,7 +14660,25 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             )
             conn.close()
             return jsonify({'success': False, 'error': f'Invalid action: {action}'}), 400
-        
+
+        # ============================================================
+        # SIGNAL BLOCKING - Instant reject if position tracked in-memory
+        # ============================================================
+        if recorder.get('signal_blocking') and ticker and action not in ('close', 'flat', 'exit'):
+            sb_entry = check_signal_blocking(recorder_id, extract_symbol_root(ticker))
+            if sb_entry:
+                sb_age = time.time() - sb_entry['set_at']
+                _logger.info(f"🛑 SIGNAL BLOCKED: {recorder_name} {action} {ticker} — position {sb_entry['side']} active for {sb_age:.0f}s")
+                log_webhook_activity(
+                    recorder_name=recorder_name,
+                    action=action,
+                    symbol=ticker,
+                    status='blocked',
+                    error=f"Signal blocking: {sb_entry['side']} position active ({sb_age:.0f}s)"
+                )
+                conn.close()
+                return jsonify({'success': False, 'blocked': True, 'reason': f"Signal blocking: {sb_entry['side']} position active"}), 200
+
         # ============================================================
         # INVERSE SIGNALS - Flip BUY↔SELL if inverse_signals is enabled
         # ============================================================
@@ -14766,6 +14796,10 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             except Exception as paper_err:
                 _logger.debug(f"Paper trade tracking error: {paper_err}")
 
+            # Signal blocking: clear position on close/flat signal
+            if recorder.get('signal_blocking') and ticker:
+                clear_signal_blocking_position(recorder_id, extract_symbol_root(ticker))
+
             conn.close()
             return jsonify({
                 'success': True,
@@ -14839,6 +14873,10 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                         _logger.debug(f"Paper trade tracking error: {paper_err}")
             except Exception as e:
                 _logger.warning(f"⚠️ Could not update trade record: {e}")
+
+            # Signal blocking: clear position on close signal
+            if recorder.get('signal_blocking') and ticker:
+                clear_signal_blocking_position(recorder_id, extract_symbol_root(ticker))
 
             conn.close()
             return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed'})
@@ -16005,7 +16043,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 'retry_count': 0,
                 'queued_at': time.time(),  # For staleness check - reject if too old
                 'signal_price': current_price,  # Original signal price for staleness comparison
-                'signal_id': signal_id  # Pipeline tracking
+                'signal_id': signal_id,  # Pipeline tracking
+                'signal_blocking': recorder.get('signal_blocking', False)  # Pass through for SET after execution
             }
 
             broker_was_queued = False  # Track if we successfully queued
@@ -28110,6 +28149,49 @@ def unregister_break_even_monitor(key: str):
         if key in _break_even_monitors:
             _break_even_monitors.pop(key)
 
+# ============================================================================
+# Signal Blocking - Instant in-memory position tracking for broker-managed exits
+# ============================================================================
+# When signal_blocking is enabled on a recorder, BUY/SELL signals are instantly
+# blocked while a position is tracked. Close/flat/exit signals pass through.
+# Reconciliation (every 60s) clears the block when broker reports flat.
+
+_signal_blocking_positions = {}  # key: "recorder_id:symbol_root" -> {side, set_at}
+_signal_blocking_lock = threading.Lock()
+
+def set_signal_blocking_position(recorder_id, symbol_root, side):
+    """Track a position for signal blocking"""
+    key = f"{recorder_id}:{symbol_root}"
+    with _signal_blocking_lock:
+        _signal_blocking_positions[key] = {
+            'side': side,
+            'set_at': time.time()
+        }
+    logger.info(f"🛑 SIGNAL BLOCKING SET: {key} → {side}")
+
+def clear_signal_blocking_position(recorder_id, symbol_root):
+    """Clear signal blocking when position is closed"""
+    key = f"{recorder_id}:{symbol_root}"
+    with _signal_blocking_lock:
+        if key in _signal_blocking_positions:
+            _signal_blocking_positions.pop(key)
+            logger.info(f"✅ SIGNAL BLOCKING CLEARED: {key}")
+
+def check_signal_blocking(recorder_id, symbol_root):
+    """Check if a position is being blocked. Returns entry or None.
+    Auto-clears entries older than 5 minutes (safety valve for stale entries)."""
+    key = f"{recorder_id}:{symbol_root}"
+    with _signal_blocking_lock:
+        entry = _signal_blocking_positions.get(key)
+        if entry:
+            age = time.time() - entry['set_at']
+            if age > 300:  # 5-minute staleness safety valve
+                _signal_blocking_positions.pop(key)
+                logger.warning(f"⏰ SIGNAL BLOCKING EXPIRED: {key} (age={age:.0f}s > 300s) — auto-cleared")
+                return None
+            return entry
+    return None
+
 def monitor_break_even():
     """
     Background thread that monitors positions for break-even activation.
@@ -29797,7 +29879,8 @@ def api_broker_execution_status():
                 'total': trader_stats.get('total', 0),
                 'enabled': trader_stats.get('enabled_count', 0),
                 'enabled_traders': enabled_traders
-            }
+            },
+            'signal_blocking': {k: {'side': v['side'], 'age': round(time.time() - v['set_at'])} for k, v in dict(_signal_blocking_positions).items()}
         })
     except Exception as e:
         logger.error(f"Error getting broker execution status: {e}")

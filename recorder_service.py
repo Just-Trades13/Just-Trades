@@ -2078,6 +2078,12 @@ def execute_trade_simple(
                                         pass
                                 except Exception as cleanup_err:
                                     logger.warning(f"⚠️ [{acct_name}] Flip close order cleanup failed: {cleanup_err}")
+                                # Signal blocking: clear on flip-close
+                                try:
+                                    from ultra_simple_server import clear_signal_blocking_position, extract_symbol_root
+                                    clear_signal_blocking_position(recorder_id, extract_symbol_root(local_tradovate_symbol))
+                                except Exception:
+                                    pass
 
                     # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
@@ -5629,7 +5635,13 @@ def reconcile_positions_with_broker():
                             conn_fix.commit()
                             conn_fix.close()
                             logger.info(f"✅ SYNC FIX COMPLETE: Closed DB record for {ticker} (broker was flat)")
-                            
+                            # Signal blocking: clear position when broker confirms flat
+                            try:
+                                from ultra_simple_server import clear_signal_blocking_position, extract_symbol_root
+                                clear_signal_blocking_position(recorder_id, extract_symbol_root(ticker))
+                            except Exception:
+                                pass
+
                         elif broker_qty != 0 and db_qty == 0:
                             logger.warning(f"⚠️ ORPHAN: Broker shows {broker_qty} {ticker} but DB shows 0 - manual intervention needed")
                             
@@ -5687,6 +5699,17 @@ def reconcile_positions_with_broker():
                         else:
                             logger.debug(f"✅ Position in sync: {ticker} - DB: {db_qty} @ {db_avg}, Broker: {broker_qty} @ {broker_avg}")
                         
+                        # Signal blocking: refresh staleness timer while position is open
+                        # Only refresh if already tracked (avoids creating entries for non-signal-blocking recorders)
+                        if broker_qty != 0:
+                            try:
+                                from ultra_simple_server import set_signal_blocking_position, check_signal_blocking, extract_symbol_root
+                                sr = extract_symbol_root(ticker)
+                                if check_signal_blocking(recorder_id, sr):
+                                    set_signal_blocking_position(recorder_id, sr, 'LONG' if broker_qty > 0 else 'SHORT')
+                            except Exception:
+                                pass
+
                         # Check for missing TP orders if position exists
                         if broker_qty != 0 and broker_avg:
                             # Get DB trade to check if TP should exist
