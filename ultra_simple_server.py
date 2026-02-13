@@ -12,6 +12,7 @@ PROTECTION RULES:
 See START_HERE.md for complete protection rules.
 """
 from __future__ import annotations
+from functools import wraps
 import sqlite3
 import logging
 # Early logger for paper trading (before main logger is configured)
@@ -56,6 +57,37 @@ try:
 except ImportError as e:
     USER_AUTH_AVAILABLE = False
     print(f"⚠️ User authentication module not available: {e}")
+
+# ============================================================================
+# SECURITY DECORATORS — Admin API Key + Session Auth (Dual Mode)
+# ============================================================================
+def admin_or_api_key_required(f):
+    """Require either a valid ADMIN_API_KEY header/param or an admin session."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # Check API key first (for curl/monitoring access)
+        api_key = request.headers.get('X-Admin-Key') or request.args.get('admin_key')
+        expected_key = os.environ.get('ADMIN_API_KEY')
+        if expected_key and api_key == expected_key:
+            return f(*args, **kwargs)
+        # Fall back to session-based admin check
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user = get_current_user()
+            if user and user.is_admin:
+                return f(*args, **kwargs)
+        return jsonify({'error': 'Admin access required'}), 403
+    return decorated
+
+def api_login_required(f):
+    """Require a logged-in session for API endpoints (returns JSON 401, not redirect)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user = get_current_user()
+            if user and user.is_active:
+                return f(*args, **kwargs)
+        return jsonify({'error': 'Login required'}), 401
+    return decorated
 
 # ============================================================================
 # DISCORD MODULE (extracted from this file)
@@ -2815,14 +2847,26 @@ def health_simple():
     })
 
 # ============================================================================
-# GLOBAL ERROR HANDLER - Catch ALL errors and display them
+# GLOBAL ERROR HANDLER - Hide tracebacks in production
 # ============================================================================
+_is_production = bool(os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DATABASE_URL'))
+
+@app.errorhandler(404)
+def not_found_error(error):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Not found'}), 404
+    return '<h1>404 — Page Not Found</h1><p>The requested page does not exist.</p>', 404
+
 @app.errorhandler(500)
 def internal_error(error):
     import traceback
     tb = traceback.format_exc()
     print(f"❌ 500 ERROR: {error}")
     print(f"❌ TRACEBACK: {tb}")
+    if _is_production:
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Internal server error'}), 500
+        return '<h1>500 — Internal Server Error</h1><p>Something went wrong. Please try again later.</p>', 500
     return f"""
     <h1>500 Internal Server Error</h1>
     <h2>Error: {error}</h2>
@@ -2836,6 +2880,10 @@ def handle_exception(e):
     tb = traceback.format_exc()
     print(f"❌ EXCEPTION: {e}")
     print(f"❌ TRACEBACK: {tb}")
+    if _is_production:
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Internal server error'}), 500
+        return '<h1>Error</h1><p>Something went wrong. Please try again later.</p>', 500
     return f"""
     <h1>Error</h1>
     <h2>{type(e).__name__}: {e}</h2>
@@ -4677,6 +4725,7 @@ def index():
 # ============================================================================
 
 @app.route('/api/fix-trader-sizes/<int:recorder_id>', methods=['POST', 'GET'])
+@admin_or_api_key_required
 def fix_trader_sizes(recorder_id):
     """Reset all traders for a recorder to use NULL position sizes (fall back to recorder defaults)."""
     try:
@@ -4693,6 +4742,7 @@ def fix_trader_sizes(recorder_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/admin/trial-abuse/unblock-all', methods=['POST', 'GET'])
+@admin_or_api_key_required
 def admin_unblock_all_trial_abuse():
     """Emergency: unblock all falsely flagged users"""
     try:
@@ -4707,6 +4757,7 @@ def admin_unblock_all_trial_abuse():
 
 
 @app.route('/api/reset-db-pool', methods=['POST', 'GET'])
+@admin_or_api_key_required
 def reset_db_pool():
     """Flush and recreate the PostgreSQL connection pool to clear poisoned connections."""
     global _pg_pool
@@ -4725,6 +4776,7 @@ def reset_db_pool():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/run-migrations', methods=['POST', 'GET'])
+@admin_or_api_key_required
 def run_migrations():
     """Run pending database migrations to add missing columns.
 
@@ -4854,45 +4906,6 @@ def whop_status():
 # ============================================================================
 # USER AUTHENTICATION ROUTES
 # ============================================================================
-
-# EMERGENCY ADMIN CREATION - Remove after use!
-@app.route('/emergency-admin-setup-dec26')
-def emergency_admin_setup():
-    """One-time emergency admin creation. DELETE THIS AFTER USE!"""
-    if not USER_AUTH_AVAILABLE:
-        return "Auth system not available", 500
-    
-    # Create admin user
-    from user_auth import create_user, get_user_by_username, approve_user
-    
-    # Check if jtmj already exists
-    existing = get_user_by_username('jtmj')
-    if existing:
-        # Make sure existing admin is approved
-        approve_user(existing.id)
-        return f"User 'jtmj' already exists (id={existing.id}). Try password: JustTrades2025!", 200
-    
-    # Create new admin
-    new_admin = create_user(
-        username='jtmj',
-        email='jtmj@justtrades.com',
-        password='JustTrades2025!',
-        display_name='JTMJ Admin',
-        is_admin=True
-    )
-    
-    if new_admin:
-        # Auto-approve admin user
-        approve_user(new_admin.id)
-        return f"""
-        <h1>✅ Admin Created!</h1>
-        <p><strong>Username:</strong> jtmj</p>
-        <p><strong>Password:</strong> JustTrades2025!</p>
-        <p><a href="/login">Go to Login</a></p>
-        <p style="color:red;">⚠️ DELETE THIS ENDPOINT AFTER LOGGING IN!</p>
-        """, 200
-    else:
-        return "Failed to create admin - username/email may exist", 500
 
 @app.route('/pricing')
 def pricing():
@@ -6492,6 +6505,7 @@ def admin_delete_announcement(ann_id):
 
 
 @app.route('/api/admin/fix-columns', methods=['GET', 'POST'])
+@admin_or_api_key_required
 def admin_fix_columns():
     """Fix missing columns in traders table - no auth required for emergency fix."""
     results = []
@@ -6701,29 +6715,8 @@ def admin_toggle_announcement(ann_id):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/debug-db-config')
-def debug_db_config():
-    """Debug endpoint to check DATABASE_URL configuration."""
-    db_url = os.getenv('DATABASE_URL', 'NOT SET')
-    if db_url != 'NOT SET':
-        # Mask the password for security
-        if '@' in db_url:
-            parts = db_url.split('@')
-            masked = parts[0].split(':')[0] + ':****@' + parts[1]
-        else:
-            masked = 'Invalid format'
-    else:
-        masked = 'NOT SET'
-    
-    return jsonify({
-        'database_url_set': db_url != 'NOT SET',
-        'database_url_masked': masked,
-        'starts_with_postgres': db_url.startswith('postgres') if db_url != 'NOT SET' else False,
-        'using_postgres': is_using_postgres(),
-        'db_url_internal': _db_url[:50] + '...' if _db_url else None
-    })
-
 @app.route('/health/detailed')
+@admin_or_api_key_required
 def health_detailed():
     """Detailed health check - includes DB and service checks (slower)."""
     try:
@@ -6803,6 +6796,7 @@ def broker_queue_stats():
     return jsonify(stats)
 
 @app.route('/api/broker-queue/clear-cache', methods=['POST'])
+@admin_or_api_key_required
 def broker_queue_clear_cache():
     """Clear broker API cache - useful after account changes."""
     broker_api_queue.clear_cache()
@@ -6810,6 +6804,7 @@ def broker_queue_clear_cache():
 
 
 @app.route('/api/webhook-activity')
+@admin_or_api_key_required
 def webhook_activity():
     """Get recent webhook activity log - shows all incoming webhooks and their processing status."""
     limit = request.args.get('limit', 50, type=int)
@@ -6835,6 +6830,7 @@ def webhook_activity():
 
 
 @app.route('/api/raw-webhooks')
+@admin_or_api_key_required
 def raw_webhooks():
     """Get raw webhook log - shows ALL incoming webhooks before any filtering.
     Useful for debugging why signals might not be processing.
@@ -6869,6 +6865,7 @@ def raw_webhooks():
 
 
 @app.route('/api/migrate-db', methods=['POST'])
+@admin_or_api_key_required
 def migrate_database():
     """Run database migrations to add missing columns."""
     try:
@@ -6986,6 +6983,7 @@ def tradingview_reconnect():
 
 
 @app.route('/api/price-update', methods=['POST'])
+@admin_or_api_key_required
 def api_price_update():
     """
     Receive real-time price updates from TradingView alerts.
@@ -7068,6 +7066,7 @@ def api_get_prices():
 
 
 @app.route('/api/position-discrepancy-check')
+@admin_or_api_key_required
 def check_position_discrepancies():
     """
     Compare recorder_positions (TradingView tracking) with actual broker positions.
@@ -7201,6 +7200,7 @@ def check_position_discrepancies():
 
 
 @app.route('/api/position-sync', methods=['POST'])
+@admin_or_api_key_required
 def sync_positions_to_broker():
     """
     Sync broker positions to match TradingView tracker.
@@ -13527,6 +13527,7 @@ def api_cancel_specific_order(account_id, order_id):
 
 
 @app.route('/api/webhooks/retry-failed', methods=['POST'])
+@admin_or_api_key_required
 def api_retry_failed_webhooks():
     """Retry recently failed webhooks by resetting them to 'pending'.
     Optional: ?minutes=N to retry webhooks from the last N minutes (default: 30)"""
@@ -14162,6 +14163,18 @@ def receive_webhook_universal():
 def receive_webhook_fast(webhook_token):
     """Fast webhook endpoint - processes directly."""
     logger.info(f"🌐 FAST WEBHOOK ENDPOINT HIT: /webhook/fast/{webhook_token[:8]}...")
+    # Validate token exists before processing
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        ph = '%s' if is_using_postgres() else '?'
+        cursor.execute(f'SELECT id FROM recorders WHERE webhook_token = {ph}', (webhook_token,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid webhook token'}), 404
+        conn.close()
+    except Exception as e:
+        logger.error(f"Token validation error: {e}")
     logger.info(f"   POST data length: {len(request.get_data()) if request.get_data() else 0} bytes")
     logger.info(f"   POST JSON: {request.get_json(silent=True)}")
     return process_webhook_directly(webhook_token)
@@ -14196,6 +14209,19 @@ def receive_webhook(webhook_token):
     # POST request - FAST MODE: Queue immediately, respond instantly
     if request.method == 'POST':
         logger.info(f"   POST data length: {len(request.get_data()) if request.get_data() else 0} bytes")
+
+        # Validate token exists before queuing to prevent queue flooding
+        try:
+            _val_conn = get_db_connection()
+            _val_cursor = _val_conn.cursor()
+            _val_ph = '%s' if is_using_postgres() else '?'
+            _val_cursor.execute(f'SELECT id FROM recorders WHERE webhook_token = {_val_ph}', (webhook_token,))
+            if not _val_cursor.fetchone():
+                _val_conn.close()
+                return jsonify({'success': False, 'error': 'Invalid webhook token'}), 404
+            _val_conn.close()
+        except Exception as _val_err:
+            logger.error(f"Token validation error: {_val_err}")
 
         if _fast_webhook_enabled:
             try:
@@ -15886,7 +15912,22 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 'trim_percent': 100
             }]
             risk_config['trim_units'] = trim_units  # 'Percent' or 'Contracts'
-        
+
+            # Multi-target TP: if tp_targets has multiple levels, use all of them
+            if tp_targets and len(tp_targets) > 1:
+                multi_tp = []
+                for target in tp_targets:
+                    t_ticks = target.get('ticks') or target.get('value', 0)
+                    t_trim = target.get('trim', 0)
+                    if t_ticks and float(t_ticks) > 0:
+                        multi_tp.append({
+                            'gain_ticks': int(float(t_ticks)),
+                            'trim_percent': float(t_trim)
+                        })
+                if len(multi_tp) > 1:
+                    risk_config['take_profit'] = multi_tp
+                    _logger.info(f"📊 Multi-target TP: {len(multi_tp)} levels configured")
+
         # Stop loss (fixed or trailing)
         # Priority: Webhook trail settings > SL type from settings
         if webhook_trail is not None and sl_ticks > 0:
@@ -24348,6 +24389,7 @@ def api_dashboard_summary():
 
 
 @app.route('/api/trades/', methods=['GET'])
+@api_login_required
 def api_trades_list():
     """Alias for /api/dashboard/trade-history for frontend compatibility"""
     return api_dashboard_trade_history()
@@ -25624,6 +25666,7 @@ def api_paper_test_direct():
 
 
 @app.route('/api/paper-trades/delete', methods=['POST'])
+@api_login_required
 def api_paper_delete_trade():
     """Delete a specific paper trade by ID (from paper_trades_v2)"""
     try:
@@ -25663,6 +25706,7 @@ def api_paper_delete_trade():
 
 
 @app.route('/api/paper-trades/reset-all', methods=['POST'])
+@api_login_required
 def api_paper_reset_all():
     """Reset paper trades. Pass recorder_id to reset a single recorder, or omit for all."""
     try:
@@ -26098,6 +26142,7 @@ def get_sample_heatmap_data():
     })
 
 @app.route('/webhooks', methods=['POST'])
+@admin_or_api_key_required
 def create_webhook():
     data = request.get_json()
     url = data.get('url')
@@ -26128,6 +26173,7 @@ def create_webhook():
     return jsonify({'message': 'Webhook created successfully'}), 201
 
 @app.route('/webhooks', methods=['GET'])
+@admin_or_api_key_required
 def get_webhooks():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -26145,6 +26191,7 @@ def get_webhooks():
     } for w in webhooks])
 
 @app.route('/webhooks/<int:id>', methods=['GET'])
+@admin_or_api_key_required
 def get_webhook(id):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -26169,6 +26216,7 @@ def get_webhook(id):
     return jsonify({'error': 'Webhook not found'}), 404
 
 @app.route('/webhooks/<int:id>', methods=['DELETE'])
+@admin_or_api_key_required
 def delete_webhook(id):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -29682,6 +29730,7 @@ def api_signal_pipeline():
 
 
 @app.route('/api/broker-execution/status', methods=['GET'])
+@admin_or_api_key_required
 def api_broker_execution_status():
     """Diagnostic endpoint to check broker execution status"""
     try:
@@ -29758,6 +29807,7 @@ def api_broker_execution_status():
 
 
 @app.route('/api/broker-execution/failures', methods=['GET'])
+@admin_or_api_key_required
 def api_broker_failures():
     """Get recent broker execution failures with details for debugging."""
     limit = request.args.get('limit', 20, type=int)
@@ -29882,6 +29932,7 @@ def api_recorder_execution_status(recorder_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/broker-execution/test', methods=['POST'])
+@admin_or_api_key_required
 def api_test_broker_execution():
     """Test endpoint to manually trigger broker execution for debugging"""
     try:
@@ -29964,6 +30015,7 @@ logger.info("🐕 Thread Health Watchdog started - will restart dead threads aut
 
 # API endpoint to check thread health
 @app.route('/api/thread-health')
+@admin_or_api_key_required
 def api_thread_health():
     """Get status of all monitored threads"""
     thread_status = {}
@@ -29990,6 +30042,7 @@ def api_thread_health():
 # ============================================================================
 
 @app.route('/api/support/tickets', methods=['GET', 'POST'])
+@api_login_required
 def support_tickets():
     """Get user's tickets or create a new ticket"""
     try:
@@ -30090,6 +30143,7 @@ def support_tickets():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/support/tickets/<int:ticket_id>/messages', methods=['GET', 'POST'])
+@api_login_required
 def ticket_messages(ticket_id):
     """Get or add messages to a ticket"""
     try:
@@ -30179,6 +30233,7 @@ def ticket_messages(ticket_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/support/tickets/<int:ticket_id>/status', methods=['POST'])
+@api_login_required
 def update_ticket_status(ticket_id):
     """Update ticket status (admin only)"""
     try:
@@ -30221,6 +30276,7 @@ def update_ticket_status(ticket_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/support/tickets/<int:ticket_id>', methods=['DELETE'])
+@api_login_required
 def delete_ticket(ticket_id):
     """Delete a support ticket and all its messages (admin only)"""
     try:
@@ -30250,6 +30306,7 @@ def delete_ticket(ticket_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/support/tickets/count')
+@api_login_required
 def get_open_ticket_count():
     """Get count of open tickets (for polling)"""
     try:
