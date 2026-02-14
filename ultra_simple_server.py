@@ -1126,12 +1126,67 @@ def start_fast_webhook_workers():
     logger.info(f"🚀 Started {_fast_webhook_worker_count} parallel webhook workers for instant execution")
 
 # ============================================================================
+# EXTERNAL TRADING ENGINE MODE
+# ============================================================================
+# When EXTERNAL_TRADING_ENGINE=1, broker workers and monitoring threads
+# run in a separate process (trading_engine.py). The web server only handles
+# HTTP requests and pushes broker tasks to Redis.
+_EXTERNAL_ENGINE = os.environ.get('EXTERNAL_TRADING_ENGINE') == '1'
+
+# ============================================================================
 # BROKER EXECUTION QUEUE - Trade Manager Style (Async, Non-Blocking)
 # ============================================================================
 # Webhook handler queues broker execution here, returns immediately.
 # Background worker processes queue with retries.
 # This ensures webhooks NEVER fail due to broker issues.
-broker_execution_queue = Queue(maxsize=5000)
+
+class RedisQueue:
+    """Drop-in replacement for Python Queue backed by Redis.
+    Used when EXTERNAL_TRADING_ENGINE is set to communicate between
+    the web server process and the trading engine process."""
+
+    def __init__(self, redis_url, key, maxsize=5000):
+        import redis as _redis
+        self._redis = _redis.from_url(redis_url, decode_responses=True)
+        self._key = key
+        self._maxsize = maxsize
+
+    def put_nowait(self, item):
+        if self.qsize() >= self._maxsize:
+            raise Full()
+        self._redis.rpush(self._key, json.dumps(item, default=str))
+
+    def put(self, item, timeout=None):
+        self.put_nowait(item)
+
+    def get(self, timeout=1):
+        result = self._redis.blpop(self._key, timeout=int(timeout))
+        if result:
+            return json.loads(result[1])
+        raise Empty()
+
+    def qsize(self):
+        return self._redis.llen(self._key)
+
+    def task_done(self):
+        pass  # Redis doesn't need task_done tracking
+
+    @property
+    def maxsize(self):
+        return self._maxsize
+
+# Toggle: Use Redis queue when external trading engine is running, else in-memory
+if _EXTERNAL_ENGINE:
+    _redis_url = os.environ.get('REDIS_URL')
+    if _redis_url:
+        broker_execution_queue = RedisQueue(_redis_url, 'broker_tasks', maxsize=5000)
+        logger.info("🔗 Broker queue: Redis (external trading engine mode)")
+    else:
+        logger.error("❌ EXTERNAL_TRADING_ENGINE=1 but REDIS_URL not set! Falling back to in-memory queue.")
+        broker_execution_queue = Queue(maxsize=5000)
+else:
+    broker_execution_queue = Queue(maxsize=5000)
+    logger.info("🔗 Broker queue: In-memory (single process mode)")
 _broker_execution_worker_count = 10  # Number of parallel workers for HIVE MIND instant execution
 
 # ============================================================================
@@ -3009,21 +3064,30 @@ if SUBSCRIPTION_SYSTEM_AVAILABLE:
         }
 
 # Initialize SocketIO for WebSocket support (like Trade Manager)
+# When EXTERNAL_TRADING_ENGINE is set, use Redis message_queue so trading_engine.py
+# can emit events to browser clients via this web server's SocketIO.
+_sio_message_queue = None
+if _EXTERNAL_ENGINE:
+    _sio_redis_url = os.environ.get('REDIS_URL')
+    if _sio_redis_url:
+        _sio_message_queue = _sio_redis_url
+        logger.info("🔗 SocketIO: Using Redis message_queue for cross-process emit")
+
 # Use 'eventlet' or 'gevent' if available, otherwise fall back to threading
 try:
     import eventlet
     eventlet.monkey_patch()
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', message_queue=_sio_message_queue)
     logger.info("SocketIO using eventlet async mode")
 except ImportError:
     try:
         import gevent
         from gevent import monkey
         monkey.patch_all()
-        socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
+        socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', message_queue=_sio_message_queue)
         logger.info("SocketIO using gevent async mode")
     except ImportError:
-        socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True, engineio_logger=True)
+        socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True, engineio_logger=True, message_queue=_sio_message_queue)
         logger.info("SocketIO using threading async mode (fallback)")
 
 # ============================================================================
@@ -9683,9 +9747,14 @@ def connect_account(account_id):
         
         is_demo = env == 'demo'
 
-        # Build redirect URI - check Railway, then ngrok, then localhost
+        # Build redirect URI - use canonical domain in production, fallback for local dev
+        # MUST match what's registered in Tradovate developer portal
+        oauth_redirect_domain = os.environ.get('OAUTH_REDIRECT_DOMAIN')
         railway_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
-        if railway_url:
+        if oauth_redirect_domain:
+            redirect_uri = f'https://{oauth_redirect_domain}/api/oauth/callback'
+            logger.info(f"Using OAUTH_REDIRECT_DOMAIN redirect_uri: {redirect_uri}")
+        elif railway_url:
             redirect_uri = f'https://{railway_url}/api/oauth/callback'
             logger.info(f"Using Railway redirect_uri: {redirect_uri}")
         else:
@@ -9894,8 +9963,12 @@ def oauth_callback():
         client_secret = DEFAULT_CLIENT_SECRET  # Always use the secret
         
         # Build redirect_uri - must match what was sent in connect_account
+        # MUST match what's registered in Tradovate developer portal
+        oauth_redirect_domain = os.environ.get('OAUTH_REDIRECT_DOMAIN')
         railway_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
-        if railway_url:
+        if oauth_redirect_domain:
+            redirect_uri = f'https://{oauth_redirect_domain}/api/oauth/callback'
+        elif railway_url:
             redirect_uri = f'https://{railway_url}/api/oauth/callback'
         else:
             # Check for ngrok URL file (local dev with ngrok)
@@ -14007,8 +14080,11 @@ def start_broker_execution_workers():
         logger.info(f"   Queue maxsize: {broker_execution_queue.maxsize}")
         logger.info(f"   Signals will fan out to ALL accounts INSTANTLY in parallel")
 
-# Start the hive mind workers
-start_broker_execution_workers()
+# Start the hive mind workers (skip if external trading engine handles them)
+if not _EXTERNAL_ENGINE:
+    start_broker_execution_workers()
+else:
+    logger.info("⏭️ Skipping broker execution workers (external trading engine mode)")
 
 # Track broker execution stats
 _broker_execution_stats = {
@@ -23743,19 +23819,26 @@ def api_affiliate_dashboard():
 # API Endpoints for Dashboard Filters
 @app.route('/api/dashboard/users', methods=['GET'])
 def api_dashboard_users():
-    """Get list of users for filter dropdown"""
+    """Get list of users for filter dropdown - ADMIN ONLY"""
+    # Security: require admin login
+    if USER_AUTH_AVAILABLE:
+        if not is_logged_in():
+            return jsonify({'error': 'Authentication required', 'users': []}), 401
+        user = get_current_user()
+        if not user or not user.get('is_admin'):
+            return jsonify({'error': 'Admin access required', 'users': []}), 403
     try:
         try:
             from app.database import SessionLocal
             from app.models import User
-            
+
             db = SessionLocal()
             users = db.query(User).order_by(User.username).all()
             db.close()
-            
+
             return jsonify({
-                'users': [{'id': u.id, 'username': u.username, 'email': u.email} for u in users],
-                'current_user_id': None  # TODO: Get from session when auth is implemented
+                'users': [{'id': u.id, 'username': u.username} for u in users],
+                'current_user_id': user.get('id') if USER_AUTH_AVAILABLE and user else None
             })
         except ImportError:
             # Database modules not available, return empty list
@@ -28419,6 +28502,44 @@ break_even_thread = threading.Thread(target=monitor_break_even, daemon=True)
 break_even_thread.start()
 logger.info("📊 Break-Even Monitor thread started")
 
+# Redis break-even request listener (receives requests from trading engine process)
+def _break_even_redis_listener():
+    """Poll Redis for break-even registration requests from the trading engine."""
+    import redis as _redis
+    _redis_url = os.environ.get('REDIS_URL')
+    if not _redis_url:
+        return
+    try:
+        r = _redis.from_url(_redis_url, decode_responses=True)
+        r.ping()
+    except Exception:
+        return
+    logger.info("📊 Break-even Redis listener started (receives requests from trading engine)")
+    while True:
+        try:
+            result = r.blpop('jt:break_even_requests', timeout=5)
+            if result:
+                data = json.loads(result[1])
+                register_break_even_monitor(
+                    account_id=int(data['account_id']),
+                    symbol=data['symbol'],
+                    entry_price=float(data['entry_price']),
+                    is_long=data['is_long'],
+                    activation_ticks=int(data['activation_ticks']),
+                    tick_size=float(data['tick_size']),
+                    sl_order_id=data.get('sl_order_id'),
+                    quantity=int(data['quantity']),
+                    account_spec=data['account_spec']
+                )
+                logger.info(f"📊 Break-even monitor registered via Redis: {data['symbol']} on account {data['account_id']}")
+        except Exception as e:
+            logger.debug(f"Break-even Redis listener error: {e}")
+            time.sleep(2)
+
+if _EXTERNAL_ENGINE:
+    _be_redis_listener_thread = threading.Thread(target=_break_even_redis_listener, daemon=True, name="BE-Redis-Listener")
+    _be_redis_listener_thread.start()
+
 # ============================================================================
 # Tradovate PnL Fetching (Direct from API - No Market Data Required!)
 # ============================================================================
@@ -29853,14 +29974,32 @@ def api_broker_execution_status():
 
         # Check queue status and HIVE MIND worker status
         queue_size = broker_execution_queue.qsize()
-        workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
+
+        # In external engine mode, read stats from Redis; otherwise use local
+        if _EXTERNAL_ENGINE:
+            from redis_state import get_broker_stats, get_engine_health
+            broker_stats = get_broker_stats()
+            engine_health = get_engine_health()
+            workers_alive = engine_health.get('workers_alive', 0)
+        else:
+            broker_stats = _broker_execution_stats
+            engine_health = None
+            workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
 
         # Check fast webhook worker status
         fast_webhook_workers_alive = sum(1 for t in _fast_webhook_threads if t.is_alive()) if _fast_webhook_threads else 0
         fast_webhook_queue_size = _fast_webhook_queue.qsize()
 
-        return jsonify({
+        last_exec_time = broker_stats.get('last_execution_time')
+        if isinstance(last_exec_time, str):
+            try:
+                last_exec_time = float(last_exec_time)
+            except (ValueError, TypeError):
+                last_exec_time = None
+
+        response = {
             'success': True,
+            'external_engine_mode': _EXTERNAL_ENGINE,
             'fast_webhook': {
                 'enabled': _fast_webhook_enabled,
                 'workers_configured': _fast_webhook_worker_count,
@@ -29872,16 +30011,20 @@ def api_broker_execution_status():
                 'workers_configured': _broker_execution_worker_count,
                 'workers_alive': workers_alive,
                 'queue_size': queue_size,
-                'stats': _broker_execution_stats,
-                'last_execution_ago_seconds': time.time() - _broker_execution_stats['last_execution_time'] if _broker_execution_stats['last_execution_time'] else None
+                'stats': broker_stats,
+                'last_execution_ago_seconds': time.time() - last_exec_time if last_exec_time else None
             },
             'traders': {
                 'total': trader_stats.get('total', 0),
                 'enabled': trader_stats.get('enabled_count', 0),
                 'enabled_traders': enabled_traders
             },
-            'signal_blocking': {k: {'side': v['side'], 'age': round(time.time() - v['set_at'])} for k, v in dict(_signal_blocking_positions).items()}
-        })
+            'signal_blocking': {k: {'side': v['side'], 'age': round(time.time() - v['set_at'])} for k, v in dict(_signal_blocking_positions).items()} if not _EXTERNAL_ENGINE else {}
+        }
+        if engine_health:
+            response['trading_engine'] = engine_health
+
+        return jsonify(response)
     except Exception as e:
         logger.error(f"Error getting broker execution status: {e}")
         import traceback
@@ -29894,7 +30037,11 @@ def api_broker_execution_status():
 def api_broker_failures():
     """Get recent broker execution failures with details for debugging."""
     limit = request.args.get('limit', 20, type=int)
-    failures = get_broker_failures(limit)
+    if _EXTERNAL_ENGINE:
+        from redis_state import get_broker_failures_from_redis
+        failures = get_broker_failures_from_redis(limit)
+    else:
+        failures = get_broker_failures(limit)
     return jsonify({
         'success': True,
         'total_failures': len(failures),
@@ -30117,7 +30264,26 @@ def api_thread_health():
         'all_threads_healthy': all_alive,
         'threads': thread_status,
         'watchdog_active': watchdog_thread.is_alive(),
+        'external_engine_mode': _EXTERNAL_ENGINE,
         'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/api/trading-engine/health')
+def api_trading_engine_health():
+    """Get trading engine health status (only meaningful when EXTERNAL_TRADING_ENGINE=1)"""
+    if not _EXTERNAL_ENGINE:
+        return jsonify({
+            'success': True,
+            'external_engine_mode': False,
+            'message': 'Trading engine runs in-process (single process mode)'
+        })
+    from redis_state import get_engine_health, get_broker_stats
+    return jsonify({
+        'success': True,
+        'external_engine_mode': True,
+        'engine': get_engine_health(),
+        'broker_stats': get_broker_stats(),
+        'queue_size': broker_execution_queue.qsize()
     })
 
 # ============================================================================
