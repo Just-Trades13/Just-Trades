@@ -2947,6 +2947,43 @@ def handle_exception(e):
     """, 500
 
 # ============================================================================
+# GLOBAL API SECURITY GATE — Requires authentication for ALL /api/ routes
+# ============================================================================
+# Whitelist of /api/ paths that MUST remain public (no auth possible)
+_API_PUBLIC_PREFIXES = (
+    '/api/oauth/callback',      # Tradovate OAuth redirect — external system calls this
+    '/api/public/',             # Explicitly public endpoints (stats, etc.)
+    '/api/trading-engine/',     # Internal health check (no sensitive data)
+)
+
+@app.before_request
+def _global_api_auth_gate():
+    """Enforce authentication on ALL /api/ routes unless whitelisted."""
+    path = request.path
+
+    # Only guard /api/ routes
+    if not path.startswith('/api/'):
+        return None
+
+    # Allow whitelisted public paths
+    for prefix in _API_PUBLIC_PREFIXES:
+        if path.startswith(prefix):
+            return None
+
+    # Allow if valid ADMIN_API_KEY is provided (for curl/monitoring)
+    api_key = request.headers.get('X-Admin-Key') or request.args.get('admin_key')
+    expected_key = os.environ.get('ADMIN_API_KEY')
+    if expected_key and api_key == expected_key:
+        return None
+
+    # Allow if user is logged in
+    if USER_AUTH_AVAILABLE and is_logged_in():
+        return None
+
+    # Block everything else
+    return jsonify({'error': 'Authentication required'}), 401
+
+# ============================================================================
 # SESSION CONFIGURATION - Required for User Authentication
 # ============================================================================
 # Use environment variable for production, or generate a secure random key
