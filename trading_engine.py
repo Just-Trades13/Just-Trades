@@ -88,7 +88,12 @@ broker_execution_queue = RedisQueue(redis_client, 'broker_tasks', maxsize=5000)
 # ============================================================================
 # IMPORTS FROM EXISTING MODULES
 # ============================================================================
-from production_db import get_db_connection, is_using_postgres
+from recorder_service import get_db_connection
+# is_using_postgres: recorder_service uses module-level variable is_postgres (set by get_db_connection)
+# We define a wrapper here that reads it from recorder_service
+def is_using_postgres():
+    import recorder_service
+    return recorder_service.is_postgres
 from redis_state import (
     increment_broker_stat, update_broker_stat, get_broker_stats,
     push_broker_failure, redis_track_signal_step, redis_complete_signal,
