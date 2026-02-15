@@ -3125,6 +3125,14 @@ init_discord_routes(
 )
 app.register_blueprint(discord_bp)
 
+# Account activation routes (Whop purchase -> website access)
+try:
+    from account_activation import activation_bp
+    app.register_blueprint(activation_bp)
+    logger.info("Account activation routes registered")
+except ImportError:
+    logger.debug("Account activation module not available")
+
 # Template filter for date formatting
 @app.template_filter('format_datetime')
 def format_datetime_filter(value):
