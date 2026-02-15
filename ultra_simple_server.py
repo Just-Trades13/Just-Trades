@@ -12053,11 +12053,15 @@ def api_get_recorder_webhook(recorder_id):
             name = row['name']
             webhook_token = row['webhook_token']
         
-        # Build webhook URL - ALWAYS use HTTPS for TradingView webhooks
-        base_url = request.host_url.rstrip('/')
-        # Force HTTPS (Railway uses edge proxy that may report HTTP internally)
-        if base_url.startswith('http://'):
-            base_url = base_url.replace('http://', 'https://', 1)
+        # Build webhook URL - use custom domain if configured, fall back to request host
+        custom_domain = os.environ.get('WEBHOOK_BASE_URL', '').rstrip('/')
+        if custom_domain:
+            base_url = custom_domain
+        else:
+            base_url = request.host_url.rstrip('/')
+            # Force HTTPS (Railway uses edge proxy that may report HTTP internally)
+            if base_url.startswith('http://'):
+                base_url = base_url.replace('http://', 'https://', 1)
         webhook_url = f"{base_url}/webhook/{webhook_token}"
         
         # Simple indicator alert message (user specifies buy or sell)
