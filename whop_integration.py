@@ -329,20 +329,53 @@ def process_webhook_event(event_type: str, data: Dict) -> Dict:
                 whop_customer_id=whop_user_id,
                 trial_days=7 if is_trial else 0
             )
+            # Auto-approve user if they paid via Whop
+            if not user.is_approved:
+                try:
+                    from user_auth import approve_user
+                    approve_user(user.id)
+                    logger.info(f"Auto-approved user {user.email} (paid via Whop)")
+                except Exception as e:
+                    logger.warning(f"Could not auto-approve {user.email}: {e}")
             logger.info(f"✅ Subscription created for user {user.email}: {plan_slug}")
             return {'success': True, 'message': f'Subscription activated for {user.email}'}
         else:
-            # User doesn't exist yet - create pending subscription
-            # It will be linked when they register with same email
-            create_subscription(
-                user_id=0,  # Placeholder - will be updated when user registers
-                plan_slug=plan_slug,
-                whop_membership_id=membership_id,
-                whop_customer_id=whop_user_id,
-                trial_days=7 if is_trial else 0
-            )
-            logger.info(f"✅ Pending subscription created for {user_email}: {plan_slug}")
-            return {'success': True, 'message': f'Pending subscription for {user_email}'}
+            # User doesn't exist — auto-create account and link subscription
+            try:
+                from account_activation import auto_create_user_from_whop
+                new_user_id = auto_create_user_from_whop(user_email, whop_user_id or 'unknown')
+                if new_user_id:
+                    create_subscription(
+                        user_id=new_user_id,
+                        plan_slug=plan_slug,
+                        whop_membership_id=membership_id,
+                        whop_customer_id=whop_user_id,
+                        trial_days=7 if is_trial else 0
+                    )
+                    logger.info(f"✅ Auto-created user + subscription for {user_email}: {plan_slug}")
+                    return {'success': True, 'message': f'Account created for {user_email}'}
+                else:
+                    # Fallback to legacy pending behavior
+                    create_subscription(
+                        user_id=0,
+                        plan_slug=plan_slug,
+                        whop_membership_id=membership_id,
+                        whop_customer_id=whop_user_id,
+                        trial_days=7 if is_trial else 0
+                    )
+                    logger.warning(f"Auto-create failed, pending subscription for {user_email}")
+                    return {'success': True, 'message': f'Pending subscription for {user_email}'}
+            except Exception:
+                # Any failure -> fall back to exact current behavior
+                create_subscription(
+                    user_id=0,
+                    plan_slug=plan_slug,
+                    whop_membership_id=membership_id,
+                    whop_customer_id=whop_user_id,
+                    trial_days=7 if is_trial else 0
+                )
+                logger.info(f"✅ Pending subscription created for {user_email}: {plan_slug}")
+                return {'success': True, 'message': f'Pending subscription for {user_email}'}
     
     elif event_type == 'membership.went_invalid':
         # Subscription cancelled or expired
