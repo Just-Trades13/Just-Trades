@@ -2984,6 +2984,100 @@ def _global_api_auth_gate():
     return jsonify({'error': 'Authentication required'}), 401
 
 # ============================================================================
+# RATE LIMITING — Protect /login and /register from brute force
+# ============================================================================
+_rate_limit_store = {}  # {ip: [timestamp, timestamp, ...]}
+_rate_limit_lock = threading.Lock()
+_RATE_LIMIT_WINDOW = 300  # 5 minutes
+_RATE_LIMIT_MAX_LOGIN = 10  # max 10 login attempts per 5 min
+_RATE_LIMIT_MAX_REGISTER = 5  # max 5 register attempts per 5 min
+
+def _check_rate_limit(key, max_attempts):
+    """Returns True if rate limited (too many attempts)."""
+    now = time.time()
+    with _rate_limit_lock:
+        if key not in _rate_limit_store:
+            _rate_limit_store[key] = []
+        # Prune old entries outside the window
+        _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < _RATE_LIMIT_WINDOW]
+        if len(_rate_limit_store[key]) >= max_attempts:
+            return True
+        _rate_limit_store[key].append(now)
+        return False
+
+@app.before_request
+def _rate_limit_auth_routes():
+    """Rate limit login and register POST requests."""
+    if request.method != 'POST':
+        return None
+    path = request.path
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+    if path == '/login':
+        if _check_rate_limit(f'login:{ip}', _RATE_LIMIT_MAX_LOGIN):
+            logger.warning(f"RATE LIMITED: {ip} on /login")
+            flash('Too many login attempts. Please wait 5 minutes.', 'error')
+            return render_template('login.html'), 429
+    elif path == '/register':
+        if _check_rate_limit(f'register:{ip}', _RATE_LIMIT_MAX_REGISTER):
+            logger.warning(f"RATE LIMITED: {ip} on /register")
+            flash('Too many registration attempts. Please wait 5 minutes.', 'error')
+            return render_template('register.html'), 429
+    return None
+
+# ============================================================================
+# CSRF PROTECTION — Block cross-origin POST requests
+# ============================================================================
+_CSRF_SAFE_METHODS = frozenset(['GET', 'HEAD', 'OPTIONS'])
+_CSRF_EXEMPT_PREFIXES = (
+    '/webhook/',            # TradingView webhook signals (external POST)
+    '/api/oauth/callback',  # Tradovate OAuth redirect
+    '/api/trading-engine/', # Internal health check
+    '/api/whop/',           # Whop payment webhook
+)
+
+@app.before_request
+def _csrf_origin_check():
+    """Reject cross-origin POST/PUT/DELETE requests (CSRF protection)."""
+    if request.method in _CSRF_SAFE_METHODS:
+        return None
+    # Exempt paths (webhooks, OAuth callbacks)
+    for prefix in _CSRF_EXEMPT_PREFIXES:
+        if request.path.startswith(prefix):
+            return None
+    # API calls with admin key are exempt (curl/monitoring)
+    api_key = request.headers.get('X-Admin-Key')
+    if api_key and api_key == os.environ.get('ADMIN_API_KEY'):
+        return None
+    # Check Origin header first, then Referer
+    origin = request.headers.get('Origin')
+    referer = request.headers.get('Referer')
+    if origin:
+        allowed_origins = [
+            'https://www.justtrades.app',
+            'https://justtrades.app',
+            'http://localhost:5000',
+            'http://127.0.0.1:5000',
+        ]
+        if origin not in allowed_origins:
+            logger.warning(f"CSRF BLOCKED: Origin={origin} Path={request.path}")
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Cross-origin request blocked'}), 403
+            flash('Request blocked for security reasons.', 'error')
+            return redirect(request.path), 403
+    elif referer:
+        from urllib.parse import urlparse
+        ref_host = urlparse(referer).netloc
+        allowed_hosts = ['www.justtrades.app', 'justtrades.app', 'localhost:5000', '127.0.0.1:5000']
+        if ref_host not in allowed_hosts:
+            logger.warning(f"CSRF BLOCKED: Referer={referer} Path={request.path}")
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Cross-origin request blocked'}), 403
+            flash('Request blocked for security reasons.', 'error')
+            return redirect(request.path), 403
+    # If neither Origin nor Referer is present, allow (some browsers strip these)
+    return None
+
+# ============================================================================
 # SESSION CONFIGURATION - Required for User Authentication
 # ============================================================================
 # Use environment variable for production, or generate a secure random key
@@ -2991,7 +3085,7 @@ import secrets
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # Sessions last 7 days
-app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
+app.config['SESSION_COOKIE_SECURE'] = bool(os.environ.get('RAILWAY_PUBLIC_DOMAIN') or os.environ.get('FLASK_ENV') == 'production')
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
