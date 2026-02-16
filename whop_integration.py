@@ -337,6 +337,14 @@ def process_webhook_event(event_type: str, data: Dict) -> Dict:
                     logger.info(f"Auto-approved user {user.email} (paid via Whop)")
                 except Exception as e:
                     logger.warning(f"Could not auto-approve {user.email}: {e}")
+            # Send activation email (for new or existing users)
+            try:
+                from account_activation import generate_activation_token, send_activation_email
+                token = generate_activation_token(user.id, user.email)
+                if token:
+                    send_activation_email(user.email, token)
+            except Exception as e:
+                logger.warning(f"Could not send activation email to {user.email}: {e}")
             logger.info(f"✅ Subscription created for user {user.email}: {plan_slug}")
             return {'success': True, 'message': f'Subscription activated for {user.email}'}
         else:
