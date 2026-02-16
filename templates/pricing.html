@@ -2576,6 +2576,70 @@
                 }
             });
         });
+
+        // ============================================
+        // AFFILIATE TRACKING — Whop checkout URL rewriting
+        // Usage: justtrades.com/pricing?a=AFFILIATE_ID
+        // Persists affiliate ID in localStorage for 30 days
+        // ============================================
+        (function() {
+            const STORAGE_KEY = 'jt_affiliate_id';
+            const STORAGE_TS_KEY = 'jt_affiliate_ts';
+            const EXPIRY_DAYS = 30;
+
+            // Check URL for ?a= parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlAffiliateId = urlParams.get('a');
+
+            if (urlAffiliateId) {
+                // New affiliate visit — store it
+                localStorage.setItem(STORAGE_KEY, urlAffiliateId);
+                localStorage.setItem(STORAGE_TS_KEY, Date.now().toString());
+            }
+
+            // Retrieve stored affiliate ID (if not expired)
+            function getAffiliateId() {
+                const id = localStorage.getItem(STORAGE_KEY);
+                const ts = localStorage.getItem(STORAGE_TS_KEY);
+                if (!id || !ts) return null;
+
+                const age = Date.now() - parseInt(ts);
+                if (age > EXPIRY_DAYS * 24 * 60 * 60 * 1000) {
+                    // Expired — clean up
+                    localStorage.removeItem(STORAGE_KEY);
+                    localStorage.removeItem(STORAGE_TS_KEY);
+                    return null;
+                }
+                return id;
+            }
+
+            // Rewrite Whop checkout URLs on all subscribe buttons
+            function tagCheckoutLinks() {
+                const affiliateId = getAffiliateId();
+                if (!affiliateId) return;
+
+                document.querySelectorAll('a.btn-subscribe').forEach(function(btn) {
+                    var href = btn.getAttribute('href') || '';
+                    if (href.indexOf('whop.com') === -1) return;
+                    // Append ?a= or &a= depending on existing params
+                    if (href.indexOf('?') === -1) {
+                        btn.setAttribute('href', href + '?a=' + encodeURIComponent(affiliateId));
+                    } else if (href.indexOf('a=') === -1) {
+                        btn.setAttribute('href', href + '&a=' + encodeURIComponent(affiliateId));
+                    }
+                });
+            }
+
+            // Run on page load and observe for dynamic button changes
+            tagCheckoutLinks();
+
+            // Re-run if buttons are swapped from spans to links dynamically
+            var observer = new MutationObserver(function() { tagCheckoutLinks(); });
+            var pricingGrid = document.querySelector('.pricing-grid');
+            if (pricingGrid) {
+                observer.observe(pricingGrid, { childList: true, subtree: true });
+            }
+        })();
     </script>
 </body>
 </html>
