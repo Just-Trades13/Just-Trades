@@ -2002,57 +2002,77 @@ class TradovateIntegration:
                     "brackets": [bracket]
                 }
             
-            # Build WebSocket message payload (REQUIRED per documentation)
-            # Format: {"n": "orderStrategy/startOrderStrategy", "o": {...}}
-            # Per Tradovate documentation: accountId, symbol, orderStrategyTypeId, action, params
+            # Build strategy payload for REST API
             strategy_payload = {
                 "accountId": account_id,
+                "accountSpec": account_spec,
                 "symbol": symbol,
                 "orderStrategyTypeId": 2,  # 2 = Bracket strategy type
                 "action": entry_side,
                 "params": json.dumps(params)  # Must be stringified JSON
             }
-            # Note: accountSpec not needed for WebSocket strategy messages per documentation
-            
-            logger.info(f"📊 Placing bracket order strategy via WebSocket: entry={entry_side}, qty={quantity}, TP={profit_target_ticks} ticks, SL={stop_loss_ticks} ticks")
+
+            logger.info(f"📊 Placing bracket order strategy via REST: entry={entry_side}, qty={quantity}, TP={profit_target_ticks} ticks, SL={stop_loss_ticks} ticks")
             logger.debug(f"Strategy payload: {strategy_payload}")
-            
-            # Send via WebSocket (REQUIRED per Tradovate documentation)
-            ws_response = await self._send_websocket_message(
-                "orderStrategy/startOrderStrategy",
-                strategy_payload
-            )
-            
-            if ws_response:
-                if isinstance(ws_response, dict):
-                    if ws_response.get('ok') or ws_response.get('id'):
-                        strategy_id = ws_response.get('id') or ws_response.get('orderStrategyId') or ws_response.get('data', {}).get('id')
-                        logger.info(f"✅ Bracket order strategy created via WebSocket: ID={strategy_id}")
-                        return {
-                            'success': True,
-                            'data': ws_response,
-                            'strategy_id': strategy_id,
-                            'orderId': ws_response.get('orderId')
-                        }
-                    else:
-                        error_msg = ws_response.get('errorText') or ws_response.get('error') or str(ws_response)
-                        logger.error(f"❌ Bracket strategy failed: {error_msg}")
-                        return {
-                            'success': False,
-                            'error': error_msg
-                        }
-                else:
-                    logger.error(f"❌ Unexpected WebSocket response format: {ws_response}")
+
+            # Ensure valid token before request
+            if not await self._ensure_valid_token():
+                return {'success': False, 'error': 'Token invalid and refresh failed'}
+
+            # Send via REST POST
+            async with self.session.post(
+                f"{self.base_url}/orderStrategy/startOrderStrategy",
+                json=strategy_payload,
+                headers=self._get_headers()
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    strategy_id = data.get('id') or data.get('orderStrategyId')
+                    logger.info(f"✅ Bracket order strategy created via REST: ID={strategy_id}")
                     return {
-                        'success': False,
-                        'error': f'Unexpected response format: {ws_response}'
+                        'success': True,
+                        'data': data,
+                        'strategy_id': strategy_id,
+                        'orderId': data.get('orderId')
                     }
-            else:
-                logger.error("❌ Failed to send bracket strategy via WebSocket (no response)")
-                return {
-                    'success': False,
-                    'error': 'WebSocket connection failed or no response received'
-                }
+                elif response.status == 401:
+                    # Token expired — refresh and retry once
+                    logger.warning("401 during bracket order, attempting refresh...")
+                    refresh_result = await self.refresh_access_token()
+                    if refresh_result.get('success'):
+                        self._last_refresh_result = refresh_result
+                        async with self.session.post(
+                            f"{self.base_url}/orderStrategy/startOrderStrategy",
+                            json=strategy_payload,
+                            headers=self._get_headers()
+                        ) as retry_response:
+                            if retry_response.status == 200:
+                                data = await retry_response.json()
+                                strategy_id = data.get('id') or data.get('orderStrategyId')
+                                logger.info(f"✅ Bracket order strategy created after token refresh: ID={strategy_id}")
+                                return {
+                                    'success': True,
+                                    'data': data,
+                                    'strategy_id': strategy_id,
+                                    'orderId': data.get('orderId')
+                                }
+                            else:
+                                try:
+                                    error = await retry_response.json()
+                                except Exception:
+                                    error = await retry_response.text()
+                                logger.error(f"❌ Bracket strategy failed after refresh: {error}")
+                                return {'success': False, 'error': str(error)}
+                    else:
+                        return {'success': False, 'error': 'Expired Access Token - refresh failed'}
+                else:
+                    try:
+                        error = await response.json()
+                    except Exception:
+                        error = await response.text()
+                    error_msg = error.get('errorText', str(error)) if isinstance(error, dict) else str(error)
+                    logger.error(f"❌ Bracket strategy failed (HTTP {response.status}): {error_msg}")
+                    return {'success': False, 'error': error_msg}
                     
         except Exception as e:
             logger.error(f"Error creating bracket order strategy: {e}", exc_info=True)
