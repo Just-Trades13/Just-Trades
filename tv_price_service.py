@@ -110,21 +110,27 @@ FUTURES_SPECS = {
 
 def get_futures_spec(symbol: str) -> dict:
     """Get futures specification for a symbol. Returns default if not found."""
-    # Normalize symbol (remove numbers, !, etc.)
-    clean_symbol = ''.join(c for c in symbol.upper() if c.isalpha())
+    # Strip exchange prefix first (e.g., "CME_MINI:NQ1!" -> "NQ1!", "COMEX:MGC1!" -> "MGC1!")
+    clean = symbol.upper()
+    if ':' in clean:
+        clean = clean.split(':')[-1]
+    # Strip continuous contract markers (e.g., "NQ1!" -> "NQ", "NQ1!1!" -> "NQ")
+    clean = clean.replace('1!', '').replace('!', '')
+    # Remove trailing digits for contract months (e.g., "MGCJ2026" -> "MGCJ")
+    clean_symbol = ''.join(c for c in clean if c.isalpha())
 
     # Try exact match first
     if clean_symbol in FUTURES_SPECS:
         return FUTURES_SPECS[clean_symbol]
 
-    # Try common variations
-    for key in FUTURES_SPECS:
+    # Try prefix matching (longest key first so MNQ matches before NQ)
+    for key in sorted(FUTURES_SPECS.keys(), key=len, reverse=True):
         if clean_symbol.startswith(key) or key.startswith(clean_symbol):
             return FUTURES_SPECS[key]
 
-    # Default spec (assumes $1 per point like stocks)
-    logger.warning(f"Unknown futures symbol: {symbol}, using default $1/point")
-    return {'tick_size': 0.01, 'tick_value': 1.00, 'point_value': 100.00, 'exchange': 'UNKNOWN'}
+    # Default spec — $1/point (safe fallback, comment and value now match)
+    logger.warning(f"Unknown futures symbol: {symbol} (cleaned: {clean_symbol}), using default $1/point")
+    return {'tick_size': 0.01, 'tick_value': 1.00, 'point_value': 1.00, 'exchange': 'UNKNOWN'}
 
 
 def calculate_pnl(symbol: str, entry_price: float, exit_price: float, quantity: int, side: str) -> float:
@@ -786,10 +792,20 @@ class PaperTradingEngine:
                 WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
             ''', (now, recorder_id, symbol))
 
+            # Close each paper_trade individually with its own P&L
+            # (batch UPDATE would stamp one P&L on all rows regardless of entry price)
             cursor.execute(f'''
-                UPDATE paper_trades SET exit_price = {ph}, pnl = {ph}, closed_at = {ph}, status = 'closed'
+                SELECT id, side, quantity, entry_price FROM paper_trades
                 WHERE recorder_id = {ph} AND symbol = {ph} AND status = 'open'
-            ''', (exit_price, pnl, now, recorder_id, symbol))
+            ''', (recorder_id, symbol))
+            open_trades = cursor.fetchall()
+
+            for trade_id, trade_side, trade_qty, trade_entry in open_trades:
+                trade_pnl = calculate_pnl(symbol, trade_entry, exit_price, trade_qty, trade_side)
+                cursor.execute(f'''
+                    UPDATE paper_trades SET exit_price = {ph}, pnl = {ph}, closed_at = {ph}, status = 'closed'
+                    WHERE id = {ph}
+                ''', (exit_price, trade_pnl, now, trade_id))
 
             conn.commit()
             conn.close()

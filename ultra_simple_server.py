@@ -152,6 +152,8 @@ except ImportError as e:
     print(f"⚠️ TradingView price service not available: {e}")
 
 
+_paper_trade_dedup = {}  # (recorder_id, symbol, action) -> timestamp
+
 def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, quantity: int = 1, price: float = None):
     """
     Record a paper trade from webhook signal.
@@ -166,8 +168,19 @@ def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, 
     """
     print(f"🧪 PAPER TRADE: rec={recorder_id}, sym={symbol}, act={action}, qty={quantity}, price={price}", flush=True)
 
-    # Clean up symbol (remove any exchange prefix)
-    clean_symbol = symbol.replace('CME_MINI:', '').replace('1!', '').upper()
+    # Normalize symbol to root (e.g., CME_MINI:NQ1!1! -> NQ, MGCJ2026 -> MGC)
+    clean_symbol = extract_symbol_root(symbol) or symbol.upper()
+
+    # Dedup: skip if same recorder/symbol/action was just processed within 1 second
+    # (process_webhook_directly calls this function twice per signal)
+    import time as _time
+    dedup_key = (recorder_id, clean_symbol, action.upper())
+    now = _time.time()
+    last_seen = _paper_trade_dedup.get(dedup_key, 0)
+    if now - last_seen < 1.0:
+        print(f"🔄 Paper trade dedup: skipping duplicate {action} {clean_symbol} for rec={recorder_id} ({now - last_seen:.3f}s since last)", flush=True)
+        return None
+    _paper_trade_dedup[dedup_key] = now
 
     # If price is provided, we can record directly to DB without needing price service
     if price:
@@ -826,8 +839,8 @@ def track_paper_trade(recorder_id: int, symbol: str, action: str, quantity: floa
         paper_engine = get_paper_engine()
         action_upper = action.upper()
 
-        # Convert symbol to TradingView format for price lookup
-        tv_symbol = f"CME_MINI:{symbol.upper().replace('MNQ', 'NQ').replace('MES', 'ES')}1!"
+        # Normalize symbol to root (e.g., CME_MINI:NQ1!1! -> NQ, MGCJ2026 -> MGC)
+        tv_symbol = extract_symbol_root(symbol) or symbol.upper()
 
         # Determine action type
         if action_upper in ['CLOSE', 'EXIT', 'FLATTEN']:
