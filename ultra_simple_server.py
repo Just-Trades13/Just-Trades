@@ -11543,11 +11543,28 @@ def api_get_recorders():
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
-        
-        # Show ALL recorders - they're public by default
-        # Privacy filtering can be added later when is_private column exists
+
+        # Filter by current user — only show their own recorders
+        user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user_id = get_current_user_id()
+
         if is_postgres:
-            if search:
+            if user_id and search:
+                cursor.execute('''
+                    SELECT * FROM recorders
+                    WHERE user_id = %s AND name ILIKE %s
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s
+                ''', (user_id, f'%{search}%', per_page, offset))
+            elif user_id:
+                cursor.execute('''
+                    SELECT * FROM recorders
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s
+                ''', (user_id, per_page, offset))
+            elif search:
                 cursor.execute('''
                     SELECT * FROM recorders
                     WHERE name ILIKE %s
@@ -11556,22 +11573,36 @@ def api_get_recorders():
                 ''', (f'%{search}%', per_page, offset))
             else:
                 cursor.execute('''
-                    SELECT * FROM recorders 
-                    ORDER BY created_at DESC 
+                    SELECT * FROM recorders
+                    ORDER BY created_at DESC
                     LIMIT %s OFFSET %s
                 ''', (per_page, offset))
         else:
-            if search:
+            if user_id and search:
                 cursor.execute('''
-                    SELECT * FROM recorders 
+                    SELECT * FROM recorders
+                    WHERE user_id = ? AND name LIKE ?
+                    ORDER BY created_at DESC
+                    LIMIT ? OFFSET ?
+                ''', (user_id, f'%{search}%', per_page, offset))
+            elif user_id:
+                cursor.execute('''
+                    SELECT * FROM recorders
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT ? OFFSET ?
+                ''', (user_id, per_page, offset))
+            elif search:
+                cursor.execute('''
+                    SELECT * FROM recorders
                     WHERE name LIKE ?
-                    ORDER BY created_at DESC 
+                    ORDER BY created_at DESC
                     LIMIT ? OFFSET ?
                 ''', (f'%{search}%', per_page, offset))
             else:
                 cursor.execute('''
-                    SELECT * FROM recorders 
-                    ORDER BY created_at DESC 
+                    SELECT * FROM recorders
+                    ORDER BY created_at DESC
                     LIMIT ? OFFSET ?
                 ''', (per_page, offset))
         
@@ -11591,14 +11622,22 @@ def api_get_recorders():
                 recorder['tp_targets'] = []
             recorders.append(recorder)
         
-        # Get total count - all recorders (public by default)
+        # Get total count matching the same user filter
         if is_postgres:
-            if search:
+            if user_id and search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = %s AND name ILIKE %s', (user_id, f'%{search}%'))
+            elif user_id:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = %s', (user_id,))
+            elif search:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name ILIKE %s', (f'%{search}%',))
             else:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders')
         else:
-            if search:
+            if user_id and search:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = ? AND name LIKE ?', (user_id, f'%{search}%'))
+            elif user_id:
+                cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE user_id = ?', (user_id,))
+            elif search:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders WHERE name LIKE ?', (f'%{search}%',))
             else:
                 cursor.execute('SELECT COUNT(*) as count FROM recorders')
