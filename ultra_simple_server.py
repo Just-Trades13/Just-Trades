@@ -5593,8 +5593,37 @@ def register():
                     conn.close()
                 except Exception as ref_err:
                     logger.error(f"Error tracking referral: {ref_err}")
-            # Do NOT auto-login - account needs admin approval first
-            flash(f'Your account has been created! Please wait for an administrator to approve your account before you can log in.', 'info')
+
+            # Check if this email has a Whop membership — auto-approve + assign tier
+            whop_linked = False
+            try:
+                from whop_integration import link_user_to_whop
+                from user_auth import approve_user
+                link_result = link_user_to_whop(user.id, email)
+                if link_result.get('success') and link_result.get('linked'):
+                    approve_user(user.id)
+                    whop_linked = True
+                    logger.info(f"Auto-approved {email} via Whop membership: {link_result.get('linked')}")
+            except Exception as whop_err:
+                logger.warning(f"Whop membership check failed for {email}: {whop_err}")
+
+            # Also check for pending subscriptions (user_id=0) from webhook that fired before registration
+            if not whop_linked:
+                try:
+                    from subscription_models import link_pending_subscription
+                    pending_result = link_pending_subscription(user.id, email)
+                    if pending_result:
+                        from user_auth import approve_user
+                        approve_user(user.id)
+                        whop_linked = True
+                        logger.info(f"Linked pending Whop subscription for {email}")
+                except Exception as pending_err:
+                    logger.warning(f"Pending subscription check failed for {email}: {pending_err}")
+
+            if whop_linked:
+                flash('Your account is ready! You have been automatically approved. Please sign in.', 'success')
+            else:
+                flash('Your account has been created! Please wait for an administrator to approve your account before you can log in.', 'info')
             return redirect(url_for('login'))
         else:
             flash('Username or email already exists. Please try different credentials.', 'error')

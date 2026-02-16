@@ -36,15 +36,14 @@ WHOP_API_KEY = os.environ.get('WHOP_API_KEY', '')
 WHOP_WEBHOOK_SECRET = os.environ.get('WHOP_WEBHOOK_SECRET', '')
 WHOP_API_BASE_URL = 'https://api.whop.com/api/v2'
 
-# Map Whop plan IDs to our plan slugs
-# These are YOUR actual Whop plan IDs from your dashboard
+# Map Whop plan/product IDs to our plan slugs
+# These are from the justtradesgroup Whop store
+# TODO: Replace these with real IDs from Whop Dashboard > Products
 WHOP_PRODUCT_MAP = {
-    # Format: 'whop_plan_id': 'our_plan_slug'
-    'plan_WtaOTfY81I2bp': 'discord_basic',      # Discord Basic $39.99/mo
-    'plan_C2Ccn2UqByZKY': 'discord_premium',    # Discord Premium $79.99/mo
-    'plan_ycOPEghNJmLsJ': 'platform_basic',     # Auto Trader Basic $200/mo
-    'plan_W0iVU9rWUXgDw': 'platform_premium',   # Auto Trader Premium $500/mo
-    'plan_Z4ZksibWL34Oj': 'platform_elite',     # Auto Trader Elite $1000/mo
+    # Format: 'whop_plan_or_product_id': 'our_plan_slug'
+    'prod_l3u1RLWEjMIS7': 'platform_basic',       # Basic+ $200/mo
+    'prod_3RCOfsuDNX4cs': 'platform_premium',      # Premium+ $500/mo
+    'prod_oKaNSNRKgxXS3': 'platform_elite',        # Elite+ $1000/mo
 }
 
 # Reverse map for looking up Whop product from our plan
@@ -194,18 +193,14 @@ def check_valid_membership(email: str, plan_type: str = 'platform') -> Optional[
     valid_memberships = []
     for m in memberships:
         plan_slug = m.get('plan_slug')
-        if plan_slug:
-            if plan_type == 'platform' and plan_slug.startswith('platform_'):
-                valid_memberships.append(m)
-            elif plan_type == 'discord' and plan_slug.startswith('discord_'):
-                valid_memberships.append(m)
-    
+        if plan_slug and plan_slug.startswith('platform_'):
+            valid_memberships.append(m)
+
     if not valid_memberships:
         return None
-    
+
     # Return highest tier (by price order: elite > premium > basic)
-    tier_order = {'platform_elite': 3, 'platform_premium': 2, 'platform_basic': 1,
-                  'discord_premium': 2, 'discord_basic': 1}
+    tier_order = {'platform_elite': 3, 'platform_premium': 2, 'platform_basic': 1}
     
     valid_memberships.sort(key=lambda x: tier_order.get(x.get('plan_slug'), 0), reverse=True)
     return valid_memberships[0]
@@ -655,11 +650,9 @@ def get_whop_checkout_url(plan_slug: str) -> Optional[str]:
     """
     # You'll need to set these URLs from your Whop dashboard
     CHECKOUT_URLS = {
-        'discord_basic': 'https://whop.com/checkout/your-discord-basic-link/',
-        'discord_premium': 'https://whop.com/checkout/your-discord-premium-link/',
-        'platform_basic': 'https://whop.com/checkout/your-platform-basic-link/',
-        'platform_premium': 'https://whop.com/checkout/your-platform-premium-link/',
-        'platform_elite': 'https://whop.com/checkout/your-platform-elite-link/',
+        'platform_basic': 'https://whop.com/justtradesgroup/basicplus/',
+        'platform_premium': 'https://whop.com/justtradesgroup/premiumtier/',
+        'platform_elite': 'https://whop.com/justtradesgroup/eliteplus/',
     }
     return CHECKOUT_URLS.get(plan_slug)
 

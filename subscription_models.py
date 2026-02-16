@@ -54,46 +54,9 @@ def get_subscription_db_connection():
 # ============================================================================
 # These define what each plan includes
 PLAN_FEATURES = {
-    'discord_basic': {
-        'name': 'Discord Basic',
-        'price': 39.99,
-        'whop_product_id': None,  # Set this from Whop dashboard
-        'type': 'discord',
-        'features': {
-            'discord_access': True,
-            'learning_content': True,
-            'community_access': True,
-            'watch_live_trading': True,
-            'all_indicators': False,
-            'all_charts': False,
-            'live_streams': False,
-            'premium_content': False,
-            'platform_access': False,
-        },
-        'limits': {}
-    },
-    'discord_premium': {
-        'name': 'Discord Premium',
-        'price': 79.99,
-        'whop_product_id': None,  # Set this from Whop dashboard
-        'type': 'discord',
-        'features': {
-            'discord_access': True,
-            'learning_content': True,
-            'community_access': True,
-            'watch_live_trading': True,
-            'all_indicators': True,
-            'all_charts': True,
-            'live_streams': True,
-            'premium_content': True,
-            'platform_access': False,
-        },
-        'limits': {}
-    },
     'platform_basic': {
-        'name': 'Just.Trades. Auto Trader Basic',
+        'name': 'Basic+',
         'price': 200.00,
-        'whop_product_id': None,  # Set this from Whop dashboard
         'type': 'platform',
         'features': {
             'platform_access': True,
@@ -102,8 +65,8 @@ PLAN_FEATURES = {
             'auto_trader': True,
             'manual_copy_trader': True,
             'control_center': True,
-            'quant_screener': False,  # Greyed out
-            'insider_signals': False,  # Greyed out
+            'quant_screener': False,
+            'insider_signals': False,
             'premium_strategies': False,
             'api_access': False,
         },
@@ -114,9 +77,8 @@ PLAN_FEATURES = {
         }
     },
     'platform_premium': {
-        'name': 'Just.Trades. Auto Trader Premium',
+        'name': 'Premium+',
         'price': 500.00,
-        'whop_product_id': None,  # Set this from Whop dashboard
         'type': 'platform',
         'features': {
             'platform_access': True,
@@ -131,16 +93,15 @@ PLAN_FEATURES = {
             'api_access': False,
         },
         'limits': {
-            'max_broker_accounts': 100,
+            'max_broker_accounts': 10,
             'max_strategies': -1,
             'max_recorders': -1,
             'premium_strategy_count': 2,  # JADNQ, JADVIX
         }
     },
     'platform_elite': {
-        'name': 'Just.Trades. Auto Trader Elite',
+        'name': 'Elite+',
         'price': 1000.00,
-        'whop_product_id': None,  # Set this from Whop dashboard
         'type': 'platform',
         'features': {
             'platform_access': True,
@@ -151,12 +112,12 @@ PLAN_FEATURES = {
             'control_center': True,
             'quant_screener': True,
             'insider_signals': True,
-            'premium_strategies': True,  # ALL strategies
+            'premium_strategies': True,  # ALL 13 strategies
             'api_access': True,
             'priority_support': True,
         },
         'limits': {
-            'max_broker_accounts': -1,  # Unlimited
+            'max_broker_accounts': 25,
             'max_strategies': -1,
             'max_recorders': -1,
             'premium_strategy_count': -1,  # All strategies
@@ -532,6 +493,74 @@ def create_subscription(user_id: int, plan_slug: str, whop_membership_id: str = 
         logger.error(f"❌ Failed to create subscription: {e}")
         conn.rollback()
         return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def link_pending_subscription(user_id: int, email: str) -> bool:
+    """
+    Link a pending subscription (user_id=0) to a real user.
+
+    When a Whop webhook fires before the user registers, the subscription is created
+    with user_id=0. This function finds those pending rows by email (stored in
+    whop_customer_id or looked up via Whop API) and updates them to the real user_id.
+
+    Returns True if a pending subscription was linked, False otherwise.
+    """
+    conn, db_type = get_subscription_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        placeholder = '%s' if db_type == 'postgresql' else '?'
+        # Find subscriptions with user_id=0 — these are pending Whop purchases
+        cursor.execute(
+            f"SELECT id, plan_slug, whop_membership_id FROM user_subscriptions "
+            f"WHERE user_id = 0 AND status IN ('active', 'trialing')"
+        )
+        rows = cursor.fetchall()
+
+        if not rows:
+            return False
+
+        # For each pending subscription, check if the Whop membership email matches
+        linked = False
+        for row in rows:
+            row_dict = dict(row)
+            membership_id = row_dict.get('whop_membership_id')
+            if not membership_id:
+                continue
+
+            # Check via Whop API if this membership belongs to this email
+            try:
+                from whop_integration import verify_membership
+                membership = verify_membership(membership_id)
+                if membership and membership.get('user_email', '').lower() == email.lower():
+                    # Match — update user_id
+                    sub_id = row_dict['id']
+                    if db_type == 'postgresql':
+                        cursor.execute(
+                            f"UPDATE user_subscriptions SET user_id = {placeholder}, updated_at = NOW() WHERE id = {placeholder}",
+                            (user_id, sub_id)
+                        )
+                    else:
+                        cursor.execute(
+                            f"UPDATE user_subscriptions SET user_id = {placeholder}, updated_at = datetime('now') WHERE id = {placeholder}",
+                            (user_id, sub_id)
+                        )
+                    linked = True
+                    logger.info(f"Linked pending subscription {sub_id} ({row_dict.get('plan_slug')}) to user {user_id}")
+            except Exception as e:
+                logger.warning(f"Could not verify membership {membership_id}: {e}")
+                continue
+
+        if linked:
+            conn.commit()
+        return linked
+    except Exception as e:
+        logger.error(f"link_pending_subscription error: {e}")
+        conn.rollback()
+        return False
     finally:
         cursor.close()
         conn.close()
