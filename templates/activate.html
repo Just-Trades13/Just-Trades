@@ -148,6 +148,11 @@
             color: var(--text-muted);
         }
 
+        .form-group input[readonly] {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         .btn-login {
             width: 100%;
             padding: 16px;
@@ -293,6 +298,26 @@
             display: none;
         }
 
+        /* Check email illustration */
+        .check-email-icon {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .check-email-icon .material-icons {
+            font-size: 64px;
+            color: var(--primary-color);
+            opacity: 0.8;
+        }
+
+        .info-text {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            line-height: 1.6;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
         /* Responsive */
         @media (max-width: 480px) {
             .login-card {
@@ -314,9 +339,6 @@
         </div>
 
         <div class="login-card">
-            <h2>Activate Your Account</h2>
-            <p class="subtitle">Set your username and password to get started</p>
-
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     <div class="flash-messages">
@@ -334,12 +356,19 @@
                 {% endif %}
             {% endwith %}
 
+            {% if has_token %}
+            {# ===== STATE 1: User clicked email link — show activation form ===== #}
+            <h2>Activate Your Account</h2>
+            <p class="subtitle">Set your username and password to get started</p>
+
             <form method="POST" action="{{ url_for('activation.activate') }}" id="activateForm">
+                <input type="hidden" name="token" value="{{ token }}">
+
                 <div class="form-group">
-                    <label for="email">Email Address</label>
+                    <label for="email_display">Email Address</label>
                     <div class="input-wrapper">
                         <span class="material-icons">email</span>
-                        <input type="email" id="email" name="email" placeholder="Email used on Whop" value="{{ email }}" required autofocus>
+                        <input type="email" id="email_display" value="{{ email }}" readonly>
                     </div>
                 </div>
 
@@ -347,7 +376,7 @@
                     <label for="username">Choose a Username</label>
                     <div class="input-wrapper">
                         <span class="material-icons">person</span>
-                        <input type="text" id="username" name="username" placeholder="Pick a username" value="{{ username }}" required minlength="3">
+                        <input type="text" id="username" name="username" placeholder="Pick a username" value="{{ username }}" required minlength="3" autofocus>
                     </div>
                 </div>
 
@@ -375,6 +404,40 @@
                 </button>
             </form>
 
+            {% else %}
+            {# ===== STATE 2: No token — show "check your email" + resend ===== #}
+            <div class="check-email-icon">
+                <span class="material-icons">mark_email_read</span>
+            </div>
+
+            <h2>Check Your Email</h2>
+            <p class="info-text">
+                After purchasing on Whop, we send an activation link to your email.
+                Click the link in that email to set your username and password.
+            </p>
+
+            <div class="divider">
+                <span>DIDN'T GET THE EMAIL?</span>
+            </div>
+
+            <form method="POST" action="{{ url_for('activation.activate_resend') }}" id="resendForm">
+                <div class="form-group">
+                    <label for="resend_email">Email Address</label>
+                    <div class="input-wrapper">
+                        <span class="material-icons">email</span>
+                        <input type="email" id="resend_email" name="email" placeholder="Email used on Whop" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-login" id="resendBtn">
+                    <span class="btn-text">Resend Activation Email</span>
+                    <span class="material-icons">send</span>
+                    <div class="spinner"></div>
+                </button>
+            </form>
+
+            {% endif %}
+
             <div class="divider">
                 <span>ALREADY ACTIVATED?</span>
             </div>
@@ -386,6 +449,7 @@
     </div>
 
     <script>
+        {% if has_token %}
         // Password match validation
         const password = document.getElementById('password');
         const confirm = document.getElementById('confirm_password');
@@ -420,6 +484,18 @@
         window.addEventListener('pageshow', function() {
             document.getElementById('activateBtn').classList.remove('loading');
         });
+
+        {% else %}
+        // Resend form loading state
+        document.getElementById('resendForm').addEventListener('submit', function() {
+            const btn = document.getElementById('resendBtn');
+            btn.classList.add('loading');
+        });
+
+        window.addEventListener('pageshow', function() {
+            document.getElementById('resendBtn').classList.remove('loading');
+        });
+        {% endif %}
     </script>
 </body>
 </html>

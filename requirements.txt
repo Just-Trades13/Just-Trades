@@ -30,3 +30,6 @@ websockets==12.0
 pywebpush==1.14.1
 py-vapid==1.9.1
 
+# Email (Brevo transactional emails)
+brevo-python
+
