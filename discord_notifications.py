@@ -306,7 +306,7 @@ def notify_trade_execution(user_id: int = None, action: str = None, symbol: str 
         "description": description,
         "color": embed_color,
         "fields": fields,
-        "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
+        "thumbnail": {"url": "https://www.justtrades.app/static/img/just_trades_logo.png"},
         "footer": {"text": "Just.Trades Notification"},
         "timestamp": _get_chicago_time().isoformat()
     }
@@ -402,7 +402,7 @@ def notify_tp_sl_hit(user_id: int = None, order_type: str = None, symbol: str = 
         "description": description,
         "color": embed_color,
         "fields": fields,
-        "thumbnail": {"url": "https://justtrades-production.up.railway.app/static/img/just_trades_logo.png"},
+        "thumbnail": {"url": "https://www.justtrades.app/static/img/just_trades_logo.png"},
         "footer": {"text": f"Just.Trades • {'Take Profit' if is_tp else 'Stop Loss'}"},
         "timestamp": _get_chicago_time().isoformat()
     }

@@ -5325,7 +5325,7 @@ def whop_status():
             'webhook_secret_configured': status['webhook_secret_configured'],
             'api_test': api_test,
             'product_map': status['product_map'],
-            'webhook_url': 'https://justtrades-production.up.railway.app/webhooks/whop'
+            'webhook_url': 'https://www.justtrades.app/webhooks/whop'
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -24220,7 +24220,7 @@ def api_affiliate_dashboard():
 
         return jsonify({
             'affiliate_code': code,
-            'referral_link': f"https://justtrades-production.up.railway.app/register?ref={code}",
+            'referral_link': f"https://www.justtrades.app/register?ref={code}",
             'referral_count': referral_count,
             'referred_users': referred_users,
             'name': app_data['name'],

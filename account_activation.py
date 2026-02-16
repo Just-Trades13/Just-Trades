@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 activation_bp = Blueprint('activation', __name__)
 
-PLATFORM_URL = os.environ.get('PLATFORM_URL', 'https://justtrades-production.up.railway.app')
+PLATFORM_URL = os.environ.get('PLATFORM_URL', 'https://www.justtrades.app')
 BREVO_API_KEY = os.environ.get('BREVO_API_KEY', '')
 BREVO_SENDER_EMAIL = os.environ.get('BREVO_SENDER_EMAIL', 'noreply@justtrades.com')
 BREVO_SENDER_NAME = os.environ.get('BREVO_SENDER_NAME', 'Just Trades')
