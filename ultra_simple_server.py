@@ -26794,7 +26794,10 @@ if USER_AUTH_AVAILABLE:
 
 @socketio.on('connect')
 def handle_connect():
-    """Handle WebSocket connection"""
+    """Handle WebSocket connection - requires authentication"""
+    if USER_AUTH_AVAILABLE and not is_logged_in():
+        logger.warning('Rejected unauthenticated WebSocket connection')
+        return False
     logger.info('Client connected to WebSocket')
     emit('status', {
         'connected': True,
