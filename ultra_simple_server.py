@@ -12613,6 +12613,18 @@ def api_create_trader():
         if USER_AUTH_AVAILABLE and is_logged_in():
             current_user_id = get_current_user_id()
         
+        # Build enabled_accounts JSON from the account data provided
+        initial_enabled_accounts = json.dumps([{
+            'account_id': account_id,
+            'account_name': account.get('name', ''),
+            'subaccount_id': subaccount_id,
+            'subaccount_name': subaccount_name,
+            'is_demo': is_demo,
+            'max_contracts': 0,
+            'custom_ticker': '',
+            'multiplier': 1.0
+        }])
+
         # Create the trader link - DEFAULT TO DISABLED (user must explicitly enable)
         # This prevents accidental live trading on new setups
         if is_postgres:
@@ -12628,7 +12640,7 @@ def api_create_trader():
                 VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                  current_user_id, None,
+                  current_user_id, initial_enabled_accounts,
                   bool(time_filter_1_enabled), time_filter_1_start, time_filter_1_stop,
                   bool(time_filter_2_enabled), time_filter_2_start, time_filter_2_stop,
                   bool(inverse_signals)))
@@ -12651,7 +12663,7 @@ def api_create_trader():
                 VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
-                  current_user_id, None,
+                  current_user_id, initial_enabled_accounts,
                   1 if time_filter_1_enabled else 0, time_filter_1_start, time_filter_1_stop,
                   1 if time_filter_2_enabled else 0, time_filter_2_start, time_filter_2_stop,
                   1 if inverse_signals else 0))
