@@ -3117,10 +3117,19 @@ def ping():
 @app.route('/health')
 def health_simple():
     """Simple health check for Railway - no DB queries to avoid timeouts"""
+    brevo_ok = False
+    try:
+        import brevo_python
+        brevo_ok = True
+    except ImportError:
+        pass
     return jsonify({
         'status': 'healthy',
         'service': 'just-trades',
-        'message': 'Server is running'
+        'message': 'Server is running',
+        'brevo_installed': brevo_ok,
+        'whop_configured': bool(os.environ.get('WHOP_API_KEY')),
+        'brevo_configured': bool(os.environ.get('BREVO_API_KEY')),
     })
 
 # ============================================================================
