@@ -222,29 +222,31 @@ def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, 
         return None
 
 
+import threading
+_paper_trade_lock = threading.Lock()
+_PAPER_FILL_DELAY_S = 0.300  # 300ms simulated broker fill latency
+
 def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quantity: int, price: float):
     """Direct database recording for paper trades - works without price service"""
+    with _paper_trade_lock:  # Serialize paper trades so concurrent signals DCA instead of duplicating
+        return _record_paper_trade_direct_inner(recorder_id, symbol, action, quantity, price)
+
+def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str, quantity: int, price: float):
     from datetime import datetime
-    import os
+    import os, time
 
-    print(f"📝 Recording paper trade directly: {action} {quantity} {symbol} @ {price}", flush=True)
+    print(f"📝 Recording paper trade: {action} {quantity} {symbol} @ {price} (waiting {int(_PAPER_FILL_DELAY_S*1000)}ms fill delay...)", flush=True)
 
-    # Simulate broker fill slippage — market orders don't fill at exact signal price
-    try:
-        import random
-        from recorder_service import get_tick_size
-        tick_sz = get_tick_size(symbol)
-        # Random 0.5-2.5 ticks of adverse slippage (LONG fills higher, SHORT fills lower)
-        slip_ticks = random.uniform(0.5, 2.5)
-        slip_amount = slip_ticks * tick_sz
-        if action in ['LONG', 'BUY']:
-            price = price + slip_amount
-        elif action in ['SHORT', 'SELL']:
-            price = price - slip_amount
-        price = round(round(price / tick_sz) * tick_sz, 10)  # Snap to tick boundary
-        print(f"📝 Simulated fill slippage: {slip_ticks:.1f} ticks → entry @ {price:.2f}", flush=True)
-    except Exception as e:
-        print(f"⚠️ Slippage calc failed (using original price): {e}", flush=True)
+    # Simulate broker fill latency — sleep then use fresh price
+    time.sleep(_PAPER_FILL_DELAY_S)
+    delayed_price = _get_live_price_for_symbol(symbol)
+    if delayed_price:
+        slippage = delayed_price - price
+        price = delayed_price
+        if abs(slippage) > 0:
+            print(f"📝 Fill after {int(_PAPER_FILL_DELAY_S*1000)}ms: {price:.2f} (slippage: {slippage:+.2f})", flush=True)
+        else:
+            print(f"📝 Fill after {int(_PAPER_FILL_DELAY_S*1000)}ms: {price:.2f} (no slippage)", flush=True)
 
     # Determine side
     if action in ['LONG', 'BUY']:
