@@ -5861,6 +5861,41 @@ def admin_reject_user(user_id):
         return jsonify({'success': False, 'error': 'Failed to reject user'}), 400
 
 
+@app.route('/admin/users/<int:user_id>/send-activation', methods=['POST'])
+def admin_send_activation(user_id):
+    """Admin endpoint to send (or resend) activation email to a user."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+
+    user = get_current_user()
+    if not user or not user.is_admin:
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+
+    from user_auth import get_user_by_id
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    try:
+        from account_activation import generate_activation_token, send_activation_email
+        token = generate_activation_token(target_user.id, target_user.email)
+        if token:
+            sent = send_activation_email(target_user.email, token)
+            if sent:
+                logger.info(f"Admin sent activation email to {target_user.email}")
+                return jsonify({'success': True, 'message': f'Activation email sent to {target_user.email}'})
+            else:
+                return jsonify({'success': False, 'error': 'Failed to send email — check BREVO_API_KEY config'}), 500
+        else:
+            return jsonify({'success': False, 'error': 'Failed to generate activation token'}), 500
+    except Exception as e:
+        logger.error(f"Admin send-activation error for user {user_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/admin/users/create', methods=['POST'])
 def admin_create_user():
     """Admin endpoint to create a new user."""

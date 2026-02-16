@@ -969,6 +969,9 @@
                             <span class="material-icons">edit</span>
                         </button>
                         {% endif %}
+                        <button class="btn-action" onclick="sendActivation({{ user.id }}, '{{ user.email }}')" title="Send activation email">
+                            <span class="material-icons">email</span>
+                        </button>
                         {% if user.id != current_user.id %}
                         <button class="btn-action delete" onclick="deleteUser({{ user.id }}, '{{ user.username }}')" title="Delete user">
                             <span class="material-icons">delete</span>
@@ -1355,6 +1358,25 @@ function deleteUser(userId, username) {
         })
         .catch(error => {
             alert('Error deleting user: ' + error);
+        });
+    }
+}
+
+function sendActivation(userId, email) {
+    if (confirm('Send activation email to ' + email + '?')) {
+        fetch('/admin/users/' + userId + '/send-activation', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('Error sending activation email: ' + error);
         });
     }
 }
