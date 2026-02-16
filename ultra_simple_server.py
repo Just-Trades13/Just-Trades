@@ -229,6 +229,16 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
 
     print(f"📝 Recording paper trade directly: {action} {quantity} {symbol} @ {price}", flush=True)
 
+    # Simulate broker fill latency — sleep then use fresh price (like real market order fill)
+    import time as _time
+    _time.sleep(PAPER_FILL_DELAY_MS / 1000.0)
+    delayed_price = _get_live_price_for_symbol(symbol)
+    if delayed_price:
+        slippage = abs(delayed_price - price)
+        if slippage > 0:
+            print(f"📝 Fill delay {PAPER_FILL_DELAY_MS}ms: signal @ {price:.2f} → fill @ {delayed_price:.2f} (slippage: {slippage:.2f})", flush=True)
+        price = delayed_price
+
     # Determine side
     if action in ['LONG', 'BUY']:
         side = 'LONG'
@@ -443,10 +453,8 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                     ''', (new_qty, avg_entry, tp_price, sl_price, exist_id))
 
                     # Reset automatic DCA tracking so it recalculates from new avg entry
-                    # Cancel any pending TP/SL fill since DCA moved the price levels
-                    global _paper_dca_next_price, _paper_fill_pending
+                    global _paper_dca_next_price
                     _paper_dca_next_price.pop(exist_id, None)
-                    _paper_fill_pending.pop(exist_id, None)
 
                     tp_str = f"TP={tp_price:.2f}" if tp_price else "TP=None"
                     sl_str = f"SL={sl_price:.2f}" if sl_price else "SL=None"
@@ -513,8 +521,7 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
 # ============================================================================
 _paper_monitor_running = False
 _paper_dca_next_price = {}  # trade_id -> next DCA trigger price (for automatic price-based DCA)
-_paper_fill_pending = {}  # trade_id -> (trigger_time, exit_price, exit_reason) — simulates broker fill latency
-PAPER_FILL_DELAY_MS = 300  # Simulated broker fill latency in milliseconds (300ms ~ real broker round-trip)
+PAPER_FILL_DELAY_MS = 300  # Simulated broker entry fill latency in milliseconds
 
 def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, recorder_id: int, side: str, entry_price: float, quantity: float, symbol: str):
     """Close a paper trade due to TP or SL hit"""
@@ -561,10 +568,9 @@ def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, 
         ''', (exit_price, pnl, cumulative, drawdown, exit_reason, now, trade_id))
         conn.commit()
 
-        # Clean up DCA tracking and pending fills for closed trade
-        global _paper_dca_next_price, _paper_fill_pending
+        # Clean up DCA tracking for closed trade
+        global _paper_dca_next_price
         _paper_dca_next_price.pop(trade_id, None)
-        _paper_fill_pending.pop(trade_id, None)
 
         emoji = "🎯" if exit_reason == 'tp' else "🛑"
         print(f"{emoji} Paper {side} closed by {exit_reason.upper()}: {symbol} @ {exit_price:.2f} | P&L: ${pnl:.2f}", flush=True)
@@ -759,9 +765,6 @@ def check_paper_trades_tpsl():
         # Get live prices from TradingView cache (use globals, not import)
         global _market_data_cache
 
-        import time as _time
-        global _paper_fill_pending
-
         for trade in open_trades:
             trade_id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price = trade
 
@@ -771,51 +774,16 @@ def check_paper_trades_tpsl():
                 continue  # No live price available
 
             # Check TP hit
-            tp_triggered = tp_price and ((side == 'LONG' and live_price >= tp_price) or (side == 'SHORT' and live_price <= tp_price))
-            # Check SL hit
-            sl_triggered = sl_price and ((side == 'LONG' and live_price <= sl_price) or (side == 'SHORT' and live_price >= sl_price))
-
-            if tp_triggered or sl_triggered:
-                exit_price = tp_price if tp_triggered else sl_price
-                exit_reason = 'tp' if tp_triggered else 'sl'
-
-                if trade_id not in _paper_fill_pending:
-                    # First detection — start the fill delay timer
-                    _paper_fill_pending[trade_id] = (_time.time(), exit_price, exit_reason)
+            if tp_price:
+                if (side == 'LONG' and live_price >= tp_price) or (side == 'SHORT' and live_price <= tp_price):
+                    _close_paper_trade_tpsl(trade_id, tp_price, 'tp', recorder_id, side, entry_price, quantity, symbol)
                     continue
 
-                # Already pending — check if delay has elapsed
-                trigger_time, pending_price, pending_reason = _paper_fill_pending[trade_id]
-                elapsed_ms = (_time.time() - trigger_time) * 1000
-
-                if elapsed_ms >= PAPER_FILL_DELAY_MS:
-                    # Delay elapsed — fill the order (use CURRENT trade data, not stale)
-                    # Re-read to pick up any DCA changes during the delay
-                    cursor.execute(f'''
-                        SELECT quantity, entry_price, tp_price, sl_price
-                        FROM paper_trades WHERE id = {ph} AND status = 'open'
-                    ''', (trade_id,))
-                    fresh = cursor.fetchone()
-                    if fresh:
-                        fresh_qty, fresh_entry, fresh_tp, fresh_sl = fresh
-                        # If TP/SL changed during delay (DCA happened), re-evaluate
-                        if pending_reason == 'tp' and fresh_tp and fresh_tp != pending_price:
-                            # TP moved (DCA recalculated it) — cancel pending, re-evaluate next cycle
-                            del _paper_fill_pending[trade_id]
-                            continue
-                        if pending_reason == 'sl' and fresh_sl and fresh_sl != pending_price:
-                            del _paper_fill_pending[trade_id]
-                            continue
-                        _close_paper_trade_tpsl(trade_id, pending_price, pending_reason, recorder_id, side, fresh_entry, fresh_qty, symbol)
-                        _paper_fill_pending.pop(trade_id, None)
-                    else:
-                        # Trade already closed (by signal) during delay
-                        _paper_fill_pending.pop(trade_id, None)
-                # else: still waiting for delay to elapse
-                continue
-            else:
-                # Price moved away from TP/SL — cancel any pending fill
-                _paper_fill_pending.pop(trade_id, None)
+            # Check SL hit
+            if sl_price:
+                if (side == 'LONG' and live_price <= sl_price) or (side == 'SHORT' and live_price >= sl_price):
+                    _close_paper_trade_tpsl(trade_id, sl_price, 'sl', recorder_id, side, entry_price, quantity, symbol)
+                    continue
 
         # Also check max daily loss after TP/SL checks
         check_paper_max_daily_loss()
