@@ -803,7 +803,7 @@ class PaperTradingEngine:
             for trade_id, trade_side, trade_qty, trade_entry in open_trades:
                 trade_pnl = calculate_pnl(symbol, trade_entry, exit_price, trade_qty, trade_side)
                 cursor.execute(f'''
-                    UPDATE paper_trades SET exit_price = {ph}, pnl = {ph}, closed_at = {ph}, status = 'closed'
+                    UPDATE paper_trades SET exit_price = {ph}, pnl = {ph}, exit_reason = 'signal', closed_at = {ph}, status = 'closed'
                     WHERE id = {ph}
                 ''', (exit_price, trade_pnl, now, trade_id))
 

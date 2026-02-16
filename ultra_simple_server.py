@@ -417,8 +417,23 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                         opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'signal')
                         print(f"📝 Closed stale opposite {opp[1]} position #{opp[0]}, P&L: ${opp_pnl:.2f}", flush=True)
 
-                    # DCA: add to primary position
+                    # DCA: add to primary position (respect max_contracts_per_trade)
+                    max_contracts = None
+                    try:
+                        cursor.execute(f'SELECT max_contracts_per_trade FROM recorders WHERE id = {ph}', (recorder_id,))
+                        mc_row = cursor.fetchone()
+                        if mc_row and mc_row[0] and int(mc_row[0]) > 0:
+                            max_contracts = int(mc_row[0])
+                    except Exception:
+                        pass
+
                     new_qty = exist_qty + quantity
+                    if max_contracts and new_qty > max_contracts:
+                        print(f"📝 DCA capped: {new_qty} would exceed max_contracts={max_contracts}, skipping add", flush=True)
+                        conn.commit()
+                        conn.close()
+                        return {'success': True, 'symbol': symbol, 'action': 'DCA_CAPPED', 'reason': f'qty {new_qty} exceeds max {max_contracts}'}
+
                     avg_entry = ((exist_entry * exist_qty) + (price * quantity)) / new_qty
                     tp_price, sl_price = _calc_tp_sl(avg_entry, side)
 
@@ -426,6 +441,10 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
                         UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}
                         WHERE id = {ph}
                     ''', (new_qty, avg_entry, tp_price, sl_price, exist_id))
+
+                    # Reset automatic DCA tracking so it recalculates from new avg entry
+                    global _paper_dca_next_price
+                    _paper_dca_next_price.pop(exist_id, None)
 
                     tp_str = f"TP={tp_price:.2f}" if tp_price else "TP=None"
                     sl_str = f"SL={sl_price:.2f}" if sl_price else "SL=None"
@@ -491,6 +510,7 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
 # PAPER TRADING TP/SL MONITOR - Uses live TradingView tick feed
 # ============================================================================
 _paper_monitor_running = False
+_paper_dca_next_price = {}  # trade_id -> next DCA trigger price (for automatic price-based DCA)
 
 def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, recorder_id: int, side: str, entry_price: float, quantity: float, symbol: str):
     """Close a paper trade due to TP or SL hit"""
@@ -536,6 +556,10 @@ def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, 
             WHERE id = {ph}
         ''', (exit_price, pnl, cumulative, drawdown, exit_reason, now, trade_id))
         conn.commit()
+
+        # Clean up DCA tracking for closed trade
+        global _paper_dca_next_price
+        _paper_dca_next_price.pop(trade_id, None)
 
         emoji = "🎯" if exit_reason == 'tp' else "🛑"
         print(f"{emoji} Paper {side} closed by {exit_reason.upper()}: {symbol} @ {exit_price:.2f} | P&L: ${pnl:.2f}", flush=True)
@@ -759,6 +783,143 @@ def check_paper_trades_tpsl():
         conn.close()
 
 
+def _check_paper_dca_adds():
+    """Automatically add DCA contracts to open paper trades when price moves against position.
+    Mirrors the real broker's DCA behavior: when price moves against by avg_down_point ticks,
+    add add_position_size contracts, recalculate avg entry and TP/SL."""
+    import os
+    from datetime import datetime
+
+    global _paper_dca_next_price
+
+    database_url = os.environ.get('DATABASE_URL')
+    use_postgres = bool(database_url)
+
+    if use_postgres:
+        import psycopg2
+        conn = psycopg2.connect(database_url)
+        ph = '%s'
+        enabled_check = "r.avg_down_enabled = TRUE"
+    else:
+        conn = sqlite3.connect('paper_trades.db')
+        ph = '?'
+        enabled_check = "r.avg_down_enabled = 1"
+
+    cursor = conn.cursor()
+
+    try:
+        # Get all open paper trades for DCA-enabled recorders
+        cursor.execute(f'''
+            SELECT pt.id, pt.recorder_id, pt.symbol, pt.side, pt.quantity, pt.entry_price,
+                   r.avg_down_point, r.avg_down_units, r.add_position_size, r.max_contracts_per_trade,
+                   r.tp_targets, r.sl_enabled, r.sl_amount, r.sl_units
+            FROM paper_trades pt
+            JOIN recorders r ON pt.recorder_id = r.id
+            WHERE pt.status = 'open' AND {enabled_check}
+        ''')
+        dca_trades = cursor.fetchall()
+
+        if not dca_trades:
+            return
+
+        # Clean up stale DCA tracking entries (closed trades)
+        active_ids = {t[0] for t in dca_trades}
+        stale_ids = [k for k in _paper_dca_next_price if k not in active_ids]
+        for sid in stale_ids:
+            del _paper_dca_next_price[sid]
+
+        from recorder_service import get_tick_size
+
+        for trade in dca_trades:
+            trade_id, rec_id, sym, side, qty, entry, dca_point, dca_units, add_size, max_contracts, tp_targets_raw, sl_en, sl_amt, sl_units = trade
+
+            if not dca_point or float(dca_point) <= 0:
+                continue
+
+            live_price = _get_live_price_for_symbol(sym)
+            if not live_price:
+                continue
+
+            tick_sz = get_tick_size(sym)
+
+            # Calculate DCA distance in price terms
+            dca_ticks = float(dca_point)
+            if dca_units == 'Points':
+                dca_distance = dca_ticks
+            else:  # Ticks (default)
+                dca_distance = dca_ticks * tick_sz
+
+            # Initialize next DCA trigger if not tracked yet
+            if trade_id not in _paper_dca_next_price:
+                if side == 'LONG':
+                    _paper_dca_next_price[trade_id] = entry - dca_distance
+                else:
+                    _paper_dca_next_price[trade_id] = entry + dca_distance
+
+            next_trigger = _paper_dca_next_price[trade_id]
+
+            # Check if price has hit the DCA trigger
+            if side == 'LONG' and live_price > next_trigger:
+                continue  # Price hasn't dropped to trigger
+            if side == 'SHORT' and live_price < next_trigger:
+                continue  # Price hasn't risen to trigger
+
+            # Check max_contracts cap
+            add_qty = int(add_size) if add_size else 1
+            new_qty = qty + add_qty
+            if max_contracts and int(max_contracts) > 0 and new_qty > int(max_contracts):
+                continue  # Capped
+
+            # DCA triggered — add contracts and update avg entry
+            new_avg = ((entry * qty) + (live_price * add_qty)) / new_qty
+
+            # Recalculate TP from new avg entry
+            new_tp = None
+            if tp_targets_raw:
+                import json
+                try:
+                    tp_list = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
+                    if tp_list and len(tp_list) > 0:
+                        tp_ticks = float(tp_list[0].get('ticks') or tp_list[0].get('value') or 0)
+                        if tp_ticks > 0:
+                            tp_off = tp_ticks * tick_sz
+                            new_tp = new_avg + tp_off if side == 'LONG' else new_avg - tp_off
+                            new_tp = round(round(new_tp / tick_sz) * tick_sz, 10)
+                except:
+                    pass
+
+            # Recalculate SL from new avg entry
+            new_sl = None
+            if sl_en and sl_amt and float(sl_amt) > 0:
+                sl_ticks = float(sl_amt)
+                sl_off = sl_ticks if sl_units == 'Points' else sl_ticks * tick_sz
+                new_sl = new_avg - sl_off if side == 'LONG' else new_avg + sl_off
+                new_sl = round(round(new_sl / tick_sz) * tick_sz, 10)
+
+            # Update the trade in DB
+            cursor.execute(f'''
+                UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}
+                WHERE id = {ph}
+            ''', (new_qty, new_avg, new_tp, new_sl, trade_id))
+            conn.commit()
+
+            # Set next DCA trigger from THIS trigger level (not from new avg)
+            # This ensures DCA levels are evenly spaced from original entry
+            if side == 'LONG':
+                _paper_dca_next_price[trade_id] = next_trigger - dca_distance
+            else:
+                _paper_dca_next_price[trade_id] = next_trigger + dca_distance
+
+            tp_str = f"TP={new_tp:.2f}" if new_tp else "TP=None"
+            sl_str = f"SL={new_sl:.2f}" if new_sl else "SL=None"
+            print(f"📈 Paper DCA: +{add_qty} to {side} {sym} @ {live_price:.2f} | Qty: {int(qty)} -> {int(new_qty)} | Avg: ${new_avg:.2f} | {tp_str} | {sl_str}", flush=True)
+
+    except Exception as e:
+        print(f"⚠️ Error checking paper DCA: {e}", flush=True)
+    finally:
+        conn.close()
+
+
 def start_paper_tpsl_monitor():
     """Start background thread to monitor paper trades for TP/SL hits"""
     global _paper_monitor_running
@@ -771,11 +932,17 @@ def start_paper_tpsl_monitor():
     def monitor_loop():
         global _paper_monitor_running
         _paper_monitor_running = True
-        print("🎯 Paper trading TP/SL monitor started (checking every 500ms)", flush=True)
+        dca_counter = 0
+        print("🎯 Paper trading TP/SL + DCA monitor started (TP/SL every 500ms, DCA every 5s)", flush=True)
 
         while _paper_monitor_running:
             try:
                 check_paper_trades_tpsl()
+                # DCA check every 5 seconds (10 * 500ms) — DCA is slower timescale
+                dca_counter += 1
+                if dca_counter >= 10:
+                    _check_paper_dca_adds()
+                    dca_counter = 0
             except Exception as e:
                 print(f"⚠️ Paper monitor error: {e}", flush=True)
             time.sleep(0.5)  # Check every 500ms for responsive TP/SL
