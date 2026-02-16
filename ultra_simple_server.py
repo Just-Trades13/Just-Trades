@@ -229,15 +229,22 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
 
     print(f"📝 Recording paper trade directly: {action} {quantity} {symbol} @ {price}", flush=True)
 
-    # Simulate broker fill latency — sleep then use fresh price (like real market order fill)
-    import time as _time
-    _time.sleep(PAPER_FILL_DELAY_MS / 1000.0)
-    delayed_price = _get_live_price_for_symbol(symbol)
-    if delayed_price:
-        slippage = abs(delayed_price - price)
-        if slippage > 0:
-            print(f"📝 Fill delay {PAPER_FILL_DELAY_MS}ms: signal @ {price:.2f} → fill @ {delayed_price:.2f} (slippage: {slippage:.2f})", flush=True)
-        price = delayed_price
+    # Simulate broker fill slippage — market orders don't fill at exact signal price
+    try:
+        import random
+        from recorder_service import get_tick_size
+        tick_sz = get_tick_size(symbol)
+        # Random 0.5-2.5 ticks of adverse slippage (LONG fills higher, SHORT fills lower)
+        slip_ticks = random.uniform(0.5, 2.5)
+        slip_amount = slip_ticks * tick_sz
+        if action in ['LONG', 'BUY']:
+            price = price + slip_amount
+        elif action in ['SHORT', 'SELL']:
+            price = price - slip_amount
+        price = round(round(price / tick_sz) * tick_sz, 10)  # Snap to tick boundary
+        print(f"📝 Simulated fill slippage: {slip_ticks:.1f} ticks → entry @ {price:.2f}", flush=True)
+    except Exception as e:
+        print(f"⚠️ Slippage calc failed (using original price): {e}", flush=True)
 
     # Determine side
     if action in ['LONG', 'BUY']:
@@ -521,7 +528,6 @@ def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quant
 # ============================================================================
 _paper_monitor_running = False
 _paper_dca_next_price = {}  # trade_id -> next DCA trigger price (for automatic price-based DCA)
-PAPER_FILL_DELAY_MS = 300  # Simulated broker entry fill latency in milliseconds
 
 def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, recorder_id: int, side: str, entry_price: float, quantity: float, symbol: str):
     """Close a paper trade due to TP or SL hit"""
