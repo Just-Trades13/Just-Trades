@@ -4566,8 +4566,9 @@
                 const profitClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
                 const profitStr = `${profitSign}$${pnl.toFixed(2)}`;
 
-                // Drawdown placeholder (server doesn't track per-trade drawdown yet)
-                const ddStr = '--';
+                // Per-trade drawdown from cumulative equity peak
+                const dd = trade.drawdown;
+                const ddStr = (dd !== null && dd !== undefined) ? `$${Math.abs(dd).toFixed(2)}` : '--';
 
                 row.innerHTML = `
                     <td><span class="status-pill ${statusPillClass}">${status}</span></td>
