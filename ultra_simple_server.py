@@ -224,7 +224,7 @@ def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, 
 
 import threading
 _paper_trade_lock = threading.Lock()
-_PAPER_FILL_DELAY_S = 0.300  # 300ms simulated broker fill latency
+_PAPER_FILL_DELAY_S = 0.800  # 800ms simulated broker fill latency
 
 def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quantity: int, price: float):
     """Direct database recording for paper trades - works without price service"""
@@ -3916,8 +3916,36 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
     tp_order_id = None
     sl_order_id = None
     
-    # If we have BOTH TP and SL, try to place as OCO order strategy
-    if tp_price and sl_price:
+    # Detect multi-TP: need individual orders instead of single OCO
+    has_multi_tp = len(take_profit_list) > 1
+
+    # Multi-TP path: Place TP Level 1 with correct trim quantity, SL separately (no OCO)
+    if has_multi_tp and tp_price:
+        trim_units = risk_config.get('trim_units', 'Percent')
+        first_tp_trim = take_profit_list[0].get('trim_percent', 100)
+        if trim_units == 'Contracts':
+            first_tp_qty = min(int(first_tp_trim), quantity) if first_tp_trim else quantity
+        else:
+            first_tp_qty = int(round(quantity * (first_tp_trim / 100.0))) if first_tp_trim else quantity
+        first_tp_qty = max(first_tp_qty, 1)  # At least 1 contract
+
+        # Place TP Level 1
+        logger.info(f"📊 Multi-TP: Placing TP Level 1 @ {tp_price}, Qty: {first_tp_qty}/{quantity}")
+        tp_order_data = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, first_tp_qty, tp_price, account_id)
+        tp_result = await tradovate.place_order(tp_order_data)
+        if tp_result and tp_result.get('success'):
+            tp_order_id = tp_result.get('orderId') or tp_result.get('data', {}).get('orderId')
+
+        # Place SL for full position
+        if sl_price:
+            logger.info(f"📊 Multi-TP: Placing SL @ {sl_price}, Qty: {quantity}")
+            sl_order_data = tradovate.create_stop_order(account_spec, symbol_upper, exit_action, quantity, sl_price, account_id)
+            sl_result = await tradovate.place_order(sl_order_data)
+            if sl_result and sl_result.get('success'):
+                sl_order_id = sl_result.get('orderId') or sl_result.get('data', {}).get('orderId')
+
+    # Single TP: If we have BOTH TP and SL, try to place as OCO order strategy
+    elif tp_price and sl_price:
         logger.info(f"📊 Placing OCO exit orders: TP @ {tp_price}, SL @ {sl_price}, Qty: {quantity}")
         logger.info(f"   Entry: {entry_price}, TP ticks: {tp_ticks}, SL ticks: {sl_ticks}")
         
