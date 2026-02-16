@@ -4065,6 +4065,8 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
         )
     
     # Handle multiple TP levels (if any beyond the first)
+    last_tp_order_id = tp_order_id  # Track the last TP placed (starts with TP1)
+    all_tp_order_ids = [tp_order_id] if tp_order_id else []  # Track all TPs for SL cleanup
     if len(take_profit_list) > 1:
         trim_units = risk_config.get('trim_units', 'Percent')
         logger.info(f"📊 Processing {len(take_profit_list) - 1} additional TP levels (trim_units={trim_units})")
@@ -4085,21 +4087,35 @@ async def apply_risk_orders(tradovate, account_spec: str, account_id: int, symbo
                 level_qty = int(round(quantity * (trim_value / 100.0))) if trim_value else 0
             if idx == len(take_profit_list) - 1 and level_qty == 0:
                 level_qty = remaining_qty  # Last level gets remaining
-            
+
             level_qty = min(max(level_qty, 0), remaining_qty)
             if level_qty <= 0:
                 continue
-                
+
             remaining_qty -= level_qty
-            
+
             if ticks:
                 tp_offset = tick_size * ticks
                 level_price = entry_price + tp_offset if is_long else entry_price - tp_offset
                 level_price = clamp_price(level_price, tick_size)
-                
+
                 logger.info(f"  TP Level {idx + 1}: Price={level_price}, Qty={level_qty}")
                 tp_order = tradovate.create_limit_order(account_spec, symbol_upper, exit_action, level_qty, level_price, account_id)
-                await tradovate.place_order(tp_order)
+                level_result = await tradovate.place_order(tp_order)
+                if level_result and level_result.get('success'):
+                    level_order_id = level_result.get('orderId') or level_result.get('data', {}).get('orderId')
+                    if level_order_id:
+                        last_tp_order_id = level_order_id
+                        all_tp_order_ids.append(level_order_id)
+
+        # Register LAST TP + SL as OCO pair (last TP fills = position fully closed = cancel SL)
+        # Only the last TP triggers SL cancellation; intermediate TPs do NOT cancel SL
+        if last_tp_order_id and sl_order_id:
+            register_oco_pair(last_tp_order_id, sl_order_id, account_id, symbol_upper)
+            logger.info(f"🔗 Multi-TP OCO: Last TP={last_tp_order_id} <-> SL={sl_order_id} (SL cancels when last TP fills)")
+            # Store all TP IDs so SL fill can cancel them all via orphan cleanup
+            if len(all_tp_order_ids) > 1:
+                logger.info(f"🔗 Multi-TP: All TP orders tracked: {all_tp_order_ids}")
 
 
 def normalize_symbol(symbol: str) -> str:
