@@ -1840,7 +1840,8 @@ class TradovateIntegration:
                                    trailing_stop: bool = False,
                                    break_even_ticks: int = None,
                                    break_even_offset: int = None,
-                                   auto_trail: dict = None) -> Optional[Dict[str, Any]]:
+                                   auto_trail: dict = None,
+                                   multi_brackets: list = None) -> Optional[Dict[str, Any]]:
         """
         Place a market entry order with bracket (TP/SL) as an order strategy using Tradovate's native ATM features.
         Supports native break-even and autoTrail (trailing-after-profit).
@@ -1907,47 +1908,99 @@ class TradovateIntegration:
                 stop_loss_delta = sl_points if sl_points else None
             
             logger.info(f"📊 Converting: {profit_target_ticks} ticks → {profit_target_delta} points, {stop_loss_ticks} ticks → {stop_loss_delta} points (tick_size={tick_size}, direction={'LONG' if is_long else 'SHORT'})")
-            
-            # Build bracket params with native Tradovate ATM features
-            bracket = {
-                "qty": int(quantity),
-                "profitTarget": float(profit_target_delta) if profit_target_delta is not None else None,
-                "stopLoss": float(stop_loss_delta) if stop_loss_delta is not None else None,
-                "trailingStop": trailing_stop  # Boolean for immediate trailing
-            }
-            
-            # Add native break-even (moves SL to entry at profit threshold)
-            if break_even_ticks and break_even_ticks > 0:
-                break_even_points = break_even_ticks * tick_size
-                bracket["breakeven"] = float(break_even_points)
-                bracket["breakevenPlus"] = float(break_even_offset * tick_size) if break_even_offset else 0
-                logger.info(f"📊 Native break-even: {break_even_ticks} ticks ({break_even_points} points), plus={bracket['breakevenPlus']} points")
-            
-            # Add native autoTrail (trailing-after-profit)
-            if auto_trail:
-                trail_stop_loss_ticks = auto_trail.get('stopLoss')
-                trail_trigger_ticks = auto_trail.get('trigger')
-                trail_freq_points = auto_trail.get('freq', tick_size * 0.25)  # Default to 0.25 tick size
-                
-                if trail_stop_loss_ticks and trail_trigger_ticks:
-                    bracket["autoTrail"] = {
-                        "stopLoss": float(trail_stop_loss_ticks * tick_size),  # Trailing distance in points
-                        "trigger": float(trail_trigger_ticks * tick_size),  # Profit threshold to start trailing in points
-                        "freq": float(trail_freq_points)  # Update frequency in points
+
+            if multi_brackets:
+                # Multi-bracket mode: one bracket per TP leg
+                brackets_list = []
+                for i, leg in enumerate(multi_brackets):
+                    leg_qty = leg['qty']
+                    leg_tp_ticks = leg.get('profit_target_ticks')
+                    leg_sl_ticks = leg.get('stop_loss_ticks')
+
+                    # Convert ticks → signed points (same logic as single bracket)
+                    leg_pt = leg_tp_ticks * tick_size if leg_tp_ticks else None
+                    leg_sl = leg_sl_ticks * tick_size if leg_sl_ticks else None
+                    if is_long:
+                        leg_pt_delta = leg_pt if leg_pt else None
+                        leg_sl_delta = -leg_sl if leg_sl else None
+                    else:
+                        leg_pt_delta = -leg_pt if leg_pt else None
+                        leg_sl_delta = leg_sl if leg_sl else None
+
+                    b = {
+                        "qty": int(leg_qty),
+                        "profitTarget": float(leg_pt_delta) if leg_pt_delta is not None else None,
+                        "stopLoss": float(leg_sl_delta) if leg_sl_delta is not None else None,
+                        "trailingStop": leg.get('trailing_stop', False)
                     }
-                    logger.info(f"📊 Native autoTrail: distance={trail_stop_loss_ticks} ticks, trigger={trail_trigger_ticks} ticks, freq={trail_freq_points} points")
-            
-            logger.info(f"📊 Bracket params: profitTarget={bracket['profitTarget']} points, stopLoss={bracket['stopLoss']} points")
-            
-            # Entry order params
-            params = {
-                "entryVersion": {
-                    "orderQty": int(quantity),
-                    "orderType": "Market",
-                    "timeInForce": "Day"
-                },
-                "brackets": [bracket]
-            }
+
+                    # Break-even per leg (always positive points)
+                    leg_be = leg.get('break_even_ticks')
+                    if leg_be and leg_be > 0:
+                        b["breakeven"] = float(leg_be * tick_size)
+                        b["breakevenPlus"] = float(leg.get('break_even_offset', 0) * tick_size)
+
+                    # AutoTrail per leg
+                    leg_at = leg.get('auto_trail')
+                    if leg_at:
+                        t_sl = leg_at.get('stopLoss')
+                        t_trig = leg_at.get('trigger')
+                        if t_sl and t_trig:
+                            b["autoTrail"] = {
+                                "stopLoss": float(t_sl * tick_size),
+                                "trigger": float(t_trig * tick_size),
+                                "freq": float(leg_at.get('freq', tick_size * 0.25))
+                            }
+
+                    brackets_list.append(b)
+                    logger.info(f"📊 Multi-bracket leg {i+1}: qty={leg_qty}, TP={leg_tp_ticks}t, SL={leg_sl_ticks}t")
+
+                params = {
+                    "entryVersion": {"orderQty": int(quantity), "orderType": "Market", "timeInForce": "Day"},
+                    "brackets": brackets_list
+                }
+            else:
+                # Existing single-bracket code — UNCHANGED
+                # Build bracket params with native Tradovate ATM features
+                bracket = {
+                    "qty": int(quantity),
+                    "profitTarget": float(profit_target_delta) if profit_target_delta is not None else None,
+                    "stopLoss": float(stop_loss_delta) if stop_loss_delta is not None else None,
+                    "trailingStop": trailing_stop  # Boolean for immediate trailing
+                }
+
+                # Add native break-even (moves SL to entry at profit threshold)
+                if break_even_ticks and break_even_ticks > 0:
+                    break_even_points = break_even_ticks * tick_size
+                    bracket["breakeven"] = float(break_even_points)
+                    bracket["breakevenPlus"] = float(break_even_offset * tick_size) if break_even_offset else 0
+                    logger.info(f"📊 Native break-even: {break_even_ticks} ticks ({break_even_points} points), plus={bracket['breakevenPlus']} points")
+
+                # Add native autoTrail (trailing-after-profit)
+                if auto_trail:
+                    trail_stop_loss_ticks = auto_trail.get('stopLoss')
+                    trail_trigger_ticks = auto_trail.get('trigger')
+                    trail_freq_points = auto_trail.get('freq', tick_size * 0.25)  # Default to 0.25 tick size
+
+                    if trail_stop_loss_ticks and trail_trigger_ticks:
+                        bracket["autoTrail"] = {
+                            "stopLoss": float(trail_stop_loss_ticks * tick_size),  # Trailing distance in points
+                            "trigger": float(trail_trigger_ticks * tick_size),  # Profit threshold to start trailing in points
+                            "freq": float(trail_freq_points)  # Update frequency in points
+                        }
+                        logger.info(f"📊 Native autoTrail: distance={trail_stop_loss_ticks} ticks, trigger={trail_trigger_ticks} ticks, freq={trail_freq_points} points")
+
+                logger.info(f"📊 Bracket params: profitTarget={bracket['profitTarget']} points, stopLoss={bracket['stopLoss']} points")
+
+                # Entry order params
+                params = {
+                    "entryVersion": {
+                        "orderQty": int(quantity),
+                        "orderType": "Market",
+                        "timeInForce": "Day"
+                    },
+                    "brackets": [bracket]
+                }
             
             # Build WebSocket message payload (REQUIRED per documentation)
             # Format: {"n": "orderStrategy/startOrderStrategy", "o": {...}}
