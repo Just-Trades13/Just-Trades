@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir \
     gunicorn
 
 # Force rebuild - changing this ENV busts ALL subsequent layer caches
-ENV BUILD_DATE=2026-01-06-0320
+ENV BUILD_DATE=2026-02-16-1400
 
 # Copy application code
 COPY . .
