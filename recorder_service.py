@@ -2251,9 +2251,9 @@ def execute_trade_simple(
                     order_id = order_result.get('orderId') or order_result.get('id')
                     logger.info(f"✅ [{acct_name}] Market order placed: {order_id}")
                     
-                    # STEP 1.5: If risk_config has trail or break_even, use apply_risk_orders
-                    # This handles trailing stops and break-even which bracket orders don't support
-                    if risk_config and (risk_config.get('trail') or risk_config.get('break_even')):
+                    # STEP 1.5: If risk_config has trail, break_even, or multi-TP, use apply_risk_orders
+                    # This handles trailing stops, break-even, and multi-TP split quantities
+                    if risk_config and (risk_config.get('trail') or risk_config.get('break_even') or has_multi_tp):
                         logger.info(f"📊 [{acct_name}] Using apply_risk_orders for advanced risk management (trailing stop/break-even)")
                         try:
                             # Import apply_risk_orders from ultra_simple_server
