@@ -5533,104 +5533,17 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    """Registration page and handler."""
+    """Registration is disabled — all accounts come through Whop purchase flow."""
     # If already logged in, redirect to dashboard
     if USER_AUTH_AVAILABLE and is_logged_in():
         return redirect(url_for('dashboard'))
-    
-    if request.method == 'POST':
-        if not USER_AUTH_AVAILABLE:
-            flash('Authentication system not available.', 'error')
-            return render_template('register.html')
-        
-        username = request.form.get('username', '').strip().lower()
-        email = request.form.get('email', '').strip().lower()
-        password = request.form.get('password', '')
-        confirm_password = request.form.get('confirm_password', '')
-        display_name = request.form.get('display_name', '').strip() or username
-        terms = request.form.get('terms')
-        
-        # Validation
-        errors = []
-        
-        if not username or len(username) < 3:
-            errors.append('Username must be at least 3 characters.')
-        
-        if not email or '@' not in email:
-            errors.append('Please enter a valid email address.')
-        
-        if not password or len(password) < 6:
-            errors.append('Password must be at least 6 characters.')
-        
-        if password != confirm_password:
-            errors.append('Passwords do not match.')
-        
-        if not terms:
-            errors.append('You must agree to the Terms of Service.')
-        
-        if errors:
-            for error in errors:
-                flash(error, 'error')
-            return render_template('register.html')
-        
-        # Try to create user (new users are NOT approved by default - admin must approve)
-        user = create_user(username, email, password, display_name)
-        if user:
-            # Track affiliate referral if ref code was provided
-            ref_code = request.form.get('ref', '') or request.args.get('ref', '')
-            if ref_code:
-                try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    is_postgres = is_using_postgres()
-                    placeholder = '%s' if is_postgres else '?'
-                    # Verify the affiliate code exists and is approved
-                    cursor.execute(f"SELECT id FROM affiliate_applications WHERE affiliate_code = {placeholder} AND status = 'approved'", (ref_code.strip().upper(),))
-                    if cursor.fetchone():
-                        cursor.execute(f"UPDATE users SET referred_by = {placeholder} WHERE username = {placeholder}", (ref_code.strip().upper(), username))
-                        conn.commit()
-                        logger.info(f"Referral tracked: {username} referred by {ref_code}")
-                    conn.close()
-                except Exception as ref_err:
-                    logger.error(f"Error tracking referral: {ref_err}")
 
-            # Check if this email has a Whop membership — auto-approve + assign tier
-            whop_linked = False
-            try:
-                from whop_integration import link_user_to_whop
-                from user_auth import approve_user
-                link_result = link_user_to_whop(user.id, email)
-                if link_result.get('success') and link_result.get('linked'):
-                    approve_user(user.id)
-                    whop_linked = True
-                    logger.info(f"Auto-approved {email} via Whop membership: {link_result.get('linked')}")
-            except Exception as whop_err:
-                logger.warning(f"Whop membership check failed for {email}: {whop_err}")
-
-            # Also check for pending subscriptions (user_id=0) from webhook that fired before registration
-            if not whop_linked:
-                try:
-                    from subscription_models import link_pending_subscription
-                    pending_result = link_pending_subscription(user.id, email)
-                    if pending_result:
-                        from user_auth import approve_user
-                        approve_user(user.id)
-                        whop_linked = True
-                        logger.info(f"Linked pending Whop subscription for {email}")
-                except Exception as pending_err:
-                    logger.warning(f"Pending subscription check failed for {email}: {pending_err}")
-
-            if whop_linked:
-                flash('Your account is ready! You have been automatically approved. Please sign in.', 'success')
-            else:
-                flash('Your account has been created! Please wait for an administrator to approve your account before you can log in.', 'info')
-            return redirect(url_for('login'))
-        else:
-            flash('Username or email already exists. Please try different credentials.', 'error')
-
-    # Pass ref code to template so it can be included in form
-    ref_code = request.args.get('ref', '')
-    return render_template('register.html', ref_code=ref_code)
+    # No manual registration — redirect to pricing page
+    # Accounts are created automatically when users purchase on Whop:
+    #   1. User buys on Whop → webhook fires → auto_create_user_from_whop()
+    #   2. Activation email sent → user clicks link → sets username + password
+    flash('To get started, choose a plan and sign up through our checkout. You will receive an activation email to set up your account.', 'info')
+    return redirect(url_for('pricing'))
 
 
 @app.route('/logout')
