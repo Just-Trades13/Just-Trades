@@ -2091,8 +2091,7 @@ def execute_trade_simple(
                     has_multi_tp = risk_config and len(risk_config.get('take_profit', [])) > 1
                     use_bracket_order = (
                         not has_existing_position and
-                        tp_ticks and tp_ticks > 0 and
-                        not has_multi_tp  # Multi-TP needs apply_risk_orders for individual levels
+                        tp_ticks and tp_ticks > 0
                     )
                     
                     if use_bracket_order:
@@ -2138,7 +2137,48 @@ def execute_trade_simple(
                                     # Immediate trailing: Use trailingStop boolean (starts trailing immediately)
                                     trailing_stop_bool = True
                                     logger.info(f"📊 [{acct_name}] Immediate trailing stop: {offset_ticks} ticks")
-                        
+
+                        # Build multi-bracket legs for native multi-TP bracket orders
+                        multi_brackets_list = None
+                        if has_multi_tp and risk_config:
+                            tp_legs = risk_config.get('take_profit', [])
+                            trim_units = risk_config.get('trim_units', 'Percent')
+                            sl_cfg = risk_config.get('stop_loss', {})
+                            sl_ticks_val = sl_cfg.get('loss_ticks') if sl_cfg else (sl_ticks if sl_ticks > 0 else None)
+
+                            multi_brackets_list = []
+                            remaining_qty = adjusted_quantity
+
+                            for i, tp_leg in enumerate(tp_legs):
+                                leg_tp_ticks = tp_leg.get('gain_ticks', tp_ticks)
+                                leg_trim = tp_leg.get('trim_percent', 0)
+                                is_last_leg = (i == len(tp_legs) - 1)
+
+                                if is_last_leg:
+                                    leg_qty = remaining_qty  # Last leg gets remainder
+                                elif trim_units == 'Contracts':
+                                    leg_qty = min(int(leg_trim), remaining_qty) if leg_trim else remaining_qty
+                                else:  # Percent
+                                    leg_qty = max(1, int(round(adjusted_quantity * (leg_trim / 100.0)))) if leg_trim else remaining_qty
+
+                                leg_qty = max(1, min(leg_qty, remaining_qty))
+                                remaining_qty -= leg_qty
+
+                                leg = {
+                                    'qty': leg_qty,
+                                    'profit_target_ticks': leg_tp_ticks,
+                                    'stop_loss_ticks': sl_ticks_val,
+                                    'trailing_stop': trailing_stop_bool,
+                                    'break_even_ticks': break_even_ticks,
+                                    'break_even_offset': break_even_offset,
+                                    'auto_trail': auto_trail
+                                }
+                                multi_brackets_list.append(leg)
+                                logger.info(f"📊 [{acct_name}] Bracket leg {i+1}: {leg_qty}x, TP={leg_tp_ticks}t, SL={sl_ticks_val}t")
+
+                            if remaining_qty > 0:
+                                multi_brackets_list[-1]['qty'] += remaining_qty
+
                         sl_log = f" + SL: {sl_ticks} ticks" if sl_ticks > 0 else ""
                         be_log = f" + BE: {break_even_ticks} ticks" if break_even_ticks else ""
                         trail_log = f" + Trail" if auto_trail or trailing_stop_bool else ""
@@ -2155,7 +2195,8 @@ def execute_trade_simple(
                             trailing_stop=trailing_stop_bool,  # Immediate trailing (boolean)
                             break_even_ticks=break_even_ticks,  # Native break-even
                             break_even_offset=break_even_offset,  # Offset beyond entry for breakevenPlus
-                            auto_trail=auto_trail  # Native trailing-after-profit
+                            auto_trail=auto_trail,  # Native trailing-after-profit
+                            multi_brackets=multi_brackets_list  # Multi-TP: None for single-TP (uses existing path)
                         )
                         
                         if bracket_result and bracket_result.get('success'):
