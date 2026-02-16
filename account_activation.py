@@ -379,14 +379,13 @@ def auto_create_user_from_whop(email, whop_user_id):
                 approve_user(existing.id)
                 logger.info(f"Auto-approved existing user {email} (Whop purchase)")
 
-            # If still has temp username, send/resend activation email
-            if existing.username.startswith('whop_'):
-                try:
-                    token = generate_activation_token(existing.id, email)
-                    if token:
-                        send_activation_email(email, token)
-                except Exception as e:
-                    logger.error(f"Failed to send activation email for existing user {email}: {e}")
+            # Send activation email on every Whop purchase
+            try:
+                token = generate_activation_token(existing.id, email)
+                if token:
+                    send_activation_email(email, token)
+            except Exception as e:
+                logger.error(f"Failed to send activation email for existing user {email}: {e}")
 
             return existing.id
 
