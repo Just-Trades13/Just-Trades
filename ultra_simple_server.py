@@ -4952,7 +4952,12 @@ def init_db():
                     admin_notes TEXT,
                     reviewed_by INTEGER REFERENCES users(id),
                     reviewed_at TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    whop_link_platform_basic TEXT,
+                    whop_link_platform_premium TEXT,
+                    whop_link_platform_elite TEXT,
+                    whop_link_discord_basic TEXT,
+                    whop_link_discord_premium TEXT
                 )
             ''')
         except:
@@ -4973,7 +4978,12 @@ def init_db():
                     admin_notes TEXT,
                     reviewed_by INTEGER REFERENCES users(id),
                     reviewed_at TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    whop_link_platform_basic TEXT,
+                    whop_link_platform_premium TEXT,
+                    whop_link_platform_elite TEXT,
+                    whop_link_discord_basic TEXT,
+                    whop_link_discord_premium TEXT
                 )
             ''')
         except:
@@ -5290,6 +5300,12 @@ def run_migrations():
         ('recorders', 'is_premium', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
         # Signal blocking - instant reject while position is open (broker-managed exits)
         ('recorders', 'signal_blocking', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
+        # Affiliate Whop checkout links
+        ('affiliate_applications', 'whop_link_platform_basic', 'TEXT'),
+        ('affiliate_applications', 'whop_link_platform_premium', 'TEXT'),
+        ('affiliate_applications', 'whop_link_platform_elite', 'TEXT'),
+        ('affiliate_applications', 'whop_link_discord_basic', 'TEXT'),
+        ('affiliate_applications', 'whop_link_discord_premium', 'TEXT'),
     ]
 
     for table, column, col_type in migrations:
@@ -5364,8 +5380,30 @@ def whop_status():
 
 @app.route('/pricing')
 def pricing():
-    """Public pricing page."""
-    return render_template('pricing.html')
+    """Public pricing page. Accepts ?ref=CODE for affiliate link tracking."""
+    ref_code = request.args.get('ref', '').strip()
+    affiliate_links = {}
+    if ref_code:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            is_postgres = is_using_postgres()
+            placeholder = '%s' if is_postgres else '?'
+            cursor.execute(
+                f"SELECT whop_link_platform_basic, whop_link_platform_premium, whop_link_platform_elite, "
+                f"whop_link_discord_basic, whop_link_discord_premium "
+                f"FROM affiliate_applications WHERE affiliate_code = {placeholder} AND status = 'approved'",
+                (ref_code,)
+            )
+            row = cursor.fetchone()
+            if row:
+                row_dict = dict(row)
+                affiliate_links = {k: v for k, v in row_dict.items() if v}
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Pricing affiliate lookup error: {e}")
+    return render_template('pricing.html', affiliate_links=affiliate_links, ref_code=ref_code)
 
 
 @app.route('/terms')
@@ -16473,10 +16511,13 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
 
             # Multi-target TP: if tp_targets has multiple levels, use all of them
             if tp_targets and len(tp_targets) > 1:
+                _logger.info(f"📊 Raw tp_targets from DB: {tp_targets}")
+                _logger.info(f"📊 trim_units={trim_units}, quantity will be {quantity}")
                 multi_tp = []
                 for target in tp_targets:
                     t_ticks = target.get('ticks') or target.get('value', 0)
                     t_trim = target.get('trim', 0)
+                    _logger.info(f"   TP level: ticks={t_ticks}, trim={t_trim}")
                     if t_ticks and float(t_ticks) > 0:
                         multi_tp.append({
                             'gain_ticks': int(float(t_ticks)),
@@ -16484,7 +16525,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                         })
                 if len(multi_tp) > 1:
                     risk_config['take_profit'] = multi_tp
-                    _logger.info(f"📊 Multi-target TP: {len(multi_tp)} levels configured")
+                    _logger.info(f"📊 Multi-target TP: {len(multi_tp)} levels configured: {multi_tp}")
 
         # Stop loss (fixed or trailing)
         # Priority: Webhook trail settings > SL type from settings
@@ -24249,15 +24290,113 @@ def api_affiliate_dashboard():
         return jsonify({
             'affiliate_code': code,
             'referral_link': f"https://www.justtrades.app/register?ref={code}",
+            'pricing_link': f"https://www.justtrades.app/pricing?ref={code}",
             'referral_count': referral_count,
             'referred_users': referred_users,
             'name': app_data['name'],
-            'status': app_data['status']
+            'status': app_data['status'],
+            'whop_link_platform_basic': app_data.get('whop_link_platform_basic') or '',
+            'whop_link_platform_premium': app_data.get('whop_link_platform_premium') or '',
+            'whop_link_platform_elite': app_data.get('whop_link_platform_elite') or '',
+            'whop_link_discord_basic': app_data.get('whop_link_discord_basic') or '',
+            'whop_link_discord_premium': app_data.get('whop_link_discord_premium') or '',
         })
 
     except Exception as e:
         logger.error(f"Affiliate dashboard API error: {e}")
         return jsonify({'error': 'Failed to load dashboard data'}), 500
+
+
+@app.route('/api/affiliate/whop-links', methods=['POST'])
+def api_affiliate_whop_links_save():
+    """Save affiliate's custom Whop checkout links."""
+    if not USER_AUTH_AVAILABLE or not is_logged_in():
+        return jsonify({'error': 'Not logged in'}), 401
+
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    data = request.get_json() or {}
+
+    # Validate links
+    WHOP_LINK_FIELDS = [
+        'whop_link_platform_basic', 'whop_link_platform_premium', 'whop_link_platform_elite',
+        'whop_link_discord_basic', 'whop_link_discord_premium'
+    ]
+    sanitized = {}
+    for field in WHOP_LINK_FIELDS:
+        val = (data.get(field) or '').strip()
+        if val and not val.startswith('https://whop.com/'):
+            return jsonify({'error': f'Invalid link for {field}. Must start with https://whop.com/'}), 400
+        sanitized[field] = val if val else None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        # Verify user has approved affiliate application
+        cursor.execute(f"SELECT id FROM affiliate_applications WHERE email = {placeholder} AND status = 'approved'", (user.email,))
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'No approved affiliate application found'}), 404
+
+        app_id = dict(row)['id']
+
+        # Update all 5 link columns
+        set_clauses = ', '.join(f"{f} = {placeholder}" for f in WHOP_LINK_FIELDS)
+        values = [sanitized[f] for f in WHOP_LINK_FIELDS]
+        values.append(app_id)
+        cursor.execute(f"UPDATE affiliate_applications SET {set_clauses} WHERE id = {placeholder}", values)
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Whop links saved'})
+
+    except Exception as e:
+        logger.error(f"Save whop links error: {e}")
+        return jsonify({'error': 'Failed to save links'}), 500
+
+
+@app.route('/api/affiliate/whop-links-public', methods=['GET'])
+def api_affiliate_whop_links_public():
+    """Public endpoint — returns affiliate's Whop links by ref code."""
+    ref_code = request.args.get('ref', '').strip()
+    if not ref_code:
+        return jsonify({}), 200
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+
+        cursor.execute(
+            f"SELECT whop_link_platform_basic, whop_link_platform_premium, whop_link_platform_elite, "
+            f"whop_link_discord_basic, whop_link_discord_premium "
+            f"FROM affiliate_applications WHERE affiliate_code = {placeholder} AND status = 'approved'",
+            (ref_code,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if not row:
+            return jsonify({}), 200
+
+        row_dict = dict(row)
+        # Only return non-null links
+        links = {k: v for k, v in row_dict.items() if v}
+        return jsonify(links)
+
+    except Exception as e:
+        logger.error(f"Public whop links error: {e}")
+        return jsonify({}), 200
 
 
 # API Endpoints for Dashboard Filters
