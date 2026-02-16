@@ -81,6 +81,45 @@
     .loading-state { text-align: center; padding: 4rem; color: var(--text-muted); }
     .error-state { text-align: center; padding: 3rem; color: var(--red); }
     .aff-code { font-family: monospace; font-size: 1.25rem; color: var(--accent-teal); font-weight: 700; }
+
+    .whop-links-section {
+        background: var(--background-light);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 2.5rem;
+    }
+    .whop-links-section h3 { font-size: 1rem; margin: 0 0 0.5rem; color: var(--text-light); }
+    .whop-links-section p.section-desc { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem; }
+    .whop-field { margin-bottom: 1rem; }
+    .whop-field label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
+    .whop-field input {
+        width: 100%;
+        background: rgba(148,163,184,0.08);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 0.65rem 1rem;
+        color: var(--text-light);
+        font-size: 0.85rem;
+        font-family: monospace;
+        transition: border-color 0.2s;
+    }
+    .whop-field input:focus { outline: none; border-color: var(--primary-color); }
+    .whop-field input.invalid { border-color: var(--red); }
+    .btn-save-links {
+        background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+        border: none;
+        border-radius: 8px;
+        color: white;
+        padding: 0.7rem 1.5rem;
+        font-weight: 600;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: transform 0.2s, opacity 0.2s;
+    }
+    .btn-save-links:hover { transform: translateY(-2px); }
+    .btn-save-links:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .save-feedback { display: inline-block; margin-left: 0.75rem; font-size: 0.85rem; }
 </style>
 {% endblock %}
 
@@ -155,13 +194,43 @@ function renderDashboard(data, container) {
         </div>
 
         <div class="referral-link-box">
-            <h3>Your Referral Link</h3>
+            <h3>Your Referral Link (Registration)</h3>
             <div class="link-row">
                 <input type="text" id="refLink" value="${escapeHtml(data.referral_link)}" readonly>
-                <button class="btn-copy" id="copyBtn" onclick="copyLink()">
+                <button class="btn-copy" id="copyBtn" onclick="copyLink('refLink', 'copyBtn')">
                     <i class="material-icons" style="font-size:18px;vertical-align:middle;">content_copy</i> Copy
                 </button>
             </div>
+        </div>
+
+        <div class="referral-link-box">
+            <h3>Your Pricing Referral Link</h3>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.75rem;">Share this link to direct visitors to the pricing page with your custom Whop checkout links.</p>
+            <div class="link-row">
+                <input type="text" id="pricingLink" value="${escapeHtml(data.pricing_link || '')}" readonly>
+                <button class="btn-copy" id="copyPricingBtn" onclick="copyLink('pricingLink', 'copyPricingBtn')">
+                    <i class="material-icons" style="font-size:18px;vertical-align:middle;">content_copy</i> Copy
+                </button>
+            </div>
+        </div>
+
+        <div class="whop-links-section">
+            <h3>Whop Checkout Links</h3>
+            <p class="section-desc">Paste your own Whop checkout links for each tier. When visitors use your pricing referral link, these links replace the default checkout buttons.</p>
+            <div class="whop-field">
+                <label>Basic+ ($200/mo)</label>
+                <input type="url" id="whop_link_platform_basic" value="${escapeHtml(data.whop_link_platform_basic || '')}" placeholder="https://whop.com/...">
+            </div>
+            <div class="whop-field">
+                <label>Premium+ ($500/mo)</label>
+                <input type="url" id="whop_link_platform_premium" value="${escapeHtml(data.whop_link_platform_premium || '')}" placeholder="https://whop.com/...">
+            </div>
+            <div class="whop-field">
+                <label>Elite+ ($1,000/mo)</label>
+                <input type="url" id="whop_link_platform_elite" value="${escapeHtml(data.whop_link_platform_elite || '')}" placeholder="https://whop.com/...">
+            </div>
+            <button class="btn-save-links" id="saveLinksBtn" onclick="saveWhopLinks()">Save Whop Links</button>
+            <span class="save-feedback" id="saveFeedback"></span>
         </div>
 
         <div class="referred-section">
@@ -171,16 +240,70 @@ function renderDashboard(data, container) {
     `;
 }
 
-function copyLink() {
-    const input = document.getElementById('refLink');
+function copyLink(inputId, btnId) {
+    const input = document.getElementById(inputId);
     navigator.clipboard.writeText(input.value).then(() => {
-        const btn = document.getElementById('copyBtn');
+        const btn = document.getElementById(btnId);
         btn.classList.add('copied');
         btn.innerHTML = '<i class="material-icons" style="font-size:18px;vertical-align:middle;">check</i> Copied!';
         setTimeout(() => {
             btn.classList.remove('copied');
             btn.innerHTML = '<i class="material-icons" style="font-size:18px;vertical-align:middle;">content_copy</i> Copy';
         }, 2000);
+    });
+}
+
+function saveWhopLinks() {
+    const fields = ['whop_link_platform_basic', 'whop_link_platform_premium', 'whop_link_platform_elite'];
+    const payload = {};
+    let valid = true;
+
+    fields.forEach(f => {
+        const input = document.getElementById(f);
+        const val = (input.value || '').trim();
+        input.classList.remove('invalid');
+        if (val && !val.startsWith('https://whop.com/')) {
+            input.classList.add('invalid');
+            valid = false;
+        }
+        payload[f] = val;
+    });
+
+    const feedback = document.getElementById('saveFeedback');
+    if (!valid) {
+        feedback.style.color = 'var(--red)';
+        feedback.textContent = 'Links must start with https://whop.com/';
+        return;
+    }
+
+    const btn = document.getElementById('saveLinksBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    feedback.textContent = '';
+
+    fetch('/api/affiliate/whop-links', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.textContent = 'Save Whop Links';
+        if (data.error) {
+            feedback.style.color = 'var(--red)';
+            feedback.textContent = data.error;
+        } else {
+            feedback.style.color = 'var(--green)';
+            feedback.textContent = 'Saved!';
+            setTimeout(() => { feedback.textContent = ''; }, 3000);
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.textContent = 'Save Whop Links';
+        feedback.style.color = 'var(--red)';
+        feedback.textContent = 'Network error. Please try again.';
     });
 }
 
