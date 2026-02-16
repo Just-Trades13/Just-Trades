@@ -4656,43 +4656,46 @@
                 });
             }
 
-            // Get P&L for each recorder
-            for (const recorder of recordersData.recorders.slice(0, 8)) {
-                try {
-                    const pnlResponse = await fetch(`/api/paper-trades/recorder/${recorder.id}`);
-                    const pnlData = await pnlResponse.json();
+            // Get P&L for all recorders in parallel
+            const recorderSlice = recordersData.recorders.slice(0, 8);
+            const pnlResults = await Promise.all(
+                recorderSlice.map(rec =>
+                    fetch(`/api/paper-trades/recorder/${rec.id}`)
+                        .then(r => r.json())
+                        .catch(() => ({ unrealized_pnl: 0, positions: [] }))
+                )
+            );
 
-                    const unrealizedPnl = pnlData.unrealized_pnl || 0;
-                    const positions = pnlData.positions || [];
-                    const pnlClass = unrealizedPnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+            recorderSlice.forEach((recorder, i) => {
+                const pnlData = pnlResults[i];
+                const unrealizedPnl = pnlData.unrealized_pnl || 0;
+                const positions = pnlData.positions || [];
+                const pnlClass = unrealizedPnl >= 0 ? 'pnl-positive' : 'pnl-negative';
 
-                    const card = document.createElement('div');
-                    card.className = 'recorder-card';
-                    card.innerHTML = `
-                        <div class="recorder-card-header">
-                            <span class="recorder-card-name">${recorder.name}</span>
-                            <span class="recorder-card-pnl ${pnlClass}">${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toFixed(2)}</span>
+                const card = document.createElement('div');
+                card.className = 'recorder-card';
+                card.innerHTML = `
+                    <div class="recorder-card-header">
+                        <span class="recorder-card-name">${recorder.name}</span>
+                        <span class="recorder-card-pnl ${pnlClass}">${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toFixed(2)}</span>
+                    </div>
+                    <div class="recorder-card-stats">
+                        <div class="recorder-stat">
+                            <span class="recorder-stat-label">Open Positions</span>
+                            <span class="recorder-stat-value">${positions.length}</span>
                         </div>
-                        <div class="recorder-card-stats">
-                            <div class="recorder-stat">
-                                <span class="recorder-stat-label">Open Positions</span>
-                                <span class="recorder-stat-value">${positions.length}</span>
-                            </div>
-                            <div class="recorder-stat">
-                                <span class="recorder-stat-label">Symbol</span>
-                                <span class="recorder-stat-value">${recorder.symbol || 'Any'}</span>
-                            </div>
-                            <div class="recorder-stat">
-                                <span class="recorder-stat-label">Status</span>
-                                <span class="recorder-stat-value">${recorder.recording_enabled ? 'Active' : 'Paused'}</span>
-                            </div>
+                        <div class="recorder-stat">
+                            <span class="recorder-stat-label">Symbol</span>
+                            <span class="recorder-stat-value">${recorder.symbol || 'Any'}</span>
                         </div>
-                    `;
-                    cardsContainer.appendChild(card);
-                } catch (e) {
-                    console.warn(`Could not load P&L for recorder ${recorder.id}`);
-                }
-            }
+                        <div class="recorder-stat">
+                            <span class="recorder-stat-label">Status</span>
+                            <span class="recorder-stat-value">${recorder.recording_enabled ? 'Active' : 'Paused'}</span>
+                        </div>
+                    </div>
+                `;
+                cardsContainer.appendChild(card);
+            });
 
             if (cardsContainer.children.length === 0) {
                 cardsContainer.innerHTML = `
