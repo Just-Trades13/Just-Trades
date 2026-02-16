@@ -400,11 +400,15 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
             else:
                 _pnl = (pos_entry - exit_px) * pv * pos_qty
             _cum, _dd = _calc_drawdown_stats(cursor, ph, recorder_id, _pnl)
+            # Per-trade drawdown from MAE tracking (how deep underwater before close)
+            global _paper_trade_mae
+            mae = _paper_trade_mae.pop(pos_id, 0.0)
+            trade_dd = abs(mae) if mae < 0 else 0
             cursor.execute(f'''
                 UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
                 cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
                 WHERE id = {ph}
-            ''', (exit_px, _pnl, _cum, _dd, reason, now, pos_id))
+            ''', (exit_px, _pnl, _cum, trade_dd, reason, now, pos_id))
             return _pnl
 
         if side in ['LONG', 'SHORT']:
@@ -530,6 +534,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
 # ============================================================================
 _paper_monitor_running = False
 _paper_dca_next_price = {}  # trade_id -> next DCA trigger price (for automatic price-based DCA)
+_paper_trade_mae = {}  # trade_id -> worst unrealized P&L (most negative = deepest drawdown)
 
 def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, recorder_id: int, side: str, entry_price: float, quantity: float, symbol: str):
     """Close a paper trade due to TP or SL hit"""
@@ -565,23 +570,26 @@ def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, 
         prev_total = cursor.fetchone()[0] or 0
         cumulative = prev_total + pnl
 
-        cursor.execute(f'SELECT COALESCE(MAX(cumulative_pnl), 0) FROM paper_trades WHERE recorder_id = {ph} AND status = %s AND cumulative_pnl IS NOT NULL' if use_postgres else f'SELECT COALESCE(MAX(cumulative_pnl), 0) FROM paper_trades WHERE recorder_id = {ph} AND status = ? AND cumulative_pnl IS NOT NULL', (recorder_id, 'closed'))
-        peak = cursor.fetchone()[0] or 0
-        drawdown = max(0, peak - cumulative) if cumulative < peak else 0
+        # Per-trade drawdown: max adverse excursion (how deep underwater the trade went)
+        global _paper_trade_mae
+        mae = _paper_trade_mae.pop(trade_id, 0.0)
+        trade_drawdown = abs(mae) if mae < 0 else 0  # Store as positive dollar amount
 
         cursor.execute(f'''
             UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
             cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
             WHERE id = {ph}
-        ''', (exit_price, pnl, cumulative, drawdown, exit_reason, now, trade_id))
+        ''', (exit_price, pnl, cumulative, trade_drawdown, exit_reason, now, trade_id))
         conn.commit()
 
-        # Clean up DCA tracking for closed trade
+        # Clean up DCA and MAE tracking for closed trade
         global _paper_dca_next_price
         _paper_dca_next_price.pop(trade_id, None)
+        _paper_trade_mae.pop(trade_id, None)
 
+        dd_str = f" | DD: ${trade_drawdown:.2f}" if trade_drawdown > 0 else ""
         emoji = "🎯" if exit_reason == 'tp' else "🛑"
-        print(f"{emoji} Paper {side} closed by {exit_reason.upper()}: {symbol} @ {exit_price:.2f} | P&L: ${pnl:.2f}", flush=True)
+        print(f"{emoji} Paper {side} closed by {exit_reason.upper()}: {symbol} @ {exit_price:.2f} | P&L: ${pnl:.2f}{dd_str}", flush=True)
 
     except Exception as e:
         print(f"⚠️ Error closing paper trade {trade_id}: {e}", flush=True)
@@ -757,11 +765,11 @@ def check_paper_trades_tpsl():
     cursor = conn.cursor()
 
     try:
-        # Get all open paper trades with TP or SL set
+        # Get ALL open paper trades (for MAE tracking + TP/SL checks)
         cursor.execute('''
             SELECT id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price
             FROM paper_trades
-            WHERE status = 'open' AND (tp_price IS NOT NULL OR sl_price IS NOT NULL)
+            WHERE status = 'open'
         ''')
         open_trades = cursor.fetchall()
 
@@ -773,6 +781,9 @@ def check_paper_trades_tpsl():
         # Get live prices from TradingView cache (use globals, not import)
         global _market_data_cache
 
+        from tv_price_service import FUTURES_SPECS
+        global _paper_trade_mae
+
         for trade in open_trades:
             trade_id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price = trade
 
@@ -780,6 +791,18 @@ def check_paper_trades_tpsl():
 
             if not live_price:
                 continue  # No live price available
+
+            # Track max adverse excursion (per-trade drawdown)
+            sym_root = extract_symbol_root(symbol)
+            spec = FUTURES_SPECS.get(sym_root, {'point_value': 1.0})
+            pv = spec['point_value']
+            if side == 'LONG':
+                unrealized = (live_price - entry_price) * pv * quantity
+            else:
+                unrealized = (entry_price - live_price) * pv * quantity
+            current_mae = _paper_trade_mae.get(trade_id, 0.0)
+            if unrealized < current_mae:
+                _paper_trade_mae[trade_id] = unrealized
 
             # Check TP hit
             if tp_price:
