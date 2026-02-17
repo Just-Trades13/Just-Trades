@@ -2230,7 +2230,7 @@ def execute_trade_simple(
                         )
                         
                         if bracket_result and bracket_result.get('success'):
-                            strategy_id = bracket_result.get('orderStrategyId') or bracket_result.get('id')
+                            strategy_id = bracket_result.get('strategy_id') or bracket_result.get('orderStrategyId') or bracket_result.get('id')
                             logger.info(f"✅ [{acct_name}] BRACKET ORDER SUCCESS! Strategy ID: {strategy_id}")
                             
                             # OPTIMIZATION: Skip position verification - bracket order handles everything
