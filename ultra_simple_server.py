@@ -3261,9 +3261,9 @@ def _rate_limit_auth_routes():
 _CSRF_SAFE_METHODS = frozenset(['GET', 'HEAD', 'OPTIONS'])
 _CSRF_EXEMPT_PREFIXES = (
     '/webhook/',            # TradingView webhook signals (external POST)
+    '/webhooks/',           # Whop webhook signals (external POST)
     '/api/oauth/callback',  # Tradovate OAuth redirect
     '/api/trading-engine/', # Internal health check
-    '/api/whop/',           # Whop payment webhook
 )
 
 @app.before_request
@@ -8630,6 +8630,107 @@ def _insider_polling_loop():
 _insider_poll_thread = threading.Thread(target=_insider_polling_loop, daemon=True)
 _insider_poll_thread.start()
 
+# ============================================================================
+# WHOP MEMBERSHIP SYNC DAEMON — catches users that Whop webhooks missed
+# ============================================================================
+WHOP_SYNC_INTERVAL = 300  # 5 minutes
+
+def _whop_membership_sync():
+    """Poll Whop for all active memberships and create missing platform accounts."""
+    from whop_integration import whop_api_request, WHOP_PRODUCT_MAP
+    from user_auth import get_user_by_email
+    from account_activation import auto_create_user_from_whop
+    from subscription_models import create_subscription, get_user_subscription
+
+    result = whop_api_request('GET', '/memberships?per=100&expand=user')
+    if not result:
+        return
+
+    memberships = result.get('data', [])
+    synced_count = 0
+
+    for membership in memberships:
+        try:
+            # Only process active/trialing memberships
+            if not membership.get('valid'):
+                continue
+
+            # Get product ID — must be a platform product we recognize
+            product = membership.get('product') or {}
+            product_id = product.get('id') if isinstance(product, dict) else membership.get('product_id')
+            plan_slug = WHOP_PRODUCT_MAP.get(product_id)
+            if not plan_slug or not plan_slug.startswith('platform_'):
+                continue
+
+            # Get user email from expanded user object
+            user_obj = membership.get('user') or {}
+            user_email = user_obj.get('email') if isinstance(user_obj, dict) else None
+            if not user_email:
+                continue
+
+            whop_user_id = user_obj.get('id') if isinstance(user_obj, dict) else None
+            membership_id = membership.get('id')
+            is_trial = membership.get('status') == 'trialing'
+
+            # Check if user exists on our platform
+            user = get_user_by_email(user_email)
+
+            if user:
+                # User exists — check if they have an active subscription
+                existing_sub = get_user_subscription(user.id, plan_type='platform')
+                if existing_sub:
+                    continue  # Already has subscription, nothing to do
+
+                # User exists but no subscription — create one
+                create_subscription(
+                    user_id=user.id,
+                    plan_slug=plan_slug,
+                    whop_membership_id=membership_id,
+                    whop_customer_id=whop_user_id,
+                    trial_days=7 if is_trial else 0
+                )
+                synced_count += 1
+                logger.info(f"🔄 Whop sync: created subscription for existing user {user_email} ({plan_slug})")
+            else:
+                # User doesn't exist — auto-create account + subscription
+                new_user_id = auto_create_user_from_whop(user_email, whop_user_id or 'unknown')
+                if new_user_id:
+                    create_subscription(
+                        user_id=new_user_id,
+                        plan_slug=plan_slug,
+                        whop_membership_id=membership_id,
+                        whop_customer_id=whop_user_id,
+                        trial_days=7 if is_trial else 0
+                    )
+                    synced_count += 1
+                    logger.info(f"🔄 Whop sync: auto-created user + subscription for {user_email} ({plan_slug})")
+                else:
+                    logger.warning(f"⚠️ Whop sync: failed to auto-create user for {user_email}")
+
+        except Exception as e:
+            logger.error(f"⚠️ Whop sync: error processing membership {membership.get('id', '?')}: {e}")
+            continue
+
+    if synced_count > 0:
+        logger.info(f"🔄 Whop sync complete: {synced_count} new account(s) synced")
+
+
+def _whop_sync_loop():
+    """Background thread for Whop membership sync."""
+    print("🚀 Starting Whop membership sync (every 5 minutes)")
+    time.sleep(30)  # Initial delay — let subscription system initialize
+    while True:
+        try:
+            _whop_membership_sync()
+        except Exception as e:
+            logger.error(f"⚠️ Whop sync loop error: {e}")
+        time.sleep(WHOP_SYNC_INTERVAL)
+
+
+if SUBSCRIPTION_SYSTEM_AVAILABLE:
+    _whop_sync_thread = threading.Thread(target=_whop_sync_loop, daemon=True, name="Whop-Sync")
+    _whop_sync_thread.start()
+
 @app.route('/insider-signals')
 @app.route('/insider_signals')
 def insider_signals():
@@ -8655,6 +8756,7 @@ def insider_signals():
                           user_tier=user_tier)
 
 @app.route('/api/insiders/status')
+@feature_required('insider_signals')
 def api_insiders_status():
     """Get insider service status"""
     try:
@@ -8710,6 +8812,7 @@ def api_insiders_status():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 @app.route('/api/insiders/today')
+@feature_required('insider_signals')
 def api_insiders_today():
     """Get today's insider signals"""
     try:
@@ -8760,6 +8863,7 @@ def api_insiders_today():
         return jsonify({"success": False, "error": str(e), "signals": []}), 500
 
 @app.route('/api/insiders/top')
+@feature_required('insider_signals')
 def api_insiders_top():
     """Get top signals with filters"""
     try:
@@ -8818,6 +8922,7 @@ def api_insiders_top():
         return jsonify({"success": False, "error": str(e), "signals": []}), 500
 
 @app.route('/api/insiders/ticker/<symbol>')
+@feature_required('insider_signals')
 def api_insiders_ticker(symbol):
     """Get signals for specific ticker"""
     try:
@@ -8871,6 +8976,7 @@ def api_insiders_ticker(symbol):
         return jsonify({"success": False, "error": str(e), "signals": []}), 500
 
 @app.route('/api/insiders/conviction')
+@feature_required('insider_signals')
 def api_insiders_conviction():
     """Get high conviction signals"""
     try:
@@ -8927,6 +9033,7 @@ def api_insiders_conviction():
         return jsonify({"success": False, "error": str(e), "signals": []}), 500
 
 @app.route('/api/insiders/refresh', methods=['POST'])
+@feature_required('insider_signals')
 def api_insiders_refresh():
     """Trigger manual refresh - only works in SQLite mode"""
     try:
@@ -8946,6 +9053,7 @@ def api_insiders_refresh():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/insiders/price/<ticker>')
+@feature_required('insider_signals')
 def api_insiders_price(ticker):
     """Get stock price using Yahoo Finance"""
     try:
@@ -8986,6 +9094,7 @@ def api_insiders_price(ticker):
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/insiders/watchlist', methods=['GET', 'POST'])
+@feature_required('insider_signals')
 def api_insiders_watchlist():
     """Watchlist operations"""
     try:
@@ -9034,6 +9143,7 @@ def api_insiders_watchlist():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/insiders/watchlist/<int:item_id>', methods=['DELETE'])
+@feature_required('insider_signals')
 def api_insiders_watchlist_delete(item_id):
     """Delete watchlist item"""
     try:
@@ -9058,6 +9168,7 @@ def api_insiders_watchlist_delete(item_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/insiders/watchlist/signals')
+@feature_required('insider_signals')
 def api_insiders_watchlist_signals():
     """Get signals matching watchlist"""
     try:
@@ -9226,7 +9337,26 @@ def create_account():
         current_user_id = None
         if USER_AUTH_AVAILABLE and is_logged_in():
             current_user_id = get_current_user_id()
-        
+
+        # Enforce tier-based account limits
+        if current_user_id and SUBSCRIPTION_SYSTEM_AVAILABLE:
+            is_admin_user = False
+            try:
+                user = get_current_user()
+                if user and user.is_admin:
+                    is_admin_user = True
+            except Exception:
+                pass
+            if not is_admin_user:
+                count_conn = get_db_connection()
+                count_cursor = count_conn.cursor()
+                count_ph = '%s' if is_using_postgres() else '?'
+                count_cursor.execute(f"SELECT COUNT(*) FROM accounts WHERE user_id = {count_ph}", (current_user_id,))
+                current_count = count_cursor.fetchone()[0]
+                count_conn.close()
+                if not check_limit(current_user_id, 'max_broker_accounts', current_count):
+                    return jsonify({'success': False, 'error': 'You have reached the maximum number of broker accounts for your plan. Please upgrade to add more.'}), 403
+
         conn = get_db_connection()
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
@@ -18649,6 +18779,7 @@ def quant_screener_page():
 
 
 @app.route('/api/quant-screener/screen', methods=['POST'])
+@feature_required('quant_screener')
 def api_quant_screener_screen():
     """Run a stock screen with the given filters"""
     try:
@@ -18694,6 +18825,7 @@ def api_quant_screener_screen():
 
 
 @app.route('/api/quant-screener/factors/<symbol>', methods=['GET'])
+@feature_required('quant_screener')
 def api_quant_screener_factors(symbol):
     """Get detailed factor grades for a specific stock"""
     try:
@@ -18716,6 +18848,7 @@ def api_quant_screener_factors(symbol):
 
 
 @app.route('/api/quant-screener/search', methods=['GET'])
+@feature_required('quant_screener')
 def api_quant_screener_search():
     """Search for stocks by symbol or name"""
     try:
@@ -18752,6 +18885,7 @@ def api_quant_screener_search():
 
 
 @app.route('/api/quant-screener/ticker/<symbol>', methods=['GET'])
+@feature_required('quant_screener')
 def api_quant_screener_ticker(symbol):
     """Get full quant report for a specific ticker using REAL financial data"""
     try:
@@ -18840,6 +18974,7 @@ def api_quant_screener_ticker(symbol):
 
 
 @app.route('/api/quant-screener/live-prices', methods=['POST'])
+@feature_required('quant_screener')
 def api_quant_screener_live_prices():
     """Fetch live stock prices from TradingView"""
     try:
@@ -18865,6 +19000,7 @@ def api_quant_screener_live_prices():
 
 
 @app.route('/api/quant-screener/live-price/<symbol>', methods=['GET'])
+@feature_required('quant_screener')
 def api_quant_screener_live_price(symbol):
     """Get live price for a single stock symbol"""
     try:
