@@ -393,6 +393,17 @@
                         <span class="slider"></span>
                     </label>
                 </div>
+                {% if is_admin %}
+                <div style="margin-top:8px;">
+                    <span style="font-size:0.85rem;color:#94a3b8;display:block;margin-bottom:6px;">Required Tier (Admin Only)</span>
+                    <div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid #334155;">
+                        <button type="button" class="tier-pill" data-tier="public" onclick="selectTier('public')" style="flex:1;padding:6px 12px;font-size:0.8rem;font-weight:600;border:none;cursor:pointer;transition:all 0.2s;background:{{ '#10b981' if not recorder or not recorder.required_tier or recorder.required_tier == 'public' else '#1e293b' }};color:{{ '#fff' if not recorder or not recorder.required_tier or recorder.required_tier == 'public' else '#64748b' }};">Public</button>
+                        <button type="button" class="tier-pill" data-tier="premium" onclick="selectTier('premium')" style="flex:1;padding:6px 12px;font-size:0.8rem;font-weight:600;border:none;border-left:1px solid #334155;cursor:pointer;transition:all 0.2s;background:{{ '#f59e0b' if recorder and recorder.required_tier == 'premium' else '#1e293b' }};color:{{ '#fff' if recorder and recorder.required_tier == 'premium' else '#64748b' }};">Premium</button>
+                        <button type="button" class="tier-pill" data-tier="elite" onclick="selectTier('elite')" style="flex:1;padding:6px 12px;font-size:0.8rem;font-weight:600;border:none;border-left:1px solid #334155;cursor:pointer;transition:all 0.2s;background:{{ '#8b5cf6' if recorder and recorder.required_tier == 'elite' else '#1e293b' }};color:{{ '#fff' if recorder and recorder.required_tier == 'elite' else '#64748b' }};">Elite</button>
+                    </div>
+                    <input type="hidden" id="required_tier" value="{{ recorder.required_tier if recorder and recorder.required_tier else 'public' }}">
+                </div>
+                {% endif %}
             </div>
         </section>
     </section>
@@ -1159,8 +1170,24 @@
             same_direction_ignore: document.getElementById('same_direction_ignore').checked,
             notes: document.getElementById('notes').value.trim(),
             recording_enabled: document.getElementById('recording_enabled').checked,
-            is_private: document.getElementById('is_private').checked
+            is_private: document.getElementById('is_private').checked,
+            required_tier: document.getElementById('required_tier') ? document.getElementById('required_tier').value : undefined
         };
+    }
+
+    function selectTier(tier) {
+        document.getElementById('required_tier').value = tier;
+        document.querySelectorAll('.tier-pill').forEach(btn => {
+            const btnTier = btn.getAttribute('data-tier');
+            const colors = { public: '#10b981', premium: '#f59e0b', elite: '#8b5cf6' };
+            if (btnTier === tier) {
+                btn.style.background = colors[tier];
+                btn.style.color = '#fff';
+            } else {
+                btn.style.background = '#1e293b';
+                btn.style.color = '#64748b';
+            }
+        });
     }
 
     function validateForm(data) {

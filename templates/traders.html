@@ -491,13 +491,24 @@
                     <input type="text" placeholder="#alerts-channel" disabled>
                 </label>
                 <div class="toggle-row">
-                    <span>Private <span style="font-size:0.7rem;color:#f59e0b;font-weight:600;">COMING SOON</span></span>
-                    <label class="switch">
-                        <input type="checkbox" checked disabled>
+                    <span>Private</span>
+                    <label class="switch" title="When enabled, only you can see this strategy in the recorder dropdown">
+                        <input type="checkbox" id="recorder_is_private" {{ 'checked' if recorder_is_private else '' }} {{ '' if is_recorder_owner or is_admin else 'disabled' }}>
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div class="toggle-row">
+                {% if is_admin %}
+                <div style="margin-top:8px;">
+                    <span style="font-size:0.85rem;color:#94a3b8;display:block;margin-bottom:6px;">Required Tier (Admin Only)</span>
+                    <div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid #334155;">
+                        <button type="button" class="tier-pill" data-tier="public" onclick="selectTier('public')" style="flex:1;padding:6px 12px;font-size:0.8rem;font-weight:600;border:none;cursor:pointer;transition:all 0.2s;background:{{ '#10b981' if recorder_required_tier == 'public' else '#1e293b' }};color:{{ '#fff' if recorder_required_tier == 'public' else '#64748b' }};">Public</button>
+                        <button type="button" class="tier-pill" data-tier="premium" onclick="selectTier('premium')" style="flex:1;padding:6px 12px;font-size:0.8rem;font-weight:600;border:none;border-left:1px solid #334155;cursor:pointer;transition:all 0.2s;background:{{ '#f59e0b' if recorder_required_tier == 'premium' else '#1e293b' }};color:{{ '#fff' if recorder_required_tier == 'premium' else '#64748b' }};">Premium</button>
+                        <button type="button" class="tier-pill" data-tier="elite" onclick="selectTier('elite')" style="flex:1;padding:6px 12px;font-size:0.8rem;font-weight:600;border:none;border-left:1px solid #334155;cursor:pointer;transition:all 0.2s;background:{{ '#8b5cf6' if recorder_required_tier == 'elite' else '#1e293b' }};color:{{ '#fff' if recorder_required_tier == 'elite' else '#64748b' }};">Elite</button>
+                    </div>
+                    <input type="hidden" id="required_tier" value="{{ recorder_required_tier or 'public' }}">
+                </div>
+                {% endif %}
+                <div class="toggle-row" style="margin-top:8px;">
                     <span>Manual Strategy <span style="font-size:0.7rem;color:#f59e0b;font-weight:600;">COMING SOON</span></span>
                     <label class="switch">
                         <input type="checkbox" disabled>
@@ -1818,6 +1829,24 @@
     }
 
     // =============================================
+    // Tier Pill Selector (Admin Only)
+    // =============================================
+    function selectTier(tier) {
+        document.getElementById('required_tier').value = tier;
+        document.querySelectorAll('.tier-pill').forEach(btn => {
+            const btnTier = btn.getAttribute('data-tier');
+            const colors = { public: '#10b981', premium: '#f59e0b', elite: '#8b5cf6' };
+            if (btnTier === tier) {
+                btn.style.background = colors[tier];
+                btn.style.color = '#fff';
+            } else {
+                btn.style.background = '#1e293b';
+                btn.style.color = '#64748b';
+            }
+        });
+    }
+
+    // =============================================
     // Inverse Signals Toggle
     // =============================================
     
@@ -2342,7 +2371,10 @@
                                 max_signals_per_session: maxSignalsPerSession,
                                 max_daily_loss: maxDailyLoss,
                                 auto_flat_after_cutoff: autoFlatAfterCutoff,
-                                inverse_signals: inverseSignals
+                                inverse_signals: inverseSignals,
+                                // Recorder privacy settings
+                                recorder_is_private: document.getElementById('recorder_is_private') ? document.getElementById('recorder_is_private').checked : undefined,
+                                required_tier: document.getElementById('required_tier') ? document.getElementById('required_tier').value : undefined
                             })
                         });
                         

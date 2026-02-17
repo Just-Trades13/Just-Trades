@@ -4901,6 +4901,19 @@ def init_db():
         except:
             pass  # Column already exists
 
+    # Add required_tier column to recorders table (Feb 2026)
+    # Allows admin to restrict a recorder to premium/elite tier users
+    if is_postgres:
+        try:
+            cursor.execute("ALTER TABLE recorders ADD COLUMN required_tier VARCHAR(20) DEFAULT 'public'")
+        except:
+            pass  # Column already exists
+    else:
+        try:
+            cursor.execute("ALTER TABLE recorders ADD COLUMN required_tier TEXT DEFAULT 'public'")
+        except:
+            pass  # Column already exists
+
     # Jan 2026: Add new webhook feature columns to recorders
     # same_direction_ignore - Block duplicate signals in same direction
     if is_postgres:
@@ -11881,7 +11894,15 @@ def recorders_edit(recorder_id):
             except:
                 continue
         conn.close()
-        return render_template('recorders.html', recorder=recorder, accounts=accounts, mode='edit')
+
+        # Check if current user is admin (for tier pill)
+        is_admin = False
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user = get_current_user()
+            if user and user.is_admin:
+                is_admin = True
+
+        return render_template('recorders.html', recorder=recorder, accounts=accounts, mode='edit', is_admin=is_admin)
     except Exception as e:
         logger.error(f"Error loading recorder edit form: {e}")
         return redirect('/recorders')
@@ -12311,6 +12332,7 @@ def api_update_recorder(recorder_id):
             'notes': 'notes',
             'same_direction_ignore': 'same_direction_ignore',
             'inverse_signals': 'inverse_signals',
+            'required_tier': 'required_tier',
         }
         
         for key, db_field in field_mapping.items():
@@ -13548,11 +13570,47 @@ def api_update_trader(trader_id):
                 else:
                     logger.warning(f"⚠️ VERIFICATION FAILED: enabled_accounts is None or empty after save!")
         
-        # CRITICAL: DO NOT update the recorder table when updating a trader!
+        # CRITICAL: DO NOT update the recorder table TRADING SETTINGS when updating a trader!
         # The recorder is the baseline/master settings and should NEVER be changed by trader edits.
         # Traders inherit from the recorder but can override settings in the traders table.
-        # Only update the traders table, NOT the recorders table.
-        
+        # EXCEPTION: Privacy and tier are recorder-level admin/owner controls, not trading settings.
+
+        # Update recorder privacy if provided (owner or admin only)
+        if 'recorder_is_private' in data or 'required_tier' in data:
+            # Get the recorder_id and ownership info for this trader
+            cursor.execute(f'SELECT recorder_id FROM traders WHERE id = {placeholder}', (trader_id,))
+            rec_row = cursor.fetchone()
+            if rec_row:
+                rec_id = rec_row[0] if isinstance(rec_row, tuple) else rec_row.get('recorder_id')
+                # Get recorder owner
+                cursor.execute(f'SELECT user_id FROM recorders WHERE id = {placeholder}', (rec_id,))
+                rec_owner_row = cursor.fetchone()
+                rec_owner_id = (rec_owner_row[0] if isinstance(rec_owner_row, tuple) else rec_owner_row.get('user_id')) if rec_owner_row else None
+
+                # Get current user info
+                current_user_id = None
+                current_is_admin = False
+                if USER_AUTH_AVAILABLE and is_logged_in():
+                    current_user_id = get_current_user_id()
+                    user = get_current_user()
+                    if user and user.is_admin:
+                        current_is_admin = True
+
+                # is_private: owner or admin can change
+                if 'recorder_is_private' in data:
+                    is_owner = (current_user_id is not None and rec_owner_id is not None and int(current_user_id) == int(rec_owner_id))
+                    if is_owner or current_is_admin:
+                        priv_val = bool(data['recorder_is_private']) if is_postgres else (1 if data['recorder_is_private'] else 0)
+                        cursor.execute(f'UPDATE recorders SET is_private = {placeholder} WHERE id = {placeholder}', (priv_val, rec_id))
+                        logger.info(f"Updated recorder {rec_id} is_private={data['recorder_is_private']}")
+
+                # required_tier: admin only
+                if 'required_tier' in data:
+                    if current_is_admin:
+                        tier_val = data['required_tier'] if data['required_tier'] in ('public', 'premium', 'elite') else 'public'
+                        cursor.execute(f'UPDATE recorders SET required_tier = {placeholder} WHERE id = {placeholder}', (tier_val, rec_id))
+                        logger.info(f"Updated recorder {rec_id} required_tier={tier_val}")
+
         conn.commit()
 
         # ============================================================
@@ -18339,18 +18397,65 @@ def traders_new():
             )
         
         # Get recorders for the dropdown:
-        # Show ALL recorders - they're public by default unless is_private is set
-        # The is_private column may not exist yet, so we use a simple query
-        cursor.execute('SELECT id, name, strategy_type FROM recorders ORDER BY name')
+        # Filter by privacy (is_private) and tier (required_tier)
+        # Always show the user's own recorders regardless of privacy/tier
+        # Get user's tier for filtering
+        user_tier = 'none'
+        if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
+            try:
+                from subscription_models import get_user_plan_tier
+                user_tier = get_user_plan_tier(user_id) or 'none'
+            except:
+                user_tier = 'none'
+
+        # Check if current user is admin — admins see everything
+        is_admin_user = False
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user = get_current_user()
+            if user and user.is_admin:
+                is_admin_user = True
+
+        # Tier hierarchy: public=0, basic=1, premium=2, elite=3
+        tier_rank = {'none': 0, 'public': 0, 'basic': 1, 'premium': 2, 'elite': 3}
+        user_tier_rank = tier_rank.get(user_tier, 0)
+
+        cursor.execute('SELECT id, name, strategy_type, user_id, is_private, required_tier FROM recorders ORDER BY name')
         recorders = []
         for row in cursor.fetchall():
             # Handle both dict-style and tuple-style rows
             if hasattr(row, 'get'):
-                recorders.append({'id': row.get('id'), 'name': row.get('name'), 'strategy_type': row.get('strategy_type', 'Futures')})
-            elif hasattr(row, '__getitem__'):
-                recorders.append({'id': row['id'], 'name': row['name'], 'strategy_type': row.get('strategy_type', 'Futures') if hasattr(row, 'get') else 'Futures'})
+                r_id = row.get('id')
+                r_name = row.get('name')
+                r_strategy_type = row.get('strategy_type', 'Futures')
+                r_user_id = row.get('user_id')
+                r_is_private = bool(row.get('is_private'))
+                r_required_tier = row.get('required_tier') or 'public'
             else:
-                recorders.append({'id': row[0], 'name': row[1], 'strategy_type': row[2] if len(row) > 2 else 'Futures'})
+                r_id = row[0]
+                r_name = row[1]
+                r_strategy_type = row[2] if len(row) > 2 else 'Futures'
+                r_user_id = row[3] if len(row) > 3 else None
+                r_is_private = bool(row[4]) if len(row) > 4 else False
+                r_required_tier = (row[5] if len(row) > 5 else None) or 'public'
+
+            # Always show user's own recorders
+            if r_user_id is not None and user_id is not None and int(r_user_id) == int(user_id):
+                recorders.append({'id': r_id, 'name': r_name, 'strategy_type': r_strategy_type})
+                continue
+
+            # Admins see everything
+            if is_admin_user:
+                recorders.append({'id': r_id, 'name': r_name, 'strategy_type': r_strategy_type})
+                continue
+
+            # Skip private recorders from other users
+            if r_is_private:
+                continue
+
+            # Check tier requirement
+            required_rank = tier_rank.get(r_required_tier, 0)
+            if user_tier_rank >= required_rank:
+                recorders.append({'id': r_id, 'name': r_name, 'strategy_type': r_strategy_type})
         
         # CRITICAL SECURITY: Get accounts with their tradovate subaccounts - ONLY user's own accounts
         # NEVER show accounts without user_id filter
@@ -18471,6 +18576,9 @@ def traders_edit(trader_id):
                    r.time_filter_2_start as r_time_filter_2_start,
                    r.time_filter_2_stop as r_time_filter_2_stop,
                    r.inverse_signals as r_inverse_signals,
+                   r.is_private as recorder_is_private,
+                   r.user_id as recorder_user_id,
+                   r.required_tier as recorder_required_tier,
                    a.name as account_name, a.id as parent_account_id
             FROM traders t
             JOIN recorders r ON t.recorder_id = r.id
@@ -18697,7 +18805,20 @@ def traders_edit(trader_id):
             'webhook_token': trader_row['webhook_token'] if 'webhook_token' in trader_row.keys() else None,
             'inverse_signals': bool(trader_row.get('r_inverse_signals') if hasattr(trader_row, 'get') else (trader_row['r_inverse_signals'] if 'r_inverse_signals' in trader_row.keys() else False))
         }
-        
+
+        # Privacy and tier data for the recorder toggle + admin pill
+        recorder_is_private = bool(trader_row.get('recorder_is_private') if hasattr(trader_row, 'get') else False)
+        recorder_user_id = trader_row.get('recorder_user_id') if hasattr(trader_row, 'get') else None
+        is_recorder_owner = (current_user_id is not None and recorder_user_id is not None and int(current_user_id) == int(recorder_user_id))
+        recorder_required_tier = (trader_row.get('recorder_required_tier') if hasattr(trader_row, 'get') else None) or 'public'
+
+        # Check if current user is admin
+        is_admin = False
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            user = get_current_user()
+            if user and user.is_admin:
+                is_admin = True
+
         return render_template(
             'traders.html',
             mode='edit',
@@ -18705,7 +18826,11 @@ def traders_edit(trader_id):
             header_cta='Update Trader',
             trader=trader,
             accounts=accounts,
-            recorder=recorder
+            recorder=recorder,
+            recorder_is_private=recorder_is_private,
+            is_recorder_owner=is_recorder_owner,
+            is_admin=is_admin,
+            recorder_required_tier=recorder_required_tier
         )
     except Exception as e:
         logger.error(f"Error in traders_edit for trader {trader_id}: {e}")
