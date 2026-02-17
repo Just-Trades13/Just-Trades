@@ -699,7 +699,8 @@ class TradovateIntegration:
             logger.info(f"📤 Sending WebSocket message: {message_type}")
             logger.debug(f"   Payload: {json.dumps(payload, indent=2)}")
             
-            await self.websocket.send(message_json)
+            # Add timeout to send to prevent hanging on dead connections
+            await asyncio.wait_for(self.websocket.send(message_json), timeout=5.0)
             
             # Wait for response (with timeout)
             # Note: Tradovate WebSocket may send multiple messages, we need the response to our request
@@ -1008,7 +1009,8 @@ class TradovateIntegration:
             
             # Send via WebSocket
             message_json = json.dumps(ws_message)
-            await self.websocket.send(message_json)
+            # Add timeout to send
+            await asyncio.wait_for(self.websocket.send(message_json), timeout=5.0)
             
             # Wait for response with timeout
             try:
@@ -1140,7 +1142,8 @@ class TradovateIntegration:
                     }
                     
                     logger.info(f"📤 [WS] Modifying order {order_id}")
-                    await self.websocket.send(json.dumps(ws_message))
+                    # Add timeout to send
+                    await asyncio.wait_for(self.websocket.send(json.dumps(ws_message)), timeout=5.0)
                     
                     response = await asyncio.wait_for(self.websocket.recv(), timeout=30.0)
                     result = json.loads(response)
@@ -1195,7 +1198,8 @@ class TradovateIntegration:
                     }
                     
                     logger.info(f"📤 [WS] Cancelling order {order_id}")
-                    await self.websocket.send(json.dumps(ws_message))
+                    # Add timeout to send
+                    await asyncio.wait_for(self.websocket.send(json.dumps(ws_message)), timeout=5.0)
                     
                     response = await asyncio.wait_for(self.websocket.recv(), timeout=30.0)
                     result = json.loads(response)
@@ -2082,7 +2086,152 @@ class TradovateIntegration:
         except Exception as e:
             logger.error(f"Error creating bracket order strategy: {e}", exc_info=True)
             return {'success': False, 'error': str(e)}
-    
+
+    async def place_multi_bracket_order(self, account_id: int, account_spec: str, symbol: str,
+                                         entry_side: str, total_quantity: int,
+                                         bracket_legs: list,
+                                         trailing_stop: bool = False,
+                                         auto_trail: dict = None) -> Optional[Dict[str, Any]]:
+        """
+        Place a multi-bracket order with multiple TP legs, each with its own SL.
+        Tradovate manages all OCO automatically — one atomic order strategy.
+
+        Args:
+            account_id: The Tradovate account ID
+            account_spec: The account name/spec
+            symbol: The trading symbol
+            entry_side: 'Buy' or 'Sell' for the entry
+            total_quantity: Total contracts (sum of all leg qtys)
+            bracket_legs: List of dicts, each with:
+                - qty (int): Contracts for this leg
+                - tp_ticks (int): Profit target in ticks for this leg
+                - sl_ticks (int or None): Stop loss in ticks (same for all legs typically)
+            trailing_stop: Whether to use immediate trailing stop (boolean, applied to all legs)
+            auto_trail: Dict with {stopLoss: ticks, trigger: ticks, freq: points} for trailing-after-profit
+
+        Returns:
+            Dict with order strategy result including strategy_id
+        """
+        try:
+            # Get tick size for this symbol to convert ticks to points
+            symbol_root = ''.join(c for c in symbol if c.isalpha())[:3].upper()
+            tick_sizes = {
+                'MES': 0.25, 'ES': 0.25, 'MNQ': 0.25, 'NQ': 0.25,
+                'MYM': 1.0, 'YM': 1.0, 'M2K': 0.1, 'RTY': 0.1,
+                'GC': 0.1, 'MGC': 0.1, 'SI': 0.005, 'SIL': 0.005,
+                'HG': 0.0005, 'PL': 0.1,
+                'CL': 0.01, 'MCL': 0.01, 'NG': 0.001, 'HO': 0.0001, 'RB': 0.0001,
+                'ZB': 0.03125, 'ZN': 0.015625, 'ZF': 0.0078125, 'ZT': 0.0078125,
+                'DX': 0.005,
+                'BTC': 5.0, 'MBT': 5.0, 'ETH': 0.25, 'MET': 0.25,
+                'ZC': 0.25, 'ZS': 0.25, 'ZW': 0.25, 'ZM': 0.1, 'ZL': 0.01,
+                'KC': 0.05, 'CT': 0.01, 'SB': 0.01,
+            }
+            tick_size = tick_sizes.get(symbol_root, 0.25)
+
+            is_long = entry_side.upper() == 'BUY'
+
+            # Build brackets array — one bracket per TP leg
+            brackets = []
+            for i, leg in enumerate(bracket_legs):
+                leg_qty = int(leg['qty'])
+                tp_ticks = leg.get('tp_ticks')
+                sl_ticks = leg.get('sl_ticks')
+
+                # Convert ticks to points with direction signs
+                if tp_ticks:
+                    tp_points = tp_ticks * tick_size
+                    tp_delta = tp_points if is_long else -tp_points
+                else:
+                    tp_delta = None
+
+                if sl_ticks:
+                    sl_points = sl_ticks * tick_size
+                    sl_delta = -sl_points if is_long else sl_points
+                else:
+                    sl_delta = None
+
+                bracket = {
+                    "qty": leg_qty,
+                    "profitTarget": float(tp_delta) if tp_delta is not None else None,
+                    "stopLoss": float(sl_delta) if sl_delta is not None else None,
+                    "trailingStop": trailing_stop
+                }
+
+                # Add autoTrail to each leg if configured
+                if auto_trail:
+                    trail_sl_ticks = auto_trail.get('stopLoss')
+                    trail_trigger_ticks = auto_trail.get('trigger')
+                    trail_freq_points = auto_trail.get('freq', tick_size * 0.25)
+
+                    if trail_sl_ticks and trail_trigger_ticks:
+                        bracket["autoTrail"] = {
+                            "stopLoss": float(trail_sl_ticks * tick_size),
+                            "trigger": float(trail_trigger_ticks * tick_size),
+                            "freq": float(trail_freq_points)
+                        }
+
+                brackets.append(bracket)
+                logger.info(f"📊 Multi-bracket leg {i+1}: qty={leg_qty}, TP={tp_ticks} ticks ({tp_delta} pts), SL={sl_ticks} ticks ({sl_delta} pts)")
+
+            # Entry order params — total qty, multiple bracket legs
+            params = {
+                "entryVersion": {
+                    "orderQty": int(total_quantity),
+                    "orderType": "Market",
+                    "timeInForce": "Day"
+                },
+                "brackets": brackets
+            }
+
+            strategy_payload = {
+                "accountId": account_id,
+                "symbol": symbol,
+                "orderStrategyTypeId": 2,
+                "action": entry_side,
+                "params": json.dumps(params)
+            }
+
+            logger.info(f"📊 Placing MULTI-BRACKET order: {entry_side} {total_quantity} {symbol}, {len(brackets)} legs")
+            logger.debug(f"Multi-bracket payload: {strategy_payload}")
+
+            ws_response = await self._send_websocket_message(
+                "orderStrategy/startOrderStrategy",
+                strategy_payload
+            )
+
+            if ws_response:
+                if isinstance(ws_response, dict):
+                    # Check for orderStrategy wrapper (Tradovate sometimes wraps response)
+                    actual_response = ws_response
+                    if 'orderStrategy' in ws_response and isinstance(ws_response['orderStrategy'], dict):
+                        actual_response = ws_response['orderStrategy']
+
+                    if actual_response.get('ok') or actual_response.get('id'):
+                        strategy_id = actual_response.get('id') or actual_response.get('orderStrategyId')
+                        logger.info(f"✅ Multi-bracket order created: ID={strategy_id}, {len(brackets)} legs")
+                        return {
+                            'success': True,
+                            'data': ws_response,
+                            'strategy_id': strategy_id,
+                            'orderId': actual_response.get('orderId'),
+                            'legs': len(brackets)
+                        }
+                    else:
+                        error_msg = actual_response.get('errorText') or actual_response.get('error') or str(ws_response)
+                        logger.error(f"❌ Multi-bracket failed: {error_msg}")
+                        return {'success': False, 'error': error_msg}
+                else:
+                    logger.error(f"❌ Unexpected response format: {ws_response}")
+                    return {'success': False, 'error': f'Unexpected response format: {ws_response}'}
+            else:
+                logger.error("❌ Multi-bracket: no WebSocket response")
+                return {'success': False, 'error': 'WebSocket connection failed or no response received'}
+
+        except Exception as e:
+            logger.error(f"Error creating multi-bracket order: {e}", exc_info=True)
+            return {'success': False, 'error': str(e)}
+
     async def place_exit_oco(self, account_id: int, account_spec: str, symbol: str,
                              exit_side: str, quantity: int,
                              take_profit_price: float = None,
