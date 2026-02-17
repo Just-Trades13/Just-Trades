@@ -2491,6 +2491,9 @@
         {% elif mode == 'edit' %}
         // No TP targets saved yet - add default
         initTpTargets([]);
+        {% else %}
+        // New trader - add default empty TP target
+        initTpTargets([]);
         {% endif %}
     });
 </script>
