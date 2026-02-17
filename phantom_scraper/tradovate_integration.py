@@ -1934,11 +1934,8 @@ class TradovateIntegration:
                         "trailingStop": leg.get('trailing_stop', False)
                     }
 
-                    # Break-even per leg (always positive points)
-                    leg_be = leg.get('break_even_ticks')
-                    if leg_be and leg_be > 0:
-                        b["breakeven"] = float(leg_be * tick_size)
-                        b["breakevenPlus"] = float(leg.get('break_even_offset', 0) * tick_size)
+                    # Break-even: NOT supported in bracket orders (Tradovate error: "Stop and Stop/Limit breakeven supported only")
+                    # Break-even is handled by the safety-net monitor in recorder_service.py instead
 
                     # AutoTrail per leg
                     leg_at = leg.get('auto_trail')
@@ -1969,12 +1966,10 @@ class TradovateIntegration:
                     "trailingStop": trailing_stop  # Boolean for immediate trailing
                 }
 
-                # Add native break-even (moves SL to entry at profit threshold)
+                # Break-even: NOT supported in bracket orders (Tradovate error: "Stop and Stop/Limit breakeven supported only")
+                # Break-even is handled by the safety-net monitor in recorder_service.py instead
                 if break_even_ticks and break_even_ticks > 0:
-                    break_even_points = break_even_ticks * tick_size
-                    bracket["breakeven"] = float(break_even_points)
-                    bracket["breakevenPlus"] = float(break_even_offset * tick_size) if break_even_offset else 0
-                    logger.info(f"📊 Native break-even: {break_even_ticks} ticks ({break_even_points} points), plus={bracket['breakevenPlus']} points")
+                    logger.info(f"📊 Break-even ({break_even_ticks} ticks) will use safety-net monitor (not native bracket)")
 
                 # Add native autoTrail (trailing-after-profit)
                 if auto_trail:
@@ -2027,13 +2022,19 @@ class TradovateIntegration:
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    strategy_id = data.get('id') or data.get('orderStrategyId')
+                    # Check for error in 200 response (Tradovate returns 200 with errorText)
+                    if data.get('errorText'):
+                        logger.error(f"❌ Bracket strategy rejected: {data['errorText']}")
+                        return {'success': False, 'error': data['errorText']}
+                    # Response wraps in {"orderStrategy": {...}}
+                    strategy_data = data.get('orderStrategy', data)
+                    strategy_id = strategy_data.get('id') or strategy_data.get('orderStrategyId')
                     logger.info(f"✅ Bracket order strategy created via REST: ID={strategy_id}")
                     return {
                         'success': True,
-                        'data': data,
+                        'data': strategy_data,
                         'strategy_id': strategy_id,
-                        'orderId': data.get('orderId')
+                        'orderId': strategy_data.get('orderId')
                     }
                 elif response.status == 401:
                     # Token expired — refresh and retry once
@@ -2048,13 +2049,17 @@ class TradovateIntegration:
                         ) as retry_response:
                             if retry_response.status == 200:
                                 data = await retry_response.json()
-                                strategy_id = data.get('id') or data.get('orderStrategyId')
+                                if data.get('errorText'):
+                                    logger.error(f"❌ Bracket strategy rejected after refresh: {data['errorText']}")
+                                    return {'success': False, 'error': data['errorText']}
+                                strategy_data = data.get('orderStrategy', data)
+                                strategy_id = strategy_data.get('id') or strategy_data.get('orderStrategyId')
                                 logger.info(f"✅ Bracket order strategy created after token refresh: ID={strategy_id}")
                                 return {
                                     'success': True,
-                                    'data': data,
+                                    'data': strategy_data,
                                     'strategy_id': strategy_id,
-                                    'orderId': data.get('orderId')
+                                    'orderId': strategy_data.get('orderId')
                                 }
                             else:
                                 try:
