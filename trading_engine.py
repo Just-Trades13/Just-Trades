@@ -465,7 +465,7 @@ def broker_execution_worker(worker_id=0):
 # WORKER MANAGEMENT
 # ============================================================================
 _broker_execution_threads = []
-_broker_execution_worker_count = 10
+_broker_execution_worker_count = 100
 _engine_start_time = time.time()
 
 
