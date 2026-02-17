@@ -14774,6 +14774,14 @@ def broker_execution_worker(worker_id=0):
                     logger.error(f"   Recorder ID: {recorder_id}, Action: {action}, Quantity: {quantity}, Ticker: {ticker}")
                     logger.error(f"   Full result: {result}")
 
+                    # Signal blocking: clear on failure (was set on queue before we knew outcome)
+                    if task.get('signal_blocking') and ticker:
+                        try:
+                            clear_signal_blocking_position(recorder_id, extract_symbol_root(ticker))
+                            logger.info(f"✅ Signal blocking CLEARED after trade failure")
+                        except Exception:
+                            pass
+
                     # Enhanced diagnostics for common failures
                     if 'No accounts to trade on' in error or 'No trader linked' in error:
                         logger.error(f"   🔍 DIAGNOSTIC: Checking trader configuration for recorder {recorder_id}...")
@@ -14849,6 +14857,13 @@ def broker_execution_worker(worker_id=0):
                 logger.error(f"   ⚠️ NO RETRY - task abandoned to prevent duplicate trades")
                 _broker_execution_stats['total_failed'] += 1
                 _broker_execution_stats['last_error'] = str(e)
+                # Signal blocking: clear on exception (was set on queue before we knew outcome)
+                if task.get('signal_blocking') and ticker:
+                    try:
+                        clear_signal_blocking_position(recorder_id, extract_symbol_root(ticker))
+                        logger.info(f"✅ Signal blocking CLEARED after exception")
+                    except Exception:
+                        pass
             
             # Mark task as done only on success
             broker_execution_queue.task_done()
