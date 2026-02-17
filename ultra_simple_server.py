@@ -5589,6 +5589,16 @@ def admin_dashboard_stats():
     webhook_workers_alive = sum(1 for t in _fast_webhook_threads if t.is_alive())
     broker_workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive())
 
+    # When external trading engine is running, pull broker worker count from Redis heartbeat
+    if _EXTERNAL_ENGINE and broker_workers_alive == 0:
+        try:
+            from redis_state import get_engine_health, get_broker_stats
+            engine_health = get_engine_health()
+            if engine_health.get('healthy'):
+                broker_workers_alive = engine_health.get('workers_alive', 0)
+        except Exception:
+            pass
+
     system_health = {
         'webhook_workers': {'alive': webhook_workers_alive, 'configured': _fast_webhook_worker_count},
         'broker_workers': {'alive': broker_workers_alive, 'configured': _broker_execution_worker_count},
@@ -8681,7 +8691,7 @@ _insider_poll_thread.start()
 # ============================================================================
 # WHOP MEMBERSHIP SYNC DAEMON — catches users that Whop webhooks missed
 # ============================================================================
-WHOP_SYNC_INTERVAL = 300  # 5 minutes
+WHOP_SYNC_INTERVAL = 30  # 30 seconds
 WHOP_RESEND_INTERVAL = 86400  # 24 hours between resends per user
 WHOP_RESEND_MAX_DAYS = 3  # Stop resending after 3 days (they need to contact support)
 
