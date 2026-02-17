@@ -8714,7 +8714,7 @@ def _whop_membership_sync():
     from account_activation import auto_create_user_from_whop, generate_activation_token, send_activation_email
     from subscription_models import create_subscription, get_user_subscription
 
-    result = whop_api_request('GET', '/memberships?per=100&expand=user')
+    result = whop_api_request('GET', '/memberships?per=100')
     if not result:
         return
 
@@ -8730,20 +8730,25 @@ def _whop_membership_sync():
             if not membership.get('valid'):
                 continue
 
-            # Get product ID — must be a platform product we recognize
-            product = membership.get('product') or {}
-            product_id = product.get('id') if isinstance(product, dict) else membership.get('product_id')
+            # Get product ID — Whop returns product as string ID or dict
+            product = membership.get('product')
+            if isinstance(product, dict):
+                product_id = product.get('id')
+            else:
+                product_id = product  # Already a string like "prod_xxx"
             plan_slug = WHOP_PRODUCT_MAP.get(product_id)
             if not plan_slug or not plan_slug.startswith('platform_'):
                 continue
 
-            # Get user email from expanded user object
-            user_obj = membership.get('user') or {}
-            user_email = user_obj.get('email') if isinstance(user_obj, dict) else None
+            # Get user email — Whop returns email at top level, user as string ID or dict
+            user_email = membership.get('email')
+            user_field = membership.get('user')
+            if not user_email and isinstance(user_field, dict):
+                user_email = user_field.get('email')
             if not user_email:
                 continue
 
-            whop_user_id = user_obj.get('id') if isinstance(user_obj, dict) else None
+            whop_user_id = user_field if isinstance(user_field, str) else (user_field.get('id') if isinstance(user_field, dict) else None)
             membership_id = membership.get('id')
             is_trial = membership.get('status') == 'trialing'
 
@@ -8828,7 +8833,7 @@ def _whop_membership_sync():
 
 def _whop_sync_loop():
     """Background thread for Whop membership sync."""
-    print("🚀 Starting Whop membership sync (every 5 minutes)")
+    print(f"🚀 Starting Whop membership sync (every {WHOP_SYNC_INTERVAL}s)")
     time.sleep(30)  # Initial delay — let subscription system initialize
     while True:
         try:
