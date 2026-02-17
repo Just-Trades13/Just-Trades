@@ -14774,14 +14774,6 @@ def broker_execution_worker(worker_id=0):
                     logger.error(f"   Recorder ID: {recorder_id}, Action: {action}, Quantity: {quantity}, Ticker: {ticker}")
                     logger.error(f"   Full result: {result}")
 
-                    # Signal blocking: clear on failure (was set on queue before we knew outcome)
-                    if task.get('signal_blocking') and ticker:
-                        try:
-                            clear_signal_blocking_position(recorder_id, extract_symbol_root(ticker))
-                            logger.info(f"✅ Signal blocking CLEARED after trade failure")
-                        except Exception:
-                            pass
-
                     # Enhanced diagnostics for common failures
                     if 'No accounts to trade on' in error or 'No trader linked' in error:
                         logger.error(f"   🔍 DIAGNOSTIC: Checking trader configuration for recorder {recorder_id}...")
@@ -14857,13 +14849,6 @@ def broker_execution_worker(worker_id=0):
                 logger.error(f"   ⚠️ NO RETRY - task abandoned to prevent duplicate trades")
                 _broker_execution_stats['total_failed'] += 1
                 _broker_execution_stats['last_error'] = str(e)
-                # Signal blocking: clear on exception (was set on queue before we knew outcome)
-                if task.get('signal_blocking') and ticker:
-                    try:
-                        clear_signal_blocking_position(recorder_id, extract_symbol_root(ticker))
-                        logger.info(f"✅ Signal blocking CLEARED after exception")
-                    except Exception:
-                        pass
             
             # Mark task as done only on success
             broker_execution_queue.task_done()
@@ -16961,11 +16946,6 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 })
                 broker_execution_queue.put_nowait(broker_task)
                 broker_was_queued = True  # Successfully queued!
-                # Signal blocking: set IMMEDIATELY on queue (not after execution)
-                # This prevents race condition where next signal arrives before broker worker finishes
-                if recorder.get('signal_blocking') and trade_action not in ('close', 'flat', 'exit'):
-                    set_signal_blocking_position(recorder_id, extract_symbol_root(ticker), trade_side)
-                    _logger.info(f"🛑 Signal blocking SET immediately on queue: {recorder_name} {trade_side} {ticker}")
                 track_signal_step(signal_id, 'STEP6_BROKER_QUEUED', {'queue_size': broker_execution_queue.qsize()})
                 workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
