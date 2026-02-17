@@ -8716,9 +8716,11 @@ def _whop_membership_sync():
 
     result = whop_api_request('GET', '/memberships?per=100')
     if not result:
+        print("⚠️ Whop sync: API call returned None — check WHOP_API_KEY")
         return
 
     memberships = result.get('data', [])
+    print(f"🔄 Whop sync: got {len(memberships)} memberships from Whop")
     synced_count = 0
     resent_count = 0
     stuck = []
@@ -8767,7 +8769,7 @@ def _whop_membership_sync():
                         trial_days=7 if is_trial else 0
                     )
                     synced_count += 1
-                    logger.info(f"🔄 Whop sync: created subscription for existing user {user_email} ({plan_slug})")
+                    print(f"🔄 Whop sync: created subscription for existing user {user_email} ({plan_slug})")
 
                 # Resend activation email if user hasn't activated yet
                 if user.username and user.username.startswith('whop_'):
@@ -8786,18 +8788,18 @@ def _whop_membership_sync():
 
                         if account_age_days > WHOP_RESEND_MAX_DAYS:
                             stuck.append(user_email)
-                            logger.warning(f"⚠️ Whop sync: {user_email} unactivated for {account_age_days} days — needs manual support")
+                            print(f"⚠️ Whop sync: {user_email} unactivated for {account_age_days} days — needs manual support")
                         else:
                             try:
                                 token = generate_activation_token(user.id, user.email)
                                 if token and send_activation_email(user.email, token):
                                     _whop_email_last_resent[user_email] = now
                                     resent_count += 1
-                                    logger.info(f"📧 Whop sync: sent activation email to {user_email}")
+                                    print(f"📧 Whop sync: sent activation email to {user_email}")
                                 else:
-                                    logger.error(f"📧 Whop sync: email send FAILED for {user_email} — check Brevo")
+                                    print(f"📧 Whop sync: email send FAILED for {user_email} — check Brevo")
                             except Exception as e:
-                                logger.error(f"📧 Whop sync: failed to resend activation to {user_email}: {e}")
+                                print(f"📧 Whop sync: failed to resend activation to {user_email}: {e}")
             else:
                 # User doesn't exist — auto-create account + subscription
                 new_user_id = auto_create_user_from_whop(user_email, whop_user_id or 'unknown')
@@ -8811,12 +8813,12 @@ def _whop_membership_sync():
                     )
                     _whop_email_last_resent[user_email] = now
                     synced_count += 1
-                    logger.info(f"🔄 Whop sync: auto-created user + subscription for {user_email} ({plan_slug})")
+                    print(f"🔄 Whop sync: auto-created user + subscription for {user_email} ({plan_slug})")
                 else:
-                    logger.warning(f"⚠️ Whop sync: failed to auto-create user for {user_email}")
+                    print(f"⚠️ Whop sync: failed to auto-create user for {user_email}")
 
         except Exception as e:
-            logger.error(f"⚠️ Whop sync: error processing membership {membership.get('id', '?')}: {e}")
+            print(f"⚠️ Whop sync: error processing membership {membership.get('id', '?')}: {e}")
             continue
 
     # Update stats for admin visibility
@@ -8828,6 +8830,7 @@ def _whop_membership_sync():
     _whop_sync_stats['stuck_users'] = stuck
 
     if synced_count > 0 or resent_count > 0 or stuck:
+        print(f"🔄 Whop sync complete: {synced_count} created, {resent_count} emails sent, {len(stuck)} stuck")
         logger.info(f"🔄 Whop sync complete: {synced_count} created, {resent_count} emails sent, {len(stuck)} stuck")
 
 
