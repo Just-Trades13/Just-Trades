@@ -326,7 +326,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
         # Add columns if they don't exist (for existing tables)
         for col in ['drawdown', 'cumulative_pnl', 'tp_price', 'sl_price', 'exit_reason']:
             try:
-                cursor.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {'REAL' if col != 'exit_reason' else 'TEXT'}")
+                cursor.execute(f"ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS {col} {'REAL' if col != 'exit_reason' else 'TEXT'}")
             except:
                 pass
     conn.commit()
@@ -3085,14 +3085,14 @@ def _init_postgres_tables():
     
     # Add inverse_signals column to recorders table (Jan 2026 migration)
     try:
-        cursor.execute("ALTER TABLE recorders ADD COLUMN inverse_signals BOOLEAN DEFAULT FALSE")
+        cursor.execute("ALTER TABLE recorders ADD COLUMN IF NOT EXISTS inverse_signals BOOLEAN DEFAULT FALSE")
         print("✅ Added inverse_signals column to recorders table")
     except:
         pass  # Column already exists
     
     # Add inverse_signals column to strategies table (Jan 2026 migration)
     try:
-        cursor.execute("ALTER TABLE strategies ADD COLUMN inverse_signals BOOLEAN DEFAULT FALSE")
+        cursor.execute("ALTER TABLE strategies ADD COLUMN IF NOT EXISTS inverse_signals BOOLEAN DEFAULT FALSE")
         print("✅ Added inverse_signals column to strategies table")
     except:
         pass  # Column already exists
@@ -4654,31 +4654,31 @@ def init_db():
     
     # Add risk settings columns to existing traders table (for existing databases)
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN initial_position_size INTEGER DEFAULT 2')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS initial_position_size INTEGER DEFAULT 2')
     except:
         pass  # Column already exists
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN add_position_size INTEGER DEFAULT 2')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS add_position_size INTEGER DEFAULT 2')
     except:
         pass
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN tp_targets TEXT DEFAULT "[]"')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS tp_targets TEXT DEFAULT "[]"')
     except:
         pass
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN sl_enabled INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS sl_enabled INTEGER DEFAULT 0')
     except:
         pass
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN sl_amount REAL DEFAULT 0')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS sl_amount REAL DEFAULT 0')
     except:
         pass
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN sl_units TEXT DEFAULT "Ticks"')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS sl_units TEXT DEFAULT "Ticks"')
     except:
         pass
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN max_daily_loss REAL DEFAULT 500')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS max_daily_loss REAL DEFAULT 500')
     except:
         pass
     
@@ -4710,92 +4710,92 @@ def init_db():
     
     for col_name, col_type in text_columns + other_columns:
         try:
-            cursor.execute(f'ALTER TABLE traders ADD COLUMN {col_name} {col_type}')
+            cursor.execute(f'ALTER TABLE traders ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
         except:
             pass  # Column already exists
     
     # Add time filter columns to traders table (Dec 2025)
     if is_postgres:
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_enabled BOOLEAN DEFAULT FALSE")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_1_enabled BOOLEAN DEFAULT FALSE")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_start TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_1_start TEXT DEFAULT ''")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_stop TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_1_stop TEXT DEFAULT ''")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_enabled BOOLEAN DEFAULT FALSE")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_2_enabled BOOLEAN DEFAULT FALSE")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_start TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_2_start TEXT DEFAULT ''")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_stop TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_2_stop TEXT DEFAULT ''")
         except:
             pass
     else:
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_enabled INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_1_enabled INTEGER DEFAULT 0")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_start TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_1_start TEXT DEFAULT ''")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_1_stop TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_1_stop TEXT DEFAULT ''")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_enabled INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_2_enabled INTEGER DEFAULT 0")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_start TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_2_start TEXT DEFAULT ''")
         except:
             pass
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN time_filter_2_stop TEXT DEFAULT ''")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS time_filter_2_stop TEXT DEFAULT ''")
         except:
             pass
 
     # Jan 2026: Add new webhook feature columns to traders
     # trail_trigger - Profit ticks before trailing stop starts (0 = immediate)
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN trail_trigger INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS trail_trigger INTEGER DEFAULT 0')
     except:
         pass
 
     # trail_freq - How often to update trailing stop (0 = every tick)
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN trail_freq INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS trail_freq INTEGER DEFAULT 0')
     except:
         pass
 
     # break_even_offset - How many ticks of profit to lock in (0 = true breakeven)
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN break_even_offset INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS break_even_offset INTEGER DEFAULT 0')
     except:
         pass
 
     # Jan 2026: Add signal delay columns to traders table
     # add_delay - Take every Nth signal (1 = all, 2 = every other, 3 = every 3rd, etc.)
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN add_delay INTEGER DEFAULT 1')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS add_delay INTEGER DEFAULT 1')
         logger.info("✅ Added add_delay column to traders table")
     except:
         pass  # Column already exists
 
     # signal_count - Track how many signals this trader has received (for Nth signal filtering)
     try:
-        cursor.execute('ALTER TABLE traders ADD COLUMN signal_count INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE traders ADD COLUMN IF NOT EXISTS signal_count INTEGER DEFAULT 0')
         logger.info("✅ Added signal_count column to traders table")
     except:
         pass  # Column already exists
@@ -4804,41 +4804,41 @@ def init_db():
     # This is a PROTECTED setting - controls DCA logic directly without code detection
     if is_postgres:
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN dca_enabled BOOLEAN DEFAULT FALSE")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS dca_enabled BOOLEAN DEFAULT FALSE")
             logger.info("✅ Added dca_enabled column to traders table (PostgreSQL)")
         except:
             pass  # Column already exists
     else:
         try:
-            cursor.execute("ALTER TABLE traders ADD COLUMN dca_enabled INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS dca_enabled INTEGER DEFAULT 0")
             logger.info("✅ Added dca_enabled column to traders table (SQLite)")
         except:
             pass  # Column already exists
 
     # Per-trader execution tracking (Feb 2026) — isolates cooldown/max_signals per trader
     try:
-        cursor.execute("ALTER TABLE traders ADD COLUMN last_trade_time TEXT")
+        cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS last_trade_time TEXT")
     except:
         pass
     try:
-        cursor.execute("ALTER TABLE traders ADD COLUMN today_signal_count INTEGER DEFAULT 0")
+        cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS today_signal_count INTEGER DEFAULT 0")
     except:
         pass
     try:
-        cursor.execute("ALTER TABLE traders ADD COLUMN today_signal_date TEXT DEFAULT ''")
+        cursor.execute("ALTER TABLE traders ADD COLUMN IF NOT EXISTS today_signal_date TEXT DEFAULT ''")
     except:
         pass
 
     # Add inverse_signals column to recorders table (Jan 2026)
     if is_postgres:
         try:
-            cursor.execute("ALTER TABLE recorders ADD COLUMN inverse_signals BOOLEAN DEFAULT FALSE")
+            cursor.execute("ALTER TABLE recorders ADD COLUMN IF NOT EXISTS inverse_signals BOOLEAN DEFAULT FALSE")
             logger.info("✅ Added inverse_signals column to recorders table (PostgreSQL)")
         except:
             pass  # Column already exists
     else:
         try:
-            cursor.execute("ALTER TABLE recorders ADD COLUMN inverse_signals INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE recorders ADD COLUMN IF NOT EXISTS inverse_signals INTEGER DEFAULT 0")
             logger.info("✅ Added inverse_signals column to recorders table (SQLite)")
         except:
             pass  # Column already exists
@@ -4846,24 +4846,24 @@ def init_db():
     # Add inverse_signals column to strategies table (Jan 2026)
     if is_postgres:
         try:
-            cursor.execute("ALTER TABLE strategies ADD COLUMN inverse_signals BOOLEAN DEFAULT FALSE")
+            cursor.execute("ALTER TABLE strategies ADD COLUMN IF NOT EXISTS inverse_signals BOOLEAN DEFAULT FALSE")
             logger.info("✅ Added inverse_signals column to strategies table (PostgreSQL)")
         except:
             pass  # Column already exists
     else:
         try:
-            cursor.execute("ALTER TABLE strategies ADD COLUMN inverse_signals INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE strategies ADD COLUMN IF NOT EXISTS inverse_signals INTEGER DEFAULT 0")
             logger.info("✅ Added inverse_signals column to strategies table (SQLite)")
         except:
             pass  # Column already exists
     
     # Add shared strategy columns to existing strategies table (for existing databases)
     try:
-        cursor.execute('ALTER TABLE strategies ADD COLUMN is_public INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE strategies ADD COLUMN IF NOT EXISTS is_public INTEGER DEFAULT 0')
     except:
         pass  # Column already exists
     try:
-        cursor.execute('ALTER TABLE strategies ADD COLUMN created_by_username TEXT')
+        cursor.execute('ALTER TABLE strategies ADD COLUMN IF NOT EXISTS created_by_username TEXT')
     except:
         pass  # Column already exists
     
@@ -4871,20 +4871,20 @@ def init_db():
     # Use BOOLEAN for PostgreSQL, INTEGER for SQLite
     if is_postgres:
         try:
-            cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_1_enabled BOOLEAN DEFAULT FALSE')
+            cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS time_filter_1_enabled BOOLEAN DEFAULT FALSE')
         except:
             pass  # Column already exists
         try:
-            cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_2_enabled BOOLEAN DEFAULT FALSE')
+            cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS time_filter_2_enabled BOOLEAN DEFAULT FALSE')
         except:
             pass  # Column already exists
     else:
         try:
-            cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_1_enabled INTEGER DEFAULT 0')
+            cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS time_filter_1_enabled INTEGER DEFAULT 0')
         except:
             pass  # Column already exists
         try:
-            cursor.execute('ALTER TABLE recorders ADD COLUMN time_filter_2_enabled INTEGER DEFAULT 0')
+            cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS time_filter_2_enabled INTEGER DEFAULT 0')
         except:
             pass  # Column already exists
     
@@ -4892,12 +4892,12 @@ def init_db():
     # Defaults to FALSE so all existing recorders are public
     if is_postgres:
         try:
-            cursor.execute('ALTER TABLE recorders ADD COLUMN is_private BOOLEAN DEFAULT FALSE')
+            cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE')
         except:
             pass  # Column already exists
     else:
         try:
-            cursor.execute('ALTER TABLE recorders ADD COLUMN is_private INTEGER DEFAULT 0')
+            cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS is_private INTEGER DEFAULT 0')
         except:
             pass  # Column already exists
 
@@ -4905,12 +4905,12 @@ def init_db():
     # Allows admin to restrict a recorder to premium/elite tier users
     if is_postgres:
         try:
-            cursor.execute("ALTER TABLE recorders ADD COLUMN required_tier VARCHAR(20) DEFAULT 'public'")
+            cursor.execute("ALTER TABLE recorders ADD COLUMN IF NOT EXISTS required_tier VARCHAR(20) DEFAULT 'public'")
         except:
             pass  # Column already exists
     else:
         try:
-            cursor.execute("ALTER TABLE recorders ADD COLUMN required_tier TEXT DEFAULT 'public'")
+            cursor.execute("ALTER TABLE recorders ADD COLUMN IF NOT EXISTS required_tier TEXT DEFAULT 'public'")
         except:
             pass  # Column already exists
 
@@ -4918,30 +4918,30 @@ def init_db():
     # same_direction_ignore - Block duplicate signals in same direction
     if is_postgres:
         try:
-            cursor.execute('ALTER TABLE recorders ADD COLUMN same_direction_ignore BOOLEAN DEFAULT FALSE')
+            cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS same_direction_ignore BOOLEAN DEFAULT FALSE')
         except:
             pass
     else:
         try:
-            cursor.execute('ALTER TABLE recorders ADD COLUMN same_direction_ignore INTEGER DEFAULT 0')
+            cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS same_direction_ignore INTEGER DEFAULT 0')
         except:
             pass
 
     # break_even_offset - How many ticks of profit to lock in (0 = true breakeven)
     try:
-        cursor.execute('ALTER TABLE recorders ADD COLUMN break_even_offset INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS break_even_offset INTEGER DEFAULT 0')
     except:
         pass
 
     # trail_trigger - Profit ticks before trailing stop starts (0 = immediate)
     try:
-        cursor.execute('ALTER TABLE recorders ADD COLUMN trail_trigger INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS trail_trigger INTEGER DEFAULT 0')
     except:
         pass
 
     # trail_freq - How often to update trailing stop (0 = every tick)
     try:
-        cursor.execute('ALTER TABLE recorders ADD COLUMN trail_freq INTEGER DEFAULT 0')
+        cursor.execute('ALTER TABLE recorders ADD COLUMN IF NOT EXISTS trail_freq INTEGER DEFAULT 0')
     except:
         pass
 
@@ -5029,13 +5029,13 @@ def init_db():
 
     # Add affiliate_code column if table was created before it was added
     try:
-        cursor.execute('ALTER TABLE affiliate_applications ADD COLUMN affiliate_code VARCHAR(20) UNIQUE' if is_postgres else 'ALTER TABLE affiliate_applications ADD COLUMN affiliate_code TEXT UNIQUE')
+        cursor.execute('ALTER TABLE affiliate_applications ADD COLUMN IF NOT EXISTS affiliate_code VARCHAR(20) UNIQUE' if is_postgres else 'ALTER TABLE affiliate_applications ADD COLUMN IF NOT EXISTS affiliate_code TEXT UNIQUE')
     except:
         pass  # Column already exists
 
     # Add referred_by column to users table for affiliate referral tracking
     try:
-        cursor.execute('ALTER TABLE users ADD COLUMN referred_by VARCHAR(20)' if is_postgres else 'ALTER TABLE users ADD COLUMN referred_by TEXT')
+        cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by VARCHAR(20)' if is_postgres else 'ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by TEXT')
     except:
         pass  # Column already exists
 
@@ -5350,7 +5350,7 @@ def run_migrations():
 
     for table, column, col_type in migrations:
         try:
-            cursor.execute(f'ALTER TABLE {table} ADD COLUMN {column} {col_type}')
+            cursor.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}')
             conn.commit()
             results.append(f"✅ Added {table}.{column}")
         except Exception as e:
@@ -7097,7 +7097,7 @@ def admin_fix_columns():
         
         for col_name, col_type in columns_to_add:
             try:
-                cursor.execute(f'ALTER TABLE traders ADD COLUMN {col_name} {col_type}')
+                cursor.execute(f'ALTER TABLE traders ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
                 conn.commit()
                 results.append(f"✅ Added {col_name}")
             except Exception as col_err:
@@ -7466,7 +7466,7 @@ def migrate_database():
                     # PostgreSQL: Use IF NOT EXISTS
                     cursor.execute(f'ALTER TABLE recorders ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
                 else:
-                    cursor.execute(f'ALTER TABLE recorders ADD COLUMN {col_name} {col_type}')
+                    cursor.execute(f'ALTER TABLE recorders ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
                 migrations_run.append(f'Added/verified {col_name}')
             except Exception as e:
                 err_str = str(e).lower()
@@ -7488,7 +7488,7 @@ def migrate_database():
                 if is_postgres:
                     cursor.execute(f'ALTER TABLE recorder_positions ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
                 else:
-                    cursor.execute(f'ALTER TABLE recorder_positions ADD COLUMN {col_name} {col_type}')
+                    cursor.execute(f'ALTER TABLE recorder_positions ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
                 migrations_run.append(f'recorder_positions.{col_name} added')
             except Exception as e:
                 if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
@@ -7505,7 +7505,7 @@ def migrate_database():
                 if is_postgres:
                     cursor.execute(f'ALTER TABLE recorded_trades ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
                 else:
-                    cursor.execute(f'ALTER TABLE recorded_trades ADD COLUMN {col_name} {col_type}')
+                    cursor.execute(f'ALTER TABLE recorded_trades ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
                 migrations_run.append(f'recorded_trades.{col_name} added')
             except Exception as e:
                 if 'already exists' not in str(e).lower() and 'duplicate' not in str(e).lower():
