@@ -8683,11 +8683,13 @@ _insider_poll_thread.start()
 # ============================================================================
 WHOP_SYNC_INTERVAL = 300  # 5 minutes
 
+_whop_emails_resent = set()  # Track emails we've already resent this session
+
 def _whop_membership_sync():
     """Poll Whop for all active memberships and create missing platform accounts."""
     from whop_integration import whop_api_request, WHOP_PRODUCT_MAP
     from user_auth import get_user_by_email
-    from account_activation import auto_create_user_from_whop
+    from account_activation import auto_create_user_from_whop, generate_activation_token, send_activation_email
     from subscription_models import create_subscription, get_user_subscription
 
     result = whop_api_request('GET', '/memberships?per=100&expand=user')
@@ -8696,6 +8698,7 @@ def _whop_membership_sync():
 
     memberships = result.get('data', [])
     synced_count = 0
+    resent_count = 0
 
     for membership in memberships:
         try:
@@ -8724,21 +8727,29 @@ def _whop_membership_sync():
             user = get_user_by_email(user_email)
 
             if user:
-                # User exists — check if they have an active subscription
+                # User exists — ensure they have a subscription
                 existing_sub = get_user_subscription(user.id, plan_type='platform')
-                if existing_sub:
-                    continue  # Already has subscription, nothing to do
+                if not existing_sub:
+                    create_subscription(
+                        user_id=user.id,
+                        plan_slug=plan_slug,
+                        whop_membership_id=membership_id,
+                        whop_customer_id=whop_user_id,
+                        trial_days=7 if is_trial else 0
+                    )
+                    synced_count += 1
+                    logger.info(f"🔄 Whop sync: created subscription for existing user {user_email} ({plan_slug})")
 
-                # User exists but no subscription — create one
-                create_subscription(
-                    user_id=user.id,
-                    plan_slug=plan_slug,
-                    whop_membership_id=membership_id,
-                    whop_customer_id=whop_user_id,
-                    trial_days=7 if is_trial else 0
-                )
-                synced_count += 1
-                logger.info(f"🔄 Whop sync: created subscription for existing user {user_email} ({plan_slug})")
+                # Resend activation email if user hasn't activated yet (once per session)
+                if user.username and user.username.startswith('whop_') and user_email not in _whop_emails_resent:
+                    try:
+                        token = generate_activation_token(user.id, user.email)
+                        if token and send_activation_email(user.email, token):
+                            _whop_emails_resent.add(user_email)
+                            resent_count += 1
+                            logger.info(f"📧 Whop sync: resent activation email to {user_email}")
+                    except Exception as e:
+                        logger.error(f"📧 Whop sync: failed to resend activation to {user_email}: {e}")
             else:
                 # User doesn't exist — auto-create account + subscription
                 new_user_id = auto_create_user_from_whop(user_email, whop_user_id or 'unknown')
@@ -8750,6 +8761,7 @@ def _whop_membership_sync():
                         whop_customer_id=whop_user_id,
                         trial_days=7 if is_trial else 0
                     )
+                    _whop_emails_resent.add(user_email)
                     synced_count += 1
                     logger.info(f"🔄 Whop sync: auto-created user + subscription for {user_email} ({plan_slug})")
                 else:
@@ -8759,8 +8771,8 @@ def _whop_membership_sync():
             logger.error(f"⚠️ Whop sync: error processing membership {membership.get('id', '?')}: {e}")
             continue
 
-    if synced_count > 0:
-        logger.info(f"🔄 Whop sync complete: {synced_count} new account(s) synced")
+    if synced_count > 0 or resent_count > 0:
+        logger.info(f"🔄 Whop sync complete: {synced_count} new account(s), {resent_count} activation email(s) resent")
 
 
 def _whop_sync_loop():
