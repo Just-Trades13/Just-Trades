@@ -15777,8 +15777,28 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         # ============================================================
         track_signal_step(signal_id, 'STEP5_FILTERS_START', {'about_to_check': 'direction,time,cooldown,etc'})
 
-        # Get current time in Chicago timezone (Central Time)
-        now = get_chicago_time()
+        # Get current time in USER'S timezone (falls back to Chicago if not set)
+        _user_tz = CHICAGO_TZ  # default
+        _user_tz_name = 'America/Chicago'
+        try:
+            _rec_user_id = recorder.get('user_id')
+            if _rec_user_id:
+                cursor.execute(f'SELECT settings_json FROM users WHERE id = {placeholder}', (_rec_user_id,))
+                _tz_row = cursor.fetchone()
+                if _tz_row:
+                    _sj_raw = _tz_row[0] if isinstance(_tz_row, (tuple, list)) else (_tz_row.get('settings_json') if hasattr(_tz_row, 'get') else _tz_row[0])
+                    if _sj_raw:
+                        _sj = json.loads(_sj_raw) if isinstance(_sj_raw, str) else _sj_raw
+                        _user_tz_name = _sj.get('timezone', 'America/Chicago')
+                        try:
+                            _user_tz = ZoneInfo(_user_tz_name)
+                        except Exception:
+                            _user_tz = CHICAGO_TZ
+                            _user_tz_name = 'America/Chicago'
+        except Exception as _tz_err:
+            _logger.debug(f"Could not load user timezone: {_tz_err}")
+        now = datetime.now(_user_tz)
+        _logger.info(f"🕐 Time filter using timezone: {_user_tz_name} → {now.strftime('%I:%M %p')}")
         
         # --- FILTER 1: Direction Filter ---
         direction_filter = recorder.get('direction_filter', '')
