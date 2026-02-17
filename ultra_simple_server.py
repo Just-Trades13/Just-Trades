@@ -13244,8 +13244,8 @@ def api_create_trader():
                     inverse_signals
                 )
                 VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-            ''', (recorder_id, account_id, subaccount_id, subaccount_name, is_demo,
-                  initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
+            ''', (recorder_id, account_id, subaccount_id, subaccount_name, bool(is_demo),
+                  initial_position_size, add_position_size, tp_targets, bool(sl_enabled), sl_amount, sl_units, max_daily_loss,
                   current_user_id, initial_enabled_accounts,
                   bool(time_filter_1_enabled), time_filter_1_start, time_filter_1_stop,
                   bool(time_filter_2_enabled), time_filter_2_start, time_filter_2_stop,
