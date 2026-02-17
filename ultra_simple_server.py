@@ -5905,6 +5905,54 @@ def admin_send_activation(user_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/admin/resend-all-activations', methods=['POST'])
+def admin_resend_all_activations():
+    """Batch resend activation emails to all unactivated Whop users."""
+    api_key = request.headers.get('X-Admin-Key')
+    if not api_key or api_key != os.environ.get('ADMIN_API_KEY'):
+        # Fall back to session auth
+        if not is_logged_in():
+            return jsonify({'success': False, 'error': 'Not authorized'}), 401
+        user = get_current_user()
+        if not user or not user.is_admin:
+            return jsonify({'success': False, 'error': 'Admin access required'}), 403
+
+    try:
+        from user_auth import get_all_users
+        from account_activation import generate_activation_token, send_activation_email
+
+        all_users = get_all_users()
+        sent = []
+        failed = []
+
+        for u in all_users:
+            # whop_ prefix = auto-created but never activated
+            if not u.username or not u.username.startswith('whop_'):
+                continue
+            try:
+                token = generate_activation_token(u.id, u.email)
+                if token and send_activation_email(u.email, token):
+                    sent.append(u.email)
+                    logger.info(f"📧 Batch resend: activation email sent to {u.email}")
+                else:
+                    failed.append(u.email)
+            except Exception as e:
+                logger.error(f"📧 Batch resend failed for {u.email}: {e}")
+                failed.append(u.email)
+
+        logger.info(f"📧 Batch resend complete: {len(sent)} sent, {len(failed)} failed")
+        return jsonify({
+            'success': True,
+            'sent': sent,
+            'sent_count': len(sent),
+            'failed': failed,
+            'failed_count': len(failed)
+        })
+    except Exception as e:
+        logger.error(f"Batch resend error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/admin/users/create', methods=['POST'])
 def admin_create_user():
     """Admin endpoint to create a new user."""
