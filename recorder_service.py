@@ -1014,18 +1014,43 @@ def execute_trade_simple(
         except Exception as _pf_err:
             logger.warning(f"⚠️ Account pre-fetch failed, will query per-account: {_pf_err}")
 
-        # 3) Pre-fetch user timezone for time filter (1 query)
-        _cached_user_tz = DEFAULT_USER_TZ
+        # 3) Pre-fetch user timezones for time filter (per-trader, not per-recorder)
+        # Each trader's time filter should use THEIR user's timezone, not the recorder owner's
+        _cached_user_tz = DEFAULT_USER_TZ  # fallback for recorder-level
+        _cached_trader_tz = {}  # user_id -> ZoneInfo
         try:
-            cursor.execute(f'SELECT u.settings_json FROM recorders r JOIN users u ON r.user_id = u.id WHERE r.id = {placeholder}', (recorder_id,))
-            _tz_row = cursor.fetchone()
-            if _tz_row:
-                _tz_json = _tz_row['settings_json'] if hasattr(_tz_row, 'keys') else _tz_row[0]
-                if _tz_json:
-                    _tz_settings = json.loads(_tz_json) if isinstance(_tz_json, str) else _tz_json
-                    _tz_name = _tz_settings.get('timezone')
-                    if _tz_name:
-                        _cached_user_tz = ZoneInfo(_tz_name)
+            # Collect all unique user_ids from traders
+            _trader_user_ids = set()
+            for _tr in trader_rows:
+                _trd = dict(_tr)
+                _tuid = _trd.get('user_id')
+                if _tuid:
+                    _trader_user_ids.add(int(_tuid))
+            # Also include recorder owner
+            cursor.execute(f'SELECT user_id FROM recorders WHERE id = {placeholder}', (recorder_id,))
+            _rec_owner = cursor.fetchone()
+            if _rec_owner:
+                _rec_owner_id = _rec_owner['user_id'] if hasattr(_rec_owner, 'keys') else _rec_owner[0]
+                if _rec_owner_id:
+                    _trader_user_ids.add(int(_rec_owner_id))
+            # Batch fetch all user timezones in one query
+            if _trader_user_ids:
+                _uid_list = ','.join(str(uid) for uid in _trader_user_ids)
+                cursor.execute(f'SELECT id, settings_json FROM users WHERE id IN ({_uid_list})')
+                for _urow in cursor.fetchall():
+                    _uid = _urow['id'] if hasattr(_urow, 'keys') else _urow[0]
+                    _sj = _urow['settings_json'] if hasattr(_urow, 'keys') else _urow[1]
+                    if _sj:
+                        try:
+                            _settings = json.loads(_sj) if isinstance(_sj, str) else _sj
+                            _tz_name = _settings.get('timezone')
+                            if _tz_name:
+                                _cached_trader_tz[int(_uid)] = ZoneInfo(_tz_name)
+                        except Exception:
+                            pass
+                # Set recorder-owner fallback
+                if _rec_owner_id and int(_rec_owner_id) in _cached_trader_tz:
+                    _cached_user_tz = _cached_trader_tz[int(_rec_owner_id)]
         except Exception:
             pass  # Default to Chicago
 
@@ -1134,7 +1159,10 @@ def execute_trade_simple(
             if not is_close_signal and (has_trader_time_1 or has_trader_time_2):
                 from datetime import datetime
                 try:
-                    now = datetime.now(_cached_user_tz)
+                    # Use THIS trader's user timezone, not the recorder owner's
+                    _this_trader_user_id = trader_dict.get('user_id')
+                    _this_trader_tz = _cached_trader_tz.get(int(_this_trader_user_id), _cached_user_tz) if _this_trader_user_id else _cached_user_tz
+                    now = datetime.now(_this_trader_tz)
                     current_time = now.time()
 
                     def parse_time_str(t_str):
@@ -1162,9 +1190,9 @@ def execute_trade_simple(
                     in_window_2 = in_window(trader_time_2_start, trader_time_2_stop) if has_trader_time_2 else False
 
                     if not in_window_1 and not in_window_2:
-                        logger.info(f"⏭️ Trader {trader_id} time filter SKIPPED: {now.strftime('%I:%M %p')} not in trading window")
+                        logger.info(f"⏭️ Trader {trader_id} time filter SKIPPED: {now.strftime('%I:%M %p')} ({_this_trader_tz}) not in trading window")
                         continue
-                    logger.info(f"✅ Trader {trader_id} time filter passed: {now.strftime('%I:%M %p')}")
+                    logger.info(f"✅ Trader {trader_id} time filter passed: {now.strftime('%I:%M %p')} ({_this_trader_tz})")
                 except Exception as time_err:
                     logger.warning(f"⚠️ Trader time filter check failed: {time_err}")
 
