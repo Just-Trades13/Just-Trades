@@ -747,17 +747,12 @@
                         </div>
                     </label>
                 </div>
-                <div class="tp-row">
-                    <span class="tp-pill">TP #1</span>
-                    <label class="form-field">
-                        <span>TP Value</span>
-                        <input type="number" id="createTpValue" name="tp_value" value="0" min="0">
-                    </label>
-                    <label class="form-field">
-                        <span>Trim %</span>
-                        <input type="number" id="createTpTrim" name="tp_trim" value="100" min="0" max="100">
-                    </label>
+                <div id="createTpTargetsContainer">
+                    <!-- TP targets will be dynamically loaded here -->
                 </div>
+                <button type="button" class="add-tp-btn" onclick="addCreateTpTarget()">
+                    <span class="material-icons">add</span> Add TP Target
+                </button>
                 <div class="separator"></div>
                 <div class="toggle-row">
                     <span>Stop Loss</span>
@@ -1515,6 +1510,85 @@
         return targets;
     }
 
+    // Create form multi-TP functions (targets createTpTargetsContainer)
+    let createTpTargetCount = 0;
+
+    function addCreateTpTarget(ticks = 0, trim = 100) {
+        const container = document.getElementById('createTpTargetsContainer');
+        if (!container) return;
+
+        createTpTargetCount++;
+        const index = createTpTargetCount;
+
+        const row = document.createElement('div');
+        row.className = 'tp-target-row';
+        row.dataset.tpIndex = index;
+        row.innerHTML = `
+            <span class="tp-pill">TP #${index}</span>
+            <label class="form-field">
+                <span>TP Value (Ticks)</span>
+                <input type="number" class="tp-ticks-input" value="${ticks}" min="0">
+            </label>
+            <label class="form-field">
+                <span>Trim %</span>
+                <input type="number" class="tp-trim-input" value="${trim}" min="0" max="100">
+            </label>
+            <button type="button" class="remove-tp-btn" onclick="removeCreateTpTarget(this)" title="Remove TP">
+                <span class="material-icons">close</span>
+            </button>
+        `;
+        container.appendChild(row);
+        updateCreateTpLabels();
+    }
+
+    function removeCreateTpTarget(btn) {
+        const row = btn.closest('.tp-target-row');
+        if (row) {
+            row.remove();
+            updateCreateTpLabels();
+        }
+    }
+
+    function updateCreateTpLabels() {
+        const container = document.getElementById('createTpTargetsContainer');
+        if (!container) return;
+        const rows = container.querySelectorAll('.tp-target-row');
+        rows.forEach((row, idx) => {
+            const pill = row.querySelector('.tp-pill');
+            if (pill) pill.textContent = `TP #${idx + 1}`;
+        });
+    }
+
+    function getCreateTpTargets() {
+        const container = document.getElementById('createTpTargetsContainer');
+        if (!container) return [];
+
+        const targets = [];
+        const rows = container.querySelectorAll('.tp-target-row');
+        rows.forEach(row => {
+            const ticks = parseInt(row.querySelector('.tp-ticks-input')?.value ?? 0);
+            const trim = parseInt(row.querySelector('.tp-trim-input')?.value ?? 100);
+            targets.push({ ticks, trim });
+        });
+        return targets;
+    }
+
+    function initCreateTpTargets(targets) {
+        const container = document.getElementById('createTpTargetsContainer');
+        if (container) container.innerHTML = '';
+        createTpTargetCount = 0;
+
+        if (!targets || targets.length === 0) {
+            addCreateTpTarget(0, 100);
+        } else {
+            targets.forEach(t => {
+                const ticks = t.ticks ?? t.value ?? 0;
+                const trim = t.trim ?? 100;
+                addCreateTpTarget(ticks, trim);
+            });
+        }
+    }
+
     function initTpTargets(targets) {
         // Clear existing
         const container = document.getElementById('tpTargetsContainer');
@@ -2009,26 +2083,22 @@
             const trimUnits = document.getElementById('createTrimUnits');
             if (trimUnits && recorder.trim_units) trimUnits.value = recorder.trim_units;
             
-            // Parse TP targets if available
-            let tpValue = 0;
-            let tpTrim = 100;
+            // Parse and populate multi-TP targets from recorder
             if (recorder.tp_targets) {
                 try {
                     const targets = typeof recorder.tp_targets === 'string' ? JSON.parse(recorder.tp_targets) : recorder.tp_targets;
                     if (targets && targets.length > 0) {
-                        tpValue = targets[0].value || targets[0].ticks || 0;
-                        tpTrim = targets[0].trim || targets[0].percent || 100;
+                        initCreateTpTargets(targets);
+                    } else {
+                        initCreateTpTargets([]);
                     }
                 } catch (e) {
                     console.log('Could not parse TP targets:', e);
+                    initCreateTpTargets([]);
                 }
+            } else {
+                initCreateTpTargets([]);
             }
-            
-            const tpValueInput = document.getElementById('createTpValue');
-            if (tpValueInput) tpValueInput.value = tpValue;
-            
-            const tpTrimInput = document.getElementById('createTpTrim');
-            if (tpTrimInput) tpTrimInput.value = tpTrim;
             
             // Populate SL Settings
             const slEnabled = document.getElementById('createSlEnabled');
@@ -2110,7 +2180,6 @@
             // Flash highlight on populated fields to show what changed
             const fieldsToHighlight = [
                 '#createInitialPositionSize', '#createAddPositionSize',
-                '#createTpValue', '#createTpTrim',
                 '#createSlAmount', '#createAvgDownAmount', '#createAvgDownPoint',
                 '#createMaxContracts', '#createTrailTrigger', '#createTrailFreq',
                 '#createBreakEvenTicks', '#createBreakEvenOffset',
@@ -2414,7 +2483,33 @@
                         const newTimeFilter2Enabled = document.getElementById('new_time_filter_2_enabled')?.checked ? true : false;
                         const newTimeFilter2Start = document.getElementById('newTimeFilter2Start')?.value || '';
                         const newTimeFilter2Stop = document.getElementById('newTimeFilter2Stop')?.value || '';
-                        
+
+                        // Collect risk settings from create form
+                        const newTpTargets = JSON.stringify(getCreateTpTargets());
+                        const newTpUnits = document.getElementById('createTpUnits')?.value || 'Ticks';
+                        const newTrimUnits = document.getElementById('createTrimUnits')?.value || 'Contracts';
+                        const newInitialPositionSize = parseInt(document.getElementById('createInitialPositionSize')?.value) || 1;
+                        const newAddPositionSize = parseInt(document.getElementById('createAddPositionSize')?.value) || 1;
+                        const newSlEnabled = document.getElementById('createSlEnabled')?.checked ? 1 : 0;
+                        const newSlAmount = parseFloat(document.getElementById('createSlAmount')?.value) || 0;
+                        const newSlUnits = document.getElementById('createSlUnits')?.value || 'Ticks';
+                        const newSlType = document.getElementById('createSlType')?.value || 'Fixed';
+                        const newTrailTrigger = parseInt(document.getElementById('createTrailTrigger')?.value) || 0;
+                        const newTrailFreq = parseInt(document.getElementById('createTrailFreq')?.value) || 0;
+                        const newBreakEvenEnabled = document.getElementById('createBreakEvenEnabled')?.checked ? 1 : 0;
+                        const newBreakEvenTicks = parseInt(document.getElementById('createBreakEvenTicks')?.value) || 0;
+                        const newBreakEvenOffset = parseInt(document.getElementById('createBreakEvenOffset')?.value) || 0;
+                        const newAvgDownEnabled = document.getElementById('createAvgDownEnabled')?.checked ? 1 : 0;
+                        const newAvgDownAmount = parseInt(document.getElementById('createAvgDownAmount')?.value) || 1;
+                        const newAvgDownPoint = parseFloat(document.getElementById('createAvgDownPoint')?.value) || 10;
+                        const newAvgDownUnits = document.getElementById('createAvgDownUnits')?.value || 'Ticks';
+                        const newMaxContracts = parseInt(document.getElementById('createMaxContracts')?.value) || 0;
+                        const newSignalCooldown = parseInt(document.getElementById('createSignalCooldown')?.value) || 0;
+                        const newMaxSignalsPerSession = parseInt(document.getElementById('createMaxSignalsPerSession')?.value) || 0;
+                        const newMaxDailyLoss = parseFloat(document.getElementById('createMaxDailyLoss')?.value) || 0;
+                        const newAutoFlatAfterCutoff = document.getElementById('createAutoFlatAfterCutoff')?.checked ? 1 : 0;
+                        const newAddDelay = parseInt(document.getElementById('createAddDelay')?.value) || 1;
+
                         for (const account of enabledAccounts) {
                             const response = await fetch('/api/traders', {
                                 method: 'POST',
@@ -2428,7 +2523,32 @@
                                     subaccount_name: account.subaccount_name,
                                     is_demo: account.is_demo,
                                     inverse_signals: newInverseSignals,
-                                    // Time filter settings (optional overrides)
+                                    // Risk settings
+                                    initial_position_size: newInitialPositionSize,
+                                    add_position_size: newAddPositionSize,
+                                    tp_targets: newTpTargets,
+                                    tp_units: newTpUnits,
+                                    trim_units: newTrimUnits,
+                                    sl_enabled: newSlEnabled,
+                                    sl_amount: newSlAmount,
+                                    sl_units: newSlUnits,
+                                    sl_type: newSlType,
+                                    trail_trigger: newTrailTrigger,
+                                    trail_freq: newTrailFreq,
+                                    break_even_enabled: newBreakEvenEnabled,
+                                    break_even_ticks: newBreakEvenTicks,
+                                    break_even_offset: newBreakEvenOffset,
+                                    avg_down_enabled: newAvgDownEnabled,
+                                    avg_down_amount: newAvgDownAmount,
+                                    avg_down_point: newAvgDownPoint,
+                                    avg_down_units: newAvgDownUnits,
+                                    max_contracts: newMaxContracts,
+                                    signal_cooldown: newSignalCooldown,
+                                    max_signals_per_session: newMaxSignalsPerSession,
+                                    max_daily_loss: newMaxDailyLoss,
+                                    auto_flat_after_cutoff: newAutoFlatAfterCutoff,
+                                    add_delay: newAddDelay,
+                                    // Time filter settings
                                     time_filter_1_enabled: newTimeFilter1Enabled,
                                     time_filter_1_start: newTimeFilter1Start,
                                     time_filter_1_stop: newTimeFilter1Stop,
@@ -2492,8 +2612,9 @@
         // No TP targets saved yet - add default
         initTpTargets([]);
         {% else %}
-        // New trader - add default empty TP target
+        // New trader - add default empty TP target for both containers
         initTpTargets([]);
+        initCreateTpTargets([]);
         {% endif %}
     });
 </script>
