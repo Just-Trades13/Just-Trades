@@ -16946,6 +16946,11 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 })
                 broker_execution_queue.put_nowait(broker_task)
                 broker_was_queued = True  # Successfully queued!
+                # Signal blocking: set IMMEDIATELY on queue (not after execution)
+                # This prevents race condition where next signal arrives before broker worker finishes
+                if recorder.get('signal_blocking') and trade_action not in ('close', 'flat', 'exit'):
+                    set_signal_blocking_position(recorder_id, extract_symbol_root(ticker), trade_side)
+                    _logger.info(f"🛑 Signal blocking SET immediately on queue: {recorder_name} {trade_side} {ticker}")
                 track_signal_step(signal_id, 'STEP6_BROKER_QUEUED', {'queue_size': broker_execution_queue.qsize()})
                 workers_alive = sum(1 for t in _broker_execution_threads if t.is_alive()) if _broker_execution_threads else 0
                 _logger.info(f"📤 Broker execution queued: {trade_action} {quantity} {ticker} (will execute async)")
