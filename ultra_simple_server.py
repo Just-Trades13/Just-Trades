@@ -8682,8 +8682,20 @@ _insider_poll_thread.start()
 # WHOP MEMBERSHIP SYNC DAEMON — catches users that Whop webhooks missed
 # ============================================================================
 WHOP_SYNC_INTERVAL = 300  # 5 minutes
+WHOP_RESEND_INTERVAL = 86400  # 24 hours between resends per user
+WHOP_RESEND_MAX_DAYS = 3  # Stop resending after 3 days (they need to contact support)
 
-_whop_emails_resent = set()  # Track emails we've already resent this session
+# email → timestamp of last resend (persists across sync cycles within a deploy)
+_whop_email_last_resent = {}
+# Track sync stats for the admin status endpoint
+_whop_sync_stats = {
+    'last_run': None,
+    'last_synced': 0,
+    'last_resent': 0,
+    'total_synced': 0,
+    'total_resent': 0,
+    'stuck_users': [],  # Users who haven't activated after max resends
+}
 
 def _whop_membership_sync():
     """Poll Whop for all active memberships and create missing platform accounts."""
@@ -8699,6 +8711,8 @@ def _whop_membership_sync():
     memberships = result.get('data', [])
     synced_count = 0
     resent_count = 0
+    stuck = []
+    now = time.time()
 
     for membership in memberships:
         try:
@@ -8740,16 +8754,35 @@ def _whop_membership_sync():
                     synced_count += 1
                     logger.info(f"🔄 Whop sync: created subscription for existing user {user_email} ({plan_slug})")
 
-                # Resend activation email if user hasn't activated yet (once per session)
-                if user.username and user.username.startswith('whop_') and user_email not in _whop_emails_resent:
-                    try:
-                        token = generate_activation_token(user.id, user.email)
-                        if token and send_activation_email(user.email, token):
-                            _whop_emails_resent.add(user_email)
-                            resent_count += 1
-                            logger.info(f"📧 Whop sync: resent activation email to {user_email}")
-                    except Exception as e:
-                        logger.error(f"📧 Whop sync: failed to resend activation to {user_email}: {e}")
+                # Resend activation email if user hasn't activated yet
+                if user.username and user.username.startswith('whop_'):
+                    last_sent = _whop_email_last_resent.get(user_email, 0)
+                    elapsed = now - last_sent
+
+                    if elapsed >= WHOP_RESEND_INTERVAL:
+                        # Check if account is older than max resend window
+                        account_age_days = 0
+                        if hasattr(user, 'created_at') and user.created_at:
+                            try:
+                                created = datetime.fromisoformat(str(user.created_at).replace('Z', '+00:00'))
+                                account_age_days = (datetime.now(created.tzinfo) - created).days if created.tzinfo else (datetime.now() - created).days
+                            except Exception:
+                                pass
+
+                        if account_age_days > WHOP_RESEND_MAX_DAYS:
+                            stuck.append(user_email)
+                            logger.warning(f"⚠️ Whop sync: {user_email} unactivated for {account_age_days} days — needs manual support")
+                        else:
+                            try:
+                                token = generate_activation_token(user.id, user.email)
+                                if token and send_activation_email(user.email, token):
+                                    _whop_email_last_resent[user_email] = now
+                                    resent_count += 1
+                                    logger.info(f"📧 Whop sync: sent activation email to {user_email}")
+                                else:
+                                    logger.error(f"📧 Whop sync: email send FAILED for {user_email} — check Brevo")
+                            except Exception as e:
+                                logger.error(f"📧 Whop sync: failed to resend activation to {user_email}: {e}")
             else:
                 # User doesn't exist — auto-create account + subscription
                 new_user_id = auto_create_user_from_whop(user_email, whop_user_id or 'unknown')
@@ -8761,7 +8794,7 @@ def _whop_membership_sync():
                         whop_customer_id=whop_user_id,
                         trial_days=7 if is_trial else 0
                     )
-                    _whop_emails_resent.add(user_email)
+                    _whop_email_last_resent[user_email] = now
                     synced_count += 1
                     logger.info(f"🔄 Whop sync: auto-created user + subscription for {user_email} ({plan_slug})")
                 else:
@@ -8771,8 +8804,16 @@ def _whop_membership_sync():
             logger.error(f"⚠️ Whop sync: error processing membership {membership.get('id', '?')}: {e}")
             continue
 
-    if synced_count > 0 or resent_count > 0:
-        logger.info(f"🔄 Whop sync complete: {synced_count} new account(s), {resent_count} activation email(s) resent")
+    # Update stats for admin visibility
+    _whop_sync_stats['last_run'] = datetime.now().isoformat()
+    _whop_sync_stats['last_synced'] = synced_count
+    _whop_sync_stats['last_resent'] = resent_count
+    _whop_sync_stats['total_synced'] += synced_count
+    _whop_sync_stats['total_resent'] += resent_count
+    _whop_sync_stats['stuck_users'] = stuck
+
+    if synced_count > 0 or resent_count > 0 or stuck:
+        logger.info(f"🔄 Whop sync complete: {synced_count} created, {resent_count} emails sent, {len(stuck)} stuck")
 
 
 def _whop_sync_loop():
@@ -8790,6 +8831,25 @@ def _whop_sync_loop():
 if SUBSCRIPTION_SYSTEM_AVAILABLE:
     _whop_sync_thread = threading.Thread(target=_whop_sync_loop, daemon=True, name="Whop-Sync")
     _whop_sync_thread.start()
+
+
+@app.route('/api/admin/whop-sync-status')
+def api_whop_sync_status():
+    """Admin endpoint to check Whop sync daemon health."""
+    api_key = request.headers.get('X-Admin-Key')
+    if not api_key or api_key != os.environ.get('ADMIN_API_KEY'):
+        if not is_logged_in():
+            return jsonify({'error': 'Not authorized'}), 401
+        user = get_current_user()
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+    return jsonify({
+        'sync_interval_seconds': WHOP_SYNC_INTERVAL,
+        'resend_interval_hours': WHOP_RESEND_INTERVAL // 3600,
+        'resend_max_days': WHOP_RESEND_MAX_DAYS,
+        'pending_resends': len(_whop_email_last_resent),
+        **_whop_sync_stats
+    })
 
 @app.route('/insider-signals')
 @app.route('/insider_signals')
