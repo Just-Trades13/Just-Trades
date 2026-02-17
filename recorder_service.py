@@ -2085,128 +2085,15 @@ def execute_trade_simple(
                                 except Exception:
                                     pass
 
-                    # ============================================================
-                    # MULTI-BRACKET: Native multi-TP bracket order (multiple legs)
-                    # Each TP target becomes its own bracket leg with SL
-                    # Tradovate manages all OCO automatically — one atomic order
-                    # ============================================================
+                    # Detect multi-TP for bracket order builder below
                     has_multi_tp = risk_config and len(risk_config.get('take_profit', [])) > 1
-                    if not has_existing_position and has_multi_tp and tp_ticks and tp_ticks > 0:
-                        multi_tp_list = risk_config.get('take_profit', [])
-                        multi_trim_units = risk_config.get('trim_units', 'Percent')
 
-                        # SL ticks: from sl_ticks param (already resolved in webhook handler)
-                        multi_sl_ticks = sl_ticks if sl_ticks > 0 else None
-
-                        # Trailing stop settings (same logic as single bracket)
-                        trailing_stop_mb = False
-                        auto_trail_mb = None
-                        trail_cfg_mb = risk_config.get('trail') if risk_config else None
-                        if trail_cfg_mb:
-                            offset_ticks_mb = trail_cfg_mb.get('offset_ticks')
-                            activation_ticks_mb = trail_cfg_mb.get('activation_ticks')
-                            frequency_ticks_mb = trail_cfg_mb.get('frequency_ticks')
-                            # Use trail offset as SL distance for trailing stops
-                            if offset_ticks_mb and not multi_sl_ticks:
-                                multi_sl_ticks = int(offset_ticks_mb)
-
-                            if offset_ticks_mb and activation_ticks_mb and activation_ticks_mb != offset_ticks_mb:
-                                # AutoTrail: trailing starts after profit threshold
-                                trail_freq_mb = (frequency_ticks_mb * local_tick_size) if frequency_ticks_mb else (local_tick_size * 0.25)
-                                auto_trail_mb = {
-                                    'stopLoss': offset_ticks_mb,
-                                    'trigger': activation_ticks_mb,
-                                    'freq': trail_freq_mb
-                                }
-                                logger.info(f"📊 [{acct_name}] Multi-bracket autoTrail: distance={offset_ticks_mb}, trigger={activation_ticks_mb}")
-                            elif offset_ticks_mb:
-                                # Immediate trailing stop
-                                trailing_stop_mb = True
-                                logger.info(f"📊 [{acct_name}] Multi-bracket trailing stop: {offset_ticks_mb} ticks")
-
-                        # Build bracket legs from TP targets
-                        bracket_legs = []
-                        total_allocated = 0
-                        for i, tp_target in enumerate(multi_tp_list):
-                            target_ticks = int(float(tp_target.get('gain_ticks', 0)))
-                            target_trim = float(tp_target.get('trim_percent', 0))
-
-                            if target_ticks <= 0:
-                                continue
-
-                            # Calculate quantity for this leg
-                            if multi_trim_units == 'Contracts':
-                                leg_qty = max(1, int(target_trim)) if target_trim > 0 else 1
-                            else:  # Percent
-                                leg_qty = max(1, int(round(adjusted_quantity * target_trim / 100.0)))
-
-                            # Last leg gets remainder to ensure total matches
-                            if i == len(multi_tp_list) - 1 and multi_trim_units != 'Contracts':
-                                leg_qty = max(1, adjusted_quantity - total_allocated)
-
-                            total_allocated += leg_qty
-
-                            bracket_legs.append({
-                                'qty': leg_qty,
-                                'tp_ticks': target_ticks,
-                                'sl_ticks': multi_sl_ticks
-                            })
-
-                        if bracket_legs:
-                            # For Contracts mode: total = sum of legs (legs define qty)
-                            # For Percent mode: total = adjusted_quantity
-                            if multi_trim_units == 'Contracts':
-                                actual_total = sum(leg['qty'] for leg in bracket_legs)
-                            else:
-                                actual_total = adjusted_quantity
-
-                            sl_log = f" + SL: {multi_sl_ticks} ticks" if multi_sl_ticks else ""
-                            trail_log = " + Trail" if auto_trail_mb or trailing_stop_mb else ""
-                            logger.info(f"📤 [{acct_name}] NATIVE MULTI-BRACKET: {len(bracket_legs)} legs, {actual_total} contracts{sl_log}{trail_log}")
-                            for li, leg in enumerate(bracket_legs):
-                                logger.info(f"   Leg {li+1}: {leg['qty']}x, TP +{leg['tp_ticks']} ticks, SL {leg['sl_ticks']} ticks")
-
-                            bracket_result = await tradovate.place_multi_bracket_order(
-                                account_id=tradovate_account_id,
-                                account_spec=tradovate_account_spec,
-                                symbol=local_tradovate_symbol,
-                                entry_side=order_action,
-                                total_quantity=actual_total,
-                                bracket_legs=bracket_legs,
-                                trailing_stop=trailing_stop_mb,
-                                auto_trail=auto_trail_mb
-                            )
-
-                            if bracket_result and bracket_result.get('success'):
-                                strategy_id = bracket_result.get('strategy_id')
-                                logger.info(f"✅ [{acct_name}] MULTI-BRACKET SUCCESS! ID={strategy_id}, {len(bracket_legs)} legs")
-
-                                broker_side = 'LONG' if order_action == 'Buy' else 'SHORT'
-
-                                return {
-                                    'success': True,
-                                    'broker_avg': None,
-                                    'broker_qty': actual_total,
-                                    'broker_side': broker_side,
-                                    'tp_price': None,
-                                    'tp_order_id': strategy_id,
-                                    'sl_price': None,
-                                    'sl_order_id': strategy_id if multi_sl_ticks else None,
-                                    'acct_name': acct_name,
-                                    'method': 'MULTI_BRACKET_WS',
-                                    'subaccount_id': tradovate_account_id
-                                }
-                            else:
-                                logger.warning(f"⚠️ [{acct_name}] Multi-bracket failed, falling back to REST: {bracket_result}")
-                                # Fall through to single bracket or REST below
-
-                    # SCALABLE APPROACH: Use bracket order via WebSocket for NEW entries
+                    # SCALABLE APPROACH: Use bracket order via REST for NEW entries
                     # This sends entry + TP + SL in ONE call (no rate limits, guaranteed orders)
                     # NOW SUPPORTS: Native break-even and autoTrail (trailing-after-profit) via Tradovate API
                     use_bracket_order = (
                         not has_existing_position and
-                        tp_ticks and tp_ticks > 0 and
-                        not has_multi_tp  # Single-TP only — multi-TP handled above
+                        tp_ticks and tp_ticks > 0
                     )
 
                     if use_bracket_order:
