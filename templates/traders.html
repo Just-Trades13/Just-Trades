@@ -348,10 +348,6 @@
                 </div>
                 <div class="form-two" style="opacity: 0.45; pointer-events: none;">
                     <label class="form-field">
-                        <span>Option Premium Filter <span style="font-size:0.7rem;color:#f59e0b;font-weight:600;">COMING SOON</span></span>
-                        <input type="number" value="0" disabled>
-                    </label>
-                    <label class="form-field">
                         <span>Direction Filter <span style="font-size:0.7rem;color:#f59e0b;font-weight:600;">COMING SOON</span></span>
                         <div class="select-shell">
                             <select disabled>
@@ -779,80 +775,6 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <label class="form-field">
-                    <span>Max Contracts</span>
-                    <input type="number" id="createMaxContracts" name="max_contracts" value="0" min="0">
-                    <small style="color: #64748b;">0 = unlimited</small>
-                </label>
-                <div class="tp-row">
-                    <span class="tp-pill">TP #1</span>
-                    <label class="form-field">
-                        <span>TP Value</span>
-                        <input type="number" value="0">
-                    </label>
-                    <label class="form-field">
-                        <span>Trim %</span>
-                        <input type="number" value="0">
-                        <small>This TP is disabled.</small>
-                    </label>
-                    <button class="icon-btn" type="button"><span class="material-icons">delete</span></button>
-                </div>
-                <div class="separator"></div>
-                <div class="toggle-row">
-                    <span>Stop Loss</span>
-                    <span class="tag tag-disabled">Disabled</span>
-                </div>
-                <div class="form-two">
-                    <label class="form-field">
-                        <span>Stop Loss Amount</span>
-                        <input type="number" value="0">
-                    </label>
-                    <label class="form-field">
-                        <span>SL Units</span>
-                        <div class="select-shell">
-                            <select>
-                                <option>Ticks</option>
-                                <option>Points</option>
-                            </select>
-                            <span class="material-icons">expand_more</span>
-                        </div>
-                    </label>
-                </div>
-                <label class="form-field">
-                    <span>SL Type</span>
-                    <div class="select-shell">
-                        <select>
-                            <option>Fixed</option>
-                            <option>Trail</option>
-                        </select>
-                        <span class="material-icons">expand_more</span>
-                    </div>
-                </label>
-                <div class="separator"></div>
-                <div class="toggle-row">
-                    <span>Averaging Down</span>
-                    <span class="tag tag-disabled">Disabled</span>
-                </div>
-                <div class="form-two">
-                    <label class="form-field">
-                        <span>Average Down Amount</span>
-                        <input type="number" value="1">
-                    </label>
-                    <label class="form-field">
-                        <span>Average Down Point</span>
-                        <input type="number" value="0">
-                    </label>
-                </div>
-                <label class="form-field">
-                    <span>Avg Down Unit</span>
-                    <div class="select-shell">
-                        <select>
-                            <option>Ticks</option>
-                            <option>Points</option>
-                        </select>
-                        <span class="material-icons">expand_more</span>
-                    </div>
-                </label>
             </div>
         </section>
 
@@ -883,10 +805,6 @@
                     </label>
                 </div>
                 <div class="form-two" style="opacity: 0.45; pointer-events: none;">
-                    <label class="form-field">
-                        <span>Option Premium Filter <span style="font-size:0.7rem;color:#f59e0b;font-weight:600;">COMING SOON</span></span>
-                        <input type="number" value="0" disabled>
-                    </label>
                     <label class="form-field">
                         <span>Direction Filter <span style="font-size:0.7rem;color:#f59e0b;font-weight:600;">COMING SOON</span></span>
                         <div class="select-shell">
@@ -2042,10 +1960,6 @@
             const avgDownEnabled = document.getElementById('createAvgDownEnabled');
             if (avgDownEnabled) avgDownEnabled.checked = recorder.avg_down_enabled ? true : false;
 
-            // Populate Max Contracts
-            const maxContracts = document.getElementById('createMaxContracts');
-            if (maxContracts) maxContracts.value = recorder.max_contracts || 0;
-
             // Populate Execution Controls
             const signalCooldown = document.getElementById('createSignalCooldown');
             if (signalCooldown) signalCooldown.value = recorder.signal_cooldown || 0;
@@ -2078,7 +1992,7 @@
             const fieldsToHighlight = [
                 '#createInitialPositionSize', '#createAddPositionSize',
                 '#createSlAmount',
-                '#createMaxContracts', '#createTrailTrigger', '#createTrailFreq',
+                '#createTrailTrigger', '#createTrailFreq',
                 '#createBreakEvenTicks', '#createBreakEvenOffset',
                 '#createSignalCooldown', '#createMaxSignalsPerSession',
                 '#createMaxDailyLoss', '#createAddDelay'
@@ -2389,7 +2303,6 @@
                         const newBreakEvenTicks = parseInt(document.getElementById('createBreakEvenTicks')?.value) || 0;
                         const newBreakEvenOffset = parseInt(document.getElementById('createBreakEvenOffset')?.value) || 0;
                         const newAvgDownEnabled = document.getElementById('createAvgDownEnabled')?.checked ? 1 : 0;
-                        const newMaxContracts = parseInt(document.getElementById('createMaxContracts')?.value) || 0;
                         const newSignalCooldown = parseInt(document.getElementById('createSignalCooldown')?.value) || 0;
                         const newMaxSignalsPerSession = parseInt(document.getElementById('createMaxSignalsPerSession')?.value) || 0;
                         const newMaxDailyLoss = parseFloat(document.getElementById('createMaxDailyLoss')?.value) || 0;
@@ -2424,7 +2337,6 @@
                                     break_even_ticks: newBreakEvenTicks,
                                     break_even_offset: newBreakEvenOffset,
                                     avg_down_enabled: newAvgDownEnabled,
-                                    max_contracts: newMaxContracts,
                                     signal_cooldown: newSignalCooldown,
                                     max_signals_per_session: newMaxSignalsPerSession,
                                     max_daily_loss: newMaxDailyLoss,
