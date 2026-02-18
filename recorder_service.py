@@ -2043,9 +2043,10 @@ def execute_trade_simple(
                                 logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty} (dca_enabled=ON)")
                                 is_dca_local = True  # PROTECTED: Triggers cancel+replace TP logic
                             else:
-                                # DCA MODE OFF: Add to position but use standard TP handling
-                                logger.info(f"📈 [{acct_name}] Same direction - Adding to {existing_position_side} {existing_position_qty} (dca_enabled=OFF, standard TP)")
-                            # Continue to execute - will add to position
+                                # DCA MODE OFF: Ignore existing position, treat as fresh entry with bracket order
+                                logger.info(f"📊 [{acct_name}] DCA OFF - Ignoring existing {existing_position_side} {existing_position_qty}, treating as fresh bracket entry")
+                                has_existing_position = False
+                            # Continue to execute
                         else:
                             # OPPOSITE DIRECTION - Check if DCA mode blocks opposite signals
                             # Block if EITHER trader.dca_enabled OR recorder.avg_down_enabled is True

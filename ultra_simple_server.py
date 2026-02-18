@@ -16672,26 +16672,33 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 _logger.info(f"📊 Using RECORDER's initial_position_size: {quantity}")
 
         # ============================================================
-        # DCA DETECTION - Adjust quantity if adding to position
+        # DCA DETECTION - Only adjust quantity if DCA is actually enabled
         # ============================================================
         is_dca = False
         if existing_position:
             if (existing_side == 'LONG' and trade_action.upper() == 'BUY') or \
                (existing_side == 'SHORT' and trade_action.upper() == 'SELL'):
-                is_dca = True
-                # Use add_position_size for DCA (unless risk-based sizing was used)
-                if 'RISK' not in quantity_source:
-                    if trader_add_size:
-                        quantity = int(trader_add_size)
-                        quantity_source = "TRADER (add_position_size - DCA)"
-                        _logger.info(f"📈 DCA detected - Using TRADER's add_position_size: {quantity}")
+                # Check if DCA is enabled: trader.dca_enabled takes precedence, then recorder.avg_down_enabled
+                trader_dca_raw = trader.get('dca_enabled') if trader else None
+                recorder_dca = recorder.get('avg_down_enabled', False)
+                effective_dca = bool(trader_dca_raw) if trader_dca_raw is not None else bool(recorder_dca)
+                if effective_dca:
+                    is_dca = True
+                    # Use add_position_size for DCA (unless risk-based sizing was used)
+                    if 'RISK' not in quantity_source:
+                        if trader_add_size:
+                            quantity = int(trader_add_size)
+                            quantity_source = "TRADER (add_position_size - DCA)"
+                            _logger.info(f"📈 DCA detected - Using TRADER's add_position_size: {quantity}")
+                        else:
+                            recorder_add_size = recorder.get('add_position_size', 1)
+                            quantity = int(recorder_add_size) if recorder_add_size else 1
+                            quantity_source = "RECORDER (add_position_size - DCA)"
+                            _logger.info(f"📈 DCA detected - Using RECORDER's add_position_size: {quantity}")
                     else:
-                        recorder_add_size = recorder.get('add_position_size', 1)
-                        quantity = int(recorder_add_size) if recorder_add_size else 1
-                        quantity_source = "RECORDER (add_position_size - DCA)"
-                        _logger.info(f"📈 DCA detected - Using RECORDER's add_position_size: {quantity}")
+                        _logger.info(f"📈 DCA detected - Keeping risk-based quantity: {quantity}")
                 else:
-                    _logger.info(f"📈 DCA detected - Keeping risk-based quantity: {quantity}")
+                    _logger.info(f"📊 Same-direction signal but DCA OFF - treating as fresh entry with initial_position_size")
         
         # Execute the trade with FULL risk settings (trader settings override recorder)
         _logger.info(f"🚀 Executing {trade_action} {quantity} {ticker} for '{recorder_name}' | Price: {current_price} | TP: {tp_ticks} ticks ({tp_source}) | SL: {sl_ticks} ticks ({sl_source}) | Qty: {quantity_source}")
