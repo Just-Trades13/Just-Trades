@@ -22205,6 +22205,10 @@ def api_control_center_stats():
                         r.symbol,
                         r.recording_enabled,
                         r.signal_count,
+                        r.time_filter_1_start,
+                        r.time_filter_1_stop,
+                        r.time_filter_2_start,
+                        r.time_filter_2_stop,
                         COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
                         COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
                         (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
@@ -22224,6 +22228,10 @@ def api_control_center_stats():
                         r.symbol,
                         r.recording_enabled,
                         r.signal_count,
+                        r.time_filter_1_start,
+                        r.time_filter_1_stop,
+                        r.time_filter_2_start,
+                        r.time_filter_2_stop,
                         COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
                         COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
                         (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
@@ -22248,6 +22256,10 @@ def api_control_center_stats():
                     r.symbol,
                     r.recording_enabled,
                     r.signal_count,
+                    r.time_filter_1_start,
+                    r.time_filter_1_stop,
+                    r.time_filter_2_start,
+                    r.time_filter_2_stop,
                     COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
                     COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
                     (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
@@ -22392,7 +22404,11 @@ def api_control_center_stats():
                 'closed_trades': row['closed_trades'] or 0,
                 'signal_count': row['signal_count'] or 0,
                 'last_signal': row['last_signal'],
-                'open_trade_details': positions_list if has_open_position else []
+                'open_trade_details': positions_list if has_open_position else [],
+                'time_filter_1_start': row['time_filter_1_start'] or '',
+                'time_filter_1_stop': row['time_filter_1_stop'] or '',
+                'time_filter_2_start': row['time_filter_2_start'] or '',
+                'time_filter_2_stop': row['time_filter_2_stop'] or '',
             })
         
         # Build open_positions array for compatibility (using same data source)

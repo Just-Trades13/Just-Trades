@@ -165,7 +165,7 @@
                     <tr>
                         <th>STRATEGY</th>
                             <th>STATUS</th>
-                        <th>PROFIT / LOSS</th>
+                        <th>TIME FILTER</th>
                         <th>ACTIONS</th>
                     </tr>
                 </thead>
@@ -339,6 +339,14 @@
     .pl-cell { font-weight: 600; font-family: 'SF Mono', Monaco, monospace; }
     .pl-cell.positive { color: #34d399; }
     .pl-cell.negative { color: #f87171; }
+
+    /* Time Filter Status */
+    .tf-cell { display: flex; flex-direction: column; gap: 0.2rem; }
+    .tf-status { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+    .tf-status.tf-active { background: rgba(52,211,153,0.15); color: #34d399; border: 1px solid rgba(52,211,153,0.3); }
+    .tf-status.tf-blocked { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+    .tf-status.tf-always { background: rgba(148,163,184,0.1); color: #64748b; border: 1px solid rgba(148,163,184,0.15); }
+    .tf-hours { font-size: 0.65rem; color: #64748b; white-space: nowrap; }
     
     .action-cell { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .btn-small { 
@@ -724,7 +732,8 @@
         });
         
         socket.on('strategy_pnl_update', (data) => {
-            updateStrategyPnL(data.strategy_id, data.strategy_name, data.pnl);
+            // Time filter status replaces P&L column — reload stats to refresh
+            loadControlCenterStats();
         });
         
         // SCALABILITY MODULE: Real-time PnL from WebSocket (via LegacyBridge)
@@ -920,8 +929,12 @@
                             console.log('📊 Control Center Stats Response:', pnlData);
                             pnlData.recorders.forEach(rec => {
                                 if (strategyMap.has(rec.id)) {
-                                    strategyMap.get(rec.id).pnl = rec.pnl || 0;
-                                    console.log(`📊 Strategy ${rec.name} (ID: ${rec.id}): P&L = $${rec.pnl.toFixed(2)}`);
+                                    const s = strategyMap.get(rec.id);
+                                    s.pnl = rec.pnl || 0;
+                                    s.time_filter_1_start = rec.time_filter_1_start || '';
+                                    s.time_filter_1_stop = rec.time_filter_1_stop || '';
+                                    s.time_filter_2_start = rec.time_filter_2_start || '';
+                                    s.time_filter_2_stop = rec.time_filter_2_stop || '';
                                 }
                             });
                         }
@@ -952,19 +965,19 @@
             // Show INDIVIDUAL account status (not just strategy-level)
             let html = '';
             strategies.forEach(strategy => {
-                const pnlClass = strategy.pnl >= 0 ? 'positive' : 'negative';
-                const pnlFormatted = strategy.pnl >= 0 ? `+$${strategy.pnl.toFixed(2)}` : `-$${Math.abs(strategy.pnl).toFixed(2)}`;
-                
+                // Time filter status
+                const tf = getTimeFilterStatus(strategy);
+
                 // Count enabled vs total traders
                 const enabledCount = strategy.traders.filter(t => t.enabled).length;
                 const totalCount = strategy.traders.length;
                 const allEnabled = enabledCount === totalCount;
                 const noneEnabled = enabledCount === 0;
-                
+
                 // Strategy-level status based on accounts
                 const statusClass = noneEnabled ? 'paused' : (allEnabled ? 'live' : 'partial');
                 const statusText = noneEnabled ? 'PAUSED' : (allEnabled ? 'LIVE' : `${enabledCount}/${totalCount} LIVE`);
-                
+
                 // List YOUR accounts with individual status indicators
                 const accountsHtml = strategy.traders.map(t => {
                     const name = t.subaccount_name || t.account_name;
@@ -972,7 +985,12 @@
                     const statusDot = isEnabled ? '🟢' : '🔴';
                     return `<span class="account-status-item" title="${name}: ${isEnabled ? 'LIVE' : 'PAUSED'}">${statusDot} ${name}</span>`;
                 }).join(' ');
-                
+
+                // Build time filter cell content
+                const tfHtml = tf.configured
+                    ? `<div class="tf-cell"><span class="tf-status ${tf.cssClass}">${tf.label}</span><span class="tf-hours">${tf.hours}</span></div>`
+                    : `<div class="tf-cell"><span class="tf-status tf-always">Always On</span></div>`;
+
                 html += `
                     <tr data-strategy-id="${strategy.id}">
                         <td class="strategy-cell">
@@ -986,7 +1004,7 @@
                                 <span class="slider"></span>
                             </label>
                         </td>
-                        <td class="pl-cell ${pnlClass}">${pnlFormatted}</td>
+                        <td>${tfHtml}</td>
                         <td class="action-cell">
                             <button class="btn-small btn-close" onclick="closeStrategyPositions(${strategy.id}, '${strategy.name}')">Close</button>
                             <button class="btn-small" onclick="viewStrategyDetails(${strategy.id})">View</button>
@@ -998,17 +1016,66 @@
             tbody.innerHTML = html;
         }
         
-        function updateStrategyPnL(strategyId, strategyName, pnl) {
-            // FIXED: Use data-strategy-id (matches table row attribute)
-            const row = document.querySelector(`tr[data-strategy-id="${strategyId}"]`);
-            if (row) {
-                const pnlCell = row.querySelector('.pl-cell');
-                if (pnlCell) {
-                    const pnlFormatted = pnl >= 0 ? `+$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`;
-                    pnlCell.textContent = pnlFormatted;
-                    pnlCell.className = `pl-cell ${pnl >= 0 ? 'positive' : 'negative'}`;
-                }
+        // Parse "8:45 AM" style time string into minutes since midnight
+        function parseTimeToMinutes(timeStr) {
+            if (!timeStr) return null;
+            const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+            if (!match) return null;
+            let hours = parseInt(match[1]);
+            const mins = parseInt(match[2]);
+            const ampm = match[3].toUpperCase();
+            if (ampm === 'PM' && hours !== 12) hours += 12;
+            if (ampm === 'AM' && hours === 12) hours = 0;
+            return hours * 60 + mins;
+        }
+
+        // Get current time in Chicago (Central) timezone as minutes since midnight
+        function getChicagoMinutes() {
+            const now = new Date();
+            const chicagoStr = now.toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: false, hour: '2-digit', minute: '2-digit' });
+            const [h, m] = chicagoStr.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        // Determine time filter status for a strategy
+        function getTimeFilterStatus(strategy) {
+            const s1 = strategy.time_filter_1_start || '';
+            const e1 = strategy.time_filter_1_stop || '';
+            const s2 = strategy.time_filter_2_start || '';
+            const e2 = strategy.time_filter_2_stop || '';
+
+            // Check if any time filter is configured (non-empty)
+            const hasWindow1 = s1 && e1;
+            const hasWindow2 = s2 && e2;
+
+            if (!hasWindow1 && !hasWindow2) {
+                return { configured: false, label: 'Always On', cssClass: 'tf-always', hours: '' };
             }
+
+            const nowMin = getChicagoMinutes();
+            let active = false;
+            let hoursStr = '';
+
+            if (hasWindow1) {
+                const start1 = parseTimeToMinutes(s1);
+                const end1 = parseTimeToMinutes(e1);
+                if (start1 !== null && end1 !== null && nowMin >= start1 && nowMin < end1) active = true;
+                hoursStr = `${s1} – ${e1}`;
+            }
+            if (hasWindow2) {
+                const start2 = parseTimeToMinutes(s2);
+                const end2 = parseTimeToMinutes(e2);
+                if (start2 !== null && end2 !== null && nowMin >= start2 && nowMin < end2) active = true;
+                if (hoursStr) hoursStr += ' | ';
+                hoursStr += `${s2} – ${e2}`;
+            }
+
+            return {
+                configured: true,
+                label: active ? 'Active' : 'Blocked',
+                cssClass: active ? 'tf-active' : 'tf-blocked',
+                hours: hoursStr
+            };
         }
         
         // SCALABILITY: Update PnL display from WebSocket data (real-time, no REST polling)
