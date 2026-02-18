@@ -317,26 +317,6 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div class="form-two">
-                    <label class="form-field">
-                        <span>Average Down Amount (contracts)</span>
-                        <input type="number" id="avgDownAmount" name="avg_down_amount" value="{{ trader.avg_down_amount or 1 }}" min="1">
-                    </label>
-                    <label class="form-field">
-                        <span>Average Down Point (ticks against)</span>
-                        <input type="number" id="avgDownPoint" name="avg_down_point" value="{{ trader.avg_down_point or 10 }}" min="0" step="0.25">
-                    </label>
-                </div>
-                <label class="form-field">
-                    <span>Avg Down Unit</span>
-                    <div class="select-shell">
-                        <select id="avgDownUnits" name="avg_down_units">
-                            <option value="Ticks" {% if trader.avg_down_units == 'Ticks' %}selected{% endif %}>Ticks</option>
-                            <option value="Points" {% if trader.avg_down_units == 'Points' %}selected{% endif %}>Points</option>
-                        </select>
-                        <span class="material-icons">expand_more</span>
-                    </div>
-                </label>
             </div>
         </section>
 
@@ -457,16 +437,6 @@
                         <input type="number" id="addDelay" name="add_delay" value="{{ trader.add_delay or 1 }}" min="1">
                         <small>Take every Nth signal (1 = all, 2 = every other, 3 = every 3rd)</small>
                     </label>
-                </div>
-                <div class="switch-row">
-                    <label class="switch">
-                        <input type="checkbox" id="autoFlatAfterCutoff" name="auto_flat_after_cutoff" {% if trader.auto_flat_after_cutoff %}checked{% endif %}>
-                        <span class="slider"></span>
-                    </label>
-                    <div>
-                        <h3>Enable Auto Flat After Cutoff</h3>
-                        <p>Automatically close open positions and disable signals after the session end time.</p>
-                    </div>
                 </div>
             </div>
         </section>
@@ -828,16 +798,6 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div class="form-two">
-                    <label class="form-field">
-                        <span>Average Down Amount (contracts)</span>
-                        <input type="number" id="createAvgDownAmount" name="avg_down_amount" value="1" min="1">
-                    </label>
-                    <label class="form-field">
-                        <span>Average Down Point (ticks against)</span>
-                        <input type="number" id="createAvgDownPoint" name="avg_down_point" value="10" min="0" step="0.25">
-                    </label>
-                </div>
                 <label class="form-field">
                     <span>Max Contracts</span>
                     <input type="number" id="createMaxContracts" name="max_contracts" value="0" min="0">
@@ -1028,16 +988,6 @@
                         <input type="number" id="createAddDelay" name="add_delay" value="1" min="1">
                         <small>Take every Nth signal (1 = all, 2 = every other, 3 = every 3rd)</small>
                     </label>
-                </div>
-                <div class="switch-row">
-                    <label class="switch">
-                        <input type="checkbox" id="createAutoFlatAfterCutoff" name="auto_flat_after_cutoff">
-                        <span class="slider"></span>
-                    </label>
-                    <div>
-                        <h3>Enable Auto Flat After Cutoff</h3>
-                        <p>Automatically close open positions and disable signals after the session end time.</p>
-                    </div>
                 </div>
             </div>
         </section>
@@ -2139,12 +2089,6 @@
             const avgDownEnabled = document.getElementById('createAvgDownEnabled');
             if (avgDownEnabled) avgDownEnabled.checked = recorder.avg_down_enabled ? true : false;
 
-            const avgDownAmount = document.getElementById('createAvgDownAmount');
-            if (avgDownAmount) avgDownAmount.value = recorder.avg_down_amount || 1;
-
-            const avgDownPoint = document.getElementById('createAvgDownPoint');
-            if (avgDownPoint) avgDownPoint.value = recorder.avg_down_point || 10;
-
             // Populate Max Contracts
             const maxContracts = document.getElementById('createMaxContracts');
             if (maxContracts) maxContracts.value = recorder.max_contracts || 0;
@@ -2180,7 +2124,7 @@
             // Flash highlight on populated fields to show what changed
             const fieldsToHighlight = [
                 '#createInitialPositionSize', '#createAddPositionSize',
-                '#createSlAmount', '#createAvgDownAmount', '#createAvgDownPoint',
+                '#createSlAmount',
                 '#createMaxContracts', '#createTrailTrigger', '#createTrailFreq',
                 '#createBreakEvenTicks', '#createBreakEvenOffset',
                 '#createSignalCooldown', '#createMaxSignalsPerSession',
@@ -2362,9 +2306,6 @@
                         const trailTrigger = parseInt(document.getElementById('trailTrigger')?.value) || 0;
                         const trailFreq = parseInt(document.getElementById('trailFreq')?.value) || 0;
                         const avgDownEnabled = document.getElementById('avgDownEnabled')?.checked ? 1 : 0;
-                        const avgDownAmount = parseInt(document.getElementById('avgDownAmount')?.value) || 1;
-                        const avgDownPoint = parseFloat(document.getElementById('avgDownPoint')?.value) || 10;
-                        const avgDownUnits = document.getElementById('avgDownUnits')?.value || 'Ticks';
                         const trimUnits = document.getElementById('trimUnits')?.value || 'Percent';
 
                         // Get time filter settings
@@ -2382,7 +2323,6 @@
                         const signalCooldown = parseInt(document.getElementById('signalCooldown')?.value) || 0;
                         const maxSignalsPerSession = parseInt(document.getElementById('maxSignalsPerSession')?.value) || 0;
                         const maxDailyLoss = parseFloat(document.getElementById('maxDailyLoss')?.value) || 0;
-                        const autoFlatAfterCutoff = document.getElementById('autoFlatAfterCutoff')?.checked ? 1 : 0;
                         const inverseSignals = document.getElementById('inverseSignals')?.checked ? 1 : 0;
 
                         // Build TP targets array from dynamic inputs
@@ -2423,9 +2363,6 @@
                                 trail_trigger: trailTrigger,
                                 trail_freq: trailFreq,
                                 avg_down_enabled: avgDownEnabled,
-                                avg_down_amount: avgDownAmount,
-                                avg_down_point: avgDownPoint,
-                                avg_down_units: avgDownUnits,
                                 // Time filter settings
                                 time_filter_1_enabled: timeFilter1Enabled,
                                 time_filter_1_start: timeFilter1Start,
@@ -2439,7 +2376,6 @@
                                 signal_cooldown: signalCooldown,
                                 max_signals_per_session: maxSignalsPerSession,
                                 max_daily_loss: maxDailyLoss,
-                                auto_flat_after_cutoff: autoFlatAfterCutoff,
                                 inverse_signals: inverseSignals,
                                 // Recorder privacy settings
                                 recorder_is_private: document.getElementById('recorder_is_private') ? document.getElementById('recorder_is_private').checked : undefined,
@@ -2500,14 +2436,10 @@
                         const newBreakEvenTicks = parseInt(document.getElementById('createBreakEvenTicks')?.value) || 0;
                         const newBreakEvenOffset = parseInt(document.getElementById('createBreakEvenOffset')?.value) || 0;
                         const newAvgDownEnabled = document.getElementById('createAvgDownEnabled')?.checked ? 1 : 0;
-                        const newAvgDownAmount = parseInt(document.getElementById('createAvgDownAmount')?.value) || 1;
-                        const newAvgDownPoint = parseFloat(document.getElementById('createAvgDownPoint')?.value) || 10;
-                        const newAvgDownUnits = document.getElementById('createAvgDownUnits')?.value || 'Ticks';
                         const newMaxContracts = parseInt(document.getElementById('createMaxContracts')?.value) || 0;
                         const newSignalCooldown = parseInt(document.getElementById('createSignalCooldown')?.value) || 0;
                         const newMaxSignalsPerSession = parseInt(document.getElementById('createMaxSignalsPerSession')?.value) || 0;
                         const newMaxDailyLoss = parseFloat(document.getElementById('createMaxDailyLoss')?.value) || 0;
-                        const newAutoFlatAfterCutoff = document.getElementById('createAutoFlatAfterCutoff')?.checked ? 1 : 0;
                         const newAddDelay = parseInt(document.getElementById('createAddDelay')?.value) || 1;
 
                         for (const account of enabledAccounts) {
@@ -2539,14 +2471,10 @@
                                     break_even_ticks: newBreakEvenTicks,
                                     break_even_offset: newBreakEvenOffset,
                                     avg_down_enabled: newAvgDownEnabled,
-                                    avg_down_amount: newAvgDownAmount,
-                                    avg_down_point: newAvgDownPoint,
-                                    avg_down_units: newAvgDownUnits,
                                     max_contracts: newMaxContracts,
                                     signal_cooldown: newSignalCooldown,
                                     max_signals_per_session: newMaxSignalsPerSession,
                                     max_daily_loss: newMaxDailyLoss,
-                                    auto_flat_after_cutoff: newAutoFlatAfterCutoff,
                                     add_delay: newAddDelay,
                                     // Time filter settings
                                     time_filter_1_enabled: newTimeFilter1Enabled,

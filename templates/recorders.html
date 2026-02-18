@@ -195,26 +195,6 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div class="form-two">
-                    <label class="form-field">
-                        <span>Average Down Amount (contracts)</span>
-                        <input type="number" id="avg_down_amount" value="{{ recorder.avg_down_amount if recorder and recorder.avg_down_amount else 1 }}" min="1">
-                    </label>
-                    <label class="form-field">
-                        <span>Average Down Point (ticks against)</span>
-                        <input type="number" id="avg_down_point" value="{{ recorder.avg_down_point if recorder and recorder.avg_down_point else 10 }}" min="0" step="0.25">
-                    </label>
-                </div>
-                <label class="form-field">
-                    <span>Avg Down Unit</span>
-                    <div class="select-shell">
-                        <select id="avg_down_units">
-                            <option value="Ticks" {{ 'selected' if not recorder or recorder.avg_down_units == 'Ticks' else '' }}>Ticks</option>
-                            <option value="Points" {{ 'selected' if recorder and recorder.avg_down_units == 'Points' else '' }}>Points</option>
-                        </select>
-                        <span class="material-icons">expand_more</span>
-                    </div>
-                </label>
             </div>
         </section>
 
@@ -344,16 +324,6 @@
                     <input type="number" id="max_daily_loss" value="{{ recorder.max_daily_loss if recorder and recorder.max_daily_loss else 0 }}" step="0.01" min="0">
                     <small>0 = no limit</small>
                 </label>
-                <div class="switch-row">
-                    <label class="switch">
-                        <input type="checkbox" id="auto_flat_after_cutoff" {{ 'checked' if recorder and recorder.auto_flat_after_cutoff else '' }}>
-                        <span class="slider"></span>
-                    </label>
-                    <div>
-                        <h3>Enable Auto Flat After Cutoff</h3>
-                        <p>Automatically close open positions and disable signals after the session end time.</p>
-                    </div>
-                </div>
                 <div class="separator"></div>
                 <div class="switch-row">
                     <label class="switch">
@@ -1150,9 +1120,6 @@
             trail_freq: parseInt(document.getElementById('trail_freq').value) || 0,
             avg_down_enabled: document.getElementById('avg_down_enabled').checked,
             signal_blocking: document.getElementById('signal_blocking').checked,
-            avg_down_amount: parseInt(document.getElementById('avg_down_amount').value) || 0,
-            avg_down_point: parseFloat(document.getElementById('avg_down_point').value) || 0,
-            avg_down_units: document.getElementById('avg_down_units').value,
             add_delay: parseInt(document.getElementById('add_delay').value) || 0,
             max_contracts_per_trade: parseInt(document.getElementById('max_contracts_per_trade').value) || 0,
             option_premium_filter: parseFloat(document.getElementById('option_premium_filter').value) || 0,
@@ -1166,7 +1133,6 @@
             signal_cooldown: parseInt(document.getElementById('signal_cooldown').value) || 0,
             max_signals_per_session: parseInt(document.getElementById('max_signals_per_session').value) || 0,
             max_daily_loss: parseFloat(document.getElementById('max_daily_loss').value) || 0,
-            auto_flat_after_cutoff: document.getElementById('auto_flat_after_cutoff').checked,
             same_direction_ignore: document.getElementById('same_direction_ignore').checked,
             notes: document.getElementById('notes').value.trim(),
             recording_enabled: document.getElementById('recording_enabled').checked,
