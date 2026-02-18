@@ -1728,6 +1728,50 @@ def execute_trade_simple(
                             logger.info(f"✅ [{acct_name}] ProjectX bracket order placed: ID={order_id}")
                             logger.info(f"   TP/SL brackets attached automatically by ProjectX (OCO)")
 
+                            # ProjectX break-even monitor (no native support)
+                            px_be_ticks = None
+                            px_be_offset = 0
+                            if risk_config:
+                                be_cfg = risk_config.get('break_even')
+                                if be_cfg and be_cfg.get('activation_ticks'):
+                                    px_be_ticks = be_cfg.get('activation_ticks')
+                                    px_be_offset = be_cfg.get('offset_ticks', 0)
+
+                            if px_be_ticks and px_be_ticks > 0 and not use_trailing_for_bracket:
+                                try:
+                                    await asyncio.sleep(0.3)
+                                    be_positions = await projectx.get_positions(int(subaccount_id))
+                                    be_entry_price = None
+                                    for pos in be_positions:
+                                        if str(pos.get('contractId', '')) == str(contract_id):
+                                            if pos.get('netPos', 0) != 0:
+                                                be_entry_price = pos.get('netPrice')
+                                                break
+                                    if be_entry_price and be_entry_price > 0:
+                                        from ultra_simple_server import register_projectx_break_even_monitor
+                                        register_projectx_break_even_monitor(
+                                            account_id=int(subaccount_id),
+                                            contract_id=contract_id,
+                                            symbol_root=symbol_root,
+                                            entry_price=float(be_entry_price),
+                                            is_long=(side.lower() == 'buy'),
+                                            activation_ticks=px_be_ticks,
+                                            offset_ticks=px_be_offset,
+                                            tick_size=tick_size,
+                                            quantity=adjusted_quantity,
+                                            session_token=projectx.session_token,
+                                            base_url=projectx.base_url,
+                                            prop_firm=prop_firm,
+                                            username=username,
+                                            api_key=api_key
+                                        )
+                                        logger.info(f"📊 [{acct_name}] ProjectX break-even monitor registered "
+                                                    f"(activation={px_be_ticks}t, entry={be_entry_price})")
+                                    else:
+                                        logger.warning(f"⚠️ [{acct_name}] ProjectX BE: Could not get entry price from position")
+                                except Exception as be_err:
+                                    logger.warning(f"⚠️ [{acct_name}] ProjectX BE monitor registration failed: {be_err}")
+
                             return {
                                 'success': True,
                                 'order_id': order_id,

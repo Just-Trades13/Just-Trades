@@ -29755,6 +29755,225 @@ break_even_thread = threading.Thread(target=monitor_break_even, daemon=True)
 break_even_thread.start()
 logger.info("📊 Break-Even Monitor thread started")
 
+# ============================================================================
+# ProjectX Break-Even Safety-Net Monitor (No native BE support)
+# ============================================================================
+# ProjectX bracket API only accepts ticks + type — no break-even.
+# This daemon polls price via get_cached_price (0 broker API calls),
+# and on trigger: cancel old SL + place new SL at entry (3 broker calls, once).
+_projectx_break_even_monitors = {}
+_projectx_break_even_lock = threading.Lock()
+
+def register_projectx_break_even_monitor(account_id: int, contract_id: str, symbol_root: str,
+                                          entry_price: float, is_long: bool, activation_ticks: int,
+                                          offset_ticks: int, tick_size: float, quantity: int,
+                                          session_token: str, base_url: str, prop_firm: str,
+                                          username: str, api_key: str):
+    """Register a ProjectX position for break-even monitoring"""
+    key = f"px:{account_id}:{contract_id}"
+    with _projectx_break_even_lock:
+        _projectx_break_even_monitors[key] = {
+            'account_id': account_id,
+            'contract_id': contract_id,
+            'symbol_root': symbol_root,
+            'entry_price': entry_price,
+            'is_long': is_long,
+            'activation_ticks': activation_ticks,
+            'offset_ticks': offset_ticks,
+            'tick_size': tick_size,
+            'quantity': quantity,
+            'session_token': session_token,
+            'base_url': base_url,
+            'prop_firm': prop_firm,
+            'username': username,
+            'api_key': api_key,
+            'triggered': False,
+            'created_at': time.time()
+        }
+    activation_price = entry_price + (tick_size * activation_ticks) if is_long else entry_price - (tick_size * activation_ticks)
+    logger.info(f"📊 ProjectX break-even monitor registered: {symbol_root} on account {account_id}")
+    logger.info(f"   Entry: {entry_price}, Activation: {activation_price} ({activation_ticks} ticks)")
+
+def unregister_projectx_break_even_monitor(key: str):
+    """Remove a ProjectX break-even monitor"""
+    with _projectx_break_even_lock:
+        _projectx_break_even_monitors.pop(key, None)
+
+def monitor_projectx_break_even():
+    """
+    Background thread that monitors ProjectX positions for break-even activation.
+    Uses get_cached_price() for price (0 broker API calls per cycle).
+    On trigger: searchOpen → cancel SL → place new SL at entry (3 calls, once).
+    """
+    logger.info("📊 ProjectX Break-Even Monitor started")
+
+    while True:
+        try:
+            with _projectx_break_even_lock:
+                if not _projectx_break_even_monitors:
+                    time.sleep(2)
+                    continue
+                monitors_copy = dict(_projectx_break_even_monitors)
+
+            monitors_to_remove = []
+
+            for key, monitor in monitors_copy.items():
+                if monitor.get('triggered'):
+                    continue
+
+                symbol_root = monitor['symbol_root']
+                entry_price = monitor['entry_price']
+                is_long = monitor['is_long']
+                activation_ticks = monitor['activation_ticks']
+                offset_ticks = monitor['offset_ticks']
+                tick_size = monitor['tick_size']
+                quantity = monitor['quantity']
+                contract_id = monitor['contract_id']
+                account_id = monitor['account_id']
+                session_token = monitor['session_token']
+                base_url = monitor['base_url']
+
+                # Get current price (Yahoo/TradingView — 0 broker API calls)
+                current_price = get_cached_price(symbol_root)
+                if not current_price:
+                    continue
+
+                # Calculate profit in ticks
+                if is_long:
+                    profit_ticks = (current_price - entry_price) / tick_size
+                else:
+                    profit_ticks = (entry_price - current_price) / tick_size
+
+                # Debug logging every ~10 seconds
+                monitor_age = time.time() - monitor.get('created_at', time.time())
+                if int(monitor_age) % 10 < 2:
+                    logger.debug(f"📊 ProjectX BE monitor: {symbol_root} | Entry: {entry_price:.2f} | Current: {current_price:.2f} | Profit: {profit_ticks:.1f}/{activation_ticks} ticks")
+
+                if profit_ticks < activation_ticks:
+                    continue
+
+                # === TRIGGERED ===
+                logger.info(f"🎯 ProjectX break-even triggered for {symbol_root}! Profit: {profit_ticks:.1f} ticks >= {activation_ticks} ticks")
+                headers = {'Authorization': f'Bearer {session_token}', 'Content-Type': 'application/json'}
+
+                try:
+                    # Step 1: Find open SL orders for this contract
+                    search_resp = requests.post(
+                        f'{base_url}/Order/searchOpen',
+                        json={'accountId': account_id},
+                        headers=headers, timeout=5
+                    )
+
+                    if search_resp.status_code == 401:
+                        # Re-authenticate
+                        logger.info(f"🔑 ProjectX BE monitor: re-authenticating for account {account_id}")
+                        auth_resp = requests.post(
+                            f'{base_url}/Auth/loginKey',
+                            json={'userName': monitor['username'], 'apiKey': monitor['api_key']},
+                            headers={'Content-Type': 'application/json'}, timeout=5
+                        )
+                        if auth_resp.status_code == 200:
+                            new_token = auth_resp.json().get('token')
+                            if new_token:
+                                monitor['session_token'] = new_token
+                                session_token = new_token
+                                with _projectx_break_even_lock:
+                                    if key in _projectx_break_even_monitors:
+                                        _projectx_break_even_monitors[key]['session_token'] = new_token
+                                headers = {'Authorization': f'Bearer {new_token}', 'Content-Type': 'application/json'}
+                                search_resp = requests.post(
+                                    f'{base_url}/Order/searchOpen',
+                                    json={'accountId': account_id},
+                                    headers=headers, timeout=5
+                                )
+
+                    if search_resp.status_code != 200:
+                        logger.warning(f"⚠️ ProjectX BE: searchOpen failed ({search_resp.status_code})")
+                        continue
+
+                    open_orders = search_resp.json() if isinstance(search_resp.json(), list) else search_resp.json().get('orders', [])
+
+                    # Step 2: Cancel matching SL orders (type 4=StopMarket, 5=StopLimit)
+                    sl_cancelled = 0
+                    for order in open_orders:
+                        order_contract = str(order.get('contractId', ''))
+                        order_type = order.get('type', 0)
+                        if order_contract == str(contract_id) and order_type in (4, 5):
+                            cancel_resp = requests.post(
+                                f'{base_url}/Order/cancel',
+                                json={'orderId': order.get('id')},
+                                headers=headers, timeout=5
+                            )
+                            if cancel_resp.status_code == 200:
+                                sl_cancelled += 1
+                                logger.info(f"✅ ProjectX BE: Cancelled SL order {order.get('id')}")
+                            else:
+                                logger.warning(f"⚠️ ProjectX BE: Cancel SL {order.get('id')} failed ({cancel_resp.status_code})")
+
+                    # Step 3: Place new SL at break-even price
+                    if is_long:
+                        stop_price = entry_price + (offset_ticks * tick_size)
+                    else:
+                        stop_price = entry_price - (offset_ticks * tick_size)
+                    stop_price = round(round(stop_price / tick_size) * tick_size, 10)  # Rule 2: tick rounding
+
+                    exit_side = "Sell" if is_long else "Buy"
+                    new_sl_data = {
+                        'accountId': account_id,
+                        'contractId': contract_id,
+                        'type': 4,  # StopMarket
+                        'side': exit_side,
+                        'size': int(quantity),
+                        'stopPrice': float(stop_price),
+                        'timeInForce': 'GTC'
+                    }
+
+                    sl_resp = requests.post(
+                        f'{base_url}/Order/place',
+                        json=new_sl_data,
+                        headers=headers, timeout=5
+                    )
+
+                    if sl_resp.status_code == 200:
+                        new_sl_id = sl_resp.json().get('id') or sl_resp.json().get('orderId')
+                        logger.info(f"✅ ProjectX break-even SL placed at {stop_price}, Order ID: {new_sl_id}")
+                        socketio.emit('break_even_triggered', {
+                            'symbol': symbol_root,
+                            'account_id': account_id,
+                            'entry_price': entry_price,
+                            'new_sl_order_id': new_sl_id,
+                            'message': f'ProjectX break-even activated for {symbol_root}'
+                        })
+                    else:
+                        logger.warning(f"⚠️ ProjectX BE: Place SL failed ({sl_resp.status_code}): {sl_resp.text[:200]}")
+
+                    # Mark triggered and queue for removal
+                    with _projectx_break_even_lock:
+                        if key in _projectx_break_even_monitors:
+                            _projectx_break_even_monitors[key]['triggered'] = True
+                    monitors_to_remove.append(key)
+
+                except Exception as trigger_err:
+                    logger.warning(f"⚠️ ProjectX BE trigger error for {key}: {trigger_err}")
+                    continue
+
+            # Remove processed monitors
+            for key in monitors_to_remove:
+                unregister_projectx_break_even_monitor(key)
+
+            time.sleep(2)
+
+        except Exception as e:
+            logger.error(f"ProjectX Break-Even Monitor error: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            time.sleep(3)
+
+# Start ProjectX break-even monitor thread
+_projectx_be_thread = threading.Thread(target=monitor_projectx_break_even, daemon=True)
+_projectx_be_thread.start()
+logger.info("📊 ProjectX Break-Even Monitor thread started")
+
 # Redis break-even request listener (receives requests from trading engine process)
 def _break_even_redis_listener():
     """Poll Redis for break-even registration requests from the trading engine."""
