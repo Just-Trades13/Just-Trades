@@ -208,6 +208,26 @@ else:
 
 ---
 
+## RULE 14: SIGNAL TRACKING MUST RESPECT DCA STATUS (Feb 18, 2026)
+
+The `_bg_signal_tracking()` background thread in `ultra_simple_server.py` (~line 16933) writes to `recorded_trades`. The main webhook handler at line ~16633 reads `recorded_trades` to detect existing positions. **These two must stay in sync.**
+
+**When DCA is OFF and same-direction signal arrives:**
+- Close the old `recorded_trades` record (`status='closed'`, `exit_reason='new_entry'`)
+- Insert a fresh record with the new entry price and quantity
+- This prevents stale open records from piling up
+
+**When DCA is ON and same-direction signal arrives:**
+- Insert a new DCA add record (existing behavior — stack positions)
+
+**Why this exists:** Without this, every same-direction signal on a DCA-off strategy inserted a NEW `status='open'` row without closing the old one. JADMNQ accumulated 12 stale open records. When the main handler queried `recorded_trades` for position detection, it found these stale records, which influenced quantity logic and bracket decisions even though DCA was off.
+
+**The `is_dca` flag is passed from the main handler** (where it's already correctly computed at line ~16724-16748) to the background thread via the Thread args at line ~17086.
+
+**NEVER** remove the `t_is_dca` parameter or unconditionally insert DCA add records. If this is reverted, stale records will accumulate and pollute position detection within hours.
+
+---
+
 ## RULE 11: RECOVERY PROTOCOL
 
 If anything breaks, restore to the known-good state:
@@ -399,6 +419,7 @@ curl -s "https://justtrades-production.up.railway.app/api/run-migrations"
 | Feb 7, 2026 | TP rejected on DCA (fractional price) | Always round to tick_size | Rule 2 |
 | Feb 18, 2026 | DCA-off got 1-contract REST instead of 3-contract bracket | DCA off = ignore position state | Rule 12 |
 | Feb 18, 2026 | 5x multiplier produced TP legs 1,1,13 instead of 5,5,5 | Multiplier must scale all quantities | Rule 13 |
+| Feb 18, 2026 | JADMNQ got 1-contract order instead of 3 — signal tracking piled up 12 stale open records | Signal tracking must respect DCA flag, close old records when DCA off | Rule 14 |
 
 ---
 

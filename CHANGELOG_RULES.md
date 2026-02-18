@@ -166,6 +166,17 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | When native bracket BE is active (no trailing stop), monitor is unnecessary. Saves an API call (get_positions) per entry |
 | **NEVER** | Remove the `trailing_stop_bool` guard — would re-add unnecessary API calls and potential double-execution |
 
+### Signal Tracking Respects DCA Flag (Feb 18, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~16933 (function def), ~16983-17019 (same-side branch), ~17086 (Thread args) |
+| **Rule** | CLAUDE.md Rule 14 |
+| **Commit** | `ee54f60` |
+| **What** | `_bg_signal_tracking` receives `t_is_dca` param. When DCA off + same direction: close old record, open fresh one. When DCA on: stack (existing behavior) |
+| **Why** | Without this, every same-direction signal inserted a NEW `status='open'` record without closing the old one. Stale records piled up (12+ for JADMNQ), polluting the position detection at line ~16633 which reads `recorded_trades` to determine existing position. Stale records caused downstream quantity/bracket issues |
+| **Verified** | Cleaned 47 stale recorded_trades + 4 recorder_positions for JADNQ/JADMNQ/JADGC/JADMGC |
+| **NEVER** | Remove the `t_is_dca` check or unconditionally insert DCA adds. The signal tracking MUST close old same-side records when DCA is off |
+
 ### CSRF Exempt Prefixes (Feb 16, 2026)
 | Field | Value |
 |-------|-------|
@@ -221,3 +232,4 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | SL ticks signing | Signed for both brokers | Negative for long, positive for short | ProjectX rejects unsigned trailing stops |
 | Native break-even | ALWAYS positive, NEVER with trailingStop | Tradovate API requirement | Bracket rejected or wrong BE direction |
 | BE safety-net monitor | Only when trailing+BE combo | Native handles non-trailing | Extra API calls, potential double-execution |
+| Signal tracking DCA | Close old + open fresh when DCA off | Prevents stale record pileup | Stale records pollute position detection → wrong qty |
