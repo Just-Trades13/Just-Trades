@@ -1938,8 +1938,13 @@ class TradovateIntegration:
                         "trailingStop": leg.get('trailing_stop', False)
                     }
 
-                    # Break-even: NOT supported in bracket orders (Tradovate error: "Stop and Stop/Limit breakeven supported only")
-                    # Break-even is handled by the safety-net monitor in recorder_service.py instead
+                    # Native break-even per leg: ALWAYS positive, NEVER combined with trailingStop
+                    leg_be_ticks = leg.get('break_even_ticks')
+                    leg_be_offset = leg.get('break_even_offset', 0)
+                    if leg_be_ticks and leg_be_ticks > 0 and not b.get('trailingStop', False):
+                        b["breakeven"] = abs(float(leg_be_ticks * tick_size))
+                        b["breakevenPlus"] = abs(float(leg_be_offset * tick_size))
+                        logger.info(f"📊 Multi-bracket leg {i+1} native break-even: activation={leg_be_ticks}t, offset={leg_be_offset}t")
 
                     # AutoTrail per leg
                     leg_at = leg.get('auto_trail')
@@ -1970,10 +1975,14 @@ class TradovateIntegration:
                     "trailingStop": trailing_stop  # Boolean for immediate trailing
                 }
 
-                # Break-even: NOT supported in bracket orders (Tradovate error: "Stop and Stop/Limit breakeven supported only")
-                # Break-even is handled by the safety-net monitor in recorder_service.py instead
-                if break_even_ticks and break_even_ticks > 0:
-                    logger.info(f"📊 Break-even ({break_even_ticks} ticks) will use safety-net monitor (not native bracket)")
+                # Native break-even: ALWAYS positive values, NEVER combined with trailingStop
+                if break_even_ticks and break_even_ticks > 0 and not trailing_stop:
+                    bracket["breakeven"] = abs(float(break_even_ticks * tick_size))
+                    be_offset = break_even_offset if break_even_offset else 0
+                    bracket["breakevenPlus"] = abs(float(be_offset * tick_size))
+                    logger.info(f"📊 Native break-even: activation={break_even_ticks}t ({bracket['breakeven']} pts), offset={be_offset}t ({bracket['breakevenPlus']} pts)")
+                elif break_even_ticks and break_even_ticks > 0 and trailing_stop:
+                    logger.info(f"📊 Break-even ({break_even_ticks} ticks) skipped in bracket — trailing stop active, will use safety-net monitor")
 
                 # Add native autoTrail (trailing-after-profit)
                 if auto_trail:

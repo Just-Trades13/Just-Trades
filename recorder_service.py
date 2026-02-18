@@ -2256,10 +2256,11 @@ def execute_trade_simple(
                                 logger.info(f"📊 [{acct_name}] autoTrail sent in bracket: "
                                             f"trigger={auto_trail.get('trigger')}, distance={auto_trail.get('stopLoss')}")
 
-                            # Register break-even monitor if configured (safety net)
-                            # If Tradovate handles BE natively → monitor sees SL already moved, does nothing
-                            # If Tradovate ignores it → monitor catches it and moves SL to entry at profit threshold
-                            if break_even_ticks and break_even_ticks > 0:
+                            # Register break-even monitor ONLY when native bracket can't handle it
+                            # Native BE works when: break_even_ticks > 0 AND trailing_stop is OFF
+                            # Safety-net needed when: break_even_ticks > 0 AND trailing_stop is ON (native can't combine both)
+                            if break_even_ticks and break_even_ticks > 0 and trailing_stop_bool:
+                                # Trailing stop + BE: native can't handle both, use safety-net monitor
                                 try:
                                     await asyncio.sleep(0.3)
                                     be_positions = await tradovate.get_positions(account_id=tradovate_account_id)
@@ -2282,12 +2283,14 @@ def execute_trade_simple(
                                             quantity=adjusted_quantity,
                                             account_spec=tradovate_account_spec
                                         )
-                                        logger.info(f"📊 [{acct_name}] Break-even monitor registered "
-                                                    f"(activation={break_even_ticks} ticks, entry={be_entry_price})")
+                                        logger.info(f"📊 [{acct_name}] Break-even safety-net monitor registered "
+                                                    f"(trailing+BE combo, activation={break_even_ticks} ticks, entry={be_entry_price})")
                                     else:
                                         logger.warning(f"⚠️ [{acct_name}] Could not get entry price for break-even monitor")
                                 except Exception as be_err:
                                     logger.warning(f"⚠️ [{acct_name}] Break-even monitor registration failed: {be_err}")
+                            elif break_even_ticks and break_even_ticks > 0:
+                                logger.info(f"📊 [{acct_name}] Break-even handled natively in bracket — skipping safety-net monitor")
 
                             return {
                                 'success': True,
