@@ -1,0 +1,183 @@
+# PROTECTED CODE CHANGES — MANDATORY CHECK BEFORE EDITING
+
+> **STOP. Before modifying ANY line in `recorder_service.py` or `ultra_simple_server.py`,
+> search this file for the line number or feature area you're about to touch.
+> If it's listed here, DO NOT change it unless the user explicitly approves.**
+
+This file is the authoritative registry of every deliberate fix in production.
+Each entry exists because reverting it caused (or would cause) real failures
+for paying customers. These are NOT optional improvements — they are load-bearing fixes.
+
+---
+
+## How To Use This File
+
+1. Before editing a line, `Ctrl+F` the line number or keyword
+2. If the line is listed here → **DO NOT MODIFY** without explicit user approval
+3. If you're restructuring a function that contains a protected line → **STOP and ASK**
+4. If you're "cleaning up" or "improving" code near a protected line → **DON'T**
+5. After deploying a new fix, **ADD IT HERE** with date, lines, and explanation
+
+---
+
+## recorder_service.py — Protected Changes
+
+### DCA-Off Resets has_existing_position (Feb 18, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2046-2049 |
+| **Rule** | CLAUDE.md Rule 12 |
+| **Commit** | `c75d7d4` |
+| **What** | When `dca_enabled=False` and signal is same-direction, sets `has_existing_position = False` |
+| **Why** | Without this, stale DB positions block the bracket order gate → REST market order instead of bracket |
+| **Verified** | JADMGC: 3-contract bracket orders confirmed working |
+| **NEVER** | Remove the `has_existing_position = False` line or add conditions that bypass it |
+
+### Multiplier Scales Trim Contracts (Feb 18, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2191 |
+| **Rule** | CLAUDE.md Rule 13 |
+| **Commit** | `201d498` |
+| **What** | `leg_trim * account_multiplier` in the `trim_units == 'Contracts'` branch |
+| **Why** | Without this, 5x multiplier with trim=1 gives legs of 1,1,13 instead of 5,5,5 |
+| **Verified** | JADMNQ with 5x multiplier: correct trim quantities confirmed |
+| **NEVER** | Use raw `leg_trim` without multiplier scaling in Contracts mode |
+
+### Bracket Order Gate (Jan 27, 2026+)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2123-2126 |
+| **Rule** | CLAUDE.md Rule 10 |
+| **What** | `use_bracket_order = (not has_existing_position and tp_ticks > 0)` |
+| **Why** | First entry = bracket order (atomic). DCA = REST market + separate TP |
+| **NEVER** | Remove the `not has_existing_position` check or force bracket for DCA |
+
+### Multi-Bracket Uses REST Only (Feb 17, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2218-2221 |
+| **Rule** | MEMORY.md Bug #15 |
+| **Commit** | `8f61062` |
+| **What** | `place_bracket_order()` uses REST (`session.post`), NOT WebSocket |
+| **Why** | WebSocket order placement was NEVER functional. REST is the only working path |
+| **NEVER** | Add WebSocket-based order functions or switch bracket orders to WebSocket |
+
+### Price Tick Rounding — TP (Multiple Locations)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~1622, ~2473, ~5900 |
+| **Rule** | CLAUDE.md Rule 2 |
+| **What** | `round(round(price / tick_size) * tick_size, 10)` |
+| **Why** | DCA weighted averages are fractional. Tradovate REJECTS orders at invalid increments |
+| **NEVER** | Remove rounding, use raw calculated prices, or "simplify" the double-round |
+
+### Price Tick Rounding — SL
+| Field | Value |
+|-------|-------|
+| **Lines** | ~1650, ~2642 |
+| **Rule** | CLAUDE.md Rule 2 |
+| **What** | Same `round(round(...))` pattern for stop-loss prices |
+| **NEVER** | Same as TP — never remove rounding |
+
+### DCA Cancel+Replace TP (Feb 7, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2520-2526 (cancel old), ~2553-2568 (cancel ALL before new) |
+| **Rule** | CLAUDE.md Rule 9 |
+| **What** | Cancel ALL working TPs on broker, then place fresh TP |
+| **Why** | `modifyOrder` is unreliable for bracket-managed orders. Cancel+replace is the safety net |
+| **NEVER** | Switch to `modifyOrder`, skip the cancel step, or remove the broker query |
+
+### Broker Query for TP Lookup (Feb 7, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2559 (`get_orders` call) |
+| **Rule** | CLAUDE.md Rule 4 |
+| **What** | Queries broker directly for existing TPs instead of using DB `tp_order_id` |
+| **Why** | `recorded_trades.tp_order_id` is shared across ALL accounts — last write wins |
+| **NEVER** | Replace broker query with DB lookup for multi-account recorders |
+
+### Flip Close Resting Order Cleanup (Feb 13, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2076-2115 |
+| **Commit** | `d531455` |
+| **What** | On opposite-direction close, cancels ALL resting orders (TP, SL, trailing) + OCO + break-even |
+| **Why** | Without this, old TP/SL orders survive the close and interfere with the next entry |
+| **Verified** | Confirmed working on JADMGC |
+| **NEVER** | Remove the cancel loop or skip OCO/break-even cleanup |
+
+### Multiplier Applied to Quantity
+| Field | Value |
+|-------|-------|
+| **Lines** | ~1757-1758 |
+| **What** | `account_multiplier = float(trader.get('multiplier', 1.0))` then `adjusted_quantity = max(1, int(quantity * account_multiplier))` |
+| **Why** | Per-account multiplier scales position size. Used everywhere downstream |
+| **NEVER** | Use raw `quantity` instead of `adjusted_quantity` after this point |
+
+---
+
+## ultra_simple_server.py — Protected Changes
+
+### DCA-Off Keeps initial_position_size (Feb 18, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~16675-16701 |
+| **Rule** | CLAUDE.md Rule 12 |
+| **Commit** | `c75d7d4` |
+| **What** | Checks `trader.dca_enabled` / `recorder.avg_down_enabled` before setting `is_dca=True` |
+| **Why** | Without this, any stale position triggers DCA path → wrong quantity (add_position_size instead of initial) |
+| **Verified** | JADMGC: 3 contracts (initial) instead of 1 (add) |
+| **NEVER** | Remove the `effective_dca` check or unconditionally set `is_dca=True` |
+
+### Paper Trades as Daemon Thread (Critical)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~16255-16268 |
+| **Rule** | MEMORY.md Bug #9 |
+| **What** | Paper trades fire in `threading.Thread(..., daemon=True)` — non-blocking |
+| **Why** | Feb 12 disaster: changing to synchronous caused 10x latency (1000-1500ms) |
+| **NEVER** | Make paper trades synchronous, await them, or put them in the broker pipeline |
+
+### Signal Tracking as Daemon Thread
+| Field | Value |
+|-------|-------|
+| **Lines** | ~14696-14725 |
+| **What** | Signal processor runs as background daemon thread with batch processing |
+| **Why** | Same as paper trades — synchronous signal tracking blocks the pipeline |
+| **NEVER** | Make signal tracking synchronous or inline it into the webhook handler |
+
+### Broker Worker error=None Fix (Feb 13, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~14934 |
+| **Commit** | `d6f5f4a` |
+| **What** | `result.get('error') or 'Unknown error'` (NOT `result.get('error', 'Unknown error')`) |
+| **Why** | `execute_trade_simple` sets `error: None` explicitly. `.get()` default only applies when key is MISSING |
+| **NEVER** | Change back to `result.get('error', 'Unknown error')` — it crashes on `'string' in None` |
+
+### CSRF Exempt Prefixes (Feb 16, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~3262-3267 |
+| **Commit** | `ce19d18` |
+| **What** | Must include `/webhook/` AND `/webhooks/` (plural) |
+| **Why** | Whop webhook route is `/webhooks/whop` — without `/webhooks/` prefix, all Whop POSTs get 403'd |
+| **NEVER** | Remove `/webhooks/` from the exempt list or consolidate to just `/webhook/` |
+
+---
+
+## Architectural Invariants — NEVER Change These
+
+| What | Current | Why | Disaster If Changed |
+|------|---------|-----|---------------------|
+| Paper trades | Daemon thread (fire-and-forget) | Non-blocking | 10x latency (Feb 12) |
+| Signal tracking | Daemon thread (batch processor) | Non-blocking | Pipeline blocked |
+| Bracket orders | REST API only | WebSocket never worked | Orders fail silently |
+| DCA TP updates | Cancel + Replace (never modify) | modifyOrder unreliable | Duplicate/orphaned TPs |
+| All prices | Rounded to tick_size | Tradovate rejects invalid | Orders rejected |
+| SQL placeholders | `%s` (postgres) / `?` (sqlite) | Production is PostgreSQL | Silent query failure |
+| TP lookup (DCA) | Broker query, not DB | DB tp_order_id shared | Cross-account contamination |
+| DCA off | Ignore position state | Position irrelevant | Wrong qty + no bracket |
+| Trim contracts | Scale by multiplier | Raw trim ignores multiplier | Wrong TP leg sizes |

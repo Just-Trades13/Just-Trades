@@ -1,7 +1,20 @@
 # Just Trades Platform — MASTER RULES & ARCHITECTURE
 
-> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB7_2026_PRODUCTION_STABLE` @ commit `b475574`
-> **JADVIX verified flawless on demo AND live accounts — Feb 7, 2026**
+> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB18_2026_DCA_SKIP_STABLE` @ commit `c75d7d4`
+> **All 4 strats (JADNQ, JADMNQ, JADGC, JADMGC) verified identical bracket orders — Feb 18, 2026**
+
+---
+
+## RULE 0: CHECK CHANGELOG_RULES.md BEFORE ANY CODE EDIT
+
+Before modifying ANY line in `recorder_service.py` or `ultra_simple_server.py`:
+1. Open `CHANGELOG_RULES.md` in the repo root
+2. Search for the line number or feature area you're about to touch
+3. If it's listed → **DO NOT CHANGE IT** without explicit user approval
+4. If restructuring a function containing a protected line → **STOP AND ASK**
+
+This file exists because working fixes have been accidentally reverted multiple times,
+causing failures for paying customers. It is the single source of truth for protected code.
 
 ---
 
@@ -142,14 +155,56 @@ Tradovate's `modifyOrder` is unreliable for bracket-managed orders. DCA TP updat
 
 ---
 
-## RULE 10: BRACKET ORDERS FOR FIRST ENTRY ONLY
+## RULE 10: BRACKET ORDERS FOR FIRST ENTRY ONLY (WHEN DCA IS ON)
 
 | Scenario | Method | Why |
 |----------|--------|-----|
 | First entry (no position) | Bracket order (entry + TP in one call) | Faster, atomic |
-| DCA entry (existing position) | REST market order + separate TP | Can't update existing position's TP via bracket |
+| DCA entry (existing position, DCA ON) | REST market order + separate TP | Can't update existing position's TP via bracket |
+| Same-direction signal (DCA OFF) | Bracket order (fresh entry) | DCA off = ignore position state |
 
-**Never** use bracket orders for DCA entries.
+**Never** use bracket orders for DCA entries. But when DCA is OFF, every same-direction signal is treated as a fresh entry with its own bracket order.
+
+---
+
+## RULE 12: DCA OFF MEANS IGNORE POSITION STATE (Feb 18, 2026)
+
+When `dca_enabled=False` (and recorder `avg_down_enabled=False`), existing position state must be **completely ignored** for same-direction signals. Two layers enforce this:
+
+**Layer 1** — `process_webhook_directly()` in `ultra_simple_server.py` (~line 16611-16637):
+- Checks `trader.dca_enabled` → falls back to `recorder.avg_down_enabled`
+- Only sets `is_dca=True` and switches to `add_position_size` when DCA is actually enabled
+- When DCA off: keeps `initial_position_size` (e.g., 3 contracts, not 1)
+
+**Layer 2** — `do_trade_for_account()` in `recorder_service.py` (~line 2036-2049):
+- When same-direction + DCA off: sets `has_existing_position = False`
+- This allows the bracket gate at line ~2122 (`not has_existing_position and tp_ticks > 0`) to pass
+- Result: fresh bracket order with full TP/SL strategy
+
+**Why this exists:** JADMGC had a stale DB position. With DCA off, it got downgraded from a 3-contract bracket order to a 1-contract REST market order with wrong TP handling. Both layers were treating "existing position" as "must be DCA" regardless of the DCA setting.
+
+**NEVER revert this behavior.** If DCA is off, position state is irrelevant for same-direction signals.
+
+---
+
+## RULE 13: MULTIPLIER MUST SCALE ALL QUANTITIES (Feb 18, 2026)
+
+The `account_multiplier` (trader.multiplier) scales the entry quantity: `adjusted_quantity = quantity * account_multiplier`. But it must **also** scale any absolute contract quantities used in TP trim legs.
+
+**Bracket trim calculation** in `recorder_service.py` (~line 2190-2193):
+```python
+# Contracts mode — MUST scale by multiplier
+elif trim_units == 'Contracts':
+    leg_qty = min(max(1, int(round(leg_trim * account_multiplier))), remaining_qty)
+
+# Percent mode — already correct (uses adjusted_quantity which includes multiplier)
+else:
+    leg_qty = max(1, int(round(adjusted_quantity * (leg_trim / 100.0))))
+```
+
+**Why this exists:** A 5x multiplier with 3 TP legs of 1 contract each produced legs of 1, 1, 13 instead of 5, 5, 5. The contract trim values were not being scaled.
+
+**Rule:** Any time a raw contract count from settings is used in execution, check if it needs `* account_multiplier`. The Percent path works automatically because it calculates off `adjusted_quantity`.
 
 ---
 
@@ -175,9 +230,11 @@ git stash push -m "backup before changes"
 
 | Tag | Commit | Description |
 |-----|--------|-------------|
+| `WORKING_FEB18_2026_DCA_SKIP_STABLE` | `c75d7d4` | **CURRENT** — DCA-off bracket fix + multiplier trim scaling |
+| `WORKING_FEB18_2026_FULL_AUDIT_STABLE` | `fbd705d` | Pre-DCA-fix fallback (audit cleanup) |
+| `WORKING_FEB18_2026_TIME_FILTER_STABLE` | `9470ca5` | Time filter status on Control Center |
+| `WORKING_FEB17_2026_MULTI_BRACKET_STABLE` | `8f61062` | Native multi-bracket orders |
 | `WORKING_FEB7_2026_PRODUCTION_STABLE` | `b475574` | **THE BLUEPRINT** — production stable, demo+live flawless |
-| `WORKING_FEB6_2026_JADVIX_DCA_TP_FIXED` | `39ceb2e` | DCA, TP, position sizes verified |
-| `WORKING_JAN14_2026_LIVE_ACCOUNTS_FIX` | - | Pre-reset stable state |
 
 ---
 
@@ -220,7 +277,7 @@ Pre-warmed WebSocket → Tradovate API → Order filled → TP/SL placed
 | ~934-1068 | Trader-level filters | add_delay, cooldown, max_signals, max_loss, time |
 | ~1072-1186 | enabled_accounts mode | Per-account dict — ALL settings (Rule 5) |
 | ~1187-1222 | Legacy single-account mode | Fetches creds from accounts table |
-| ~1655-1663 | DCA detection | Same direction + dca_enabled → is_dca_local |
+| ~1655-1663 | DCA detection | Same direction + dca_enabled → is_dca_local (Rule 12) |
 | ~1697-1761 | Bracket order (first entry) | Entry + TP in one WebSocket call (Rule 10) |
 | ~1842-1900 | Position fetch after entry | DCA: get weighted avg from broker |
 | ~1951-1969 | TP price calculation | **MUST round to tick_size** (Rule 2) |
@@ -228,6 +285,7 @@ Pre-warmed WebSocket → Tradovate API → Order filled → TP/SL placed
 | ~2040-2053 | Cancel ALL existing TPs | Per-account broker query (Rule 9) |
 | ~2076-2098 | TP placement with retry | 10 attempts, exponential backoff |
 | ~2118-2140 | SL price calculation | **MUST round to tick_size** (Rule 2) |
+| ~2172-2212 | Multi-bracket TP leg builder | Trim qty calculation — **MUST use multiplier** (Rule 13) |
 | ~2188-2201 | TP order ID storage | Best-effort, shared across accounts |
 
 ### Database
@@ -339,17 +397,19 @@ curl -s "https://justtrades-production.up.railway.app/api/run-migrations"
 | Feb 6, 2026 | Wrong position sizes (NULL masking) | Explicit values, not NULL | Rule 5 |
 | Feb 7, 2026 | Cross-account TP contamination | Use broker query, not DB | Rule 4 |
 | Feb 7, 2026 | TP rejected on DCA (fractional price) | Always round to tick_size | Rule 2 |
+| Feb 18, 2026 | DCA-off got 1-contract REST instead of 3-contract bracket | DCA off = ignore position state | Rule 12 |
+| Feb 18, 2026 | 5x multiplier produced TP legs 1,1,13 instead of 5,5,5 | Multiplier must scale all quantities | Rule 13 |
 
 ---
 
 ## DETAILED DOCUMENTATION
 
-For deeper technical details, see the memory files:
+- **`CHANGELOG_RULES.md`** — **MANDATORY** protected code registry. Check BEFORE any edit (Rule 0)
 - `memory/WHY_IT_WORKS.md` — Logic document: what broke, why it's fixed, how to preserve it
 - `memory/feb7_production_stable_blueprint.md` — Full blueprint with every code location and commit
 - `memory/feb6_dca_tp_fix_details.md` — DCA/TP fix history
 
 ---
 
-*Last updated: Feb 8, 2026*
-*Production stable tag: WORKING_FEB7_2026_PRODUCTION_STABLE @ b475574*
+*Last updated: Feb 18, 2026*
+*Production stable tag: WORKING_FEB18_2026_DCA_SKIP_STABLE @ c75d7d4*
