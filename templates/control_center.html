@@ -931,8 +931,10 @@
                                 if (strategyMap.has(rec.id)) {
                                     const s = strategyMap.get(rec.id);
                                     s.pnl = rec.pnl || 0;
+                                    s.time_filter_1_enabled = rec.time_filter_1_enabled || false;
                                     s.time_filter_1_start = rec.time_filter_1_start || '';
                                     s.time_filter_1_stop = rec.time_filter_1_stop || '';
+                                    s.time_filter_2_enabled = rec.time_filter_2_enabled || false;
                                     s.time_filter_2_start = rec.time_filter_2_start || '';
                                     s.time_filter_2_stop = rec.time_filter_2_stop || '';
                                 }
@@ -1038,34 +1040,46 @@
         }
 
         // Determine time filter status for a strategy
+        // Mirrors engine logic in recorder_service.py lines 1156-1194
         function getTimeFilterStatus(strategy) {
             const s1 = strategy.time_filter_1_start || '';
             const e1 = strategy.time_filter_1_stop || '';
             const s2 = strategy.time_filter_2_start || '';
             const e2 = strategy.time_filter_2_stop || '';
 
-            // Check if any time filter is configured (non-empty)
-            const hasWindow1 = s1 && e1;
-            const hasWindow2 = s2 && e2;
+            // Engine: has_trader_time_1 = enabled AND start AND stop
+            const hasWindow1 = strategy.time_filter_1_enabled && s1 && e1;
+            const hasWindow2 = strategy.time_filter_2_enabled && s2 && e2;
 
+            // Engine: only enters time check if (has_time_1 or has_time_2)
             if (!hasWindow1 && !hasWindow2) {
                 return { configured: false, label: 'Always On', cssClass: 'tf-always', hours: '' };
             }
 
             const nowMin = getChicagoMinutes();
-            let active = false;
-            let hoursStr = '';
 
-            if (hasWindow1) {
-                const start1 = parseTimeToMinutes(s1);
-                const end1 = parseTimeToMinutes(e1);
-                if (start1 !== null && end1 !== null && nowMin >= start1 && nowMin < end1) active = true;
-                hoursStr = `${s1} – ${e1}`;
+            // Engine: in_window checks with overnight support (start > stop)
+            function inWindow(startMin, endMin) {
+                if (startMin === null || endMin === null) return true; // invalid = allow
+                if (startMin <= endMin) {
+                    // Normal window: e.g. 8:45 AM – 3:00 PM
+                    return nowMin >= startMin && nowMin <= endMin;
+                } else {
+                    // Overnight window: e.g. 6:00 PM – 8:00 AM
+                    return nowMin >= startMin || nowMin <= endMin;
+                }
             }
+
+            // Engine: in_window_1 = in_window(...) if has_time_1 else False
+            let inWindow1 = hasWindow1 ? inWindow(parseTimeToMinutes(s1), parseTimeToMinutes(e1)) : false;
+            let inWindow2 = hasWindow2 ? inWindow(parseTimeToMinutes(s2), parseTimeToMinutes(e2)) : false;
+
+            // Engine: reject only if BOTH are false (not in_window_1 and not in_window_2)
+            const active = inWindow1 || inWindow2;
+
+            let hoursStr = '';
+            if (hasWindow1) hoursStr = `${s1} – ${e1}`;
             if (hasWindow2) {
-                const start2 = parseTimeToMinutes(s2);
-                const end2 = parseTimeToMinutes(e2);
-                if (start2 !== null && end2 !== null && nowMin >= start2 && nowMin < end2) active = true;
                 if (hoursStr) hoursStr += ' | ';
                 hoursStr += `${s2} – ${e2}`;
             }
