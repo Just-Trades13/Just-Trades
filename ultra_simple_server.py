@@ -5344,6 +5344,8 @@ def run_migrations():
         ('affiliate_applications', 'whop_link_platform_elite', 'TEXT'),
         ('affiliate_applications', 'whop_link_discord_basic', 'TEXT'),
         ('affiliate_applications', 'whop_link_discord_premium', 'TEXT'),
+        # DCA enabled flag for traders (Feb 2026)
+        ('traders', 'dca_enabled', 'BOOLEAN DEFAULT FALSE' if is_postgres else 'INTEGER DEFAULT 0'),
     ]
 
     for table, column, col_type in migrations:
