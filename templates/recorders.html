@@ -238,11 +238,6 @@
                     </label>
                 </div>
                 <label class="form-field">
-                    <span>Option Premium Filter</span>
-                    <input type="number" id="option_premium_filter" value="{{ recorder.option_premium_filter if recorder else 0 }}" step="0.01" min="0">
-                    <small>Currently disabled</small>
-                </label>
-                <label class="form-field">
                     <span>Direction Filter</span>
                     <div class="select-shell">
                         <select id="direction_filter">
@@ -1122,7 +1117,6 @@
             signal_blocking: document.getElementById('signal_blocking').checked,
             add_delay: parseInt(document.getElementById('add_delay').value) || 0,
             max_contracts_per_trade: parseInt(document.getElementById('max_contracts_per_trade').value) || 0,
-            option_premium_filter: parseFloat(document.getElementById('option_premium_filter').value) || 0,
             direction_filter: document.getElementById('direction_filter').value || null,
             time_filter_1_enabled: document.getElementById('time_filter_1_enabled').checked,
             time_filter_1_start: document.getElementById('time_filter_1_start').value || '',
