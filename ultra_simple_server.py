@@ -11865,9 +11865,24 @@ def recorders_edit(recorder_id):
         if not row:
             conn.close()
             return redirect('/recorders')
-        
-        columns = ['id', 'user_id', 'name', 'enabled', 'webhook_token', 'ticker', 'position_size', 
-                   'tp_enabled', 'tp_targets', 'sl_enabled', 'sl_amount', 'trailing_sl', 'account_id', 
+
+        # Ownership check — only owner or admin can view edit page
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+            if isinstance(row, dict):
+                owner_id = row.get('user_id')
+            elif hasattr(row, 'keys'):
+                owner_id = dict(row).get('user_id')
+            else:
+                owner_id = row[1]  # user_id is second column in SELECT *
+            current_user = get_current_user()
+            is_admin_user = current_user and current_user.is_admin
+            if current_user_id and owner_id and owner_id != current_user_id and not is_admin_user:
+                conn.close()
+                return redirect('/recorders')
+
+        columns = ['id', 'user_id', 'name', 'enabled', 'webhook_token', 'ticker', 'position_size',
+                   'tp_enabled', 'tp_targets', 'sl_enabled', 'sl_amount', 'trailing_sl', 'account_id',
                    'created_at', 'updated_at']
         if isinstance(row, dict):
             recorder = row
@@ -11881,8 +11896,12 @@ def recorders_edit(recorder_id):
             recorder['tp_targets'] = json.loads(recorder.get('tp_targets') or '[]')
         except:
             recorder['tp_targets'] = []
-        # Get accounts for dropdown
-        cursor.execute('SELECT id, name FROM accounts')
+        # Get accounts for dropdown (filtered to current user's accounts)
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            ph_acct = '%s' if is_postgres else '?'
+            cursor.execute(f'SELECT id, name FROM accounts WHERE user_id = {ph_acct}', (get_current_user_id(),))
+        else:
+            cursor.execute('SELECT id, name FROM accounts')
         rows = cursor.fetchall()
         accounts = []
         for row in rows:
@@ -12287,11 +12306,22 @@ def api_update_recorder(recorder_id):
         cursor = conn.cursor()
         placeholder = '%s' if is_postgres else '?'
         
-        # Check if recorder exists
-        cursor.execute(f'SELECT id FROM recorders WHERE id = {placeholder}', (recorder_id,))
-        if not cursor.fetchone():
+        # Check if recorder exists and get owner
+        cursor.execute(f'SELECT id, user_id FROM recorders WHERE id = {placeholder}', (recorder_id,))
+        existing = cursor.fetchone()
+        if not existing:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
+
+        # Ownership check — only owner or admin can update
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+            owner_id = existing[1] if isinstance(existing, tuple) else existing.get('user_id')
+            current_user = get_current_user()
+            is_admin = current_user and current_user.is_admin
+            if current_user_id and owner_id and owner_id != current_user_id and not is_admin:
+                conn.close()
+                return jsonify({'success': False, 'error': 'You can only edit your own recorders'}), 403
 
         # Validate risk settings before saving
         validation_errors = validate_trader_risk_settings(data)
@@ -12409,13 +12439,23 @@ def api_delete_recorder(recorder_id):
         
         # Check if recorder exists
         ph = '%s' if is_using_postgres() else '?'
-        cursor.execute(f'SELECT name FROM recorders WHERE id = {ph}', (recorder_id,))
+        cursor.execute(f'SELECT name, user_id FROM recorders WHERE id = {ph}', (recorder_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
 
-        name = row[0]
+        # Ownership check — only owner or admin can delete
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+            owner_id = row[1] if isinstance(row, tuple) else row.get('user_id')
+            current_user = get_current_user()
+            is_admin = current_user and current_user.is_admin
+            if current_user_id and owner_id and owner_id != current_user_id and not is_admin:
+                conn.close()
+                return jsonify({'success': False, 'error': 'You can only delete your own recorders'}), 403
+
+        name = row[0] if isinstance(row, tuple) else row.get('name')
 
         # CASCADE DELETE: Delete all associated data FIRST
         cursor.execute(f'DELETE FROM recorded_trades WHERE recorder_id = {ph}', (recorder_id,))
@@ -12456,7 +12496,20 @@ def api_clone_recorder(recorder_id):
         if not row:
             conn.close()
             return jsonify({'success': False, 'error': 'Recorder not found'}), 404
-        
+
+        # Ownership check — only owner or admin can clone
+        clone_user_id = None
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id = get_current_user_id()
+            clone_user_id = current_user_id
+            original_temp = dict(row)
+            owner_id = original_temp.get('user_id')
+            current_user = get_current_user()
+            is_admin = current_user and current_user.is_admin
+            if current_user_id and owner_id and owner_id != current_user_id and not is_admin:
+                conn.close()
+                return jsonify({'success': False, 'error': 'You can only clone your own recorders'}), 403
+
         original = dict(row)
         
         # Generate new webhook token
@@ -12466,7 +12519,7 @@ def api_clone_recorder(recorder_id):
         # Create cloned recorder with modified name
         new_name = f"{original['name']} (Copy)"
         
-        _vals = ', '.join([ph] * 33)
+        _vals = ', '.join([ph] * 34)
         cursor.execute(f'''
             INSERT INTO recorders (
                 name, strategy_type, symbol, demo_account_id, account_id,
@@ -12477,7 +12530,7 @@ def api_clone_recorder(recorder_id):
                 add_delay, max_contracts_per_trade, option_premium_filter, direction_filter,
                 time_filter_1_start, time_filter_1_stop, time_filter_2_start, time_filter_2_stop,
                 signal_cooldown, max_signals_per_session, max_daily_loss, auto_flat_after_cutoff,
-                notes, recording_enabled, webhook_token
+                notes, recording_enabled, webhook_token, user_id
             ) VALUES ({_vals})
         ''', (
             new_name,
@@ -12512,7 +12565,8 @@ def api_clone_recorder(recorder_id):
             original['auto_flat_after_cutoff'],
             original['notes'],
             original['recording_enabled'],
-            webhook_token
+            webhook_token,
+            clone_user_id
         ))
         
         new_id = cursor.lastrowid
@@ -13266,15 +13320,25 @@ def api_create_trader():
             conn.close()
             return jsonify({'success': False, 'error': 'Invalid risk settings', 'validation_errors': validation_errors}), 400
 
-        # Verify account exists
+        # Verify account exists AND user owns it
         if is_postgres:
-            cursor.execute('SELECT id, name FROM accounts WHERE id = %s', (account_id,))
+            cursor.execute('SELECT id, name, user_id FROM accounts WHERE id = %s', (account_id,))
         else:
-            cursor.execute('SELECT id, name FROM accounts WHERE id = ?', (account_id,))
+            cursor.execute('SELECT id, name, user_id FROM accounts WHERE id = ?', (account_id,))
         account = cursor.fetchone()
         if not account:
             conn.close()
             return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+        # Ownership check — only account owner or admin can create traders
+        if USER_AUTH_AVAILABLE and is_logged_in():
+            current_user_id_check = get_current_user_id()
+            acct_owner_id = account[2] if isinstance(account, tuple) else account.get('user_id')
+            current_user_check = get_current_user()
+            is_admin_check = current_user_check and current_user_check.is_admin
+            if current_user_id_check and acct_owner_id and acct_owner_id != current_user_id_check and not is_admin_check:
+                conn.close()
+                return jsonify({'success': False, 'error': 'You can only create traders on your own accounts'}), 403
 
         # Check if link already exists
         if is_postgres:
