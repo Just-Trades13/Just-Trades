@@ -168,6 +168,20 @@ for paying customers. These are NOT optional improvements — they are load-bear
 
 ---
 
+## projectx_integration.py — Protected Changes
+
+### Trailing Stop Bracket Ticks Must Be Signed (Feb 18, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~1116-1118 |
+| **What** | Trailing stop bracket uses `sl_sign * abs(int(sl_ticks))` — signed, not unsigned |
+| **Why** | ProjectX API requires negative ticks when longing, positive when shorting — same as fixed stops |
+| **Error if reverted** | `"Rejected (Invalid stop loss ticks (50). Ticks should be less than zero when longing.)"` |
+| **Matches Tradovate** | Tradovate signs SL delta the same way: `-sl_points` for long, `+sl_points` for short |
+| **NEVER** | Use `abs()` for trailing stop ticks — unsigned values are rejected by ProjectX API |
+
+---
+
 ## Architectural Invariants — NEVER Change These
 
 | What | Current | Why | Disaster If Changed |
@@ -181,3 +195,4 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | TP lookup (DCA) | Broker query, not DB | DB tp_order_id shared | Cross-account contamination |
 | DCA off | Ignore position state | Position irrelevant | Wrong qty + no bracket |
 | Trim contracts | Scale by multiplier | Raw trim ignores multiplier | Wrong TP leg sizes |
+| SL ticks signing | Signed for both brokers | Negative for long, positive for short | ProjectX rejects unsigned trailing stops |

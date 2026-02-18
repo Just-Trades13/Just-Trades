@@ -1114,8 +1114,8 @@ class ProjectXIntegration:
             sl_type = self.ORDER_TYPE_TRAILING_STOP if trailing_stop else self.ORDER_TYPE_STOP
             sl_label = "Trailing SL" if trailing_stop else "SL"
             if trailing_stop:
-                # Trailing stop: unsigned distance — platform determines direction from position side
-                bracket_ticks = abs(int(sl_ticks))
+                # Trailing stop: signed offset same as fixed (Buy=-ticks below, Sell=+ticks above)
+                bracket_ticks = sl_sign * abs(int(sl_ticks))
             else:
                 # Fixed stop: signed offset from entry (Buy=-ticks below, Sell=+ticks above)
                 bracket_ticks = sl_sign * abs(int(sl_ticks))
