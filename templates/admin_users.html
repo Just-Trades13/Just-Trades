@@ -1477,7 +1477,9 @@ function viewUserDetails(userId, userName) {
         .then(data => {
             if (data.success) {
                 currentUserDetails = data;
-                
+                currentUserDetails.user_id = userId;
+                currentUserDetails.user_name = userName;
+
                 // Update counts
                 document.getElementById('accountsCount').textContent = data.accounts_count;
                 document.getElementById('recordersCount').textContent = data.recorders_count;
@@ -1535,9 +1537,14 @@ function renderAccountsTab(accounts) {
                         <span class="material-icons">account_balance</span>
                         ${acc.name || 'Account ' + acc.id}
                     </div>
-                    <div style="display: flex; gap: 8px;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
                         ${envBadge}
                         ${statusBadge}
+                        <button onclick="deleteUserAccount(${acc.id}, '${(acc.name || 'Account ' + acc.id).replace(/'/g, "\\'")}', ${currentUserDetails ? currentUserDetails.user_id : 0})"
+                                style="background: none; border: none; color: #f5365c; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center;"
+                                title="Delete account">
+                            <span class="material-icons" style="font-size: 18px;">delete</span>
+                        </button>
                     </div>
                 </div>
                 <div class="details-grid">
@@ -1595,7 +1602,14 @@ function renderRecordersTab(recorders) {
                         <span class="material-icons">smart_toy</span>
                         ${rec.name}
                     </div>
-                    ${statusBadge}
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        ${statusBadge}
+                        <button onclick="deleteUserRecorder(${rec.id}, '${(rec.name || 'Strategy ' + rec.id).replace(/'/g, "\\'")}', ${currentUserDetails ? currentUserDetails.user_id : 0})"
+                                style="background: none; border: none; color: #f5365c; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center;"
+                                title="Delete strategy">
+                            <span class="material-icons" style="font-size: 18px;">delete</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="details-grid">
                     <div class="details-item">
@@ -1707,6 +1721,50 @@ function renderTradesTab(trades, stats) {
     
     html += '</tbody></table>';
     return html;
+}
+
+function deleteUserAccount(accountId, accountName, userId) {
+    if (!confirm('Delete account "' + accountName + '"?\n\nThis will remove the broker connection. Any linked strategies will be unlinked.')) {
+        return;
+    }
+    fetch('/api/accounts/' + accountId, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success || data.status === 'success') {
+            // Refresh the modal to show updated data
+            viewUserDetails(currentUserDetails.user_id, currentUserDetails.user_name);
+        } else {
+            alert('Failed to delete account: ' + (data.error || data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error deleting account: ' + error);
+    });
+}
+
+function deleteUserRecorder(recorderId, recorderName, userId) {
+    if (!confirm('Delete strategy "' + recorderName + '"?\n\n⚠ This will CASCADE delete:\n- All recorded trades\n- All signals\n- All position records\n- All trader links\n\nThis cannot be undone.')) {
+        return;
+    }
+    fetch('/api/recorders/' + recorderId, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success || data.status === 'success') {
+            // Refresh the modal to show updated data
+            viewUserDetails(currentUserDetails.user_id, currentUserDetails.user_name);
+        } else {
+            alert('Failed to delete strategy: ' + (data.error || data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error deleting strategy: ' + error);
+    });
 }
 
 // Tab click handlers
