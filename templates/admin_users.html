@@ -1051,6 +1051,10 @@
                 <span class="material-icons">smart_toy</span>
                 Strategies <span class="count" id="recordersCount">0</span>
             </button>
+            <button class="details-tab" data-tab="traders">
+                <span class="material-icons">link</span>
+                Traders <span class="count" id="tradersCount">0</span>
+            </button>
             <button class="details-tab" data-tab="trades">
                 <span class="material-icons">candlestick_chart</span>
                 Trades <span class="count" id="tradesCount">0</span>
@@ -1463,6 +1467,7 @@ function viewUserDetails(userId, userName) {
     // Reset tab counts
     document.getElementById('accountsCount').textContent = '...';
     document.getElementById('recordersCount').textContent = '...';
+    document.getElementById('tradersCount').textContent = '...';
     document.getElementById('tradesCount').textContent = '...';
     
     // Activate first tab
@@ -1483,6 +1488,7 @@ function viewUserDetails(userId, userName) {
                 // Update counts
                 document.getElementById('accountsCount').textContent = data.accounts_count;
                 document.getElementById('recordersCount').textContent = data.recorders_count;
+                document.getElementById('tradersCount').textContent = data.traders_count || 0;
                 document.getElementById('tradesCount').textContent = data.trades.length;
                 
                 // Show accounts tab by default
@@ -1511,6 +1517,8 @@ function showDetailsTab(tabName) {
         content.innerHTML = renderAccountsTab(currentUserDetails.accounts);
     } else if (tabName === 'recorders') {
         content.innerHTML = renderRecordersTab(currentUserDetails.recorders);
+    } else if (tabName === 'traders') {
+        content.innerHTML = renderTradersTab(currentUserDetails.traders);
     } else if (tabName === 'trades') {
         content.innerHTML = renderTradesTab(currentUserDetails.trades, currentUserDetails.trade_stats);
     }
@@ -1644,6 +1652,78 @@ function renderRecordersTab(recorders) {
     return html;
 }
 
+function renderTradersTab(traders) {
+    if (!traders || traders.length === 0) {
+        return '<div class="empty-details"><span class="material-icons">link_off</span><p>No trader connections</p></div>';
+    }
+
+    let html = '';
+    traders.forEach(tr => {
+        const statusBadge = tr.enabled
+            ? '<span class="badge badge-active">Enabled</span>'
+            : '<span class="badge badge-inactive">Disabled</span>';
+        const envBadge = tr.is_demo
+            ? '<span class="badge badge-pending">DEMO</span>'
+            : '<span class="badge badge-admin">LIVE</span>';
+
+        html += `
+            <div class="details-card">
+                <div class="details-card-header">
+                    <div class="details-card-title">
+                        <span class="material-icons">link</span>
+                        ${tr.recorder_name || 'Strategy #' + tr.recorder_id}
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        ${envBadge}
+                        ${statusBadge}
+                        <button onclick="deleteUserTrader(${tr.id}, '${(tr.recorder_name || 'Trader #' + tr.id).replace(/'/g, "\\'")}', '${(tr.account_name || 'Account').replace(/'/g, "\\'")}')"
+                                style="background: none; border: none; color: #f5365c; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center;"
+                                title="Delete trader link">
+                            <span class="material-icons" style="font-size: 18px;">delete</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="details-grid">
+                    <div class="details-item">
+                        <span class="details-label">Strategy</span>
+                        <span class="details-value">${tr.recorder_name || 'N/A'} ${tr.recorder_ticker ? '(' + tr.recorder_ticker + ')' : ''}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Account</span>
+                        <span class="details-value">${tr.account_name || 'N/A'} ${tr.account_broker ? '(' + tr.account_broker + ')' : ''}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Subaccount</span>
+                        <span class="details-value">${tr.subaccount_name || 'N/A'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Multiplier</span>
+                        <span class="details-value">${tr.multiplier || 1}x</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Initial Size</span>
+                        <span class="details-value">${tr.initial_position_size || 'Default'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Add Size</span>
+                        <span class="details-value">${tr.add_position_size || 'Default'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Max Contracts</span>
+                        <span class="details-value">${tr.max_contracts || 'N/A'}</span>
+                    </div>
+                    <div class="details-item">
+                        <span class="details-label">Custom Ticker</span>
+                        <span class="details-value">${tr.custom_ticker || 'None'}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    return html;
+}
+
 function renderTradesTab(trades, stats) {
     let html = '';
     
@@ -1764,6 +1844,27 @@ function deleteUserRecorder(recorderId, recorderName, userId) {
     })
     .catch(error => {
         alert('Error deleting strategy: ' + error);
+    });
+}
+
+function deleteUserTrader(traderId, strategyName, accountName) {
+    if (!confirm('Delete trader link?\n\nStrategy: ' + strategyName + '\nAccount: ' + accountName + '\n\nThis will unlink the account from the strategy. No trades or data will be deleted.')) {
+        return;
+    }
+    fetch('/api/traders/' + traderId, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success || data.status === 'success') {
+            viewUserDetails(currentUserDetails.user_id, currentUserDetails.user_name);
+        } else {
+            alert('Failed to delete trader: ' + (data.error || data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error deleting trader: ' + error);
     });
 }
 

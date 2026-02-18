@@ -6360,6 +6360,51 @@ def admin_get_user_details(user_id):
             
             trades.append(trade)
 
+        # Get user's trader links (account-to-strategy connections)
+        traders_list = []
+        try:
+            cursor.execute(f'''
+                SELECT t.id, t.recorder_id, t.account_id, t.subaccount_id, t.subaccount_name,
+                       t.enabled, t.initial_position_size, t.add_position_size, t.multiplier,
+                       t.max_contracts, t.custom_ticker, t.is_demo,
+                       r.name as recorder_name, r.ticker as recorder_ticker,
+                       a.name as account_name, a.broker as account_broker
+                FROM traders t
+                LEFT JOIN recorders r ON t.recorder_id = r.id
+                LEFT JOIN accounts a ON t.account_id = a.id
+                WHERE t.user_id = {placeholder}
+                ORDER BY t.id DESC
+            ''', (user_id,))
+            for row in cursor.fetchall():
+                if hasattr(row, 'keys'):
+                    trader = dict(row)
+                else:
+                    trader = {
+                        'id': row[0],
+                        'recorder_id': row[1],
+                        'account_id': row[2],
+                        'subaccount_id': row[3],
+                        'subaccount_name': row[4],
+                        'enabled': bool(row[5]),
+                        'initial_position_size': row[6],
+                        'add_position_size': row[7],
+                        'multiplier': float(row[8]) if row[8] else 1.0,
+                        'max_contracts': row[9],
+                        'custom_ticker': row[10],
+                        'is_demo': bool(row[11]),
+                        'recorder_name': row[12],
+                        'recorder_ticker': row[13],
+                        'account_name': row[14],
+                        'account_broker': row[15]
+                    }
+                traders_list.append(trader)
+        except Exception as traders_err:
+            logger.debug(f"Traders query failed: {traders_err}")
+            try:
+                conn.rollback()
+            except:
+                pass
+
         conn.close()
 
         # Calculate stats
@@ -6373,6 +6418,8 @@ def admin_get_user_details(user_id):
             'accounts_count': len(accounts),
             'recorders': recorders,
             'recorders_count': len(recorders),
+            'traders': traders_list,
+            'traders_count': len(traders_list),
             'trades': trades,
             'trade_stats': {
                 'total_trades': len(trades),
