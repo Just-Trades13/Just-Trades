@@ -13018,16 +13018,16 @@ def validate_trader_risk_settings(data, context='save'):
                     if trim < 0 or trim > 100:
                         errors.append(f'tp_targets[{i}].trim must be between 0 and 100 (got {trim})')
 
-    # --- Position Sizes ---
+    # --- Position Sizes (0 = use default/none, so allow 0+) ---
     for field in ['initial_position_size', 'add_position_size']:
         val = data.get(field)
         if val is not None:
             try:
                 val = int(val)
-                if val < 1:
-                    errors.append(f'{field} must be at least 1 (got {val})')
+                if val < 0:
+                    errors.append(f'{field} cannot be negative (got {val})')
             except (ValueError, TypeError):
-                errors.append(f'{field} must be a positive integer')
+                errors.append(f'{field} must be a non-negative integer')
 
     # --- SL Settings ---
     sl_enabled = data.get('sl_enabled')
