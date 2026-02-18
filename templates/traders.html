@@ -1253,18 +1253,79 @@
     function toggleTrailSettingsEdit() {
         const slType = document.getElementById('slType');
         const trailSettings = document.getElementById('trailSettingsEdit');
+        const beCheckbox = document.getElementById('breakEvenEnabled');
         if (slType && trailSettings) {
-            trailSettings.style.display = (slType.value === 'Trail' || slType.value === 'Trailing') ? 'flex' : 'none';
+            const isTrail = (slType.value === 'Trail' || slType.value === 'Trailing');
+            trailSettings.style.display = isTrail ? 'flex' : 'none';
+            // Mutual exclusion: Trail and Break-Even cannot coexist
+            if (beCheckbox) {
+                const beRow = beCheckbox.closest('.toggle-row');
+                if (isTrail) {
+                    beCheckbox.checked = false;
+                    beCheckbox.disabled = true;
+                    if (beRow) { beRow.style.opacity = '0.5'; beRow.title = 'Cannot use Break-Even with Trailing Stop'; }
+                } else {
+                    beCheckbox.disabled = false;
+                    if (beRow) { beRow.style.opacity = '1'; beRow.title = ''; }
+                }
+            }
         }
     }
 
     function toggleTrailSettingsCreate() {
         const slType = document.getElementById('createSlType');
         const trailSettings = document.getElementById('trailSettingsCreate');
+        const beCheckbox = document.getElementById('createBreakEvenEnabled');
         if (slType && trailSettings) {
-            trailSettings.style.display = (slType.value === 'Trail' || slType.value === 'Trailing') ? 'flex' : 'none';
+            const isTrail = (slType.value === 'Trail' || slType.value === 'Trailing');
+            trailSettings.style.display = isTrail ? 'flex' : 'none';
+            // Mutual exclusion: Trail and Break-Even cannot coexist
+            if (beCheckbox) {
+                const beRow = beCheckbox.closest('.toggle-row');
+                if (isTrail) {
+                    beCheckbox.checked = false;
+                    beCheckbox.disabled = true;
+                    if (beRow) { beRow.style.opacity = '0.5'; beRow.title = 'Cannot use Break-Even with Trailing Stop'; }
+                } else {
+                    beCheckbox.disabled = false;
+                    if (beRow) { beRow.style.opacity = '1'; beRow.title = ''; }
+                }
+            }
         }
     }
+
+    // Reverse: if Break-Even is checked, force SL Type to Fixed
+    document.addEventListener('DOMContentLoaded', function() {
+        const beEdit = document.getElementById('breakEvenEnabled');
+        if (beEdit) {
+            beEdit.addEventListener('change', function() {
+                if (this.checked) {
+                    const slType = document.getElementById('slType');
+                    if (slType && (slType.value === 'Trail' || slType.value === 'Trailing')) {
+                        slType.value = 'Fixed';
+                        toggleTrailSettingsEdit();
+                    }
+                }
+            });
+        }
+        const beCreate = document.getElementById('createBreakEvenEnabled');
+        if (beCreate) {
+            beCreate.addEventListener('change', function() {
+                if (this.checked) {
+                    const slType = document.getElementById('createSlType');
+                    if (slType && (slType.value === 'Trail' || slType.value === 'Trailing')) {
+                        slType.value = 'Fixed';
+                        toggleTrailSettingsCreate();
+                    }
+                }
+            });
+        }
+        // On page load, enforce mutual exclusion for edit form (if Trail is already selected)
+        const slTypeEdit = document.getElementById('slType');
+        if (slTypeEdit && (slTypeEdit.value === 'Trail' || slTypeEdit.value === 'Trailing')) {
+            toggleTrailSettingsEdit();
+        }
+    });
 
     // =============================================
     // Multi-TP Target Functions

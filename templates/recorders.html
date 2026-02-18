@@ -959,10 +959,45 @@
     function toggleTrailSettings() {
         const slType = document.getElementById('sl_type').value;
         const trailSettings = document.getElementById('trail_settings');
+        const beCheckbox = document.getElementById('break_even_enabled');
         if (trailSettings) {
-            trailSettings.style.display = (slType === 'Trail') ? 'flex' : 'none';
+            const isTrail = (slType === 'Trail');
+            trailSettings.style.display = isTrail ? 'flex' : 'none';
+            // Mutual exclusion: Trail and Break-Even cannot coexist
+            if (beCheckbox) {
+                const beRow = beCheckbox.closest('.toggle-row');
+                if (isTrail) {
+                    beCheckbox.checked = false;
+                    beCheckbox.disabled = true;
+                    if (beRow) { beRow.style.opacity = '0.5'; beRow.title = 'Cannot use Break-Even with Trailing Stop'; }
+                } else {
+                    beCheckbox.disabled = false;
+                    if (beRow) { beRow.style.opacity = '1'; beRow.title = ''; }
+                }
+            }
         }
     }
+
+    // Reverse: if Break-Even is checked, force SL Type to Fixed
+    (function() {
+        const beCheckbox = document.getElementById('break_even_enabled');
+        if (beCheckbox) {
+            beCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    const slType = document.getElementById('sl_type');
+                    if (slType && slType.value === 'Trail') {
+                        slType.value = 'Fixed';
+                        toggleTrailSettings();
+                    }
+                }
+            });
+        }
+        // On page load, enforce mutual exclusion if Trail is already selected
+        const slType = document.getElementById('sl_type');
+        if (slType && slType.value === 'Trail') {
+            toggleTrailSettings();
+        }
+    })();
 
     document.addEventListener('DOMContentLoaded', function () {
         console.log('DOMContentLoaded: Starting initialization, recorderId:', recorderId);
