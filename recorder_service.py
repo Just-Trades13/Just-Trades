@@ -2188,7 +2188,7 @@ def execute_trade_simple(
                                 if is_last_leg:
                                     leg_qty = remaining_qty  # Last leg gets remainder
                                 elif trim_units == 'Contracts':
-                                    leg_qty = min(int(leg_trim), remaining_qty) if leg_trim else remaining_qty
+                                    leg_qty = min(max(1, int(round(leg_trim * account_multiplier))), remaining_qty) if leg_trim else remaining_qty
                                 else:  # Percent
                                     leg_qty = max(1, int(round(adjusted_quantity * (leg_trim / 100.0)))) if leg_trim else remaining_qty
 
