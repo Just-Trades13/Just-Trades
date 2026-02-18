@@ -16169,6 +16169,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
                 WHERE t.recorder_id = {placeholder} AND t.enabled = TRUE
+                ORDER BY t.id
                 LIMIT 1
             ''', (recorder_id,))
         else:
@@ -16181,6 +16182,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                 FROM traders t
                 JOIN accounts a ON t.account_id = a.id
                 WHERE t.recorder_id = {placeholder} AND t.enabled = 1
+                ORDER BY t.id
                 LIMIT 1
             ''', (recorder_id,))
         trader_row = cursor.fetchone()
