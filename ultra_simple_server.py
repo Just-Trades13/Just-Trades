@@ -16930,7 +16930,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
 
         # BACKGROUND: Record trade based on SIGNAL (not broker) - Like Trade Manager!
         import threading
-        def _bg_signal_tracking(rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, t_tick_size, t_tick_value, has_trader, rec_name):
+        def _bg_signal_tracking(rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, t_tick_size, t_tick_value, has_trader, rec_name, t_is_dca=False):
             try:
                 trade_conn = get_db_connection()
                 trade_cursor = trade_conn.cursor()
@@ -16981,19 +16981,42 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                         except Exception:
                             pass
                     else:
-                        # SAME SIDE: DCA - Add to existing position!
+                        # SAME SIDE
                         broker_managed = True if has_trader else False
-                        trade_cursor.execute(f'''
-                            INSERT INTO recorded_trades
-                            (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
-                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                        ''', (rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, broker_managed))
-                        _logger.info(f"📈 DCA {t_side} +{qty} @ {c_price}")
+                        if t_is_dca:
+                            # DCA MODE ON: Add new record (stack positions)
+                            trade_cursor.execute(f'''
+                                INSERT INTO recorded_trades
+                                (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                            ''', (rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, broker_managed))
+                            _logger.info(f"📈 DCA {t_side} +{qty} @ {c_price}")
 
-                        try:
-                            notify_trade_execution(action=f"DCA {t_side}", symbol=tkr, quantity=qty, price=c_price, recorder_name=rec_name, tp_price=t_tp_price, sl_price=t_sl_price, recorder_id=rec_id)
-                        except Exception:
-                            pass
+                            try:
+                                notify_trade_execution(action=f"DCA {t_side}", symbol=tkr, quantity=qty, price=c_price, recorder_name=rec_name, tp_price=t_tp_price, sl_price=t_sl_price, recorder_id=rec_id)
+                            except Exception:
+                                pass
+                        else:
+                            # DCA MODE OFF: Close old record, open fresh one (no stacking)
+                            trade_cursor.execute(f'''
+                                UPDATE recorded_trades
+                                SET status = 'closed', exit_price = {ph}, exit_reason = 'new_entry',
+                                    exit_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                                WHERE id = {ph}
+                            ''', (c_price, existing_id))
+                            _logger.info(f"📊 [{rec_name}] DCA OFF - Closed stale {existing_side} #{existing_id}, opening fresh entry")
+
+                            trade_cursor.execute(f'''
+                                INSERT INTO recorded_trades
+                                (recorder_id, ticker, action, side, entry_price, entry_time, quantity, status, tp_price, sl_price, broker_managed_tp_sl, created_at, updated_at)
+                                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, {ph}, 'open', {ph}, {ph}, {ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                            ''', (rec_id, tkr, t_action, t_side, c_price, qty, t_tp_price, t_sl_price, broker_managed))
+                            _logger.info(f"📈 NEW {t_side} opened @ {c_price} x{qty} | TP: {t_tp_price} | SL: {t_sl_price}")
+
+                            try:
+                                notify_trade_execution(action=t_side, symbol=tkr, quantity=qty, price=c_price, recorder_name=rec_name, tp_price=t_tp_price, sl_price=t_sl_price, recorder_id=rec_id)
+                            except Exception:
+                                pass
                 else:
                     # NO EXISTING POSITION: Open new trade
                     broker_managed = True if has_trader else False
@@ -17060,7 +17083,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
 
         threading.Thread(
             target=_bg_signal_tracking,
-            args=(recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, tick_size, tick_value, bool(trader), recorder_name),
+            args=(recorder_id, ticker, trade_action, trade_side, current_price, quantity, tp_price, sl_price, tick_size, tick_value, bool(trader), recorder_name, is_dca),
             daemon=True
         ).start()
 
