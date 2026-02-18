@@ -22199,18 +22199,18 @@ def api_control_center_stats():
         if current_user_id:
             if is_postgres:
                 cursor.execute('''
-                    SELECT DISTINCT
+                    SELECT
                         r.id,
                         r.name,
                         r.symbol,
                         r.recording_enabled,
                         r.signal_count,
-                        r.time_filter_1_enabled,
-                        r.time_filter_1_start,
-                        r.time_filter_1_stop,
-                        r.time_filter_2_enabled,
-                        r.time_filter_2_start,
-                        r.time_filter_2_stop,
+                        MAX(COALESCE(t.time_filter_1_enabled, r.time_filter_1_enabled)) as time_filter_1_enabled,
+                        MAX(COALESCE(NULLIF(t.time_filter_1_start, ''), r.time_filter_1_start)) as time_filter_1_start,
+                        MAX(COALESCE(NULLIF(t.time_filter_1_stop, ''), r.time_filter_1_stop)) as time_filter_1_stop,
+                        MAX(COALESCE(t.time_filter_2_enabled, r.time_filter_2_enabled)) as time_filter_2_enabled,
+                        MAX(COALESCE(NULLIF(t.time_filter_2_start, ''), r.time_filter_2_start)) as time_filter_2_start,
+                        MAX(COALESCE(NULLIF(t.time_filter_2_stop, ''), r.time_filter_2_stop)) as time_filter_2_stop,
                         COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
                         COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
                         (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
@@ -22224,18 +22224,18 @@ def api_control_center_stats():
                 ''', (current_user_id, current_user_id))
             else:
                 cursor.execute('''
-                    SELECT DISTINCT
+                    SELECT
                         r.id,
                         r.name,
                         r.symbol,
                         r.recording_enabled,
                         r.signal_count,
-                        r.time_filter_1_enabled,
-                        r.time_filter_1_start,
-                        r.time_filter_1_stop,
-                        r.time_filter_2_enabled,
-                        r.time_filter_2_start,
-                        r.time_filter_2_stop,
+                        MAX(COALESCE(t.time_filter_1_enabled, r.time_filter_1_enabled)) as time_filter_1_enabled,
+                        MAX(COALESCE(NULLIF(t.time_filter_1_start, ''), r.time_filter_1_start)) as time_filter_1_start,
+                        MAX(COALESCE(NULLIF(t.time_filter_1_stop, ''), r.time_filter_1_stop)) as time_filter_1_stop,
+                        MAX(COALESCE(t.time_filter_2_enabled, r.time_filter_2_enabled)) as time_filter_2_enabled,
+                        MAX(COALESCE(NULLIF(t.time_filter_2_start, ''), r.time_filter_2_start)) as time_filter_2_start,
+                        MAX(COALESCE(NULLIF(t.time_filter_2_stop, ''), r.time_filter_2_stop)) as time_filter_2_stop,
                         COUNT(CASE WHEN rt.status = 'open' THEN 1 END) as open_trades,
                         COUNT(CASE WHEN rt.status = 'closed' THEN 1 END) as closed_trades,
                         (SELECT action FROM recorded_signals WHERE recorder_id = r.id ORDER BY created_at DESC LIMIT 1) as last_signal
