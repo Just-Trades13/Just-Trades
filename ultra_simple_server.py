@@ -13112,6 +13112,22 @@ def api_create_trader():
         time_filter_2_stop = data.get('time_filter_2_stop', '')
         inverse_signals = data.get('inverse_signals', 0)
 
+        # Additional risk settings (inherit from recorder if not provided)
+        sl_type = data.get('sl_type')
+        tp_units = data.get('tp_units')
+        trim_units = data.get('trim_units')
+        break_even_enabled = data.get('break_even_enabled')
+        break_even_ticks = data.get('break_even_ticks')
+        break_even_offset = data.get('break_even_offset')
+        avg_down_enabled = data.get('avg_down_enabled')
+        avg_down_amount = data.get('avg_down_amount')
+        avg_down_point = data.get('avg_down_point')
+        avg_down_units = data.get('avg_down_units')
+        trail_trigger = data.get('trail_trigger')
+        trail_freq = data.get('trail_freq')
+        add_delay = data.get('add_delay')
+        dca_enabled = data.get('dca_enabled')
+
         if not recorder_id or not account_id:
             return jsonify({'success': False, 'error': 'recorder_id and account_id are required'}), 400
         
@@ -13123,13 +13139,21 @@ def api_create_trader():
         if is_postgres:
             cursor.execute('''
                 SELECT id, name, initial_position_size, add_position_size, tp_targets,
-                       sl_enabled, sl_amount, sl_units, max_daily_loss
+                       sl_enabled, sl_amount, sl_units, max_daily_loss,
+                       sl_type, tp_units, trim_units,
+                       break_even_enabled, break_even_ticks, break_even_offset,
+                       avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
+                       trail_trigger, trail_freq, add_delay
                 FROM recorders WHERE id = %s
             ''', (recorder_id,))
         else:
             cursor.execute('''
                 SELECT id, name, initial_position_size, add_position_size, tp_targets,
-                       sl_enabled, sl_amount, sl_units, max_daily_loss
+                       sl_enabled, sl_amount, sl_units, max_daily_loss,
+                       sl_type, tp_units, trim_units,
+                       break_even_enabled, break_even_ticks, break_even_offset,
+                       avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
+                       trail_trigger, trail_freq, add_delay
                 FROM recorders WHERE id = ?
             ''', (recorder_id,))
         recorder = cursor.fetchone()
@@ -13146,6 +13170,19 @@ def api_create_trader():
             rec_sl_amount = recorder.get('sl_amount', 0)
             rec_sl_units = recorder.get('sl_units', 'Ticks')
             rec_max_loss = recorder.get('max_daily_loss', 500)
+            rec_sl_type = recorder.get('sl_type', 'Fixed')
+            rec_tp_units = recorder.get('tp_units', 'Ticks')
+            rec_trim_units = recorder.get('trim_units', 'Contracts')
+            rec_break_even_enabled = recorder.get('break_even_enabled', False)
+            rec_break_even_ticks = recorder.get('break_even_ticks', 10)
+            rec_break_even_offset = recorder.get('break_even_offset', 0)
+            rec_avg_down_enabled = recorder.get('avg_down_enabled', False)
+            rec_avg_down_amount = recorder.get('avg_down_amount', 0)
+            rec_avg_down_point = recorder.get('avg_down_point', 0)
+            rec_avg_down_units = recorder.get('avg_down_units', 'Ticks')
+            rec_trail_trigger = recorder.get('trail_trigger', 0)
+            rec_trail_freq = recorder.get('trail_freq', 0)
+            rec_add_delay = recorder.get('add_delay', 1)
         else:
             rec_initial = recorder[2] if recorder[2] is not None else 1
             rec_add = recorder[3] if recorder[3] is not None else 1
@@ -13154,7 +13191,20 @@ def api_create_trader():
             rec_sl_amount = recorder[6] if recorder[6] is not None else 0
             rec_sl_units = recorder[7] if recorder[7] is not None else 'Ticks'
             rec_max_loss = recorder[8] if recorder[8] is not None else 500
-        
+            rec_sl_type = recorder[9] if recorder[9] is not None else 'Fixed'
+            rec_tp_units = recorder[10] if recorder[10] is not None else 'Ticks'
+            rec_trim_units = recorder[11] if recorder[11] is not None else 'Contracts'
+            rec_break_even_enabled = recorder[12] if recorder[12] is not None else False
+            rec_break_even_ticks = recorder[13] if recorder[13] is not None else 10
+            rec_break_even_offset = recorder[14] if recorder[14] is not None else 0
+            rec_avg_down_enabled = recorder[15] if recorder[15] is not None else False
+            rec_avg_down_amount = recorder[16] if recorder[16] is not None else 0
+            rec_avg_down_point = recorder[17] if recorder[17] is not None else 0
+            rec_avg_down_units = recorder[18] if recorder[18] is not None else 'Ticks'
+            rec_trail_trigger = recorder[19] if recorder[19] is not None else 0
+            rec_trail_freq = recorder[20] if recorder[20] is not None else 0
+            rec_add_delay = recorder[21] if recorder[21] is not None else 1
+
         # INHERIT from recorder if user didn't provide custom values
         if initial_position_size is None:
             initial_position_size = rec_initial
@@ -13170,6 +13220,34 @@ def api_create_trader():
             sl_units = rec_sl_units
         if max_daily_loss is None:
             max_daily_loss = rec_max_loss
+        if sl_type is None:
+            sl_type = rec_sl_type
+        if tp_units is None:
+            tp_units = rec_tp_units
+        if trim_units is None:
+            trim_units = rec_trim_units
+        if break_even_enabled is None:
+            break_even_enabled = rec_break_even_enabled
+        if break_even_ticks is None:
+            break_even_ticks = rec_break_even_ticks
+        if break_even_offset is None:
+            break_even_offset = rec_break_even_offset
+        if avg_down_enabled is None:
+            avg_down_enabled = rec_avg_down_enabled
+        if avg_down_amount is None:
+            avg_down_amount = rec_avg_down_amount
+        if avg_down_point is None:
+            avg_down_point = rec_avg_down_point
+        if avg_down_units is None:
+            avg_down_units = rec_avg_down_units
+        if trail_trigger is None:
+            trail_trigger = rec_trail_trigger
+        if trail_freq is None:
+            trail_freq = rec_trail_freq
+        if add_delay is None:
+            add_delay = rec_add_delay
+        if dca_enabled is None:
+            dca_enabled = False
         
         # Validate risk settings AFTER inheritance (catch bad recorder defaults too)
         validation_data = {
@@ -13241,15 +13319,24 @@ def api_create_trader():
                     user_id, enabled_accounts,
                     time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
                     time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
-                    inverse_signals
+                    inverse_signals,
+                    sl_type, tp_units, trim_units,
+                    break_even_enabled, break_even_ticks, break_even_offset,
+                    avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
+                    trail_trigger, trail_freq, add_delay, dca_enabled
                 )
-                VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, bool(is_demo),
                   initial_position_size, add_position_size, tp_targets, bool(sl_enabled), sl_amount, sl_units, max_daily_loss,
                   current_user_id, initial_enabled_accounts,
                   bool(time_filter_1_enabled), time_filter_1_start, time_filter_1_stop,
                   bool(time_filter_2_enabled), time_filter_2_start, time_filter_2_stop,
-                  bool(inverse_signals)))
+                  bool(inverse_signals),
+                  sl_type, tp_units, trim_units,
+                  bool(break_even_enabled), int(break_even_ticks), int(break_even_offset),
+                  bool(avg_down_enabled), int(avg_down_amount), float(avg_down_point), avg_down_units,
+                  int(trail_trigger), int(trail_freq), int(add_delay), bool(dca_enabled)))
             result = cursor.fetchone()
             if result:
                 trader_id = result.get('id') if isinstance(result, dict) else result[0]
@@ -13264,15 +13351,24 @@ def api_create_trader():
                     user_id, enabled_accounts,
                     time_filter_1_enabled, time_filter_1_start, time_filter_1_stop,
                     time_filter_2_enabled, time_filter_2_start, time_filter_2_stop,
-                    inverse_signals
+                    inverse_signals,
+                    sl_type, tp_units, trim_units,
+                    break_even_enabled, break_even_ticks, break_even_offset,
+                    avg_down_enabled, avg_down_amount, avg_down_point, avg_down_units,
+                    trail_trigger, trail_freq, add_delay, dca_enabled
                 )
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (recorder_id, account_id, subaccount_id, subaccount_name, 1 if is_demo else 0,
                   initial_position_size, add_position_size, tp_targets, sl_enabled, sl_amount, sl_units, max_daily_loss,
                   current_user_id, initial_enabled_accounts,
                   1 if time_filter_1_enabled else 0, time_filter_1_start, time_filter_1_stop,
                   1 if time_filter_2_enabled else 0, time_filter_2_start, time_filter_2_stop,
-                  1 if inverse_signals else 0))
+                  1 if inverse_signals else 0,
+                  sl_type, tp_units, trim_units,
+                  1 if break_even_enabled else 0, int(break_even_ticks), int(break_even_offset),
+                  1 if avg_down_enabled else 0, int(avg_down_amount), float(avg_down_point), avg_down_units,
+                  int(trail_trigger), int(trail_freq), int(add_delay), 1 if dca_enabled else 0))
             trader_id = cursor.lastrowid
         
         conn.commit()
