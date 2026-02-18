@@ -157,6 +157,15 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | `execute_trade_simple` sets `error: None` explicitly. `.get()` default only applies when key is MISSING |
 | **NEVER** | Change back to `result.get('error', 'Unknown error')` — it crashes on `'string' in None` |
 
+### Break-Even Monitor Only for Trailing+BE Combo (Feb 18, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2259-2293 |
+| **Commit** | `410fd40` |
+| **What** | Safety-net monitor only registers when `trailing_stop_bool=True` AND `break_even_ticks > 0` |
+| **Why** | When native bracket BE is active (no trailing stop), monitor is unnecessary. Saves an API call (get_positions) per entry |
+| **NEVER** | Remove the `trailing_stop_bool` guard — would re-add unnecessary API calls and potential double-execution |
+
 ### CSRF Exempt Prefixes (Feb 16, 2026)
 | Field | Value |
 |-------|-------|
@@ -165,6 +174,20 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **What** | Must include `/webhook/` AND `/webhooks/` (plural) |
 | **Why** | Whop webhook route is `/webhooks/whop` — without `/webhooks/` prefix, all Whop POSTs get 403'd |
 | **NEVER** | Remove `/webhooks/` from the exempt list or consolidate to just `/webhook/` |
+
+---
+
+## tradovate_integration.py — Protected Changes
+
+### Native Break-Even in Bracket Orders (Feb 18, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~1978-1985 (single-bracket), ~1941-1947 (multi-bracket) |
+| **Commit** | `410fd40` |
+| **What** | Adds `breakeven` and `breakevenPlus` params to bracket order — ALWAYS positive, NEVER with `trailingStop: true` |
+| **Why** | Native BE is faster than safety-net monitor (no extra API calls, no polling). Forum-confirmed: values must be positive on both sides |
+| **Guard** | `not trailing_stop` check prevents combining with trailingStop (Tradovate rejects this combination) |
+| **NEVER** | Use negative/signed values for breakeven/breakevenPlus. NEVER send breakeven when trailingStop is true |
 
 ---
 
@@ -196,3 +219,5 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | DCA off | Ignore position state | Position irrelevant | Wrong qty + no bracket |
 | Trim contracts | Scale by multiplier | Raw trim ignores multiplier | Wrong TP leg sizes |
 | SL ticks signing | Signed for both brokers | Negative for long, positive for short | ProjectX rejects unsigned trailing stops |
+| Native break-even | ALWAYS positive, NEVER with trailingStop | Tradovate API requirement | Bracket rejected or wrong BE direction |
+| BE safety-net monitor | Only when trailing+BE combo | Native handles non-trailing | Extra API calls, potential double-execution |
