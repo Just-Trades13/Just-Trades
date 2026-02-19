@@ -2081,6 +2081,7 @@
         
         async function checkIfAdmin() {
             try {
+                if (document.body.dataset.userLoggedIn !== 'true') return;
                 const response = await fetch('/api/support/tickets');
                 if (response.ok) {
                     const data = await response.json();
