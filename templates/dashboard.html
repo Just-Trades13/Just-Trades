@@ -3595,6 +3595,7 @@
     
     async function loadTickerData() {
         try {
+            if (document.body.dataset.userLoggedIn !== 'true') return;
             const response = await fetch('/api/market-data');
             const data = await response.json();
             const tickerContent = document.getElementById('tickerContent');
@@ -3654,9 +3655,10 @@
 
     // Load Stock Heatmap
     async function loadStockHeatmap() {
+        if (document.body.dataset.userLoggedIn !== 'true') return;
         const heatmapGrid = document.getElementById('heatmapGrid');
         const heatmapLoading = document.getElementById('heatmapLoading');
-        
+
         try {
             const response = await fetch('/api/stock-heatmap');
             const data = await response.json();
@@ -4390,6 +4392,7 @@
     // Load live prices for the prices bar
     async function loadLivePrices() {
         try {
+            if (document.body.dataset.userLoggedIn !== 'true') return;
             const response = await fetch('/api/live-prices');
             const data = await response.json();
 
@@ -4425,6 +4428,7 @@
     // Load paper positions
     async function loadPaperPositions() {
         try {
+            if (document.body.dataset.userLoggedIn !== 'true') return;
             const response = await fetch('/api/paper-trades/positions');
             const data = await response.json();
 
