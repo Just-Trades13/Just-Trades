@@ -6201,10 +6201,24 @@ def admin_delete_user(user_id):
     cursor = conn.cursor()
     
     try:
-        if db_type == 'postgresql':
-            cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
-        else:
-            cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        ph = '%s' if db_type == 'postgresql' else '?'
+
+        # Delete from child tables in dependency order (most dependent first)
+        cursor.execute(f'DELETE FROM support_messages WHERE ticket_id IN (SELECT id FROM support_tickets WHERE user_id = {ph})', (user_id,))
+        cursor.execute(f'DELETE FROM recorded_trades WHERE user_id = {ph}', (user_id,))
+        cursor.execute(f'DELETE FROM recorded_signals WHERE recorder_id IN (SELECT id FROM recorders WHERE user_id = {ph})', (user_id,))
+        cursor.execute(f'DELETE FROM recorder_positions WHERE recorder_id IN (SELECT id FROM recorders WHERE user_id = {ph})', (user_id,))
+        cursor.execute(f'DELETE FROM traders WHERE user_id = {ph}', (user_id,))
+        cursor.execute(f'DELETE FROM support_tickets WHERE user_id = {ph}', (user_id,))
+        cursor.execute(f'DELETE FROM recorders WHERE user_id = {ph}', (user_id,))
+        cursor.execute(f'DELETE FROM strategies WHERE user_id = {ph}', (user_id,))
+        cursor.execute(f'DELETE FROM push_subscriptions WHERE user_id = {ph}', (user_id,))
+        cursor.execute(f'DELETE FROM accounts WHERE user_id = {ph}', (user_id,))
+        # Nullify audit columns (don't delete announcements/applications, just unlink)
+        cursor.execute(f'UPDATE announcements SET created_by = NULL WHERE created_by = {ph}', (user_id,))
+        cursor.execute(f'UPDATE affiliate_applications SET reviewed_by = NULL WHERE reviewed_by = {ph}', (user_id,))
+        # Finally delete the user
+        cursor.execute(f'DELETE FROM users WHERE id = {ph}', (user_id,))
         conn.commit()
         return jsonify({'success': True})
     except Exception as e:
