@@ -25097,7 +25097,7 @@ def api_dashboard_users():
         if not is_logged_in():
             return jsonify({'error': 'Authentication required', 'users': []}), 401
         user = get_current_user()
-        if not user or not user.get('is_admin'):
+        if not user or not getattr(user, 'is_admin', False):
             return jsonify({'error': 'Admin access required', 'users': []}), 403
     try:
         try:
@@ -25110,7 +25110,7 @@ def api_dashboard_users():
 
             return jsonify({
                 'users': [{'id': u.id, 'username': u.username} for u in users],
-                'current_user_id': user.get('id') if USER_AUTH_AVAILABLE and user else None
+                'current_user_id': getattr(user, 'id', None) if USER_AUTH_AVAILABLE and user else None
             })
         except ImportError:
             # Database modules not available, return empty list
