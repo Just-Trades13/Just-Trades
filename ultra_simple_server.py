@@ -3457,8 +3457,11 @@ except ImportError:
         socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', message_queue=_sio_message_queue)
         logger.info("SocketIO using gevent async mode")
     except ImportError:
-        socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True, engineio_logger=True, message_queue=_sio_message_queue)
+        socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', message_queue=_sio_message_queue)
         logger.info("SocketIO using threading async mode (fallback)")
+
+logging.getLogger('engineio.server').setLevel(logging.WARNING)
+logging.getLogger('socketio.server').setLevel(logging.WARNING)
 
 # ============================================================================
 # INITIALIZE 100+ USER SCALABILITY MODULE (if available and enabled)
