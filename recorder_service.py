@@ -2449,7 +2449,35 @@ def execute_trade_simple(
                                 except Exception as be_err:
                                     logger.warning(f"⚠️ [{acct_name}] Break-even monitor registration failed: {be_err}")
                             elif break_even_ticks and break_even_ticks > 0:
-                                logger.info(f"📊 [{acct_name}] Break-even handled natively in bracket — skipping safety-net monitor")
+                                # Native break-even NOT supported by Tradovate brackets — use safety-net monitor
+                                try:
+                                    await asyncio.sleep(0.3)
+                                    be_positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                                    be_entry_price = None
+                                    for pos in be_positions:
+                                        pos_symbol = str(pos.get('symbol', '')).upper()
+                                        if local_symbol_root in pos_symbol and pos.get('netPos', 0) != 0:
+                                            be_entry_price = pos.get('netPrice')
+                                            break
+                                    if be_entry_price and be_entry_price > 0:
+                                        from ultra_simple_server import register_break_even_monitor
+                                        register_break_even_monitor(
+                                            account_id=tradovate_account_id,
+                                            symbol=local_tradovate_symbol,
+                                            entry_price=be_entry_price,
+                                            is_long=(order_action == 'Buy'),
+                                            activation_ticks=break_even_ticks,
+                                            tick_size=local_tick_size,
+                                            sl_order_id=strategy_id,
+                                            quantity=adjusted_quantity,
+                                            account_spec=tradovate_account_spec
+                                        )
+                                        logger.info(f"📊 [{acct_name}] Break-even safety-net monitor registered "
+                                                    f"(activation={break_even_ticks} ticks, entry={be_entry_price})")
+                                    else:
+                                        logger.warning(f"⚠️ [{acct_name}] Could not get entry price for break-even monitor")
+                                except Exception as be_err:
+                                    logger.warning(f"⚠️ [{acct_name}] Break-even monitor registration failed: {be_err}")
 
                             return {
                                 'success': True,
