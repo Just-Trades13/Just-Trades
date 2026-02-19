@@ -1708,6 +1708,121 @@ def execute_trade_simple(
                             use_trailing_for_bracket = True
                             logger.info(f"📊 [{acct_name}] ProjectX: trailing stop enabled (sl_type)")
 
+                        # Detect multi-TP for stacked bracket orders
+                        has_multi_tp = risk_config and len(risk_config.get('take_profit', [])) > 1
+
+                        if has_multi_tp and risk_config:
+                            # === STACKED BRACKETS: One bracket per TP leg ===
+                            tp_legs = risk_config.get('take_profit', [])
+                            trim_units = risk_config.get('trim_units', 'Percent')
+                            account_multiplier = float(trader.get('multiplier', 1.0))
+
+                            remaining_qty = adjusted_quantity
+                            all_order_ids = []
+
+                            for i, tp_leg in enumerate(tp_legs):
+                                leg_tp_ticks = tp_leg.get('gain_ticks', tp_ticks)
+                                leg_trim = tp_leg.get('trim_percent', 0)
+                                is_last_leg = (i == len(tp_legs) - 1)
+
+                                # Calculate per-leg quantity (same logic as Tradovate, Rule 13)
+                                if is_last_leg:
+                                    leg_qty = remaining_qty
+                                elif trim_units == 'Contracts':
+                                    leg_qty = min(max(1, int(round(leg_trim * account_multiplier))), remaining_qty) if leg_trim else remaining_qty
+                                else:  # Percent
+                                    leg_qty = max(1, int(round(adjusted_quantity * (leg_trim / 100.0)))) if leg_trim else remaining_qty
+
+                                leg_qty = max(1, min(leg_qty, remaining_qty))
+                                remaining_qty -= leg_qty
+
+                                # Place individual bracket: entry + TP + SL (each is independent OCO)
+                                leg_order_data = projectx.create_market_order_with_brackets(
+                                    account_id=int(subaccount_id),
+                                    contract_id=contract_id,
+                                    side=side,
+                                    quantity=leg_qty,
+                                    tp_ticks=leg_tp_ticks if leg_tp_ticks and leg_tp_ticks > 0 else None,
+                                    sl_ticks=sl_ticks if sl_ticks > 0 else None,
+                                    trailing_stop=use_trailing_for_bracket
+                                )
+
+                                logger.info(f"📤 [{acct_name}] ProjectX bracket leg {i+1}/{len(tp_legs)}: "
+                                             f"{side} {leg_qty}, TP={leg_tp_ticks}t, SL={sl_ticks}t"
+                                             f"{' (trailing)' if use_trailing_for_bracket else ''}")
+
+                                leg_result = await projectx.place_order(leg_order_data)
+
+                                if leg_result and leg_result.get('success'):
+                                    leg_id = leg_result.get('orderId')
+                                    all_order_ids.append(leg_id)
+                                    logger.info(f"✅ [{acct_name}] Bracket leg {i+1} placed: ID={leg_id}")
+                                else:
+                                    error = (leg_result.get('error') or 'Unknown') if leg_result else 'No response'
+                                    logger.error(f"❌ [{acct_name}] Bracket leg {i+1} failed: {error}")
+                                    # Continue placing remaining legs — partial fill is better than no fill
+
+                            if remaining_qty > 0:
+                                logger.warning(f"⚠️ [{acct_name}] {remaining_qty} contracts unallocated after leg split")
+
+                            if all_order_ids:
+                                # ProjectX break-even monitor (no native support)
+                                px_be_ticks = None
+                                px_be_offset = 0
+                                if risk_config:
+                                    be_cfg = risk_config.get('break_even')
+                                    if be_cfg and be_cfg.get('activation_ticks'):
+                                        px_be_ticks = be_cfg.get('activation_ticks')
+                                        px_be_offset = be_cfg.get('offset_ticks', 0)
+
+                                if px_be_ticks and px_be_ticks > 0 and not use_trailing_for_bracket:
+                                    try:
+                                        await asyncio.sleep(0.3)
+                                        be_positions = await projectx.get_positions(int(subaccount_id))
+                                        be_entry_price = None
+                                        for pos in be_positions:
+                                            if str(pos.get('contractId', '')) == str(contract_id):
+                                                if pos.get('netPos', 0) != 0:
+                                                    be_entry_price = pos.get('netPrice')
+                                                    break
+                                        if be_entry_price and be_entry_price > 0:
+                                            from ultra_simple_server import register_projectx_break_even_monitor
+                                            register_projectx_break_even_monitor(
+                                                account_id=int(subaccount_id),
+                                                contract_id=contract_id,
+                                                symbol_root=symbol_root,
+                                                entry_price=float(be_entry_price),
+                                                is_long=(side.lower() == 'buy'),
+                                                activation_ticks=px_be_ticks,
+                                                offset_ticks=px_be_offset,
+                                                tick_size=tick_size,
+                                                quantity=adjusted_quantity,
+                                                session_token=projectx.session_token,
+                                                base_url=projectx.base_url,
+                                                prop_firm=prop_firm,
+                                                username=username,
+                                                api_key=api_key
+                                            )
+                                            logger.info(f"📊 [{acct_name}] ProjectX break-even monitor registered "
+                                                        f"(activation={px_be_ticks}t, entry={be_entry_price})")
+                                        else:
+                                            logger.warning(f"⚠️ [{acct_name}] ProjectX BE: Could not get entry price from position")
+                                    except Exception as be_err:
+                                        logger.warning(f"⚠️ [{acct_name}] ProjectX BE monitor registration failed: {be_err}")
+
+                                return {
+                                    'success': True,
+                                    'order_id': all_order_ids[0],
+                                    'broker': 'ProjectX',
+                                    'account': acct_name,
+                                    'tp_ticks': tp_ticks,
+                                    'sl_ticks': sl_ticks,
+                                    'multi_tp_legs': len(all_order_ids)
+                                }
+                            else:
+                                return {'success': False, 'error': 'All bracket legs failed'}
+
+                        # === SINGLE BRACKET (existing behavior, unchanged) ===
                         order_data = projectx.create_market_order_with_brackets(
                             account_id=int(subaccount_id),
                             contract_id=contract_id,
