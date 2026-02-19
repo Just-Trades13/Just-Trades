@@ -1,6 +1,6 @@
 # Railway Deployment Reference — Just Trades Platform
 
-> **Production URL**: `https://justtrades-production.up.railway.app`
+> **Production URL**: `https://justtrades.app`
 > **Branch**: `main` (auto-deploys on push)
 > **Database**: PostgreSQL (Railway managed)
 > **Last verified**: Feb 18, 2026
@@ -165,22 +165,22 @@ else:
 
 ```bash
 # Broker execution status (queue depth, worker count)
-curl -s "https://justtrades-production.up.railway.app/api/broker-execution/status"
+curl -s "https://justtrades.app/api/broker-execution/status"
 
 # Recent failures
-curl -s "https://justtrades-production.up.railway.app/api/broker-execution/failures?limit=20"
+curl -s "https://justtrades.app/api/broker-execution/failures?limit=20"
 
 # Recent webhook activity
-curl -s "https://justtrades-production.up.railway.app/api/webhook-activity?limit=10"
+curl -s "https://justtrades.app/api/webhook-activity?limit=10"
 
 # Raw webhook payloads
-curl -s "https://justtrades-production.up.railway.app/api/raw-webhooks?limit=10"
+curl -s "https://justtrades.app/api/raw-webhooks?limit=10"
 
 # Max loss monitor
-curl -s "https://justtrades-production.up.railway.app/api/admin/max-loss-monitor/status"
+curl -s "https://justtrades.app/api/admin/max-loss-monitor/status"
 
 # Run migrations manually
-curl -s "https://justtrades-production.up.railway.app/api/run-migrations"
+curl -s "https://justtrades.app/api/run-migrations"
 ```
 
 ### Railway CLI Monitoring
@@ -250,7 +250,7 @@ railway restart  # May need restart after var change
 ### 3. Database Migration Failed
 
 ```bash
-curl -s "https://justtrades-production.up.railway.app/api/run-migrations"
+curl -s "https://justtrades.app/api/run-migrations"
 ```
 
 If that fails, check logs for SQL errors. Remember: PostgreSQL uses `%s`, not `?`.

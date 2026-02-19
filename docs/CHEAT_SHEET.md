@@ -213,7 +213,7 @@ price = round(round(price / tick_size) * tick_size, 10)
 git reset --hard WORKING_FEB18_2026_DCA_SKIP_STABLE && git push -f origin main
 
 # Check production after deploy (~90s)
-curl -s "https://justtrades-production.up.railway.app/api/broker-execution/status"
+curl -s "https://justtrades.app/api/broker-execution/status"
 ```
 
 ---

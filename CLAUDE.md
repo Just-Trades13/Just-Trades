@@ -601,12 +601,12 @@ enabled_value = 'TRUE' if is_postgres else '1'
 ## MONITORING ENDPOINTS
 
 ```bash
-curl -s "https://justtrades-production.up.railway.app/api/broker-execution/status"
-curl -s "https://justtrades-production.up.railway.app/api/broker-execution/failures?limit=20"
-curl -s "https://justtrades-production.up.railway.app/api/webhook-activity?limit=10"
-curl -s "https://justtrades-production.up.railway.app/api/raw-webhooks?limit=10"
-curl -s "https://justtrades-production.up.railway.app/api/admin/max-loss-monitor/status"
-curl -s "https://justtrades-production.up.railway.app/api/run-migrations"
+curl -s "https://justtrades.app/api/broker-execution/status"
+curl -s "https://justtrades.app/api/broker-execution/failures?limit=20"
+curl -s "https://justtrades.app/api/webhook-activity?limit=10"
+curl -s "https://justtrades.app/api/raw-webhooks?limit=10"
+curl -s "https://justtrades.app/api/admin/max-loss-monitor/status"
+curl -s "https://justtrades.app/api/run-migrations"
 ```
 
 ---
