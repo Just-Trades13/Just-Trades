@@ -1915,6 +1915,11 @@ def execute_trade_simple(
             acct_id = trader.get('account_id')
             account_multiplier = float(trader.get('multiplier', 1.0))  # Get multiplier for this account
             adjusted_quantity = max(1, int(quantity * account_multiplier))  # Apply multiplier to quantity
+            # Enforce max_contracts cap (if configured)
+            max_contracts = int(trader.get('max_contracts') or 0)
+            if max_contracts > 0 and adjusted_quantity > max_contracts:
+                logger.info(f"📊 [{acct_name}] Max contracts cap: {adjusted_quantity} → {max_contracts}")
+                adjusted_quantity = max_contracts
             broker_type = trader.get('broker', 'Tradovate')  # Default to Tradovate
             is_dca_local = False  # Track if this is a DCA add (set True when same direction as existing position)
 

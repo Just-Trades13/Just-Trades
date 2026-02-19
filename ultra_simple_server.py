@@ -16613,10 +16613,10 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
 
         elif sl_enabled and sl_amount > 0:
             # Fallback to trader/recorder settings
-            if sl_units == 'Loss ($)':
-                # Dollar loss per contract. Convert to ticks.
+            if sl_units == 'Points':
+                # Points = dollar value per contract. Convert to ticks.
                 sl_ticks = int(sl_amount / tick_value) if tick_value else int(sl_amount / tick_size)
-                sl_source = "SETTINGS (dollar)"
+                sl_source = "SETTINGS (points)"
             elif sl_units == 'Percent':
                 # Percent of entry price
                 sl_ticks = int((current_price * (sl_amount / 100)) / tick_size) if current_price and tick_size else 0
@@ -17111,8 +17111,13 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                     t_trim = target.get('trim', 0)
                     _logger.info(f"   TP level: ticks={t_ticks}, trim={t_trim}")
                     if t_ticks and float(t_ticks) > 0:
+                        # Apply tp_units conversion (same as single-TP at line 16764)
+                        if tp_units == 'Points':
+                            converted_ticks = int(float(t_ticks) / tick_value) if tick_value else int(float(t_ticks) / tick_size)
+                        else:
+                            converted_ticks = int(float(t_ticks))
                         multi_tp.append({
-                            'gain_ticks': int(float(t_ticks)),
+                            'gain_ticks': converted_ticks,
                             'trim_percent': float(t_trim)
                         })
                 if len(multi_tp) > 1:
