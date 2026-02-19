@@ -152,9 +152,165 @@ except ImportError as e:
     print(f"⚠️ TradingView price service not available: {e}")
 
 
+# --- Paper trade filter tracking (mirrors broker-side filters) ---
+_paper_last_signal_time = {}   # recorder_id -> last signal timestamp
+_paper_daily_signal_count = {}  # (recorder_id, date_str) -> count
 _paper_trade_dedup = {}  # (recorder_id, symbol, action) -> timestamp
 
-def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, quantity: int = 1, price: float = None):
+
+def _paper_should_execute_signal(recorder_id: int, action: str, recorder: dict) -> tuple:
+    """
+    Check if a paper trade signal should execute, applying the same filters the broker uses.
+    CLOSE/FLAT/EXIT signals always bypass all filters (capital protection).
+
+    Returns (should_execute: bool, reason: str)
+    """
+    import time as _time
+    from datetime import datetime
+
+    action_upper = action.upper()
+
+    # Close signals ALWAYS execute — capital protection
+    if action_upper in ['CLOSE', 'FLAT', 'EXIT']:
+        return True, 'close_bypass'
+
+    try:
+        now = _time.time()
+        today_str = datetime.now().strftime('%Y-%m-%d')
+
+        # --- Filter 1: Signal Cooldown ---
+        signal_cooldown = int(recorder.get('signal_cooldown') or 0)
+        if signal_cooldown > 0:
+            last_time = _paper_last_signal_time.get(recorder_id, 0)
+            elapsed = now - last_time
+            if elapsed < signal_cooldown:
+                return False, f'signal_cooldown ({elapsed:.0f}s < {signal_cooldown}s)'
+
+        # --- Filter 2: Max Signals Per Session ---
+        max_signals = int(recorder.get('max_signals_per_session') or 0)
+        if max_signals > 0:
+            count_key = (recorder_id, today_str)
+            current_count = _paper_daily_signal_count.get(count_key, 0)
+            if current_count >= max_signals:
+                return False, f'max_signals_per_session ({current_count} >= {max_signals})'
+
+        # --- Filter 3: Max Daily Loss ---
+        max_daily_loss = float(recorder.get('max_daily_loss') or 0)
+        if max_daily_loss > 0:
+            try:
+                import os
+                database_url = os.environ.get('DATABASE_URL')
+                if database_url:
+                    import psycopg2
+                    _mdl_conn = psycopg2.connect(database_url)
+                    _mdl_ph = '%s'
+                    _mdl_today = "CURRENT_DATE"
+                else:
+                    _mdl_conn = sqlite3.connect('paper_trades.db')
+                    _mdl_ph = '?'
+                    _mdl_today = "date('now')"
+                try:
+                    _mdl_cursor = _mdl_conn.cursor()
+                    _mdl_cursor.execute(f'''
+                        SELECT COALESCE(SUM(pnl), 0) FROM paper_trades
+                        WHERE recorder_id = {_mdl_ph} AND status = 'closed'
+                        AND DATE(closed_at) = {_mdl_today}
+                    ''', (recorder_id,))
+                    daily_pnl = float(_mdl_cursor.fetchone()[0])
+                    if daily_pnl <= -abs(max_daily_loss):
+                        return False, f'max_daily_loss (${daily_pnl:.2f} <= -${max_daily_loss:.2f})'
+                finally:
+                    _mdl_conn.close()
+            except Exception as _mdl_err:
+                pass  # Fail open — never block trading on DB error
+
+        # --- Filter 4: Time Filters ---
+        try:
+            from zoneinfo import ZoneInfo
+            # Get user timezone
+            _user_tz_name = 'America/Chicago'
+            try:
+                import os
+                database_url = os.environ.get('DATABASE_URL')
+                _rec_user_id = recorder.get('user_id')
+                if _rec_user_id and database_url:
+                    import psycopg2
+                    _tz_conn = psycopg2.connect(database_url)
+                    try:
+                        _tz_cursor = _tz_conn.cursor()
+                        _tz_cursor.execute('SELECT settings_json FROM users WHERE id = %s', (_rec_user_id,))
+                        _tz_row = _tz_cursor.fetchone()
+                        if _tz_row and _tz_row[0]:
+                            import json as _json
+                            _sj = _json.loads(_tz_row[0]) if isinstance(_tz_row[0], str) else _tz_row[0]
+                            _user_tz_name = _sj.get('timezone', 'America/Chicago')
+                    finally:
+                        _tz_conn.close()
+            except Exception:
+                pass
+            _user_tz = ZoneInfo(_user_tz_name)
+            current_dt = datetime.now(_user_tz)
+            current_time = current_dt.time()
+
+            def _parse_time(time_str):
+                if not time_str:
+                    return None
+                time_str = time_str.strip()
+                try:
+                    if 'AM' in time_str.upper() or 'PM' in time_str.upper():
+                        return datetime.strptime(time_str.upper(), '%I:%M %p').time()
+                    return datetime.strptime(time_str, '%H:%M').time()
+                except Exception:
+                    return None
+
+            def _in_window(ct, start_str, stop_str):
+                start = _parse_time(start_str)
+                stop = _parse_time(stop_str)
+                if not start or not stop:
+                    return True
+                if start <= stop:
+                    return start <= ct <= stop
+                else:
+                    return ct >= start or ct <= stop
+
+            tf1_en = recorder.get('time_filter_1_enabled', False)
+            tf1_start = recorder.get('time_filter_1_start', '')
+            tf1_stop = recorder.get('time_filter_1_stop', '')
+            tf2_en = recorder.get('time_filter_2_enabled', False)
+            tf2_start = recorder.get('time_filter_2_start', '')
+            tf2_stop = recorder.get('time_filter_2_stop', '')
+
+            has_tf1 = tf1_en and tf1_start and tf1_stop
+            has_tf2 = tf2_en and tf2_start and tf2_stop
+
+            if has_tf1 or has_tf2:
+                in_w1 = _in_window(current_time, tf1_start, tf1_stop) if has_tf1 else False
+                in_w2 = _in_window(current_time, tf2_start, tf2_stop) if has_tf2 else False
+                if not in_w1 and not in_w2:
+                    return False, f'time_filter ({current_dt.strftime("%I:%M %p")} outside windows)'
+        except Exception:
+            pass  # Fail open
+
+        # All filters passed
+        return True, 'passed'
+
+    except Exception as _filter_err:
+        # Fail open — never block trading on filter error
+        print(f"⚠️ Paper filter error (fail-open): {_filter_err}", flush=True)
+        return True, 'error_failopen'
+
+
+def _paper_update_filter_tracking(recorder_id: int):
+    """Update paper trade filter tracking dicts after a successful paper trade execution."""
+    import time as _time
+    from datetime import datetime
+    _paper_last_signal_time[recorder_id] = _time.time()
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    count_key = (recorder_id, today_str)
+    _paper_daily_signal_count[count_key] = _paper_daily_signal_count.get(count_key, 0) + 1
+
+
+def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, quantity: int = 1, price: float = None, signal_time: float = 0):
     """
     Record a paper trade from webhook signal.
     Called automatically when webhooks are processed.
@@ -165,8 +321,17 @@ def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, 
         action: The action ('LONG', 'SHORT', 'CLOSE')
         quantity: Number of contracts
         price: Entry/exit price (uses live feed if not provided)
+        signal_time: Unix timestamp when signal was received (for staleness check)
     """
     print(f"🧪 PAPER TRADE: rec={recorder_id}, sym={symbol}, act={action}, qty={quantity}, price={price}", flush=True)
+
+    # Signal staleness check — skip signals older than 30s (matches broker worker threshold)
+    import time as _staleness_time
+    if signal_time > 0:
+        age = _staleness_time.time() - signal_time
+        if age > 30:
+            print(f"🧪 PAPER TRADE STALE: signal is {age:.1f}s old (>30s), skipping", flush=True)
+            return None
 
     # Normalize symbol to root (e.g., CME_MINI:NQ1!1! -> NQ, MGCJ2026 -> MGC)
     clean_symbol = extract_symbol_root(symbol) or symbol.upper()
@@ -224,7 +389,7 @@ def record_paper_trade_from_webhook(recorder_id: int, symbol: str, action: str, 
 
 import threading
 _paper_trade_lock = threading.Lock()
-_PAPER_FILL_DELAY_S = 0.800  # 800ms simulated broker fill latency
+_PAPER_FILL_DELAY_S = 0  # No delay — use signal price like real broker
 
 def _record_paper_trade_direct(recorder_id: int, symbol: str, action: str, quantity: int, price: float):
     """Direct database recording for paper trades - works without price service"""
@@ -235,18 +400,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
     from datetime import datetime
     import os, time
 
-    print(f"📝 Recording paper trade: {action} {quantity} {symbol} @ {price} (waiting {int(_PAPER_FILL_DELAY_S*1000)}ms fill delay...)", flush=True)
-
-    # Simulate broker fill latency — sleep then use fresh price
-    time.sleep(_PAPER_FILL_DELAY_S)
-    delayed_price = _get_live_price_for_symbol(symbol)
-    if delayed_price:
-        slippage = delayed_price - price
-        price = delayed_price
-        if abs(slippage) > 0:
-            print(f"📝 Fill after {int(_PAPER_FILL_DELAY_S*1000)}ms: {price:.2f} (slippage: {slippage:+.2f})", flush=True)
-        else:
-            print(f"📝 Fill after {int(_PAPER_FILL_DELAY_S*1000)}ms: {price:.2f} (no slippage)", flush=True)
+    print(f"📝 Recording paper trade: {action} {quantity} {symbol} @ {price} (instant fill — signal price)", flush=True)
 
     # Determine side
     if action in ['LONG', 'BUY']:
@@ -804,16 +958,23 @@ def check_paper_trades_tpsl():
             if unrealized < current_mae:
                 _paper_trade_mae[trade_id] = unrealized
 
-            # Check TP hit
+            # Get bid/ask from cache for spread-aware fills (fallback to live_price/last)
+            _cache_entry = _market_data_cache.get(sym_root, {})
+            _bid = _cache_entry.get('bid', live_price)
+            _ask = _cache_entry.get('ask', live_price)
+
+            # Check TP hit — use bid for LONG (selling at bid), ask for SHORT (buying at ask)
             if tp_price:
-                if (side == 'LONG' and live_price >= tp_price) or (side == 'SHORT' and live_price <= tp_price):
-                    _close_paper_trade_tpsl(trade_id, tp_price, 'tp', recorder_id, side, entry_price, quantity, symbol)
+                if (side == 'LONG' and _bid >= tp_price) or (side == 'SHORT' and _ask <= tp_price):
+                    _fill_price = _bid if side == 'LONG' else _ask
+                    _close_paper_trade_tpsl(trade_id, _fill_price, 'tp', recorder_id, side, entry_price, quantity, symbol)
                     continue
 
-            # Check SL hit
+            # Check SL hit — use bid for LONG (selling at bid), ask for SHORT (buying at ask)
             if sl_price:
-                if (side == 'LONG' and live_price <= sl_price) or (side == 'SHORT' and live_price >= sl_price):
-                    _close_paper_trade_tpsl(trade_id, sl_price, 'sl', recorder_id, side, entry_price, quantity, symbol)
+                if (side == 'LONG' and _bid <= sl_price) or (side == 'SHORT' and _ask >= sl_price):
+                    _fill_price = _bid if side == 'LONG' else _ask
+                    _close_paper_trade_tpsl(trade_id, _fill_price, 'sl', recorder_id, side, entry_price, quantity, symbol)
                     continue
 
         # Also check max daily loss after TP/SL checks
@@ -16300,22 +16461,66 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         # ============================================================
         paper_action = action.upper()
         if paper_action in ['BUY', 'SELL', 'LONG', 'SHORT', 'CLOSE', 'FLAT', 'EXIT']:
-            paper_qty = int(quantity) if quantity else 1
-            paper_price = float(price) if price else None
-            import threading
-            def _bg_paper_trade(rec_id, sym, act, qty, px):
-                try:
-                    result = record_paper_trade_from_webhook(
-                        recorder_id=rec_id, symbol=sym, action=act, quantity=qty, price=px
-                    )
-                    print(f"🧪 PAPER TRADE (bg): {act} {qty} {sym} → {result}", flush=True)
-                except Exception as e:
-                    print(f"🧪 PAPER TRADE ERROR (bg): {e}", flush=True)
-            threading.Thread(
-                target=_bg_paper_trade,
-                args=(recorder_id, ticker, paper_action, paper_qty, paper_price),
-                daemon=True
-            ).start()
+            # Apply paper-specific filters (mirrors broker-side filters)
+            _paper_ok, _paper_reason = _paper_should_execute_signal(recorder_id, paper_action, recorder)
+            if not _paper_ok:
+                _logger.info(f"📝 Paper trade FILTERED: {paper_action} {ticker} — {_paper_reason}")
+            else:
+                # Use recorder position sizes (matches broker behavior) instead of raw webhook qty
+                if paper_action in ['CLOSE', 'FLAT', 'EXIT']:
+                    paper_qty = int(quantity) if quantity else 1
+                else:
+                    # Determine if this is a DCA add by checking for open paper position
+                    _paper_is_dca = False
+                    try:
+                        _paper_side = 'LONG' if paper_action in ['BUY', 'LONG'] else 'SHORT'
+                        import os as _pp_os
+                        _pp_db_url = _pp_os.environ.get('DATABASE_URL')
+                        if _pp_db_url:
+                            import psycopg2 as _pp_pg
+                            _pp_conn = _pp_pg.connect(_pp_db_url)
+                            _pp_ph = '%s'
+                        else:
+                            _pp_conn = sqlite3.connect('paper_trades.db')
+                            _pp_ph = '?'
+                        try:
+                            _pp_cursor = _pp_conn.cursor()
+                            _pp_cursor.execute(f'''
+                                SELECT id FROM paper_trades
+                                WHERE recorder_id = {_pp_ph} AND symbol = {_pp_ph} AND side = {_pp_ph} AND status = 'open'
+                                LIMIT 1
+                            ''', (recorder_id, extract_symbol_root(ticker) if ticker else ticker, _paper_side))
+                            if _pp_cursor.fetchone():
+                                _paper_is_dca = True
+                        finally:
+                            _pp_conn.close()
+                    except Exception as _pq_err:
+                        _logger.debug(f"Paper DCA check error: {_pq_err}")
+
+                    if _paper_is_dca:
+                        paper_qty = int(recorder.get('add_position_size') or 1)
+                    else:
+                        paper_qty = int(recorder.get('initial_position_size') or 1)
+                    _logger.info(f"📝 Paper qty: {paper_qty} ({'DCA add' if _paper_is_dca else 'initial'}, recorder settings)")
+
+                paper_price = float(price) if price else None
+                import threading
+                def _bg_paper_trade(rec_id, sym, act, qty, px, sig_t):
+                    try:
+                        result = record_paper_trade_from_webhook(
+                            recorder_id=rec_id, symbol=sym, action=act, quantity=qty, price=px,
+                            signal_time=sig_t
+                        )
+                        print(f"🧪 PAPER TRADE (bg): {act} {qty} {sym} → {result}", flush=True)
+                        if result:
+                            _paper_update_filter_tracking(rec_id)
+                    except Exception as e:
+                        print(f"🧪 PAPER TRADE ERROR (bg): {e}", flush=True)
+                threading.Thread(
+                    target=_bg_paper_trade,
+                    args=(recorder_id, ticker, paper_action, paper_qty, paper_price, time.time()),
+                    daemon=True
+                ).start()
 
         # ============================================================
         # 📈 GET RISK SETTINGS
@@ -28925,6 +29130,10 @@ async def process_tradingview_message(message):
                                     _market_data_cache[root] = {}
                                 
                                 _market_data_cache[root]['last'] = float(last_price)
+                                if bid:
+                                    _market_data_cache[root]['bid'] = float(bid)
+                                if ask:
+                                    _market_data_cache[root]['ask'] = float(ask)
                                 _market_data_cache[root]['source'] = 'tradingview'
                                 _market_data_cache[root]['updated'] = time.time()
                                 
