@@ -1109,21 +1109,17 @@ class ProjectXIntegration:
             }
             logger.info(f"📊 TP bracket: {tp_sign * abs(int(tp_ticks))} ticks (side={'Buy' if is_buy else 'Sell'})")
 
-        # Add stop loss bracket if specified (supports trailing stop)
+        # Add stop loss bracket if specified
+        # NOTE: Always use fixed stop (type=4) — ProjectX type=5 (TrailingStop) bracket
+        # ticks are inverted on buy side (SL placed ABOVE entry instead of below).
+        # Trailing stop behavior can be added later via monitoring daemon.
         if sl_ticks and int(sl_ticks) > 0:
-            sl_type = self.ORDER_TYPE_TRAILING_STOP if trailing_stop else self.ORDER_TYPE_STOP
-            sl_label = "Trailing SL" if trailing_stop else "SL"
-            if trailing_stop:
-                # Trailing stop: SIGNED same as fixed stop (API rejects positive ticks on longs)
-                bracket_ticks = sl_sign * abs(int(sl_ticks))
-            else:
-                # Fixed stop: signed offset from entry (Buy=-ticks below, Sell=+ticks above)
-                bracket_ticks = sl_sign * abs(int(sl_ticks))
+            bracket_ticks = sl_sign * abs(int(sl_ticks))
             order["stopLossBracket"] = {
                 "ticks": bracket_ticks,
-                "type": sl_type
+                "type": self.ORDER_TYPE_STOP
             }
-            logger.info(f"📊 {sl_label} bracket: {bracket_ticks} ticks (type={sl_type}, side={'Buy' if is_buy else 'Sell'})")
+            logger.info(f"📊 SL bracket: {bracket_ticks} ticks (type=4 fixed, side={'Buy' if is_buy else 'Sell'})")
 
         return order
     
