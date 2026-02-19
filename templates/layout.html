@@ -2173,6 +2173,7 @@
         // Update affiliate applications badge
         function updateAffiliateBadge() {
             try {
+                if (document.body.dataset.userLoggedIn !== 'true') return;
                 fetch('/api/admin/affiliates/count')
                     .then(r => r.json())
                     .then(data => {
