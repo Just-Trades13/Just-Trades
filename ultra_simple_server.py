@@ -959,9 +959,10 @@ def check_paper_trades_tpsl():
                 _paper_trade_mae[trade_id] = unrealized
 
             # Get bid/ask from cache for spread-aware fills (fallback to live_price/last)
+            # Use 'or' pattern (Rule 17) — .get() default is ignored if key exists with None value
             _cache_entry = _market_data_cache.get(sym_root, {})
-            _bid = _cache_entry.get('bid', live_price)
-            _ask = _cache_entry.get('ask', live_price)
+            _bid = _cache_entry.get('bid') or live_price
+            _ask = _cache_entry.get('ask') or live_price
 
             # Check TP hit — use bid for LONG (selling at bid), ask for SHORT (buying at ask)
             if tp_price:
