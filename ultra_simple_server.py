@@ -13529,7 +13529,8 @@ def api_create_trader():
         if add_delay is None:
             add_delay = rec_add_delay
         if dca_enabled is None:
-            dca_enabled = False
+            # Frontend sends 'avg_down_enabled' — use that, then fall back to recorder
+            dca_enabled = bool(avg_down_enabled) if avg_down_enabled is not None else bool(rec_avg_down_enabled)
         
         # Validate risk settings AFTER inheritance (catch bad recorder defaults too)
         validation_data = {
@@ -13781,10 +13782,12 @@ def api_update_trader(trader_id):
             params.append(data['avg_down_units'])
 
         # DCA Mode - PROTECTED SETTING - controls DCA logic directly
-        if 'dca_enabled' in data:
+        # Frontend sends 'avg_down_enabled', backend stores as 'dca_enabled'
+        dca_value = data.get('dca_enabled') if 'dca_enabled' in data else data.get('avg_down_enabled') if 'avg_down_enabled' in data else None
+        if dca_value is not None:
             updates.append(f'dca_enabled = {placeholder}')
-            params.append(bool(data['dca_enabled']) if is_postgres else (1 if data['dca_enabled'] else 0))
-            logger.info(f"🔄 Setting dca_enabled={data['dca_enabled']} for trader {trader_id}")
+            params.append(bool(dca_value) if is_postgres else (1 if dca_value else 0))
+            logger.info(f"🔄 Setting dca_enabled={dca_value} for trader {trader_id}")
 
         # TP/Trim units
         if 'tp_units' in data:
