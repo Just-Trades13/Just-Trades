@@ -617,7 +617,13 @@ def feature_required(feature_name: str):
             if not user_id:
                 flash('Please log in to access this page.', 'warning')
                 return redirect(url_for('login'))
-            
+
+            # Admins always have access to all features
+            from user_auth import get_user_by_id
+            current_user = get_user_by_id(user_id)
+            if current_user and current_user.is_admin:
+                return f(*args, **kwargs)
+
             if not check_feature_access(user_id, feature_name):
                 flash(f'This feature requires a higher subscription tier.', 'warning')
                 return redirect(url_for('pricing'))
