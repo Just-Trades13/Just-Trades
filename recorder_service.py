@@ -2190,7 +2190,21 @@ def execute_trade_simple(
                             existing_position_side = 'LONG' if net_pos > 0 else 'SHORT'
                             existing_position_qty = abs(net_pos)
                             break
-                    
+
+                    # BROKER-VERIFIED QUANTITY SAFETY NET (Feb 20, 2026)
+                    # If broker has NO position, force initial_position_size regardless of what
+                    # the webhook handler (DB-based) decided. Prevents DB/broker drift from
+                    # causing wrong DCA sizing (stale recorded_trades says "in position"
+                    # but broker is actually flat → should use initial, not add size).
+                    if not has_existing_position and action.upper() not in ('CLOSE', 'FLATTEN', 'EXIT', 'FLAT'):
+                        trader_initial = int(trader.get('initial_position_size') or quantity)
+                        correct_adjusted = max(1, int(trader_initial * account_multiplier))
+                        if max_contracts > 0 and correct_adjusted > max_contracts:
+                            correct_adjusted = max_contracts
+                        if correct_adjusted != adjusted_quantity:
+                            logger.warning(f"⚠️ [{acct_name}] BROKER/DB MISMATCH: Broker has NO position but qty was {adjusted_quantity} (likely DCA-sized from stale DB). Overriding to {correct_adjusted} (initial_position_size={trader_initial} × {account_multiplier}x)")
+                            adjusted_quantity = correct_adjusted
+
                     # CRITICAL POSITION CHECKS - UNIVERSAL DCA LOGIC (Jan 27, 2026)
                     # Same direction = ALWAYS add to position (DCA)
                     # Opposite direction = CLOSE position (for strategy exits) OR BLOCK (if avg_down_enabled)

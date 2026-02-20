@@ -126,6 +126,16 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | Per-account multiplier scales position size. Used everywhere downstream |
 | **NEVER** | Use raw `quantity` instead of `adjusted_quantity` after this point |
 
+### Broker-Verified Quantity Safety Net (Feb 20, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2194-2206 |
+| **Rule** | CLAUDE.md Rule 27 (pending) |
+| **What** | When broker confirms NO position (`has_existing_position=False`) and signal is an entry (not CLOSE), overrides `adjusted_quantity` to `initial_position_size * account_multiplier` if it differs from current value |
+| **Why** | DB/broker drift: stale `recorded_trades` records make Layer 1 (webhook handler) think DCA is active → passes `add_position_size` instead of `initial_position_size`. This safety net uses the already-fetched broker position check to correct the quantity. Zero new API calls. |
+| **Verified** | Syntax verified. Awaiting live signal test. |
+| **NEVER** | Remove this safety net or bypass it. If broker says flat, quantity MUST be initial_position_size. Do NOT add new API calls here — uses existing `get_positions()` result from line 2181 |
+
 ---
 
 ## ultra_simple_server.py — Protected Changes
@@ -288,3 +298,4 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | JADVIX DCA auto-enable | Startup UPDATE on every deploy | Business requirement for all JADVIX users | DCA off → bracket-only, no consolidation |
 | User delete cascade | Delete all child tables before users | PostgreSQL FK constraints | Admin can't delete users |
 | enabled_accounts logger | Uses `env_label` not `env` | `env` only defined in else-branch | Silent 0-account failure for traders |
+| Broker qty safety net | Override to initial_position_size when broker flat | DB/broker drift gives wrong DCA qty | Users get add_position_size on fresh entry → wrong contract count |
