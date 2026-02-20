@@ -4425,6 +4425,39 @@
         }
     }
 
+    // SSE real-time price streaming (replaces 5s polling when connected)
+    let _priceEventSource = null;
+    let _sseConnected = false;
+
+    function initPriceStream() {
+        if (!window.EventSource) return;
+        if (document.body.dataset.userLoggedIn !== 'true') return;
+
+        _priceEventSource = new EventSource('/api/price-stream');
+
+        _priceEventSource.onopen = function() {
+            _sseConnected = true;
+        };
+
+        _priceEventSource.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'snapshot' && data.prices) {
+                    Object.entries(data.prices).forEach(([symbol, priceData]) => {
+                        updatePriceDisplay(symbol, priceData);
+                    });
+                } else if (data.type === 'price_update') {
+                    updatePriceDisplay(data.symbol, data);
+                }
+            } catch (e) { /* silent */ }
+        };
+
+        _priceEventSource.onerror = function() {
+            _sseConnected = false;
+            // EventSource auto-reconnects; polling takes over in the meantime
+        };
+    }
+
     // Load paper positions
     async function loadPaperPositions() {
         try {
@@ -5327,10 +5360,13 @@
             } catch (e) { /* silent */ }
         }, 10000);
 
-        // Refresh prices every 5 seconds (reduced from 2s)
+        // Start SSE price stream (real-time, replaces polling when connected)
+        initPriceStream();
+
+        // Refresh prices every 5 seconds (fallback when SSE is not connected)
         setInterval(async () => {
             try {
-                await loadLivePrices();
+                if (!_sseConnected) await loadLivePrices();
             } catch (e) { /* silent */ }
         }, 5000);
 

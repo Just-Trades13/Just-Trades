@@ -29,7 +29,7 @@ import secrets
 import requests
 from typing import Optional
 from queue import Queue, Empty, Full
-from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session, Response
 from flask_socketio import SocketIO, emit
 from datetime import datetime, timedelta
 try:
@@ -156,6 +156,41 @@ except ImportError as e:
 _paper_last_signal_time = {}   # recorder_id -> last signal timestamp
 _paper_daily_signal_count = {}  # (recorder_id, date_str) -> count
 _paper_trade_dedup = {}  # (recorder_id, symbol, action) -> timestamp
+
+
+# --- SSE Price Streaming Infrastructure ---
+_sse_price_queues = []       # list of queue.Queue, one per connected SSE client
+_sse_price_lock = threading.Lock()
+
+
+def _broadcast_sse_price(root: str):
+    """Push current cached price for a symbol to all SSE subscribers.
+    Called from TradingView WebSocket handler after _market_data_cache update.
+    Thread-safe, non-blocking. Silently skips if no subscribers."""
+    if not _sse_price_queues:
+        return
+    data = _market_data_cache.get(root)
+    if not data or not isinstance(data, dict):
+        return
+    msg = {
+        'type': 'price_update',
+        'symbol': root,
+        'price': data.get('last'),
+        'bid': data.get('bid'),
+        'ask': data.get('ask'),
+        'change': data.get('ch'),
+        'change_percent': data.get('chp'),
+        'source': data.get('source'),
+    }
+    with _sse_price_lock:
+        dead = []
+        for q in _sse_price_queues:
+            try:
+                q.put_nowait(msg)
+            except Full:
+                dead.append(q)
+        for q in dead:
+            _sse_price_queues.remove(q)
 
 
 def _paper_should_execute_signal(recorder_id: int, action: str, recorder: dict) -> tuple:
@@ -26593,6 +26628,56 @@ def api_live_price_symbol(symbol):
         logger.error(f"Error getting price for {symbol}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/price-stream')
+def api_price_stream():
+    """SSE endpoint for real-time price streaming to the dashboard.
+    Replaces 5-second polling with push-based tick-by-tick updates.
+    Frontend connects via EventSource('/api/price-stream')."""
+    def generate():
+        q = Queue(maxsize=200)
+        with _sse_price_lock:
+            _sse_price_queues.append(q)
+        try:
+            # Send initial snapshot of all cached prices
+            snapshot = {}
+            for sym, sdata in dict(_market_data_cache).items():
+                if isinstance(sdata, dict) and 'last' in sdata and ':' not in sym:
+                    snapshot[sym] = {
+                        'symbol': sym,
+                        'price': sdata.get('last'),
+                        'bid': sdata.get('bid'),
+                        'ask': sdata.get('ask'),
+                        'change': sdata.get('ch'),
+                        'change_percent': sdata.get('chp'),
+                        'source': sdata.get('source'),
+                    }
+            yield f"data: {json.dumps({'type': 'snapshot', 'prices': snapshot})}\n\n"
+
+            while True:
+                try:
+                    msg = q.get(timeout=15)
+                    yield f"data: {json.dumps(msg)}\n\n"
+                except Empty:
+                    yield ": heartbeat\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with _sse_price_lock:
+                if q in _sse_price_queues:
+                    _sse_price_queues.remove(q)
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+        }
+    )
+
+
 # ============================================================================
 # Paper Trading — Dashboard API (reads from legacy paper_trades table)
 # ============================================================================
@@ -28455,9 +28540,14 @@ async def process_market_data_message(data):
                     if root_symbol:
                         _market_data_cache[root_symbol]['ask'] = float(ask)
         
+        # Push to SSE subscribers (dashboard real-time)
+        for _sse_sym in symbols_updated:
+            if ':' not in _sse_sym:
+                _broadcast_sse_price(_sse_sym)
+
         # Update PnL for positions with this symbol
         update_position_pnl()
-        
+
         # Check TP/SL for open recorder trades
         if symbols_updated:
             check_recorder_trades_tp_sl(symbols_updated)
@@ -29277,7 +29367,10 @@ async def process_tradingview_message(message):
                                     _market_data_cache[root]['ask'] = float(ask)
                                 _market_data_cache[root]['source'] = 'tradingview'
                                 _market_data_cache[root]['updated'] = time.time()
-                                
+
+                                # Push to SSE subscribers (dashboard real-time)
+                                _broadcast_sse_price(root)
+
                                 logger.info(f"💰 TradingView price: {root} = {last_price}")
                                 
                                 # Check TP/SL for recorder trades
