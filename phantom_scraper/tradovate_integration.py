@@ -1871,7 +1871,6 @@ class TradovateIntegration:
         try:
             # Get tick size for this symbol to convert ticks to points
             # Tradovate bracket API wants POINTS, not ticks!
-            symbol_root = ''.join(c for c in symbol if c.isalpha())[:3].upper()
             tick_sizes = {
                 # Index futures
                 'MES': 0.25, 'ES': 0.25, 'MNQ': 0.25, 'NQ': 0.25,
@@ -1892,6 +1891,17 @@ class TradovateIntegration:
                 # Softs
                 'KC': 0.05, 'CT': 0.01, 'SB': 0.01,
             }
+            # Match symbol root against dict keys: try 3-char first, then 2-char
+            # Fixes 2-letter symbols like GC where "GCJ6" → "GCJ" missed the dict
+            alpha_chars = ''.join(c for c in symbol if c.isalpha()).upper()
+            symbol_root = None
+            for length in (3, 2):
+                candidate = alpha_chars[:length]
+                if candidate in tick_sizes:
+                    symbol_root = candidate
+                    break
+            if not symbol_root:
+                symbol_root = alpha_chars[:3]
             tick_size = tick_sizes.get(symbol_root, 0.25)
             
             # Determine direction for sign handling

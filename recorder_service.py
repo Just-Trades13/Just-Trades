@@ -1335,7 +1335,7 @@ def execute_trade_simple(
                                 'time_filter_2_start': trader_dict.get('time_filter_2_start'),
                                 'time_filter_2_stop': trader_dict.get('time_filter_2_stop'),
                             })
-                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type}, Env: {env})")
+                            logger.info(f"  ✅ Added from enabled_accounts: {subaccount_name} (ID: {subaccount_id}, Multiplier: {multiplier}x, Broker: {broker_type}, Env: {env_label})")
                 except Exception as e:
                     logger.error(f"❌ Error parsing enabled_accounts: {e}")
             else:
