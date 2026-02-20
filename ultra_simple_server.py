@@ -729,6 +729,25 @@ def _calc_paper_commission(symbol: str, quantity: float) -> float:
     per_side = _PAPER_COMMISSION_PER_SIDE.get(sym_root, _PAPER_COMMISSION_DEFAULT)
     return quantity * per_side * 2  # entry + exit = round-turn
 
+
+def _is_cme_session_break() -> bool:
+    """Check if we're in the CME daily maintenance window (no fills possible).
+    Equity/metals/energy: 5:00 PM - 6:00 PM ET Mon-Fri, all day Sat, Sun before 6 PM."""
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+    try:
+        now_et = datetime.now(ZoneInfo('US/Eastern'))
+        wd = now_et.weekday()
+        if wd == 5:  # Saturday — closed all day
+            return True
+        if wd == 6:  # Sunday — closed until 6 PM ET
+            return now_et.time() < time(18, 0)
+        # Mon-Fri: maintenance 5:00 PM - 6:00 PM ET
+        return time(17, 0) <= now_et.time() < time(18, 0)
+    except Exception:
+        return False  # Fail open — don't skip checks if TZ fails
+
+
 def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, recorder_id: int, side: str, entry_price: float, quantity: float, symbol: str):
     """Close a paper trade due to TP or SL hit"""
     from datetime import datetime
@@ -948,6 +967,11 @@ def check_paper_max_daily_loss():
 def check_paper_trades_tpsl():
     """Check all open paper trades against live prices for TP/SL hits AND max daily loss"""
     import os
+
+    # Skip TP/SL checks during CME maintenance break (no real fills possible)
+    if _is_cme_session_break():
+        check_paper_max_daily_loss()  # Still enforce risk limits
+        return
 
     database_url = os.environ.get('DATABASE_URL')
     use_postgres = bool(database_url)
