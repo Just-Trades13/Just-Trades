@@ -1,7 +1,7 @@
 # Just Trades Platform — MASTER RULES & ARCHITECTURE
 
-> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB18_2026_DCA_SKIP_STABLE` @ commit `c75d7d4`
-> **All 4 strats (JADNQ, JADMNQ, JADGC, JADMGC) verified identical bracket orders — Feb 18, 2026**
+> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE` @ commit `656683a`
+> **JADVIX DCA confirmed LIVE — consolidating TPs + correct size — Feb 20, 2026**
 > **PAID USERS IN PRODUCTION — EVERY BROKEN DEPLOY COSTS REAL MONEY**
 
 ---
@@ -222,10 +222,11 @@ WebSocket pool was NEVER functional. ALL orders go through REST (`session.post`)
 ## RULE 11: RECOVERY PROTOCOL
 
 ```bash
-git reset --hard WORKING_FEB18_2026_DCA_SKIP_STABLE   # CURRENT stable
-git reset --hard WORKING_FEB18_2026_FULL_AUDIT_STABLE  # Pre-DCA fix fallback
-git reset --hard WORKING_FEB17_2026_MULTI_BRACKET_STABLE  # Pre-audit fallback
-git reset --hard WORKING_FEB7_2026_PRODUCTION_STABLE   # THE BLUEPRINT
+git reset --hard WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE  # CURRENT stable
+git reset --hard WORKING_FEB18_2026_DCA_SKIP_STABLE        # Pre-DCA-field-fix fallback
+git reset --hard WORKING_FEB18_2026_FULL_AUDIT_STABLE      # Pre-DCA-off fix fallback
+git reset --hard WORKING_FEB17_2026_MULTI_BRACKET_STABLE   # Pre-audit fallback
+git reset --hard WORKING_FEB7_2026_PRODUCTION_STABLE       # THE BLUEPRINT
 git push -f origin main  # CAUTION: force push — only if resetting
 ```
 
@@ -233,7 +234,8 @@ git push -f origin main  # CAUTION: force push — only if resetting
 
 | Tag | Commit | Description |
 |-----|--------|-------------|
-| `WORKING_FEB18_2026_DCA_SKIP_STABLE` | `c75d7d4` | **CURRENT** — DCA-off bracket fix + multiplier trim scaling |
+| `WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE` | `656683a` | **CURRENT** — DCA field fix, env crash fix, JADVIX auto-enable, cascade delete |
+| `WORKING_FEB18_2026_DCA_SKIP_STABLE` | `c75d7d4` | DCA-off bracket fix + multiplier trim scaling |
 | `WORKING_FEB18_2026_FULL_AUDIT_STABLE` | `fbd705d` | Pre-DCA-fix fallback (audit cleanup) |
 | `WORKING_FEB18_2026_TIME_FILTER_STABLE` | `9470ca5` | Time filter status on Control Center |
 | `WORKING_FEB17_2026_MULTI_BRACKET_STABLE` | `8f61062` | Native multi-bracket orders |
@@ -407,6 +409,54 @@ The `_CSRF_EXEMPT_PREFIXES` list must include EVERY route that receives POST req
 
 ---
 
+## RULE 24: FRONTEND/BACKEND FIELD NAME MISMATCH — DCA TOGGLE (Feb 19, 2026)
+
+The frontend (`traders.html` line 314) sends `avg_down_enabled`. The backend (`ultra_simple_server.py` trader create/update) reads `dca_enabled`. These are DIFFERENT field names for the SAME setting.
+
+**What broke:** The create trader endpoint checked `dca_enabled` from the request body — it was always `None` because the frontend sent `avg_down_enabled`. Then `if dca_enabled is None: dca_enabled = False` hardcoded it to False. DCA was ALWAYS off regardless of UI toggle.
+
+**Fix (3 places):**
+1. **Create trader** (`ultra_simple_server.py` ~line 13531): Bridges `avg_down_enabled` → `dca_enabled`, falls back to recorder's `avg_down_enabled`
+2. **Update trader** (`ultra_simple_server.py` ~line 13784): Accepts EITHER `dca_enabled` or `avg_down_enabled` field name
+3. **Startup auto-fix** (`ultra_simple_server.py` ~line 8956): `UPDATE traders SET dca_enabled=TRUE WHERE recorder linked to JADVIX recorders` — ensures all JADVIX traders have DCA on every deploy
+
+**NEVER remove the startup auto-fix.** All JADVIX strategies REQUIRE DCA enabled for all users. This is a business requirement.
+
+**Rule:** When adding new settings, ALWAYS verify the HTML form field name matches the Python request.form/request.json key. Check: `grep -n 'name=' templates/traders.html | grep avg` vs `grep -n 'avg_down\|dca_enabled' ultra_simple_server.py`
+
+---
+
+## RULE 25: VARIABLE MUST BE DEFINED IN ALL BRANCHES BEFORE USE (Feb 20, 2026)
+
+Python raises `UnboundLocalError: cannot access local variable` when a variable is assigned in only SOME branches of an if-elif-else chain but used AFTER the chain unconditionally.
+
+**What broke:** `recorder_service.py` line 1338 logged `{env}`, but `env` was only assigned in the `else` branch (line 1279). When accounts had `acct.environment` set (first branch), `env` was never defined. The `except` at line 1339 caught the crash silently → the entire `enabled_accounts` parsing failed → trader got **zero accounts to execute on** → 0 trades placed.
+
+**Fix:** Changed `{env}` to `{env_label}` which is defined at line 1283 unconditionally.
+
+**Rule:** After writing ANY if-elif-else chain, check that EVERY variable used AFTER the chain is defined in ALL branches (or before the chain). Pay special attention to logger lines that reference variables from branching logic.
+
+**Detection:** `python3 -c "import py_compile; py_compile.compile('file.py', doraise=True)"` does NOT catch this — it's a runtime error, not a syntax error. Must trace the code path manually.
+
+---
+
+## RULE 26: ADMIN DELETE MUST CASCADE CHILD RECORDS (Feb 19, 2026)
+
+PostgreSQL enforces foreign key constraints. `DELETE FROM users WHERE id = ?` will FAIL with `foreign key constraint violation` if the user has records in child tables.
+
+**What broke:** Admin panel user delete (`/admin/users`) only did `DELETE FROM users` without cleaning child records first. Got `accounts_user_id_fkey` violation error.
+
+**Fix:** Cascade deletion in dependency order before deleting user:
+```
+support_messages → recorded_trades → recorded_signals → recorder_positions → traders →
+support_tickets → recorders → strategies → push_subscriptions → accounts →
+(nullify: announcements.created_by, affiliate_applications.reviewed_by) → users
+```
+
+**Rule:** When deleting a parent record, ALWAYS delete/nullify ALL child records first. Use `%s`/`?` placeholder pattern (Rule 4). If adding a new table with a `user_id` foreign key, ADD it to the cascade deletion list in `admin_delete_user()`.
+
+---
+
 ## DEPLOYED FEATURES (Stable, Confirmed Working)
 
 | Feature | Commit | Date | Status |
@@ -420,6 +470,12 @@ The `_CSRF_EXEMPT_PREFIXES` list must include EVERY route that receives POST req
 | DCA-off bracket fix | `c75d7d4` | Feb 18 | Confirmed on all 4 recorders |
 | Multiplier trim scaling | `201d498` | Feb 18 | Confirmed |
 | ProjectX parity (opposite block, DCA SL, trailing) | `c9f0a3d` | Feb 13 | **UNTESTED** |
+| User delete cascade (all child tables) | `a40fc07` | Feb 19 | Working |
+| Insider signals admin bypass | `4e95998` | Feb 19 | Working |
+| DCA field name fix (avg_down_enabled → dca_enabled) | `d3e714d` | Feb 19 | **Confirmed LIVE** |
+| JADVIX DCA auto-enable on startup | `bda90af` | Feb 19 | **Confirmed LIVE** |
+| env UnboundLocalError fix in enabled_accounts | `656683a` | Feb 20 | Working |
+| Tick size 2-letter symbol root fix (GC, CL, SI) | `656683a` | Feb 20 | Working |
 
 ---
 
@@ -648,8 +704,11 @@ curl -s "https://justtrades.app/api/run-migrations"
 | 18 | Feb 18, 2026 | Multiplier not applied to trim qty (1,1,13 instead of 5,5,5) | Raw contract count not scaled by multiplier | Rule 13 | Hours |
 | 19 | Feb 18, 2026 | 12+ stale open records polluted position detection | Signal tracking ignored DCA off status | Rule 14 | Hours |
 | 20 | Feb 18, 2026 | GC TPs 2.5x too far from entry | 2-letter symbol root GC→GCJ (3 chars) missed tick_sizes dict | Rule 15 | Hours |
+| 21 | Feb 19, 2026 | DCA toggle ON had no effect — always False | Frontend sends `avg_down_enabled`, backend reads `dca_enabled` — field name mismatch | Rule 24 | Hours |
+| 22 | Feb 20, 2026 | Trader 1359 got 0 accounts → 0 trades silently | `env` variable only defined in else-branch, crash caught by except → enabled_accounts parse failed | Rule 25 | Hours |
+| 23 | Feb 19, 2026 | Admin user delete failed — FK constraint | `DELETE FROM users` without cascading child records first | Rule 26 | Hours |
 
-**Pattern:** 20 disasters in ~2.5 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, or (c) restructuring working code.
+**Pattern:** 23 disasters in ~2.5 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, or (d) field name mismatches between frontend and backend.
 
 ---
 
@@ -707,7 +766,7 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 ---
 
-*Last updated: Feb 18, 2026*
-*Production stable tag: WORKING_FEB18_2026_DCA_SKIP_STABLE @ c75d7d4*
-*Total rules: 23 | Total documented disasters: 20 | Paid users in production: YES*
+*Last updated: Feb 20, 2026*
+*Production stable tag: WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE @ 656683a*
+*Total rules: 26 | Total documented disasters: 23 | Paid users in production: YES*
 *Documentation: 8 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*
