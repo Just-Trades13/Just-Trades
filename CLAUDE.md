@@ -1,7 +1,7 @@
 # Just Trades Platform — MASTER RULES & ARCHITECTURE
 
-> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE` @ commit `656683a`
-> **JADVIX DCA confirmed LIVE — consolidating TPs + correct size — Feb 20, 2026**
+> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` @ commit `bb1a183`
+> **Broker-verified quantity safety net deployed — prevents DB/broker drift sizing — Feb 20, 2026**
 > **PAID USERS IN PRODUCTION — EVERY BROKEN DEPLOY COSTS REAL MONEY**
 
 ---
@@ -222,7 +222,8 @@ WebSocket pool was NEVER functional. ALL orders go through REST (`session.post`)
 ## RULE 11: RECOVERY PROTOCOL
 
 ```bash
-git reset --hard WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE  # CURRENT stable
+git reset --hard WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET  # CURRENT stable
+git reset --hard WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE   # Pre-safety-net fallback
 git reset --hard WORKING_FEB18_2026_DCA_SKIP_STABLE        # Pre-DCA-field-fix fallback
 git reset --hard WORKING_FEB18_2026_FULL_AUDIT_STABLE      # Pre-DCA-off fix fallback
 git reset --hard WORKING_FEB17_2026_MULTI_BRACKET_STABLE   # Pre-audit fallback
@@ -234,7 +235,8 @@ git push -f origin main  # CAUTION: force push — only if resetting
 
 | Tag | Commit | Description |
 |-----|--------|-------------|
-| `WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE` | `656683a` | **CURRENT** — DCA field fix, env crash fix, JADVIX auto-enable, cascade delete |
+| `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` | `bb1a183` | **CURRENT** — Broker-verified quantity safety net, prevents DB/broker drift sizing |
+| `WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE` | `656683a` | DCA field fix, env crash fix, JADVIX auto-enable, cascade delete |
 | `WORKING_FEB18_2026_DCA_SKIP_STABLE` | `c75d7d4` | DCA-off bracket fix + multiplier trim scaling |
 | `WORKING_FEB18_2026_FULL_AUDIT_STABLE` | `fbd705d` | Pre-DCA-fix fallback (audit cleanup) |
 | `WORKING_FEB18_2026_TIME_FILTER_STABLE` | `9470ca5` | Time filter status on Control Center |
@@ -478,6 +480,7 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | JADVIX DCA auto-enable on startup | `bda90af` | Feb 19 | **Confirmed LIVE** |
 | env UnboundLocalError fix in enabled_accounts | `656683a` | Feb 20 | Working |
 | Tick size 2-letter symbol root fix (GC, CL, SI) | `656683a` | Feb 20 | Working |
+| Broker-verified quantity safety net (DB/broker drift) | `bb1a183` | Feb 20 | Working |
 
 ---
 
@@ -562,6 +565,28 @@ Both need the same session cookies. Both extract JWT the same way. Both fall bac
 - Remove the JWT auth — cookies are the ONLY way to get real-time CME data via TradingView
 - Pass cookies in WebSocket `additional_headers` — crashes on websockets 15+ (BaseEventLoop error)
 - Send `"unauthorized_user_token"` when JWT is available — that's delayed data
+
+---
+
+## RULE 28: BROKER-VERIFIED QUANTITY SAFETY NET (Feb 20, 2026)
+
+The webhook handler (`ultra_simple_server.py`) uses `recorded_trades` (DB) to detect existing positions and decide DCA vs fresh entry. But the DB can drift from broker reality (stale records, overnight carries, missed closes). When the DB says "in position" but the broker is actually flat, the webhook handler passes `add_position_size` instead of `initial_position_size`.
+
+**Safety net** in `recorder_service.py` (~line 2194-2206): After the existing `get_positions()` broker check (line 2181), if broker confirms NO position and the signal is an entry (not CLOSE/FLATTEN/EXIT):
+- Recalculates quantity as `initial_position_size * account_multiplier`
+- Overrides `adjusted_quantity` if it differs from what Layer 1 passed
+- Logs `BROKER/DB MISMATCH` warning when override fires
+
+**Zero new API calls** — uses the existing `get_positions()` result that was already fetched for DCA detection.
+
+**Two-layer protection against DB/broker drift:**
+1. **Root cause** (Rule 14): Signal tracking closes old records when DCA off → prevents stale record pileup
+2. **Safety net** (this rule): Even if stale records exist, broker verification catches the wrong quantity before execution
+
+**NEVER:**
+- Remove this safety net — it's the last line of defense against DB drift causing wrong sizing
+- Add new API calls in this section — uses existing broker data only (Rule 16)
+- Move this check AFTER the DCA logic — it must run BEFORE the DCA decision at line 2208
 
 ---
 
@@ -810,6 +835,6 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 ---
 
 *Last updated: Feb 20, 2026*
-*Production stable tag: WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE @ 656683a*
-*Total rules: 26 | Total documented disasters: 23 | Paid users in production: YES*
+*Production stable tag: WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET @ bb1a183*
+*Total rules: 28 | Total documented disasters: 23 | Paid users in production: YES*
 *Documentation: 8 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*
