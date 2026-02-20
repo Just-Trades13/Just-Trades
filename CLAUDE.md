@@ -473,6 +473,8 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | User delete cascade (all child tables) | `a40fc07` | Feb 19 | Working |
 | Insider signals admin bypass | `4e95998` | Feb 19 | Working |
 | DCA field name fix (avg_down_enabled → dca_enabled) | `d3e714d` | Feb 19 | **Confirmed LIVE** |
+| SSE real-time price streaming to dashboard | `8641182` | Feb 20 | Working |
+| TradingView WebSocket JWT auth fix (was crashing) | `d43cd0c` | Feb 20 | **Needs verification** |
 | JADVIX DCA auto-enable on startup | `bda90af` | Feb 19 | **Confirmed LIVE** |
 | env UnboundLocalError fix in enabled_accounts | `656683a` | Feb 20 | Working |
 | Tick size 2-letter symbol root fix (GC, CL, SI) | `656683a` | Feb 20 | Working |
@@ -519,6 +521,47 @@ risk_config built in ultra_simple_server.py (~16829-16914)
 | ~16919-16951 | broker_task queued with risk_config |
 | ~14597 | Broker worker extracts risk_config |
 | ~14659 | Passes risk_config to execute_trade_simple() |
+
+---
+
+## RULE 27: TRADINGVIEW SESSION COOKIES REQUIRED FOR REAL-TIME PRICES (Feb 20, 2026)
+
+The TradingView WebSocket provides real-time CME market data to the dashboard, paper trading TP/SL monitor, and SSE price stream. It has **two auth levels**:
+
+- **Premium JWT** (~100ms real-time) — requires valid session cookies in `accounts.tradingview_session`
+- **Public fallback** (10-15 min delayed) — `"unauthorized_user_token"` when cookies missing/expired
+
+**How it works:**
+1. `get_tradingview_session()` reads `tradingview_session` JSON from `accounts` table
+2. `get_tradingview_auth_token(session)` fetches `https://www.tradingview.com/chart/` with those cookies
+3. Extracts JWT from HTML via regex: `"auth_token":"([^"]+)"`
+4. JWT sent via `set_auth_token` WebSocket protocol message
+
+**If JWT extraction fails, system SILENTLY falls back to delayed data.** No error, no alert — just stale prices everywhere.
+
+**Cookie format in DB:** `{"sessionid": "xxx", "sessionid_sign": "yyy"}`
+
+**Cookies expire** ~every 3 months. When prices become stale, CHECK COOKIES FIRST:
+```sql
+SELECT id, name, tradingview_session FROM accounts WHERE tradingview_session IS NOT NULL LIMIT 1;
+```
+
+**To update cookies:** Get `sessionid` and `sessionid_sign` from browser (Chrome DevTools → Application → Cookies → tradingview.com), then:
+```sql
+UPDATE accounts SET tradingview_session = '{"sessionid":"NEW_VALUE","sessionid_sign":"NEW_VALUE"}' WHERE id = 459;
+```
+Then redeploy (`railway up`) to restart the WebSocket with new JWT.
+
+**Two TradingView WebSocket connections exist:**
+1. `tv_price_service.py` — `TradingViewTicker` class, tracks 20 default symbols, feeds paper engine
+2. `ultra_simple_server.py` — `connect_tradingview_websocket()`, feeds `_market_data_cache` for dashboard/SSE/TP-SL monitor
+
+Both need the same session cookies. Both extract JWT the same way. Both fall back to delayed if JWT fails.
+
+**NEVER:**
+- Remove the JWT auth — cookies are the ONLY way to get real-time CME data via TradingView
+- Pass cookies in WebSocket `additional_headers` — crashes on websockets 15+ (BaseEventLoop error)
+- Send `"unauthorized_user_token"` when JWT is available — that's delayed data
 
 ---
 
