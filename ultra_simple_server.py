@@ -400,8 +400,6 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
     from datetime import datetime
     import os, time
 
-    print(f"📝 Recording paper trade: {action} {quantity} {symbol} @ {price} (instant fill — signal price)", flush=True)
-
     # Determine side
     if action in ['LONG', 'BUY']:
         side = 'LONG'
@@ -409,6 +407,22 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
         side = 'SHORT'
     else:
         side = 'CLOSE'
+
+    # Adjust entry price to bid/ask (real market orders fill at ask for buys, bid for sells)
+    global _market_data_cache
+    signal_price = price  # preserve original for logging
+    if side in ('LONG', 'SHORT') and price:
+        _cache = _market_data_cache.get(symbol, {})
+        if side == 'LONG':
+            _entry_ask = _cache.get('ask')
+            if _entry_ask:
+                price = float(_entry_ask)
+        else:
+            _entry_bid = _cache.get('bid')
+            if _entry_bid:
+                price = float(_entry_bid)
+
+    print(f"📝 Recording paper trade: {action} {quantity} {symbol} @ {price} (signal={signal_price}, fill={'ask' if side == 'LONG' else 'bid' if side == 'SHORT' else 'signal'})", flush=True)
 
     # Get database connection
     database_url = os.environ.get('DATABASE_URL')
@@ -964,11 +978,11 @@ def check_paper_trades_tpsl():
             _bid = _cache_entry.get('bid') or live_price
             _ask = _cache_entry.get('ask') or live_price
 
-            # Check TP hit — use bid for LONG (selling at bid), ask for SHORT (buying at ask)
+            # Check TP hit — bid for LONG (selling), ask for SHORT (buying) must reach TP level
+            # TP is a LIMIT order: fills at tp_price (guaranteed), not at market price
             if tp_price:
                 if (side == 'LONG' and _bid >= tp_price) or (side == 'SHORT' and _ask <= tp_price):
-                    _fill_price = _bid if side == 'LONG' else _ask
-                    _close_paper_trade_tpsl(trade_id, _fill_price, 'tp', recorder_id, side, entry_price, quantity, symbol)
+                    _close_paper_trade_tpsl(trade_id, tp_price, 'tp', recorder_id, side, entry_price, quantity, symbol)
                     continue
 
             # Check SL hit — use bid for LONG (selling at bid), ask for SHORT (buying at ask)
