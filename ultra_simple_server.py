@@ -456,6 +456,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                 tp_price REAL,
                 sl_price REAL,
                 exit_reason TEXT,
+                commission REAL DEFAULT 0,
                 opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 closed_at TIMESTAMP,
                 status TEXT DEFAULT 'open'
@@ -468,6 +469,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS tp_price REAL")
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS sl_price REAL")
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT")
+            cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS commission REAL DEFAULT 0")
         except:
             pass
     else:
@@ -486,15 +488,16 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                 tp_price REAL,
                 sl_price REAL,
                 exit_reason TEXT,
+                commission REAL DEFAULT 0,
                 opened_at TEXT NOT NULL,
                 closed_at TEXT,
                 status TEXT DEFAULT 'open'
             )
         ''')
         # Add columns if they don't exist (for existing tables)
-        for col in ['drawdown', 'cumulative_pnl', 'tp_price', 'sl_price', 'exit_reason']:
+        for col in ['drawdown', 'cumulative_pnl', 'tp_price', 'sl_price', 'exit_reason', 'commission']:
             try:
-                cursor.execute(f"ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS {col} {'REAL' if col != 'exit_reason' else 'TEXT'}")
+                cursor.execute(f"ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS {col} {'REAL' if col not in ('exit_reason',) else 'TEXT'}")
             except:
                 pass
     conn.commit()
@@ -564,9 +567,11 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
             spec = FUTURES_SPECS.get(extract_symbol_root(symbol), {'point_value': 1.0})
             pv = spec['point_value']
             if pos_side == 'LONG':
-                _pnl = (exit_px - pos_entry) * pv * pos_qty
+                _gross = (exit_px - pos_entry) * pv * pos_qty
             else:
-                _pnl = (pos_entry - exit_px) * pv * pos_qty
+                _gross = (pos_entry - exit_px) * pv * pos_qty
+            _comm = _calc_paper_commission(symbol, pos_qty)
+            _pnl = _gross - _comm
             _cum, _dd = _calc_drawdown_stats(cursor, ph, recorder_id, _pnl)
             # Per-trade drawdown from MAE tracking (how deep underwater before close)
             global _paper_trade_mae
@@ -574,9 +579,9 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
             trade_dd = abs(mae) if mae < 0 else 0
             cursor.execute(f'''
                 UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
-                cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
+                cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, commission = {ph}, closed_at = {ph}
                 WHERE id = {ph}
-            ''', (exit_px, _pnl, _cum, trade_dd, reason, now, pos_id))
+            ''', (exit_px, _pnl, _cum, trade_dd, reason, _comm, now, pos_id))
             return _pnl
 
         if side in ['LONG', 'SHORT']:
@@ -704,6 +709,21 @@ _paper_monitor_running = False
 _paper_dca_next_price = {}  # trade_id -> next DCA trigger price (for automatic price-based DCA)
 _paper_trade_mae = {}  # trade_id -> worst unrealized P&L (most negative = deepest drawdown)
 
+# Commission per side per contract (round-turn = 2x). Keyed by symbol root.
+# Default: $0.52/side for micros, $1.29/side for full-size. Override with recorder setting later.
+_PAPER_COMMISSION_PER_SIDE = {
+    'MNQ': 0.52, 'MES': 0.52, 'MYM': 0.52, 'M2K': 0.52, 'MGC': 0.52, 'MCL': 0.52, 'SIL': 0.52,
+    'NQ': 1.29, 'ES': 1.29, 'YM': 1.29, 'RTY': 1.29, 'GC': 1.29, 'CL': 1.29, 'SI': 1.29,
+}
+_PAPER_COMMISSION_DEFAULT = 0.52  # fallback for unknown symbols
+
+
+def _calc_paper_commission(symbol: str, quantity: float) -> float:
+    """Calculate round-turn commission for a paper trade close."""
+    sym_root = extract_symbol_root(symbol) if symbol else ''
+    per_side = _PAPER_COMMISSION_PER_SIDE.get(sym_root, _PAPER_COMMISSION_DEFAULT)
+    return quantity * per_side * 2  # entry + exit = round-turn
+
 def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, recorder_id: int, side: str, entry_price: float, quantity: float, symbol: str):
     """Close a paper trade due to TP or SL hit"""
     from datetime import datetime
@@ -729,9 +749,13 @@ def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, 
         point_value = spec['point_value']
 
         if side == 'LONG':
-            pnl = (exit_price - entry_price) * point_value * quantity
+            gross_pnl = (exit_price - entry_price) * point_value * quantity
         else:
-            pnl = (entry_price - exit_price) * point_value * quantity
+            gross_pnl = (entry_price - exit_price) * point_value * quantity
+
+        # Commission: round-turn per contract
+        commission = _calc_paper_commission(symbol, quantity)
+        pnl = gross_pnl - commission
 
         # Get cumulative P&L stats
         cursor.execute(f'SELECT COALESCE(SUM(pnl), 0) FROM paper_trades WHERE recorder_id = {ph} AND status = %s' if use_postgres else f'SELECT COALESCE(SUM(pnl), 0) FROM paper_trades WHERE recorder_id = {ph} AND status = ?', (recorder_id, 'closed'))
@@ -745,9 +769,9 @@ def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, 
 
         cursor.execute(f'''
             UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
-            cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, closed_at = {ph}
+            cumulative_pnl = {ph}, drawdown = {ph}, exit_reason = {ph}, commission = {ph}, closed_at = {ph}
             WHERE id = {ph}
-        ''', (exit_price, pnl, cumulative, trade_drawdown, exit_reason, now, trade_id))
+        ''', (exit_price, pnl, cumulative, trade_drawdown, exit_reason, commission, now, trade_id))
         conn.commit()
 
         # Clean up DCA and MAE tracking for closed trade
@@ -756,8 +780,9 @@ def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, 
         _paper_trade_mae.pop(trade_id, None)
 
         dd_str = f" | DD: ${trade_drawdown:.2f}" if trade_drawdown > 0 else ""
+        comm_str = f" | Comm: ${commission:.2f}" if commission > 0 else ""
         emoji = "🎯" if exit_reason == 'tp' else "🛑"
-        print(f"{emoji} Paper {side} closed by {exit_reason.upper()}: {symbol} @ {exit_price:.2f} | P&L: ${pnl:.2f}{dd_str}", flush=True)
+        print(f"{emoji} Paper {side} closed by {exit_reason.upper()}: {symbol} @ {exit_price:.2f} | Net P&L: ${pnl:.2f} (gross: ${gross_pnl:.2f}){comm_str}{dd_str}", flush=True)
 
     except Exception as e:
         print(f"⚠️ Error closing paper trade {trade_id}: {e}", flush=True)
