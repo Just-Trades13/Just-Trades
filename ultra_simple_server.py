@@ -717,6 +717,11 @@ _PAPER_COMMISSION_PER_SIDE = {
 }
 _PAPER_COMMISSION_DEFAULT = 0.52  # fallback for unknown symbols
 
+# Fill-through ticks: TP limit orders require price to trade THROUGH the level by N ticks.
+# 0 = fill on touch (TradingView-style, optimistic), 1 = conservative/realistic.
+# Only applies to TP (limit orders). SL (stop→market) fills regardless.
+_PAPER_FILL_THROUGH_TICKS = 1
+
 
 def _calc_paper_commission(symbol: str, quantity: float) -> float:
     """Calculate round-turn commission for a paper trade close."""
@@ -1003,10 +1008,14 @@ def check_paper_trades_tpsl():
             _bid = _cache_entry.get('bid') or live_price
             _ask = _cache_entry.get('ask') or live_price
 
-            # Check TP hit — bid for LONG (selling), ask for SHORT (buying) must reach TP level
-            # TP is a LIMIT order: fills at tp_price (guaranteed), not at market price
+            # Check TP hit — bid for LONG (selling), ask for SHORT (buying) must trade THROUGH TP level
+            # TP is a LIMIT order: requires fill-through (price must pass TP by N ticks for queue fill)
+            # Fills at tp_price (limit guarantee), not at market price
             if tp_price:
-                if (side == 'LONG' and _bid >= tp_price) or (side == 'SHORT' and _ask <= tp_price):
+                from recorder_service import get_tick_size as _gts
+                _tp_tick_sz = _gts(symbol)
+                _tp_offset = _PAPER_FILL_THROUGH_TICKS * _tp_tick_sz
+                if (side == 'LONG' and _bid >= tp_price + _tp_offset) or (side == 'SHORT' and _ask <= tp_price - _tp_offset):
                     _close_paper_trade_tpsl(trade_id, tp_price, 'tp', recorder_id, side, entry_price, quantity, symbol)
                     continue
 
