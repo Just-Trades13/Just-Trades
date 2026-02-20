@@ -144,12 +144,15 @@ except ImportError:
 try:
     from tv_price_service import (
         get_ticker, get_paper_engine, start_price_service,
-        TradingViewTicker, PaperTradingEngine
+        TradingViewTicker, PaperTradingEngine,
+        get_tradingview_auth_token
     )
     TV_PRICE_SERVICE_AVAILABLE = True
 except ImportError as e:
     TV_PRICE_SERVICE_AVAILABLE = False
     print(f"⚠️ TradingView price service not available: {e}")
+    def get_tradingview_auth_token(session_data):
+        return None
 
 
 # --- Paper trade filter tracking (mirrors broker-side filters) ---
@@ -29152,12 +29155,15 @@ async def connect_tradingview_websocket():
 
     # Log session info for debugging (masked)
     logger.info(f"📡 TradingView session: sessionid={sessionid[:10]}...{sessionid[-5:]}, sign={'present' if sessionid_sign else 'MISSING'}")
-    
-    # TradingView WebSocket URL options:
-    # - data.tradingview.com = standard WebSocket for real-time quotes
-    # - prodata.tradingview.com = for paid accounts (may require subscription)
-    # - widgetdata.tradingview.com = for embedded widgets (may have restrictions)
-    # Using data.tradingview.com as primary - works with Premium/Essential session
+
+    # Get JWT auth token for premium real-time data (same approach as tv_price_service.py)
+    jwt_token = get_tradingview_auth_token(session)
+    if jwt_token:
+        logger.info("🚀 TradingView JWT obtained — will use PREMIUM real-time data (~100ms)")
+    else:
+        jwt_token = "unauthorized_user_token"
+        logger.warning("⚠️ TradingView JWT extraction failed — falling back to PUBLIC delayed data")
+
     ws_url = "wss://data.tradingview.com/socket.io/websocket"
     
     while True:
@@ -29175,16 +29181,13 @@ async def connect_tradingview_websocket():
             
             logger.info(f"Connecting to TradingView WebSocket...")
             
-            # Create connection with headers
+            # Create connection (auth via JWT in protocol message, not cookies in headers)
             async with websockets.connect(
                 ws_url,
-                additional_headers={
-                    'Origin': 'https://www.tradingview.com',
-                    'Cookie': f'sessionid={sessionid}; sessionid_sign={sessionid_sign}'
-                },
-                ping_interval=20,  # Send ping every 20 seconds
-                ping_timeout=10,   # Wait 10 seconds for pong
-                close_timeout=5    # Wait 5 seconds for close
+                origin='https://www.tradingview.com',
+                ping_interval=20,
+                ping_timeout=10,
+                close_timeout=5
             ) as ws:
                 _tradingview_ws = ws
                 _tradingview_reconnect_count = 0  # Reset on successful connection
@@ -29192,16 +29195,13 @@ async def connect_tradingview_websocket():
                 _tradingview_subscribed_symbols.clear()  # CRITICAL: Clear old subscriptions on reconnect!
                 logger.info("✅ TradingView WebSocket CONNECTED!")
                 
-                # TradingView WebSocket auth: cookies provide session, but we need a token for the protocol
-                # "unauthorized_user_token" is the standard token that works with cookie-based auth
-                # The COOKIES determine data access level (real-time vs delayed), not the auth token
-                # The auth token just establishes the WebSocket protocol session
+                # Send JWT auth token — premium JWT = real-time data, "unauthorized_user_token" = delayed
                 auth_msg = json.dumps({
                     "m": "set_auth_token",
-                    "p": ["unauthorized_user_token"]
+                    "p": [jwt_token]
                 })
                 await ws.send(f"~m~{len(auth_msg)}~m~{auth_msg}")
-                logger.info(f"Sent TradingView auth (cookies should provide real-time access)")
+                logger.info(f"Sent TradingView auth ({'PREMIUM JWT' if jwt_token != 'unauthorized_user_token' else 'PUBLIC delayed'})")
                 
                 # Create a quote session
                 quote_session = f"qs_{int(time.time())}"
