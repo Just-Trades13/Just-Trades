@@ -108,6 +108,16 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Verified** | Confirmed working on JADMGC |
 | **NEVER** | Remove the cancel loop or skip OCO/break-even cleanup |
 
+### env_label in enabled_accounts Logger (Feb 20, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~1338 |
+| **Rule** | CLAUDE.md Rule 25 |
+| **Commit** | `656683a` |
+| **What** | Logger uses `{env_label}` (always defined at line 1283), NOT `{env}` (only defined in else-branch at line 1279) |
+| **Why** | `env` was unbound when any of the first 4 branches matched. Crash caught by except → entire enabled_accounts parsing aborted → trader got 0 accounts → 0 trades silently |
+| **NEVER** | Change `{env_label}` back to `{env}` or add any variable usage after the if-elif chain at lines 1265-1281 without verifying it's defined in ALL branches |
+
 ### Multiplier Applied to Quantity
 | Field | Value |
 |-------|-------|
@@ -177,6 +187,37 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Verified** | Cleaned 47 stale recorded_trades + 4 recorder_positions for JADNQ/JADMNQ/JADGC/JADMGC |
 | **NEVER** | Remove the `t_is_dca` check or unconditionally insert DCA adds. The signal tracking MUST close old same-side records when DCA is off |
 
+### DCA Field Name Bridging — avg_down_enabled → dca_enabled (Feb 19, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~13531-13532 (create), ~13784-13788 (update) |
+| **Rule** | CLAUDE.md Rule 24 |
+| **Commit** | `d3e714d` |
+| **What** | Create: `dca_enabled = bool(avg_down_enabled) if avg_down_enabled is not None else bool(rec_avg_down_enabled)`. Update: accepts either `dca_enabled` or `avg_down_enabled` field name |
+| **Why** | Frontend sends `avg_down_enabled`, backend column is `dca_enabled`. Without bridging, DCA is ALWAYS False regardless of UI toggle |
+| **Verified** | JADVIX DCA confirmed LIVE — consolidating TPs + correct size |
+| **NEVER** | Remove the `avg_down_enabled` fallback, hardcode `dca_enabled = False`, or assume the frontend field name matches the DB column |
+
+### JADVIX DCA Auto-Enable on Startup (Feb 19, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~8956-8980 |
+| **Rule** | CLAUDE.md Rule 24 |
+| **Commit** | `bda90af` |
+| **What** | `UPDATE traders SET dca_enabled = TRUE WHERE recorder_id IN (SELECT id FROM recorders WHERE UPPER(name) LIKE '%JADVIX%')` |
+| **Why** | Business requirement: ALL JADVIX traders MUST have DCA on for ALL users. Startup auto-fix ensures this on every deploy |
+| **NEVER** | Remove this startup fix. All JADVIX strategies require DCA enabled. This is not optional. |
+
+### User Delete Cascade (Feb 19, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~6203-6230 (admin_delete_user) |
+| **Rule** | CLAUDE.md Rule 26 |
+| **Commit** | `a40fc07` |
+| **What** | Cascade deletes all child records (support_messages, recorded_trades, recorded_signals, recorder_positions, traders, support_tickets, recorders, strategies, push_subscriptions, accounts) then nullifies audit columns before deleting user |
+| **Why** | PostgreSQL enforces FK constraints. Direct `DELETE FROM users` fails with `accounts_user_id_fkey` violation |
+| **NEVER** | Remove any child table from the cascade. If adding a new table with user_id FK, ADD it to this cascade list |
+
 ### CSRF Exempt Prefixes (Feb 16, 2026)
 | Field | Value |
 |-------|-------|
@@ -189,6 +230,15 @@ for paying customers. These are NOT optional improvements — they are load-bear
 ---
 
 ## tradovate_integration.py — Protected Changes
+
+### Symbol Root Extraction for Tick Size Lookup (Feb 18, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~1874-1882 |
+| **What** | Matches symbol alpha chars against tick_sizes dict: try 3-char first, then 2-char. Replaces blind `[:3]` slice |
+| **Why** | 2-letter symbols like GC: `GCJ6` → `GCJ` → missed dict → default 0.25 instead of 0.10 → all bracket TPs/SLs 2.5x too far |
+| **Verified** | All 12 symbol variants (GC, MGC, NQ, MNQ, ES, MES, CL, MCL, SI, ZB, YM, MYM) resolve correctly |
+| **NEVER** | Revert to `[:3]` slice. NEVER change the default fallback without checking ALL 2-letter symbols |
 
 ### Native Break-Even in Bracket Orders (Feb 18, 2026)
 | Field | Value |
@@ -233,3 +283,8 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | Native break-even | ALWAYS positive, NEVER with trailingStop | Tradovate API requirement | Bracket rejected or wrong BE direction |
 | BE safety-net monitor | Only when trailing+BE combo | Native handles non-trailing | Extra API calls, potential double-execution |
 | Signal tracking DCA | Close old + open fresh when DCA off | Prevents stale record pileup | Stale records pollute position detection → wrong qty |
+| Symbol root extraction | Try 3-char then 2-char against dict | 2-letter symbols (GC, CL, SI) include month letter in blind [:3] | Wrong tick_size → TPs/SLs placed at wrong distances |
+| DCA field name bridge | `avg_down_enabled` → `dca_enabled` on create/update | Frontend and DB use different names | DCA always False → no TP consolidation |
+| JADVIX DCA auto-enable | Startup UPDATE on every deploy | Business requirement for all JADVIX users | DCA off → bracket-only, no consolidation |
+| User delete cascade | Delete all child tables before users | PostgreSQL FK constraints | Admin can't delete users |
+| enabled_accounts logger | Uses `env_label` not `env` | `env` only defined in else-branch | Silent 0-account failure for traders |
