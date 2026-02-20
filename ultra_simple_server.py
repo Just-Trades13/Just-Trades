@@ -5538,6 +5538,32 @@ def run_migrations():
         conn.rollback()
         results.append(f"⚠️ Could not fix NULL values: {str(e)[:100]}")
 
+    # Enable DCA on ALL traders linked to JADVIX recorders (name contains 'JADVIX')
+    # JADVIX strats require DCA ON for all users — this fixes traders created before the
+    # avg_down_enabled→dca_enabled field name mismatch was fixed
+    try:
+        if is_postgres:
+            cursor.execute('''
+                UPDATE traders SET dca_enabled = TRUE
+                WHERE recorder_id IN (SELECT id FROM recorders WHERE UPPER(name) LIKE '%JADVIX%')
+                AND (dca_enabled IS NULL OR dca_enabled = FALSE)
+            ''')
+        else:
+            cursor.execute('''
+                UPDATE traders SET dca_enabled = 1
+                WHERE recorder_id IN (SELECT id FROM recorders WHERE UPPER(name) LIKE '%JADVIX%')
+                AND (dca_enabled IS NULL OR dca_enabled = 0)
+            ''')
+        jadvix_updated = cursor.rowcount
+        conn.commit()
+        if jadvix_updated > 0:
+            results.append(f"✅ JADVIX DCA fix: enabled dca_enabled on {jadvix_updated} traders")
+        else:
+            results.append(f"⏭️ JADVIX DCA: all traders already have dca_enabled=TRUE")
+    except Exception as e:
+        conn.rollback()
+        results.append(f"⚠️ JADVIX DCA fix failed: {str(e)[:100]}")
+
     conn.close()
     return jsonify({'success': True, 'migrations': results})
 
@@ -8928,6 +8954,31 @@ def _insider_polling_loop():
 # Start the polling thread
 _insider_poll_thread = threading.Thread(target=_insider_polling_loop, daemon=True)
 _insider_poll_thread.start()
+
+# ONE-TIME FIX: Enable DCA on all JADVIX traders (field name mismatch stored False)
+try:
+    _fix_conn = get_db_connection()
+    _fix_cur = _fix_conn.cursor()
+    if is_using_postgres():
+        _fix_cur.execute('''
+            UPDATE traders SET dca_enabled = TRUE
+            WHERE recorder_id IN (SELECT id FROM recorders WHERE UPPER(name) LIKE '%JADVIX%')
+            AND (dca_enabled IS NULL OR dca_enabled = FALSE)
+        ''')
+    else:
+        _fix_cur.execute('''
+            UPDATE traders SET dca_enabled = 1
+            WHERE recorder_id IN (SELECT id FROM recorders WHERE UPPER(name) LIKE '%JADVIX%')
+            AND (dca_enabled IS NULL OR dca_enabled = 0)
+        ''')
+    _jadvix_fixed = _fix_cur.rowcount
+    _fix_conn.commit()
+    _fix_cur.close()
+    _fix_conn.close()
+    if _jadvix_fixed > 0:
+        print(f"✅ STARTUP FIX: Enabled dca_enabled on {_jadvix_fixed} JADVIX traders")
+except Exception as _fix_err:
+    print(f"⚠️ JADVIX DCA startup fix failed: {_fix_err}")
 
 # ============================================================================
 # WHOP MEMBERSHIP SYNC DAEMON — catches users that Whop webhooks missed
