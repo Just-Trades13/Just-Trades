@@ -40,6 +40,7 @@ causing failures for paying customers. It is the single source of truth for prot
    | Unsure about tick sizes, bracket syntax, debugging | `docs/CHEAT_SHEET.md` |
    | Monitoring, health checks, endpoint responses | `docs/MONITORING_ENDPOINTS.md` |
    | Testing signals, verifying trades, regression checks | `docs/TESTING_PROCEDURES.md` |
+   | Admin access, onboarding, permissions, branch protection | `docs/ADMIN_ACCESS_POLICY.md` |
 
    **If the task involves multiple areas, read ALL relevant docs.** This takes 5 seconds and prevents hours of debugging.
 
@@ -1596,6 +1597,45 @@ If rebuilding from scratch:
 
 ---
 
+## ADMIN ACCESS & ONBOARDING
+
+> **Full policy: `docs/ADMIN_ACCESS_POLICY.md`**
+
+### Two-Stage Access Model
+
+| Stage | Access | Can Do | Can't Do |
+|-------|--------|--------|----------|
+| **Stage 1: Read-Only** | `CLAUDE_ADMIN_REFERENCE.md` + Claude Code | Monitor, diagnose, learn system | Edit code, deploy, restart, modify DB |
+| **Stage 2: Repo Access** | Full GitHub repo + Claude Code | Submit PRs, review code | Push to main (branch protection required) |
+
+### Stage 1 Safety Guarantees
+
+Admins in Stage 1 cannot harm production because:
+- **No repo** — can't edit code
+- **No Railway CLI link** — can't restart, redeploy, or change env vars
+- **No git credentials** — can't push anything
+- **No DB credentials** — can't run SQL against production
+- **Reference file sanitized** — all destructive commands removed
+
+### Stage 2 Requirements (Before Granting Repo Access)
+
+- [ ] Admin completed Stage 1 learning period
+- [ ] Admin demonstrates understanding of the 31 rules and sacred files
+- [ ] Branch protection configured on `main` (require PR + owner approval)
+- [ ] Admin added as GitHub collaborator (Write, not Admin)
+- [ ] All changes go through PRs — owner reviews before merge
+
+### Admin Reference Files (Not in Repo)
+
+| File | Purpose |
+|------|---------|
+| `CLAUDE_ADMIN_REFERENCE.md` | Read-only system manual (sanitized CLAUDE.md) |
+| `README_FOR_ADMINS.md` | Setup guide for Claude Code + quick reference |
+
+When CLAUDE.md is updated, regenerate `CLAUDE_ADMIN_REFERENCE.md` by stripping destructive commands and sending to all active admins.
+
+---
+
 ## DETAILED DOCUMENTATION
 
 - **`CHANGELOG_RULES.md`** — **MANDATORY** protected code registry. Check BEFORE any edit (Rule 0)
@@ -1614,4 +1654,4 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 *Last updated: Feb 21, 2026*
 *Production stable tag: WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET @ bb1a183 (+ brevo fix 5b6be75)*
 *Total rules: 31 | Total documented disasters: 24 | Paid users in production: YES*
-*Documentation: 10 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*
+*Documentation: 11 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*
