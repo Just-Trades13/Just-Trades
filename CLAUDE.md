@@ -481,6 +481,7 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | env UnboundLocalError fix in enabled_accounts | `656683a` | Feb 20 | Working |
 | Tick size 2-letter symbol root fix (GC, CL, SI) | `656683a` | Feb 20 | Working |
 | Broker-verified quantity safety net (DB/broker drift) | `bb1a183` | Feb 20 | Working |
+| Brevo v1 pin + start.sh runtime install (activation emails) | `5b6be75` | Feb 21 | **Confirmed working** |
 
 ---
 
@@ -587,6 +588,58 @@ The webhook handler (`ultra_simple_server.py`) uses `recorded_trades` (DB) to de
 - Remove this safety net — it's the last line of defense against DB drift causing wrong sizing
 - Add new API calls in this section — uses existing broker data only (Rule 16)
 - Move this check AFTER the DCA logic — it must run BEFORE the DCA decision at line 2208
+
+---
+
+## RULE 29: PIN ALL PYTHON PACKAGE VERSIONS — ESPECIALLY brevo-python (Feb 21, 2026)
+
+**What happened:** `brevo-python` was unpinned in `requirements.txt`. When Docker cache was busted, pip pulled **v4.0.5** instead of v1.x. Version 4.x completely removed the `brevo_python.rest` module, `TransactionalEmailsApi`, `Configuration`, and `SendSmtpEmail` classes our code uses. Every activation email failed with `ImportError` caught as "brevo-python not installed" — a misleading error message that sent debugging in the wrong direction for hours.
+
+**Timeline of the disaster:**
+1. **Feb 15**: `brevo-python` added to `requirements.txt` (unpinned)
+2. **~Feb 16-17**: Deployed via method that installed v1.x → emails worked
+3. **~Feb 20**: Docker cache busted → pip pulled v4.0.5 → `from brevo_python.rest import ApiException` raised `ImportError` → ALL activation emails failed silently
+4. **Feb 21**: 3 users stuck (laserodkod88287, shumate105, supremerunz1121) with 8,800+ orphaned activation tokens from Whop sync daemon retrying every 30 seconds
+5. **Feb 21**: Root cause found — pinned to `brevo-python<2.0.0` → emails confirmed working
+
+**What we tried that DIDN'T work (and why):**
+1. **Added comment to requirements.txt** to change file hash → Docker cache bust. **Failed**: Railway's Docker builder may use content-addressable caching that survived the change.
+2. **Updated `BUILD_DATE` env in Dockerfile** → Only busts layers BELOW it. Pip install is ABOVE `BUILD_DATE`, so it stayed cached. This was the SAME mistake made on Feb 16 (commit `1a5e5e3`) — BUILD_DATE is at line 23, pip install at line 15.
+3. **Added explicit `RUN pip install brevo-python`** after BUILD_DATE → Installed v4.0.5 (latest), not v1.x. Package installed but API incompatible.
+4. **Added `pip install brevo-python` to start.sh** → Also installed v4.0.5 at runtime. Same API incompatibility.
+
+**What ACTUALLY fixed it:**
+- Pinned `brevo-python<2.0.0` in requirements.txt, Dockerfile, AND start.sh
+- The start.sh runtime install is the belt-and-suspenders guarantee (bypasses all Docker caching)
+
+**Dockerfile cache lesson — BUILD_DATE position matters:**
+```dockerfile
+COPY requirements.txt .          # Line 14 — cached by file hash
+RUN pip install -r requirements  # Line 15 — cached if line 14 cached
+ENV BUILD_DATE=2026-02-21        # Line 23 — ONLY busts lines BELOW this
+COPY . .                         # Line 28 — busted by BUILD_DATE
+```
+Changing BUILD_DATE does NOT bust the pip install layer above it. To bust pip install, you must change the actual `requirements.txt` content OR the `RUN pip install` instruction text.
+
+**`railway run` runs LOCALLY, not in the container:**
+- `railway run python3 -c "import brevo_python"` tests your LOCAL Mac (Python 3.13)
+- The deployed container runs Python 3.11 with its own site-packages
+- NEVER trust `railway run` for verifying what's installed in production
+- Use `railway logs` to check runtime behavior instead
+
+**Rules for the future:**
+1. **ALWAYS pin package versions** in requirements.txt — never use bare `package-name`
+2. **Pin with upper bound** (`<2.0.0`) not exact version, to allow patch updates
+3. **After adding ANY new package**, verify it works in production via `railway logs`, NOT `railway run`
+4. **start.sh runtime install** is the safety net — keep `python -m pip install "brevo-python<2.0.0"` in start.sh
+5. **If a package has "not installed" error**, check the INSTALLED VERSION first — it might be installed but API-incompatible
+
+**NEVER:**
+- Remove the version pin from `brevo-python<2.0.0`
+- Upgrade to brevo-python v2+ without rewriting `account_activation.py` to use the new API
+- Trust `railway run` to test what's in the production container
+- Use `pip install --quiet ... 2>/dev/null` when debugging — it hides all errors
+- Assume BUILD_DATE busts pip install cache (it doesn't — it's below the pip layer)
 
 ---
 
@@ -775,6 +828,7 @@ curl -s "https://justtrades.app/api/run-migrations"
 | 21 | Feb 19, 2026 | DCA toggle ON had no effect — always False | Frontend sends `avg_down_enabled`, backend reads `dca_enabled` — field name mismatch | Rule 24 | Hours |
 | 22 | Feb 20, 2026 | Trader 1359 got 0 accounts → 0 trades silently | `env` variable only defined in else-branch, crash caught by except → enabled_accounts parse failed | Rule 25 | Hours |
 | 23 | Feb 19, 2026 | Admin user delete failed — FK constraint | `DELETE FROM users` without cascading child records first | Rule 26 | Hours |
+| 24 | Feb 20-21, 2026 | **ALL activation emails failed for 2 days** — 3 users stuck, 8800+ orphaned tokens | `brevo-python` unpinned → Docker cache bust pulled v4.0.5 → `brevo_python.rest` module removed in v4 → `ImportError` logged as "not installed" (misleading). 4 failed fix attempts before finding root cause. `railway run` tested LOCAL Mac, not container. | Rule 29 | **Hours (multi-attempt)** |
 
 **Pattern:** 23 disasters in ~2.5 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, or (d) field name mismatches between frontend and backend.
 
@@ -836,5 +890,5 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 *Last updated: Feb 20, 2026*
 *Production stable tag: WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET @ bb1a183*
-*Total rules: 28 | Total documented disasters: 23 | Paid users in production: YES*
+*Total rules: 29 | Total documented disasters: 24 | Paid users in production: YES*
 *Documentation: 8 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*
