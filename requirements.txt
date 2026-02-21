@@ -31,7 +31,7 @@ pywebpush==1.14.1
 py-vapid==1.9.1
 
 # Email (Brevo transactional emails)
-brevo-python
+brevo-python<2.0.0
 
 # Cache bust: 2026-02-21 — force pip reinstall to pick up brevo-python
 

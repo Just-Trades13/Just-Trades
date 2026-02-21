@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir \
     websockets \
     gunicorn \
-    brevo-python
+    "brevo-python<2.0.0"
 
 # Force rebuild - changing this ENV busts ALL subsequent layer caches
 ENV BUILD_DATE=2026-02-21-1235

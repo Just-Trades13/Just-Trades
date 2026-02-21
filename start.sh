@@ -12,7 +12,7 @@ echo "EXTERNAL_TRADING_ENGINE: ${EXTERNAL_TRADING_ENGINE:-not set}"
 
 echo ""
 echo "Step 0: Ensure brevo-python is installed..."
-python -m pip install brevo-python || echo "⚠️ brevo-python install failed - activation emails may not work"
+python -m pip install "brevo-python<2.0.0" || echo "⚠️ brevo-python install failed - activation emails may not work"
 
 echo ""
 echo "Step 1: Initialize database (timeout 15s)..."
