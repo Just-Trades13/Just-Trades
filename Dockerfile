@@ -14,16 +14,14 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional production dependencies (no eventlet - causes issues)
+# Install additional production dependencies
 RUN pip install --no-cache-dir \
     websockets \
-    gunicorn
+    gunicorn \
+    brevo-python
 
 # Force rebuild - changing this ENV busts ALL subsequent layer caches
-ENV BUILD_DATE=2026-02-21-1230
-
-# Ensure brevo-python is installed (Docker cache can skip requirements.txt layer)
-RUN pip install --no-cache-dir brevo-python
+ENV BUILD_DATE=2026-02-21-1235
 
 # Copy application code
 COPY . .
