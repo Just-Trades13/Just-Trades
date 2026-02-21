@@ -20,7 +20,10 @@ RUN pip install --no-cache-dir \
     gunicorn
 
 # Force rebuild - changing this ENV busts ALL subsequent layer caches
-ENV BUILD_DATE=2026-02-16-1400
+ENV BUILD_DATE=2026-02-21-1230
+
+# Ensure brevo-python is installed (Docker cache can skip requirements.txt layer)
+RUN pip install --no-cache-dir brevo-python
 
 # Copy application code
 COPY . .
