@@ -1,6 +1,6 @@
 # Just Trades Platform — MASTER RULES & ARCHITECTURE
 
-> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` @ commit `bb1a183`
+> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` @ commit `bb1a183` (+ brevo fix `5b6be75`)
 > **Broker-verified quantity safety net deployed — prevents DB/broker drift sizing — Feb 20, 2026**
 > **PAID USERS IN PRODUCTION — EVERY BROKEN DEPLOY COSTS REAL MONEY**
 
@@ -38,6 +38,8 @@ causing failures for paying customers. It is the single source of truth for prot
    | ANY SQL query, new column, migration, table change | `docs/DATABASE_SCHEMA.md` |
    | Deploying, env vars, Railway CLI, rollback | `docs/RAILWAY_DEPLOYMENT.md` |
    | Unsure about tick sizes, bracket syntax, debugging | `docs/CHEAT_SHEET.md` |
+   | Monitoring, health checks, endpoint responses | `docs/MONITORING_ENDPOINTS.md` |
+   | Testing signals, verifying trades, regression checks | `docs/TESTING_PROCEDURES.md` |
 
    **If the task involves multiple areas, read ALL relevant docs.** This takes 5 seconds and prevents hours of debugging.
 
@@ -222,7 +224,7 @@ WebSocket pool was NEVER functional. ALL orders go through REST (`session.post`)
 ## RULE 11: RECOVERY PROTOCOL
 
 ```bash
-git reset --hard WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET  # CURRENT stable
+git reset --hard WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET  # CURRENT stable (+ brevo fix 5b6be75)
 git reset --hard WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE   # Pre-safety-net fallback
 git reset --hard WORKING_FEB18_2026_DCA_SKIP_STABLE        # Pre-DCA-field-fix fallback
 git reset --hard WORKING_FEB18_2026_FULL_AUDIT_STABLE      # Pre-DCA-off fix fallback
@@ -235,7 +237,7 @@ git push -f origin main  # CAUTION: force push — only if resetting
 
 | Tag | Commit | Description |
 |-----|--------|-------------|
-| `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` | `bb1a183` | **CURRENT** — Broker-verified quantity safety net, prevents DB/broker drift sizing |
+| `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` | `bb1a183` | **CURRENT** — Broker-verified qty safety net + brevo pin (+ `5b6be75`) |
 | `WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE` | `656683a` | DCA field fix, env crash fix, JADVIX auto-enable, cascade delete |
 | `WORKING_FEB18_2026_DCA_SKIP_STABLE` | `c75d7d4` | DCA-off bracket fix + multiplier trim scaling |
 | `WORKING_FEB18_2026_FULL_AUDIT_STABLE` | `fbd705d` | Pre-DCA-fix fallback (audit cleanup) |
@@ -683,6 +685,22 @@ You will waste hours applying fixes to symptoms instead of causes. Every multi-a
 
 ---
 
+## RULE 31: NEW FEATURE DOCUMENTATION CHECKLIST
+
+When adding ANY new feature to the platform, complete ALL of these documentation steps before considering the work done:
+
+1. **Update CLAUDE.md** — Add feature to the Deployed Features table with commit hash, date, and status
+2. **Update relevant docs** — If the feature touches a broker, webhook, DB schema, or deployment, update the matching doc in `/docs/`
+3. **Add to CHANGELOG_RULES.md** — If the feature modifies `recorder_service.py`, `ultra_simple_server.py`, or `tradovate_integration.py`, add the protected lines
+4. **Update recovery tags** — If the commit is a new stable state, create a git tag and update CLAUDE.md Rule 11
+5. **Update MEMORY.md** — If a new bug pattern was discovered, add it to the Critical Bug Patterns section
+6. **Test with real signal** — Before documenting as "Working", confirm with a real webhook test. Mark as "UNTESTED" if not verified.
+7. **Document settings** — If the feature adds new settings (DB columns, env vars, config fields), add them to DATABASE_SCHEMA.md and the enabled_accounts checklist (Rule 6)
+
+**This checklist prevents documentation drift** — the #1 cause of "rebuild difficulty" in this project.
+
+---
+
 ## WHOP INTEGRATION (Feb 16)
 
 **Sync Daemon:** Polls Whop API every 30 seconds, creates Just Trades accounts for new memberships, sends welcome emails.
@@ -785,6 +803,313 @@ recorder_positions (id, recorder_id, ticker, side, total_quantity, avg_entry_pri
 
 ---
 
+## SYSTEM COMPONENTS REFERENCE
+
+### Background Daemons (All Auto-Start on Deploy)
+
+| Daemon | File | Line | Interval | Critical? | What It Does |
+|--------|------|------|----------|-----------|-------------|
+| **Token Refresh** | recorder_service.py | ~302 | 5 min | YES | Refreshes Tradovate OAuth tokens before expiry (30-min window) |
+| **Position Reconciliation** | recorder_service.py | ~6384 | 60 sec | **CRITICAL** | Syncs DB with broker, auto-places missing TPs, enforces auto-flat |
+| **Daily State Reset** | recorder_service.py | ~6324 | 60 sec (checks) | YES | Clears stale positions/trades at market open (LIVE recorders only) |
+| **TP/SL Polling** | recorder_service.py | ~6138 | 1 sec / 10 sec | YES | Fallback price polling when WebSocket unavailable |
+| **Position Drawdown** | recorder_service.py | ~6513 | 1 sec / 5 sec | No | Tracks worst/best unrealized P&L for risk management |
+| **TradingView WebSocket** | recorder_service.py | ~6659 | Continuous | YES | Real-time CME prices for TP/SL monitoring and dashboard |
+| **WebSocket Prewarm** | recorder_service.py | ~280 | Once (startup) | No | Pre-establishes Tradovate WebSocket connections |
+| **Bracket Fill Monitor** | recorder_service.py | ~6433 | 5-10 sec | No | Currently DISABLED — bracket fill detection handled by TP/SL polling |
+| **Whop Sync** | ultra_simple_server.py | ~9239 | 30 sec | No | Polls Whop API, creates accounts, sends activation emails |
+
+**All daemons are daemon threads** (`daemon=True`) — they terminate automatically when the main process exits. NEVER change them to non-daemon or synchronous (Bug #9: 100% outage from exactly this).
+
+### Token Refresh Daemon (recorder_service.py ~302)
+
+Three-tier refresh strategy:
+1. **Primary**: `POST /v1/auth/renewaccesstoken` with refresh_token (Bearer auth)
+2. **Secondary**: `TradovateAPIAccess.login(username, password)` if refresh token fails
+3. **Tertiary**: Falls back to stored credentials (trades still execute via API Access)
+
+Checks every 5 minutes. Triggers refresh if token expires within 30 minutes. On failure: logs warning, adds account to `_ACCOUNTS_NEED_REAUTH` set (visible at `/api/accounts/auth-status`).
+
+### Position Reconciliation (recorder_service.py ~6384)
+
+**DO NOT DISABLE.** This is the safety net for the entire trading system.
+
+What it does every 60 seconds:
+1. `reconcile_positions_with_broker()` — Syncs DB quantity/avg price with broker
+2. `check_auto_flat_cutoff()` — Flattens positions after configured market hours
+3. **AUTO-PLACES missing TP orders** — If TP recorded in DB but not found on broker, places it
+4. Closes DB records when broker is flat
+5. Updates DB to match broker's actual position quantity
+
+### Paper Trading System (ultra_simple_server.py ~351)
+
+- Separate database: `paper_trades` table (SQLite `paper_trades.db` or PostgreSQL)
+- Called from webhook handler for recorders in `simulation_mode=1`
+- Deduplication: `_paper_trade_dedup` prevents duplicate signals within 1.0 second
+- Tracks: entry/exit price, P&L, TP/SL levels, MFE/MAE, commission, cumulative P&L
+- **Non-blocking**: Paper trades NEVER block the broker pipeline (daemon threads only)
+
+### TradingView WebSocket (recorder_service.py ~6659)
+
+Two connections exist (both use identical auth):
+1. `recorder_service.py` — Feeds `_market_data_cache` for position tracking, TP/SL monitoring
+2. `ultra_simple_server.py` — Feeds dashboard SSE price stream and paper trading engine
+
+Authentication flow:
+1. Read `tradingview_session` JSON from `accounts` table: `{"sessionid": "xxx", "sessionid_sign": "yyy"}`
+2. Fetch `https://www.tradingview.com/chart/` with cookies
+3. Extract JWT via regex: `"auth_token":"([^"]+)"`
+4. Send `set_auth_token` WebSocket protocol message
+
+Data quality:
+- **Premium JWT** (~100ms real-time) — requires valid session cookies
+- **Public fallback** (10-15 min delayed) — `"unauthorized_user_token"` when cookies missing/expired
+- **Silent degradation** — no error or alert when falling back to delayed data
+
+Protocol: Custom TradingView format with `~m~` delimiters. Subscribes via `quote_add_symbols`. Receives `qsd` (quote stream data) messages with symbol prices.
+
+### Whop Sync Daemon (ultra_simple_server.py ~9239)
+
+Polls every 30 seconds (`WHOP_SYNC_INTERVAL = 30`). Three-layer protection:
+- **Layer 1**: Real-time Whop webhook (`/webhooks/whop`) — fires on purchase
+- **Layer 2**: Sync daemon (30s poll) — catches missed webhooks, network failures
+- **Layer 3**: Manual admin sync button
+
+Email resend strategy:
+- First sync: sends activation immediately
+- If unactivated after 12 hours (`WHOP_RESEND_INTERVAL`): resends
+- Stops after 3 days (`WHOP_RESEND_MAX_DAYS`)
+- Tracks "stuck users" for admin review at `/api/admin/whop-sync-status`
+
+---
+
+## USER ONBOARDING FLOW — COMPLETE LIFECYCLE
+
+### Step 1: Purchase (Whop)
+
+User purchases subscription on Whop marketplace. Whop fires webhook to `/webhooks/whop`.
+
+**What can fail:** Webhook 403'd if `/webhooks/` not in CSRF exempt list (Bug #12). Whop API key truncated in Railway (Bug #13).
+
+### Step 2: Account Creation
+
+`auto_create_user_from_whop(email, whop_user_id)` in `account_activation.py` (~line 357):
+1. Check if user exists by email (idempotent)
+2. If new: generate temp username (`whop_{8_random_chars}`), random password
+3. Call `create_user()` → insert into `users` table
+4. Auto-approve via `approve_user(user.id)`
+5. Generate 72-hour activation token
+6. Send activation email via Brevo
+
+**What can fail:** brevo-python version mismatch (Bug #24 — must pin <2.0.0). Email failure does NOT break account creation (try/except).
+
+### Step 3: Activation Email
+
+Sent via Brevo API (`account_activation.py` ~line 239):
+- Uses `brevo_python.TransactionalEmailsApi` (v1.x API)
+- HTML template with dark theme and blue "ACTIVATE MY ACCOUNT" button
+- Activation URL: `{PLATFORM_URL}/activate?token={token}`
+- Token expires in 72 hours
+
+**What can fail:** brevo-python v4 breaks imports (Rule 29). BREVO_API_KEY env var missing. Email marked as spam.
+
+### Step 4: User Activation
+
+User clicks activation link → `/activate?token={token}`:
+1. Validate token (not expired, not used)
+2. User sets custom username and password
+3. Account marked as activated
+4. Redirect to login
+
+### Step 5: Login
+
+`/login` (POST) — session-based authentication:
+1. Validate username/password
+2. Store `user_id` in Flask session
+3. Redirect to dashboard
+
+### Step 6: Broker Authentication
+
+User connects their broker account:
+- **Tradovate/NinjaTrader**: OAuth flow → `/api/oauth/callback` → stores token in `accounts.tradovate_token`
+- **ProjectX**: API key entered directly → stored in `accounts.projectx_api_key`
+- **Webull**: App key/secret entered → stored in `accounts.webull_app_key/secret`
+
+**What can fail:** OAuth callback not in CSRF exempt list. Token storage fails. Tradovate credentials invalid.
+
+### Step 7: Trader Setup
+
+User creates a trader linking their account to a recorder:
+- `POST /api/traders` with `recorder_id`, `account_id`, risk settings
+- Settings inherited from recorder where not overridden (NULL fallback chain — Rule 19)
+- **DCA field name bridge**: Frontend sends `avg_down_enabled`, backend stores as `dca_enabled` (Rule 24)
+- JADVIX traders auto-fixed to `dca_enabled=TRUE` on every deploy
+
+### Step 8: First Trade
+
+TradingView alert fires → `POST /webhook/{webhook_token}`:
+1. 10 webhook workers parse signal in <50ms
+2. `process_webhook_directly()` finds recorder, applies filters, builds risk_config
+3. Signal queued to `broker_execution_queue`
+4. 10 broker workers pick up, call `execute_trade_simple()`
+5. `do_trade_for_account()` runs per account simultaneously via `asyncio.gather()`
+6. First entry: bracket order (entry + TP + SL in one REST call)
+7. DCA entry: REST market order + separate cancel/replace TP
+
+**What can fail:** See the 23 past disasters table. Most common: tick rounding (Rule 3), SQL placeholders (Rule 4), field name mismatches (Rule 24).
+
+---
+
+## PRODUCTION STRATEGY CONFIG SNAPSHOT
+
+> **WARNING:** These settings are stored in the PostgreSQL database on Railway. If the database is lost, these configs are gone forever. This section documents the config structure and known production values.
+
+### How to Extract Current Configs
+
+```bash
+# Connect to production PostgreSQL
+railway connect postgres
+
+# Export all recorder configs
+SELECT id, name, symbol, initial_position_size, add_position_size,
+       tp_units, trim_units, tp_targets, sl_enabled, sl_amount, sl_units,
+       sl_type, trail_trigger, trail_freq, avg_down_enabled,
+       avg_down_amount, avg_down_point, avg_down_units,
+       break_even_enabled, break_even_ticks, break_even_offset,
+       add_delay, signal_cooldown, max_signals_per_session,
+       max_daily_loss, time_filter_1_enabled, time_filter_1_start,
+       time_filter_1_stop, auto_flat_after_cutoff, custom_ticker,
+       inverse_strategy, recording_enabled
+FROM recorders WHERE recording_enabled = TRUE ORDER BY name;
+
+# Export all trader overrides
+SELECT t.id, t.recorder_id, r.name as recorder_name, t.account_id,
+       t.enabled, t.multiplier, t.initial_position_size, t.add_position_size,
+       t.dca_enabled, t.tp_targets, t.sl_enabled, t.sl_amount, t.sl_type,
+       t.trail_trigger, t.trail_freq, t.break_even_enabled,
+       t.break_even_ticks, t.break_even_offset, t.max_daily_loss
+FROM traders t JOIN recorders r ON t.recorder_id = r.id
+WHERE t.enabled = TRUE ORDER BY r.name;
+```
+
+### Production Recorder Configs (Snapshot: Feb 21, 2026)
+
+> **Run `/api/admin/export-configs` to get the latest values. This snapshot may be outdated.**
+
+#### JADNQ V.2 (ID: 71) — NQ E-mini Nasdaq
+```
+initial_position_size: 1    add_position_size: 0
+tp_targets: [{"ticks": 200, "trim": 100}]   tp_units: Ticks   trim_units: Contracts
+sl_enabled: true   sl_amount: 50   sl_type: Trail   trail_trigger: 0   trail_freq: 0
+avg_down_enabled: false   break_even_enabled: false
+time_filters: disabled   max_daily_loss: 0   auto_flat: false
+Active traders: 7 (multipliers: 1x, 1x, 1x, 1x, 1x, 1x, 3x init/multi-TP)
+```
+
+#### JADMNQ V.2 (ID: 70) — MNQ Micro Nasdaq
+```
+initial_position_size: 1    add_position_size: 0
+tp_targets: [{"ticks": 200, "trim": 100}]   tp_units: Ticks   trim_units: Contracts
+sl_enabled: true   sl_amount: 50   sl_type: Trail   trail_trigger: 0   trail_freq: 0
+avg_down_enabled: false   break_even_enabled: false
+time_filters: disabled   max_daily_loss: 0   auto_flat: false
+Active traders: 3 (multipliers: 1x, 20x, 1x live)
+NOTE: One live trader (id 1490) has time_filter_1 enabled: 9:30AM-3:00PM
+```
+
+#### JADVIX Medium Risk V.2 (ID: 67) — DCA Strategy
+```
+initial_position_size: 1    add_position_size: 1
+tp_targets: [{"ticks": 50, "trim": 100}]   tp_units: Ticks   trim_units: Contracts
+sl_enabled: false   sl_amount: 0   sl_type: Fixed
+avg_down_enabled: true   avg_down_amount: 0   avg_down_point: 0
+break_even_enabled: false
+time_filters: disabled   max_daily_loss: 0   auto_flat: false
+Active traders: 4 (multipliers: 1x, 1x, 2.5x, 1x) — ALL have dca_enabled=true
+```
+
+#### JADVIX HIGH RISK V.2 (ID: 68) — Aggressive DCA Strategy
+```
+initial_position_size: 1    add_position_size: 1
+tp_targets: [{"ticks": 20, "trim": 100}]   tp_units: Ticks   trim_units: Contracts
+sl_enabled: false   sl_amount: 0   sl_type: Fixed
+avg_down_enabled: true   avg_down_amount: 0   avg_down_point: 0
+break_even_enabled: false
+time_filters: disabled   max_daily_loss: 0   auto_flat: false
+Active traders: 2 (multipliers: 1x, 30x) — ALL have dca_enabled=true
+```
+
+#### MGC-C1MIN (ID: 69) — Micro Gold 1-Min
+```
+initial_position_size: 1    add_position_size: 1
+tp_targets: [{"ticks": 20, "trim": 100}]   tp_units: Ticks   trim_units: Contracts
+sl_enabled: false   sl_amount: 0   sl_type: Fixed
+avg_down_enabled: false   break_even_enabled: false
+time_filters: disabled   max_daily_loss: 400   auto_flat: false
+Active traders: 0
+```
+
+#### Key Patterns Across All Strategies
+- **JADVIX (DCA on)**: No SL, smaller TP (20-50 ticks), avg_down_enabled=true
+- **JAD NQ/MNQ (DCA off)**: Trail SL 50 ticks, large TP (200 ticks), avg_down_enabled=false
+- **MGC**: Micro Gold with $400 daily loss limit, no active traders currently
+- **Multipliers in use**: 1x (most), 2.5x, 3x (multi-TP), 20x, 30x
+- **trim: 100** = 100% of position on single TP (full close)
+
+### Config Structure Reference
+
+Each recorder has these settings (see `docs/DATABASE_SCHEMA.md` for full schema):
+
+**Position Settings:**
+- `initial_position_size` — Contracts for first entry (default: 2)
+- `add_position_size` — Contracts for DCA adds (default: 2)
+
+**TP Settings:**
+- `tp_units` — `'Ticks'`, `'Points'`, or `'Percent'`
+- `trim_units` — `'Contracts'` or `'Percent'` (Contracts mode MUST scale by multiplier — Rule 13)
+- `tp_targets` — JSON array: `[{"ticks": 20, "trim": 1}, {"ticks": 50, "trim": 1}]`
+
+**SL Settings:**
+- `sl_enabled` — 0/1
+- `sl_amount` — Distance in `sl_units`
+- `sl_units` — `'Ticks'`, `'Points'`, or `'Percent'`
+- `sl_type` — `'Fixed'` or `'Trailing'`
+- `trail_trigger` — Ticks before trail activates
+- `trail_freq` — Trail update frequency in ticks
+
+**DCA Settings:**
+- `avg_down_enabled` — 0/1 (maps to trader `dca_enabled` — Rule 24)
+- `avg_down_amount` — Contracts per DCA add
+- `avg_down_point` — Distance to trigger DCA
+- `avg_down_units` — `'Ticks'` or `'Points'`
+
+**Break-Even:**
+- `break_even_enabled` — 0/1
+- `break_even_ticks` — Ticks in profit to move SL to break-even
+- `break_even_offset` — Offset from entry (usually 0)
+
+**Filters:**
+- `add_delay` — Seconds between DCA entries (default: 1)
+- `signal_cooldown` — Seconds between signals (default: 0)
+- `max_signals_per_session` — 0 = unlimited
+- `max_daily_loss` — Dollar amount, 0 = disabled
+- `time_filter_1_start/end/enabled` — Trading hours window 1
+- `time_filter_2_start/end/enabled` — Trading hours window 2
+- `auto_flat_after_cutoff` — Flatten position after time window
+
+**Trader-Level Overrides:**
+All settings above can be overridden per trader. NULL = use recorder value. The `multiplier` field (default 1.0) scales ALL quantities for that account.
+
+### JADVIX Startup Auto-Fix
+
+**Location:** `ultra_simple_server.py` lines ~5651 and ~9068
+
+On every deploy, automatically sets `dca_enabled=TRUE` on all traders linked to recorders with "JADVIX" in the name. This is a business requirement — all JADVIX strategies require DCA enabled for all users.
+
+**NEVER remove this auto-fix.** It prevents the DCA field name mismatch (Rule 24) from disabling DCA on new traders.
+
+---
+
 ## SUPPORTED BROKERS
 
 | Broker | Status | Auth Type | Notes |
@@ -818,13 +1143,218 @@ enabled_value = 'TRUE' if is_postgres else '1'
 ## MONITORING ENDPOINTS
 
 ```bash
+# Core health
+curl -s "https://justtrades.app/health"
+curl -s "https://justtrades.app/status"
+curl -s "https://justtrades.app/health/detailed"           # Admin/API key required
+
+# Broker execution
 curl -s "https://justtrades.app/api/broker-execution/status"
 curl -s "https://justtrades.app/api/broker-execution/failures?limit=20"
+curl -s "https://justtrades.app/api/broker-queue/stats"
+
+# Webhook activity
 curl -s "https://justtrades.app/api/webhook-activity?limit=10"
 curl -s "https://justtrades.app/api/raw-webhooks?limit=10"
+
+# TradingView WebSocket
+curl -s "https://justtrades.app/api/tradingview/status"
+curl -s "https://justtrades.app/api/tradingview/auth-status"
+
+# Account health
+curl -s "https://justtrades.app/api/accounts/auth-status"
 curl -s "https://justtrades.app/api/admin/max-loss-monitor/status"
-curl -s "https://justtrades.app/api/run-migrations"
+curl -s "https://justtrades.app/api/admin/whop-sync-status"
+
+# Paper trading & market data
+curl -s "https://justtrades.app/api/paper-trades/service-status"
+curl -s "https://justtrades.app/api/market-data/status"
+
+# Thread health
+curl -s "https://justtrades.app/api/thread-health"           # Admin/API key required
+
+# Database
+curl -s "https://justtrades.app/api/run-migrations"          # Admin/API key required
 ```
+
+For complete endpoint details with response payloads, see `docs/MONITORING_ENDPOINTS.md`.
+
+---
+
+## DAILY MONITORING CHECKLIST (Pre-Market)
+
+Run these checks before market open each trading day. Order matters — earlier checks catch issues that affect later ones.
+
+### 1. Service Health
+```bash
+curl -s "https://justtrades.app/health" | python3 -m json.tool
+```
+**Healthy:** `"status": "ok"`. **Unhealthy:** Connection refused or error → Railway service down. Fix: `railway restart` or check `railway logs --tail`.
+
+### 2. Broker Execution Workers
+```bash
+curl -s "https://justtrades.app/api/broker-execution/status" | python3 -m json.tool
+```
+**Healthy:** `broker_execution.workers_alive` = 10, `queue_size` = 0. **Unhealthy:** Workers < 10 or queue growing → restart service. Queue > 0 before market open → stale items, investigate.
+
+### 3. Recent Failures
+```bash
+curl -s "https://justtrades.app/api/broker-execution/failures?limit=20" | python3 -m json.tool
+```
+**Healthy:** Empty or old failures only. **Unhealthy:** Recent failures with `"error": "token expired"` → check auth status. `"error": "rate limit"` → too many accounts on one token (Rule 16).
+
+### 4. Tradovate Token Status
+```bash
+curl -s "https://justtrades.app/api/accounts/auth-status" | python3 -m json.tool
+```
+**Healthy:** `"all_accounts_valid": true`. **Unhealthy:** Accounts in `accounts_needing_reauth` → user needs to re-login via OAuth, or token refresh daemon has failed.
+
+### 5. TradingView WebSocket (Real-Time Prices)
+```bash
+curl -s "https://justtrades.app/api/tradingview/status" | python3 -m json.tool
+```
+**Healthy:** `"websocket_connected": true`, `"jwt_token_valid": true`, `cached_prices` has recent timestamps. **Unhealthy:** `jwt_token_valid: false` → session cookies expired (~every 3 months). Update cookies per Rule 27.
+
+### 6. Whop Sync Daemon
+```bash
+curl -s "https://justtrades.app/api/admin/whop-sync-status" | python3 -m json.tool
+```
+**Healthy:** `last_run` within 60 seconds, `stuck_users` = 0. **Unhealthy:** `last_run` > 5 minutes old → daemon stopped, restart service. `stuck_users` > 0 → manual email needed.
+
+### 7. Webhook Activity (Last 24h)
+```bash
+curl -s "https://justtrades.app/api/webhook-activity?limit=50" | python3 -m json.tool
+```
+**Healthy:** `success_rate` > 95%, recent timestamps. **Unhealthy:** Low success rate → check failures. No recent webhooks during market hours → TradingView alerts may have stopped.
+
+### 8. Thread Health
+```bash
+curl -s "https://justtrades.app/api/thread-health" | python3 -m json.tool
+```
+**Healthy:** All expected daemons running. **Unhealthy:** Missing threads → service needs restart.
+
+### 9. Railway Logs (Quick Scan)
+```bash
+railway logs --tail 2>/dev/null | head -50
+```
+**Healthy:** Normal trade execution logs, no tracebacks. **Unhealthy:** `NameError`, `ImportError`, `TypeError` → code bug deployed. Roll back immediately.
+
+### 10. Max Loss Monitor
+```bash
+curl -s "https://justtrades.app/api/admin/max-loss-monitor/status" | python3 -m json.tool
+```
+**Healthy:** No breaches. **Unhealthy:** `daily_loss_breach_count` > 0 → traders hitting loss limits, verify this is working correctly.
+
+---
+
+## INCIDENT RESPONSE PLAYBOOK
+
+### Severity Levels
+
+| Level | Definition | Response Time | Example |
+|-------|-----------|---------------|---------|
+| **SEV-1** | Total outage — NO trades executing | Immediate | NameError in sacred function, all workers dead |
+| **SEV-2** | Degraded — Some trades failing | < 15 min | Token expired on one account, wrong position sizes |
+| **SEV-3** | Single user — One account affected | < 1 hour | User's broker auth expired, trader disabled |
+
+### SEV-1: Total Outage Response
+
+**Symptoms:** No trades executing, all webhooks failing, service returning 500s.
+
+**Step 1: Diagnose (< 2 minutes)**
+```bash
+# Check if service is up
+curl -s "https://justtrades.app/health"
+
+# Check logs for crash
+railway logs --tail
+
+# Check broker workers
+curl -s "https://justtrades.app/api/broker-execution/status"
+```
+
+**Step 2: Immediate Rollback (if code change caused it)**
+```bash
+git reset --hard WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET
+git push -f origin main
+# Wait ~90 seconds for Railway auto-deploy
+```
+
+**Step 3: Verify Recovery**
+```bash
+curl -s "https://justtrades.app/api/broker-execution/status"
+# Confirm workers_alive = 10, queue_size = 0
+```
+
+**Step 4: Post-Incident**
+- Check for missed signals during outage: `curl -s "https://justtrades.app/api/raw-webhooks?limit=50"`
+- Check for orphaned positions: `curl -s "https://justtrades.app/api/broker-execution/failures?limit=50"`
+- Position reconciliation daemon will auto-sync DB within 60 seconds
+
+### SEV-2: Degraded Performance
+
+**Symptoms:** Some trades failing, high latency, wrong position sizes, TP/SL not placing.
+
+**Common causes and fixes:**
+
+| Symptom | Likely Cause | Diagnosis | Fix |
+|---------|-------------|-----------|-----|
+| Token expired errors | Token refresh daemon failed | `/api/accounts/auth-status` | User re-OAuth, or restart service |
+| Wrong position sizes | Multiplier not applied, DCA mismatch | Check trader settings in DB | Verify multiplier, dca_enabled |
+| TP/SL rejected | Price not on tick boundary | Check `broker-execution/failures` | Tick rounding bug (Rule 3) |
+| High latency (>500ms) | Background thread changed to sync | Check logs for timing | Revert to stable tag |
+| Queue growing | Workers stuck or dead | `/api/broker-execution/status` | `railway restart` |
+
+### SEV-3: Single User Issue
+
+**Symptoms:** One account not trading, one user can't log in, one trader getting wrong sizes.
+
+**Diagnosis flow:**
+1. Check trader enabled: `SELECT enabled FROM traders WHERE account_id = X`
+2. Check account token: `/api/accounts/auth-status`
+3. Check specific recorder: `/api/recorders/{id}/execution-status`
+4. Check broker state: `/api/traders/{id}/broker-state`
+
+### Common Failure Scenarios
+
+**Scenario: Stale Records Polluting Position Detection**
+```sql
+-- Diagnosis: Find stale open records
+SELECT id, recorder_id, ticker, side, status, entry_time
+FROM recorded_trades WHERE status = 'open' ORDER BY entry_time;
+
+-- Fix: Close stale records
+UPDATE recorded_trades SET status = 'closed', exit_reason = 'manual_cleanup'
+WHERE status = 'open' AND entry_time < NOW() - INTERVAL '24 hours';
+```
+
+**Scenario: Orphaned TP Orders on Broker**
+```sql
+-- Position reconciliation (runs automatically every 60s) handles this
+-- Manual trigger if needed:
+curl -s "https://justtrades.app/api/run-migrations"
+-- Then wait 60s for reconciliation loop
+```
+
+**Scenario: Whop Users Not Getting Emails**
+1. Check Whop sync: `curl -s "https://justtrades.app/api/admin/whop-sync-status"`
+2. Check Brevo: Is `BREVO_API_KEY` set? Is brevo-python pinned <2.0.0?
+3. Check stuck users: Look at `stuck_users` in sync status
+4. Manual resend: Admin panel → Users → Resend activation
+
+**Scenario: TradingView Prices Stale (10-15 min delay)**
+1. Check: `curl -s "https://justtrades.app/api/tradingview/status"`
+2. If `jwt_token_valid: false`: Session cookies expired
+3. Fix: Get new cookies from browser, update DB (see Rule 27), redeploy
+
+### Rollback Beyond Code
+
+Sometimes the issue isn't just code — it's data state. After a code rollback:
+
+1. **Stale DB records**: Check and clean `recorded_trades` with `status='open'` that shouldn't be
+2. **Redis state**: `railway restart` clears in-memory state (signal tracking, dedup caches)
+3. **Broker positions**: Position reconciliation auto-syncs within 60 seconds
+4. **Orphaned activation tokens**: Clean with `DELETE FROM activation_tokens WHERE expires_at < NOW()`
 
 ---
 
@@ -903,6 +1433,8 @@ curl -s "https://justtrades.app/api/run-migrations"
 | **Database Schema** | `docs/DATABASE_SCHEMA.md` | ANY SQL query, new columns, migrations, table structure |
 | **Railway Deployment** | `docs/RAILWAY_DEPLOYMENT.md` | Deploying, env vars, rollback, monitoring endpoints |
 | **Cheat Sheet** | `docs/CHEAT_SHEET.md` | Quick reference for common operations, tick sizes, debugging |
+| **Monitoring Endpoints** | `docs/MONITORING_ENDPOINTS.md` | Health checks, status endpoints, response payloads, alert thresholds |
+| **Testing Procedures** | `docs/TESTING_PROCEDURES.md` | End-to-end test signals, regression checklist, verification steps |
 
 **Key API differences to remember:**
 - **Tradovate**: OAuth + REST, bracket `params` = stringified JSON, values in POINTS
@@ -929,6 +1461,6 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 ---
 
 *Last updated: Feb 21, 2026*
-*Production stable tag: WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET @ bb1a183*
-*Total rules: 30 | Total documented disasters: 24 | Paid users in production: YES*
-*Documentation: 8 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*
+*Production stable tag: WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET @ bb1a183 (+ brevo fix 5b6be75)*
+*Total rules: 31 | Total documented disasters: 24 | Paid users in production: YES*
+*Documentation: 10 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*

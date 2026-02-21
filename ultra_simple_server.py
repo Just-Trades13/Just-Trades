@@ -7583,6 +7583,83 @@ def admin_max_loss_monitor_status():
     return jsonify(status)
 
 
+@app.route('/api/admin/export-configs', methods=['GET'])
+@admin_or_api_key_required
+def admin_export_configs():
+    """Export all recorder configs and trader overrides as JSON for backup/documentation."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        enabled_val = 'TRUE' if is_postgres else '1'
+
+        # --- Recorder configs ---
+        cursor.execute(f"""
+            SELECT id, name, symbol, initial_position_size, add_position_size,
+                   tp_units, trim_units, tp_targets, sl_enabled, sl_amount, sl_units,
+                   sl_type, trail_trigger, trail_freq, avg_down_enabled,
+                   avg_down_amount, avg_down_point, avg_down_units,
+                   break_even_enabled, break_even_ticks, break_even_offset,
+                   add_delay, signal_cooldown, max_signals_per_session,
+                   max_daily_loss, time_filter_1_enabled, time_filter_1_start,
+                   time_filter_1_stop, auto_flat_after_cutoff, custom_ticker,
+                   inverse_strategy, recording_enabled
+            FROM recorders WHERE recording_enabled = {enabled_val}
+            ORDER BY name
+        """)
+        recorder_cols = [desc[0] for desc in cursor.description]
+        recorders = []
+        for row in cursor.fetchall():
+            rec = dict(zip(recorder_cols, row))
+            # Parse tp_targets JSON if it's a string
+            if isinstance(rec.get('tp_targets'), str):
+                try:
+                    import json as _json
+                    rec['tp_targets'] = _json.loads(rec['tp_targets'])
+                except Exception:
+                    pass
+            recorders.append(rec)
+
+        # --- Trader overrides ---
+        cursor.execute(f"""
+            SELECT t.id, t.recorder_id, r.name as recorder_name, t.account_id,
+                   t.enabled, t.multiplier, t.initial_position_size, t.add_position_size,
+                   t.dca_enabled, t.tp_targets, t.sl_enabled, t.sl_amount, t.sl_type,
+                   t.trail_trigger, t.trail_freq, t.break_even_enabled,
+                   t.break_even_ticks, t.break_even_offset, t.max_daily_loss
+            FROM traders t JOIN recorders r ON t.recorder_id = r.id
+            WHERE t.enabled = {enabled_val}
+            ORDER BY r.name, t.id
+        """)
+        trader_cols = [desc[0] for desc in cursor.description]
+        traders = []
+        for row in cursor.fetchall():
+            tr = dict(zip(trader_cols, row))
+            if isinstance(tr.get('tp_targets'), str):
+                try:
+                    import json as _json
+                    tr['tp_targets'] = _json.loads(tr['tp_targets'])
+                except Exception:
+                    pass
+            traders.append(tr)
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'snapshot_time': datetime.now().isoformat(),
+            'recorders': recorders,
+            'traders': traders,
+            'recorder_count': len(recorders),
+            'trader_count': len(traders)
+        })
+
+    except Exception as e:
+        logger.error(f"Export configs failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 ## /api/admin/discord/enable route moved to discord_routes.py
 
 @app.route('/api/admin/recorders/fix-all', methods=['POST'])
