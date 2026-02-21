@@ -11,6 +11,10 @@ echo "DATABASE_URL set: $(if [ -n "$DATABASE_URL" ]; then echo 'yes'; else echo 
 echo "EXTERNAL_TRADING_ENGINE: ${EXTERNAL_TRADING_ENGINE:-not set}"
 
 echo ""
+echo "Step 0: Ensure brevo-python is installed..."
+pip install --quiet brevo-python 2>/dev/null || echo "⚠️ brevo-python install failed - activation emails may not work"
+
+echo ""
 echo "Step 1: Initialize database (timeout 15s)..."
 timeout 15 python init_db.py || echo "⚠️ init_db timed out or failed - continuing anyway"
 
