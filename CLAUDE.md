@@ -643,6 +643,46 @@ Changing BUILD_DATE does NOT bust the pip install layer above it. To bust pip in
 
 ---
 
+## RULE 30: DIAGNOSE BEFORE YOU FIX — MANDATORY DEBUG CHECKLIST (Feb 21, 2026)
+
+**Why this rule exists:** On Feb 21, 2026, 4 consecutive fix attempts failed for the Brevo email issue because each "fix" was applied before the root cause was identified. The error said "brevo-python not installed" — the actual problem was v4 API incompatibility. Hours wasted on Docker cache busting when a 30-second version check would have found the real issue.
+
+**This is the #1 pattern behind wasted debugging time in this project.** Jumping to a fix before understanding the problem.
+
+### BEFORE attempting ANY fix, complete ALL 4 steps:
+
+**Step 1: GET THE EXACT ERROR**
+- Do NOT trust catch-all error messages (e.g., "not installed" might mean "wrong version")
+- Read the actual exception, not the except handler's message
+- If the error is inside a `try/except` that masks it, temporarily check logs for the real traceback
+- Ask: "What EXACTLY is failing?" — not "What does the error message SAY is failing?"
+
+**Step 2: VERIFY IN THE REAL ENVIRONMENT**
+- **`railway run` runs on your LOCAL Mac** — it does NOT test the production container
+- **`railway logs`** is the ONLY way to see what's happening in production
+- If you need to test a Python import or value in production, add a temporary log line — don't trust local commands
+- Ask: "Am I testing the ACTUAL environment where this runs?"
+
+**Step 3: CHECK STATE BEFORE ASSUMING**
+- If "not installed" → check what version IS installed (`pip show`, `pip list`)
+- If "not found" → check if it exists under a different name/path
+- If "failed" → check if it partially succeeded
+- If "no data" → check if the data exists but in a different format
+- Ask: "What is the CURRENT state?" — not "What do I THINK the state is?"
+
+**Step 4: STATE YOUR DIAGNOSIS BEFORE WRITING CODE**
+- Tell the user: "I believe the root cause is X because Y"
+- If you can't state the root cause with confidence, YOU DON'T UNDERSTAND THE PROBLEM YET
+- Get confirmation before writing any fix
+- Ask: "Can I explain WHY this is broken, not just WHAT is broken?"
+
+### If you skip these steps:
+You will waste hours applying fixes to symptoms instead of causes. Every multi-attempt debugging session in this project's history (Brevo: 4 attempts, DCA: 3 layers, TP orders: 2 days) happened because diagnosis was skipped.
+
+**One correct diagnosis > four fast fixes.**
+
+---
+
 ## WHOP INTEGRATION (Feb 16)
 
 **Sync Daemon:** Polls Whop API every 30 seconds, creates Just Trades accounts for new memberships, sends welcome emails.
@@ -888,7 +928,7 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 ---
 
-*Last updated: Feb 20, 2026*
+*Last updated: Feb 21, 2026*
 *Production stable tag: WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET @ bb1a183*
-*Total rules: 29 | Total documented disasters: 24 | Paid users in production: YES*
+*Total rules: 30 | Total documented disasters: 24 | Paid users in production: YES*
 *Documentation: 8 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*
