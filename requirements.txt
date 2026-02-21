@@ -33,3 +33,5 @@ py-vapid==1.9.1
 # Email (Brevo transactional emails)
 brevo-python
 
+# Cache bust: 2026-02-21 — force pip reinstall to pick up brevo-python
+
