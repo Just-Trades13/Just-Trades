@@ -24005,8 +24005,10 @@ def _propagate_manual_trade_to_followers(user_id, account_id, subaccount_id,
         import requests as _requests
         import uuid
 
+        logger.info(f"Copy trader: checking leader for user_id={user_id} account_id={account_id} subaccount_id={subaccount_id}")
         leader = get_leader_for_account(user_id, account_id, subaccount_id)
         if not leader:
+            logger.info(f"Copy trader: account {account_id}:{subaccount_id} is not a leader — skipping propagation")
             return
 
         leader_id = leader['id']
