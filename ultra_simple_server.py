@@ -807,7 +807,7 @@ def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, 
 
     try:
         from tv_price_service import FUTURES_SPECS
-        spec = FUTURES_SPECS.get(symbol, {'point_value': 1.0})
+        spec = FUTURES_SPECS.get(extract_symbol_root(symbol), {'point_value': 1.0})
         point_value = spec['point_value']
 
         if side == 'LONG':
@@ -892,7 +892,7 @@ def _calculate_unrealized_pnl(symbol: str, side: str, quantity: float, entry_pri
 
     # Get symbol root for specs lookup
     symbol_root = extract_symbol_root(symbol) if symbol else 'MNQ'
-    spec = FUTURES_SPECS.get(symbol_root, {'point_value': 2.0})  # Default to MNQ
+    spec = FUTURES_SPECS.get(symbol_root, {'point_value': 1.0})
     point_value = spec['point_value']
 
     if side == 'LONG':
