@@ -4458,7 +4458,18 @@
     async function loadPaperPositions() {
         try {
             if (document.body.dataset.userLoggedIn !== 'true') return;
-            const response = await fetch('/api/paper-trades/positions');
+
+            if (!selectedStrategyId) {
+                const tbody = document.getElementById('paperPositionsBody');
+                const countEl = document.getElementById('positionCount');
+                if (tbody) tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Select a strategy to view positions</td></tr>';
+                if (countEl) countEl.textContent = '0 positions';
+                const openPnlEl = document.getElementById('openPnl');
+                if (openPnlEl) { openPnlEl.textContent = '--'; openPnlEl.className = 'stat-value'; }
+                return;
+            }
+
+            const response = await fetch(`/api/paper-trades/positions?recorder_id=${selectedStrategyId}`);
             const data = await response.json();
 
             const tbody = document.getElementById('paperPositionsBody');
@@ -5039,6 +5050,7 @@
         loadPaperHistoryPaginated(1);
         loadPnlCalendar();
         loadRecorderCards();
+        loadPaperPositions();
     }
 
     // ============================================================
