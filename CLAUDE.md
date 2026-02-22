@@ -486,6 +486,7 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Broker-verified quantity safety net (DB/broker drift) | `bb1a183` | Feb 20 | Working |
 | Brevo v1 pin + start.sh runtime install (activation emails) | `5b6be75` | Feb 21 | **Confirmed working** |
 | Pro Copy Trader pricing card + sidebar gating + route locks | `99f990c` | Feb 22 | Working |
+| TOS + Risk Disclosure updated with Goldman-reviewed legal language | `993d8b5` | Feb 22 | Working |
 
 ---
 

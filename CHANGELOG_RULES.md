@@ -310,3 +310,8 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | Broker qty safety net | Override to initial_position_size when broker flat | DB/broker drift gives wrong DCA qty | Users get add_position_size on fresh entry → wrong contract count |
 | Pro Copy Trader route gating | `@feature_required` on /recorders, /traders, /control-center | Tier enforcement for $100 plan | Copy-only users access recorder/trader features they didn't pay for |
 | Sidebar `is_copy_only` gating | `layout.html` greys out locked nav items | Visual indication of tier limits | Users click locked features, get confused by redirect |
+| TOS governing law | `terms.html` Section 15: Illinois + federal law | Goldman-reviewed legal requirement | Wrong jurisdiction for disputes |
+| TOS jury trial waiver | `terms.html` Section 16: waiver + arbitration opt-out | Goldman-reviewed legal requirement | Users retain jury trial right |
+| TOS limitation of liability | `terms.html` Section 18: 18.1-18.3 detailed caps | Goldman-reviewed — 3-month cap, intentional risk allocation | Unlimited liability exposure |
+| Risk Disclosure disclaimers | `risk_disclosure.html` Sections 11-17: platform overview, TradingView, hypothetical, testimonials, automation | Goldman-reviewed legal requirement | Missing legally required disclosures |
+| Contact email | `legal@justtrades.app` in both terms.html and risk_disclosure.html | Canonical legal contact | Users email non-existent address |
