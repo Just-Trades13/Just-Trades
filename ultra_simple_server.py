@@ -24837,14 +24837,18 @@ def copy_trader_status():
             return jsonify({'success': False, 'error': 'Requires Pro Copy Trader or Premium+ plan'}), 403
     try:
         from copy_trader_models import get_leaders_for_user
+        from ws_leader_monitor import _leader_connections
         leaders = get_leaders_for_user(user_id)
         status = []
         for leader in leaders:
+            lid = leader.get('id')
+            conn = _leader_connections.get(lid)
             status.append({
-                'leader_id': leader.get('id'),
+                'leader_id': lid,
                 'label': leader.get('label'),
                 'auto_copy_enabled': bool(leader.get('auto_copy_enabled')),
-                'ws_connected': False,  # Will be populated by ws_leader_monitor in Step 7
+                'ws_connected': bool(conn and conn.connected),
+                'ws_authenticated': bool(conn and conn.authenticated),
             })
         return jsonify({'success': True, 'leaders': status})
     except Exception as e:
