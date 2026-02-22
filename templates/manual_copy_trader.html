@@ -244,56 +244,6 @@
         </div>
     </section>
 
-    <section class="copy-trader">
-        <header>
-            <div>
-                <h2>Copy Trader</h2>
-                <p>Mirror your manual trades to multiple accounts</p>
-            </div>
-            <label class="copy-toggle">
-                <input type="checkbox" id="copyTradeEnabled">
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">Copy Trading</span>
-            </label>
-        </header>
-        <div class="copy-accounts-container">
-            <div class="copy-accounts-header">
-                <span>Select accounts to copy trades to:</span>
-                <div class="copy-actions">
-                    <button type="button" class="btn-small" id="selectAllAccounts">Select All</button>
-                    <button type="button" class="btn-small btn-outline" id="deselectAllAccounts">Deselect All</button>
-                </div>
-            </div>
-            <div id="copyAccountsList" class="copy-accounts-list">
-                <div class="copy-accounts-loading">
-                    <i class="material-icons spin">sync</i>
-                    <span>Loading accounts...</span>
-                </div>
-            </div>
-            <div class="copy-settings">
-                <h4>Copy Settings</h4>
-                <div class="copy-settings-grid">
-                    <label class="setting-row">
-                        <input type="checkbox" id="copyUseSameQuantity" checked>
-                        <span>Use same quantity for all accounts</span>
-                    </label>
-                    <label class="setting-row">
-                        <input type="checkbox" id="copyUseRiskSettings" checked>
-                        <span>Apply same risk settings (TP/SL/Trail)</span>
-                    </label>
-                    <label class="setting-row">
-                        <input type="checkbox" id="copyExcludeSource" checked>
-                        <span>Exclude source account from copy</span>
-                    </label>
-                </div>
-            </div>
-            <div class="copy-status" id="copyStatus">
-                <i class="material-icons">info</i>
-                <span>Enable copy trading and select accounts to mirror your trades</span>
-            </div>
-        </div>
-    </section>
-
     <!-- ================================================================== -->
     <!-- PRO COPY TRADER — Leader/Follower Auto-Copy                       -->
     <!-- ================================================================== -->
@@ -380,8 +330,7 @@
         display: grid;
         gap: 1.5rem;
     }
-    .manual-trader,
-    .copy-trader {
+    .manual-trader {
         background: rgba(11,18,33,0.92);
         border-radius: 18px;
         border: 1px solid rgba(59,130,246,0.25);
@@ -389,11 +338,7 @@
         display: grid;
         gap: 1.25rem;
     }
-    .copy-trader {
-        border-color: rgba(148,163,184,0.2);
-    }
-    .manual-trader header,
-    .copy-trader header {
+    .manual-trader header {
         display: flex;
         align-items: center;
         gap: 0.75rem;
@@ -550,193 +495,6 @@
         color: #3b82f6;
     }
     
-    /* Copy Accounts Container */
-    .copy-accounts-container {
-        display: grid;
-        gap: 1rem;
-    }
-    .copy-accounts-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-    }
-    .copy-accounts-header span {
-        font-size: 0.85rem;
-        color: rgba(226,232,240,0.7);
-    }
-    .copy-actions {
-        display: flex;
-        gap: 0.5rem;
-    }
-    .btn-small {
-        padding: 0.4rem 0.8rem;
-        font-size: 0.75rem;
-        border-radius: 8px;
-        border: none;
-        background: rgba(59,130,246,0.25);
-        color: #93c5fd;
-        cursor: pointer;
-        transition: background 0.2s ease;
-    }
-    .btn-small:hover {
-        background: rgba(59,130,246,0.4);
-    }
-    .btn-small.btn-outline {
-        background: transparent;
-        border: 1px solid rgba(148,163,184,0.3);
-        color: rgba(226,232,240,0.7);
-    }
-    .btn-small.btn-outline:hover {
-        background: rgba(148,163,184,0.1);
-    }
-    
-    /* Copy Accounts List */
-    .copy-accounts-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: 0.75rem;
-        max-height: 300px;
-        overflow-y: auto;
-        padding: 0.5rem;
-        background: rgba(15,23,42,0.4);
-        border-radius: 12px;
-        border: 1px solid rgba(148,163,184,0.15);
-    }
-    .copy-accounts-loading {
-        grid-column: 1 / -1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-        padding: 2rem;
-        color: rgba(148,163,184,0.7);
-    }
-    .spin {
-        animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-    
-    /* Account Card */
-    .copy-account-card {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 0.75rem 1rem;
-        background: rgba(15,23,42,0.55);
-        border: 1px solid rgba(148,163,184,0.2);
-        border-radius: 10px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-    .copy-account-card:hover {
-        border-color: rgba(59,130,246,0.4);
-        background: rgba(59,130,246,0.05);
-    }
-    .copy-account-card.selected {
-        border-color: rgba(59,130,246,0.6);
-        background: rgba(59,130,246,0.1);
-    }
-    .copy-account-card input[type="checkbox"] {
-        width: 18px;
-        height: 18px;
-        accent-color: #3b82f6;
-    }
-    .copy-account-info {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 0.15rem;
-    }
-    .copy-account-name {
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: #e2e8f0;
-    }
-    .copy-account-meta {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.75rem;
-        color: rgba(148,163,184,0.8);
-    }
-    .copy-account-badge {
-        padding: 0.15rem 0.4rem;
-        border-radius: 4px;
-        font-size: 0.65rem;
-        font-weight: 600;
-        text-transform: uppercase;
-    }
-    .copy-account-badge.demo {
-        background: rgba(251,191,36,0.2);
-        color: #fcd34d;
-    }
-    .copy-account-badge.live {
-        background: rgba(16,185,129,0.2);
-        color: #6ee7b7;
-    }
-    
-    /* Copy Settings */
-    .copy-settings {
-        padding: 1rem;
-        background: rgba(15,23,42,0.4);
-        border-radius: 12px;
-        border: 1px solid rgba(148,163,184,0.15);
-    }
-    .copy-settings h4 {
-        margin: 0 0 0.75rem 0;
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: rgba(226,232,240,0.7);
-    }
-    .copy-settings-grid {
-        display: grid;
-        gap: 0.6rem;
-    }
-    .setting-row {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        color: rgba(226,232,240,0.8);
-        font-size: 0.85rem;
-        cursor: pointer;
-    }
-    .setting-row input[type="checkbox"] {
-        width: 16px;
-        height: 16px;
-        accent-color: #3b82f6;
-    }
-    
-    /* Copy Status */
-    .copy-status {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.75rem 1rem;
-        background: rgba(59,130,246,0.1);
-        border: 1px solid rgba(59,130,246,0.25);
-        border-radius: 10px;
-        font-size: 0.85rem;
-        color: rgba(147,197,253,0.9);
-    }
-    .copy-status i {
-        font-size: 1.1rem;
-    }
-    .copy-status.active {
-        background: rgba(16,185,129,0.1);
-        border-color: rgba(16,185,129,0.3);
-        color: #6ee7b7;
-    }
-    .copy-status.disabled {
-        background: rgba(148,163,184,0.1);
-        border-color: rgba(148,163,184,0.2);
-        color: rgba(148,163,184,0.7);
-    }
     .live-positions {
         background: rgba(11,18,33,0.92);
         border-radius: 18px;
@@ -901,24 +659,20 @@
 
     /* ===== LIGHT MODE OVERRIDES ===== */
     :root[data-theme="light"] .manual-trader,
-    :root[data-theme="light"] .live-positions,
-    :root[data-theme="light"] .copy-trader {
+    :root[data-theme="light"] .live-positions {
         background: #ffffff !important;
         border-color: rgba(148, 163, 184, 0.2) !important;
     }
     :root[data-theme="light"] .manual-trader header,
-    :root[data-theme="light"] .live-positions header,
-    :root[data-theme="light"] .copy-trader header {
+    :root[data-theme="light"] .live-positions header {
         background: #f8fafc !important;
     }
     :root[data-theme="light"] .manual-trader h1,
     :root[data-theme="light"] .manual-trader h3,
-    :root[data-theme="light"] .live-positions h2,
-    :root[data-theme="light"] .copy-trader h2 {
+    :root[data-theme="light"] .live-positions h2 {
         color: #1e293b !important;
     }
-    :root[data-theme="light"] .live-positions p,
-    :root[data-theme="light"] .copy-trader p {
+    :root[data-theme="light"] .live-positions p {
         color: #64748b !important;
     }
     :root[data-theme="light"] .setup-card,
@@ -1482,13 +1236,6 @@
             const data = await response.json();
             if (data.success) {
                 showToast(`✅ ${data.message || `${side} order placed successfully`}`, 'success');
-                
-                // Execute copy trades if enabled
-                const copyEnabled = document.getElementById('copyTradeEnabled')?.checked;
-                if (copyEnabled) {
-                    // Small delay to let primary order process
-                    setTimeout(() => executeCopyTrades(side), 100);
-                }
             } else {
                 showToast(`❌ Error: ${data.error || 'Failed to place order'}`, 'error');
             }
@@ -1555,148 +1302,6 @@
 
         return risk;
     }
-
-    // ============================================================================
-    // Copy Trader Functionality
-    // ============================================================================
-    let allSubaccounts = []; // Store all available subaccounts for copy trading
-
-    async function loadCopyTraderAccounts() {
-        const listContainer = document.getElementById('copyAccountsList');
-        if (!listContainer) return;
-
-        try {
-            const response = await fetch('/api/accounts');
-            const data = await response.json();
-            
-            if (!data.success || !data.accounts) {
-                listContainer.innerHTML = '<div class="copy-accounts-loading"><span>No accounts found</span></div>';
-                return;
-            }
-            
-            allSubaccounts = [];
-            let html = '';
-            
-            data.accounts.forEach(account => {
-                if (!account.is_connected) return;
-                
-                const accountName = account.name || `Account ${account.id}`;
-                const tradovateAccounts = account.tradovate_accounts || [];
-                
-                tradovateAccounts.forEach(subaccount => {
-                    const subId = String(subaccount.id);
-                    const subName = subaccount.name || subId;
-                    const isDemo = subaccount.is_demo;
-                    const envLabel = isDemo ? 'Demo' : 'Live';
-                    const badgeClass = isDemo ? 'demo' : 'live';
-                    
-                    // Store for later use
-                    allSubaccounts.push({
-                        account_id: account.id,
-                        subaccount_id: subId,
-                        full_value: `${account.id}:${subId}`,
-                        name: subName,
-                        account_name: accountName,
-                        is_demo: isDemo
-                    });
-                    
-                    html += `
-                        <label class="copy-account-card" data-value="${account.id}:${subId}">
-                            <input type="checkbox" class="copy-account-checkbox" value="${account.id}:${subId}">
-                            <div class="copy-account-info">
-                                <span class="copy-account-name">${subName}</span>
-                                <div class="copy-account-meta">
-                                    <span>${accountName}</span>
-                                    <span class="copy-account-badge ${badgeClass}">${envLabel}</span>
-                                </div>
-                            </div>
-                        </label>
-                    `;
-                });
-            });
-            
-            if (html === '') {
-                listContainer.innerHTML = '<div class="copy-accounts-loading"><span>No connected accounts found. Connect accounts first.</span></div>';
-            } else {
-                listContainer.innerHTML = html;
-                
-                // Add event listeners for card selection styling
-                document.querySelectorAll('.copy-account-card').forEach(card => {
-                    const checkbox = card.querySelector('input[type="checkbox"]');
-                    checkbox.addEventListener('change', () => {
-                        card.classList.toggle('selected', checkbox.checked);
-                        updateCopyStatus();
-                    });
-                });
-            }
-            
-            updateCopyStatus();
-        } catch (error) {
-            console.error('Error loading copy trader accounts:', error);
-            listContainer.innerHTML = '<div class="copy-accounts-loading"><span>Error loading accounts</span></div>';
-        }
-    }
-
-    function getSelectedCopyAccounts() {
-        const checkboxes = document.querySelectorAll('.copy-account-checkbox:checked');
-        return Array.from(checkboxes).map(cb => cb.value);
-    }
-
-    function updateCopyStatus() {
-        const statusEl = document.getElementById('copyStatus');
-        const toggleEl = document.getElementById('copyTradeEnabled');
-        if (!statusEl || !toggleEl) return;
-        
-        const isEnabled = toggleEl.checked;
-        const selectedAccounts = getSelectedCopyAccounts();
-        
-        if (!isEnabled) {
-            statusEl.className = 'copy-status disabled';
-            statusEl.innerHTML = '<i class="material-icons">sync_disabled</i><span>Copy trading is disabled</span>';
-        } else if (selectedAccounts.length === 0) {
-            statusEl.className = 'copy-status';
-            statusEl.innerHTML = '<i class="material-icons">warning</i><span>Select at least one account to copy trades to</span>';
-        } else {
-            statusEl.className = 'copy-status active';
-            statusEl.innerHTML = `<i class="material-icons">check_circle</i><span>Copy trading active: ${selectedAccounts.length} account${selectedAccounts.length > 1 ? 's' : ''} selected</span>`;
-        }
-    }
-
-    // Initialize copy trader on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        // Load accounts for copy trader
-        setTimeout(() => loadCopyTraderAccounts(), 200);
-        
-        // Copy trade toggle
-        const copyToggle = document.getElementById('copyTradeEnabled');
-        if (copyToggle) {
-            copyToggle.addEventListener('change', updateCopyStatus);
-        }
-        
-        // Select All / Deselect All buttons
-        const selectAllBtn = document.getElementById('selectAllAccounts');
-        const deselectAllBtn = document.getElementById('deselectAllAccounts');
-        
-        if (selectAllBtn) {
-            selectAllBtn.addEventListener('click', () => {
-                document.querySelectorAll('.copy-account-checkbox').forEach(cb => {
-                    cb.checked = true;
-                    cb.closest('.copy-account-card').classList.add('selected');
-                });
-                updateCopyStatus();
-            });
-        }
-        
-        if (deselectAllBtn) {
-            deselectAllBtn.addEventListener('click', () => {
-                document.querySelectorAll('.copy-account-checkbox').forEach(cb => {
-                    cb.checked = false;
-                    cb.closest('.copy-account-card').classList.remove('selected');
-                });
-                updateCopyStatus();
-            });
-        }
-    });
 
     // ============================================================================
     // Pro Copy Trader — Leader/Follower Management
@@ -2031,97 +1636,6 @@
         }
     }
 
-    // Execute copy trades to all selected accounts
-    async function executeCopyTrades(side) {
-        const copyEnabled = document.getElementById('copyTradeEnabled')?.checked;
-        if (!copyEnabled) return { success: true, message: 'Copy trading disabled' };
-        
-        const selectedAccounts = getSelectedCopyAccounts();
-        if (selectedAccounts.length === 0) return { success: true, message: 'No accounts selected for copy' };
-        
-        const tickerSelect = document.getElementById('manualTickerSelect');
-        const positionSizeInput = document.getElementById('manualPositionSize');
-        const excludeSource = document.getElementById('copyExcludeSource')?.checked;
-        const useSameQuantity = document.getElementById('copyUseSameQuantity')?.checked;
-        const useRiskSettings = document.getElementById('copyUseRiskSettings')?.checked;
-        
-        const sourceAccount = document.getElementById('manualAccountSelect')?.value;
-        const rawSymbol = tickerSelect?.value;
-        const symbol = convertToTradovateSymbol(rawSymbol); // Convert to Tradovate format
-        const quantity = parseInt(positionSizeInput?.value || '1');
-        const riskPayload = useRiskSettings ? collectRiskSettings() : {};
-        
-        // Filter out source account if needed
-        // sourceAccount format: "account_id:subaccount_id" e.g., "1:26029294"
-        // selectedAccounts format: same "account_id:subaccount_id"
-        console.log('=== COPY TRADE DEBUG ===');
-        console.log('Source account (from select):', sourceAccount);
-        console.log('Selected accounts:', selectedAccounts);
-        console.log('Exclude source checked:', excludeSource);
-        
-        const accountsToCopy = excludeSource 
-            ? selectedAccounts.filter(acc => {
-                const match = acc === sourceAccount;
-                console.log(`  Comparing: "${acc}" === "${sourceAccount}" => ${match} (${match ? 'EXCLUDE' : 'INCLUDE'})`);
-                return !match;
-            })
-            : selectedAccounts;
-        
-        console.log('Accounts to copy to:', accountsToCopy);
-        console.log('========================');
-        
-        if (accountsToCopy.length === 0) {
-            showToast('ℹ️ No additional accounts to copy to (source excluded)', 'info');
-            return { success: true, message: 'No accounts to copy to (source excluded)' };
-        }
-        
-        // Execute copy trades
-        const results = [];
-        showToast(`🔄 Copying ${side} trade to ${accountsToCopy.length} account(s)...`, 'info');
-        
-        for (const accountValue of accountsToCopy) {
-            try {
-                const response = await fetch('/api/manual-trade', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        account_subaccount: accountValue,
-                        symbol: symbol,
-                        side: side,
-                        quantity: useSameQuantity ? quantity : quantity,
-                        risk: riskPayload
-                    })
-                });
-                
-                const data = await response.json();
-                results.push({
-                    account: accountValue,
-                    success: data.success,
-                    message: data.message || data.error
-                });
-            } catch (error) {
-                results.push({
-                    account: accountValue,
-                    success: false,
-                    message: error.message
-                });
-            }
-        }
-        
-        // Summarize results
-        const successful = results.filter(r => r.success).length;
-        const failed = results.filter(r => !r.success).length;
-        
-        if (failed === 0) {
-            showToast(`✅ Copy trade successful: ${successful} account(s)`, 'success');
-        } else if (successful === 0) {
-            showToast(`❌ Copy trade failed for all ${failed} account(s)`, 'error');
-        } else {
-            showToast(`⚠️ Copy trade: ${successful} succeeded, ${failed} failed`, 'info');
-        }
-        
-        return { success: successful > 0, results };
-    }
 </script>
 <script>
     // ============================================================================
