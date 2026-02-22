@@ -619,6 +619,121 @@ def send_activation_email(email, token):
         return False
 
 
+def send_password_reset_email(email, token):
+    """
+    Send password reset email via Brevo API.
+
+    Returns True if sent, False on any failure.
+    Failures are logged but never raise.
+    """
+    if not BREVO_API_KEY:
+        logger.warning("BREVO_API_KEY not configured — skipping password reset email")
+        return False
+
+    try:
+        import brevo_python
+        from brevo_python.rest import ApiException
+
+        configuration = brevo_python.Configuration()
+        configuration.api_key['api-key'] = BREVO_API_KEY
+        api_instance = brevo_python.TransactionalEmailsApi(brevo_python.ApiClient(configuration))
+
+        reset_url = f"{PLATFORM_URL}/reset-password?token={token}"
+
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background-color:#0b1221;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#0b1221;">
+    <tr>
+      <td align="center" style="padding:40px 20px;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;width:100%;">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="padding-bottom:30px;">
+              <span style="font-size:28px;font-weight:700;letter-spacing:0.15em;color:#f8fafc;">JUST.TRADES.</span>
+            </td>
+          </tr>
+
+          <!-- Card -->
+          <tr>
+            <td style="background-color:#111a2f;border-radius:16px;padding:40px 36px;border:1px solid rgba(148,163,184,0.12);">
+
+              <h1 style="margin:0 0 16px;font-size:24px;font-weight:600;color:#f8fafc;text-align:center;">
+                Reset Your Password
+              </h1>
+
+              <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#7f8db2;text-align:center;">
+                We received a request to reset your password. Click the button below to choose a new password.
+              </p>
+
+              <!-- CTA Button -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td align="center" style="padding:8px 0 24px;">
+                    <a href="{reset_url}"
+                       style="display:inline-block;padding:16px 40px;background:linear-gradient(135deg,#19b8ff,#0c6bbd);
+                              color:#ffffff;font-size:16px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
+                              text-decoration:none;border-radius:12px;">
+                      RESET MY PASSWORD
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 8px;font-size:13px;color:#7f8db2;text-align:center;">
+                Or copy and paste this link into your browser:
+              </p>
+              <p style="margin:0 0 24px;font-size:13px;color:#19b8ff;text-align:center;word-break:break-all;">
+                {reset_url}
+              </p>
+
+              <hr style="border:none;border-top:1px solid rgba(148,163,184,0.12);margin:24px 0;">
+
+              <p style="margin:0;font-size:12px;color:#7f8db2;text-align:center;">
+                This link expires in 1 hour. If you didn't request a password reset, you can safely ignore this email.
+              </p>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding-top:24px;">
+              <p style="margin:0;font-size:12px;color:#7f8db2;">Just Trades - Automated Trading Platform</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+        send_smtp_email = brevo_python.SendSmtpEmail(
+            to=[brevo_python.SendSmtpEmailTo(email=email)],
+            sender=brevo_python.SendSmtpEmailSender(
+                name=BREVO_SENDER_NAME,
+                email=BREVO_SENDER_EMAIL
+            ),
+            subject="Reset Your Just Trades Password",
+            html_content=html_content
+        )
+
+        api_instance.send_transac_email(send_smtp_email)
+        logger.info(f"Password reset email sent to {email}")
+        return True
+
+    except ImportError:
+        logger.warning("brevo-python not installed — skipping password reset email")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to send password reset email to {email}: {e}")
+        return False
+
+
 # ============================================================================
 # USER OPERATIONS
 # ============================================================================
