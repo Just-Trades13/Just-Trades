@@ -297,6 +297,17 @@
     <!-- ================================================================== -->
     <!-- PRO COPY TRADER — Leader/Follower Auto-Copy                       -->
     <!-- ================================================================== -->
+    {% if not has_advanced_copy_trader %}
+    <section class="pro-copy-trader" style="position:relative;overflow:hidden">
+        <div class="pro-upgrade-overlay">
+            <span class="material-icons" style="font-size:2rem;color:rgba(168,85,247,0.7)">lock</span>
+            <h3>Pro Copy Trader</h3>
+            <p>Auto-copy trades from a leader account to multiple followers via WebSocket.</p>
+            <p style="font-size:0.8rem;color:rgba(148,163,184,0.7)">Available on Pro Copy Trader ($100/mo) and Basic+ plans.</p>
+            <a href="/pricing" class="btn-small" style="padding:0.6rem 1.5rem;font-size:0.85rem;text-decoration:none">View Plans</a>
+        </div>
+    </section>
+    {% else %}
     <section class="pro-copy-trader" id="proCopyTraderSection">
         <header>
             <div>
@@ -359,6 +370,7 @@
             </div>
         </div>
     </section>
+    {% endif %}
 </div>
 {% endblock %}
 
@@ -996,6 +1008,28 @@
     }
     :root[data-theme="light"] .inactive-config .config-header span {
         color: #64748b !important;
+    }
+
+    /* Pro Copy Trader Upgrade Overlay */
+    .pro-upgrade-overlay {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem 2rem;
+        text-align: center;
+        gap: 0.75rem;
+    }
+    .pro-upgrade-overlay h3 {
+        margin: 0;
+        font-size: 1.2rem;
+        color: #e2e8f0;
+    }
+    .pro-upgrade-overlay p {
+        margin: 0;
+        color: rgba(226,232,240,0.6);
+        font-size: 0.9rem;
+        max-width: 400px;
     }
 
     /* ===== PRO COPY TRADER STYLES ===== */

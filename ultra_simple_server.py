@@ -19976,12 +19976,23 @@ def manual_trader_page():
             if user.is_admin:
                 has_platform_subscription = True
     
+    # Check advanced copy trader feature access
+    has_advanced_copy_trader = False
+    if SUBSCRIPTION_SYSTEM_AVAILABLE and USER_AUTH_AVAILABLE:
+        user = get_current_user()
+        if user:
+            from subscription_models import check_feature_access
+            has_advanced_copy_trader = check_feature_access(user.id, 'advanced_copy_trader')
+            if user.is_admin:
+                has_advanced_copy_trader = True
+
     # Pass current user ID for filtering live positions
     current_user_id = get_current_user_id() if USER_AUTH_AVAILABLE else None
-    return render_template('manual_copy_trader.html', 
+    return render_template('manual_copy_trader.html',
                           current_user_id=current_user_id,
                           has_platform_subscription=has_platform_subscription,
-                          user_tier=user_tier)
+                          user_tier=user_tier,
+                          has_advanced_copy_trader=has_advanced_copy_trader)
 
 
 # ============================================================================
