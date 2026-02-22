@@ -23898,7 +23898,8 @@ def manual_trade():
         side = data.get('side', '').strip()
         quantity = int(data.get('quantity', 1))
         risk_settings = data.get('risk') or {}
-        
+        cl_ord_id = data.get('cl_ord_id')  # Copy trader loop prevention (Step 6)
+
         # DEBUG: Log received risk settings
         logger.info(f"📋 Manual trade request: symbol={symbol}, side={side}, qty={quantity}")
         logger.info(f"📋 Risk settings received: {risk_settings}")
@@ -24367,6 +24368,8 @@ def manual_trade():
                     logger.info(f"📤 Order data: {order_data}")
                     if risk_settings:
                         order_data.setdefault('customFields', {})['riskSettings'] = risk_settings
+                    if cl_ord_id:
+                        order_data['clOrdId'] = cl_ord_id  # Copy trader loop prevention (Step 6)
                     result = await tradovate.place_order(order_data)
                     logger.info(f"📥 Order result: {result}")
                     if result and result.get('success') and risk_settings:
@@ -24617,6 +24620,12 @@ def copy_trader_list_leaders():
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    # Tier check — admin bypass
+    user = get_current_user()
+    if not (user and user.is_admin):
+        from subscription_models import check_feature_access
+        if not check_feature_access(user_id, 'advanced_copy_trader'):
+            return jsonify({'success': False, 'error': 'Requires Pro Copy Trader or Premium+ plan'}), 403
     try:
         from copy_trader_models import get_leaders_for_user
         leaders = get_leaders_for_user(user_id)
@@ -24632,6 +24641,12 @@ def copy_trader_create_leader():
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    # Tier check — admin bypass
+    user = get_current_user()
+    if not (user and user.is_admin):
+        from subscription_models import check_feature_access
+        if not check_feature_access(user_id, 'advanced_copy_trader'):
+            return jsonify({'success': False, 'error': 'Requires Pro Copy Trader or Premium+ plan'}), 403
     try:
         data = request.get_json() or {}
         account_id = data.get('account_id')
@@ -24657,6 +24672,12 @@ def copy_trader_list_followers(leader_id):
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    # Tier check — admin bypass
+    user = get_current_user()
+    if not (user and user.is_admin):
+        from subscription_models import check_feature_access
+        if not check_feature_access(user_id, 'advanced_copy_trader'):
+            return jsonify({'success': False, 'error': 'Requires Pro Copy Trader or Premium+ plan'}), 403
     try:
         from copy_trader_models import get_leader_by_id, get_all_followers_for_leader
         leader = get_leader_by_id(leader_id)
@@ -24676,6 +24697,12 @@ def copy_trader_add_follower(leader_id):
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    # Tier check — admin bypass
+    user = get_current_user()
+    if not (user and user.is_admin):
+        from subscription_models import check_feature_access
+        if not check_feature_access(user_id, 'advanced_copy_trader'):
+            return jsonify({'success': False, 'error': 'Requires Pro Copy Trader or Premium+ plan'}), 403
     try:
         data = request.get_json() or {}
         account_id = data.get('account_id')
@@ -24707,7 +24734,28 @@ def copy_trader_update_follower(follower_id):
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    # Tier check — admin bypass
+    user = get_current_user()
+    if not (user and user.is_admin):
+        from subscription_models import check_feature_access
+        if not check_feature_access(user_id, 'advanced_copy_trader'):
+            return jsonify({'success': False, 'error': 'Requires Pro Copy Trader or Premium+ plan'}), 403
     try:
+        # Ownership check: verify follower belongs to user's leader
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(f'''
+            SELECT fa.id FROM follower_accounts fa
+            JOIN leader_accounts la ON fa.leader_id = la.id
+            WHERE fa.id = {placeholder} AND la.user_id = {placeholder}
+        ''', (follower_id, user_id))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'success': False, 'error': 'Follower not found'}), 404
+
         data = request.get_json() or {}
         from copy_trader_models import update_follower
         success = update_follower(follower_id, **data)
@@ -24723,6 +24771,12 @@ def copy_trader_toggle_auto_mode():
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    # Tier check — admin bypass
+    user = get_current_user()
+    if not (user and user.is_admin):
+        from subscription_models import check_feature_access
+        if not check_feature_access(user_id, 'advanced_copy_trader'):
+            return jsonify({'success': False, 'error': 'Requires Pro Copy Trader or Premium+ plan'}), 403
     try:
         data = request.get_json() or {}
         leader_id = data.get('leader_id')
@@ -24749,6 +24803,12 @@ def copy_trader_get_log(leader_id):
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    # Tier check — admin bypass
+    user = get_current_user()
+    if not (user and user.is_admin):
+        from subscription_models import check_feature_access
+        if not check_feature_access(user_id, 'advanced_copy_trader'):
+            return jsonify({'success': False, 'error': 'Requires Pro Copy Trader or Premium+ plan'}), 403
     try:
         from copy_trader_models import get_leader_by_id, get_copy_trade_history, get_copy_stats
         leader = get_leader_by_id(leader_id)
@@ -24769,6 +24829,12 @@ def copy_trader_status():
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    # Tier check — admin bypass
+    user = get_current_user()
+    if not (user and user.is_admin):
+        from subscription_models import check_feature_access
+        if not check_feature_access(user_id, 'advanced_copy_trader'):
+            return jsonify({'success': False, 'error': 'Requires Pro Copy Trader or Premium+ plan'}), 403
     try:
         from copy_trader_models import get_leaders_for_user
         leaders = get_leaders_for_user(user_id)
@@ -24783,6 +24849,34 @@ def copy_trader_status():
         return jsonify({'success': True, 'leaders': status})
     except Exception as e:
         logger.error(f"Error getting copy trader status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/copy-trader/leader-position/<int:leader_id>', methods=['GET'])
+def copy_trader_leader_position(leader_id):
+    """Get leader's tracked position state from the WebSocket monitor."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        from copy_trader_models import get_leader_by_id
+        leader = get_leader_by_id(leader_id)
+        if not leader or leader.get('user_id') != user_id:
+            return jsonify({'success': False, 'error': 'Leader not found'}), 404
+
+        from ws_leader_monitor import _leader_connections
+        conn = _leader_connections.get(leader_id)
+        if not conn:
+            return jsonify({'success': True, 'positions': {}, 'connected': False})
+
+        return jsonify({
+            'success': True,
+            'connected': conn.connected,
+            'authenticated': conn.authenticated,
+            'positions': conn._positions,
+        })
+    except Exception as e:
+        logger.error(f"Error getting leader position: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

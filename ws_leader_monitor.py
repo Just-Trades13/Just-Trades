@@ -37,6 +37,43 @@ except ImportError:
     WEBSOCKETS_AVAILABLE = False
     logger.warning("websockets library not installed. pip install websockets")
 
+# Tick sizes for TP/SL delta calculation (Rule 15: 2-letter symbols handled)
+TICK_SIZES = {
+    'ES': 0.25, 'NQ': 0.25, 'RTY': 0.10, 'YM': 1.0,
+    'MES': 0.25, 'MNQ': 0.25, 'M2K': 0.10, 'MYM': 1.0,
+    'GC': 0.10, 'SI': 0.005, 'HG': 0.0005, 'PL': 0.10,
+    'MGC': 0.10, 'SIL': 0.005,
+    'CL': 0.01, 'NG': 0.001, 'HO': 0.0001, 'RB': 0.0001,
+    'MCL': 0.01,
+    'ZB': 0.03125, 'ZN': 0.015625, 'ZF': 0.0078125, 'ZT': 0.00390625,
+    'DX': 0.005,
+    'KC': 0.05, 'CT': 0.01, 'SB': 0.01,
+    '6E': 0.00005, '6J': 0.0000005, '6B': 0.0001, '6A': 0.0001,
+}
+
+
+def _get_symbol_root(symbol: str) -> str:
+    """Extract symbol root from futures contract name (e.g. GCJ6 -> GC, MNQH6 -> MNQ).
+    Rule 15 compliant: tries 3-char first, then 2-char."""
+    alpha = ''.join(c for c in symbol if c.isalpha()).upper()
+    # Try 3-char root first (e.g. MNQ, MGC, MES)
+    root3 = alpha[:3]
+    if root3 in TICK_SIZES:
+        return root3
+    # Try 2-char root (e.g. GC, CL, NQ, ES)
+    root2 = alpha[:2]
+    if root2 in TICK_SIZES:
+        return root2
+    # Fallback: return 3-char (might match in future)
+    return root3
+
+
+def _get_tick_size(symbol: str) -> float:
+    """Get tick size for a symbol. Default 0.25."""
+    root = _get_symbol_root(symbol)
+    return TICK_SIZES.get(root, 0.25)
+
+
 # Global state
 _monitor_running = False
 _monitor_thread = None
@@ -71,6 +108,10 @@ class LeaderConnection:
         self._last_heartbeat = 0
         self._request_id = 0
         self._connection_time = None  # When we connected — for replay filter
+
+        # Position state tracking (Phase 2)
+        self._positions: Dict[str, dict] = {}  # symbol -> {side: 'Long'|'Short', qty: int}
+        self._contract_cache: Dict[int, str] = {}  # contractId -> symbol name
 
     def _next_request_id(self) -> int:
         self._request_id += 1
@@ -210,8 +251,161 @@ class LeaderConnection:
         for fill in fills:
             await self._process_fill(fill, fill_callback)
 
+    async def _resolve_symbol(self, contract_id: int) -> str:
+        """Resolve contractId to symbol name via REST API with caching."""
+        if not contract_id:
+            return ''
+        if contract_id in self._contract_cache:
+            return self._contract_cache[contract_id]
+        try:
+            import aiohttp
+            base_url = ("https://demo.tradovateapi.com/v1" if self.is_demo
+                        else "https://live.tradovateapi.com/v1")
+            headers = {'Authorization': f'Bearer {self.access_token}',
+                       'Content-Type': 'application/json'}
+            async with aiohttp.ClientSession() as http:
+                async with http.get(f"{base_url}/contract/item",
+                                    params={'id': contract_id},
+                                    headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        symbol = data.get('name', '') or ''
+                        if symbol:
+                            self._contract_cache[contract_id] = symbol
+                            logger.debug(f"Resolved contractId {contract_id} → {symbol}")
+                        return symbol
+        except Exception as e:
+            logger.warning(f"Failed to resolve contractId {contract_id}: {e}")
+        return ''
+
+    def _classify_fill(self, symbol: str, action: str, qty: int) -> str:
+        """Classify a fill based on current position state.
+
+        Returns: 'entry', 'partial_exit', 'full_exit', or 'reversal'
+        """
+        pos = self._positions.get(symbol)
+        if not pos or pos.get('qty', 0) == 0:
+            return 'entry'  # Flat — any fill is an entry
+
+        pos_side = pos.get('side', '')
+        pos_qty = pos.get('qty', 0)
+
+        # Determine if fill is same-direction or opposite
+        fill_is_buy = action.lower() == 'buy'
+        same_direction = (fill_is_buy and pos_side == 'Long') or (not fill_is_buy and pos_side == 'Short')
+
+        if same_direction:
+            return 'entry'  # Adding to position (scale-in)
+
+        # Opposite direction
+        if qty < pos_qty:
+            return 'partial_exit'
+        elif qty == pos_qty:
+            return 'full_exit'
+        else:
+            return 'reversal'  # qty > pos_qty — flip
+
+    def _update_position(self, symbol: str, action: str, qty: int, fill_type: str):
+        """Update tracked position state after a classified fill."""
+        fill_is_buy = action.lower() == 'buy'
+        new_side = 'Long' if fill_is_buy else 'Short'
+
+        if fill_type == 'entry':
+            pos = self._positions.get(symbol, {'side': new_side, 'qty': 0})
+            pos['side'] = new_side
+            pos['qty'] = pos.get('qty', 0) + qty
+            self._positions[symbol] = pos
+        elif fill_type == 'partial_exit':
+            pos = self._positions.get(symbol)
+            if pos:
+                pos['qty'] = max(0, pos['qty'] - qty)
+                if pos['qty'] == 0:
+                    del self._positions[symbol]
+        elif fill_type == 'full_exit':
+            self._positions.pop(symbol, None)
+        elif fill_type == 'reversal':
+            pos = self._positions.get(symbol, {'side': '', 'qty': 0})
+            remainder = qty - pos.get('qty', 0)
+            self._positions[symbol] = {'side': new_side, 'qty': remainder}
+
+    async def _get_leader_risk_config(self, symbol: str, entry_price: float) -> dict:
+        """Extract TP/SL from leader's working orders after an entry fill.
+
+        Returns risk_config dict compatible with /api/manual-trade:
+          {take_profit: [{gain_ticks, trim_percent: 100}], stop_loss: {loss_ticks, type: 'fixed'}}
+        Returns {} if no TP/SL found on leader.
+        """
+        try:
+            import aiohttp
+            base_url = ("https://demo.tradovateapi.com/v1" if self.is_demo
+                        else "https://live.tradovateapi.com/v1")
+            headers = {'Authorization': f'Bearer {self.access_token}',
+                       'Content-Type': 'application/json'}
+
+            tick_size = _get_tick_size(symbol)
+            symbol_root = _get_symbol_root(symbol)
+            risk_config = {}
+
+            async with aiohttp.ClientSession() as http:
+                async with http.get(f"{base_url}/order/list",
+                                    headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"Leader order/list returned {resp.status}")
+                        return {}
+                    orders = await resp.json()
+
+            # Filter to working orders for this symbol
+            for order in orders:
+                ord_status = (order.get('ordStatus') or '').lower()
+                if ord_status not in ('working', 'accepted'):
+                    continue
+                # Match by symbol root in the order's contract
+                ord_name = (order.get('contractName') or order.get('name') or '').upper()
+                if symbol_root not in ord_name and symbol.upper() not in ord_name:
+                    # Try contractId match
+                    continue
+
+                ord_type = (order.get('ordType') or '').lower()
+                ord_price = order.get('price', 0)
+
+                if ord_type == 'limit' and ord_price > 0:
+                    # Limit order = likely TP
+                    tp_ticks = abs(ord_price - entry_price) / tick_size
+                    tp_ticks = round(tp_ticks)
+                    if tp_ticks > 0:
+                        risk_config['take_profit'] = [{'gain_ticks': tp_ticks, 'trim_percent': 100}]
+                        logger.info(f"Leader TP found: {ord_price} ({tp_ticks} ticks from {entry_price})")
+
+                elif ord_type in ('stop', 'stopmarket', 'stoplimit', 'stoporder') and ord_price > 0:
+                    # Stop order = likely SL
+                    sl_ticks = abs(entry_price - ord_price) / tick_size
+                    sl_ticks = round(sl_ticks)
+                    if sl_ticks > 0:
+                        risk_config['stop_loss'] = {'loss_ticks': sl_ticks, 'type': 'fixed'}
+                        logger.info(f"Leader SL found: {ord_price} ({sl_ticks} ticks from {entry_price})")
+
+                elif ord_type == 'trailingstoporder':
+                    # Trailing stop — extract trail offset
+                    trail_offset = order.get('trailPrice') or order.get('pegOffset')
+                    if trail_offset:
+                        trail_ticks = round(abs(trail_offset) / tick_size)
+                        if trail_ticks > 0:
+                            risk_config['stop_loss'] = {'loss_ticks': trail_ticks, 'type': 'fixed'}
+                            logger.info(f"Leader trailing SL found: offset={trail_offset} ({trail_ticks} ticks)")
+
+            if not risk_config:
+                logger.info(f"No TP/SL found on leader for {symbol} — followers get naked entry")
+
+            return risk_config
+
+        except Exception as e:
+            logger.error(f"Error getting leader risk config: {e}")
+            return {}
+
     async def _process_fill(self, fill: dict, fill_callback):
-        """Process a single fill event."""
+        """Process a single fill event — classify and copy to followers."""
         fill_id = fill.get('id')
         order_id = fill.get('orderId')
         contract_id = fill.get('contractId')
@@ -242,10 +436,27 @@ class LeaderConnection:
         if not action or qty == 0:
             return
 
-        logger.info(f"FILL detected on leader {self.leader_id}: "
-                    f"{action} {qty} contractId={contract_id} @ {price}")
+        # Resolve symbol from contractId if not in fill data
+        symbol = fill.get('symbol', '') or ''
+        if not symbol and contract_id:
+            symbol = await self._resolve_symbol(contract_id)
+        if not symbol:
+            logger.warning(f"Cannot resolve symbol for fill (contractId={contract_id}), skipping")
+            return
 
-        # Get symbol name from contract (will be resolved by callback)
+        qty = abs(qty)
+
+        # Classify the fill
+        fill_type = self._classify_fill(symbol, action, qty)
+
+        logger.info(f"FILL detected on leader {self.leader_id}: "
+                    f"{action} {qty} {symbol} @ {price} — type={fill_type}")
+
+        # Update position state
+        self._update_position(symbol, action, qty, fill_type)
+        logger.debug(f"Leader {self.leader_id} positions: {self._positions}")
+
+        # Pass to callback with fill_type
         if fill_callback:
             try:
                 await fill_callback(
@@ -254,11 +465,12 @@ class LeaderConnection:
                         'fill_id': fill_id,
                         'order_id': order_id,
                         'contract_id': contract_id,
-                        'symbol': fill.get('symbol', ''),
+                        'symbol': symbol,
                         'action': action,
-                        'qty': abs(qty),
+                        'qty': qty,
                         'price': price,
                         'timestamp': timestamp_str,
+                        'fill_type': fill_type,
                     }
                 )
             except Exception as e:
@@ -279,7 +491,7 @@ class LeaderConnection:
 # FILL CALLBACK — COPY TO FOLLOWERS
 # ============================================================================
 async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
-    """Copy a leader's fill to all enabled followers."""
+    """Copy a leader's fill to all enabled followers — smart routing by fill_type."""
     global _copy_locks
 
     # Per-leader lock prevents duplicate copies
@@ -301,21 +513,45 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
             qty = fill_data.get('qty', 1)
             symbol = fill_data.get('symbol', '')
             price = fill_data.get('price', 0)
+            fill_type = fill_data.get('fill_type', 'entry')
 
-            logger.info(f"Copying {action} {qty} {symbol} from leader {leader_id} "
-                        f"to {len(followers)} followers")
+            # For entries, get leader's TP/SL as risk_config
+            risk_config = {}
+            if fill_type == 'entry':
+                leader_conn = _leader_connections.get(leader_id)
+                if leader_conn and price > 0:
+                    risk_config = await leader_conn._get_leader_risk_config(symbol, price)
+
+            logger.info(f"Copying {fill_type} {action} {qty} {symbol} from leader {leader_id} "
+                        f"to {len(followers)} followers (risk={bool(risk_config)})")
 
             for follower in followers:
                 follower_id = follower['id']
                 multiplier = follower.get('multiplier', 1.0) or 1.0
+                max_pos = follower.get('max_position_size', 0) or 0
                 follower_qty = max(1, int(round(qty * multiplier)))
 
+                # Apply max_position_size cap (Step 5)
+                if max_pos and max_pos > 0 and fill_type == 'entry':
+                    follower_qty = min(follower_qty, max_pos)
+
+                # Determine follower risk — respect copy_tp / copy_sl toggles
+                follower_risk = {}
+                if risk_config and fill_type == 'entry':
+                    copy_tp = follower.get('copy_tp', True)
+                    copy_sl = follower.get('copy_sl', True)
+                    if copy_tp and 'take_profit' in risk_config:
+                        follower_risk['take_profit'] = risk_config['take_profit']
+                    if copy_sl and 'stop_loss' in risk_config:
+                        follower_risk['stop_loss'] = risk_config['stop_loss']
+
                 # Log the pending copy
+                log_side = 'close' if fill_type in ('full_exit', 'reversal') else action
                 log_id = log_copy_trade(
                     leader_id=leader_id,
                     follower_id=follower_id,
                     symbol=symbol,
-                    side=action,
+                    side=f"{log_side} ({fill_type})",
                     leader_quantity=qty,
                     follower_quantity=follower_qty,
                     leader_price=price,
@@ -325,32 +561,57 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                 start_time = time.time()
 
                 try:
-                    # Execute via internal manual trade API
                     account_subaccount = f"{follower['account_id']}:{follower['subaccount_id']}"
 
-                    # Use clOrdId with COPY prefix for loop prevention
-                    import uuid
-                    cl_ord_id = f"{COPY_ORDER_PREFIX}{uuid.uuid4().hex[:12]}"
-
-                    result = await _execute_follower_trade(
-                        account_subaccount=account_subaccount,
-                        symbol=symbol,
-                        side=action,
-                        quantity=follower_qty,
-                        cl_ord_id=cl_ord_id
-                    )
+                    if fill_type == 'entry':
+                        result = await _execute_follower_entry(
+                            account_subaccount, symbol, action, follower_qty,
+                            risk_config=follower_risk
+                        )
+                    elif fill_type == 'partial_exit':
+                        # Trim: opposite-side market order, no risk
+                        opposite_side = 'Sell' if action.lower() == 'buy' else 'Buy'
+                        result = await _execute_follower_entry(
+                            account_subaccount, symbol, opposite_side, follower_qty,
+                            risk_config={}
+                        )
+                    elif fill_type == 'full_exit':
+                        result = await _execute_follower_close(account_subaccount, symbol)
+                    elif fill_type == 'reversal':
+                        # Close first, then open new entry
+                        close_result = await _execute_follower_close(account_subaccount, symbol)
+                        if close_result and close_result.get('success'):
+                            logger.info(f"  Reversal close done for follower {follower_id}, now entering")
+                        # New entry in opposite direction
+                        result = await _execute_follower_entry(
+                            account_subaccount, symbol, action, follower_qty,
+                            risk_config=follower_risk
+                        )
+                    else:
+                        # Unknown fill type — fall back to naked entry
+                        result = await _execute_follower_entry(
+                            account_subaccount, symbol, action, follower_qty,
+                            risk_config={}
+                        )
 
                     latency_ms = int((time.time() - start_time) * 1000)
 
                     if result and result.get('success'):
+                        risk_desc = ''
+                        if follower_risk:
+                            tp = follower_risk.get('take_profit', [{}])
+                            sl = follower_risk.get('stop_loss', {})
+                            tp_t = tp[0].get('gain_ticks', 0) if tp else 0
+                            sl_t = sl.get('loss_ticks', 0) if sl else 0
+                            risk_desc = f" TP={tp_t}t SL={sl_t}t"
                         if log_id:
                             update_copy_trade_log(
                                 log_id, status='filled',
                                 follower_order_id=result.get('order_id'),
                                 latency_ms=latency_ms
                             )
-                        logger.info(f"  Copied to follower {follower_id}: "
-                                    f"{action} {follower_qty} {symbol} ({latency_ms}ms)")
+                        logger.info(f"  Copied {fill_type} to follower {follower_id}: "
+                                    f"{action} {follower_qty} {symbol}{risk_desc} ({latency_ms}ms)")
                     else:
                         error_msg = (result.get('error') or 'Unknown error') if result else 'No result'
                         if log_id:
@@ -359,7 +620,7 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                                 error_message=error_msg,
                                 latency_ms=latency_ms
                             )
-                        logger.warning(f"  Failed to copy to follower {follower_id}: {error_msg}")
+                        logger.warning(f"  Failed {fill_type} for follower {follower_id}: {error_msg}")
 
                 except Exception as e:
                     latency_ms = int((time.time() - start_time) * 1000)
@@ -375,25 +636,25 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
             logger.error(f"Error in copy_fill_to_followers for leader {leader_id}: {e}")
 
 
-async def _execute_follower_trade(account_subaccount: str, symbol: str,
+async def _execute_follower_entry(account_subaccount: str, symbol: str,
                                    side: str, quantity: int,
-                                   cl_ord_id: str = None) -> dict:
-    """Execute a trade on a follower account via internal REST call."""
+                                   risk_config: dict = None) -> dict:
+    """Execute an entry trade on a follower account with optional TP/SL."""
     import aiohttp
+    import uuid
 
-    # Use localhost to call our own /api/manual-trade endpoint
     platform_url = os.environ.get('PLATFORM_URL', 'http://localhost:5000')
     url = f"{platform_url}/api/manual-trade"
+    cl_ord_id = f"{COPY_ORDER_PREFIX}{uuid.uuid4().hex[:12]}"
 
     payload = {
         'account_subaccount': account_subaccount,
         'symbol': symbol,
         'side': side,
         'quantity': quantity,
-        'risk': {},  # No TP/SL on copy trades — leader manages risk
+        'risk': risk_config or {},
+        'cl_ord_id': cl_ord_id,
     }
-    if cl_ord_id:
-        payload['cl_ord_id'] = cl_ord_id
 
     try:
         async with aiohttp.ClientSession() as http_session:
@@ -401,7 +662,35 @@ async def _execute_follower_trade(account_subaccount: str, symbol: str,
                 result = await resp.json()
                 return result
     except Exception as e:
-        logger.error(f"Error executing follower trade: {e}")
+        logger.error(f"Error executing follower entry: {e}")
+        return {'success': False, 'error': str(e)}
+
+
+async def _execute_follower_close(account_subaccount: str, symbol: str) -> dict:
+    """Close/flatten a follower's position via /api/manual-trade with side='close'."""
+    import aiohttp
+    import uuid
+
+    platform_url = os.environ.get('PLATFORM_URL', 'http://localhost:5000')
+    url = f"{platform_url}/api/manual-trade"
+    cl_ord_id = f"{COPY_ORDER_PREFIX}{uuid.uuid4().hex[:12]}"
+
+    payload = {
+        'account_subaccount': account_subaccount,
+        'symbol': symbol,
+        'side': 'close',
+        'quantity': 1,  # Not used for close — liquidateposition handles qty
+        'risk': {},
+        'cl_ord_id': cl_ord_id,
+    }
+
+    try:
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                result = await resp.json()
+                return result
+    except Exception as e:
+        logger.error(f"Error executing follower close: {e}")
         return {'success': False, 'error': str(e)}
 
 

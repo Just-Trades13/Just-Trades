@@ -291,6 +291,10 @@
                 <span class="status-dot" id="leaderStatusDot"></span>
                 <span id="leaderStatusText">Not connected</span>
             </div>
+            <div id="leaderPositionDisplay" class="leader-position-display" style="display:none">
+                <span class="position-label">Leader Position:</span>
+                <span id="leaderPositionBadge" class="position-badge flat">FLAT</span>
+            </div>
         </div>
 
         <!-- Follower Accounts -->
@@ -1008,6 +1012,30 @@
     .log-status-badge.error { background: rgba(248,113,113,0.2); color: #fca5a5; }
     .log-status-badge.pending { background: rgba(251,191,36,0.2); color: #fde68a; }
 
+    /* Leader Position Display */
+    .leader-position-display {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        background: rgba(15,23,42,0.4);
+        border-radius: 8px;
+        font-size: 0.85rem;
+    }
+    .position-label { color: rgba(148,163,184,0.8); }
+    .position-badge {
+        padding: 0.2rem 0.6rem;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        letter-spacing: 0.05em;
+    }
+    .position-badge.flat { background: rgba(148,163,184,0.2); color: #94a3b8; }
+    .position-badge.long { background: rgba(16,185,129,0.25); color: #6ee7b7; }
+    .position-badge.short { background: rgba(248,113,113,0.25); color: #fca5a5; }
+    .log-risk { font-size: 0.7rem; color: rgba(168,85,247,0.7); margin-left: 0.25rem; }
+    .log-latency { font-size: 0.7rem; color: rgba(148,163,184,0.5); margin-left: 0.35rem; }
+
     /* Light mode overrides for pro copy trader */
     :root[data-theme="light"] .pro-copy-trader {
         background: #ffffff !important;
@@ -1584,6 +1612,12 @@
                     enabled ? 'connecting' : 'connected',
                     enabled ? 'Connecting to leader WebSocket...' : 'Manual mode active'
                 );
+                // Start/stop position polling
+                if (enabled) {
+                    startPositionPolling();
+                } else {
+                    stopPositionPolling();
+                }
             } else {
                 showToast(`Error: ${data.error || 'Failed to toggle mode'}`, 'error');
             }
@@ -1613,18 +1647,21 @@
 
             let html = '';
             data.log.forEach(entry => {
-                const sideClass = entry.side?.toLowerCase() === 'buy' ? 'buy' : 'sell';
+                const rawSide = entry.side || '';
+                const sideClass = rawSide.toLowerCase().includes('buy') ? 'buy' : 'sell';
                 const time = new Date(entry.created_at).toLocaleTimeString();
+                const latency = entry.latency_ms ? `<span class="log-latency">${entry.latency_ms}ms</span>` : '';
                 html += `
                     <div class="log-entry">
                         <div>
                             <span class="log-symbol">${entry.symbol}</span>
-                            <span class="log-side ${sideClass}">${entry.side}</span>
+                            <span class="log-side ${sideClass}">${rawSide}</span>
                             <span style="color:rgba(148,163,184,0.6)">x${entry.follower_quantity}</span>
                             <span style="color:rgba(148,163,184,0.5)">&rarr; ${entry.follower_label || 'Follower'}</span>
                         </div>
                         <div>
                             <span class="log-status-badge ${entry.status}">${entry.status}</span>
+                            ${latency}
                             <span class="log-time">${time}</span>
                         </div>
                     </div>
@@ -1634,6 +1671,61 @@
         } catch (error) {
             console.error('Error loading copy log:', error);
         }
+    }
+
+    // Poll leader position state every 3 seconds when auto-copy is active
+    let _leaderPositionInterval = null;
+
+    async function pollLeaderPosition() {
+        if (!currentLeaderId) return;
+        try {
+            const response = await fetch(`/api/copy-trader/leader-position/${currentLeaderId}`);
+            const data = await response.json();
+            if (!data.success) return;
+
+            const posDisplay = document.getElementById('leaderPositionDisplay');
+            const badge = document.getElementById('leaderPositionBadge');
+            if (!posDisplay || !badge) return;
+
+            posDisplay.style.display = 'flex';
+            const positions = data.positions || {};
+            const symbols = Object.keys(positions);
+
+            if (symbols.length === 0) {
+                badge.className = 'position-badge flat';
+                badge.textContent = 'FLAT';
+            } else {
+                const parts = symbols.map(sym => {
+                    const p = positions[sym];
+                    return `${p.side === 'Long' ? '+' : '-'}${p.qty} ${sym}`;
+                });
+                const side = positions[symbols[0]].side;
+                badge.className = `position-badge ${side.toLowerCase()}`;
+                badge.textContent = parts.join(', ');
+            }
+
+            // Update WS connection status too
+            if (data.connected) {
+                updateLeaderStatus('connected', 'Auto-copy active');
+            }
+        } catch (error) {
+            console.error('Error polling leader position:', error);
+        }
+    }
+
+    function startPositionPolling() {
+        if (_leaderPositionInterval) clearInterval(_leaderPositionInterval);
+        pollLeaderPosition();
+        _leaderPositionInterval = setInterval(pollLeaderPosition, 3000);
+    }
+
+    function stopPositionPolling() {
+        if (_leaderPositionInterval) {
+            clearInterval(_leaderPositionInterval);
+            _leaderPositionInterval = null;
+        }
+        const posDisplay = document.getElementById('leaderPositionDisplay');
+        if (posDisplay) posDisplay.style.display = 'none';
     }
 
 </script>
