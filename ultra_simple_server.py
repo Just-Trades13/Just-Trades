@@ -24986,6 +24986,12 @@ def copy_trader_toggle_auto_mode():
             return jsonify({'success': False, 'error': 'Leader not found'}), 404
 
         success = update_leader(leader_id, auto_copy_enabled=enabled)
+        # Trigger leader monitor to reload (picks up new auto_copy_enabled state)
+        try:
+            from ws_leader_monitor import trigger_leader_reload
+            trigger_leader_reload()
+        except Exception:
+            pass  # Non-fatal — monitor will pick up on next cycle
         return jsonify({'success': success, 'auto_copy_enabled': enabled})
     except Exception as e:
         logger.error(f"Error toggling auto mode: {e}")

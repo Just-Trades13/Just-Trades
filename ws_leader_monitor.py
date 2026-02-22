@@ -83,6 +83,14 @@ _copy_locks: Dict[int, asyncio.Lock] = {}  # leader_id -> Lock (prevents duplica
 # Copy order prefix for loop prevention
 COPY_ORDER_PREFIX = 'JT_COPY_'
 
+# Reload signal — set by trigger_leader_reload() to refresh active leaders
+_leader_reload_event = threading.Event()
+
+
+def trigger_leader_reload():
+    """Signal the leader monitor to reload active leaders from DB."""
+    _leader_reload_event.set()
+
 
 class LeaderConnection:
     """WebSocket connection to Tradovate for monitoring a leader's fills."""
@@ -802,14 +810,38 @@ async def _run_leader_monitor():
 
     while _monitor_running:
         try:
+            # Clear reload event before loading (so any signal during load triggers next cycle)
+            _leader_reload_event.clear()
+
             leaders = _load_active_leaders()
 
             if not leaders:
                 logger.debug("No active leaders with auto_copy_enabled")
+                # Disconnect any previously-connected leaders that are no longer active
+                for lid in list(_leader_connections.keys()):
+                    old_conn = _leader_connections.pop(lid)
+                    if old_conn.connected:
+                        try:
+                            await old_conn.close()
+                        except Exception:
+                            pass
+                    logger.info(f"Leader monitor: disconnected disabled leader {lid}")
                 await asyncio.sleep(15)
                 continue
 
             logger.info(f"Monitoring {len(leaders)} active leader(s)")
+
+            # Disconnect leaders no longer in the active list
+            active_ids = {l['leader_id'] for l in leaders}
+            for lid in list(_leader_connections.keys()):
+                if lid not in active_ids:
+                    old_conn = _leader_connections.pop(lid)
+                    if old_conn.connected:
+                        try:
+                            await old_conn.close()
+                        except Exception:
+                            pass
+                    logger.info(f"Leader monitor: disconnected disabled leader {lid}")
 
             # Create connections for new leaders
             tasks = []
@@ -836,19 +868,31 @@ async def _run_leader_monitor():
                 _leader_connections[conn_key] = conn
                 tasks.append(asyncio.create_task(_monitor_leader(conn)))
 
-            # Wait for any connection to drop, then reconnect
+            # Wait for any connection to drop OR reload signal, then refresh
             if tasks:
-                done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-
-                # Clean up completed tasks
-                for task in done:
-                    try:
-                        task.result()
-                    except Exception as e:
-                        logger.error(f"Leader monitor task error: {e}")
+                # Check reload event every 5 seconds to pick up newly enabled/disabled leaders
+                while True:
+                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED, timeout=5.0)
+                    if _leader_reload_event.is_set():
+                        logger.info("Leader monitor: reload triggered, refreshing active leaders")
+                        for task in pending:
+                            task.cancel()
+                        break
+                    if done:
+                        # A connection dropped — existing reconnect logic handles it
+                        # Clean up completed tasks
+                        for task in done:
+                            try:
+                                task.result()
+                            except Exception as e:
+                                logger.error(f"Leader monitor task error: {e}")
+                        break
+            else:
+                # No new tasks — wait briefly or until reload signal
+                await asyncio.sleep(5)
 
             # Reconnection delay with backoff
-            await asyncio.sleep(5)
+            await asyncio.sleep(2)
 
         except Exception as e:
             logger.error(f"Error in leader monitor main loop: {e}")
