@@ -569,6 +569,9 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Pro Copy Trader pricing card + sidebar gating + route locks | `99f990c` | Feb 22 | Working |
 | TOS + Risk Disclosure updated with Goldman-reviewed legal language | `993d8b5` | Feb 22 | Working |
 | Forgot password system (Brevo email + token reset, 1hr expiry) | `bd95145`..`9f8a7e1` | Feb 22 | **Needs verification** |
+| Pro Copy Trader: PLATFORM_URL fix (localhost→127.0.0.1:PORT) | `e67add9` | Feb 22 | **Needs verification** |
+| Pro Copy Trader: Manual trade follower propagation (BUY/SELL/CLOSE) | `aa176a4` | Feb 22 | **Needs verification** |
+| Pro Copy Trader: Auto-mode toggle reload signal (5s pickup) | `4f854c5` | Feb 22 | **Needs verification** |
 
 ---
 
