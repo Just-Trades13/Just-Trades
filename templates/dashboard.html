@@ -5144,10 +5144,23 @@
     const originalLoadPaperAnalytics = loadPaperAnalytics;
     loadPaperAnalytics = async function() {
         try {
-            let url = '/api/paper-trades/analytics';
-            if (selectedStrategyId) {
-                url += `?recorder_id=${selectedStrategyId}`;
+            if (!selectedStrategyId) {
+                // Clear all stat cards when no strategy selected
+                const el = id => document.getElementById(id);
+                if (el('analyticsTotalPnl')) { el('analyticsTotalPnl').textContent = '--'; el('analyticsTotalPnl').className = 'analytics-value'; }
+                const totalPnlCard = el('analyticsTotalPnl')?.closest('.analytics-card');
+                if (totalPnlCard) totalPnlCard.classList.remove('negative');
+                if (el('analyticsWinRate')) el('analyticsWinRate').textContent = '--';
+                if (el('analyticsProfitFactor')) el('analyticsProfitFactor').textContent = '--';
+                if (el('analyticsMaxDD')) el('analyticsMaxDD').textContent = '--';
+                if (el('analyticsTotalTrades')) el('analyticsTotalTrades').textContent = '--';
+                if (el('analyticsAvgWin')) el('analyticsAvgWin').textContent = '--';
+                if (el('analyticsAvgLoss')) el('analyticsAvgLoss').textContent = '--';
+                if (el('analyticsExpectancy')) { el('analyticsExpectancy').textContent = '--'; el('analyticsExpectancy').className = 'analytics-value'; }
+                return;
             }
+
+            let url = `/api/paper-trades/analytics?recorder_id=${selectedStrategyId}`;
 
             const response = await fetch(url);
             const data = await response.json();
