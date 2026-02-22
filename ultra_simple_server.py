@@ -12646,10 +12646,12 @@ def api_get_recorders():
         cursor = conn.cursor()
         is_postgres = is_using_postgres()
 
-        # Filter by current user — only show their own recorders
+        # Filter by current user — only show their own recorders (admins see all)
         user_id = None
         if USER_AUTH_AVAILABLE and is_logged_in():
-            user_id = get_current_user_id()
+            current_user = get_current_user()
+            if current_user and not current_user.is_admin:
+                user_id = current_user.id
 
         if is_postgres:
             if user_id and search:
