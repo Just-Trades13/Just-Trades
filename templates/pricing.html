@@ -1089,6 +1089,10 @@
             background: linear-gradient(135deg, #5865F2, #7289DA);
         }
         
+        .card-icon.copy {
+            background: linear-gradient(135deg, #2dd4bf, #14b8a6);
+        }
+
         .card-icon.basic {
             background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
         }
@@ -2038,6 +2042,41 @@
             <!-- Platform Plans -->
             <div class="pricing-section active" id="platform-section">
                 <div class="pricing-grid platform">
+                    <!-- Pro Copy Trader Plan -->
+                    <div class="pricing-card">
+                        <div class="card-header">
+                            <div class="card-icon copy">
+                                <span class="material-icons">content_copy</span>
+                            </div>
+                            <h3 class="plan-name">Pro Copy Trader</h3>
+                            <p class="plan-description">Mirror any broker account</p>
+                        </div>
+
+                        <div class="price-wrapper">
+                            <div class="price">
+                                <span class="currency">$</span>
+                                <span class="amount">100</span>
+                                <span class="period">/mo</span>
+                            </div>
+                            <span class="trial-badge">7 Day Free Trial</span>
+                        </div>
+
+                        <ul class="features-list">
+                            <li><span class="material-icons check">check_circle</span><span>Up to <strong>10 broker accounts</strong></span></li>
+                            <li><span class="material-icons check">check_circle</span><span>Leader WebSocket monitoring</span></li>
+                            <li><span class="material-icons check">check_circle</span><span>Automatic trade copying</span></li>
+                            <li><span class="material-icons check">check_circle</span><span>TP/SL mirroring</span></li>
+                            <li><span class="material-icons check">check_circle</span><span>Position size multipliers</span></li>
+                            <li><span class="material-icons check">check_circle</span><span>Real-time position tracking</span></li>
+                            <li class="disabled"><span class="material-icons lock">lock</span><span>Quant Screener</span></li>
+                            <li class="disabled"><span class="material-icons lock">lock</span><span>Insider Signals</span></li>
+                            <li class="disabled"><span class="material-icons lock">lock</span><span>Custom Strategies/Recorders</span></li>
+                            <li class="disabled"><span class="material-icons lock">lock</span><span>Control Center</span></li>
+                        </ul>
+
+                        <a class="btn-subscribe outline" data-tier="pro_copy_trader" href="https://whop.com/justtradesgroup/procopytrader/" target="_blank">Start Free Trial</a>
+                    </div>
+
                     <!-- Basic+ Plan -->
                     <div class="pricing-card">
                         <div class="card-header">

@@ -801,18 +801,19 @@
                     <img src="{{ url_for('static', filename='img/just_trades_logo.png') }}" alt="Just.Trades. logo">
                     <a href="/dashboard">JUST.TRADES.</a>
                 </div>
+                {% set is_copy_only = (user_plan_tier == 'pro_copy_trader') %}
                 <ul class="nav">
                     <li class="{{ 'active' if 'dashboard' in request.path else '' }}">
                         <a href="/dashboard"><i class="material-icons">dashboard</i><p>DASHBOARD</p></a>
                     </li>
-                    <li class="{{ 'active' if request.path.startswith('/recorders') else '' }}">
-                        <a href="/recorders"><i class="material-icons">edit</i><p>MY RECORDERS</p></a>
+                    <li class="{{ 'active' if request.path.startswith('/recorders') else '' }}" {% if is_copy_only %}style="opacity: 0.4; pointer-events: none;"{% endif %}>
+                        <a href="/recorders"><i class="material-icons">{% if is_copy_only %}lock{% else %}edit{% endif %}</i><p>MY RECORDERS</p></a>
                     </li>
-                    <li class="{{ 'active' if 'quant-screener' in request.path else '' }}">
-                        <a href="/quant-screener"><i class="material-icons">analytics</i><p>QUANT SCREENER</p></a>
+                    <li class="{{ 'active' if 'quant-screener' in request.path else '' }}" {% if is_copy_only %}style="opacity: 0.4; pointer-events: none;"{% endif %}>
+                        <a href="/quant-screener"><i class="material-icons">{% if is_copy_only %}lock{% else %}analytics{% endif %}</i><p>QUANT SCREENER</p></a>
                     </li>
-                    <li class="{{ 'active' if 'insider-signals' in request.path else '' }}">
-                        <a href="/insider-signals"><i class="material-icons">insights</i><p>INSIDER SIGNALS</p></a>
+                    <li class="{{ 'active' if 'insider-signals' in request.path else '' }}" {% if is_copy_only %}style="opacity: 0.4; pointer-events: none;"{% endif %}>
+                        <a href="/insider-signals"><i class="material-icons">{% if is_copy_only %}lock{% else %}insights{% endif %}</i><p>INSIDER SIGNALS</p></a>
                     </li>
                     <li class="{{ 'active' if ('traders' in request.path or 'accounts' in request.path or 'control-center' in request.path or 'manual-trader' in request.path or 'strategies' in request.path) else '' }}">
                         <a data-toggle="collapse" href="#traderSubmenu">
@@ -833,15 +834,15 @@
                                         <span class="sidebar-normal">STRATEGY GUIDE</span>
                                     </a>
                                 </li>
-                                <li>
+                                <li {% if is_copy_only %}style="opacity: 0.4; pointer-events: none;"{% endif %}>
                                     <a class="{{ 'active' if 'traders' in request.path else '' }}" href="/traders">
-                                        <span class="sidebar-mini-icon">MT</span>
+                                        <span class="sidebar-mini-icon">{% if is_copy_only %}🔒{% else %}MT{% endif %}</span>
                                         <span class="sidebar-normal">MY TRADERS</span>
                                     </a>
                                 </li>
-                                <li>
+                                <li {% if is_copy_only %}style="opacity: 0.4; pointer-events: none;"{% endif %}>
                                     <a class="{{ 'active' if 'control-center' in request.path else '' }}" href="/control-center">
-                                        <span class="sidebar-mini-icon">CC</span>
+                                        <span class="sidebar-mini-icon">{% if is_copy_only %}🔒{% else %}CC{% endif %}</span>
                                         <span class="sidebar-normal">CONTROL CENTER</span>
                                     </a>
                                 </li>

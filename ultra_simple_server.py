@@ -12426,6 +12426,7 @@ def my_recorders_redirect():
 
 
 @app.route('/recorders', methods=['GET'])
+@feature_required('recorders')
 def recorders_list():
     """Render the recorders list page - shows only user's own recorders"""
     # Require login if auth is available
@@ -12518,6 +12519,7 @@ def recorders_list():
                               is_admin=False)
 
 @app.route('/recorders/new')
+@feature_required('recorders')
 def recorders_new():
     """Render the new recorder form"""
     # Require login if auth is available
@@ -12548,6 +12550,7 @@ def recorders_new():
         return render_template('recorders.html', recorder=None, accounts=[], mode='create')
 
 @app.route('/recorders/<int:recorder_id>')
+@feature_required('recorders')
 def recorders_edit(recorder_id):
     """Render the edit recorder form"""
     # Require login if auth is available
@@ -19172,6 +19175,7 @@ def api_get_all_recorders_pnl():
 
 
 @app.route('/traders')
+@feature_required('auto_trader')
 def traders_list():
     """Traders list page - show all recorder-account links"""
     # Require login if auth is available
@@ -19808,6 +19812,7 @@ def traders_edit(trader_id):
         return f"<h1>Error loading trader</h1><pre>{str(e)}</pre>", 500
 
 @app.route('/control-center')
+@feature_required('control_center')
 def control_center():
     """Control Center with live recorder/strategy data and PnL"""
     # Require login if auth is available
