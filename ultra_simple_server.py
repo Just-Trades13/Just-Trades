@@ -27293,8 +27293,8 @@ class PaperDBReader:
 
     @staticmethod
     def get_chart_data(recorder_id=None, limit=500):
-        """Get PnL chart data: cumulative profit + drawdown arrays for Chart.js"""
-        sql = "SELECT pnl, closed_at FROM paper_trades WHERE status='closed' AND pnl IS NOT NULL"
+        """Get PnL chart data: cumulative profit + peak recorded drawdown per day"""
+        sql = "SELECT pnl, closed_at, drawdown FROM paper_trades WHERE status='closed' AND pnl IS NOT NULL"
         params = []
         if recorder_id is not None:
             sql += " AND recorder_id={ph}"
@@ -27306,13 +27306,14 @@ class PaperDBReader:
         if not rows:
             return {'labels': [], 'profit': [], 'drawdown': []}
 
-        # Aggregate trades by day — track peak intraday drawdown
+        # Aggregate trades by day — peak recorded DD is max(drawdown) from DB
         from datetime import datetime
         daily = {}  # date_str -> {pnl_sum, peak_dd}
         day_order = []
 
         for r in rows:
             pnl_val = r.get('pnl', 0) or 0
+            trade_dd = abs(r.get('drawdown', 0) or 0)
             closed_at = str(r.get('closed_at', ''))
             date_str = ''
             if closed_at:
@@ -27325,17 +27326,12 @@ class PaperDBReader:
                 date_str = f'Day {len(daily) + 1}'
 
             if date_str not in daily:
-                daily[date_str] = {'pnl_sum': 0.0, 'peak_dd': 0.0, 'intraday_running': 0.0, 'intraday_peak': 0.0}
+                daily[date_str] = {'pnl_sum': 0.0, 'peak_dd': 0.0}
                 day_order.append(date_str)
 
-            d = daily[date_str]
-            d['pnl_sum'] += pnl_val
-            d['intraday_running'] += pnl_val
-            if d['intraday_running'] > d['intraday_peak']:
-                d['intraday_peak'] = d['intraday_running']
-            intraday_dd = d['intraday_peak'] - d['intraday_running']
-            if intraday_dd > d['peak_dd']:
-                d['peak_dd'] = intraday_dd
+            daily[date_str]['pnl_sum'] += pnl_val
+            if trade_dd > daily[date_str]['peak_dd']:
+                daily[date_str]['peak_dd'] = trade_dd
 
         labels = []
         profit = []
