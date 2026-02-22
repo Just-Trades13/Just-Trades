@@ -11693,7 +11693,22 @@ def oauth_callback():
                 fetch_result = fetch_and_store_tradovate_accounts(account_id, access_token, base_url)
                 if not fetch_result.get("success"):
                     logger.warning(f"Unable to fetch subaccounts after OAuth for account {account_id}: {fetch_result.get('error')}")
-            
+                else:
+                    # Register subaccounts for cross-user abuse detection (flag-only, non-fatal)
+                    try:
+                        from subaccount_abuse_detection import register_subaccounts
+                        _sub_conn = get_db_connection()
+                        _sub_cursor = _sub_conn.cursor()
+                        _sub_ph = '%s' if is_using_postgres() else '?'
+                        _sub_cursor.execute(f'SELECT user_id FROM accounts WHERE id = {_sub_ph}', (account_id,))
+                        _sub_row = _sub_cursor.fetchone()
+                        _sub_conn.close()
+                        if _sub_row:
+                            _sub_user_id = _sub_row['user_id'] if isinstance(_sub_row, dict) else _sub_row[0]
+                            register_subaccounts(_sub_user_id, account_id, fetch_result.get('subaccounts', []), broker='Tradovate')
+                    except Exception as _sub_err:
+                        logger.debug(f"Subaccount abuse check skipped: {_sub_err}")
+
             logger.info(f"Successfully stored tokens for account {account_id}")
             return redirect(f'/accounts?success=true&connected={account_id}')
         else:
@@ -11815,6 +11830,20 @@ def refresh_account_subaccounts(account_id):
 
         fetch_result = fetch_and_store_tradovate_accounts(account_id, tradovate_token)
         if fetch_result.get('success'):
+            # Register subaccounts for cross-user abuse detection (flag-only, non-fatal)
+            try:
+                from subaccount_abuse_detection import register_subaccounts
+                _ref_conn = get_db_connection()
+                _ref_cur = _ref_conn.cursor()
+                _ref_ph = '%s' if is_using_postgres() else '?'
+                _ref_cur.execute(f'SELECT user_id FROM accounts WHERE id = {_ref_ph}', (account_id,))
+                _ref_row = _ref_cur.fetchone()
+                _ref_conn.close()
+                if _ref_row:
+                    _ref_uid = _ref_row['user_id'] if isinstance(_ref_row, dict) else _ref_row[0]
+                    register_subaccounts(_ref_uid, account_id, fetch_result.get('subaccounts', []), broker='Tradovate')
+            except Exception as _ref_err:
+                logger.debug(f"Subaccount abuse check skipped on refresh: {_ref_err}")
             return jsonify({'success': True, 'subaccounts': fetch_result.get('subaccounts', [])})
         return jsonify({'success': False, 'error': fetch_result.get('error', 'Unable to refresh subaccounts')}), 400
     except Exception as e:
@@ -14174,6 +14203,9 @@ def api_create_trader():
             current_user_id = get_current_user_id()
         
         # Build enabled_accounts JSON from the account data provided
+        create_multiplier = float(data.get('multiplier', 1.0)) if data.get('multiplier') else 1.0
+        if create_multiplier <= 0:
+            create_multiplier = 1.0
         initial_enabled_accounts = json.dumps([{
             'account_id': account_id,
             'account_name': account.get('name', ''),
@@ -14182,7 +14214,7 @@ def api_create_trader():
             'is_demo': is_demo,
             'max_contracts': 0,
             'custom_ticker': '',
-            'multiplier': 1.0
+            'multiplier': create_multiplier
         }])
 
         # Create the trader link - DEFAULT TO DISABLED (user must explicitly enable)
@@ -14249,11 +14281,23 @@ def api_create_trader():
         
         conn.commit()
         conn.close()
-        
+
+        # Check subaccount ownership for abuse detection (flag-only, non-fatal)
+        if subaccount_id and current_user_id:
+            try:
+                from subaccount_abuse_detection import check_subaccount_ownership, register_subaccounts
+                is_shared, conflicting = check_subaccount_ownership(subaccount_id, current_user_id, broker='Tradovate')
+                if is_shared:
+                    logger.warning(f"SUBACCOUNT ABUSE: trader {trader_id} uses subaccount {subaccount_id} also owned by users {conflicting}")
+                # Also register this subaccount in the registry
+                register_subaccounts(current_user_id, account_id, [{'id': subaccount_id, 'name': subaccount_name, 'environment': 'demo' if is_demo else 'live'}], broker='Tradovate')
+            except Exception as _chk_err:
+                logger.debug(f"Subaccount abuse check skipped on trader create: {_chk_err}")
+
         env_label = "DEMO" if is_demo else "LIVE"
         display_name = f"{account['name']} {env_label} ({subaccount_name})" if subaccount_name else account['name']
         logger.info(f"Created trader {trader_id}: recorder '{recorder['name']}' -> {display_name} | Position: {initial_position_size}, SL: {sl_amount} {sl_units}")
-        
+
         return jsonify({
             'success': True,
             'trader_id': trader_id,
@@ -33845,6 +33889,16 @@ if __name__ == '__main__':
         logger.debug("Trial abuse protection module not found")
     except Exception as e:
         logger.warning(f"⚠️ Trial abuse protection init failed: {e}")
+
+    # Initialize subaccount abuse detection
+    try:
+        from subaccount_abuse_detection import init_subaccount_abuse_detection
+        init_subaccount_abuse_detection(app)
+        logger.info("✅ Subaccount abuse detection initialized")
+    except ImportError:
+        logger.debug("Subaccount abuse detection module not found")
+    except Exception as e:
+        logger.warning(f"⚠️ Subaccount abuse detection init failed: {e}")
 
     # Initialize TradingView real-time price service
     if TV_PRICE_SERVICE_AVAILABLE:
