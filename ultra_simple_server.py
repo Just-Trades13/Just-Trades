@@ -29347,14 +29347,22 @@ async def subscribe_tradingview_symbols(ws, quote_session):
         for row in cursor.fetchall():
             ticker = row[0]
             if ticker:
-                # Convert to TradingView format
+                # Convert to TradingView format (CME_MINI for all futures on TradingView)
                 root = extract_symbol_root(ticker)
-                tv_symbol = f"CME_MINI:{root}1!" if root in ['MNQ', 'MES', 'M2K'] else f"CME:{root}1!"
+                tv_symbol = f"CME_MINI:{root}1!"
                 symbols.add(tv_symbol)
         conn.close()
-        
-        # Also add common symbols
-        default_symbols = ['CME_MINI:MNQ1!', 'CME_MINI:MES1!', 'CME:NQ1!', 'CME:ES1!']
+
+        # Default symbols — all use CME_MINI exchange on TradingView
+        default_symbols = [
+            'CME_MINI:NQ1!', 'CME_MINI:MNQ1!',   # Nasdaq
+            'CME_MINI:ES1!', 'CME_MINI:MES1!',   # S&P 500
+            'CME_MINI:YM1!', 'CME_MINI:MYM1!',   # Dow
+            'CME_MINI:RTY1!', 'CME_MINI:M2K1!',  # Russell
+            'COMEX:GC1!', 'COMEX:MGC1!',          # Gold
+            'NYMEX:CL1!', 'NYMEX:MCL1!',         # Crude Oil
+            'COMEX:SI1!', 'COMEX:SIL1!',          # Silver
+        ]
         symbols.update(default_symbols)
         
         for symbol in symbols:
