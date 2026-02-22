@@ -689,7 +689,7 @@ async def _execute_follower_entry(account_subaccount: str, symbol: str,
     import aiohttp
     import uuid
 
-    platform_url = os.environ.get('PLATFORM_URL', 'http://localhost:5000')
+    platform_url = os.environ.get('PLATFORM_URL') or f"http://127.0.0.1:{os.environ.get('PORT', '5000')}"
     url = f"{platform_url}/api/manual-trade"
     cl_ord_id = f"{COPY_ORDER_PREFIX}{uuid.uuid4().hex[:12]}"
 
@@ -717,7 +717,7 @@ async def _execute_follower_close(account_subaccount: str, symbol: str) -> dict:
     import aiohttp
     import uuid
 
-    platform_url = os.environ.get('PLATFORM_URL', 'http://localhost:5000')
+    platform_url = os.environ.get('PLATFORM_URL') or f"http://127.0.0.1:{os.environ.get('PORT', '5000')}"
     url = f"{platform_url}/api/manual-trade"
     cl_ord_id = f"{COPY_ORDER_PREFIX}{uuid.uuid4().hex[:12]}"
 
