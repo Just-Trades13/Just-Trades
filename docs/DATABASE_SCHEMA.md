@@ -296,6 +296,78 @@ CREATE TABLE recorded_signals (
 
 ---
 
+## TABLE: leader_accounts
+
+Accounts designated as copy trading signal sources (Pro Copy Trader feature).
+
+```sql
+CREATE TABLE leader_accounts (
+    id SERIAL PRIMARY KEY,                    -- (INTEGER PRIMARY KEY AUTOINCREMENT for SQLite)
+    user_id INTEGER NOT NULL,
+    account_id INTEGER NOT NULL,
+    subaccount_id VARCHAR(50) NOT NULL,
+    label VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,           -- (INTEGER DEFAULT 1 for SQLite)
+    auto_copy_enabled BOOLEAN DEFAULT FALSE,  -- (INTEGER DEFAULT 0 for SQLite)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, account_id, subaccount_id)
+);
+-- Index: idx_leader_accounts_user ON leader_accounts(user_id)
+```
+
+## TABLE: follower_accounts
+
+Accounts that follow and copy trades from a leader account.
+
+```sql
+CREATE TABLE follower_accounts (
+    id SERIAL PRIMARY KEY,
+    leader_id INTEGER NOT NULL REFERENCES leader_accounts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL,
+    account_id INTEGER NOT NULL,
+    subaccount_id VARCHAR(50) NOT NULL,
+    label VARCHAR(100),
+    is_enabled BOOLEAN DEFAULT TRUE,
+    multiplier REAL DEFAULT 1.0,              -- Position size multiplier for follower
+    max_position_size INTEGER DEFAULT 0,      -- 0 = unlimited
+    copy_tp BOOLEAN DEFAULT TRUE,             -- Copy take profit orders
+    copy_sl BOOLEAN DEFAULT TRUE,             -- Copy stop loss orders
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(leader_id, account_id, subaccount_id)
+);
+-- Index: idx_follower_accounts_leader ON follower_accounts(leader_id)
+```
+
+## TABLE: copy_trade_log
+
+Audit trail of all copy trade executions.
+
+```sql
+CREATE TABLE copy_trade_log (
+    id SERIAL PRIMARY KEY,
+    leader_id INTEGER NOT NULL REFERENCES leader_accounts(id),
+    follower_id INTEGER NOT NULL REFERENCES follower_accounts(id),
+    leader_order_id VARCHAR(100),
+    follower_order_id VARCHAR(100),
+    symbol VARCHAR(50) NOT NULL,
+    side VARCHAR(10) NOT NULL,                -- 'Buy' or 'Sell'
+    leader_quantity INTEGER NOT NULL,
+    follower_quantity INTEGER NOT NULL,
+    leader_price REAL,
+    follower_price REAL,
+    status VARCHAR(20) DEFAULT 'pending',     -- pending, filled, failed, cancelled
+    error_message TEXT,
+    latency_ms INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- Index: idx_copy_trade_log_leader ON copy_trade_log(leader_id)
+-- Index: idx_copy_trade_log_created ON copy_trade_log(created_at)
+```
+
+---
+
 ## MIGRATION PATTERN
 
 New columns are added via try/except ALTER TABLE (idempotent):

@@ -485,6 +485,7 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Tick size 2-letter symbol root fix (GC, CL, SI) | `656683a` | Feb 20 | Working |
 | Broker-verified quantity safety net (DB/broker drift) | `bb1a183` | Feb 20 | Working |
 | Brevo v1 pin + start.sh runtime install (activation emails) | `5b6be75` | Feb 21 | **Confirmed working** |
+| Pro Copy Trader pricing card + sidebar gating + route locks | `99f990c` | Feb 22 | Working |
 
 ---
 
@@ -1530,11 +1531,15 @@ Hardcoded in `whop_integration.py` lines 42-46 (NOT an env var):
 
 | Whop Product ID | Plan Slug | Plan Name | Price |
 |----------------|-----------|-----------|-------|
+| `prod_PLACEHOLDER_COPY` | `pro_copy_trader` | Pro Copy Trader | $100/mo |
 | `prod_l3u1RLWEjMIS7` | `platform_basic` | Basic+ | $200/mo |
 | `prod_3RCOfsuDNX4cs` | `platform_premium` | Premium+ | $500/mo |
 | `prod_oKaNSNRKgxXS3` | `platform_elite` | Elite+ | $1000/mo |
 
+**TODO:** Replace `prod_PLACEHOLDER_COPY` with real Whop product ID once created. Update in `whop_integration.py` line 44 AND line 660.
+
 **Plan features** (defined in `subscription_models.py` lines 56-126):
+- **Pro Copy Trader**: Copy trading only, 10 broker accounts, 1 leader + 10 followers, NO recorders/traders/control center
 - **Basic+**: Platform access, 5 broker accounts, unlimited strategies
 - **Premium+**: + Quant screener, insider signals, premium strategies (JADNQ, JADVIX), 10 accounts
 - **Elite+**: + API access, ALL 13 strategies, 25 accounts

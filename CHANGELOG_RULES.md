@@ -218,6 +218,15 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | Business requirement: ALL JADVIX traders MUST have DCA on for ALL users. Startup auto-fix ensures this on every deploy |
 | **NEVER** | Remove this startup fix. All JADVIX strategies require DCA enabled. This is not optional. |
 
+### Pro Copy Trader Route Gating (Feb 22, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~12429 (`@feature_required('recorders')` on /recorders), ~12522 (/recorders/new), ~12553 (/recorders/<id>), ~19178 (`@feature_required('auto_trader')` on /traders), ~19815 (`@feature_required('control_center')` on /control-center) |
+| **Commit** | `7954eb2` |
+| **What** | `@feature_required` decorators gate recorder, trader, and control center routes for pro_copy_trader tier |
+| **Why** | Pro Copy Trader ($100/mo) only gets copy trading features. Without decorators, they can access recorders/traders/control center via direct URL |
+| **NEVER** | Remove these decorators. They enforce the tier pricing model |
+
 ### User Delete Cascade (Feb 19, 2026)
 | Field | Value |
 |-------|-------|
@@ -299,3 +308,5 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | User delete cascade | Delete all child tables before users | PostgreSQL FK constraints | Admin can't delete users |
 | enabled_accounts logger | Uses `env_label` not `env` | `env` only defined in else-branch | Silent 0-account failure for traders |
 | Broker qty safety net | Override to initial_position_size when broker flat | DB/broker drift gives wrong DCA qty | Users get add_position_size on fresh entry → wrong contract count |
+| Pro Copy Trader route gating | `@feature_required` on /recorders, /traders, /control-center | Tier enforcement for $100 plan | Copy-only users access recorder/trader features they didn't pay for |
+| Sidebar `is_copy_only` gating | `layout.html` greys out locked nav items | Visual indication of tier limits | Users click locked features, get confused by redirect |
