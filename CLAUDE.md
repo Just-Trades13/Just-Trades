@@ -6,73 +6,154 @@
 
 ---
 
-## RULE 0: CHECK CHANGELOG_RULES.md BEFORE ANY CODE EDIT
+## MANDATORY GATE SYSTEM — ENFORCED BEFORE EVERY CODE EDIT
 
-Before modifying ANY line in `recorder_service.py` or `ultra_simple_server.py`:
-1. Open `CHANGELOG_RULES.md` in the repo root
-2. Search for the line number or feature area you're about to touch
-3. If it's listed → **DO NOT CHANGE IT** without explicit user approval
-4. If restructuring a function containing a protected line → **STOP AND ASK**
+**You CANNOT use the Edit or Write tool on ANY existing file until you have passed the required gates.**
+**Each gate requires a specific formatted output block visible to the user.**
+**Skipping a gate = protocol violation. The user will reject edits that skip gates.**
 
-This file exists because working fixes have been accidentally reverted multiple times,
-causing failures for paying customers. It is the single source of truth for protected code.
+24+ production disasters happened because similar protocols were written as prose and skimmed past.
+This gate system exists because prose doesn't work. Formatted proof-of-completion does.
 
 ---
 
-## !! MANDATORY PROTOCOL — READ THIS BEFORE EVERY TASK !!
+### GATE 1: RECON (Required for ALL edits)
 
-**This is not optional. This is not a guideline. This is a HARD REQUIREMENT for every single prompt.**
+Before editing ANY file, you MUST output this block with real values (not placeholders):
 
-### BEFORE you edit ANY code:
+```
+GATE 1 — RECON
+File: [filename]
+Function/section: [name or "new code at line X"]
+CHANGELOG_RULES.md: [searched for X — no conflicts / conflict at line Y — STOP]
+Reference doc: [read docs/X.md / N/A — not touching broker/SQL/deploy code]
+Full function read: [Read tool lines X-Y / new file — N/A]
+```
 
-1. **STATE your intent** — Tell the user exactly what you plan to change, which file, which function, and why. Do NOT start editing.
-2. **AUTO-LOAD the relevant reference doc** — Based on what you're about to touch, READ the matching doc FIRST. This is not optional:
+**GATE 1 rules:**
+- `CHANGELOG_RULES.md` MUST be searched if editing `recorder_service.py`, `ultra_simple_server.py`, or `tradovate_integration.py`. If the area is protected → STOP and tell the user.
+- Reference doc lookup table:
 
-   | IF you're touching... | THEN READ this doc FIRST (use Read tool) |
-   |----------------------|------------------------------------------|
-   | `tradovate_integration.py` or Tradovate API calls | `docs/TRADOVATE_API_REFERENCE.md` |
-   | `projectx_integration.py` or ProjectX API calls | `docs/PROJECTX_API_REFERENCE.md` |
-   | `webull_integration.py` or Webull API calls | `docs/WEBULL_API_REFERENCE.md` |
-   | Webhook handler, alert parsing, signal format | `docs/TRADINGVIEW_WEBHOOK_REFERENCE.md` |
-   | Whop sync, membership parsing, `/webhooks/whop` | `docs/WHOP_API_REFERENCE.md` |
-   | ANY SQL query, new column, migration, table change | `docs/DATABASE_SCHEMA.md` |
-   | Deploying, env vars, Railway CLI, rollback | `docs/RAILWAY_DEPLOYMENT.md` |
-   | Unsure about tick sizes, bracket syntax, debugging | `docs/CHEAT_SHEET.md` |
-   | Monitoring, health checks, endpoint responses | `docs/MONITORING_ENDPOINTS.md` |
-   | Testing signals, verifying trades, regression checks | `docs/TESTING_PROCEDURES.md` |
-   | Admin access, onboarding, permissions, branch protection | `docs/ADMIN_ACCESS_POLICY.md` |
+| IF you're touching... | THEN READ this doc FIRST |
+|----------------------|--------------------------|
+| `tradovate_integration.py` or Tradovate API | `docs/TRADOVATE_API_REFERENCE.md` |
+| `projectx_integration.py` or ProjectX API | `docs/PROJECTX_API_REFERENCE.md` |
+| `webull_integration.py` or Webull API | `docs/WEBULL_API_REFERENCE.md` |
+| Webhook handler, alert parsing, signal format | `docs/TRADINGVIEW_WEBHOOK_REFERENCE.md` |
+| Whop sync, membership parsing, `/webhooks/whop` | `docs/WHOP_API_REFERENCE.md` |
+| ANY SQL query, new column, migration, table change | `docs/DATABASE_SCHEMA.md` |
+| Deploying, env vars, Railway CLI, rollback | `docs/RAILWAY_DEPLOYMENT.md` |
+| Tick sizes, bracket syntax, debugging | `docs/CHEAT_SHEET.md` |
+| Monitoring, health checks, endpoint responses | `docs/MONITORING_ENDPOINTS.md` |
+| Testing signals, verifying trades | `docs/TESTING_PROCEDURES.md` |
+| Admin access, onboarding, permissions | `docs/ADMIN_ACCESS_POLICY.md` |
 
-   **If the task involves multiple areas, read ALL relevant docs.** This takes 5 seconds and prevents hours of debugging.
+- If task involves multiple areas, read ALL matching docs.
+- "Full function read" means the Read tool was used on the actual file. Not from memory. Not summarized.
 
-3. **READ the full function/section** — You MUST use the Read tool on the target file and read the COMPLETE function you plan to modify. Not a summary. Not from memory. The actual current code. If you skip this, you WILL break something.
-4. **CHECK which file you're touching** — If it's a CRITICAL file (see Sacred Files below), you MUST get explicit user approval before making ANY edit. Say: "This is a critical production file. Here's exactly what I want to change: [show diff]. Approve?"
-5. **SHOW the exact change** — Before writing, tell the user the old code and the new code. No surprises.
-6. **Make ONE minimal edit** — One change. Not two. Not "while I'm in here." ONE.
-7. **VERIFY after editing** — After every edit, grep for undefined variables, check imports, and confirm no syntax errors.
-8. **STOP and confirm** — After each change, stop. Tell the user what you did. Ask if they want to test before continuing. Do NOT chain multiple edits.
+---
 
-### IF the user asks for multiple changes:
+### GATE 2: INTENT (Required for sacred files only)
 
-- Create a numbered list of each change
-- Do them ONE AT A TIME in separate edits
-- After EACH edit, pause and report what was done
-- NEVER batch changes into a single mega-edit
+If editing `recorder_service.py`, `ultra_simple_server.py`, or `tradovate_integration.py`, you MUST output:
 
-### IF the user asks about an API, broker, or integration:
+```
+GATE 2 — INTENT (Sacred File)
+What I will change: [1-2 sentence description]
+Why: [reason]
+Lines affected: [X-Y]
+Sacred functions touched: [none / list them — if any, STOP]
 
-- **Read the matching doc BEFORE answering.** Do not answer from memory. The docs contain production-verified gotchas, exact payloads, and lessons learned that your training data does NOT have.
-- Example: "How does Tradovate handle trailing stops?" → Read `docs/TRADOVATE_API_REFERENCE.md` first, THEN answer.
-- Example: "What format does TradingView send?" → Read `docs/TRADINGVIEW_WEBHOOK_REFERENCE.md` first, THEN answer.
-- Example: "Why is Whop not syncing?" → Read `docs/WHOP_API_REFERENCE.md` first, THEN diagnose.
+BEFORE (lines X-Y):
+[exact current code]
 
-### IF you're unsure about ANYTHING:
+AFTER:
+[exact proposed code]
+```
 
-- **ASK.** Do not guess. Do not assume. Do not "figure it out" by trying things.
-- Wrong guesses in production = failed trades for paying customers
+**GATE 2 rules:**
+- If ANY sacred function appears in the diff → STOP. Sacred functions: `execute_trade_simple()`, `do_trade_for_account()`, `process_webhook_directly()`, `start_position_reconciliation()`, `start_websocket_keepalive_daemon()`, `broker_execution_worker()`
+- The before/after MUST be real code, not descriptions. The user needs to see the exact diff.
+- Only ADD lines to sacred files. NEVER restructure, rename, reorder, or "improve" existing code.
 
-### WHAT HAPPENS WHEN YOU SKIP THIS PROTOCOL:
+---
 
-Every major outage in this platform's history happened because this protocol was skipped. See the disaster table at the bottom. 20+ incidents. Hours of recovery each time. Paying users affected.
+### GATE 3: APPROVAL (Required for sacred files only)
+
+After showing GATE 2, you MUST use the **AskUserQuestion tool** to get explicit approval:
+
+```
+"Approve this edit to [file]? [1-line summary of change]"
+Options: "Yes, do it" / "No, don't edit"
+```
+
+**You CANNOT call Edit/Write on a sacred file until the user selects "Yes, do it."**
+If the user selects "No" → do NOT retry the same edit. Ask what they want instead.
+
+---
+
+### GATE 4: VERIFY (Required after EVERY edit)
+
+After every Edit or Write call, you MUST output:
+
+```
+GATE 4 — VERIFY
+py_compile: [passed / FAILED — fix before continuing]
+Undefined variables: [checked lines X-Y — none found / FOUND: var at line Z]
+Sacred functions in diff: [0 / FOUND — rollback immediately]
+SQL placeholders: [all use '%s'/'?' pattern / N/A — no SQL]
+```
+
+**GATE 4 rules:**
+- `py_compile` must actually be run via Bash tool (not assumed).
+- Undefined variable check: trace every variable in new/modified code through all if/elif/else branches (Rule 25).
+- If py_compile fails → fix immediately before any other action.
+
+---
+
+### GATE 5: CHECKPOINT (Required after EVERY commit)
+
+After every `git commit`, you MUST output:
+
+```
+GATE 5 — CHECKPOINT
+Commit: [hash] [first line of message]
+Files changed: [list]
+Want to test before next change? Pausing for confirmation.
+```
+
+**Then STOP. Do NOT proceed to the next edit until the user responds.**
+The user may say "continue", "test first", or "stop here". Respect their choice.
+
+---
+
+### Gate Requirements by File Type
+
+| File Type | Gate 1 | Gate 2 | Gate 3 | Gate 4 | Gate 5 |
+|-----------|--------|--------|--------|--------|--------|
+| Sacred files (`recorder_service.py`, `ultra_simple_server.py`, `tradovate_integration.py`) | REQUIRED | REQUIRED | REQUIRED | REQUIRED | REQUIRED |
+| Other Python files (`account_activation.py`, `user_auth.py`, etc.) | REQUIRED | skip | skip | REQUIRED | REQUIRED |
+| Templates (HTML) | REQUIRED | skip | skip | skip | REQUIRED |
+| New files | REQUIRED | skip | skip | REQUIRED | REQUIRED |
+| Documentation (CLAUDE.md, docs/) | skip | skip | skip | skip | skip |
+
+### Multiple Changes
+
+When a task requires multiple edits:
+1. List all planned edits upfront as a numbered list
+2. Execute them ONE AT A TIME — each edit goes through its own gate sequence
+3. GATE 5 (checkpoint) after each commit — the user decides when to continue
+4. NEVER batch unrelated changes into one commit
+
+### API / Integration Questions
+
+Before answering ANY question about a broker, webhook format, or integration:
+- Read the matching reference doc from the table in GATE 1. Do not answer from memory.
+- The docs contain production-verified gotchas that training data does not have.
+
+### When Unsure
+
+**ASK.** Do not guess. Wrong guesses in production = failed trades for paying customers.
 
 ---
 
@@ -1647,7 +1728,7 @@ When CLAUDE.md is updated, regenerate `CLAUDE_ADMIN_REFERENCE.md` by stripping d
 
 ## DETAILED DOCUMENTATION
 
-- **`CHANGELOG_RULES.md`** — **MANDATORY** protected code registry. Check BEFORE any edit (Rule 0)
+- **`CHANGELOG_RULES.md`** — **MANDATORY** protected code registry. Enforced by Gate 1 — must be searched before any sacred file edit
 
 Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 - `MEMORY.md` — Master learnings file (loaded into every session)
