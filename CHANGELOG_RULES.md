@@ -237,6 +237,16 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | PostgreSQL enforces FK constraints. Direct `DELETE FROM users` fails with `accounts_user_id_fkey` violation |
 | **NEVER** | Remove any child table from the cascade. If adding a new table with user_id FK, ADD it to this cascade list |
 
+### Multiplier Persisted on Trader Create (Feb 22, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~13784-13786 |
+| **Rule** | CLAUDE.md Rule 13 |
+| **What** | `create_multiplier = float(data.get('multiplier', 1.0))` used in `initial_enabled_accounts` JSON instead of hardcoded `1.0` |
+| **Why** | Frontend sends multiplier on create, but server ignored it and hardcoded 1.0. Users who set 5x multiplier at creation time got 1x execution. Only fixed on subsequent edits (PUT path was already correct). |
+| **Verified** | Syntax passes. Frontend (`traders.html` line 2384) now sends `multiplier: account.multiplier` in POST body |
+| **NEVER** | Hardcode `'multiplier': 1.0` in `initial_enabled_accounts`. Always read from request data |
+
 ### CSRF Exempt Prefixes (Feb 16, 2026)
 | Field | Value |
 |-------|-------|
@@ -315,3 +325,4 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | TOS limitation of liability | `terms.html` Section 18: 18.1-18.3 detailed caps | Goldman-reviewed — 3-month cap, intentional risk allocation | Unlimited liability exposure |
 | Risk Disclosure disclaimers | `risk_disclosure.html` Sections 11-17: platform overview, TradingView, hypothetical, testimonials, automation | Goldman-reviewed legal requirement | Missing legally required disclosures |
 | Contact email | `legal@justtrades.app` in both terms.html and risk_disclosure.html | Canonical legal contact | Users email non-existent address |
+| Multiplier on create | Read from request, not hardcoded 1.0 | Frontend sends multiplier per account | Users get 1x execution despite setting 5x at creation |
