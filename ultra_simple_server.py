@@ -6680,15 +6680,19 @@ def admin_delete_user(user_id):
         # Nullify audit columns (don't delete announcements/applications, just unlink)
         cursor.execute(f'UPDATE announcements SET created_by = NULL WHERE created_by = {ph}', (user_id,))
         cursor.execute(f'UPDATE affiliate_applications SET reviewed_by = NULL WHERE reviewed_by = {ph}', (user_id,))
-        # Clean up token tables (try/except in case tables don't exist yet)
+        # Clean up token tables (savepoint protects transaction if table doesn't exist)
         try:
+            cursor.execute('SAVEPOINT token_cleanup_1')
             cursor.execute(f'DELETE FROM activation_tokens WHERE user_id = {ph}', (user_id,))
+            cursor.execute('RELEASE SAVEPOINT token_cleanup_1')
         except Exception:
-            pass
+            cursor.execute('ROLLBACK TO SAVEPOINT token_cleanup_1')
         try:
+            cursor.execute('SAVEPOINT token_cleanup_2')
             cursor.execute(f'DELETE FROM password_reset_tokens WHERE user_id = {ph}', (user_id,))
+            cursor.execute('RELEASE SAVEPOINT token_cleanup_2')
         except Exception:
-            pass
+            cursor.execute('ROLLBACK TO SAVEPOINT token_cleanup_2')
         # Finally delete the user
         cursor.execute(f'DELETE FROM users WHERE id = {ph}', (user_id,))
         conn.commit()
