@@ -136,14 +136,43 @@ class LeaderConnection:
             self.connected = True
             self._connection_time = datetime.now(timezone.utc)
 
-            # Authenticate
-            auth_msg = f"authorize\n{self._next_request_id()}\n\n{self.access_token}"
+            # Wait for 'o' (open) frame before authenticating
+            open_frame = await asyncio.wait_for(self.websocket.recv(), timeout=10)
+            logger.debug(f"Leader {self.leader_id} open frame: {open_frame[:50] if open_frame else 'empty'}")
+
+            # Authenticate with request ID 0 (reserved for auth per Tradovate spec)
+            auth_msg = f"authorize\n0\n\n{self.access_token}"
             await self.websocket.send(auth_msg)
 
-            # Wait for auth response
-            response = await asyncio.wait_for(self.websocket.recv(), timeout=10)
+            # Wait for auth response — loop until we get the auth reply (skip heartbeats)
+            auth_success = False
+            for _ in range(10):  # Max 10 messages to find auth response
+                response = await asyncio.wait_for(self.websocket.recv(), timeout=10)
+                logger.debug(f"Leader {self.leader_id} auth recv: {response[:200] if response else 'empty'}")
 
-            if 's' in response or '"s":200' in response or 'ok' in response.lower():
+                if not response or response in ('o', 'h', '[]'):
+                    continue
+
+                # Parse a[...] response looking for {"i":0,"s":200}
+                if response.startswith('a['):
+                    try:
+                        array = json.loads(response[1:])
+                        for item in array:
+                            if isinstance(item, dict) and item.get('i') == 0 and item.get('s') == 200:
+                                auth_success = True
+                                break
+                            elif isinstance(item, str):
+                                parsed = json.loads(item)
+                                if isinstance(parsed, dict) and parsed.get('i') == 0 and parsed.get('s') == 200:
+                                    auth_success = True
+                                    break
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                if auth_success:
+                    break
+
+            if auth_success:
                 self.authenticated = True
                 logger.info(f"Authenticated for leader {self.leader_id}")
 
@@ -151,7 +180,7 @@ class LeaderConnection:
                 await self._subscribe_sync()
                 return True
             else:
-                logger.error(f"Auth failed for leader {self.leader_id}: {response[:200]}")
+                logger.error(f"Auth failed for leader {self.leader_id} — no s:200 response")
                 return False
 
         except Exception as e:
@@ -170,6 +199,7 @@ class LeaderConnection:
     async def run(self, fill_callback):
         """Run the monitoring loop."""
         self._running = True
+        self._last_server_msg = time.time()
 
         while self._running and self.connected:
             try:
@@ -179,9 +209,16 @@ class LeaderConnection:
                     await self.websocket.send("[]")
                     self._last_heartbeat = now
 
+                # Server timeout: if no message in 10s, connection is dead
+                if now - self._last_server_msg > 10.0:
+                    logger.warning(f"Server timeout for leader {self.leader_id} — no message in 10s")
+                    self.connected = False
+                    break
+
                 # Receive messages
                 try:
                     message = await asyncio.wait_for(self.websocket.recv(), timeout=1.0)
+                    self._last_server_msg = time.time()
                     await self._handle_message(message, fill_callback)
                 except asyncio.TimeoutError:
                     continue
@@ -201,23 +238,29 @@ class LeaderConnection:
             return
 
         try:
-            data = None
+            items = []
 
-            # Parse message formats
+            # Parse a[...] format — Tradovate wraps messages in a JSON array prefixed with 'a'
             if raw_message.startswith('a['):
-                inner = raw_message[1:]
-                array = json.loads(inner)
-                if array and isinstance(array[0], str):
-                    data = json.loads(array[0])
+                array = json.loads(raw_message[1:])
+                for element in array:
+                    if isinstance(element, dict):
+                        items.append(element)
+                    elif isinstance(element, str):
+                        try:
+                            parsed = json.loads(element)
+                            if isinstance(parsed, dict):
+                                items.append(parsed)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
             elif '{' in raw_message:
                 json_start = raw_message.find('{')
-                json_str = raw_message[json_start:]
-                data = json.loads(json_str)
+                parsed = json.loads(raw_message[json_start:])
+                if isinstance(parsed, dict):
+                    items.append(parsed)
 
-            if not data:
-                return
-
-            await self._check_for_fills(data, fill_callback)
+            for data in items:
+                await self._check_for_fills(data, fill_callback)
 
         except json.JSONDecodeError:
             pass
@@ -228,22 +271,25 @@ class LeaderConnection:
         """Check for fill events in the WebSocket data."""
         fills = []
 
-        # Direct fill entity event
-        if (data.get('e') == 'props' and
-                data.get('d', {}).get('entityType') == 'fill' and
-                data.get('d', {}).get('eventType') == 'Created'):
-            fills.append(data['d'])
+        # Props event: {e: "props", d: {entityType: "fill", entity: {...}, eventType: "Created"}}
+        if data.get('e') == 'props':
+            d = data.get('d', {})
+            if d.get('entityType') == 'fill' and d.get('eventType') == 'Created':
+                # The actual fill fields are inside d['entity'], not d itself
+                entity = d.get('entity') or d
+                if isinstance(entity, dict):
+                    fills.append(entity)
 
-        # Fills in sync response
-        if 'd' in data:
+        # Bulk sync response with fills array nested in 'd'
+        if 'd' in data and not fills:
             d = data['d']
-            if 'fills' in d:
+            if isinstance(d, dict) and 'fills' in d:
                 for f in d.get('fills', []):
                     if isinstance(f, dict):
                         fills.append(f)
 
-        # Direct fills array
-        if 'fills' in data:
+        # Direct fills array at top level
+        if 'fills' in data and not fills:
             for f in data.get('fills', []):
                 if isinstance(f, dict):
                     fills.append(f)
