@@ -650,7 +650,9 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
             _cum, _dd = _calc_drawdown_stats(cursor, ph, recorder_id, _pnl)
             # Per-trade drawdown from MAE tracking (how deep underwater before close)
             global _paper_trade_mae
+            global _paper_trail_state
             mae = _paper_trade_mae.pop(pos_id, 0.0)
+            _paper_trail_state.pop(pos_id, None)
             trade_dd = abs(mae) if mae < 0 else 0
             cursor.execute(f'''
                 UPDATE paper_trades SET status = 'closed', exit_price = {ph}, pnl = {ph},
@@ -786,6 +788,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
 _paper_monitor_running = False
 _paper_dca_next_price = {}  # trade_id -> next DCA trigger price (for automatic price-based DCA)
 _paper_trade_mae = {}  # trade_id -> worst unrealized P&L (most negative = deepest drawdown)
+_paper_trail_state = {}  # trade_id -> {'best_price': float, 'trail_active': bool, 'be_triggered': bool}
 
 # Commission per side per contract (round-turn = 2x). Keyed by symbol root.
 # Default: $0.52/side for micros, $1.29/side for full-size. Override with recorder setting later.
@@ -876,10 +879,12 @@ def _close_paper_trade_tpsl(trade_id: int, exit_price: float, exit_reason: str, 
         ''', (exit_price, pnl, cumulative, trade_drawdown, exit_reason, commission, now, trade_id))
         conn.commit()
 
-        # Clean up DCA and MAE tracking for closed trade
+        # Clean up DCA, MAE, and trail tracking for closed trade
         global _paper_dca_next_price
+        global _paper_trail_state
         _paper_dca_next_price.pop(trade_id, None)
         _paper_trade_mae.pop(trade_id, None)
+        _paper_trail_state.pop(trade_id, None)
 
         dd_str = f" | DD: ${trade_drawdown:.2f}" if trade_drawdown > 0 else ""
         comm_str = f" | Comm: ${commission:.2f}" if commission > 0 else ""
@@ -1066,11 +1071,16 @@ def check_paper_trades_tpsl():
     cursor = conn.cursor()
 
     try:
-        # Get ALL open paper trades (for MAE tracking + TP/SL checks)
+        # Get ALL open paper trades with recorder settings for trailing/break-even
         cursor.execute('''
-            SELECT id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, tp_legs
-            FROM paper_trades
-            WHERE status = 'open'
+            SELECT pt.id, pt.recorder_id, pt.symbol, pt.side, pt.quantity, pt.entry_price,
+                   pt.tp_price, pt.sl_price, pt.tp_legs,
+                   r.sl_type, r.trail_trigger, r.trail_freq,
+                   r.break_even_enabled, r.break_even_ticks, r.break_even_offset,
+                   r.sl_amount, r.sl_units
+            FROM paper_trades pt
+            LEFT JOIN recorders r ON pt.recorder_id = r.id
+            WHERE pt.status = 'open'
         ''')
         open_trades = cursor.fetchall()
 
@@ -1085,9 +1095,12 @@ def check_paper_trades_tpsl():
         from tv_price_service import FUTURES_SPECS
         global _paper_trade_mae
         global _paper_dca_next_price
+        global _paper_trail_state
 
         for trade in open_trades:
-            trade_id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, tp_legs_raw = trade
+            trade_id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, tp_legs_raw, \
+                sl_type, trail_trigger, trail_freq, be_enabled, be_ticks, be_offset, \
+                r_sl_amount, r_sl_units = trade
 
             live_price = _get_live_price_for_symbol(symbol)
 
@@ -1115,6 +1128,90 @@ def check_paper_trades_tpsl():
             from recorder_service import get_tick_size as _gts
             _tp_tick_sz = _gts(symbol)
             _tp_offset = _PAPER_FILL_THROUGH_TICKS * _tp_tick_sz
+
+            # --- Trailing stop + break-even simulation ---
+            if sl_price and (sl_type == 'Trail' or be_enabled):
+                # Initialize trail state for this trade if needed
+                if trade_id not in _paper_trail_state:
+                    _paper_trail_state[trade_id] = {
+                        'best_price': entry_price,
+                        'trail_active': False,
+                        'be_triggered': False
+                    }
+                ts = _paper_trail_state[trade_id]
+                sl_moved = False
+
+                # Update best price seen (most favorable for our side)
+                if side == 'LONG':
+                    if live_price > ts['best_price']:
+                        ts['best_price'] = live_price
+                else:
+                    if live_price < ts['best_price']:
+                        ts['best_price'] = live_price
+
+                # Break-even: snap SL to entry when price moves enough in our favor
+                if be_enabled and be_ticks and not ts.get('be_triggered'):
+                    be_ticks_val = float(be_ticks)
+                    be_offset_val = float(be_offset) if be_offset else 0
+                    if side == 'LONG':
+                        profit_ticks = (ts['best_price'] - entry_price) / _tp_tick_sz
+                        if profit_ticks >= be_ticks_val:
+                            new_sl = entry_price + (be_offset_val * _tp_tick_sz)
+                            new_sl = round(round(new_sl / _tp_tick_sz) * _tp_tick_sz, 10)
+                            if new_sl > sl_price:
+                                sl_price = new_sl
+                                sl_moved = True
+                            ts['be_triggered'] = True
+                    else:
+                        profit_ticks = (entry_price - ts['best_price']) / _tp_tick_sz
+                        if profit_ticks >= be_ticks_val:
+                            new_sl = entry_price - (be_offset_val * _tp_tick_sz)
+                            new_sl = round(round(new_sl / _tp_tick_sz) * _tp_tick_sz, 10)
+                            if new_sl < sl_price:
+                                sl_price = new_sl
+                                sl_moved = True
+                            ts['be_triggered'] = True
+
+                # Trailing stop: move SL to follow price by sl_amount distance
+                if sl_type == 'Trail':
+                    trail_trigger_val = float(trail_trigger) if trail_trigger else 0
+                    trail_freq_val = float(trail_freq) if trail_freq else 0
+
+                    # Check if trailing is activated
+                    if not ts['trail_active']:
+                        if side == 'LONG':
+                            profit_ticks = (ts['best_price'] - entry_price) / _tp_tick_sz
+                        else:
+                            profit_ticks = (entry_price - ts['best_price']) / _tp_tick_sz
+                        if trail_trigger_val == 0 or profit_ticks >= trail_trigger_val:
+                            ts['trail_active'] = True
+
+                    if ts['trail_active'] and r_sl_amount:
+                        _sl_amt = float(r_sl_amount)
+                        _sl_un = r_sl_units or 'Ticks'
+                        _sl_dist = _sl_amt if _sl_un == 'Points' else _sl_amt * _tp_tick_sz
+                        if side == 'LONG':
+                            new_sl = ts['best_price'] - _sl_dist
+                            new_sl = round(round(new_sl / _tp_tick_sz) * _tp_tick_sz, 10)
+                            # Only move SL up, never down
+                            if new_sl > sl_price:
+                                # Apply trail_freq: only update if moved at least trail_freq ticks
+                                if trail_freq_val == 0 or (new_sl - sl_price) / _tp_tick_sz >= trail_freq_val:
+                                    sl_price = new_sl
+                                    sl_moved = True
+                        else:
+                            new_sl = ts['best_price'] + _sl_dist
+                            new_sl = round(round(new_sl / _tp_tick_sz) * _tp_tick_sz, 10)
+                            # Only move SL down, never up
+                            if new_sl < sl_price:
+                                if trail_freq_val == 0 or (sl_price - new_sl) / _tp_tick_sz >= trail_freq_val:
+                                    sl_price = new_sl
+                                    sl_moved = True
+
+                # Persist updated SL to DB
+                if sl_moved:
+                    cursor.execute(f'UPDATE paper_trades SET sl_price = {ph} WHERE id = {ph}', (sl_price, trade_id))
+                    conn.commit()
 
             # --- Multi-leg TP support ---
             # If tp_legs exists, check each unfilled leg for partial closes
@@ -1172,9 +1269,10 @@ def check_paper_trades_tpsl():
                             exit_reason = 'tp', closed_at = {ph}
                             WHERE id = {ph}
                         ''', (json.dumps(tp_legs), now_ts, trade_id))
-                        # Clean up MAE tracking
+                        # Clean up MAE, DCA, and trail tracking
                         _paper_trade_mae.pop(trade_id, None)
                         _paper_dca_next_price.pop(trade_id, None)
+                        _paper_trail_state.pop(trade_id, None)
                     else:
                         # Update remaining quantity and leg state on parent
                         cursor.execute(f'''
