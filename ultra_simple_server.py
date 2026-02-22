@@ -6118,6 +6118,96 @@ def logout():
 
 
 # ============================================================================
+# PASSWORD RESET ROUTES
+# ============================================================================
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Forgot password page — enter email to receive reset link."""
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+
+        if not email:
+            flash('Please enter your email address.', 'error')
+            return render_template('forgot_password.html')
+
+        # Always show generic success — never reveal if email exists
+        try:
+            from user_auth import get_user_by_email
+            from account_activation import generate_password_reset_token, send_password_reset_email
+
+            user = get_user_by_email(email)
+            if user:
+                token = generate_password_reset_token(user.id, email)
+                if token:
+                    send_password_reset_email(email, token)
+        except Exception as e:
+            logger.error(f"Forgot password error for {email}: {e}")
+
+        flash('If an account exists for that email, a password reset link has been sent.', 'info')
+        return render_template('forgot_password.html')
+
+    # GET request
+    return render_template('forgot_password.html')
+
+
+@app.route('/reset-password', methods=['GET', 'POST'])
+def reset_password():
+    """Reset password page — validate token and set new password."""
+    if request.method == 'POST':
+        token = request.form.get('token', '').strip()
+        password = request.form.get('password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if not token:
+            flash('Invalid reset link.', 'error')
+            return render_template('reset_password.html', has_token=False)
+
+        from account_activation import validate_password_reset_token, mark_reset_token_used
+
+        user_id, email = validate_password_reset_token(token)
+        if not user_id:
+            flash('This reset link is invalid or has expired.', 'error')
+            return render_template('reset_password.html', has_token=False)
+
+        # Validate password
+        if not password or len(password) < 6:
+            flash('Password must be at least 6 characters.', 'error')
+            return render_template('reset_password.html', has_token=True, token=token)
+
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return render_template('reset_password.html', has_token=True, token=token)
+
+        # Update password
+        from user_auth import update_user_password
+
+        success = update_user_password(user_id, password)
+        if success:
+            mark_reset_token_used(token)
+            flash('Your password has been reset successfully. Please sign in.', 'success')
+            return redirect(url_for('login'))
+        else:
+            flash('Failed to reset password. Please try again.', 'error')
+            return render_template('reset_password.html', has_token=True, token=token)
+
+    # GET request
+    token = request.args.get('token', '').strip()
+
+    if token:
+        from account_activation import validate_password_reset_token
+
+        user_id, email = validate_password_reset_token(token)
+        if user_id:
+            return render_template('reset_password.html', has_token=True, token=token)
+        else:
+            flash('This reset link is invalid or has expired.', 'error')
+            return render_template('reset_password.html', has_token=False)
+
+    # No token — show expired state
+    return render_template('reset_password.html', has_token=False)
+
+
+# ============================================================================
 # ADMIN ROUTES - System Dashboard
 # ============================================================================
 @app.route('/admin/dashboard')
