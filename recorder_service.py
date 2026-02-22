@@ -1661,7 +1661,7 @@ def execute_trade_simple(
                                     sl_order_data = {
                                         "accountId": int(subaccount_id),
                                         "contractId": contract_id,
-                                        "type": 5,  # ORDER_TYPE_TRAILING_STOP
+                                        "type": 4,  # StopMarket (type=5 broken on buy side — trailing emulator handles movement)
                                         "side": 0 if sl_side.lower() == "buy" else 1,
                                         "size": broker_qty,
                                         "stopPrice": float(sl_price)
@@ -1684,6 +1684,35 @@ def execute_trade_simple(
                                 else:
                                     sl_err = sl_result.get('error', 'Unknown') if sl_result else 'No response'
                                     logger.error(f"❌ [{acct_name}] ProjectX DCA {sl_label} failed: {sl_err}")
+
+                            # Register trailing stop emulator if trailing enabled
+                            if use_trailing and sl_result and sl_result.get('success'):
+                                try:
+                                    trail_cfg = risk_config.get('trail', {}) if risk_config else {}
+                                    trail_activation = trail_cfg.get('activation_ticks', 0)
+                                    trail_offset = trail_cfg.get('offset_ticks', sl_ticks)
+                                    trail_frequency = trail_cfg.get('frequency_ticks', 0)
+                                    from ultra_simple_server import register_projectx_trailing_monitor
+                                    register_projectx_trailing_monitor(
+                                        account_id=int(subaccount_id),
+                                        contract_id=contract_id,
+                                        symbol_root=symbol_root,
+                                        entry_price=float(broker_avg) if broker_avg else float(sl_price + sl_ticks * tick_size if side.lower() == 'buy' else sl_price - sl_ticks * tick_size),
+                                        is_long=(side.lower() == 'buy'),
+                                        activation_ticks=trail_activation,
+                                        offset_ticks=trail_offset,
+                                        frequency_ticks=trail_frequency,
+                                        tick_size=tick_size,
+                                        quantity=broker_qty,
+                                        session_token=projectx.session_token,
+                                        base_url=projectx.base_url,
+                                        prop_firm=prop_firm,
+                                        username=username,
+                                        api_key=api_key
+                                    )
+                                    logger.info(f"📊 [{acct_name}] ProjectX trailing monitor registered (DCA, trigger={trail_activation}t, offset={trail_offset}t)")
+                                except Exception as trail_err:
+                                    logger.warning(f"⚠️ [{acct_name}] ProjectX trailing monitor registration failed: {trail_err}")
 
                         return {
                             'success': True,
@@ -1810,6 +1839,49 @@ def execute_trade_simple(
                                     except Exception as be_err:
                                         logger.warning(f"⚠️ [{acct_name}] ProjectX BE monitor registration failed: {be_err}")
 
+                                # Trailing stop emulator (when trailing enabled instead of BE)
+                                if use_trailing_for_bracket:
+                                    try:
+                                        await asyncio.sleep(0.3)
+                                        trail_positions = await projectx.get_positions(int(subaccount_id))
+                                        trail_entry_price = None
+                                        for pos in trail_positions:
+                                            if str(pos.get('contractId', '')) == str(contract_id):
+                                                if pos.get('netPos', 0) != 0:
+                                                    trail_entry_price = pos.get('netPrice')
+                                                    break
+                                        if trail_entry_price and trail_entry_price > 0:
+                                            trail_cfg = risk_config.get('trail', {}) if risk_config else {}
+                                            trail_trigger_val = trail_cfg.get('activation_ticks', 0)
+                                            if not trail_trigger_val:
+                                                trail_trigger_val = int(float(trader.get('trail_trigger', 0) or 0))
+                                            trail_offset_val = trail_cfg.get('offset_ticks', sl_ticks)
+                                            trail_freq_val = trail_cfg.get('frequency_ticks', 0)
+                                            if not trail_freq_val:
+                                                trail_freq_val = int(float(trader.get('trail_freq', 0) or 0))
+                                            from ultra_simple_server import register_projectx_trailing_monitor
+                                            register_projectx_trailing_monitor(
+                                                account_id=int(subaccount_id),
+                                                contract_id=contract_id,
+                                                symbol_root=symbol_root,
+                                                entry_price=float(trail_entry_price),
+                                                is_long=(side.lower() == 'buy'),
+                                                activation_ticks=trail_trigger_val,
+                                                offset_ticks=trail_offset_val,
+                                                frequency_ticks=trail_freq_val,
+                                                tick_size=tick_size,
+                                                quantity=adjusted_quantity,
+                                                session_token=projectx.session_token,
+                                                base_url=projectx.base_url,
+                                                prop_firm=prop_firm,
+                                                username=username,
+                                                api_key=api_key
+                                            )
+                                            logger.info(f"📊 [{acct_name}] ProjectX trailing monitor registered "
+                                                        f"(multi-bracket, trigger={trail_trigger_val}t, offset={trail_offset_val}t)")
+                                    except Exception as trail_err:
+                                        logger.warning(f"⚠️ [{acct_name}] ProjectX trailing monitor registration failed: {trail_err}")
+
                                 return {
                                     'success': True,
                                     'order_id': all_order_ids[0],
@@ -1886,6 +1958,49 @@ def execute_trade_simple(
                                         logger.warning(f"⚠️ [{acct_name}] ProjectX BE: Could not get entry price from position")
                                 except Exception as be_err:
                                     logger.warning(f"⚠️ [{acct_name}] ProjectX BE monitor registration failed: {be_err}")
+
+                            # Trailing stop emulator (when trailing enabled instead of BE)
+                            if use_trailing_for_bracket:
+                                try:
+                                    await asyncio.sleep(0.3)
+                                    trail_positions = await projectx.get_positions(int(subaccount_id))
+                                    trail_entry_price = None
+                                    for pos in trail_positions:
+                                        if str(pos.get('contractId', '')) == str(contract_id):
+                                            if pos.get('netPos', 0) != 0:
+                                                trail_entry_price = pos.get('netPrice')
+                                                break
+                                    if trail_entry_price and trail_entry_price > 0:
+                                        trail_cfg = risk_config.get('trail', {}) if risk_config else {}
+                                        trail_trigger_val = trail_cfg.get('activation_ticks', 0)
+                                        if not trail_trigger_val:
+                                            trail_trigger_val = int(float(trader.get('trail_trigger', 0) or 0))
+                                        trail_offset_val = trail_cfg.get('offset_ticks', sl_ticks)
+                                        trail_freq_val = trail_cfg.get('frequency_ticks', 0)
+                                        if not trail_freq_val:
+                                            trail_freq_val = int(float(trader.get('trail_freq', 0) or 0))
+                                        from ultra_simple_server import register_projectx_trailing_monitor
+                                        register_projectx_trailing_monitor(
+                                            account_id=int(subaccount_id),
+                                            contract_id=contract_id,
+                                            symbol_root=symbol_root,
+                                            entry_price=float(trail_entry_price),
+                                            is_long=(side.lower() == 'buy'),
+                                            activation_ticks=trail_trigger_val,
+                                            offset_ticks=trail_offset_val,
+                                            frequency_ticks=trail_freq_val,
+                                            tick_size=tick_size,
+                                            quantity=adjusted_quantity,
+                                            session_token=projectx.session_token,
+                                            base_url=projectx.base_url,
+                                            prop_firm=prop_firm,
+                                            username=username,
+                                            api_key=api_key
+                                        )
+                                        logger.info(f"📊 [{acct_name}] ProjectX trailing monitor registered "
+                                                    f"(single-bracket, trigger={trail_trigger_val}t, offset={trail_offset_val}t)")
+                                except Exception as trail_err:
+                                    logger.warning(f"⚠️ [{acct_name}] ProjectX trailing monitor registration failed: {trail_err}")
 
                             return {
                                 'success': True,
