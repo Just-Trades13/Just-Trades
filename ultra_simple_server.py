@@ -493,6 +493,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                 cumulative_pnl REAL,
                 tp_price REAL,
                 sl_price REAL,
+                tp_legs TEXT,
                 exit_reason TEXT,
                 commission REAL DEFAULT 0,
                 opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -506,6 +507,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS cumulative_pnl REAL")
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS tp_price REAL")
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS sl_price REAL")
+            cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS tp_legs TEXT")
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT")
             cursor.execute("ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS commission REAL DEFAULT 0")
         except:
@@ -525,6 +527,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                 cumulative_pnl REAL,
                 tp_price REAL,
                 sl_price REAL,
+                tp_legs TEXT,
                 exit_reason TEXT,
                 commission REAL DEFAULT 0,
                 opened_at TEXT NOT NULL,
@@ -533,9 +536,9 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
             )
         ''')
         # Add columns if they don't exist (for existing tables)
-        for col in ['drawdown', 'cumulative_pnl', 'tp_price', 'sl_price', 'exit_reason', 'commission']:
+        for col in ['drawdown', 'cumulative_pnl', 'tp_price', 'sl_price', 'tp_legs', 'exit_reason', 'commission']:
             try:
-                cursor.execute(f"ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS {col} {'REAL' if col not in ('exit_reason',) else 'TEXT'}")
+                cursor.execute(f"ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS {col} {'REAL' if col not in ('exit_reason', 'tp_legs') else 'TEXT'}")
             except:
                 pass
     conn.commit()
@@ -568,13 +571,14 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
 
     try:
         # Helper: fetch recorder TP/SL settings and calculate prices
-        def _calc_tp_sl(entry, direction):
+        def _calc_tp_sl(entry, direction, total_qty=None):
             _tp, _sl = None, None
+            _tp_legs_list = None
             try:
-                cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units FROM recorders WHERE id = {ph}', (recorder_id,))
+                cursor.execute(f'SELECT tp_targets, sl_enabled, sl_amount, sl_units, trim_units FROM recorders WHERE id = {ph}', (recorder_id,))
                 rec_row = cursor.fetchone()
                 if rec_row:
-                    tp_targets_raw, sl_en, sl_amt, sl_un = rec_row
+                    tp_targets_raw, sl_en, sl_amt, sl_un, trim_un = rec_row
                     from recorder_service import get_tick_size
                     tick_sz = get_tick_size(symbol)
                     if tp_targets_raw:
@@ -582,12 +586,45 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                         try:
                             tp_list = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
                             if tp_list and len(tp_list) > 0:
+                                # First TP leg → backward-compatible tp_price
                                 first_tp = tp_list[0]
                                 tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
                                 if tp_ticks and float(tp_ticks) > 0:
                                     tp_off = float(tp_ticks) * tick_sz
                                     _tp = entry + tp_off if direction == 'LONG' else entry - tp_off
                                     _tp = round(round(_tp / tick_sz) * tick_sz, 10)
+
+                                # Build all TP legs with prices and trim quantities
+                                if total_qty and total_qty > 0:
+                                    _tp_legs_list = []
+                                    remaining = int(total_qty)
+                                    for i, leg in enumerate(tp_list):
+                                        leg_ticks = float(leg.get('ticks') or leg.get('value') or 0)
+                                        leg_trim = float(leg.get('trim', 0))
+                                        if leg_ticks <= 0:
+                                            continue
+                                        leg_off = leg_ticks * tick_sz
+                                        leg_price = entry + leg_off if direction == 'LONG' else entry - leg_off
+                                        leg_price = round(round(leg_price / tick_sz) * tick_sz, 10)
+                                        # Calculate trim qty
+                                        if i == len(tp_list) - 1:
+                                            leg_qty = remaining  # Last leg gets remainder
+                                        elif trim_un == 'Percent':
+                                            leg_qty = max(1, int(round(total_qty * (leg_trim / 100.0))))
+                                        else:  # Contracts — cap at remaining
+                                            leg_qty = max(1, int(round(leg_trim))) if leg_trim > 0 else 1
+                                            leg_qty = min(leg_qty, remaining)
+                                        if leg_qty <= 0:
+                                            continue
+                                        remaining -= leg_qty
+                                        _tp_legs_list.append({
+                                            'ticks': leg_ticks,
+                                            'price': leg_price,
+                                            'qty': leg_qty,
+                                            'filled': False
+                                        })
+                                        if remaining <= 0:
+                                            break
                         except:
                             pass
                     if sl_en and sl_amt and float(sl_amt) > 0:
@@ -597,7 +634,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                         _sl = round(round(_sl / tick_sz) * tick_sz, 10)
             except Exception as e:
                 print(f"⚠️ Could not fetch recorder TP/SL settings: {e}", flush=True)
-            return _tp, _sl
+            return _tp, _sl, _tp_legs_list
 
         # Helper: close a single open position with P&L
         def _close_position(pos_id, pos_side, pos_qty, pos_entry, exit_px, reason):
@@ -669,12 +706,13 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                         return {'success': True, 'symbol': symbol, 'action': 'DCA_CAPPED', 'reason': f'qty {new_qty} exceeds max {max_contracts}'}
 
                     avg_entry = ((exist_entry * exist_qty) + (price * quantity)) / new_qty
-                    tp_price, sl_price = _calc_tp_sl(avg_entry, side)
+                    tp_price, sl_price, tp_legs_list = _calc_tp_sl(avg_entry, side, total_qty=new_qty)
+                    tp_legs_json = json.dumps(tp_legs_list) if tp_legs_list else None
 
                     cursor.execute(f'''
-                        UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}
+                        UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}, tp_legs = {ph}
                         WHERE id = {ph}
-                    ''', (new_qty, avg_entry, tp_price, sl_price, exist_id))
+                    ''', (new_qty, avg_entry, tp_price, sl_price, tp_legs_json, exist_id))
 
                     # Reset automatic DCA tracking so it recalculates from new avg entry
                     global _paper_dca_next_price
@@ -706,15 +744,17 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                         print(f"📝 Closed {opp[1]} position #{opp[0]} (signal), P&L: ${opp_pnl:.2f}", flush=True)
 
             # Open new position with TP/SL from recorder settings
-            tp_price, sl_price = _calc_tp_sl(price, side)
+            tp_price, sl_price, tp_legs_list = _calc_tp_sl(price, side, total_qty=quantity)
+            tp_legs_json = json.dumps(tp_legs_list) if tp_legs_list else None
 
             cursor.execute(f'''
-                INSERT INTO paper_trades (recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, opened_at, status)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open')
-            ''', (recorder_id, symbol, side, quantity, price, tp_price, sl_price, now))
+                INSERT INTO paper_trades (recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, tp_legs, opened_at, status)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'open')
+            ''', (recorder_id, symbol, side, quantity, price, tp_price, sl_price, tp_legs_json, now))
             tp_str = f"TP={tp_price:.2f}" if tp_price else "TP=None"
+            legs_str = f" | Legs: {len(tp_legs_list)}" if tp_legs_list and len(tp_legs_list) > 1 else ""
             sl_str = f"SL={sl_price:.2f}" if sl_price else "SL=None"
-            print(f"📝 Opened {side} {quantity} {symbol} @ {price} | {tp_str} | {sl_str}", flush=True)
+            print(f"📝 Opened {side} {quantity} {symbol} @ {price} | {tp_str}{legs_str} | {sl_str}", flush=True)
 
         else:  # CLOSE action
             # Find and close ALL open positions for this recorder/symbol
@@ -1005,6 +1045,7 @@ def check_paper_max_daily_loss():
 def check_paper_trades_tpsl():
     """Check all open paper trades against live prices for TP/SL hits AND max daily loss"""
     import os
+    from datetime import datetime
 
     # Skip TP/SL checks during CME maintenance break (no real fills possible)
     if _is_cme_session_break():
@@ -1027,7 +1068,7 @@ def check_paper_trades_tpsl():
     try:
         # Get ALL open paper trades (for MAE tracking + TP/SL checks)
         cursor.execute('''
-            SELECT id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price
+            SELECT id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, tp_legs
             FROM paper_trades
             WHERE status = 'open'
         ''')
@@ -1043,9 +1084,10 @@ def check_paper_trades_tpsl():
 
         from tv_price_service import FUTURES_SPECS
         global _paper_trade_mae
+        global _paper_dca_next_price
 
         for trade in open_trades:
-            trade_id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price = trade
+            trade_id, recorder_id, symbol, side, quantity, entry_price, tp_price, sl_price, tp_legs_raw = trade
 
             live_price = _get_live_price_for_symbol(symbol)
 
@@ -1070,13 +1112,83 @@ def check_paper_trades_tpsl():
             _bid = _cache_entry.get('bid') or live_price
             _ask = _cache_entry.get('ask') or live_price
 
+            from recorder_service import get_tick_size as _gts
+            _tp_tick_sz = _gts(symbol)
+            _tp_offset = _PAPER_FILL_THROUGH_TICKS * _tp_tick_sz
+
+            # --- Multi-leg TP support ---
+            # If tp_legs exists, check each unfilled leg for partial closes
+            # If tp_legs is NULL, fall back to single tp_price (backward compat)
+            tp_legs = None
+            if tp_legs_raw:
+                try:
+                    tp_legs = json.loads(tp_legs_raw) if isinstance(tp_legs_raw, str) else tp_legs_raw
+                except:
+                    tp_legs = None
+
+            if tp_legs and len(tp_legs) > 1:
+                # Multi-leg TP: check each unfilled leg independently
+                # For partial fills, INSERT a new closed record per leg and reduce parent qty
+                legs_modified = False
+                current_qty = quantity
+                now_ts = datetime.now().isoformat()
+                for leg in tp_legs:
+                    if leg.get('filled'):
+                        continue
+                    leg_price = leg.get('price', 0)
+                    leg_qty = leg.get('qty', 0)
+                    if not leg_price or not leg_qty or leg_qty <= 0:
+                        continue
+                    # Cap leg_qty at current remaining quantity
+                    leg_qty = min(leg_qty, int(current_qty))
+                    if leg_qty <= 0:
+                        continue
+                    # Check if this leg's TP is hit (same fill-through logic)
+                    if (side == 'LONG' and _bid >= leg_price + _tp_offset) or (side == 'SHORT' and _ask <= leg_price - _tp_offset):
+                        # Calculate P&L for this partial fill
+                        if side == 'LONG':
+                            _leg_gross = (leg_price - entry_price) * pv * leg_qty
+                        else:
+                            _leg_gross = (entry_price - leg_price) * pv * leg_qty
+                        _leg_comm = _calc_paper_commission(symbol, leg_qty)
+                        _leg_pnl = _leg_gross - _leg_comm
+                        # Insert a new CLOSED record for this partial fill
+                        cursor.execute(f'''
+                            INSERT INTO paper_trades (recorder_id, symbol, side, quantity, entry_price,
+                            exit_price, pnl, exit_reason, commission, opened_at, closed_at, status)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'closed')
+                        ''', (recorder_id, symbol, side, leg_qty, entry_price,
+                              leg_price, _leg_pnl, 'tp_leg', _leg_comm, now_ts, now_ts))
+                        leg['filled'] = True
+                        current_qty -= leg_qty
+                        legs_modified = True
+                        print(f"🎯 Paper TP leg filled: {leg_qty} of {side} {symbol} @ {leg_price:.2f} | P&L: ${_leg_pnl:.2f} | Remaining: {int(current_qty)}", flush=True)
+
+                if legs_modified:
+                    if current_qty <= 0:
+                        # All legs filled — close the parent trade
+                        cursor.execute(f'''
+                            UPDATE paper_trades SET status = 'closed', quantity = 0, tp_legs = {ph},
+                            exit_reason = 'tp', closed_at = {ph}
+                            WHERE id = {ph}
+                        ''', (json.dumps(tp_legs), now_ts, trade_id))
+                        # Clean up MAE tracking
+                        _paper_trade_mae.pop(trade_id, None)
+                        _paper_dca_next_price.pop(trade_id, None)
+                    else:
+                        # Update remaining quantity and leg state on parent
+                        cursor.execute(f'''
+                            UPDATE paper_trades SET quantity = {ph}, tp_legs = {ph}
+                            WHERE id = {ph}
+                        ''', (current_qty, json.dumps(tp_legs), trade_id))
+                    conn.commit()
+                    continue  # Skip single-TP check below
+
+            # Single-leg TP (backward compat or single-TP recorder)
             # Check TP hit — bid for LONG (selling), ask for SHORT (buying) must trade THROUGH TP level
             # TP is a LIMIT order: requires fill-through (price must pass TP by N ticks for queue fill)
             # Fills at tp_price (limit guarantee), not at market price
             if tp_price:
-                from recorder_service import get_tick_size as _gts
-                _tp_tick_sz = _gts(symbol)
-                _tp_offset = _PAPER_FILL_THROUGH_TICKS * _tp_tick_sz
                 if (side == 'LONG' and _bid >= tp_price + _tp_offset) or (side == 'SHORT' and _ask <= tp_price - _tp_offset):
                     _close_paper_trade_tpsl(trade_id, tp_price, 'tp', recorder_id, side, entry_price, quantity, symbol)
                     continue
@@ -1126,7 +1238,7 @@ def _check_paper_dca_adds():
         cursor.execute(f'''
             SELECT pt.id, pt.recorder_id, pt.symbol, pt.side, pt.quantity, pt.entry_price,
                    r.avg_down_point, r.avg_down_units, r.add_position_size, r.max_contracts_per_trade,
-                   r.tp_targets, r.sl_enabled, r.sl_amount, r.sl_units
+                   r.tp_targets, r.sl_enabled, r.sl_amount, r.sl_units, r.trim_units
             FROM paper_trades pt
             JOIN recorders r ON pt.recorder_id = r.id
             WHERE pt.status = 'open' AND {enabled_check}
@@ -1145,7 +1257,7 @@ def _check_paper_dca_adds():
         from recorder_service import get_tick_size
 
         for trade in dca_trades:
-            trade_id, rec_id, sym, side, qty, entry, dca_point, dca_units, add_size, max_contracts, tp_targets_raw, sl_en, sl_amt, sl_units = trade
+            trade_id, rec_id, sym, side, qty, entry, dca_point, dca_units, add_size, max_contracts, tp_targets_raw, sl_en, sl_amt, sl_units, trim_un = trade
 
             if not dca_point or float(dca_point) <= 0:
                 continue
@@ -1187,20 +1299,47 @@ def _check_paper_dca_adds():
             # DCA triggered — add contracts and update avg entry
             new_avg = ((entry * qty) + (live_price * add_qty)) / new_qty
 
-            # Recalculate TP from new avg entry
+            # Recalculate TP from new avg entry (first leg + all legs)
             new_tp = None
+            new_tp_legs = None
             if tp_targets_raw:
                 import json
                 try:
                     tp_list = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
                     if tp_list and len(tp_list) > 0:
+                        # First leg → backward-compat tp_price
                         tp_ticks = float(tp_list[0].get('ticks') or tp_list[0].get('value') or 0)
                         if tp_ticks > 0:
                             tp_off = tp_ticks * tick_sz
                             new_tp = new_avg + tp_off if side == 'LONG' else new_avg - tp_off
                             new_tp = round(round(new_tp / tick_sz) * tick_sz, 10)
+                        # All legs — recalculate prices and trim quantities for new total qty
+                        new_tp_legs = []
+                        remaining = int(new_qty)
+                        for li, leg in enumerate(tp_list):
+                            leg_ticks = float(leg.get('ticks') or leg.get('value') or 0)
+                            leg_trim = float(leg.get('trim', 0))
+                            if leg_ticks <= 0:
+                                continue
+                            leg_off = leg_ticks * tick_sz
+                            leg_price = new_avg + leg_off if side == 'LONG' else new_avg - leg_off
+                            leg_price = round(round(leg_price / tick_sz) * tick_sz, 10)
+                            if li == len(tp_list) - 1:
+                                leg_qty = remaining
+                            elif trim_un == 'Percent':
+                                leg_qty = max(1, int(round(new_qty * (leg_trim / 100.0))))
+                            else:
+                                leg_qty = max(1, int(round(leg_trim))) if leg_trim > 0 else 1
+                                leg_qty = min(leg_qty, remaining)
+                            if leg_qty <= 0:
+                                continue
+                            remaining -= leg_qty
+                            new_tp_legs.append({'ticks': leg_ticks, 'price': leg_price, 'qty': leg_qty, 'filled': False})
+                            if remaining <= 0:
+                                break
                 except:
                     pass
+            new_tp_legs_json = json.dumps(new_tp_legs) if new_tp_legs else None
 
             # Recalculate SL from new avg entry
             new_sl = None
@@ -1212,9 +1351,9 @@ def _check_paper_dca_adds():
 
             # Update the trade in DB
             cursor.execute(f'''
-                UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}
+                UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}, tp_legs = {ph}
                 WHERE id = {ph}
-            ''', (new_qty, new_avg, new_tp, new_sl, trade_id))
+            ''', (new_qty, new_avg, new_tp, new_sl, new_tp_legs_json, trade_id))
             conn.commit()
 
             # Set next DCA trigger from THIS trigger level (not from new avg)
