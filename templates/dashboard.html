@@ -475,31 +475,20 @@
         </div>
 
         <div class="paper-trading-grid">
-            <!-- Open Positions Panel -->
-            <div class="paper-panel paper-positions-panel">
-                <div class="panel-header">
-                    <h3><span class="material-icons">trending_up</span> Open Positions</h3>
-                    <span class="position-count" id="positionCount">0 positions</span>
-                </div>
-                <div class="panel-content">
-                    <table class="positions-table" id="paperPositionsTable">
-                        <thead>
-                            <tr>
-                                <th>Recorder</th>
-                                <th>Symbol</th>
-                                <th>Side</th>
-                                <th>Qty</th>
-                                <th>Entry</th>
-                                <th>Current</th>
-                                <th>Unrealized P&L</th>
-                            </tr>
-                        </thead>
-                        <tbody id="paperPositionsBody">
-                            <tr class="empty-row">
-                                <td colspan="7">No open paper positions</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <!-- Open Positions Panel — Trade Manager Style Cards -->
+            <div class="live-positions-panel">
+                <header>
+                    <div>
+                        <h2>Open Positions</h2>
+                        <p id="positionCount">0 positions</p>
+                    </div>
+                    <span class="price-source">Paper</span>
+                </header>
+                <div class="positions-grid" id="paperPositionsGrid">
+                    <div class="no-positions">
+                        <span class="material-icons">trending_flat</span>
+                        <p>Select a strategy to view positions</p>
+                    </div>
                 </div>
             </div>
 
@@ -1878,6 +1867,133 @@
         padding: 1rem;
         max-height: 400px;
         overflow-y: auto;
+    }
+
+    /* Live Positions — Trade Manager Style Cards */
+    .live-positions-panel {
+        background: rgba(7,12,23,0.92);
+        border-radius: 18px;
+        border: 1px solid rgba(148,163,184,0.12);
+        overflow: hidden;
+    }
+    .live-positions-panel header {
+        background: linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.8));
+        padding: 1rem 1.25rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(59,130,246,0.2);
+    }
+    .live-positions-panel h2 { margin: 0; font-size: 1.1rem; color: #60a5fa; }
+    .live-positions-panel p { margin: 0.25rem 0 0; font-size: 0.75rem; color: #64748b; }
+    .price-source {
+        background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(22,163,74,0.15));
+        color: #22c55e;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        border: 1px solid rgba(34,197,94,0.3);
+    }
+    .positions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1rem;
+        padding: 1.25rem;
+    }
+    .no-positions {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 2rem;
+        color: #64748b;
+    }
+    .no-positions .material-icons { font-size: 2.5rem; opacity: 0.5; margin-bottom: 0.5rem; }
+    .no-positions p { margin: 0; }
+    .position-card {
+        background: linear-gradient(145deg, rgba(15,23,42,0.95), rgba(30,41,59,0.85));
+        border-radius: 14px;
+        border: 1px solid rgba(148,163,184,0.1);
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    .position-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        border-color: rgba(59,130,246,0.3);
+    }
+    .position-card.positive { border-left: 3px solid #22c55e; }
+    .position-card.negative { border-left: 3px solid #ef4444; }
+    .position-card-header {
+        padding: 0.85rem 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(0,0,0,0.2);
+        border-bottom: 1px solid rgba(148,163,184,0.08);
+    }
+    .position-symbol {
+        font-weight: 700;
+        font-size: 1rem;
+        color: #f1f5f9;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .position-side {
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        text-transform: uppercase;
+    }
+    .position-side.long { background: rgba(34,197,94,0.2); color: #22c55e; }
+    .position-side.short { background: rgba(239,68,68,0.2); color: #ef4444; }
+    .position-strategy { font-size: 0.7rem; color: #60a5fa; font-weight: 500; }
+    .position-card-body { padding: 1rem; }
+    .pnl-display {
+        text-align: center;
+        padding: 0.75rem;
+        background: rgba(0,0,0,0.25);
+        border-radius: 10px;
+        margin-bottom: 0.85rem;
+    }
+    .pnl-amount {
+        font-size: 1.6rem;
+        font-weight: 700;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .pnl-amount.positive { color: #22c55e; text-shadow: 0 0 20px rgba(34,197,94,0.4); }
+    .pnl-amount.negative { color: #ef4444; text-shadow: 0 0 20px rgba(239,68,68,0.4); }
+    .position-details {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem;
+    }
+    .detail-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+    .detail-label {
+        font-size: 0.65rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .detail-value {
+        font-size: 0.85rem;
+        color: #e2e8f0;
+        font-weight: 500;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .detail-value.price-live {
+        color: #fbbf24;
+        animation: pricePulse 1s ease-in-out infinite;
+    }
+    @keyframes pricePulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
     }
     .positions-table, .history-table {
         width: 100%;
@@ -4459,10 +4575,11 @@
         try {
             if (document.body.dataset.userLoggedIn !== 'true') return;
 
+            const grid = document.getElementById('paperPositionsGrid');
+            const countEl = document.getElementById('positionCount');
+
             if (!selectedStrategyId) {
-                const tbody = document.getElementById('paperPositionsBody');
-                const countEl = document.getElementById('positionCount');
-                if (tbody) tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Select a strategy to view positions</td></tr>';
+                if (grid) grid.innerHTML = '<div class="no-positions"><span class="material-icons">trending_flat</span><p>Select a strategy to view positions</p></div>';
                 if (countEl) countEl.textContent = '0 positions';
                 const openPnlEl = document.getElementById('openPnl');
                 if (openPnlEl) { openPnlEl.textContent = '--'; openPnlEl.className = 'stat-value'; }
@@ -4472,11 +4589,10 @@
             const response = await fetch(`/api/paper-trades/positions?recorder_id=${selectedStrategyId}`);
             const data = await response.json();
 
-            const tbody = document.getElementById('paperPositionsBody');
-            const countEl = document.getElementById('positionCount');
+            if (!grid) return;
 
             if (!data.success || !data.positions || data.positions.length === 0) {
-                tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No open paper positions</td></tr>';
+                grid.innerHTML = '<div class="no-positions"><span class="material-icons">trending_flat</span><p>No open positions</p></div>';
                 if (countEl) countEl.textContent = '0 positions';
                 return;
             }
@@ -4484,29 +4600,51 @@
             if (countEl) countEl.textContent = `${data.positions.length} position${data.positions.length !== 1 ? 's' : ''}`;
 
             let totalUnrealized = 0;
-            tbody.innerHTML = '';
+            grid.innerHTML = '';
 
             for (const pos of data.positions) {
-                const row = document.createElement('tr');
                 const pnl = pos.unrealized_pnl || 0;
                 totalUnrealized += pnl;
-                const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
-                const sideClass = pos.side === 'LONG' ? 'side-long' : 'side-short';
-
-                // Use recorder name from API response (fallback to ID-based lookup)
+                const pnlClass = pnl >= 0 ? 'positive' : 'negative';
+                const pnlSign = pnl >= 0 ? '+' : '-';
                 const recorderName = pos.recorder_name || await getRecorderName(pos.recorder_id);
                 const simpleSymbol = pos.symbol.split(':').pop().replace('1!', '');
 
-                row.innerHTML = `
-                    <td>${recorderName}</td>
-                    <td>${simpleSymbol}</td>
-                    <td class="${sideClass}">${pos.side}</td>
-                    <td>${pos.quantity}</td>
-                    <td>$${pos.entry_price?.toLocaleString('en-US', {minimumFractionDigits: 2}) || '--'}</td>
-                    <td>$${pos.current_price?.toLocaleString('en-US', {minimumFractionDigits: 2}) || '--'}</td>
-                    <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</td>
+                const card = document.createElement('div');
+                card.className = `position-card ${pnlClass}`;
+                card.innerHTML = `
+                    <div class="position-card-header">
+                        <div class="position-symbol">
+                            ${simpleSymbol}
+                            <span class="position-side ${pos.side.toLowerCase()}">${pos.side}</span>
+                        </div>
+                        <span class="position-strategy">${recorderName}</span>
+                    </div>
+                    <div class="position-card-body">
+                        <div class="pnl-display">
+                            <div class="pnl-amount ${pnlClass}">${pnlSign}$${Math.abs(pnl).toFixed(2)}</div>
+                        </div>
+                        <div class="position-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Entry</span>
+                                <span class="detail-value">${pos.entry_price?.toFixed(2) || '--'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Current</span>
+                                <span class="detail-value price-live">${pos.current_price?.toFixed(2) || '--'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Quantity</span>
+                                <span class="detail-value">${pos.quantity}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Side</span>
+                                <span class="detail-value">${pos.side}</span>
+                            </div>
+                        </div>
+                    </div>
                 `;
-                tbody.appendChild(row);
+                grid.appendChild(card);
             }
 
             // Update open P&L summary
