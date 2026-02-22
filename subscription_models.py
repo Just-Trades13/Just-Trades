@@ -54,6 +54,31 @@ def get_subscription_db_connection():
 # ============================================================================
 # These define what each plan includes
 PLAN_FEATURES = {
+    'pro_copy_trader': {
+        'name': 'Pro Copy Trader',
+        'price': 100.00,
+        'type': 'platform',
+        'features': {
+            'platform_access': True,
+            'dashboard': True,
+            'recorders': False,
+            'auto_trader': False,
+            'manual_copy_trader': True,
+            'advanced_copy_trader': True,
+            'control_center': False,
+            'quant_screener': False,
+            'insider_signals': False,
+            'premium_strategies': False,
+            'api_access': False,
+        },
+        'limits': {
+            'max_broker_accounts': 10,
+            'max_strategies': 0,
+            'max_recorders': 0,
+            'max_leaders': 1,
+            'max_followers': 10,
+        }
+    },
     'platform_basic': {
         'name': 'Basic+',
         'price': 200.00,
@@ -64,6 +89,7 @@ PLAN_FEATURES = {
             'recorders': True,
             'auto_trader': True,
             'manual_copy_trader': True,
+            'advanced_copy_trader': True,
             'control_center': True,
             'quant_screener': False,
             'insider_signals': False,
@@ -86,6 +112,7 @@ PLAN_FEATURES = {
             'recorders': True,
             'auto_trader': True,
             'manual_copy_trader': True,
+            'advanced_copy_trader': True,
             'control_center': True,
             'quant_screener': True,
             'insider_signals': True,
@@ -109,6 +136,7 @@ PLAN_FEATURES = {
             'recorders': True,
             'auto_trader': True,
             'manual_copy_trader': True,
+            'advanced_copy_trader': True,
             'control_center': True,
             'quant_screener': True,
             'insider_signals': True,

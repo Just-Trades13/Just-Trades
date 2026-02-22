@@ -41,9 +41,10 @@ WHOP_API_BASE_URL = 'https://api.whop.com/api/v2'
 # TODO: Replace these with real IDs from Whop Dashboard > Products
 WHOP_PRODUCT_MAP = {
     # Format: 'whop_plan_or_product_id': 'our_plan_slug'
-    'prod_l3u1RLWEjMIS7': 'platform_basic',       # Basic+ $200/mo
-    'prod_3RCOfsuDNX4cs': 'platform_premium',      # Premium+ $500/mo
-    'prod_oKaNSNRKgxXS3': 'platform_elite',        # Elite+ $1000/mo
+    'prod_PLACEHOLDER_COPY': 'pro_copy_trader',    # Pro Copy Trader $100/mo — TODO: replace with real Whop product ID
+    'prod_l3u1RLWEjMIS7': 'platform_basic',        # Basic+ $200/mo
+    'prod_3RCOfsuDNX4cs': 'platform_premium',       # Premium+ $500/mo
+    'prod_oKaNSNRKgxXS3': 'platform_elite',         # Elite+ $1000/mo
 }
 
 # Reverse map for looking up Whop product from our plan
@@ -656,6 +657,7 @@ def get_whop_checkout_url(plan_slug: str) -> Optional[str]:
     """
     # You'll need to set these URLs from your Whop dashboard
     CHECKOUT_URLS = {
+        'pro_copy_trader': 'https://whop.com/justtradesgroup/procopytrader/',  # TODO: update with real URL
         'platform_basic': 'https://whop.com/justtradesgroup/basicplus/',
         'platform_premium': 'https://whop.com/justtradesgroup/premiumtier/',
         'platform_elite': 'https://whop.com/justtradesgroup/eliteplus/',
