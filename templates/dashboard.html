@@ -4804,6 +4804,24 @@
     // Load PnL chart from dedicated chart-data endpoint
     async function loadPnlChart() {
         try {
+            // Don't load combined data — require a strategy selection
+            if (!selectedStrategyId) {
+                if (equityChart) {
+                    equityChart.destroy();
+                    equityChart = null;
+                }
+                const canvas = document.getElementById('equityCurveChart');
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                    ctx.font = '14px Inter, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Select a strategy to view chart', canvas.width / 2, canvas.height / 2);
+                }
+                return;
+            }
+
             let url = '/api/paper-trades/chart-data?limit=500';
             if (selectedStrategyId) url += `&recorder_id=${selectedStrategyId}`;
 
