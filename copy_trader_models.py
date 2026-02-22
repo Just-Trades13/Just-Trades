@@ -266,6 +266,36 @@ def get_leader_by_id(leader_id: int) -> Optional[Dict]:
         conn.close()
 
 
+def get_leader_for_account(user_id: int, account_id: int, subaccount_id: str = None) -> Optional[Dict]:
+    """Look up a leader by its account — returns leader dict or None."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+    enabled_val = 'TRUE' if db_type == 'postgresql' else '1'
+
+    try:
+        if subaccount_id:
+            cursor.execute(
+                f'SELECT * FROM leader_accounts WHERE user_id = {ph} '
+                f'AND account_id = {ph} AND subaccount_id = {ph} '
+                f'AND is_active = {enabled_val}',
+                (user_id, account_id, str(subaccount_id))
+            )
+        else:
+            cursor.execute(
+                f'SELECT * FROM leader_accounts WHERE user_id = {ph} '
+                f'AND account_id = {ph} AND is_active = {enabled_val}',
+                (user_id, account_id)
+            )
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def update_leader(leader_id: int, **kwargs) -> bool:
     """Update a leader account. Supported fields: label, is_active, auto_copy_enabled."""
     allowed = {'label', 'is_active', 'auto_copy_enabled'}
