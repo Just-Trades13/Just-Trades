@@ -234,6 +234,274 @@ def mark_token_used(token):
 
 
 # ============================================================================
+# PASSWORD RESET — token generation, validation, rate limiting
+# ============================================================================
+_reset_tokens_table_initialized = False
+
+
+def init_password_reset_tokens_table():
+    """Create password_reset_tokens table if it doesn't exist. Safe to call repeatedly."""
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            if db_type == 'postgresql':
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        token VARCHAR(100) UNIQUE NOT NULL,
+                        email VARCHAR(255) NOT NULL,
+                        used BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        expires_at TIMESTAMP NOT NULL
+                    )
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token
+                    ON password_reset_tokens(token)
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id
+                    ON password_reset_tokens(user_id)
+                ''')
+            else:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        token TEXT UNIQUE NOT NULL,
+                        email TEXT NOT NULL,
+                        used INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        expires_at TIMESTAMP NOT NULL
+                    )
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token
+                    ON password_reset_tokens(token)
+                ''')
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id
+                    ON password_reset_tokens(user_id)
+                ''')
+
+            conn.commit()
+            logger.info("password_reset_tokens table initialized")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create password_reset_tokens table: {e}")
+            conn.rollback()
+            return False
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        logger.error(f"DB connection error in init_password_reset_tokens_table: {e}")
+        return False
+
+
+def _check_reset_rate_limit(email):
+    """Check if email has fewer than 3 reset requests in the last hour. Returns True if allowed."""
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            placeholder = '%s' if db_type == 'postgresql' else '?'
+            one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+            cursor.execute(
+                f'SELECT COUNT(*) FROM password_reset_tokens '
+                f'WHERE LOWER(email) = {placeholder} AND created_at > {placeholder}',
+                (email.lower(), one_hour_ago)
+            )
+            row = cursor.fetchone()
+            count = row[0] if row else 0
+            return count < 3
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        logger.error(f"Rate limit check error for {email}: {e}")
+        return True  # Allow on error — don't block legitimate resets
+
+
+def _invalidate_previous_reset_tokens(user_id):
+    """Mark all unused reset tokens for this user as used."""
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            placeholder = '%s' if db_type == 'postgresql' else '?'
+            if db_type == 'postgresql':
+                cursor.execute(
+                    f'UPDATE password_reset_tokens SET used = TRUE WHERE user_id = {placeholder} AND used = FALSE',
+                    (user_id,)
+                )
+            else:
+                cursor.execute(
+                    f'UPDATE password_reset_tokens SET used = 1 WHERE user_id = {placeholder} AND used = 0',
+                    (user_id,)
+                )
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to invalidate previous reset tokens for user_id={user_id}: {e}")
+            conn.rollback()
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        logger.error(f"_invalidate_previous_reset_tokens error: {e}")
+
+
+def generate_password_reset_token(user_id, email):
+    """
+    Generate a secure password reset token and store it in DB.
+    Token expires in 1 hour. Invalidates all previous tokens for this user.
+
+    Returns token string or None on failure.
+    """
+    global _reset_tokens_table_initialized
+    if not _reset_tokens_table_initialized:
+        init_password_reset_tokens_table()
+        _reset_tokens_table_initialized = True
+
+    # Rate limit: max 3 per email per hour
+    if not _check_reset_rate_limit(email):
+        logger.warning(f"Password reset rate limit reached for {email}")
+        return None
+
+    # Invalidate all previous unused tokens
+    _invalidate_previous_reset_tokens(user_id)
+
+    try:
+        from user_auth import get_auth_db_connection
+
+        token = secrets.token_urlsafe(48)
+        expires_at = datetime.utcnow() + timedelta(hours=1)
+
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            placeholder = '%s' if db_type == 'postgresql' else '?'
+            cursor.execute(
+                f'INSERT INTO password_reset_tokens (user_id, token, email, expires_at) '
+                f'VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})',
+                (user_id, token, email.lower(), expires_at)
+            )
+            conn.commit()
+            logger.info(f"Password reset token generated for user_id={user_id}, email={email}")
+            return token
+        except Exception as e:
+            logger.error(f"Failed to store password reset token for {email}: {e}")
+            conn.rollback()
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        logger.error(f"Password reset token generation error for {email}: {e}")
+        return None
+
+
+def validate_password_reset_token(token):
+    """
+    Validate a password reset token.
+
+    Returns (user_id, email) if valid, (None, None) if invalid/expired/used.
+    """
+    global _reset_tokens_table_initialized
+    if not _reset_tokens_table_initialized:
+        init_password_reset_tokens_table()
+        _reset_tokens_table_initialized = True
+
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            placeholder = '%s' if db_type == 'postgresql' else '?'
+            cursor.execute(
+                f'SELECT user_id, email, used, expires_at FROM password_reset_tokens '
+                f'WHERE token = {placeholder}',
+                (token,)
+            )
+
+            row = cursor.fetchone()
+            if not row:
+                return None, None
+
+            if hasattr(row, 'keys'):
+                user_id = row['user_id']
+                email = row['email']
+                used = row['used']
+                expires_at = row['expires_at']
+            else:
+                user_id = row[0]
+                email = row[1]
+                used = row[2]
+                expires_at = row[3]
+
+            # Check if already used
+            if used and used not in (0, False):
+                return None, None
+
+            # Check expiration
+            if isinstance(expires_at, str):
+                expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00').replace('+00:00', ''))
+            if datetime.utcnow() > expires_at:
+                return None, None
+
+            return user_id, email
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        logger.error(f"Password reset token validation error: {e}")
+        return None, None
+
+
+def mark_reset_token_used(token):
+    """Mark a password reset token as used."""
+    try:
+        from user_auth import get_auth_db_connection
+        conn, db_type = get_auth_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            placeholder = '%s' if db_type == 'postgresql' else '?'
+            if db_type == 'postgresql':
+                cursor.execute(
+                    f'UPDATE password_reset_tokens SET used = TRUE WHERE token = {placeholder}',
+                    (token,)
+                )
+            else:
+                cursor.execute(
+                    f'UPDATE password_reset_tokens SET used = 1 WHERE token = {placeholder}',
+                    (token,)
+                )
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to mark reset token as used: {e}")
+            conn.rollback()
+            return False
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        logger.error(f"mark_reset_token_used error: {e}")
+        return False
+
+
+# ============================================================================
 # EMAIL — Brevo (Sendinblue) transactional email
 # ============================================================================
 def send_activation_email(email, token):
