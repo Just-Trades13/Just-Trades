@@ -293,6 +293,72 @@
             </div>
         </div>
     </section>
+
+    <!-- ================================================================== -->
+    <!-- PRO COPY TRADER — Leader/Follower Auto-Copy                       -->
+    <!-- ================================================================== -->
+    <section class="pro-copy-trader" id="proCopyTraderSection">
+        <header>
+            <div>
+                <h2>Pro Copy Trader</h2>
+                <p>Auto-copy trades from a leader account to followers via WebSocket</p>
+            </div>
+            <div class="pro-copy-mode-toggle">
+                <span class="mode-label" id="modeManualLabel">Manual</span>
+                <label class="copy-toggle">
+                    <input type="checkbox" id="autoCopyMode">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="mode-label" id="modeAutoLabel">Auto</span>
+            </div>
+        </header>
+
+        <!-- Leader Account Selection -->
+        <div class="pro-copy-card">
+            <h3>Leader Account</h3>
+            <p class="card-desc">Select the account whose trades will be copied</p>
+            <div class="leader-select-row">
+                <div class="select-shell" style="flex:1">
+                    <select id="leaderAccountSelect">
+                        <option value="">Select leader account...</option>
+                    </select>
+                    <span class="material-icons">expand_more</span>
+                </div>
+                <button type="button" class="btn-small" id="setLeaderBtn">Set Leader</button>
+            </div>
+            <div id="leaderStatus" class="leader-status" style="display:none">
+                <span class="status-dot" id="leaderStatusDot"></span>
+                <span id="leaderStatusText">Not connected</span>
+            </div>
+        </div>
+
+        <!-- Follower Accounts -->
+        <div class="pro-copy-card">
+            <h3>Follower Accounts</h3>
+            <p class="card-desc">Accounts that will receive copied trades</p>
+            <div class="follower-actions-row">
+                <button type="button" class="btn-small" id="addAllFollowersBtn">Add All Accounts</button>
+                <button type="button" class="btn-small btn-outline" id="refreshFollowersBtn">Refresh</button>
+            </div>
+            <div id="followerAccountsList" class="follower-accounts-list">
+                <div class="follower-placeholder">
+                    <i class="material-icons">group_add</i>
+                    <p>Set a leader account first, then add follower accounts</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Copy Trade Log -->
+        <div class="pro-copy-card">
+            <h3>Recent Copy Activity</h3>
+            <div id="copyTradeLog" class="copy-trade-log">
+                <div class="log-placeholder">
+                    <i class="material-icons">history</i>
+                    <p>No copy trades yet</p>
+                </div>
+            </div>
+        </div>
+    </section>
 </div>
 {% endblock %}
 
@@ -931,6 +997,250 @@
     :root[data-theme="light"] .inactive-config .config-header span {
         color: #64748b !important;
     }
+
+    /* ===== PRO COPY TRADER STYLES ===== */
+    .pro-copy-trader {
+        background: rgba(11,18,33,0.92);
+        border-radius: 18px;
+        border: 1px solid rgba(168,85,247,0.3);
+        padding: 1.75rem;
+        display: grid;
+        gap: 1.25rem;
+    }
+    .pro-copy-trader header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    .pro-copy-trader h2 {
+        margin: 0;
+        font-size: 1.5rem;
+        background: linear-gradient(135deg, #a855f7, #6366f1);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .pro-copy-trader p {
+        color: var(--text-muted);
+        margin: 0;
+    }
+    .pro-copy-mode-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .mode-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: rgba(226,232,240,0.5);
+        transition: color 0.3s ease;
+    }
+    .mode-label.active {
+        color: #a855f7;
+    }
+    .pro-copy-card {
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(168,85,247,0.2);
+        border-radius: 14px;
+        padding: 1.25rem;
+        display: grid;
+        gap: 0.75rem;
+    }
+    .pro-copy-card h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(226,232,240,0.8);
+    }
+    .card-desc {
+        font-size: 0.8rem;
+        color: rgba(148,163,184,0.7) !important;
+    }
+    .leader-select-row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+    }
+    .leader-status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        background: rgba(15,23,42,0.4);
+        border-radius: 8px;
+        font-size: 0.85rem;
+        color: rgba(226,232,240,0.7);
+    }
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #64748b;
+    }
+    .status-dot.connected {
+        background: #22c55e;
+        box-shadow: 0 0 6px rgba(34,197,94,0.5);
+    }
+    .status-dot.disconnected {
+        background: #f87171;
+    }
+    .status-dot.connecting {
+        background: #fbbf24;
+        animation: pulse-dot 1.5s ease infinite;
+    }
+    @keyframes pulse-dot {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+    }
+    .follower-actions-row {
+        display: flex;
+        gap: 0.5rem;
+    }
+    .follower-accounts-list {
+        display: grid;
+        gap: 0.5rem;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    .follower-placeholder {
+        text-align: center;
+        padding: 2rem;
+        color: rgba(148,163,184,0.6);
+    }
+    .follower-placeholder i {
+        font-size: 2rem;
+        display: block;
+        margin-bottom: 0.5rem;
+    }
+    .follower-card {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        background: rgba(15,23,42,0.4);
+        border: 1px solid rgba(148,163,184,0.15);
+        border-radius: 10px;
+        transition: border-color 0.2s ease;
+    }
+    .follower-card:hover {
+        border-color: rgba(168,85,247,0.3);
+    }
+    .follower-card.disabled {
+        opacity: 0.5;
+    }
+    .follower-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+    .follower-name {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #e2e8f0;
+    }
+    .follower-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.75rem;
+        color: rgba(148,163,184,0.8);
+    }
+    .follower-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    .follower-multiplier {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+    .follower-multiplier span {
+        font-size: 0.75rem;
+        color: rgba(148,163,184,0.7);
+        text-transform: uppercase;
+    }
+    .follower-multiplier input {
+        width: 60px;
+        padding: 0.3rem 0.5rem;
+        font-size: 0.85rem;
+        border-radius: 8px;
+        text-align: center;
+    }
+    .follower-sync-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #64748b;
+    }
+    .follower-sync-dot.synced { background: #22c55e; }
+    .follower-sync-dot.error { background: #f87171; }
+
+    /* Copy Trade Log */
+    .copy-trade-log {
+        max-height: 250px;
+        overflow-y: auto;
+    }
+    .log-placeholder {
+        text-align: center;
+        padding: 1.5rem;
+        color: rgba(148,163,184,0.5);
+    }
+    .log-placeholder i {
+        font-size: 1.5rem;
+        display: block;
+        margin-bottom: 0.35rem;
+    }
+    .log-entry {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(148,163,184,0.1);
+        font-size: 0.8rem;
+    }
+    .log-entry:last-child { border-bottom: none; }
+    .log-symbol { font-weight: 600; color: #e2e8f0; }
+    .log-side.buy { color: #34d399; }
+    .log-side.sell { color: #f87171; }
+    .log-time { color: rgba(148,163,184,0.6); }
+    .log-status-badge {
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        font-size: 0.65rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .log-status-badge.filled { background: rgba(34,197,94,0.2); color: #86efac; }
+    .log-status-badge.error { background: rgba(248,113,113,0.2); color: #fca5a5; }
+    .log-status-badge.pending { background: rgba(251,191,36,0.2); color: #fde68a; }
+
+    /* Light mode overrides for pro copy trader */
+    :root[data-theme="light"] .pro-copy-trader {
+        background: #ffffff !important;
+        border-color: rgba(168,85,247,0.2) !important;
+    }
+    :root[data-theme="light"] .pro-copy-card {
+        background: #f8fafc !important;
+        border-color: rgba(168,85,247,0.15) !important;
+    }
+    :root[data-theme="light"] .pro-copy-trader h2 {
+        -webkit-text-fill-color: unset;
+        background: none;
+        color: #7c3aed !important;
+    }
+    :root[data-theme="light"] .follower-card {
+        background: #ffffff !important;
+        border-color: rgba(148,163,184,0.2) !important;
+    }
+    :root[data-theme="light"] .follower-name {
+        color: #1e293b !important;
+    }
 </style>
 {% endblock %}
 
@@ -1353,6 +1663,339 @@
             });
         }
     });
+
+    // ============================================================================
+    // Pro Copy Trader — Leader/Follower Management
+    // ============================================================================
+    let currentLeaderId = null;
+
+    // Initialize Pro Copy Trader on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Populate leader dropdown from existing accounts
+        loadLeaderAccountOptions();
+
+        // Set Leader button
+        const setLeaderBtn = document.getElementById('setLeaderBtn');
+        if (setLeaderBtn) {
+            setLeaderBtn.addEventListener('click', setLeaderAccount);
+        }
+
+        // Add All Followers button
+        const addAllBtn = document.getElementById('addAllFollowersBtn');
+        if (addAllBtn) {
+            addAllBtn.addEventListener('click', addAllFollowerAccounts);
+        }
+
+        // Refresh followers
+        const refreshBtn = document.getElementById('refreshFollowersBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                if (currentLeaderId) loadFollowerAccounts(currentLeaderId);
+            });
+        }
+
+        // Auto/Manual mode toggle
+        const autoCopyToggle = document.getElementById('autoCopyMode');
+        if (autoCopyToggle) {
+            autoCopyToggle.addEventListener('change', function() {
+                const manualLabel = document.getElementById('modeManualLabel');
+                const autoLabel = document.getElementById('modeAutoLabel');
+                if (this.checked) {
+                    manualLabel?.classList.remove('active');
+                    autoLabel?.classList.add('active');
+                } else {
+                    autoLabel?.classList.remove('active');
+                    manualLabel?.classList.add('active');
+                }
+                toggleAutoCopyMode(this.checked);
+            });
+            // Set initial state
+            document.getElementById('modeManualLabel')?.classList.add('active');
+        }
+    });
+
+    async function loadLeaderAccountOptions() {
+        const leaderSelect = document.getElementById('leaderAccountSelect');
+        if (!leaderSelect) return;
+
+        try {
+            const response = await fetch('/api/accounts');
+            const data = await response.json();
+
+            if (!data.success || !data.accounts) return;
+
+            leaderSelect.innerHTML = '<option value="">Select leader account...</option>';
+            data.accounts.forEach(account => {
+                if (!account.is_connected) return;
+                const accountName = account.name || `Account ${account.id}`;
+                (account.tradovate_accounts || []).forEach(sub => {
+                    const option = document.createElement('option');
+                    option.value = `${account.id}:${sub.id}`;
+                    option.textContent = `${accountName} - ${sub.name || sub.id} (${sub.is_demo ? 'Demo' : 'Live'})`;
+                    leaderSelect.appendChild(option);
+                });
+            });
+        } catch (error) {
+            console.error('Error loading leader options:', error);
+        }
+    }
+
+    async function setLeaderAccount() {
+        const leaderSelect = document.getElementById('leaderAccountSelect');
+        const val = leaderSelect?.value;
+        if (!val) {
+            showToast('Please select a leader account', 'error');
+            return;
+        }
+
+        const [accountId, subaccountId] = val.split(':');
+        const label = leaderSelect.options[leaderSelect.selectedIndex]?.textContent || '';
+
+        try {
+            const response = await fetch('/api/copy-trader/leaders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    account_id: parseInt(accountId),
+                    subaccount_id: subaccountId,
+                    label: label
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                currentLeaderId = data.leader_id;
+                showToast('Leader account set', 'success');
+                updateLeaderStatus('connected', `Leader: ${label}`);
+                loadFollowerAccounts(currentLeaderId);
+                loadCopyTradeLog(currentLeaderId);
+            } else {
+                showToast(`Error: ${data.error || 'Failed to set leader'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error setting leader:', error);
+            showToast('Failed to set leader account', 'error');
+        }
+    }
+
+    function updateLeaderStatus(state, text) {
+        const statusEl = document.getElementById('leaderStatus');
+        const dotEl = document.getElementById('leaderStatusDot');
+        const textEl = document.getElementById('leaderStatusText');
+        if (!statusEl) return;
+
+        statusEl.style.display = 'flex';
+        dotEl.className = `status-dot ${state}`;
+        textEl.textContent = text;
+    }
+
+    async function loadFollowerAccounts(leaderId) {
+        const container = document.getElementById('followerAccountsList');
+        if (!container || !leaderId) return;
+
+        try {
+            const response = await fetch(`/api/copy-trader/followers/${leaderId}`);
+            const data = await response.json();
+
+            if (!data.success || !data.followers || data.followers.length === 0) {
+                container.innerHTML = `
+                    <div class="follower-placeholder">
+                        <i class="material-icons">group_add</i>
+                        <p>No followers yet. Click "Add All Accounts" to add your accounts.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            data.followers.forEach(f => {
+                const enabledClass = f.is_enabled ? '' : ' disabled';
+                const syncClass = f.is_enabled ? 'synced' : '';
+                html += `
+                    <div class="follower-card${enabledClass}" data-follower-id="${f.id}">
+                        <label class="copy-toggle" style="margin:0">
+                            <input type="checkbox" class="follower-enable-toggle"
+                                   data-id="${f.id}" ${f.is_enabled ? 'checked' : ''}>
+                            <span class="toggle-slider" style="width:36px;height:20px"></span>
+                        </label>
+                        <div class="follower-info">
+                            <span class="follower-name">${f.label || f.subaccount_id}</span>
+                            <div class="follower-meta">
+                                <span>Account ${f.account_id}:${f.subaccount_id}</span>
+                                <span class="follower-sync-dot ${syncClass}"></span>
+                            </div>
+                        </div>
+                        <div class="follower-controls">
+                            <div class="follower-multiplier">
+                                <span>Mult</span>
+                                <input type="number" class="follower-mult-input"
+                                       data-id="${f.id}" value="${f.multiplier || 1}"
+                                       min="0.1" max="100" step="0.1">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+
+            // Wire up enable toggles
+            container.querySelectorAll('.follower-enable-toggle').forEach(toggle => {
+                toggle.addEventListener('change', function() {
+                    updateFollowerSetting(this.dataset.id, { is_enabled: this.checked });
+                    this.closest('.follower-card')?.classList.toggle('disabled', !this.checked);
+                });
+            });
+
+            // Wire up multiplier inputs (save on blur)
+            container.querySelectorAll('.follower-mult-input').forEach(input => {
+                input.addEventListener('change', function() {
+                    updateFollowerSetting(this.dataset.id, { multiplier: parseFloat(this.value) || 1.0 });
+                });
+            });
+        } catch (error) {
+            console.error('Error loading followers:', error);
+            container.innerHTML = '<div class="follower-placeholder"><p>Error loading followers</p></div>';
+        }
+    }
+
+    async function addAllFollowerAccounts() {
+        if (!currentLeaderId) {
+            showToast('Set a leader account first', 'error');
+            return;
+        }
+
+        const leaderSelect = document.getElementById('leaderAccountSelect');
+        const leaderVal = leaderSelect?.value;
+
+        try {
+            const response = await fetch('/api/accounts');
+            const data = await response.json();
+            if (!data.success) return;
+
+            let added = 0;
+            for (const account of (data.accounts || [])) {
+                if (!account.is_connected) continue;
+                for (const sub of (account.tradovate_accounts || [])) {
+                    const val = `${account.id}:${sub.id}`;
+                    if (val === leaderVal) continue; // Skip leader account
+
+                    const label = `${account.name || 'Account'} - ${sub.name || sub.id} (${sub.is_demo ? 'Demo' : 'Live'})`;
+                    // API call placeholder — will be wired in Step 5
+                    try {
+                        const resp = await fetch(`/api/copy-trader/followers/${currentLeaderId}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                account_id: account.id,
+                                subaccount_id: String(sub.id),
+                                label: label,
+                                multiplier: 1.0
+                            })
+                        });
+                        const result = await resp.json();
+                        if (result.success) added++;
+                    } catch (e) { /* individual failure OK */ }
+                }
+            }
+
+            showToast(`Added ${added} follower account(s)`, 'success');
+            loadFollowerAccounts(currentLeaderId);
+        } catch (error) {
+            console.error('Error adding followers:', error);
+            showToast('Failed to add followers', 'error');
+        }
+    }
+
+    async function updateFollowerSetting(followerId, settings) {
+        try {
+            const response = await fetch(`/api/copy-trader/followers/${followerId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            const data = await response.json();
+            if (!data.success) {
+                showToast('Failed to update follower setting', 'error');
+            }
+        } catch (error) {
+            console.error('Error updating follower:', error);
+        }
+    }
+
+    async function toggleAutoCopyMode(enabled) {
+        if (!currentLeaderId) {
+            showToast('Set a leader account first', 'error');
+            const toggle = document.getElementById('autoCopyMode');
+            if (toggle) toggle.checked = false;
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/copy-trader/auto-mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    leader_id: currentLeaderId,
+                    enabled: enabled
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast(enabled ? 'Auto copy mode enabled' : 'Auto copy mode disabled', 'success');
+                updateLeaderStatus(
+                    enabled ? 'connecting' : 'connected',
+                    enabled ? 'Connecting to leader WebSocket...' : 'Manual mode active'
+                );
+            } else {
+                showToast(`Error: ${data.error || 'Failed to toggle mode'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error toggling auto mode:', error);
+            showToast('Failed to toggle auto copy mode', 'error');
+        }
+    }
+
+    async function loadCopyTradeLog(leaderId) {
+        const container = document.getElementById('copyTradeLog');
+        if (!container || !leaderId) return;
+
+        try {
+            const response = await fetch(`/api/copy-trader/leaders/${leaderId}/log`);
+            const data = await response.json();
+
+            if (!data.success || !data.log || data.log.length === 0) {
+                container.innerHTML = `
+                    <div class="log-placeholder">
+                        <i class="material-icons">history</i>
+                        <p>No copy trades yet</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            data.log.forEach(entry => {
+                const sideClass = entry.side?.toLowerCase() === 'buy' ? 'buy' : 'sell';
+                const time = new Date(entry.created_at).toLocaleTimeString();
+                html += `
+                    <div class="log-entry">
+                        <div>
+                            <span class="log-symbol">${entry.symbol}</span>
+                            <span class="log-side ${sideClass}">${entry.side}</span>
+                            <span style="color:rgba(148,163,184,0.6)">x${entry.follower_quantity}</span>
+                            <span style="color:rgba(148,163,184,0.5)">&rarr; ${entry.follower_label || 'Follower'}</span>
+                        </div>
+                        <div>
+                            <span class="log-status-badge ${entry.status}">${entry.status}</span>
+                            <span class="log-time">${time}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('Error loading copy log:', error);
+        }
+    }
 
     // Execute copy trades to all selected accounts
     async function executeCopyTrades(side) {
