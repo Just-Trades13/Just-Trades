@@ -19941,18 +19941,21 @@ def control_center():
                 if user.is_admin:
                     has_platform_subscription = True
         
-        return render_template('control_center.html', 
-                              live_rows=live_rows, 
+        current_user_id = user.id if user else None
+        return render_template('control_center.html',
+                              live_rows=live_rows,
                               logs=logs,
                               has_platform_subscription=has_platform_subscription,
-                              user_tier=user_tier)
+                              user_tier=user_tier,
+                              current_user_id=current_user_id)
     except Exception as e:
         logger.error(f"Error loading control center: {e}")
-        return render_template('control_center.html', 
-                              live_rows=[], 
+        return render_template('control_center.html',
+                              live_rows=[],
                               logs=[],
                               has_platform_subscription=False,
-                              user_tier='none')
+                              user_tier='none',
+                              current_user_id=None)
 
 @app.route('/manual-trader')
 def manual_trader_page():

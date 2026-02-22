@@ -200,7 +200,28 @@
             </div>
         </article>
     </section>
-    
+
+    <!-- Account P&L Cards (Live from WebSocket) -->
+    <section class="account-pnl-section">
+        <div class="live-positions-panel">
+            <header>
+                <div>
+                    <h2>Account P&L</h2>
+                    <p id="accountPnlCount">Waiting for data...</p>
+                </div>
+                <span class="price-source">Live</span>
+            </header>
+            <div class="account-pnl-container" id="accountPnlContainer">
+                <div class="pnl-summary">
+                    <div class="no-positions">
+                        <span class="material-icons">account_balance_wallet</span>
+                        <p>Connecting to live data...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
 </div>
 {% endblock %}
 {% block styles %}
@@ -544,6 +565,74 @@
         transition: width 0.3s ease;
     }
 
+    /* ============================================
+       ACCOUNT P&L CARDS
+       ============================================ */
+    .account-pnl-section { margin-top: 0; }
+    .account-pnl-container { padding: 1.25rem; }
+    .pnl-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+    .account-pnl-card {
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(59,130,246,0.25);
+        border-radius: 14px;
+        padding: 1rem;
+    }
+    .account-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(148,163,184,0.15);
+    }
+    .account-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #e2e8f0;
+    }
+    .account-type-badge {
+        padding: 0.2rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.65rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+    .account-type-badge.demo {
+        background: rgba(251,191,36,0.2);
+        color: #fcd34d;
+    }
+    .account-type-badge.live {
+        background: rgba(16,185,129,0.2);
+        color: #6ee7b7;
+    }
+    .pnl-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.35rem 0;
+    }
+    .pnl-label {
+        color: rgba(148,163,184,0.9);
+        font-size: 0.8rem;
+    }
+    .pnl-value {
+        font-weight: 600;
+        font-size: 0.95rem;
+    }
+    .pnl-value.positive { color: #10b981; }
+    .pnl-value.negative { color: #f87171; }
+    .pnl-row.net-liq {
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid rgba(148,163,184,0.15);
+    }
+    .pnl-row.net-liq .pnl-value { color: #38bdf8; }
+
     @media (max-width: 1100px) {
         .live-panels { grid-template-columns: 1fr; }
     }
@@ -656,6 +745,8 @@
 {% block scripts %}
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
+    const CURRENT_USER_ID = {{ current_user_id|default('null') }};
+
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.log-feed').forEach(function(feed) {
             feed.scrollTop = feed.scrollHeight;
@@ -1077,14 +1168,14 @@
         // SCALABILITY: Update PnL display from WebSocket data (real-time, no REST polling)
         function updatePnLFromWebSocket(pnlData) {
             console.log('📡 Updating PnL from WebSocket:', Object.keys(pnlData).length, 'accounts');
-            
+
             // pnlData is keyed by account_id: { account_name, open_pnl, realized_pnl, net_liq, ... }
             Object.entries(pnlData).forEach(([accountId, data]) => {
                 // Update any UI elements that show this account's PnL
                 const openPnl = data.open_pnl || 0;
                 const realizedPnl = data.realized_pnl || 0;
                 const totalPnl = openPnl + realizedPnl;
-                
+
                 // Find account row in table (if exists)
                 const accountRow = document.querySelector(`tr[data-account-id="${accountId}"]`);
                 if (accountRow) {
@@ -1095,10 +1186,73 @@
                         pnlCell.className = pnlCell.className.replace(/positive|negative/g, '') + (totalPnl >= 0 ? ' positive' : ' negative');
                     }
                 }
-                
+
                 // Update summary totals if needed
                 updateTotalPnL();
             });
+
+            // Render account P&L cards
+            renderAccountPnlCards(pnlData);
+        }
+
+        function renderAccountPnlCards(pnlData) {
+            const container = document.getElementById('accountPnlContainer');
+            if (!container) return;
+
+            let accountCount = 0;
+            let html = '<div class="pnl-summary">';
+
+            for (const [accId, acc] of Object.entries(pnlData)) {
+                // Filter by user_id — only show accounts owned by current user
+                if (CURRENT_USER_ID !== null && acc.user_id !== CURRENT_USER_ID) {
+                    continue;
+                }
+                accountCount++;
+                const openPnl = acc.open_pnl || 0;
+                const realizedPnl = acc.realized_pnl || 0;
+                const netLiq = acc.net_liq || 0;
+                const pnlClass = openPnl >= 0 ? 'positive' : 'negative';
+                const pnlSign = openPnl >= 0 ? '+' : '';
+                const isDemo = acc.is_demo ? '(Demo)' : '(Live)';
+
+                html += `
+                    <div class="account-pnl-card">
+                        <div class="account-header">
+                            <span class="account-name">${acc.account_name || accId}</span>
+                            <span class="account-type-badge ${acc.is_demo ? 'demo' : 'live'}">${isDemo}</span>
+                        </div>
+                        <div class="pnl-row">
+                            <span class="pnl-label">Unrealized P&L:</span>
+                            <span class="pnl-value ${pnlClass}">${pnlSign}$${openPnl.toFixed(2)}</span>
+                        </div>
+                        <div class="pnl-row">
+                            <span class="pnl-label">Today's Realized:</span>
+                            <span class="pnl-value ${realizedPnl >= 0 ? 'positive' : 'negative'}">${realizedPnl >= 0 ? '+' : ''}$${realizedPnl.toFixed(2)}</span>
+                        </div>
+                        <div class="pnl-row net-liq">
+                            <span class="pnl-label">Net Liq:</span>
+                            <span class="pnl-value">$${netLiq.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            html += '</div>';
+
+            if (accountCount === 0) {
+                html = `<div class="pnl-summary"><div class="no-positions">
+                    <span class="material-icons">account_balance_wallet</span>
+                    <p>No account data available</p>
+                </div></div>`;
+            }
+
+            container.innerHTML = html;
+
+            // Update count label
+            const countEl = document.getElementById('accountPnlCount');
+            if (countEl) {
+                countEl.textContent = `${accountCount} account${accountCount !== 1 ? 's' : ''}`;
+            }
         }
         
         // SCALABILITY: Update positions display from WebSocket data
