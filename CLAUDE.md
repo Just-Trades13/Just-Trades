@@ -487,6 +487,7 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Brevo v1 pin + start.sh runtime install (activation emails) | `5b6be75` | Feb 21 | **Confirmed working** |
 | Pro Copy Trader pricing card + sidebar gating + route locks | `99f990c` | Feb 22 | Working |
 | TOS + Risk Disclosure updated with Goldman-reviewed legal language | `993d8b5` | Feb 22 | Working |
+| Forgot password system (Brevo email + token reset, 1hr expiry) | `bd95145`..`9f8a7e1` | Feb 22 | **Needs verification** |
 
 ---
 
@@ -930,6 +931,8 @@ User clicks activation link → `/activate?token={token}`:
 1. Validate username/password
 2. Store `user_id` in Flask session
 3. Redirect to dashboard
+
+**Forgot password flow:** `/login` → "Forgot password?" link → `/forgot-password` → enter email → Brevo sends reset email with 1-hour token → `/reset-password?token=xxx` → set new password → redirect to login. Never reveals if email exists (always generic success). Rate limited to 3 requests per email per hour. Previous tokens invalidated on new request. Token functions in `account_activation.py`, routes in `ultra_simple_server.py` (lines ~6120-6207), templates: `forgot_password.html`, `reset_password.html`.
 
 ### Step 6: Broker Authentication
 
@@ -1657,7 +1660,7 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 ---
 
-*Last updated: Feb 21, 2026*
+*Last updated: Feb 22, 2026*
 *Production stable tag: WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET @ bb1a183 (+ brevo fix 5b6be75)*
 *Total rules: 31 | Total documented disasters: 24 | Paid users in production: YES*
 *Documentation: 11 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*
