@@ -27306,9 +27306,9 @@ class PaperDBReader:
         if not rows:
             return {'labels': [], 'profit': [], 'drawdown': []}
 
-        # Aggregate trades by day
+        # Aggregate trades by day — track peak intraday drawdown
         from datetime import datetime
-        daily = {}  # date_str -> sum of pnl for that day
+        daily = {}  # date_str -> {pnl_sum, peak_dd}
         day_order = []
 
         for r in rows:
@@ -27325,25 +27325,30 @@ class PaperDBReader:
                 date_str = f'Day {len(daily) + 1}'
 
             if date_str not in daily:
-                daily[date_str] = 0.0
+                daily[date_str] = {'pnl_sum': 0.0, 'peak_dd': 0.0, 'intraday_running': 0.0, 'intraday_peak': 0.0}
                 day_order.append(date_str)
-            daily[date_str] += pnl_val
+
+            d = daily[date_str]
+            d['pnl_sum'] += pnl_val
+            d['intraday_running'] += pnl_val
+            if d['intraday_running'] > d['intraday_peak']:
+                d['intraday_peak'] = d['intraday_running']
+            intraday_dd = d['intraday_peak'] - d['intraday_running']
+            if intraday_dd > d['peak_dd']:
+                d['peak_dd'] = intraday_dd
 
         labels = []
         profit = []
         drawdown = []
         running_pnl = 0.0
-        peak_pnl = 0.0
 
         for date_str in day_order:
-            running_pnl += daily[date_str]
-            if running_pnl > peak_pnl:
-                peak_pnl = running_pnl
-            dd = peak_pnl - running_pnl
+            d = daily[date_str]
+            running_pnl += d['pnl_sum']
 
             labels.append(date_str)
             profit.append(round(running_pnl, 2))
-            drawdown.append(round(dd, 2))  # Positive value — DD goes up with profit
+            drawdown.append(round(d['peak_dd'], 2))  # Peak intraday drawdown for the day
 
         return {'labels': labels, 'profit': profit, 'drawdown': drawdown}
 
