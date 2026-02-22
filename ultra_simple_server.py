@@ -33144,6 +33144,14 @@ if __name__ == '__main__':
     except Exception as e:
         logger.warning(f"⚠️ Live max loss monitor failed to start: {e}")
 
+    # Start Pro Copy Trader leader monitor (WebSocket-based)
+    try:
+        from ws_leader_monitor import start_leader_monitor
+        start_leader_monitor()
+        logger.info("Pro Copy Trader leader monitor started")
+    except Exception as e:
+        logger.warning(f"Leader monitor failed to start (non-fatal): {e}")
+
     # Start fast webhook workers (MUST be after app is created)
     try:
         start_fast_webhook_workers()
