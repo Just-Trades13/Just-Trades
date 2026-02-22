@@ -27304,35 +27304,44 @@ class PaperDBReader:
         if not rows:
             return {'labels': [], 'profit': [], 'drawdown': []}
 
+        # Aggregate trades by day
+        from datetime import datetime
+        daily = {}  # date_str -> sum of pnl for that day
+        day_order = []
+
+        for r in rows:
+            pnl_val = r.get('pnl', 0) or 0
+            closed_at = str(r.get('closed_at', ''))
+            date_str = ''
+            if closed_at:
+                try:
+                    dt = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+                    date_str = dt.strftime('%b %d')
+                except Exception:
+                    date_str = closed_at[:10]
+            if not date_str:
+                date_str = f'Day {len(daily) + 1}'
+
+            if date_str not in daily:
+                daily[date_str] = 0.0
+                day_order.append(date_str)
+            daily[date_str] += pnl_val
+
         labels = []
         profit = []
         drawdown = []
         running_pnl = 0.0
         peak_pnl = 0.0
 
-        for r in rows:
-            pnl_val = r.get('pnl', 0) or 0
-            closed_at = str(r.get('closed_at', ''))
-            running_pnl += pnl_val
-
+        for date_str in day_order:
+            running_pnl += daily[date_str]
             if running_pnl > peak_pnl:
                 peak_pnl = running_pnl
-
             dd = peak_pnl - running_pnl
 
-            # Format label from closed_at
-            if closed_at:
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
-                    labels.append(dt.strftime('%b %d'))
-                except Exception:
-                    labels.append(closed_at[:10])
-            else:
-                labels.append(f'Trade {len(labels) + 1}')
-
+            labels.append(date_str)
             profit.append(round(running_pnl, 2))
-            drawdown.append(round(-dd, 2))  # Negative for chart display
+            drawdown.append(round(dd, 2))  # Positive value — DD goes up with profit
 
         return {'labels': labels, 'profit': profit, 'drawdown': drawdown}
 

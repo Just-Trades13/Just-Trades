@@ -1643,7 +1643,7 @@
     }
     #equityCurveChart {
         width: 100% !important;
-        height: 200px !important;
+        height: 100% !important;
     }
 
     /* Strategy Selector */
@@ -4662,15 +4662,15 @@
     // Legacy alias for backwards compatibility
     const loadPaperHistory = () => loadPaperHistoryPaginated(currentHistoryPage);
 
-    // Load recorder performance cards
+    // Load recorder performance cards (filtered by selected strategy)
     async function loadRecorderCards() {
         try {
+            const cardsContainer = document.getElementById('recorderCards');
+            const filterSelect = document.getElementById('historyRecorderFilter');
+
             // Get all recorders first
             const recordersResponse = await fetch('/api/recorders');
             const recordersData = await recordersResponse.json();
-
-            const cardsContainer = document.getElementById('recorderCards');
-            const filterSelect = document.getElementById('historyRecorderFilter');
 
             if (!recordersData.recorders || recordersData.recorders.length === 0) {
                 cardsContainer.innerHTML = `
@@ -4682,9 +4682,7 @@
                 return;
             }
 
-            cardsContainer.innerHTML = '';
-
-            // Populate filter dropdown
+            // Populate filter dropdown (always show all)
             if (filterSelect) {
                 filterSelect.innerHTML = '<option value="">All Recorders</option>';
                 recordersData.recorders.forEach(rec => {
@@ -4693,41 +4691,66 @@
                 });
             }
 
-            // Get P&L for all recorders in parallel
-            const recorderSlice = recordersData.recorders.slice(0, 8);
-            const pnlResults = await Promise.all(
-                recorderSlice.map(rec =>
+            // Filter recorders to selected strategy
+            let displayRecorders = recordersData.recorders;
+            if (selectedStrategyId) {
+                displayRecorders = recordersData.recorders.filter(r => r.id === selectedStrategyId);
+            }
+
+            if (displayRecorders.length === 0) {
+                cardsContainer.innerHTML = `
+                    <div class="recorder-card-placeholder">
+                        <span class="material-icons">analytics</span>
+                        <p>Select a strategy to view performance</p>
+                    </div>
+                `;
+                return;
+            }
+
+            cardsContainer.innerHTML = '';
+
+            // Get analytics for displayed recorders in parallel
+            const recorderSlice = displayRecorders.slice(0, 8);
+            const [pnlResults, analyticsResults] = await Promise.all([
+                Promise.all(recorderSlice.map(rec =>
                     fetch(`/api/paper-trades/recorder/${rec.id}`)
                         .then(r => r.json())
                         .catch(() => ({ unrealized_pnl: 0, positions: [] }))
-                )
-            );
+                )),
+                Promise.all(recorderSlice.map(rec =>
+                    fetch(`/api/paper-trades/analytics?recorder_id=${rec.id}`)
+                        .then(r => r.json())
+                        .catch(() => ({ success: false }))
+                ))
+            ]);
 
             recorderSlice.forEach((recorder, i) => {
                 const pnlData = pnlResults[i];
-                const unrealizedPnl = pnlData.unrealized_pnl || 0;
+                const analyticsData = analyticsResults[i];
                 const positions = pnlData.positions || [];
-                const pnlClass = unrealizedPnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                const a = analyticsData.success ? (analyticsData.analytics || {}) : {};
+                const totalPnl = a.total_pnl || 0;
+                const pnlClass = totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative';
 
                 const card = document.createElement('div');
                 card.className = 'recorder-card';
                 card.innerHTML = `
                     <div class="recorder-card-header">
                         <span class="recorder-card-name">${recorder.name}</span>
-                        <span class="recorder-card-pnl ${pnlClass}">${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toFixed(2)}</span>
+                        <span class="recorder-card-pnl ${pnlClass}">${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}</span>
                     </div>
                     <div class="recorder-card-stats">
                         <div class="recorder-stat">
-                            <span class="recorder-stat-label">Open Positions</span>
+                            <span class="recorder-stat-label">Trades</span>
+                            <span class="recorder-stat-value">${a.total_trades || 0}</span>
+                        </div>
+                        <div class="recorder-stat">
+                            <span class="recorder-stat-label">Win Rate</span>
+                            <span class="recorder-stat-value">${(a.win_rate || 0)}%</span>
+                        </div>
+                        <div class="recorder-stat">
+                            <span class="recorder-stat-label">Open</span>
                             <span class="recorder-stat-value">${positions.length}</span>
-                        </div>
-                        <div class="recorder-stat">
-                            <span class="recorder-stat-label">Symbol</span>
-                            <span class="recorder-stat-value">${recorder.symbol || 'Any'}</span>
-                        </div>
-                        <div class="recorder-stat">
-                            <span class="recorder-stat-label">Status</span>
-                            <span class="recorder-stat-value">${recorder.recording_enabled ? 'Active' : 'Paused'}</span>
                         </div>
                     </div>
                 `;
@@ -4876,7 +4899,7 @@
             let peak = 0;
             for (let i = 0; i < pnlValues.length; i++) {
                 if (pnlValues[i] > peak) peak = pnlValues[i];
-                drawdownValues.push(peak > 0 ? -(peak - pnlValues[i]) : 0);
+                drawdownValues.push(peak > 0 ? (peak - pnlValues[i]) : 0);
             }
         } else {
             // New {labels, profit, drawdown} format
@@ -4899,23 +4922,22 @@
                         backgroundColor: 'rgba(34, 197, 94, 0.1)',
                         fill: true,
                         tension: 0.2,
-                        pointRadius: pointCount > 50 ? 0 : 3,
+                        pointRadius: 3,
                         pointHoverRadius: 5,
                         pointBackgroundColor: '#ffffff',
                         borderWidth: 2,
                         order: 1
                     },
                     {
-                        label: 'Drawdown',
+                        label: 'Cumulative Drawdown',
                         data: drawdownValues,
                         borderColor: '#f87171',
-                        borderDash: [5, 3],
                         fill: false,
                         tension: 0.2,
-                        pointRadius: pointCount > 50 ? 0 : 3,
+                        pointRadius: 4,
                         pointHoverRadius: 5,
-                        pointBackgroundColor: '#ffffff',
-                        borderWidth: 1.5,
+                        pointBackgroundColor: '#ef4444',
+                        borderWidth: 2,
                         order: 2
                     }
                 ]
@@ -4924,7 +4946,7 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: false },
+                    legend: { display: true, labels: { color: '#94a3b8', usePointStyle: true, pointStyle: 'rectRounded', boxWidth: 15 } },
                     tooltip: {
                         backgroundColor: '#0f172a',
                         borderColor: 'rgba(148,163,184,0.2)',
@@ -4934,7 +4956,7 @@
                         callbacks: {
                             label: function(context) {
                                 const value = context.raw;
-                                const prefix = context.dataset.label === 'Drawdown' ? 'DD: ' : 'Profit: ';
+                                const prefix = context.dataset.label === 'Cumulative Drawdown' ? 'DD: ' : 'Profit: ';
                                 return prefix + '$' + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                             }
                         }
@@ -5013,6 +5035,7 @@
         loadPnlChart();
         loadPaperHistoryPaginated(1);
         loadPnlCalendar();
+        loadRecorderCards();
     }
 
     // ============================================================
@@ -5028,10 +5051,13 @@
 
     async function loadPnlCalendar() {
         try {
-            let url = '/api/paper-trades/daily-pnl?days=90';
-            if (selectedStrategyId) {
-                url += `&recorder_id=${selectedStrategyId}`;
+            if (!selectedStrategyId) {
+                dailyPnlData = {};
+                renderCalendar();
+                return;
             }
+
+            let url = `/api/paper-trades/daily-pnl?days=90&recorder_id=${selectedStrategyId}`;
 
             const response = await fetch(url);
             const data = await response.json();
