@@ -31183,6 +31183,227 @@ _projectx_be_thread = threading.Thread(target=monitor_projectx_break_even, daemo
 _projectx_be_thread.start()
 logger.info("📊 ProjectX Break-Even Monitor thread started")
 
+# ============================================================================
+# ProjectX Trailing Stop Emulator (Cancel/Replace)
+# ============================================================================
+# ProjectX type=5 trailing stop is BROKEN on buy/long side (inverts direction).
+# This daemon emulates trailing stops by polling price via get_cached_price
+# (0 broker API calls per cycle) and on SL move: cancel old SL + place new SL.
+_projectx_trailing_monitors = {}
+_projectx_trailing_lock = threading.Lock()
+
+def register_projectx_trailing_monitor(account_id, contract_id, symbol_root,
+                                         entry_price, is_long, activation_ticks,
+                                         offset_ticks, frequency_ticks, tick_size,
+                                         quantity, session_token, base_url,
+                                         prop_firm, username, api_key):
+    """Register a ProjectX position for trailing stop monitoring"""
+    key = f"px_trail:{account_id}:{contract_id}"
+    with _projectx_trailing_lock:
+        _projectx_trailing_monitors[key] = {
+            'account_id': account_id,
+            'contract_id': contract_id,
+            'symbol_root': symbol_root,
+            'entry_price': entry_price,
+            'is_long': is_long,
+            'activation_ticks': activation_ticks,
+            'offset_ticks': offset_ticks,
+            'frequency_ticks': frequency_ticks,
+            'tick_size': tick_size,
+            'quantity': quantity,
+            'session_token': session_token,
+            'base_url': base_url,
+            'prop_firm': prop_firm,
+            'username': username,
+            'api_key': api_key,
+            'best_price': entry_price,
+            'trail_active': activation_ticks == 0,
+            'last_sl_price': None,
+            'created_at': time.time()
+        }
+    logger.info(f"📊 ProjectX trailing monitor registered: {symbol_root} on account {account_id}")
+    logger.info(f"   Entry: {entry_price}, Offset: {offset_ticks}t, Trigger: {activation_ticks}t, Freq: {frequency_ticks}t")
+
+def unregister_projectx_trailing_monitor(key):
+    with _projectx_trailing_lock:
+        _projectx_trailing_monitors.pop(key, None)
+
+def monitor_projectx_trailing():
+    """
+    Background thread emulating trailing stops for ProjectX.
+    Polls get_cached_price (0 broker API calls per cycle).
+    On SL move: searchOpen -> cancel type 4/5 -> place type 4 (3 calls).
+    """
+    logger.info("📊 ProjectX Trailing Stop Emulator started")
+
+    while True:
+        try:
+            with _projectx_trailing_lock:
+                if not _projectx_trailing_monitors:
+                    time.sleep(2)
+                    continue
+                monitors_copy = dict(_projectx_trailing_monitors)
+
+            monitors_to_remove = []
+
+            for key, mon in monitors_copy.items():
+                symbol_root = mon['symbol_root']
+                entry_price = mon['entry_price']
+                is_long = mon['is_long']
+                tick_size = mon['tick_size']
+                offset_ticks = mon['offset_ticks']
+                activation_ticks = mon['activation_ticks']
+                frequency_ticks = mon['frequency_ticks']
+                contract_id = mon['contract_id']
+                account_id = mon['account_id']
+                session_token = mon['session_token']
+                base_url = mon['base_url']
+
+                # 24h staleness cleanup
+                if time.time() - mon['created_at'] > 86400:
+                    logger.info(f"🧹 ProjectX trailing monitor expired (24h): {key}")
+                    monitors_to_remove.append(key)
+                    continue
+
+                # Get current price (TradingView cache — 0 broker API calls)
+                current_price = get_cached_price(symbol_root)
+                if not current_price:
+                    continue
+
+                # Update best_price (most favorable for our side)
+                best_price = mon['best_price']
+                if is_long:
+                    if current_price > best_price:
+                        best_price = current_price
+                        with _projectx_trailing_lock:
+                            if key in _projectx_trailing_monitors:
+                                _projectx_trailing_monitors[key]['best_price'] = best_price
+                else:
+                    if current_price < best_price:
+                        best_price = current_price
+                        with _projectx_trailing_lock:
+                            if key in _projectx_trailing_monitors:
+                                _projectx_trailing_monitors[key]['best_price'] = best_price
+
+                # Check activation
+                if not mon['trail_active']:
+                    if is_long:
+                        profit_ticks = (best_price - entry_price) / tick_size
+                    else:
+                        profit_ticks = (entry_price - best_price) / tick_size
+                    if profit_ticks >= activation_ticks:
+                        with _projectx_trailing_lock:
+                            if key in _projectx_trailing_monitors:
+                                _projectx_trailing_monitors[key]['trail_active'] = True
+                        mon['trail_active'] = True
+                        logger.info(f"🎯 ProjectX trailing ACTIVATED: {symbol_root} ({profit_ticks:.1f} >= {activation_ticks} ticks)")
+                    else:
+                        continue
+
+                # Calculate new SL price
+                sl_distance = offset_ticks * tick_size
+                if is_long:
+                    new_sl = best_price - sl_distance
+                else:
+                    new_sl = best_price + sl_distance
+                new_sl = round(round(new_sl / tick_size) * tick_size, 10)
+
+                # Only move SL in favorable direction
+                last_sl = mon['last_sl_price']
+                should_update = False
+                if last_sl is None:
+                    should_update = True
+                elif is_long and new_sl > last_sl:
+                    if frequency_ticks == 0 or (new_sl - last_sl) / tick_size >= frequency_ticks:
+                        should_update = True
+                elif not is_long and new_sl < last_sl:
+                    if frequency_ticks == 0 or (last_sl - new_sl) / tick_size >= frequency_ticks:
+                        should_update = True
+
+                if not should_update:
+                    continue
+
+                # === CANCEL/REPLACE SL ===
+                headers = {'Authorization': f'Bearer {session_token}', 'Content-Type': 'application/json'}
+
+                # Step 1: searchOpen
+                search_resp = requests.post(f'{base_url}/Order/searchOpen',
+                    json={'accountId': account_id}, headers=headers, timeout=5)
+
+                if search_resp.status_code == 401:
+                    auth_resp = requests.post(f'{base_url}/Auth/loginKey',
+                        json={'userName': mon['username'], 'apiKey': mon['api_key']},
+                        headers={'Content-Type': 'application/json'}, timeout=5)
+                    if auth_resp.status_code == 200:
+                        new_token = auth_resp.json().get('token')
+                        if new_token:
+                            session_token = new_token
+                            with _projectx_trailing_lock:
+                                if key in _projectx_trailing_monitors:
+                                    _projectx_trailing_monitors[key]['session_token'] = new_token
+                            headers = {'Authorization': f'Bearer {new_token}', 'Content-Type': 'application/json'}
+                            search_resp = requests.post(f'{base_url}/Order/searchOpen',
+                                json={'accountId': account_id}, headers=headers, timeout=5)
+
+                if search_resp.status_code != 200:
+                    logger.warning(f"⚠️ ProjectX trail: searchOpen failed ({search_resp.status_code})")
+                    continue
+
+                open_orders = search_resp.json() if isinstance(search_resp.json(), list) else search_resp.json().get('orders', [])
+
+                # Step 2: Cancel existing SL orders for this contract
+                sl_cancelled = 0
+                for order in open_orders:
+                    if str(order.get('contractId', '')) == str(contract_id) and order.get('type', 0) in (4, 5):
+                        cancel_resp = requests.post(f'{base_url}/Order/cancel',
+                            json={'orderId': order.get('id')}, headers=headers, timeout=5)
+                        if cancel_resp.status_code == 200:
+                            sl_cancelled += 1
+
+                # If no SL orders found after first placement, position likely closed
+                if sl_cancelled == 0 and last_sl is not None:
+                    logger.info(f"📊 ProjectX trail: No SL orders found for {symbol_root} — position likely closed")
+                    monitors_to_remove.append(key)
+                    continue
+
+                # Step 3: Place new SL
+                exit_side = 1 if is_long else 0
+                new_sl_data = {
+                    'accountId': account_id,
+                    'contractId': contract_id,
+                    'type': 4,
+                    'side': exit_side,
+                    'size': int(mon['quantity']),
+                    'stopPrice': float(new_sl)
+                }
+                sl_resp = requests.post(f'{base_url}/Order/place',
+                    json=new_sl_data, headers=headers, timeout=5)
+
+                if sl_resp.status_code == 200:
+                    with _projectx_trailing_lock:
+                        if key in _projectx_trailing_monitors:
+                            _projectx_trailing_monitors[key]['last_sl_price'] = new_sl
+                    logger.info(f"📊 ProjectX trail SL moved: {symbol_root} -> {new_sl} (best={best_price}, offset={offset_ticks}t)")
+                else:
+                    logger.warning(f"⚠️ ProjectX trail: Place SL failed ({sl_resp.status_code})")
+
+            # Cleanup
+            for key in monitors_to_remove:
+                unregister_projectx_trailing_monitor(key)
+
+            time.sleep(2)
+
+        except Exception as e:
+            logger.error(f"ProjectX Trailing Stop Emulator error: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            time.sleep(3)
+
+# Start ProjectX trailing stop emulator thread
+_projectx_trail_thread = threading.Thread(target=monitor_projectx_trailing, daemon=True)
+_projectx_trail_thread.start()
+logger.info("📊 ProjectX Trailing Stop Emulator thread started")
+
 # Redis break-even request listener (receives requests from trading engine process)
 def _break_even_redis_listener():
     """Poll Redis for break-even registration requests from the trading engine."""
