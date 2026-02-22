@@ -4549,9 +4549,16 @@
     async function loadPaperHistoryPaginated(page) {
         page = page || 1;
         try {
-            const recorderId = selectedStrategyId || '';
-            let url = `/api/paper-trades/history?page=${page}&per_page=20`;
-            if (recorderId) url += `&recorder_id=${recorderId}`;
+            if (!selectedStrategyId) {
+                const tbody = document.getElementById('paperHistoryBody');
+                const paginEl = document.getElementById('paginationControls');
+                const badgeEl = document.getElementById('tradeCountBadge');
+                if (tbody) tbody.innerHTML = '<tr class="empty-row"><td colspan="11">Select a strategy to view trades</td></tr>';
+                if (paginEl) paginEl.style.display = 'none';
+                if (badgeEl) badgeEl.textContent = '';
+                return;
+            }
+            let url = `/api/paper-trades/history?page=${page}&per_page=20&recorder_id=${selectedStrategyId}`;
             if (currentHistoryFilter) url += `&filter=${currentHistoryFilter}`;
 
             const response = await fetch(url);
