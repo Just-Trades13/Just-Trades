@@ -1496,49 +1496,6 @@
             tableHTML += buildAccountPnlSummary(accountPnlData);
         }
 
-        // Build positions table
-        tableHTML += `
-            <table class="positions-table">
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>Quantity</th>
-                        <th>Avg Price</th>
-                        <th>Account</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        // Filter positions by user_id - ONLY show positions owned by current user
-        const filteredPositions = positions.filter(pos => {
-            if (CURRENT_USER_ID === null) return true;
-            // Only show positions that explicitly belong to this user (no null pass-through)
-            return pos.user_id === CURRENT_USER_ID;
-        });
-        
-        filteredPositions.forEach(pos => {
-            const qty = pos.net_quantity || pos.quantity || 0;
-            const qtyClass = qty >= 0 ? 'positive' : 'negative';
-            const qtySign = qty >= 0 ? '+' : '';
-            const accountName = pos.account_name || 'Unknown';
-            const isDemo = pos.is_demo ? '(Demo)' : '(Live)';
-            
-            tableHTML += `
-                <tr>
-                    <td><strong>${pos.symbol || 'N/A'}</strong></td>
-                    <td class="position-quantity ${qtyClass}">${qtySign}${qty}</td>
-                    <td>${pos.avg_price ? pos.avg_price.toFixed(2) : 'N/A'}</td>
-                    <td>${accountName} <span class="account-type">${isDemo}</span></td>
-                </tr>
-            `;
-        });
-
-        tableHTML += `
-                </tbody>
-            </table>
-        `;
-
         container.innerHTML = tableHTML;
     }
 
