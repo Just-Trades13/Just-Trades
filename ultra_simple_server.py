@@ -1283,10 +1283,10 @@ def check_paper_trades_tpsl():
                     continue  # Skip single-TP check below
 
             # Single-leg TP (backward compat or single-TP recorder)
-            # Check TP hit — bid for LONG (selling), ask for SHORT (buying) must trade THROUGH TP level
-            # TP is a LIMIT order: requires fill-through (price must pass TP by N ticks for queue fill)
-            # Fills at tp_price (limit guarantee), not at market price
-            if tp_price:
+            # ONLY check single tp_price when there's NO multi-leg config
+            # Otherwise multi-leg handles all TP exits above — falling through here would
+            # re-close the entire position at the first leg's price (Bug: hundreds of $ error)
+            if tp_price and not (tp_legs and len(tp_legs) > 1):
                 if (side == 'LONG' and _bid >= tp_price + _tp_offset) or (side == 'SHORT' and _ask <= tp_price - _tp_offset):
                     _close_paper_trade_tpsl(trade_id, tp_price, 'tp', recorder_id, side, entry_price, quantity, symbol)
                     continue
