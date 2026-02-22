@@ -24594,6 +24594,187 @@ def manual_trade():
         logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+# ============================================================================
+# PRO COPY TRADER API ROUTES
+# ============================================================================
+# Pure additions — zero modifications to any existing code above.
+
+@app.route('/api/copy-trader/leaders', methods=['GET'])
+def copy_trader_list_leaders():
+    """List leader accounts for the current user."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        from copy_trader_models import get_leaders_for_user
+        leaders = get_leaders_for_user(user_id)
+        return jsonify({'success': True, 'leaders': leaders})
+    except Exception as e:
+        logger.error(f"Error listing leaders: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/copy-trader/leaders', methods=['POST'])
+def copy_trader_create_leader():
+    """Create or update a leader account."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        data = request.get_json() or {}
+        account_id = data.get('account_id')
+        subaccount_id = str(data.get('subaccount_id', ''))
+        label = data.get('label', '')
+
+        if not account_id or not subaccount_id:
+            return jsonify({'success': False, 'error': 'account_id and subaccount_id required'}), 400
+
+        from copy_trader_models import create_leader
+        leader_id = create_leader(user_id, int(account_id), subaccount_id, label)
+        if leader_id:
+            return jsonify({'success': True, 'leader_id': leader_id})
+        return jsonify({'success': False, 'error': 'Failed to create leader'}), 500
+    except Exception as e:
+        logger.error(f"Error creating leader: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/copy-trader/followers/<int:leader_id>', methods=['GET'])
+def copy_trader_list_followers(leader_id):
+    """List followers for a leader account."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        from copy_trader_models import get_leader_by_id, get_all_followers_for_leader
+        leader = get_leader_by_id(leader_id)
+        if not leader or leader.get('user_id') != user_id:
+            return jsonify({'success': False, 'error': 'Leader not found'}), 404
+
+        followers = get_all_followers_for_leader(leader_id)
+        return jsonify({'success': True, 'followers': followers})
+    except Exception as e:
+        logger.error(f"Error listing followers: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/copy-trader/followers/<int:leader_id>', methods=['POST'])
+def copy_trader_add_follower(leader_id):
+    """Add a follower account to a leader."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        data = request.get_json() or {}
+        account_id = data.get('account_id')
+        subaccount_id = str(data.get('subaccount_id', ''))
+        label = data.get('label', '')
+        multiplier = float(data.get('multiplier', 1.0))
+
+        if not account_id or not subaccount_id:
+            return jsonify({'success': False, 'error': 'account_id and subaccount_id required'}), 400
+
+        from copy_trader_models import get_leader_by_id, create_follower
+        leader = get_leader_by_id(leader_id)
+        if not leader or leader.get('user_id') != user_id:
+            return jsonify({'success': False, 'error': 'Leader not found'}), 404
+
+        follower_id = create_follower(leader_id, user_id, int(account_id),
+                                       subaccount_id, label, multiplier)
+        if follower_id:
+            return jsonify({'success': True, 'follower_id': follower_id})
+        return jsonify({'success': False, 'error': 'Failed to add follower'}), 500
+    except Exception as e:
+        logger.error(f"Error adding follower: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/copy-trader/followers/<int:follower_id>', methods=['PUT'])
+def copy_trader_update_follower(follower_id):
+    """Update follower settings (is_enabled, multiplier, etc.)."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        data = request.get_json() or {}
+        from copy_trader_models import update_follower
+        success = update_follower(follower_id, **data)
+        return jsonify({'success': success})
+    except Exception as e:
+        logger.error(f"Error updating follower: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/copy-trader/auto-mode', methods=['POST'])
+def copy_trader_toggle_auto_mode():
+    """Toggle auto copy mode for a leader (enables/disables WebSocket monitoring)."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        data = request.get_json() or {}
+        leader_id = data.get('leader_id')
+        enabled = data.get('enabled', False)
+
+        if not leader_id:
+            return jsonify({'success': False, 'error': 'leader_id required'}), 400
+
+        from copy_trader_models import get_leader_by_id, update_leader
+        leader = get_leader_by_id(leader_id)
+        if not leader or leader.get('user_id') != user_id:
+            return jsonify({'success': False, 'error': 'Leader not found'}), 404
+
+        success = update_leader(leader_id, auto_copy_enabled=enabled)
+        return jsonify({'success': success, 'auto_copy_enabled': enabled})
+    except Exception as e:
+        logger.error(f"Error toggling auto mode: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/copy-trader/leaders/<int:leader_id>/log', methods=['GET'])
+def copy_trader_get_log(leader_id):
+    """Get copy trade log for a leader."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        from copy_trader_models import get_leader_by_id, get_copy_trade_history, get_copy_stats
+        leader = get_leader_by_id(leader_id)
+        if not leader or leader.get('user_id') != user_id:
+            return jsonify({'success': False, 'error': 'Leader not found'}), 404
+
+        log = get_copy_trade_history(leader_id, limit=50)
+        stats = get_copy_stats(leader_id)
+        return jsonify({'success': True, 'log': log, 'stats': stats})
+    except Exception as e:
+        logger.error(f"Error getting copy log: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/copy-trader/status', methods=['GET'])
+def copy_trader_status():
+    """Get copy trader system status (WebSocket monitor connections)."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        from copy_trader_models import get_leaders_for_user
+        leaders = get_leaders_for_user(user_id)
+        status = []
+        for leader in leaders:
+            status.append({
+                'leader_id': leader.get('id'),
+                'label': leader.get('label'),
+                'auto_copy_enabled': bool(leader.get('auto_copy_enabled')),
+                'ws_connected': False,  # Will be populated by ws_leader_monitor in Step 7
+            })
+        return jsonify({'success': True, 'leaders': status})
+    except Exception as e:
+        logger.error(f"Error getting copy trader status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/settings')
 def settings():
     # Require login if auth is available
@@ -32888,6 +33069,14 @@ if __name__ == '__main__':
             logger.info("✅ Subscription system initialized")
         except Exception as e:
             logger.warning(f"⚠️ Subscription system init failed: {e}")
+
+    # Initialize copy trader system
+    try:
+        from copy_trader_models import init_copy_trader_system
+        init_copy_trader_system()
+        logger.info("Copy trader system initialized")
+    except Exception as e:
+        logger.warning(f"Copy trader init failed (non-fatal): {e}")
 
     # Initialize trial abuse protection
     try:
