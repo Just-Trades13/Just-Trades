@@ -576,6 +576,7 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Pro Copy Trader: Auth gate bypass (X-Admin-Key for internal requests) | `03c5853` | Feb 23 | **Confirmed working** |
 | Pro Copy Trader: Token refresh truthy dict fix + 85-min expiry | `b7529f9` | Feb 23 | **Confirmed working** |
 | Pro Copy Trader: Parallel follower propagation (ThreadPoolExecutor) | `22f32be` | Feb 23 | **Confirmed working** |
+| Pro Copy Trader: Cross-leader loop prevention (time-based dedup) | `e6fe62d` | Feb 23 | **CRITICAL FIX** |
 
 ---
 
@@ -1527,8 +1528,9 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 | 25 | Feb 22-23, 2026 | Copy trader: ALL 16 follower trades returned "Authentication required" | Internal `requests.post()` to `/api/manual-trade` had no Flask session → `_global_api_auth_gate()` blocked with 401. Fix: `X-Admin-Key` header. | Rule 32 | Hours |
 | 26 | Feb 23, 2026 | Copy trader: Token refresh overwrites valid tokens with expired ones | `if refreshed:` checks dict truthiness — non-empty `{'success': False}` is always True. Also set 24hr expiry (should be 85min). | Rule 17, 32 | Hours |
 | 27 | Feb 23, 2026 | Copy trader: Follower trades executed sequentially (~600ms for 2 followers) | Simple `for follower in followers:` loop — each waited for previous to complete | `22f32be` | Minutes |
+| 28 | Feb 23, 2026 | **Copy trader: 46 FILLS PER ACCOUNT — infinite cross-leader loop** | Tradovate WebSocket fill events do NOT include `clOrdId` → `JT_COPY_` prefix check never fires → cross-linked leaders (A↔B both leader AND follower) cascade fills infinitely. 3 NQ signals → 46 fills each on 3 demo accounts. | `e6fe62d` | Minutes |
 
-**Pattern:** 27 disasters in ~2.5 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, or (e) auth/session assumptions for internal requests.
+**Pattern:** 28 disasters in ~2.5 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, or (e) auth/session assumptions for internal requests.
 
 ---
 
