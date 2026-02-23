@@ -1375,6 +1375,24 @@ def _load_active_leaders() -> List[Dict]:
         return []
 
 
+def _get_fresh_token(account_id: int) -> Optional[str]:
+    """Fetch current token from accounts table (may have been refreshed by daemon)."""
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        return None
+    try:
+        import psycopg2
+        conn = psycopg2.connect(database_url)
+        cursor = conn.cursor()
+        cursor.execute('SELECT tradovate_token FROM accounts WHERE id = %s', (account_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"Error fetching fresh token for account {account_id}: {e}")
+        return None
+
+
 # ============================================================================
 # MAIN ASYNC LOOP
 # ============================================================================
@@ -1495,12 +1513,27 @@ async def _monitor_leader(conn: LeaderConnection):
             if not _monitor_running:
                 break
 
+            # Refresh token from DB before reconnecting — the token refresh
+            # daemon in recorder_service.py may have already obtained a fresh one
+            fresh_token = _get_fresh_token(conn.account_id)
+            if fresh_token and fresh_token != conn.access_token:
+                logger.info(f"Leader {conn.leader_id}: refreshed token from DB")
+                conn.access_token = fresh_token
+
             logger.info(f"Reconnecting leader {conn.leader_id} in {backoff}s...")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, max_backoff)
 
         except Exception as e:
             logger.error(f"Leader monitor error for {conn.leader_id}: {e}")
+            # Also try token refresh on exception path
+            try:
+                fresh_token = _get_fresh_token(conn.account_id)
+                if fresh_token and fresh_token != conn.access_token:
+                    logger.info(f"Leader {conn.leader_id}: refreshed token from DB (exception path)")
+                    conn.access_token = fresh_token
+            except Exception:
+                pass
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, max_backoff)
 
