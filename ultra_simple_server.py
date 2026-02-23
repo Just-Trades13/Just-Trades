@@ -7093,6 +7093,25 @@ def admin_get_user_details(user_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/admin/users/<int:user_id>/live-pnl', methods=['GET'])
+def admin_get_user_live_pnl(user_id):
+    """Admin endpoint to get cached live PnL data for a specific user's accounts."""
+    if not USER_AUTH_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Auth not available'}), 400
+    if not is_logged_in():
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    current = get_current_user()
+    if not current or not current.is_admin:
+        return jsonify({'success': False, 'error': 'Not authorized'}), 403
+
+    cached_data = _tradovate_pnl_cache.get('data', {})
+    user_pnl = {}
+    for acc_id, acc_data in cached_data.items():
+        if acc_data.get('user_id') == user_id:
+            user_pnl[acc_id] = acc_data
+    return jsonify({'success': True, 'pnl_data': user_pnl})
+
+
 # ============================================================================
 # ADMIN SUBSCRIPTION MANAGEMENT
 # ============================================================================

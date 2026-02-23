@@ -1587,7 +1587,7 @@ function showDetailsTab(tabName) {
     } else if (tabName === 'trades') {
         content.innerHTML = renderTradesTab(currentUserDetails.trades, currentUserDetails.trade_stats);
     } else if (tabName === 'live_pnl') {
-        renderLivePnlTab();
+        fetchAndRenderLivePnl();
     }
 }
 
@@ -1941,11 +1941,27 @@ function deleteUserTrader(traderId, strategyName, accountName) {
 
 let adminPnlCache = {};
 
+function fetchAndRenderLivePnl() {
+    const content = document.getElementById('detailsContent');
+    const userId = currentUserDetails.user_id;
+
+    content.innerHTML = '<div class="loading-spinner"></div>';
+
+    fetch('/admin/users/' + userId + '/live-pnl')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.pnl_data) {
+                Object.assign(adminPnlCache, data.pnl_data);
+            }
+            renderLivePnlTab();
+        })
+        .catch(() => renderLivePnlTab());
+}
+
 function renderLivePnlTab() {
     const content = document.getElementById('detailsContent');
     const userId = currentUserDetails.user_id;
 
-    // Filter adminPnlCache by user_id (pnl_data is keyed by Tradovate subaccount ID, not accounts.id)
     let cardCount = 0;
     let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; padding: 16px;">';
 
@@ -1984,7 +2000,7 @@ function renderLivePnlTab() {
     html += '</div>';
 
     if (cardCount === 0) {
-        html = '<div class="empty-details"><span class="material-icons">account_balance_wallet</span><p>Waiting for P&L data... (updates every ~5 seconds)</p></div>';
+        html = '<div class="empty-details"><span class="material-icons">account_balance_wallet</span><p>No live P&L data available</p></div>';
     }
 
     document.getElementById('pnlCount').textContent = cardCount;
@@ -1996,7 +2012,6 @@ if (typeof io !== 'undefined') {
     const adminPnlSocket = io();
 
     adminPnlSocket.on('position_update', function(data) {
-        // pnl_data is only in position_update, NOT in pnl_update
         if (data.pnl_data) {
             Object.assign(adminPnlCache, data.pnl_data);
         }
