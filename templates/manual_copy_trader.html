@@ -1535,7 +1535,7 @@
             if (data.success) {
                 currentLeaderId = data.leader_id;
                 showToast('Leader account set', 'success');
-                updateLeaderStatus('connected', `Leader: ${label}`);
+                updateLeaderStatus('disconnected', `Manual mode: ${label}`);
                 loadFollowerAccounts(currentLeaderId);
                 loadCopyTradeLog(currentLeaderId);
             } else {
@@ -1712,7 +1712,7 @@
             if (data.success) {
                 showToast(enabled ? 'Auto copy mode enabled' : 'Auto copy mode disabled', 'success');
                 updateLeaderStatus(
-                    enabled ? 'connecting' : 'connected',
+                    enabled ? 'connecting' : 'disconnected',
                     enabled ? 'Connecting to leader WebSocket...' : 'Manual mode active'
                 );
                 // Start/stop position polling
@@ -1808,8 +1808,9 @@
                 badge.textContent = parts.join(', ');
             }
 
-            // Update WS connection status too
-            if (data.connected) {
+            // Update WS connection status — only if auto-copy is actually enabled
+            const _autoCopyOn = document.getElementById('autoCopyMode')?.checked;
+            if (data.connected && _autoCopyOn) {
                 updateLeaderStatus('connected', 'Auto-copy active');
             }
         } catch (error) {
