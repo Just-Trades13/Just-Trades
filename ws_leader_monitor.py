@@ -223,6 +223,9 @@ class LeaderConnection:
         self._running = True
         self._last_server_msg = time.time()
         self._last_debounce_cleanup = time.time()
+        self._msg_count = 0
+        self._data_msg_count = 0  # Non-heartbeat messages
+        self._last_stats_log = time.time()
 
         while self._running and self.connected:
             try:
@@ -245,10 +248,20 @@ class LeaderConnection:
                     self.connected = False
                     break
 
+                # Log WebSocket stats every 30 seconds
+                if now - self._last_stats_log > 30.0:
+                    logger.info(f"Leader {self.leader_id} WebSocket: {self._msg_count} msgs "
+                                f"({self._data_msg_count} data) in last 30s, "
+                                f"positions={dict(self._positions)}")
+                    self._msg_count = 0
+                    self._data_msg_count = 0
+                    self._last_stats_log = now
+
                 # Receive messages
                 try:
                     message = await asyncio.wait_for(self.websocket.recv(), timeout=1.0)
                     self._last_server_msg = time.time()
+                    self._msg_count += 1
                     await self._handle_message(message, fill_callback, order_callback)
                 except asyncio.TimeoutError:
                     continue
@@ -266,6 +279,8 @@ class LeaderConnection:
         """Handle incoming WebSocket message — look for fill and order events."""
         if not raw_message or raw_message in ('o', 'h', '[]'):
             return
+
+        self._data_msg_count += 1
 
         try:
             items = []
@@ -290,6 +305,16 @@ class LeaderConnection:
                     items.append(parsed)
 
             for data in items:
+                # Log entity type for visibility into what Tradovate is sending
+                entity_type = None
+                if data.get('e') == 'props':
+                    entity_type = data.get('d', {}).get('entityType')
+                    event_type = data.get('d', {}).get('eventType')
+                    if entity_type in ('fill', 'order', 'position'):
+                        logger.info(f"Leader {self.leader_id} WS event: "
+                                    f"entityType={entity_type}, eventType={event_type}, "
+                                    f"raw={str(data)[:300]}")
+
                 await self._check_for_fills(data, fill_callback)
                 if order_callback:
                     await self._check_for_orders(data, order_callback)
