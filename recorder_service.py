@@ -6208,6 +6208,14 @@ def reconcile_positions_with_broker():
                                                     logger.warning(f"Could not cancel duplicate TP {extra_tp_id}: {cancel_err}")
 
                                     if not has_tp_order:
+                                        # Skip auto-TP if WS position monitor is connected (it handles TPs in real-time)
+                                        try:
+                                            from ws_position_monitor import is_position_ws_connected
+                                            if is_position_ws_connected(recorder_id):
+                                                logger.debug(f"WS connected for {ticker} — skipping auto-TP (WS handles it)")
+                                                continue
+                                        except ImportError:
+                                            pass  # WS monitor not available — proceed with REST placement
                                         logger.warning(f"🔄 SYNC FIX: MISSING TP ORDER for {ticker} - PLACING NOW")
 
                                         # Calculate correct TP based on broker avg price
@@ -6570,15 +6578,15 @@ def start_position_reconciliation():
         return
 
     def reconciliation_loop():
-        logger.info("🔄 Starting position reconciliation thread (every 60 seconds)")
+        logger.info("🔄 Starting position reconciliation thread (safety net — every 300 seconds)")
         while True:
             try:
                 reconcile_positions_with_broker()
                 check_auto_flat_cutoff()
-                time.sleep(60)  # Run every 60 seconds (reduced to avoid rate limiting)
+                time.sleep(300)  # Safety net: 5 min when WS position monitor is primary
             except Exception as e:
                 logger.error(f"Error in position reconciliation loop: {e}")
-                time.sleep(60)
+                time.sleep(300)
     
     _position_reconciliation_thread = threading.Thread(target=reconciliation_loop, daemon=True)
     _position_reconciliation_thread.start()
