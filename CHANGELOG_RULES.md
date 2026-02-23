@@ -387,3 +387,103 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | WS Position Monitor startup | ultra_simple_server.py, NOT recorder_service.py | recorder_service.py is imported, never __main__ | Monitor silently never starts |
 | Position WS Monitor | One WebSocket per token, LOWER() on broker match | Rule 16, broker column is 'Tradovate' (capital T) | Either rate limit hit or no connections found |
 | subaccount_id for traders | Use `t.subaccount_id` from traders table | Column exists on traders AND accounts with different meanings | SQL error, no accounts loaded |
+
+---
+
+## ws_leader_monitor.py — Protected Changes
+
+### Cross-Leader Loop Prevention (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~466-480 (clOrdId check), _recent_copy_fills dict |
+| **Rule** | CLAUDE.md Disaster #28 |
+| **Commit** | `e6fe62d` |
+| **What** | Two-layer loop prevention: (1) `clOrdId.startswith('JT_COPY_')` prefix check, (2) time-based dedup via `_recent_copy_fills` dict — 10-second window |
+| **Why** | Cross-linked leaders (A→B and B→A) caused infinite copy loop — 46 fills per account. Tradovate WS FILL events do NOT include clOrdId, so Layer 1 alone doesn't work. |
+| **Verified** | 3 cross-linked demo accounts — no infinite loop after fix |
+| **NEVER** | Remove either dedup layer. Remove the `_recent_copy_fills` dict. Reduce the 10-second dedup window. |
+
+### Parallel Follower Execution — asyncio.gather (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~993-1113 (`_copy_one_follower` + `asyncio.gather`) |
+| **Rule** | CLAUDE.md Rule 35 |
+| **Commit** | `b26dc75` |
+| **What** | All followers execute simultaneously via `asyncio.gather(*[_copy_one_follower(f) for f in followers])` |
+| **Why** | Sequential `for follower in followers:` loop caused 15-25s total for 5 followers. Per-leader asyncio.Lock meant fill 2 waited for fill 1's ALL followers to complete. |
+| **Verified** | Rapid buy clicks on leader — followers stay in sync. User confirmed "extremely fast". |
+| **NEVER** | Revert to sequential for-loop. Add `await` inside a sequential follower loop. Remove the `_copy_one_follower` async function. |
+
+### Position Sync — Add/Trim/Reversal Detection (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~1065-1098 |
+| **Rule** | CLAUDE.md Rule 34 |
+| **Commit** | `b97eb10` |
+| **What** | Detects three modes: ADD (same-side higher qty → buy difference), TRIM (same-side lower qty → sell difference), REVERSAL (side change → close + re-enter) |
+| **Why** | Previous code always did close + re-enter for ANY non-flat position change. Leader adds to position → follower briefly has no position (risk exposure, extra commission). |
+| **Verified** | Leader Long 1→Long 2: follower buys 1 more (not close 1, open 2). User confirmed working. |
+| **NEVER** | Revert to close+re-enter for same-side changes. Forget to apply multiplier to BOTH target and previous qty. |
+
+### Pipeline Separation — Skip Followers with Webhook Traders (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | Before follower loop (calls `get_subaccounts_with_active_traders()`) |
+| **Rule** | CLAUDE.md Disaster #29 (near-miss prevented) |
+| **Commit** | `e46c4a4` |
+| **What** | Before executing followers, checks if any follower's subaccount also has an enabled webhook trader. Skips overlapping followers to prevent double-fills. |
+| **Why** | 4 follower accounts found with BOTH copy trader links AND active webhook traders. Would have caused 2 fills per signal on those accounts. |
+| **NEVER** | Remove the pipeline separation check. Execute followers without checking for webhook overlap first. |
+
+### Market-Hours Reconnect Fix (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | `_is_futures_market_likely_open()` function |
+| **Rule** | MEMORY.md Bug #37 |
+| **Commit** | `2c53a6d` |
+| **What** | Dead-subscription detection only triggers reconnect when futures market is likely open. During market-closed hours (weekends, 5-6 PM ET), 0 data is expected — no reconnect needed. |
+| **Why** | Without this, all monitors reconnect every 90 seconds during market-closed hours, generating 429 rate limit errors. |
+| **NEVER** | Remove the market-hours check. Change the reconnect logic to ignore this gate. |
+
+---
+
+## ultra_simple_server.py — Copy Trader Protected Changes
+
+### Admin Key Header for Internal HTTP Requests (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | `_propagate_manual_trade_to_followers()` ~24018-24021 |
+| **Rule** | CLAUDE.md Rule 32 |
+| **Commit** | `03c5853` |
+| **What** | Internal HTTP POST to `/api/manual-trade` includes `X-Admin-Key` header from `ADMIN_API_KEY` env var |
+| **Why** | `_global_api_auth_gate()` at line ~3700 blocks ALL unauthenticated `/api/` requests. Internal `requests.post()` has no Flask session cookies. Without the admin key, ALL 16 follower trades got 401 "Authentication required". |
+| **NEVER** | Remove the `X-Admin-Key` header. Make internal HTTP requests without auth. |
+
+### Parallel Manual Copy Propagation — ThreadPoolExecutor (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | `_propagate_manual_trade_to_followers()` ~24070-24072 |
+| **Rule** | CLAUDE.md Rule 35 |
+| **Commit** | `22f32be` |
+| **What** | `ThreadPoolExecutor(max_workers=len(followers))` — all followers fire simultaneously |
+| **Why** | Sequential for-loop meant 2 followers = ~600ms total. 10 followers would be ~3 seconds. |
+| **NEVER** | Revert to sequential for-loop. Add blocking calls inside a sequential loop. |
+
+### Token Refresh Truthy Dict Fix (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | `do_refresh_tokens()` ~24201-24229 |
+| **Rule** | CLAUDE.md Rule 17 + Rule 32 |
+| **Commit** | `b7529f9` |
+| **What** | `if refreshed and refreshed.get('success'):` instead of `if refreshed:`. Token expiry = 85 minutes (not 24 hours). |
+| **Why** | `refresh_access_token()` returns `{'success': False, 'error': '...'}` on failure. Non-empty dict is ALWAYS truthy → failed refreshes overwrote valid tokens with expired ones AND set 24-hour expiry (preventing refresh daemon from catching it). |
+| **NEVER** | Change back to `if refreshed:`. Set token expiry to 24 hours. |
+
+### Copy Trader Toggle Import Fix (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | Toggle POST handler ~25213 |
+| **Commit** | `ce4e6a2` |
+| **What** | Added `get_user_by_id` import inside try block |
+| **Why** | `NameError: name 'get_user_by_id' is not defined` → caught by except → returned 500. Toggle completely non-functional. |
+| **NEVER** | Remove the import. Move it to a location where it might be accidentally deleted by a restructure. |

@@ -1,7 +1,7 @@
 # Just Trades Platform — MASTER RULES & ARCHITECTURE
 
-> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` @ commit `bb1a183` (+ brevo fix `5b6be75`)
-> **Broker-verified quantity safety net deployed — prevents DB/broker drift sizing — Feb 20, 2026**
+> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB23_2026_COPY_TRADER_STABLE` @ commit `98021d6`
+> **Pro Copy Trader FULLY WORKING — manual + auto-copy, parallel execution, position sync — Feb 23, 2026**
 > **PAID USERS IN PRODUCTION — EVERY BROKEN DEPLOY COSTS REAL MONEY**
 
 ---
@@ -308,7 +308,8 @@ WebSocket pool was NEVER functional. ALL orders go through REST (`session.post`)
 ## RULE 11: RECOVERY PROTOCOL
 
 ```bash
-git reset --hard WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET  # CURRENT stable (+ brevo fix 5b6be75)
+git reset --hard WORKING_FEB23_2026_COPY_TRADER_STABLE     # CURRENT — copy trader fully working
+git reset --hard WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET  # Pre-copy-trader fallback (+ brevo fix 5b6be75)
 git reset --hard WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE   # Pre-safety-net fallback
 git reset --hard WORKING_FEB18_2026_DCA_SKIP_STABLE        # Pre-DCA-field-fix fallback
 git reset --hard WORKING_FEB18_2026_FULL_AUDIT_STABLE      # Pre-DCA-off fix fallback
@@ -321,7 +322,8 @@ git push -f origin main  # CAUTION: force push — only if resetting
 
 | Tag | Commit | Description |
 |-----|--------|-------------|
-| `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` | `bb1a183` | **CURRENT** — Broker-verified qty safety net + brevo pin (+ `5b6be75`) |
+| `WORKING_FEB23_2026_COPY_TRADER_STABLE` | `98021d6` | **CURRENT** — Pro Copy Trader fully working (manual + auto, parallel, position sync) |
+| `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` | `bb1a183` | Broker-verified qty safety net + brevo pin (+ `5b6be75`) |
 | `WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE` | `656683a` | DCA field fix, env crash fix, JADVIX auto-enable, cascade delete |
 | `WORKING_FEB18_2026_DCA_SKIP_STABLE` | `c75d7d4` | DCA-off bracket fix + multiplier trim scaling |
 | `WORKING_FEB18_2026_FULL_AUDIT_STABLE` | `fbd705d` | Pre-DCA-fix fallback (audit cleanup) |
@@ -1919,6 +1921,6 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 ---
 
 *Last updated: Feb 23, 2026*
-*Production stable tag: WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET @ bb1a183 (+ brevo fix 5b6be75)*
-*Total rules: 31 | Total documented disasters: 30 | Paid users in production: YES*
-*Documentation: 11 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*
+*Production stable tag: WORKING_FEB23_2026_COPY_TRADER_STABLE @ 98021d6*
+*Total rules: 35 | Total documented disasters: 33 | Paid users in production: YES*
+*Documentation: 11 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 9 files in ~/.claude/memory/*
