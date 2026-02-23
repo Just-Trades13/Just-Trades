@@ -284,7 +284,7 @@ def create_leader(user_id: int, account_id: int, subaccount_id: str,
 
 
 def get_leaders_for_user(user_id: int) -> List[Dict]:
-    """Get all leader accounts for a user."""
+    """Get all leader accounts for a user (filters out orphaned accounts)."""
     conn, db_type = get_copy_trader_db_connection()
     cursor = conn.cursor()
     ph = _ph(db_type)
@@ -292,9 +292,10 @@ def get_leaders_for_user(user_id: int) -> List[Dict]:
     try:
         active_val = 'TRUE' if db_type == 'postgresql' else '1'
         cursor.execute(f'''
-            SELECT * FROM leader_accounts
-            WHERE user_id = {ph} AND is_active = {active_val}
-            ORDER BY created_at DESC
+            SELECT la.* FROM leader_accounts la
+            INNER JOIN accounts a ON la.account_id = a.id
+            WHERE la.user_id = {ph} AND la.is_active = {active_val}
+            ORDER BY la.created_at DESC
         ''', (user_id,))
         return [dict(row) for row in cursor.fetchall()]
     finally:
@@ -480,7 +481,7 @@ def create_follower(leader_id: int, user_id: int, account_id: int,
 
 
 def get_followers_for_leader(leader_id: int) -> List[Dict]:
-    """Get all enabled followers for a leader."""
+    """Get all enabled followers for a leader (filters out orphaned accounts)."""
     conn, db_type = get_copy_trader_db_connection()
     cursor = conn.cursor()
     ph = _ph(db_type)
@@ -488,9 +489,10 @@ def get_followers_for_leader(leader_id: int) -> List[Dict]:
     try:
         enabled_val = 'TRUE' if db_type == 'postgresql' else '1'
         cursor.execute(f'''
-            SELECT * FROM follower_accounts
-            WHERE leader_id = {ph} AND is_enabled = {enabled_val}
-            ORDER BY created_at
+            SELECT fa.* FROM follower_accounts fa
+            INNER JOIN accounts a ON fa.account_id = a.id
+            WHERE fa.leader_id = {ph} AND fa.is_enabled = {enabled_val}
+            ORDER BY fa.created_at
         ''', (leader_id,))
         return [dict(row) for row in cursor.fetchall()]
     finally:
@@ -544,16 +546,17 @@ def get_subaccounts_with_active_traders(subaccount_ids: list) -> set:
 
 
 def get_all_followers_for_leader(leader_id: int) -> List[Dict]:
-    """Get all followers for a leader (including disabled)."""
+    """Get all followers for a leader (including disabled, filters out orphaned accounts)."""
     conn, db_type = get_copy_trader_db_connection()
     cursor = conn.cursor()
     ph = _ph(db_type)
 
     try:
         cursor.execute(f'''
-            SELECT * FROM follower_accounts
-            WHERE leader_id = {ph}
-            ORDER BY created_at
+            SELECT fa.* FROM follower_accounts fa
+            INNER JOIN accounts a ON fa.account_id = a.id
+            WHERE fa.leader_id = {ph}
+            ORDER BY fa.created_at
         ''', (leader_id,))
         return [dict(row) for row in cursor.fetchall()]
     finally:
