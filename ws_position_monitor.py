@@ -301,6 +301,9 @@ class AccountGroupConnection:
                     self._data_msg_count = 0
                     self._last_stats_log = now
 
+                # Process pending orphan checks (event-driven, 5s delay)
+                await self._process_orphan_checks()
+
                 # Receive messages
                 try:
                     message = await asyncio.wait_for(self.websocket.recv(), timeout=1.0)
@@ -660,6 +663,10 @@ class AccountGroupConnection:
 
                 if cursor.rowcount > 0:
                     logger.info(f"[{self.token_key}] Cleared cancelled TP order {order_id}")
+                    # Schedule orphan check with delay (avoids false positive during DCA cancel-replace, Rule 8)
+                    check_time = time.time() + self._ORPHAN_CHECK_DELAY
+                    for rid in recorder_ids:
+                        self._pending_orphan_checks[rid] = check_time
 
                 conn.commit()
                 conn.close()
@@ -729,6 +736,23 @@ class AccountGroupConnection:
                     o_status in ['Working', 'New', 'Accepted', 'PendingNew', 'PartiallyFilled']):
                 return True
         return False
+
+    async def _process_orphan_checks(self):
+        """Process pending orphan checks whose delay has expired."""
+        if not self._pending_orphan_checks:
+            return
+
+        now = time.time()
+        ready = {rid: t for rid, t in self._pending_orphan_checks.items() if now >= t}
+        if not ready:
+            return
+
+        for rid in ready:
+            del self._pending_orphan_checks[rid]
+            try:
+                await self._check_and_fix_orphan(rid)
+            except Exception as e:
+                logger.error(f"[{self.token_key}] Orphan check failed for recorder {rid}: {e}")
 
     # ====================================================================
     # TP ORPHAN DETECTION — Broker verification + TP placement
