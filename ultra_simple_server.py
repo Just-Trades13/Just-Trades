@@ -24076,7 +24076,7 @@ def manual_trade():
         leader_id = data.get('leader_id')  # Copy trader — frontend sends this from copy trader page
 
         # DEBUG: Log received risk settings
-        logger.info(f"📋 Manual trade request: symbol={symbol}, side={side}, qty={quantity}")
+        logger.info(f"📋 Manual trade request: symbol={symbol}, side={side}, qty={quantity}, leader_id={leader_id}")
         logger.info(f"📋 Risk settings received: {risk_settings}")
         
         if not account_subaccount:
@@ -24091,7 +24091,24 @@ def manual_trade():
         parts = account_subaccount.split(':')
         account_id = int(parts[0])
         subaccount_id = parts[1] if len(parts) > 1 and parts[1] else None
-        
+
+        # Server-side fallback: if no leader_id from frontend, look up from user's leaders
+        if not leader_id and not cl_ord_id:
+            try:
+                from copy_trader_models import get_leaders_for_user
+                _user_id = session.get('user_id')
+                if _user_id:
+                    _leaders = get_leaders_for_user(_user_id)
+                    for _l in (_leaders or []):
+                        if _l.get('account_id') == account_id and str(_l.get('subaccount_id', '')) == str(subaccount_id or ''):
+                            leader_id = _l['id']
+                            logger.info(f"Copy trader: server-side leader match — leader_id={leader_id}")
+                            break
+                    if not leader_id and _leaders:
+                        logger.info(f"Copy trader: no leader match for account {account_id}:{subaccount_id} (user has {len(_leaders)} leaders)")
+            except Exception as _e:
+                logger.warning(f"Copy trader: leader lookup error: {_e}")
+
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
