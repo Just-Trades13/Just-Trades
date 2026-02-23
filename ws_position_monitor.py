@@ -728,12 +728,14 @@ def _load_account_groups() -> List[Dict]:
               AND a.tradovate_token IS NOT NULL
               AND a.tradovate_token != ''
               AND t.subaccount_id IS NOT NULL
-              AND a.broker IN ('tradovate', 'ninjatrader')
+              AND LOWER(a.broker) IN ('tradovate', 'ninjatrader')
         ''')
 
         # Group by token
+        rows = cursor.fetchall()
+        logger.info(f"Account groups query returned {len(rows)} rows")
         token_groups: Dict[str, Dict] = {}
-        for row in cursor.fetchall():
+        for row in rows:
             account_id = row[0]
             subaccount_id = int(row[1])
             token = row[2]
