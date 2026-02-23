@@ -83,6 +83,16 @@ _copy_locks: Dict[int, asyncio.Lock] = {}  # leader_id -> Lock (prevents duplica
 # Copy order prefix for loop prevention
 COPY_ORDER_PREFIX = 'JT_COPY_'
 
+# Track recently copied fills to prevent cross-leader loops.
+# Key: (account_id, symbol, side), Value: timestamp
+# When account A is both a leader and a follower, a copy fill on A would
+# trigger leader A's monitor to re-copy — infinite loop. This dedup catches it.
+_recent_copy_fills: Dict[tuple, float] = {}
+_COPY_DEDUP_WINDOW = 10.0  # seconds — fills within this window are considered duplicates
+
+# Track all follower account IDs across all leaders to detect cross-leader loops
+_follower_account_ids: set = set()
+
 # Reload signal — set by trigger_leader_reload() to refresh active leaders
 _leader_reload_event = threading.Event()
 
@@ -468,8 +478,8 @@ class LeaderConnection:
         action = fill.get('action', '')  # Buy or Sell
         timestamp_str = fill.get('timestamp', '')
 
-        # --- LOOP PREVENTION ---
-        # Check clOrdId for our copy prefix
+        # --- LOOP PREVENTION (Layer 1: clOrdId check) ---
+        # Check clOrdId for our copy prefix (works if Tradovate includes it on fill)
         cl_ord_id = fill.get('clOrdId', '') or ''
         if cl_ord_id.startswith(COPY_ORDER_PREFIX):
             logger.debug(f"Skipping copied order fill (clOrdId={cl_ord_id})")
@@ -499,6 +509,23 @@ class LeaderConnection:
             return
 
         qty = abs(qty)
+
+        # --- LOOP PREVENTION (Layer 2: cross-leader dedup) ---
+        # If this leader's account recently RECEIVED a copy trade for the same
+        # symbol+side, this fill is from that copy — don't re-propagate.
+        # This catches the case where Tradovate fill data lacks clOrdId.
+        # Key uses subaccount_id (Tradovate numeric ID) to match across leaders.
+        dedup_key = (str(self.subaccount_id), symbol, action.lower())
+        now = time.time()
+        if dedup_key in _recent_copy_fills:
+            elapsed = now - _recent_copy_fills[dedup_key]
+            if elapsed < _COPY_DEDUP_WINDOW:
+                logger.info(f"Loop prevention: skipping fill on leader {self.leader_id} "
+                            f"(subaccount {self.subaccount_id}) — this account received a "
+                            f"copy trade for {action} {symbol} {elapsed:.1f}s ago")
+                return
+            else:
+                del _recent_copy_fills[dedup_key]  # Expired, clean up
 
         # Classify the fill
         fill_type = self._classify_fill(symbol, action, qty)
@@ -616,6 +643,18 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
 
                 try:
                     account_subaccount = f"{follower['account_id']}:{follower['subaccount_id']}"
+
+                    # Record this copy in dedup map — if this follower account is
+                    # ALSO a leader, its monitor will see the fill and skip it.
+                    # Uses str(subaccount_id) to match the key format in _process_fill.
+                    follower_sub_id = str(follower.get('subaccount_id', ''))
+                    copy_action = action.lower()
+                    _recent_copy_fills[(follower_sub_id, symbol, copy_action)] = time.time()
+                    if fill_type in ('full_exit', 'partial_exit'):
+                        # Close/exit: the follower gets an opposite-side market order
+                        opp_action = 'sell' if action.lower() == 'buy' else 'buy'
+                        _recent_copy_fills[(follower_sub_id, symbol, opp_action)] = time.time()
+                    logger.debug(f"Dedup recorded: ({follower_sub_id}, {symbol}, {copy_action})")
 
                     if fill_type == 'entry':
                         result = await _execute_follower_entry(
