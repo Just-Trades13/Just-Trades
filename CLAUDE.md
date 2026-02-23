@@ -47,6 +47,7 @@ Full function read: [Read tool lines X-Y / new file — N/A]
 | Monitoring, health checks, endpoint responses | `docs/MONITORING_ENDPOINTS.md` |
 | Testing signals, verifying trades | `docs/TESTING_PROCEDURES.md` |
 | Admin access, onboarding, permissions | `docs/ADMIN_ACCESS_POLICY.md` |
+| Copy trader, follower propagation, leader monitor, `ws_leader_monitor.py` | `docs/COPY_TRADER_ARCHITECTURE.md` |
 
 - If task involves multiple areas, read ALL matching docs.
 - "Full function read" means the Read tool was used on the actual file. Not from memory. Not summarized.
