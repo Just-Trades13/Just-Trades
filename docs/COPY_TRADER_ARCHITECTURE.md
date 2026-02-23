@@ -5,7 +5,7 @@
 > **Date**: February 2026
 > **Last Updated**: February 23, 2026
 > **Priority**: CRITICAL — this is the #1 product feature
-> **Status**: WORKING — Manual copy + Auto-copy both confirmed working Feb 23, 2026
+> **Status**: WORKING — Manual + Auto-copy confirmed working. Parallel execution + smart position sync (add/trim/reversal). Feb 23, 2026
 
 ---
 
@@ -23,6 +23,8 @@
 - `ws_leader_monitor.py` connects to Tradovate WebSocket for each leader with `auto_copy_enabled=True`
 - Detects fill events via `syncrequest` → `"e":"props"` → `entityType: "fill"`
 - Copies to followers via HTTP POST to `/api/manual-trade` with admin key
+- **All followers fire in PARALLEL via `asyncio.gather()`** — not sequential (commit `b26dc75`)
+- **Position adds use delta qty** — leader Long 1→Long 2 = follower buys 1 more, NOT close+re-enter (commit `b97eb10`)
 - Reload signal: toggling auto-mode triggers reconnect within 5 seconds
 
 ### Pipeline Separation — Webhook vs Copy Trader (Feb 23, 2026)
@@ -58,6 +60,15 @@ The HTTP self-POST pattern works because we added `X-Admin-Key` header bypass in
 | Page init leader load | `a38b9b5` | `currentLeaderId` was null on page load → propagation skipped |
 | Leader ID from frontend | `dd1cbea` | Frontend sends leader_id directly instead of fragile reverse-lookup |
 | Diagnostic logging | `5510b9f` | Added logging to trace propagation flow |
+| WS market-hours fix | `2c53a6d` | Dead-subscription reconnect skipped when futures market closed → no more 429 spam |
+| Toggle startup reset removal | `ef813fe` | `copy_trader_models.py` force-reset toggle OFF on every startup |
+| Toggle optimistic UI | `d04ddbd` | Toggle text updates immediately instead of waiting for API response |
+| Toggle race condition fix | `39b8122` | `masterToggleUserChanged` flag prevents stale GET from overwriting user click |
+| Toggle missing import fix | `ce4e6a2` | `get_user_by_id` not imported in toggle handler → 500 error |
+| FLASK_SECRET_KEY permanent | N/A (env var) | Sessions survive deploys — toggle POST no longer gets 401 |
+| Auto-copy parallel (asyncio.gather) | `b26dc75` | Sequential for-loop → `asyncio.gather()` — all followers simultaneously |
+| Position add-not-close | `b97eb10` | Same-side adds use delta qty instead of close+re-enter |
+| Warning disclaimer | `24e1094` | Yellow warning box: don't mix copy trader with webhook strategies |
 
 ### Debugging Lessons Learned
 
@@ -513,6 +524,13 @@ ALTER TABLE follower_accounts ADD COLUMN lockout_reason TEXT;
 | 11 | Auto-mode toggle doesn't reconnect | New leaders not picked up until existing connection drops | Reload event with 5s timeout on `asyncio.wait` | `4f854c5` |
 | 12 | `railway run` tests local, not container | Package version mismatches, wrong Python version | Use `railway logs` for production verification | lesson |
 | 13 | Follower also has webhook trader | Double-fills — one from copy, one from webhook pipeline | `get_subaccounts_with_active_traders()` skips overlapping followers | `e46c4a4` |
+| 14 | Toggle startup force-reset | Toggle always shows "Disabled" after deploy | Remove startup UPDATE that sets `copy_trader_enabled='false'` | `ef813fe` |
+| 15 | GET/POST race condition on toggle | Stale GET response overwrites user's click | `masterToggleUserChanged` flag — GET callback skips if user already clicked | `39b8122` |
+| 16 | Missing import in route handler | `NameError: get_user_by_id` → 500 on POST | Import inside try block, not at module level (sacred file — minimal edit) | `ce4e6a2` |
+| 17 | `FLASK_SECRET_KEY` auto-generated | Sessions die on every deploy, all POSTs fail | Set as PERMANENT Railway env var — never auto-generate in production | env var |
+| 18 | Sequential auto-copy follower loop | Rapid leader trades queue up, followers fall behind | `asyncio.gather()` for parallel execution | `b26dc75` |
+| 19 | Close+re-enter on position add | Follower briefly has no position, extra commission | Detect same-side add/trim, use delta qty | `b97eb10` |
+| 20 | WS reconnect during market-closed hours | 429 rate limit errors from unnecessary reconnects | `_is_futures_market_likely_open()` check before reconnect | `2c53a6d` |
 
 ---
 
@@ -590,3 +608,52 @@ curl -X POST https://justtrades.app/api/manual-trade \
 curl https://justtrades.app/api/copy-trader/leaders/2/log \
   -H "X-Admin-Key: YOUR_KEY"
 ```
+
+---
+
+## 11. POSITION SYNC LOGIC — ADD/TRIM/REVERSAL (Feb 23, 2026)
+
+### The Problem (Bug #33)
+When the leader adds to a position (Long 1 → Long 2), the original code CLOSED the follower's position then re-entered with the full target quantity. This caused:
+- Brief gap with no position (risk exposure)
+- Extra commission (two trades instead of one)
+- Confusing fill history
+
+### The Fix: Delta-Based Position Sync
+
+`_copy_fill_to_followers()` in `ws_leader_monitor.py` (line ~1065) now detects five scenarios:
+
+| Scenario | Detection | Follower Action | Risk Config |
+|----------|-----------|-----------------|-------------|
+| **ENTRY** (from flat) | `leader_was_flat` and `leader_target_qty > 0` | Fresh entry with full qty | Leader's TP/SL copied |
+| **CLOSE** (to flat) | `follower_target_qty == 0` | `_execute_follower_close()` | None |
+| **ADD** (same side, higher qty) | `leader_target_side == leader_prev_side` and `target > prev` | Entry for DIFFERENCE only | None (no TP/SL on adds) |
+| **TRIM** (same side, lower qty) | `leader_target_side == leader_prev_side` and `target < prev` | Opposite-side entry for DIFFERENCE | None |
+| **REVERSAL** (side change) | `leader_target_side != leader_prev_side` | Close + re-enter full target | Leader's TP/SL copied |
+
+### Key Implementation Details
+
+```python
+# Variables from fill_data (set by _process_fill)
+leader_prev = fill_data.get('leader_prev_position', {'side': '', 'qty': 0})
+leader_pos = fill_data.get('leader_position', {'side': '', 'qty': 0})
+
+# Per-follower calculation
+follower_prev_qty = max(1, int(round(leader_prev_qty * multiplier)))
+follower_target_qty = max(1, int(round(leader_target_qty * multiplier)))
+
+# Both are capped by max_position_size if set
+if max_pos > 0:
+    follower_prev_qty = min(follower_prev_qty, max_pos)
+    follower_target_qty = min(follower_target_qty, max_pos)
+
+# Delta
+add_qty = follower_target_qty - follower_prev_qty   # positive = add
+trim_qty = follower_prev_qty - follower_target_qty   # positive = trim
+```
+
+### NEVER:
+- Close + re-enter for same-side position changes
+- Forget to apply multiplier to BOTH target and previous qty
+- Forget to cap BOTH with max_position_size
+- Send risk_config (TP/SL) on adds/trims — only on fresh entries from flat

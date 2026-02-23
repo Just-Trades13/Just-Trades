@@ -585,6 +585,14 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | WebSocket Position Monitor (`ws_position_monitor.py`) | `636ae87` | Feb 23 | **Confirmed working** |
 | WS Position Monitor startup integration | `fb4c67e` | Feb 23 | **Confirmed working** |
 | Reconciliation downgraded to 5-min safety net | Phase 2 | Feb 23 | Working |
+| WS monitors: market-hours reconnect fix | `2c53a6d` | Feb 23 | **Confirmed working** |
+| Copy trader toggle: remove startup force-OFF reset | `ef813fe` | Feb 23 | **Confirmed working** |
+| Copy trader toggle: optimistic UI + race condition fix | `39b8122` | Feb 23 | **Confirmed working** |
+| Copy trader toggle: missing get_user_by_id import fix | `ce4e6a2` | Feb 23 | **Confirmed working** |
+| FLASK_SECRET_KEY set as permanent Railway env var | N/A | Feb 23 | **CRITICAL — sessions survive deploys** |
+| Auto-copy: parallel follower execution (asyncio.gather) | `b26dc75` | Feb 23 | **Confirmed working** |
+| Auto-copy: add-to-position instead of close+re-enter | `b97eb10` | Feb 23 | **Confirmed working** |
+| Copy trader: warning disclaimer (don't mix with webhooks) | `24e1094` | Feb 23 | Working |
 
 ---
 
@@ -830,6 +838,64 @@ resp = requests.post(url, json=payload, headers=_headers, timeout=30)
 - Make internal `/api/` requests without `X-Admin-Key` header
 - Use `if result:` to check success of a function that returns a dict — always check `.get('success')`
 - Set Tradovate token expiry to 24 hours — they expire in 90 minutes. Use `timedelta(minutes=85)`
+
+---
+
+## RULE 33: FLASK_SECRET_KEY MUST BE PERMANENT ENV VAR (Feb 23, 2026)
+
+`app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)` generates a NEW random key on every deploy if the env var is not set. This invalidates ALL Flask sessions — every user gets logged out, every POST requiring `session.get('user_id')` fails with 401.
+
+**What broke:** Copy trader toggle POST returned 500 because `session.get('user_id')` returned None after a deploy. The toggle handler couldn't authenticate the user. Combined with 3 other bugs (startup reset, race condition, missing import), the toggle was completely non-functional.
+
+**Fix:** Set `FLASK_SECRET_KEY` as a permanent Railway env var (64-char hex string). Sessions now survive deploys.
+
+**NEVER:**
+- Remove `FLASK_SECRET_KEY` from Railway env vars
+- Change the key value (logs out all active users)
+- Use `secrets.token_hex()` as default in production — auto-generated keys die on restart
+
+---
+
+## RULE 34: AUTO-COPY POSITION SYNC — ADD/TRIM, DON'T CLOSE+RE-ENTER (Feb 23, 2026)
+
+When the leader adds to a position (e.g., Long 1 → Long 2), the follower must ADD the difference (buy 1 more), NOT close the existing position and re-enter with the full target quantity.
+
+**What broke:** The position sync `else` branch in `_copy_fill_to_followers()` (ws_leader_monitor.py ~line 1065) always did: close follower → enter target qty. For adds, this meant: sell 1, then buy 2 — two trades instead of one, a brief period with no position, and unnecessary commission.
+
+**Three sync modes (ws_leader_monitor.py ~line 1065-1098):**
+
+| Scenario | Leader Position Change | Follower Action |
+|----------|----------------------|-----------------|
+| **ADD** | Same side, higher qty (Long 1 → Long 2) | Buy the DIFFERENCE (1 more) |
+| **TRIM** | Same side, lower qty (Long 3 → Long 1) | Sell the DIFFERENCE (2) |
+| **REVERSAL** | Different side (Long 2 → Short 1) | Close + re-enter (correct behavior) |
+| **ENTRY** | From flat (Flat → Long 2) | Fresh entry with risk config |
+| **CLOSE** | To flat (Long 2 → Flat) | Close all |
+
+**Key variables:** `leader_prev` (from fill_data), `leader_target_qty/side`, `follower_prev_qty = leader_prev_qty * multiplier`
+
+**NEVER:**
+- Close + re-enter for same-side position changes (costs extra commission, creates gap)
+- Forget to apply `multiplier` to both target AND previous qty when calculating delta
+- Forget to apply `max_pos` cap to both target AND previous qty
+
+---
+
+## RULE 35: AUTO-COPY FOLLOWERS MUST EXECUTE IN PARALLEL (Feb 23, 2026)
+
+Both copy trader propagation paths MUST execute all followers simultaneously, never sequentially.
+
+| Path | Parallel Method | Where |
+|------|----------------|-------|
+| **Manual copy** (UI button) | `ThreadPoolExecutor(max_workers=len(followers))` | `ultra_simple_server.py` `_propagate_manual_trade_to_followers()` |
+| **Auto-copy** (WebSocket fill) | `asyncio.gather(*[_copy_one_follower(f) for f in followers])` | `ws_leader_monitor.py` `_copy_fill_to_followers()` |
+
+**What broke:** Auto-copy had `for follower in followers:` — each follower's HTTP POST (3-5s) waited for the previous one. 5 followers = 15-25s per fill. Rapid trades from the leader queued up behind the per-leader lock, causing followers to fall minutes behind.
+
+**NEVER:**
+- Use a sequential `for` loop for follower execution — always parallel
+- Remove the per-leader asyncio.Lock entirely (it prevents dedup issues) — just make execution inside it fast
+- Add `await` calls inside a sequential loop for follower trades
 
 ---
 
@@ -1592,8 +1658,11 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 | 28 | Feb 23, 2026 | **Copy trader: 46 FILLS PER ACCOUNT — infinite cross-leader loop** | Tradovate WebSocket fill events do NOT include `clOrdId` → `JT_COPY_` prefix check never fires → cross-linked leaders (A↔B both leader AND follower) cascade fills infinitely. 3 NQ signals → 46 fills each on 3 demo accounts. | `e6fe62d` | Minutes |
 | 29 | Feb 23, 2026 | TP orders stacking 5+ deep — burst fills on TP hit | Three compounding bugs: (1) SQL `?` silently fails on PostgreSQL, (2) hardcoded `'MNQ'` in symbol matching, (3) no cancel-before-place. Each 60s reconciliation cycle added another TP. | Phase 1 fixes | Hours |
 | 30 | Feb 23, 2026 | Position monitor never started — placed in wrong file | `ws_position_monitor` startup in `recorder_service.py` `initialize()` which only runs under `__name__=='__main__'` — but recorder_service.py is always imported as a module. Also: SQL referenced `a.subaccount_id` (doesn't exist on accounts table), and `broker IN ('tradovate')` was case-sensitive but DB stores `'Tradovate'`. | `fb4c67e`, `636ae87` | Hours |
+| 31 | Feb 23, 2026 | Copy trader toggle stuck "Disabled" — 4 compounding bugs | (1) `copy_trader_models.py` force-reset toggle OFF on every startup, (2) GET/POST race condition overwrites user click, (3) `get_user_by_id` not imported in toggle handler → 500, (4) `FLASK_SECRET_KEY` not set → sessions invalidated on every deploy | Rules 32, 33, 34 | Hours |
+| 32 | Feb 23, 2026 | Auto-copy followers sequential — rapid trades queue up | `for follower in followers:` in `_copy_fill_to_followers()` → each follower waited for previous HTTP round-trip. 5 followers × 3-5s = 15-25s per fill. | `b26dc75` | Minutes |
+| 33 | Feb 23, 2026 | Auto-copy close+re-enter on position add — follower gets closed then reopened | Position sync `else` branch always closed follower then re-entered target qty. Leader Long 1→Long 2 = follower sells 1, buys 2 instead of just buying 1 more. | `b97eb10` | Minutes |
 
-**Pattern:** 30 disasters in ~3 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, or (e) auth/session assumptions for internal requests.
+**Pattern:** 33 disasters in ~3 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, or (e) auth/session assumptions for internal requests.
 
 **Near-miss prevented:** Webhook + copy trader pipeline overlap (4 follower accounts had both active webhook traders AND copy follower links). Would have caused double-fills. Fixed proactively with pipeline separation (`e46c4a4`) before any incident occurred.
 
