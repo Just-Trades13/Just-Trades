@@ -25,6 +25,12 @@
 - Copies to followers via HTTP POST to `/api/manual-trade` with admin key
 - Reload signal: toggling auto-mode triggers reconnect within 5 seconds
 
+### Pipeline Separation — Webhook vs Copy Trader (Feb 23, 2026)
+- Both propagation paths skip followers that have their own active webhook traders
+- `get_subaccounts_with_active_traders()` in `copy_trader_models.py` — one DB query per propagation event
+- Prevents double-fills when a follower account receives trades from BOTH pipelines
+- Commit: `e46c4a4`
+
 ### Current Architecture: HTTP Self-POST with Admin Key
 ```
 CURRENT (working):
@@ -205,6 +211,7 @@ Both paths call the **same** `copy_to_followers()` function. The future version 
 | `get_leaders_for_user(user_id)` | Returns all leaders for a user |
 | `get_leader_for_account(user_id, account_id, subaccount_id)` | Reverse lookup — find leader by account |
 | `log_copy_trade(...)` | Writes to `copy_trade_log` table |
+| `get_subaccounts_with_active_traders(subaccount_ids)` | Returns set of subaccount_ids that have active webhook traders — pipeline separation |
 | `get_copy_trade_history(leader_id)` | Reads copy log for UI display |
 
 ### Frontend (`templates/manual_copy_trader.html`)
@@ -505,6 +512,7 @@ ALTER TABLE follower_accounts ADD COLUMN lockout_reason TEXT;
 | 10 | 4PM CT replay | Re-executes entire day's trades on followers | Fill ID dedup set + timestamp filtering | existing |
 | 11 | Auto-mode toggle doesn't reconnect | New leaders not picked up until existing connection drops | Reload event with 5s timeout on `asyncio.wait` | `4f854c5` |
 | 12 | `railway run` tests local, not container | Package version mismatches, wrong Python version | Use `railway logs` for production verification | lesson |
+| 13 | Follower also has webhook trader | Double-fills — one from copy, one from webhook pipeline | `get_subaccounts_with_active_traders()` skips overlapping followers | `e46c4a4` |
 
 ---
 

@@ -577,6 +577,7 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Pro Copy Trader: Token refresh truthy dict fix + 85-min expiry | `b7529f9` | Feb 23 | **Confirmed working** |
 | Pro Copy Trader: Parallel follower propagation (ThreadPoolExecutor) | `22f32be` | Feb 23 | **Confirmed working** |
 | Pro Copy Trader: Cross-leader loop prevention (time-based dedup) | `e6fe62d` | Feb 23 | **CRITICAL FIX** |
+| Pro Copy Trader: Pipeline separation (skip followers with webhook traders) | `e46c4a4` | Feb 23 | Working |
 
 ---
 
@@ -1531,6 +1532,8 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 | 28 | Feb 23, 2026 | **Copy trader: 46 FILLS PER ACCOUNT — infinite cross-leader loop** | Tradovate WebSocket fill events do NOT include `clOrdId` → `JT_COPY_` prefix check never fires → cross-linked leaders (A↔B both leader AND follower) cascade fills infinitely. 3 NQ signals → 46 fills each on 3 demo accounts. | `e6fe62d` | Minutes |
 
 **Pattern:** 28 disasters in ~2.5 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, or (e) auth/session assumptions for internal requests.
+
+**Near-miss prevented:** Webhook + copy trader pipeline overlap (4 follower accounts had both active webhook traders AND copy follower links). Would have caused double-fills. Fixed proactively with pipeline separation (`e46c4a4`) before any incident occurred.
 
 ---
 
