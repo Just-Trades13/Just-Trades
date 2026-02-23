@@ -71,6 +71,35 @@ def _get_tick_size(symbol: str) -> float:
     return TICK_SIZES.get(root, 0.25)
 
 
+def _is_futures_market_likely_open() -> bool:
+    """Check if US futures markets are likely open (for dead-subscription detection).
+
+    US futures: Sunday 6 PM ET → Friday 5 PM ET, with daily 5-6 PM ET break.
+    Returns True during trading hours, False during known closed periods.
+    Used to avoid unnecessary reconnects when 0 data is expected.
+    """
+    from datetime import timedelta as _td
+    utc_now = datetime.now(timezone.utc)
+    # EST offset (close enough — DST shifts by 1hr, won't affect logic)
+    et_now = utc_now + _td(hours=-5)
+    weekday = et_now.weekday()  # 0=Mon, 6=Sun
+    hour = et_now.hour
+
+    # Saturday: always closed
+    if weekday == 5:
+        return False
+    # Sunday before 6 PM ET: closed
+    if weekday == 6 and hour < 18:
+        return False
+    # Friday after 5 PM ET: closed
+    if weekday == 4 and hour >= 17:
+        return False
+    # Daily maintenance break: 5-6 PM ET (Mon-Thu)
+    if weekday in (0, 1, 2, 3) and 17 <= hour < 18:
+        return False
+    return True
+
+
 # Global state
 _monitor_running = False
 _monitor_thread = None
@@ -248,11 +277,14 @@ class AccountGroupConnection:
 
                     if self._data_msg_count == 0:
                         self._zero_data_windows += 1
-                        if self._zero_data_windows >= 3:
+                        if self._zero_data_windows >= 3 and _is_futures_market_likely_open():
                             logger.warning(f"[{self.token_key}] No data for "
                                            f"{self._zero_data_windows * 30}s — forcing reconnect")
                             self.connected = False
                             break
+                        elif self._zero_data_windows == 3:
+                            # Market closed — 0 data is expected, stay connected
+                            logger.info(f"[{self.token_key}] 0 data but market closed — staying connected")
                     else:
                         self._zero_data_windows = 0
 

@@ -74,6 +74,30 @@ def _get_tick_size(symbol: str) -> float:
     return TICK_SIZES.get(root, 0.25)
 
 
+def _is_futures_market_likely_open() -> bool:
+    """Check if US futures markets are likely open (for dead-subscription detection).
+
+    US futures: Sunday 6 PM ET → Friday 5 PM ET, with daily 5-6 PM ET break.
+    Returns True during trading hours, False during known closed periods.
+    Used to avoid unnecessary reconnects when 0 data is expected.
+    """
+    from datetime import timedelta as _td
+    utc_now = datetime.now(timezone.utc)
+    et_now = utc_now + _td(hours=-5)
+    weekday = et_now.weekday()  # 0=Mon, 6=Sun
+    hour = et_now.hour
+
+    if weekday == 5:  # Saturday: always closed
+        return False
+    if weekday == 6 and hour < 18:  # Sunday before 6 PM ET
+        return False
+    if weekday == 4 and hour >= 17:  # Friday after 5 PM ET
+        return False
+    if weekday in (0, 1, 2, 3) and 17 <= hour < 18:  # Daily break 5-6 PM ET
+        return False
+    return True
+
+
 # Global state
 _monitor_running = False
 _monitor_thread = None
@@ -291,11 +315,13 @@ class LeaderConnection:
                     # Dead-subscription detection: 3 consecutive windows with 0 data msgs = 90s silence
                     if self._data_msg_count == 0:
                         self._zero_data_windows += 1
-                        if self._zero_data_windows >= 3:
+                        if self._zero_data_windows >= 3 and _is_futures_market_likely_open():
                             logger.warning(f"Leader {self.leader_id} — no data msgs for "
                                            f"{self._zero_data_windows * 30}s, forcing reconnect")
                             self.connected = False
                             break
+                        elif self._zero_data_windows == 3:
+                            logger.info(f"Leader {self.leader_id} — 0 data but market closed — staying connected")
                     else:
                         self._zero_data_windows = 0
 
