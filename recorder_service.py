@@ -2320,6 +2320,26 @@ def execute_trade_simple(
                             logger.warning(f"⚠️ [{acct_name}] BROKER/DB MISMATCH: Broker has NO position but qty was {adjusted_quantity} (likely DCA-sized from stale DB). Overriding to {correct_adjusted} (initial_position_size={trader_initial} × {account_multiplier}x)")
                             adjusted_quantity = correct_adjusted
 
+                    # POSITION-BASED MAX CONTRACTS CAP (Feb 23, 2026)
+                    # If adding to a same-direction position, cap so total doesn't exceed max_contracts.
+                    # existing_position_qty is from broker (already fetched above at line 2296).
+                    if max_contracts > 0 and existing_position_qty > 0 and has_existing_position:
+                        is_same_direction = (
+                            (existing_position_side == 'LONG' and action == 'BUY') or
+                            (existing_position_side == 'SHORT' and action == 'SELL')
+                        )
+                        if is_same_direction:
+                            room = max_contracts - existing_position_qty
+                            if room <= 0:
+                                logger.warning(f"🚫 [{acct_name}] POSITION MAX CONTRACTS BLOCKED: "
+                                               f"already at {existing_position_qty}/{max_contracts}")
+                                return {'success': False, 'error': f'Max contracts reached ({existing_position_qty}/{max_contracts})',
+                                        'acct_name': acct_name}
+                            if adjusted_quantity > room:
+                                logger.info(f"📊 [{acct_name}] Position cap: {adjusted_quantity} → {room} "
+                                            f"(existing {existing_position_qty} + {room} = {max_contracts} max)")
+                                adjusted_quantity = room
+
                     # CRITICAL POSITION CHECKS - UNIVERSAL DCA LOGIC (Jan 27, 2026)
                     # Same direction = ALWAYS add to position (DCA)
                     # Opposite direction = CLOSE position (for strategy exits) OR BLOCK (if avg_down_enabled)
