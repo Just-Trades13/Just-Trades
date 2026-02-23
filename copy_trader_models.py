@@ -177,6 +177,57 @@ def init_copy_trader_tables():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_trade_log_leader ON copy_trade_log(leader_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_trade_log_created ON copy_trade_log(created_at)')
 
+        # --- mirrored_orders table (order mirroring) ---
+        if db_type == 'postgresql':
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS mirrored_orders (
+                    id SERIAL PRIMARY KEY,
+                    leader_id INTEGER NOT NULL,
+                    follower_id INTEGER NOT NULL,
+                    leader_order_id INTEGER NOT NULL,
+                    follower_order_id INTEGER,
+                    symbol VARCHAR(50) NOT NULL,
+                    action VARCHAR(10) NOT NULL,
+                    order_type VARCHAR(20) NOT NULL,
+                    leader_price REAL,
+                    follower_price REAL,
+                    stop_price REAL,
+                    leader_qty INTEGER NOT NULL,
+                    follower_qty INTEGER NOT NULL,
+                    time_in_force VARCHAR(10) DEFAULT 'Day',
+                    status VARCHAR(20) DEFAULT 'pending',
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS mirrored_orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    leader_id INTEGER NOT NULL,
+                    follower_id INTEGER NOT NULL,
+                    leader_order_id INTEGER NOT NULL,
+                    follower_order_id INTEGER,
+                    symbol TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    order_type TEXT NOT NULL,
+                    leader_price REAL,
+                    follower_price REAL,
+                    stop_price REAL,
+                    leader_qty INTEGER NOT NULL,
+                    follower_qty INTEGER NOT NULL,
+                    time_in_force TEXT DEFAULT 'Day',
+                    status TEXT DEFAULT 'pending',
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_mirrored_orders_leader_order ON mirrored_orders(leader_order_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_mirrored_orders_follower ON mirrored_orders(follower_id, status)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_mirrored_orders_leader ON mirrored_orders(leader_id, status)')
+
         conn.commit()
         logger.info("Copy trader tables initialized successfully")
         return True
@@ -723,6 +774,210 @@ def init_copy_trader_system():
 
     logger.info("Copy trader system initialized")
     return True
+
+
+# ============================================================================
+# MIRRORED ORDERS CRUD (Order Mirroring)
+# ============================================================================
+def create_mirrored_order(leader_id: int, follower_id: int, leader_order_id: int,
+                          symbol: str, action: str, order_type: str,
+                          leader_qty: int, follower_qty: int,
+                          leader_price: float = None, stop_price: float = None,
+                          time_in_force: str = 'Day') -> Optional[int]:
+    """Create a mirrored order record. Returns mirror ID or None."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+
+    try:
+        if db_type == 'postgresql':
+            cursor.execute(f'''
+                INSERT INTO mirrored_orders
+                (leader_id, follower_id, leader_order_id, symbol, action, order_type,
+                 leader_qty, follower_qty, leader_price, stop_price, time_in_force, status)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending')
+                RETURNING id
+            ''', (leader_id, follower_id, leader_order_id, symbol, action, order_type,
+                  leader_qty, follower_qty, leader_price, stop_price, time_in_force))
+            result = cursor.fetchone()
+            mirror_id = result['id'] if result else None
+        else:
+            cursor.execute(f'''
+                INSERT INTO mirrored_orders
+                (leader_id, follower_id, leader_order_id, symbol, action, order_type,
+                 leader_qty, follower_qty, leader_price, stop_price, time_in_force, status)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending')
+            ''', (leader_id, follower_id, leader_order_id, symbol, action, order_type,
+                  leader_qty, follower_qty, leader_price, stop_price, time_in_force))
+            mirror_id = cursor.lastrowid
+
+        conn.commit()
+        logger.info(f"Created mirrored order: leader_order={leader_order_id}, follower={follower_id}, {action} {follower_qty} {symbol}")
+        return mirror_id
+    except Exception as e:
+        logger.error(f"Failed to create mirrored order: {e}")
+        conn.rollback()
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_mirrored_order(mirror_id: int, status: str,
+                          follower_order_id: int = None,
+                          follower_price: float = None,
+                          error_message: str = None) -> bool:
+    """Update a mirrored order record (status, follower_order_id, error)."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+
+    try:
+        now_expr = 'NOW()' if db_type == 'postgresql' else "datetime('now')"
+        cursor.execute(f'''
+            UPDATE mirrored_orders
+            SET status = {ph},
+                follower_order_id = COALESCE({ph}, follower_order_id),
+                follower_price = COALESCE({ph}, follower_price),
+                error_message = COALESCE({ph}, error_message),
+                updated_at = {now_expr}
+            WHERE id = {ph}
+        ''', (status, follower_order_id, follower_price, error_message, mirror_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Failed to update mirrored order {mirror_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_mirrored_orders_by_leader_order(leader_order_id: int) -> List[Dict]:
+    """Get all mirrored orders for a leader order, with follower account info."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+
+    try:
+        cursor.execute(f'''
+            SELECT mo.*, fa.account_id as follower_account_id,
+                   fa.subaccount_id as follower_subaccount_id,
+                   fa.multiplier as follower_multiplier
+            FROM mirrored_orders mo
+            JOIN follower_accounts fa ON mo.follower_id = fa.id
+            WHERE mo.leader_order_id = {ph} AND mo.status = 'working'
+        ''', (leader_order_id,))
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_active_mirror_for_follower(follower_id: int, symbol: str, action: str) -> Optional[Dict]:
+    """Get an active (working) mirrored order for a follower on a symbol+side.
+    Used by fill-path dedup to skip market orders when a limit order exists."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+
+    try:
+        cursor.execute(f'''
+            SELECT * FROM mirrored_orders
+            WHERE follower_id = {ph} AND symbol = {ph} AND action = {ph} AND status = 'working'
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (follower_id, symbol, action))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def cancel_all_mirrors_for_leader(leader_id: int) -> int:
+    """Bulk cancel all working mirrors for a leader (used on disconnect cleanup).
+    Returns count of cancelled mirrors."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+
+    try:
+        now_expr = 'NOW()' if db_type == 'postgresql' else "datetime('now')"
+        cursor.execute(f'''
+            UPDATE mirrored_orders
+            SET status = 'cancelled', updated_at = {now_expr}
+            WHERE leader_id = {ph} AND status = 'working'
+        ''', (leader_id,))
+        count = cursor.rowcount
+        conn.commit()
+        if count > 0:
+            logger.info(f"Cancelled {count} working mirrors for leader {leader_id} (disconnect cleanup)")
+        return count
+    except Exception as e:
+        logger.error(f"Failed to cancel mirrors for leader {leader_id}: {e}")
+        conn.rollback()
+        return 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_working_mirrors_for_leader(leader_id: int) -> List[Dict]:
+    """Get all working mirrored orders for a leader (for reconciliation)."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+
+    try:
+        cursor.execute(f'''
+            SELECT mo.*, fa.account_id as follower_account_id,
+                   fa.subaccount_id as follower_subaccount_id
+            FROM mirrored_orders mo
+            JOIN follower_accounts fa ON mo.follower_id = fa.id
+            WHERE mo.leader_id = {ph} AND mo.status = 'working'
+            ORDER BY mo.created_at
+        ''', (leader_id,))
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def cleanup_stale_mirrors(max_age_hours: int = 24) -> int:
+    """Mark mirrors older than max_age_hours with status='working' as 'expired'.
+    Called periodically for housekeeping. Returns count of expired mirrors."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        if db_type == 'postgresql':
+            cursor.execute(f'''
+                UPDATE mirrored_orders
+                SET status = 'expired', updated_at = NOW()
+                WHERE status = 'working'
+                AND created_at < NOW() - INTERVAL '{max_age_hours} hours'
+            ''')
+        else:
+            cursor.execute(f'''
+                UPDATE mirrored_orders
+                SET status = 'expired', updated_at = datetime('now')
+                WHERE status = 'working'
+                AND created_at < datetime('now', '-{max_age_hours} hours')
+            ''')
+        count = cursor.rowcount
+        conn.commit()
+        if count > 0:
+            logger.info(f"Expired {count} stale mirrored orders (>{max_age_hours}h old)")
+        return count
+    except Exception as e:
+        logger.error(f"Failed to cleanup stale mirrors: {e}")
+        conn.rollback()
+        return 0
+    finally:
+        cursor.close()
+        conn.close()
 
 
 # ============================================================================
