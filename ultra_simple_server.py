@@ -23997,23 +23997,17 @@ def get_open_trades():
         return jsonify({'error': str(e)}), 500
 
 
-def _propagate_manual_trade_to_followers(user_id, account_id, subaccount_id,
-                                          symbol, side, quantity, risk_settings):
-    """Fire-and-forget: copy a manual trade to all enabled followers."""
+def _propagate_manual_trade_to_followers(leader_id, symbol, side, quantity, risk_settings):
+    """Fire-and-forget: copy a manual trade to all enabled followers of a leader."""
     try:
-        from copy_trader_models import get_leader_for_account, get_followers_for_leader, log_copy_trade
+        from copy_trader_models import get_followers_for_leader, log_copy_trade
         import requests as _requests
         import uuid
 
-        logger.info(f"Copy trader: checking leader for user_id={user_id} account_id={account_id} subaccount_id={subaccount_id}")
-        leader = get_leader_for_account(user_id, account_id, subaccount_id)
-        if not leader:
-            logger.info(f"Copy trader: account {account_id}:{subaccount_id} is not a leader — skipping propagation")
-            return
-
-        leader_id = leader['id']
+        logger.info(f"Copy trader: propagating from leader_id={leader_id}: {side} {quantity} {symbol}")
         followers = get_followers_for_leader(leader_id)
         if not followers:
+            logger.info(f"Copy trader: leader {leader_id} has no enabled followers — skipping")
             return
 
         platform_url = os.environ.get('PLATFORM_URL') or f"http://127.0.0.1:{os.environ.get('PORT', '5000')}"
@@ -24079,6 +24073,7 @@ def manual_trade():
         quantity = int(data.get('quantity', 1))
         risk_settings = data.get('risk') or {}
         cl_ord_id = data.get('cl_ord_id')  # Copy trader loop prevention (Step 6)
+        leader_id = data.get('leader_id')  # Copy trader — frontend sends this from copy trader page
 
         # DEBUG: Log received risk settings
         logger.info(f"📋 Manual trade request: symbol={symbol}, side={side}, qty={quantity}")
@@ -24360,11 +24355,11 @@ def manual_trade():
 
                 if result.get('success'):
                     # Propagate to followers if this is a leader account (fire-and-forget)
-                    if not cl_ord_id or not cl_ord_id.startswith('JT_COPY_'):
+                    if leader_id and (not cl_ord_id or not cl_ord_id.startswith('JT_COPY_')):
+                        logger.info(f"Copy trader: triggering propagation for leader {leader_id}")
                         threading.Thread(
                             target=_propagate_manual_trade_to_followers,
-                            args=(session.get('user_id'), account_id, subaccount_id,
-                                  symbol, side, quantity, risk_settings),
+                            args=(leader_id, symbol, side, quantity, risk_settings),
                             daemon=True
                         ).start()
                     return jsonify(result)
@@ -24785,11 +24780,11 @@ def manual_trade():
             logger.error(f"Error emitting WebSocket events: {ws_error}")
 
         # Propagate to followers if this is a leader account (fire-and-forget)
-        if not cl_ord_id or not cl_ord_id.startswith('JT_COPY_'):
+        if leader_id and (not cl_ord_id or not cl_ord_id.startswith('JT_COPY_')):
+            logger.info(f"Copy trader: triggering propagation for leader {leader_id}")
             threading.Thread(
                 target=_propagate_manual_trade_to_followers,
-                args=(session.get('user_id'), account_id, subaccount_id,
-                      symbol, side, quantity, risk_settings),
+                args=(leader_id, symbol, side, quantity, risk_settings),
                 daemon=True
             ).start()
 
