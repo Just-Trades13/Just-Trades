@@ -1,0 +1,1083 @@
+/* ============================================================
+   JUST TRADES — MOBILE RESPONSIVE OVERRIDES
+   ============================================================
+   Additive-only: layers on top of existing inline styles.
+   Three breakpoints: 1024px (tablet), 768px (phone), 480px (small phone).
+   Loaded via <link> in layout.html (cascades to all inner pages)
+   and standalone pages (login, register, pricing).
+   ============================================================ */
+
+/* ────────────────────────────────────────────────────────────
+   GLOBAL: prevent horizontal overflow everywhere
+   ──────────────────────────────────────────────────────────── */
+html, body {
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+}
+
+/* ============================================================
+   TABLET — max-width: 1024px
+   ============================================================ */
+@media (max-width: 1024px) {
+
+    /* --- Dashboard: hero title row stacks --- */
+    .hero-title-row {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    .hero-text-content {
+        flex: 1 1 100%;
+        max-width: 100%;
+    }
+
+    /* --- Dashboard: ticker bar tighter --- */
+    .hero-ticker-full {
+        padding: 0.75rem 1rem;
+        gap: 1rem;
+    }
+
+    /* --- Control center: positions grid smaller min --- */
+    .positions-grid {
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+
+    /* --- Copy trader: follower card stacks on tablet --- */
+    .follower-card {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+    }
+
+    /* --- Quant screener: stock modal goes wider on tablet --- */
+    .stock-modal-expanded {
+        max-width: 95vw;
+    }
+}
+
+/* ============================================================
+   PHONE — max-width: 768px
+   ============================================================ */
+@media (max-width: 768px) {
+
+    /* ── LAYOUT (layout.html) ─────────────────────────────── */
+
+    /* Smoother sidebar overlay tap-to-close */
+    .sidebar-overlay {
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Top actions: hide time chip on phones to save space */
+    .time-chip {
+        display: none;
+    }
+
+    /* ── DASHBOARD ─────────────────────────────────────────── */
+
+    /* Hero title: scale down */
+    .hero-title {
+        font-size: 1.5rem;
+        line-height: 1.3;
+    }
+
+    /* Live prices bar: smaller items, allow scroll */
+    .live-prices-bar {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x proximity;
+        padding-bottom: 6px;
+    }
+    .live-price-item {
+        min-width: 120px;
+        flex-shrink: 0;
+        scroll-snap-align: start;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.6rem;
+    }
+    .price-value {
+        font-size: 0.95rem;
+    }
+
+    /* Strategy selector: remove min-width */
+    .strategy-selector {
+        min-width: 0;
+        width: 100%;
+        font-size: 0.85rem;
+    }
+
+    /* Paper trading controls: stack vertically */
+    .paper-trading-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+
+    /* Analytics grid: 2 columns on phone */
+    .analytics-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+    .analytics-card {
+        padding: 0.75rem;
+    }
+    .analytics-value {
+        font-size: 1.1rem;
+    }
+    .analytics-label {
+        font-size: 0.65rem;
+    }
+
+    /* Calendar: keep 7 cols but shrink cells */
+    .calendar-days {
+        gap: 3px;
+    }
+    .calendar-day {
+        min-height: 44px;
+        padding: 4px 2px;
+        font-size: 0.7rem;
+    }
+    .calendar-weekdays {
+        font-size: 0.65rem;
+    }
+    #calendarMonthYear {
+        min-width: 0;
+        font-size: 0.85rem;
+    }
+
+    /* Position cards: single column */
+    .positions-grid {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+    .position-card {
+        padding: 0.85rem;
+    }
+    .position-details {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+
+    /* Recorder cards: 2 col on phone */
+    .recorder-cards {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 0.75rem;
+    }
+
+    /* Heatmap: 3 cols on phone */
+    .heatmap-grid {
+        grid-template-columns: repeat(3, 1fr);
+        height: 320px;
+    }
+
+    /* PnL display */
+    .pnl-amount {
+        font-size: 1.3rem;
+    }
+    .pnl-display {
+        padding: 0.5rem;
+    }
+
+    /* Market intel grid */
+    .market-intel-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    /* Paper trading grid */
+    .paper-trading-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    /* Premium content grid */
+    .premium-content-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Trade table wrapper: ensure horizontal scroll */
+    .trade-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .trade-table-wrapper table,
+    .positions-table,
+    .history-table {
+        min-width: 600px;
+        font-size: 0.78rem;
+    }
+    .positions-table th,
+    .positions-table td,
+    .history-table th,
+    .history-table td {
+        padding: 0.6rem 0.5rem;
+    }
+
+    /* Dashboard modal */
+    .dashboard-modal {
+        max-width: 95vw;
+        padding: 1.5rem;
+    }
+
+    /* ── TRADERS PAGE ──────────────────────────────────────── */
+
+    /* Builder header stacks */
+    .builder-header {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 1.25rem;
+        gap: 1rem;
+    }
+    .header-actions {
+        justify-content: flex-start;
+    }
+
+    /* Form grids: single column */
+    .form-two {
+        grid-template-columns: 1fr;
+    }
+
+    /* TP/SL grid: single column */
+    .tp-sl-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* TP row: stack inputs */
+    .tp-row {
+        grid-template-columns: auto 1fr auto;
+        gap: 0.5rem;
+    }
+
+    /* Details grid */
+    .details-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Time filters */
+    .time-filters {
+        grid-template-columns: 1fr;
+    }
+
+    /* Strategy card actions */
+    .strategy-actions {
+        flex-wrap: wrap;
+    }
+
+    /* Strategy header stacks on narrow */
+    .strategy-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    /* Strategy meta wraps */
+    .strategy-meta {
+        flex-wrap: wrap;
+    }
+
+    /* Tables: horizontal scroll wrapper */
+    .trader-table,
+    .accounts-table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Empty state card: less padding */
+    .empty-state-card {
+        padding: 2rem 1rem;
+    }
+
+    /* ── COPY TRADER PAGE ──────────────────────────────────── */
+
+    /* Trade setup grid: single column (reinforces 900px rule) */
+    .trade-setup-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Setup/risk cards */
+    .setup-card,
+    .risk-card,
+    .pro-copy-card {
+        padding: 0.85rem;
+    }
+
+    /* PnL summary */
+    .pnl-summary {
+        grid-template-columns: 1fr;
+    }
+
+    /* Copy trade log */
+    .copy-trade-log {
+        max-height: 200px;
+        font-size: 0.78rem;
+    }
+
+    /* Follower card: stack */
+    .follower-card {
+        grid-template-columns: 1fr;
+        gap: 0.4rem;
+        padding: 0.65rem 0.85rem;
+    }
+
+    /* Follower meta wraps */
+    .follower-meta {
+        flex-wrap: wrap;
+    }
+
+    /* ── CONTROL CENTER ────────────────────────────────────── */
+
+    /* Live panels: single column (reinforces 1100px rule) */
+    .live-panels {
+        grid-template-columns: 1fr;
+    }
+
+    /* Table font size reduction */
+    .control-center table {
+        font-size: 0.78rem;
+    }
+    .control-center thead th {
+        padding: 0.65rem 0.75rem;
+        font-size: 0.68rem;
+    }
+    .control-center tbody td {
+        padding: 0.7rem 0.75rem;
+    }
+
+    /* Panel actions: wrap nicely */
+    .panel-actions {
+        gap: 0.35rem;
+    }
+    .panel-actions .btn {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.75rem;
+    }
+
+    /* Log entries: tighter */
+    .log-entry {
+        grid-template-columns: auto 1fr;
+        font-size: 0.75rem;
+        padding: 0.5rem 0.65rem;
+    }
+
+    /* Autotrader logs: shorter */
+    .autotrader-logs {
+        max-height: 400px;
+    }
+
+    /* ── RECORDERS PAGE ────────────────────────────────────── */
+
+    /* Builder header */
+    .recorder-builder .builder-header {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 1.25rem;
+    }
+
+    /* Webhook card */
+    .webhook-card {
+        padding: 1.25rem;
+    }
+
+    /* Copy row: stack */
+    .copy-row {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .copy-row input {
+        width: 100%;
+    }
+
+    /* ── QUANT SCREENER ────────────────────────────────────── */
+
+    /* Search input wrapper */
+    .search-input-wrapper {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    /* Results table wrapper */
+    .results-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .results-table {
+        min-width: 800px;
+        font-size: 0.75rem;
+    }
+    .results-table th {
+        padding: 0.6rem 0.4rem;
+        font-size: 0.65rem;
+    }
+    .results-table td {
+        padding: 0.6rem 0.4rem;
+    }
+
+    /* Stock cards: single column */
+    .results-cards {
+        grid-template-columns: 1fr;
+    }
+
+    /* Factor grades grid: 3 cols */
+    .factor-grades-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* Stock modal: full width */
+    .stock-modal {
+        max-width: 95vw;
+        margin: 1rem;
+    }
+    .stock-modal-expanded {
+        max-width: 98vw;
+    }
+
+    /* Factor tabs: scroll horizontally */
+    .factor-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+    }
+    .factor-tab {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* Metrics table: scroll */
+    .metrics-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .metrics-table {
+        min-width: 500px;
+        font-size: 0.78rem;
+    }
+
+    /* Movers grid: 2 cols */
+    .movers-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Market context: single column */
+    .market-context-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Politician trades: stack */
+    .politician-trade-item {
+        grid-template-columns: 1fr;
+        gap: 0.35rem;
+    }
+    .trade-details {
+        text-align: left;
+    }
+
+    /* Watchlist: full width input */
+    .add-ticker-wrapper {
+        flex-direction: column;
+        max-width: 100%;
+    }
+
+    /* Run screen container: stack */
+    .run-screen-container {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    /* Quick screen buttons: smaller */
+    .quick-screens {
+        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    }
+    .quick-screen-btn {
+        padding: 0.65rem 0.75rem;
+    }
+    .qs-icon {
+        font-size: 1.2rem;
+    }
+    .qs-label {
+        font-size: 0.65rem;
+    }
+
+    /* Digest tabs: wrap */
+    .digest-tabs {
+        gap: 0.35rem;
+    }
+    .digest-tab {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.78rem;
+    }
+
+    /* News items: tighter */
+    .news-list {
+        max-height: 400px;
+    }
+    .news-headline {
+        font-size: 0.88rem;
+    }
+    .news-summary {
+        font-size: 0.8rem;
+    }
+
+    /* ── PRICING PAGE ──────────────────────────────────────── */
+    /* (Pricing already has solid breakpoints at 1200/900/600.
+        These refine the 768px gap.) */
+
+    .pricing-grid.platform,
+    .pricing-grid.discord {
+        grid-template-columns: 1fr;
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .pricing-card {
+        padding: 28px;
+    }
+
+    /* Pricing hero */
+    .hero h1 {
+        font-size: 2.4rem;
+    }
+
+    /* Stats bar: 2 cols */
+    .stats-container {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 24px;
+    }
+    .stat-number {
+        font-size: 2.4rem;
+    }
+
+    /* Steps: single column (reinforces 900px rule) */
+    .step {
+        grid-template-columns: 1fr;
+        text-align: center;
+        gap: 16px;
+    }
+    .step-content,
+    .step:nth-child(even) .step-content {
+        text-align: center;
+        order: 2;
+    }
+    .step-number {
+        order: 1;
+        margin: 0 auto;
+    }
+    .step-visual {
+        order: 3;
+    }
+
+    /* Features grid: single column */
+    .features-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    .feature-card {
+        padding: 28px 24px;
+    }
+
+    /* Testimonials grid: single column */
+    .testimonials-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    /* Footer: single column */
+    .footer-content {
+        grid-template-columns: 1fr;
+        text-align: center;
+        gap: 32px;
+    }
+    .footer-social {
+        justify-content: center;
+    }
+    .footer-bottom {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    /* Section tabs: vertical on phone */
+    .section-tabs {
+        flex-direction: column;
+        align-items: center;
+    }
+    .section-tab {
+        width: 100%;
+        max-width: 280px;
+    }
+
+    /* ── LOGIN PAGE ────────────────────────────────────────── */
+
+    .login-card {
+        padding: 28px 20px;
+    }
+    .logo-section img {
+        width: 64px;
+        height: 64px;
+    }
+    .form-group input {
+        padding: 14px 14px 14px 44px;
+        font-size: 0.9rem;
+    }
+    .btn-login {
+        padding: 14px;
+    }
+    .form-options {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    /* ── REGISTER PAGE ─────────────────────────────────────── */
+
+    .register-card {
+        padding: 28px 20px;
+    }
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+    .btn-register {
+        padding: 14px;
+    }
+
+    /* ── GLOBAL TOUCH TARGETS ──────────────────────────────── */
+
+    /* Ensure all interactive elements meet 44px touch target */
+    .btn,
+    .btn-small,
+    .action-btn,
+    .icon-btn,
+    .switch {
+        min-height: 44px;
+        min-width: 44px;
+    }
+    .btn-small {
+        min-height: 36px;
+        min-width: 36px;
+    }
+
+    /* Inputs and selects: comfortable tap size */
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    input[type="tel"],
+    select,
+    textarea {
+        font-size: 16px; /* Prevents iOS zoom on focus */
+        min-height: 44px;
+    }
+
+    /* ── GLOBAL TYPOGRAPHY SCALING ─────────────────────────── */
+
+    /* Section headers across all pages */
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.25rem; }
+    h3 { font-size: 1rem; }
+
+    /* Upgrade overlay card */
+    .upgrade-card {
+        max-width: 95vw;
+        padding: 24px;
+    }
+    .upgrade-icon {
+        width: 60px;
+        height: 60px;
+    }
+    .upgrade-buttons {
+        flex-direction: column;
+    }
+    .upgrade-buttons .btn-upgrade,
+    .upgrade-buttons .btn-back {
+        width: 100%;
+    }
+}
+
+/* ============================================================
+   SMALL PHONE — max-width: 480px
+   ============================================================ */
+@media (max-width: 480px) {
+
+    /* ── LAYOUT ────────────────────────────────────────────── */
+
+    /* Sidebar: slightly narrower on tiny phones */
+    .sidebar {
+        width: 240px;
+    }
+
+    /* Top navbar: compact */
+    .top-navbar {
+        padding: 8px 10px;
+    }
+    .breadcrumb-label {
+        font-size: 0.8rem;
+    }
+    .mobile-menu-btn {
+        width: 38px;
+        height: 38px;
+        margin-right: 8px;
+    }
+
+    /* ── DASHBOARD ─────────────────────────────────────────── */
+
+    /* Analytics grid: still 2 cols but tighter */
+    .analytics-grid {
+        gap: 0.5rem;
+    }
+    .analytics-card {
+        padding: 0.6rem;
+    }
+    .analytics-value {
+        font-size: 0.95rem;
+    }
+
+    /* Live prices: even smaller */
+    .live-price-item {
+        min-width: 100px;
+        font-size: 0.78rem;
+        padding: 0.3rem 0.5rem;
+    }
+    .price-value {
+        font-size: 0.85rem;
+    }
+
+    /* Calendar: minimal */
+    .calendar-day {
+        min-height: 36px;
+        padding: 3px 1px;
+        font-size: 0.62rem;
+    }
+    .calendar-weekdays {
+        font-size: 0.58rem;
+    }
+
+    /* Hero title */
+    .hero-title {
+        font-size: 1.25rem;
+    }
+
+    /* Ticker items: compact */
+    .ticker-item {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.6rem;
+    }
+
+    /* Equity chart container: shorter */
+    .equity-curve-container {
+        height: 240px;
+    }
+
+    /* ── TRADERS & RECORDERS ───────────────────────────────── */
+
+    /* Card panels: tighter padding */
+    .card-panel header {
+        padding: 0.85rem 1rem;
+    }
+
+    /* Buttons: compact */
+    .btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.8rem;
+    }
+
+    /* Badges & chips */
+    .status-badge,
+    .chip,
+    .tag {
+        font-size: 0.65rem;
+        padding: 0.2rem 0.5rem;
+    }
+
+    /* Alert blocks */
+    .alert-block {
+        padding: 0.75rem 1rem;
+        font-size: 0.82rem;
+    }
+
+    /* ── CONTROL CENTER ────────────────────────────────────── */
+
+    /* Table even more compact */
+    .control-center thead th {
+        padding: 0.5rem;
+        font-size: 0.62rem;
+    }
+    .control-center tbody td {
+        padding: 0.5rem;
+        font-size: 0.72rem;
+    }
+
+    /* Panel actions: full width buttons */
+    .panel-actions {
+        width: 100%;
+        justify-content: center;
+    }
+    .panel-actions .btn {
+        flex: 1;
+        justify-content: center;
+        font-size: 0.7rem;
+    }
+
+    /* ── COPY TRADER ───────────────────────────────────────── */
+
+    /* Multiplier input: wider for fat fingers */
+    .follower-multiplier input {
+        width: 70px;
+        padding: 0.4rem 0.5rem;
+    }
+
+    /* Toggle slider: slightly bigger touch target */
+    .toggle-slider {
+        width: 52px;
+        height: 28px;
+    }
+
+    /* ── QUANT SCREENER ────────────────────────────────────── */
+
+    /* Quick screens: 2 cols */
+    .quick-screens {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Stock card: tighter */
+    .stock-card {
+        padding: 0.85rem 1rem;
+        min-height: 140px;
+    }
+
+    /* Modal: almost full screen */
+    .stock-modal {
+        max-width: 100vw;
+        max-height: 95vh;
+        margin: 0.5rem;
+        border-radius: 16px;
+    }
+
+    /* Factor tabs: smaller */
+    .factor-tab {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.78rem;
+    }
+
+    /* Movers grid: single column */
+    .movers-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ── PRICING PAGE ──────────────────────────────────────── */
+
+    .hero {
+        padding: 80px 16px 50px;
+    }
+    .hero h1 {
+        font-size: 1.8rem;
+    }
+    .hero p {
+        font-size: 0.95rem;
+    }
+    .btn-primary-large,
+    .btn-secondary-large {
+        padding: 12px 24px;
+        font-size: 0.85rem;
+    }
+
+    /* Pricing card: less padding */
+    .pricing-card {
+        padding: 24px 20px;
+    }
+    .amount {
+        font-size: 2.8rem;
+    }
+
+    /* Stats */
+    .stats-bar {
+        padding: 24px 16px;
+    }
+    .stats-container {
+        gap: 16px;
+    }
+    .stat-number {
+        font-size: 2rem;
+    }
+
+    /* Section padding */
+    .features-section,
+    .how-it-works-section,
+    .pricing-section,
+    .testimonials-section,
+    .faq-section,
+    .cta-section {
+        padding: 60px 16px;
+    }
+
+    /* Section headers */
+    .features-section h2,
+    .how-it-works-section h2,
+    .pricing-section h2,
+    .testimonials-section h2,
+    .faq-section h2,
+    .cta-section h2 {
+        font-size: 1.8rem;
+    }
+
+    /* Footer */
+    .footer {
+        padding: 40px 16px;
+    }
+
+    /* Header */
+    .header {
+        padding: 12px 16px;
+    }
+
+    /* ── LOGIN / REGISTER ──────────────────────────────────── */
+
+    .login-card,
+    .register-card {
+        padding: 24px 16px;
+        border-radius: 20px;
+    }
+    .logo-section img {
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+    }
+    .logo-section h1 {
+        font-size: 1.25rem;
+    }
+    .divider {
+        margin: 20px 0;
+    }
+
+    /* ── GLOBAL ────────────────────────────────────────────── */
+
+    /* Reduce main content padding further */
+    .main-content {
+        padding: 10px;
+    }
+
+    /* Modal overlays: full-width */
+    .dashboard-modal {
+        max-width: 100vw;
+        padding: 1.25rem;
+        border-radius: 16px;
+    }
+
+    /* Upgrade overlay */
+    .upgrade-card {
+        padding: 20px 16px;
+    }
+}
+
+/* ============================================================
+   ULTRA-SMALL PHONE — max-width: 360px
+   ============================================================
+   Catches very small devices (iPhone SE, older Androids).
+   Only the most critical overrides.
+   ============================================================ */
+@media (max-width: 360px) {
+
+    /* Calendar: absolute minimum */
+    .calendar-day {
+        min-height: 30px;
+        font-size: 0.55rem;
+    }
+
+    /* Analytics: single column on tiny screens */
+    .analytics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Live prices: hide the bar entirely, too cramped */
+    .live-prices-bar {
+        display: none;
+    }
+
+    /* Sidebar: even narrower */
+    .sidebar {
+        width: 220px;
+    }
+
+    /* Pricing: hero even smaller */
+    .hero h1 {
+        font-size: 1.5rem;
+    }
+    .amount {
+        font-size: 2.4rem;
+    }
+}
+
+/* ============================================================
+   LANDSCAPE PHONE — short + wide
+   ============================================================
+   Prevents content from being cut off on landscape phones.
+   ============================================================ */
+@media (max-height: 500px) and (orientation: landscape) {
+
+    /* Sidebar: shorter, scrollable */
+    .sidebar {
+        overflow-y: auto;
+    }
+
+    /* Top navbar: thinner */
+    .top-navbar {
+        padding: 6px 12px;
+    }
+
+    /* Main content: minimal top padding */
+    .main-content {
+        padding-top: 8px;
+    }
+
+    /* Modal: max 80vh */
+    .stock-modal,
+    .dashboard-modal {
+        max-height: 80vh;
+    }
+
+    /* Pricing hero: less vertical space */
+    .hero {
+        padding: 60px 24px 40px;
+        min-height: auto;
+    }
+}
+
+/* ============================================================
+   UTILITY: SMOOTH SCROLLING FOR OVERFLOW CONTAINERS
+   ============================================================ */
+.live-prices-bar,
+.trade-table-wrapper,
+.results-table-wrapper,
+.metrics-table-wrapper,
+.factor-tabs,
+.trader-table,
+.accounts-table {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+
+.live-prices-bar::-webkit-scrollbar,
+.trade-table-wrapper::-webkit-scrollbar,
+.results-table-wrapper::-webkit-scrollbar,
+.metrics-table-wrapper::-webkit-scrollbar,
+.factor-tabs::-webkit-scrollbar,
+.trader-table::-webkit-scrollbar,
+.accounts-table::-webkit-scrollbar {
+    height: 4px;
+}
+
+.live-prices-bar::-webkit-scrollbar-thumb,
+.trade-table-wrapper::-webkit-scrollbar-thumb,
+.results-table-wrapper::-webkit-scrollbar-thumb,
+.metrics-table-wrapper::-webkit-scrollbar-thumb,
+.factor-tabs::-webkit-scrollbar-thumb,
+.trader-table::-webkit-scrollbar-thumb,
+.accounts-table::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 4px;
+}
+
+.live-prices-bar::-webkit-scrollbar-track,
+.trade-table-wrapper::-webkit-scrollbar-track,
+.results-table-wrapper::-webkit-scrollbar-track,
+.metrics-table-wrapper::-webkit-scrollbar-track,
+.factor-tabs::-webkit-scrollbar-track,
+.trader-table::-webkit-scrollbar-track,
+.accounts-table::-webkit-scrollbar-track {
+    background: transparent;
+}
