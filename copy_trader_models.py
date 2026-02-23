@@ -195,9 +195,6 @@ def init_copy_trader_tables():
                 INSERT INTO platform_settings (key, value) VALUES ('copy_trader_enabled', 'false')
                 ON CONFLICT (key) DO NOTHING
             ''')
-            # One-time fix: if copy_trader_enabled was previously set to 'true', reset to 'false'
-            # Copy trading should default OFF to avoid interfering with webhook auto-traders
-            cursor.execute("UPDATE platform_settings SET value = 'false' WHERE key = 'copy_trader_enabled' AND value = 'true'")
         else:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS platform_settings (
@@ -211,7 +208,6 @@ def init_copy_trader_tables():
             cursor.execute('''
                 INSERT OR IGNORE INTO platform_settings (key, value) VALUES ('copy_trader_enabled', 'false')
             ''')
-            cursor.execute("UPDATE platform_settings SET value = 'false' WHERE key = 'copy_trader_enabled' AND value = 'true'")
 
         # --- mirrored_orders table (order mirroring) ---
         if db_type == 'postgresql':
