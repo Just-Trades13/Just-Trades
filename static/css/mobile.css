@@ -78,6 +78,25 @@ html, body {
         line-height: 1.3;
     }
 
+    /* P&L Calendar: compact for phone */
+    .pnl-calendar-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    .calendar-nav {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .pnl-calendar-container {
+        padding: 0.75rem;
+    }
+    .calendar-legend {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 0.7rem;
+    }
+
     /* Live prices bar: smaller items, allow scroll */
     .live-prices-bar {
         flex-wrap: nowrap;
@@ -217,6 +236,28 @@ html, body {
         padding: 1.5rem;
     }
 
+    /* ── ACCOUNT MANAGEMENT PAGE ──────────────────────────── */
+
+    /* Header: stack title and actions */
+    .accounts-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+    .accounts-actions {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    .accounts-actions .search-bar {
+        flex: 1;
+        min-width: 0;
+    }
+    .accounts-actions .btn-add {
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+
     /* ── TRADERS PAGE ──────────────────────────────────────── */
 
     /* Builder header stacks */
@@ -273,12 +314,30 @@ html, body {
         flex-wrap: wrap;
     }
 
+    /* List header: search input loses min-width */
+    .list-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+    .list-header input {
+        min-width: 0;
+        width: 100%;
+    }
+
     /* Tables: horizontal scroll wrapper */
     .trader-table,
     .accounts-table {
         display: block;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+    }
+
+    /* Toast: don't exceed viewport */
+    .toast-notification {
+        max-width: 95vw;
+        left: 2.5vw;
+        right: 2.5vw;
     }
 
     /* Empty state card: less padding */
@@ -293,11 +352,52 @@ html, body {
         grid-template-columns: 1fr;
     }
 
-    /* Setup/risk cards */
+    /* Setup/risk cards: reduce padding, let content breathe */
     .setup-card,
     .risk-card,
     .pro-copy-card {
-        padding: 0.85rem;
+        padding: 0.75rem;
+    }
+    .setup-card label,
+    .risk-card label,
+    .pro-copy-card label {
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+    }
+
+    /* Leader/follower select row: stack vertically */
+    .leader-select-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+    }
+    .leader-select-row select {
+        width: 100%;
+    }
+    .leader-select-row .btn {
+        width: 100%;
+    }
+
+    /* Follower actions row: wrap */
+    .follower-actions-row {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .follower-actions-row .btn {
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+    }
+
+    /* Manual action buttons: force grid to fit */
+    .manual-actions {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.5rem;
+    }
+    .manual-actions .btn {
+        padding: 0.6rem 0.25rem;
+        font-size: 0.78rem;
+        min-width: 0;
     }
 
     /* PnL summary */
@@ -323,6 +423,14 @@ html, body {
         flex-wrap: wrap;
     }
 
+    /* Follower multiplier: comfortable width */
+    .follower-multiplier {
+        justify-content: flex-start;
+    }
+    .follower-multiplier input {
+        width: 60px;
+    }
+
     /* ── CONTROL CENTER ────────────────────────────────────── */
 
     /* Live panels: single column (reinforces 1100px rule) */
@@ -330,16 +438,37 @@ html, body {
         grid-template-columns: 1fr;
     }
 
-    /* Table font size reduction */
+    /* Table: horizontal scroll with hint */
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
     .control-center table {
-        font-size: 0.78rem;
+        font-size: 0.75rem;
+        min-width: 600px;
     }
     .control-center thead th {
-        padding: 0.65rem 0.75rem;
-        font-size: 0.68rem;
+        padding: 0.5rem 0.6rem;
+        font-size: 0.65rem;
+        white-space: nowrap;
     }
     .control-center tbody td {
-        padding: 0.7rem 0.75rem;
+        padding: 0.55rem 0.6rem;
+    }
+
+    /* Status cells: tighter */
+    .status-cell {
+        gap: 0.35rem;
+    }
+    .strategy-cell {
+        min-width: 0;
+    }
+    .account-status-item {
+        font-size: 0.68rem;
+    }
+    .tf-status {
+        font-size: 0.62rem;
+        padding: 0.15rem 0.4rem;
     }
 
     /* Panel actions: wrap nicely */
@@ -517,9 +646,42 @@ html, body {
     }
 
     /* ── PRICING PAGE ──────────────────────────────────────── */
-    /* (Pricing already has solid breakpoints at 1200/900/600.
-        These refine the 768px gap.) */
 
+    /* Pricing nav: hamburger-friendly */
+    .header {
+        padding: 12px 16px;
+    }
+    .nav-links {
+        display: none;
+    }
+    .header-actions {
+        gap: 8px;
+    }
+    .header-actions .btn {
+        padding: 8px 16px;
+        font-size: 0.82rem;
+    }
+
+    /* Hero: tighten vertical space */
+    .hero {
+        padding: 90px 20px 50px;
+        min-height: auto;
+    }
+    .hero-content {
+        gap: 40px;
+    }
+    .hero-buttons {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+    .hero-buttons .btn-primary-large,
+    .hero-buttons .btn-secondary-large {
+        width: 100%;
+        text-align: center;
+    }
+
+    /* Pricing grids: single column centered */
     .pricing-grid.platform,
     .pricing-grid.discord {
         grid-template-columns: 1fr;
@@ -529,6 +691,11 @@ html, body {
     }
     .pricing-card {
         padding: 28px;
+    }
+
+    /* FAQ: full width */
+    .faq-item {
+        padding: 20px;
     }
 
     /* Pricing hero */
@@ -737,14 +904,30 @@ html, body {
         font-size: 0.85rem;
     }
 
-    /* Calendar: minimal */
+    /* Calendar: compact and clean for small phones */
+    .pnl-calendar {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .calendar-days {
+        gap: 2px;
+        min-width: 300px;
+    }
     .calendar-day {
-        min-height: 36px;
-        padding: 3px 1px;
-        font-size: 0.62rem;
+        min-height: 32px;
+        padding: 2px 1px;
+        font-size: 0.58rem;
+        border-radius: 4px;
     }
     .calendar-weekdays {
-        font-size: 0.58rem;
+        font-size: 0.55rem;
+        min-width: 300px;
+    }
+    .calendar-weekdays span {
+        text-align: center;
+    }
+    .calendar-legend {
+        font-size: 0.62rem;
     }
 
     /* Hero title */
@@ -761,6 +944,19 @@ html, body {
     /* Equity chart container: shorter */
     .equity-curve-container {
         height: 240px;
+    }
+
+    /* ── ACCOUNT MANAGEMENT ────────────────────────────────── */
+
+    /* Stack search and add button vertically */
+    .accounts-actions {
+        flex-direction: column;
+    }
+    .accounts-actions .search-bar {
+        width: 100%;
+    }
+    .accounts-actions .btn-add {
+        width: 100%;
     }
 
     /* ── TRADERS & RECORDERS ───────────────────────────────── */
