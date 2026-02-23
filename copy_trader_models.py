@@ -405,6 +405,51 @@ def get_followers_for_leader(leader_id: int) -> List[Dict]:
         conn.close()
 
 
+def get_subaccounts_with_active_traders(subaccount_ids: list) -> set:
+    """Return the subset of subaccount_ids that have active webhook traders.
+
+    Queries the traders table once, parses enabled_accounts JSON, and returns
+    any subaccount_id that appears in an enabled trader's account list.
+    Used by copy trader propagation to skip followers that already receive
+    webhook signals — prevents double-fills (Rule: separate pipelines).
+    """
+    if not subaccount_ids:
+        return set()
+
+    target_ids = {str(sid) for sid in subaccount_ids}
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        enabled_val = 'TRUE' if db_type == 'postgresql' else '1'
+        cursor.execute(f'''
+            SELECT enabled_accounts FROM traders
+            WHERE enabled = {enabled_val} AND enabled_accounts IS NOT NULL
+        ''')
+        rows = cursor.fetchall()
+
+        taken = set()
+        for row in rows:
+            ea_raw = row['enabled_accounts'] if isinstance(row, dict) else row[0]
+            if not ea_raw:
+                continue
+            try:
+                accounts = json.loads(ea_raw) if isinstance(ea_raw, str) else ea_raw
+                if not isinstance(accounts, list):
+                    continue
+                for acct in accounts:
+                    sub_id = str(acct.get('subaccount_id', ''))
+                    if sub_id and sub_id in target_ids:
+                        taken.add(sub_id)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        return taken
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_all_followers_for_leader(leader_id: int) -> List[Dict]:
     """Get all followers for a leader (including disabled)."""
     conn, db_type = get_copy_trader_db_connection()

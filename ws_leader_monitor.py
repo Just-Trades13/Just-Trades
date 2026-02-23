@@ -590,6 +590,21 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                 logger.debug(f"No enabled followers for leader {leader_id}")
                 return
 
+            # Skip followers that have their own active webhook traders
+            # (prevents double-fills from webhook + copy trader pipelines)
+            from copy_trader_models import get_subaccounts_with_active_traders
+            follower_sub_ids = [str(f.get('subaccount_id', '')) for f in followers]
+            subs_with_traders = get_subaccounts_with_active_traders(follower_sub_ids)
+            if subs_with_traders:
+                original_count = len(followers)
+                followers = [f for f in followers if str(f.get('subaccount_id', '')) not in subs_with_traders]
+                skipped = original_count - len(followers)
+                logger.info(f"Copy trader: skipped {skipped} follower(s) with active webhook traders "
+                            f"(subs: {subs_with_traders})")
+                if not followers:
+                    logger.info(f"All followers for leader {leader_id} have webhook traders — nothing to copy")
+                    return
+
             action = fill_data.get('action', '')
             qty = fill_data.get('qty', 1)
             symbol = fill_data.get('symbol', '')

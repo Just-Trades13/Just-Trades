@@ -24010,6 +24010,21 @@ def _propagate_manual_trade_to_followers(leader_id, symbol, side, quantity, risk
             logger.info(f"Copy trader: leader {leader_id} has no enabled followers — skipping")
             return
 
+        # Skip followers that have their own active webhook traders
+        # (prevents double-fills from webhook + copy trader pipelines)
+        from copy_trader_models import get_subaccounts_with_active_traders
+        follower_sub_ids = [str(f.get('subaccount_id', '')) for f in followers]
+        subs_with_traders = get_subaccounts_with_active_traders(follower_sub_ids)
+        if subs_with_traders:
+            original_count = len(followers)
+            followers = [f for f in followers if str(f.get('subaccount_id', '')) not in subs_with_traders]
+            skipped = original_count - len(followers)
+            logger.info(f"Copy trader: skipped {skipped} follower(s) with active webhook traders "
+                        f"(subs: {subs_with_traders})")
+            if not followers:
+                logger.info(f"All followers for leader {leader_id} have webhook traders — nothing to copy")
+                return
+
         platform_url = os.environ.get('PLATFORM_URL') or f"http://127.0.0.1:{os.environ.get('PORT', '5000')}"
         url = f"{platform_url}/api/manual-trade"
 
