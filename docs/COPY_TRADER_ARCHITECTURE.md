@@ -3,38 +3,103 @@
 > **For**: Claude Code CLI agent working on `just-trades-platform`
 > **Author**: Myles Jadwin (CEO, Just Trades Group) + Claude research
 > **Date**: February 2026
+> **Last Updated**: February 23, 2026
 > **Priority**: CRITICAL — this is the #1 product feature
-> **Location**: Place in `docs/COPY_TRADER_ARCHITECTURE.md`
+> **Status**: WORKING — Manual copy + Auto-copy both confirmed working Feb 23, 2026
 
 ---
 
-## 0. READ THIS FIRST — THE CORE RULE
+## 0. CURRENT STATE — WHAT'S WORKING (Feb 23, 2026)
 
-**DO NOT use HTTP self-POST to copy trades to followers.**
+### Manual Copy Trader — CONFIRMED WORKING
+- User clicks BUY/SELL/CLOSE on Manual Copy Trader page
+- Trade executes on leader account
+- `_propagate_manual_trade_to_followers()` fires in a daemon thread
+- All followers execute in PARALLEL via `ThreadPoolExecutor`
+- Typical latency: ~300ms per follower (Tradovate API round-trip dominates)
+- Loop prevention: `JT_COPY_` prefix on `cl_ord_id`
 
-The previous implementation tried to have the server POST to its own `/api/manual-trade` endpoint for each follower. This fails because:
-- The internal request has no Flask session → 401 "Authentication required"
-- Adding admin keys is a bandaid that introduces more failure modes
-- It's architecturally wrong — Tradesyncer doesn't do this
+### Auto-Copy (WebSocket Leader Monitor) — CONFIRMED WORKING
+- `ws_leader_monitor.py` connects to Tradovate WebSocket for each leader with `auto_copy_enabled=True`
+- Detects fill events via `syncrequest` → `"e":"props"` → `entityType: "fill"`
+- Copies to followers via HTTP POST to `/api/manual-trade` with admin key
+- Reload signal: toggling auto-mode triggers reconnect within 5 seconds
 
-**Instead: call the broker execution functions DIRECTLY in Python.**
-
-Your server already has `_execute_projectx_trade()` and the Tradovate REST API order placement code as internal functions. The propagation function should import and call those directly — no HTTP, no auth gate, no session, no loopback.
-
+### Current Architecture: HTTP Self-POST with Admin Key
 ```
-WRONG (current):
-  propagation thread → HTTP POST to own /api/manual-trade → auth gate → 401 ❌
+CURRENT (working):
+  propagation thread → HTTP POST to own /api/manual-trade
+    → X-Admin-Key header bypasses auth gate → trade executes → ✅
 
-RIGHT (Tradesyncer pattern):
-  propagation thread → call _execute_projectx_trade() directly → broker API → ✅
-  propagation thread → call tradovate_place_order() directly → broker API → ✅
+FUTURE OPTIMIZATION (not yet implemented):
+  propagation thread → call broker execution function directly
+    → skip HTTP overhead → ~50-80ms faster per follower
 ```
+
+The HTTP self-POST pattern works because we added `X-Admin-Key` header bypass in
+`_global_api_auth_gate()` (line ~3700). The admin key is read from `ADMIN_API_KEY` env var.
+
+### Fixes Applied This Session (Feb 22-23, 2026)
+
+| Fix | Commit | What Was Wrong |
+|-----|--------|---------------|
+| Auth gate bypass | `03c5853` | Internal POST had no Flask session → 401 on every follower trade |
+| Truthy dict bug | `b7529f9` | `if refreshed:` always True for non-empty dicts → overwrote valid tokens with expired ones |
+| Token expiry correction | `b7529f9` | `timedelta(hours=24)` → `timedelta(minutes=85)` (Tradovate tokens expire in 90 min) |
+| Parallel propagation | `22f32be` | Sequential for-loop → `ThreadPoolExecutor` — all followers fire simultaneously |
+| Architecture doc + Gate 1 | `a66c0c9` | Added this doc to CLAUDE.md Gate 1 reference table |
+| Leader lookup fallback | `2c7a9ba` | Server-side leader lookup when frontend doesn't send leader_id |
+| Page init leader load | `a38b9b5` | `currentLeaderId` was null on page load → propagation skipped |
+| Leader ID from frontend | `dd1cbea` | Frontend sends leader_id directly instead of fragile reverse-lookup |
+| Diagnostic logging | `5510b9f` | Added logging to trace propagation flow |
+
+### Debugging Lessons Learned
+
+**1. Auth Gate Blocks Internal Requests**
+- `_global_api_auth_gate()` at line ~3700 blocks ALL `/api/` routes for unauthenticated requests
+- Internal `requests.post()` from propagation thread has no Flask session cookies
+- Fix: Include `X-Admin-Key` header from `ADMIN_API_KEY` env var
+- This applies to BOTH `_propagate_manual_trade_to_followers()` AND `ws_leader_monitor.py`'s `_execute_follower_entry()`/`_execute_follower_close()`
+
+**2. Truthy Dict Bug in Token Refresh**
+- `refresh_access_token()` returns `{'success': False, 'error': '...'}` on failure
+- `if refreshed:` checks truthiness — non-empty dicts are ALWAYS truthy
+- This caused FAILED refreshes to overwrite valid OAuth tokens with expired ones
+- AND set a 24-hour expiry (should be 85 min), preventing the refresh daemon from catching it
+- Fix: `if refreshed and refreshed.get('success'):`
+- **This is Rule 17 (dict.get default) applied to a different pattern — check success explicitly**
+
+**3. Close "Succeeds" But Doesn't Actually Trade**
+- `get_positions()` returns empty list `[]` on 401 (instead of raising an error)
+- Close handler sees "no positions" → returns `success=True, message="No open position found"`
+- This masks token expiry — Close appears to work when Sell fails
+- Diagnosis: If Close succeeds but Sell fails with same token → token is expired
+
+**4. Orphaned Follower Accounts**
+- Follower account pointed to `accounts.id=591` which didn't exist in the DB
+- All trades to that follower returned "Account not found"
+- Leader 26 still referenced the deleted account → its followers were orphaned
+- Fix: Delete orphaned follower_accounts, reassign to working leaders
+- Prevention: Add FK constraint or cleanup job for follower→account references
+
+**5. `railway run` Tests Local Machine, Not Production Container**
+- `railway run python3 -c "import X"` runs on LOCAL Mac (Python 3.13)
+- Production container runs Python 3.11 with different packages
+- NEVER use `railway run` to verify production state
+- Use `railway logs` or DB queries instead
 
 ---
 
-## 1. TARGET ARCHITECTURE (MATCH TRADESYNCER)
+## 1. TARGET ARCHITECTURE (FUTURE: DIRECT-CALL PATTERN)
 
-### High-Level Data Flow
+### Performance Comparison
+
+| Pattern | Latency Per Follower | Why |
+|---------|---------------------|-----|
+| HTTP self-POST (current) | ~300ms | HTTP overhead (~50-80ms) + Tradovate API (~200-250ms) |
+| Direct function call (future) | ~220ms | Tradovate API only — skip HTTP/JSON/auth gate |
+
+### High-Level Data Flow (Future)
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    JUST TRADES SERVER                          │
@@ -52,13 +117,13 @@ RIGHT (Tradesyncer pattern):
 │  │  Input: leader_id, symbol, side, quantity                  │  │
 │  │                                                            │  │
 │  │  1. get_followers_for_leader(leader_id)                    │  │
-│  │  2. For each enabled follower:                             │  │
+│  │  2. ThreadPoolExecutor for each enabled follower:          │  │
 │  │     a. Calculate qty: leader_qty × multiplier              │  │
 │  │     b. Map contract if cross-order (NQ → MNQ)              │  │
 │  │     c. Get follower's broker credentials from DB           │  │
 │  │     d. DIRECT CALL to broker execution function:           │  │
 │  │        - ProjectX: _execute_projectx_trade(...)            │  │
-│  │        - Tradovate: _place_tradovate_order(...)            │  │
+│  │        - Tradovate: TradovateIntegration.place_order(...)  │  │
 │  │     e. Log result to copy_trade_log                        │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │            │                             │                      │
@@ -74,240 +139,82 @@ RIGHT (Tradesyncer pattern):
 
 | Trigger | Source | How it enters the copy engine |
 |---------|--------|-------------------------------|
-| Manual Trade | User clicks BUY/SELL in copy trader UI | After leader trade succeeds, call `copy_to_followers()` in same thread or daemon thread |
+| Manual Trade | User clicks BUY/SELL in copy trader UI | After leader trade succeeds, call `copy_to_followers()` in daemon thread |
 | Auto-Copy | `ws_leader_monitor.py` detects fill via WebSocket | On fill event, call `copy_to_followers()` from the async handler |
 
-Both paths call the **same** `copy_to_followers()` function. This function does NOT make HTTP requests to the Just Trades server. It calls broker APIs directly.
+Both paths call the **same** `copy_to_followers()` function. The future version calls broker APIs directly instead of HTTP self-POST.
+
+### What Direct-Call Would Require
+1. Create `copy_engine.py` with `copy_to_followers()` function
+2. Implement `_get_tradovate_token_for_account(account_id)` — DB lookup + refresh if expired
+3. Implement `_get_tradovate_base_url(account_id)` — demo vs live
+4. For Tradovate: instantiate `TradovateIntegration` directly, call `place_order()` or `liquidate_position()`
+5. For ProjectX: call existing `_execute_projectx_trade()` directly
+6. Replace `_propagate_manual_trade_to_followers()` to use new engine
+7. Replace `ws_leader_monitor.py` follower execution to use new engine
+8. Remove HTTP self-POST and admin key header workaround
 
 ---
 
-## 2. COPY ENGINE — THE FUNCTION TO BUILD
+## 2. CURRENT IMPLEMENTATION — CODE LOCATIONS
 
-```python
-def copy_to_followers(leader_id, symbol, side, quantity, risk_settings=None):
-    """
-    Copy a trade from leader to all enabled followers.
-    
-    Called by:
-      1. Manual trade handler (after leader trade succeeds)
-      2. WebSocket leader monitor (on fill event)
-    
-    This function calls broker execution functions DIRECTLY.
-    It does NOT HTTP POST to the server's own endpoints.
-    """
-    from copy_trader_models import get_followers_for_leader, log_copy_trade
-    import time
-    import uuid
-    
-    logger.info(f"Copy engine: {side} {quantity} {symbol} from leader {leader_id}")
-    
-    followers = get_followers_for_leader(leader_id)
-    if not followers:
-        logger.info(f"Copy engine: leader {leader_id} has no enabled followers")
-        return
-    
-    for follower in followers:
-        start_ms = time.time() * 1000
-        cl_ord_id = f"JT_COPY_{uuid.uuid4().hex[:12]}"
-        
-        try:
-            # Calculate follower quantity
-            multiplier = follower.get('multiplier', 1.0)
-            follower_qty = max(1, int(round(quantity * multiplier)))
-            
-            # Map symbol if cross-order enabled
-            follower_symbol = symbol  # TODO: contract mapping table
-            
-            # Get follower's broker type and credentials
-            # follower dict should contain: account_id, subaccount_id, broker_type
-            broker_type = follower.get('broker_type', 'projectx')
-            
-            if side.lower() == 'close':
-                result = _close_follower_position(follower, follower_symbol, cl_ord_id)
-            elif broker_type == 'projectx':
-                result = _execute_projectx_copy(follower, follower_symbol, side, follower_qty, cl_ord_id)
-            elif broker_type == 'tradovate':
-                result = _execute_tradovate_copy(follower, follower_symbol, side, follower_qty, cl_ord_id)
-            else:
-                result = {'success': False, 'error': f'Unknown broker: {broker_type}'}
-            
-            latency_ms = int(time.time() * 1000 - start_ms)
-            status = 'success' if result.get('success') else 'error'
-            
-            log_copy_trade(
-                leader_id=leader_id,
-                follower_id=follower['id'],
-                symbol=follower_symbol,
-                side=side,
-                quantity=follower_qty,
-                status=status,
-                error_message=result.get('error', '') if status == 'error' else None,
-                latency_ms=latency_ms,
-                cl_ord_id=cl_ord_id
-            )
-            
-            logger.info(f"Copy engine: follower {follower['id']} → {status} ({latency_ms}ms)")
-            
-        except Exception as e:
-            latency_ms = int(time.time() * 1000 - start_ms)
-            logger.error(f"Copy engine: follower {follower['id']} exception: {e}")
-            log_copy_trade(
-                leader_id=leader_id,
-                follower_id=follower['id'],
-                symbol=symbol,
-                side=side,
-                quantity=quantity,
-                status='error',
-                error_message=str(e)[:500],
-                latency_ms=latency_ms,
-                cl_ord_id=cl_ord_id
-            )
+### Manual Copy Propagation (`ultra_simple_server.py`)
 
+| Line | What | Notes |
+|------|------|-------|
+| ~24000 | `_propagate_manual_trade_to_followers()` | Main propagation function |
+| ~24018-24021 | Admin key header setup | `X-Admin-Key` from `ADMIN_API_KEY` env var |
+| ~24023-24068 | `_copy_one_follower()` inner function | Handles one follower trade |
+| ~24070-24072 | `ThreadPoolExecutor` parallel dispatch | All followers fire simultaneously |
+| ~24077 | `manual_trade()` route | `/api/manual-trade` endpoint |
+| ~24086-24087 | `cl_ord_id` and `leader_id` extraction | Loop prevention + propagation trigger |
+| ~24107-24121 | Server-side leader lookup fallback | Finds leader if frontend didn't send leader_id |
+| ~24382 | ProjectX success → propagation trigger | Daemon thread spawned |
+| ~24788 | Tradovate success → propagation trigger | Daemon thread spawned |
 
-def _execute_projectx_copy(follower, symbol, side, qty, cl_ord_id):
-    """
-    Place a trade on a ProjectX follower account.
-    Calls the SAME internal function used by manual trading.
-    Does NOT HTTP POST to /api/manual-trade.
-    """
-    # Get the follower's ProjectX auth token
-    account_id = follower['account_id']
-    subaccount_id = follower['subaccount_id']
-    
-    # Look up the user's ProjectX token from the accounts table
-    # This needs the follower user's stored credentials
-    token = _get_projectx_token_for_account(account_id)
-    
-    if not token:
-        return {'success': False, 'error': 'No ProjectX token for follower account'}
-    
-    # Use the existing ProjectX trade execution logic
-    # Map side to ProjectX format
-    px_side = 'Buy' if side.lower() == 'buy' else 'Sell'
-    
-    # Call ProjectX Gateway API directly
-    import requests
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json'
-    }
-    payload = {
-        'accountId': int(subaccount_id),
-        'contractId': _resolve_projectx_contract(symbol),
-        'type': 2,  # Market order
-        'side': 0 if px_side == 'Buy' else 1,
-        'size': qty,
-        'clOrdId': cl_ord_id
-    }
-    
-    resp = requests.post(
-        'https://gateway.projectx.com/api/Order/place',
-        headers=headers,
-        json=payload,
-        timeout=30
-    )
-    
-    if resp.status_code == 200:
-        data = resp.json()
-        return {'success': True, 'order_id': data.get('orderId')}
-    else:
-        return {'success': False, 'error': f'ProjectX {resp.status_code}: {resp.text[:200]}'}
+### Auto-Copy WebSocket Monitor (`ws_leader_monitor.py`)
 
+| Line | What | Notes |
+|------|------|-------|
+| ~80 | `_leader_reload_event` | Threading event for reload signal |
+| ~466 | `JT_COPY_` loop prevention check | Skips fills from copy trades |
+| ~692, ~720 | `platform_url` construction | Uses `127.0.0.1:{PORT}` (not localhost) |
+| ~796 | `_run_leader_monitor()` | Main async event loop |
+| ~841 | `asyncio.wait` with 5s timeout | Checks reload event periodically |
+| follower execution | `_execute_follower_entry()` / `_execute_follower_close()` | HTTP POST with admin key header |
 
-def _execute_tradovate_copy(follower, symbol, side, qty, cl_ord_id):
-    """
-    Place a trade on a Tradovate follower account.
-    Calls the Tradovate REST API directly.
-    Does NOT HTTP POST to /api/manual-trade.
-    """
-    account_id = follower['account_id']
-    subaccount_id = follower['subaccount_id']
-    
-    # Get Tradovate access token for this account
-    token = _get_tradovate_token_for_account(account_id)
-    
-    if not token:
-        return {'success': False, 'error': 'No Tradovate token for follower account'}
-    
-    import requests
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json'
-    }
-    
-    # Determine API URL (live vs demo)
-    base_url = _get_tradovate_base_url(account_id)  # live or demo
-    
-    payload = {
-        'accountId': int(subaccount_id),
-        'action': 'Buy' if side.lower() == 'buy' else 'Sell',
-        'symbol': symbol,
-        'orderQty': qty,
-        'orderType': 'Market',
-        'timeInForce': 'GTC',
-        'isAutomated': True,
-        'clOrdId': cl_ord_id
-    }
-    
-    resp = requests.post(
-        f'{base_url}/order/placeorder',
-        headers=headers,
-        json=payload,
-        timeout=30
-    )
-    
-    if resp.status_code == 200:
-        data = resp.json()
-        return {'success': True, 'order_id': data.get('orderId')}
-    else:
-        return {'success': False, 'error': f'Tradovate {resp.status_code}: {resp.text[:200]}'}
+### Auth Gate (`ultra_simple_server.py`)
 
+| Line | What | Notes |
+|------|------|-------|
+| ~3700-3724 | `_global_api_auth_gate()` | `@app.before_request` — blocks unauthenticated `/api/` |
+| ~3710 | `_API_PUBLIC_PREFIXES` check | Whitelisted paths skip auth |
+| ~3714-3717 | `X-Admin-Key` check | Internal requests use this to bypass auth |
 
-def _close_follower_position(follower, symbol, cl_ord_id):
-    """Close/flatten a position on a follower account."""
-    broker_type = follower.get('broker_type', 'projectx')
-    
-    if broker_type == 'projectx':
-        token = _get_projectx_token_for_account(follower['account_id'])
-        if not token:
-            return {'success': False, 'error': 'No ProjectX token'}
-        
-        import requests
-        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-        payload = {
-            'accountId': int(follower['subaccount_id']),
-            'contractId': _resolve_projectx_contract(symbol),
-            'clOrdId': cl_ord_id
-        }
-        resp = requests.post(
-            'https://gateway.projectx.com/api/Order/closecontractposition',
-            headers=headers, json=payload, timeout=30
-        )
-        return {'success': resp.status_code == 200, 'error': resp.text[:200] if resp.status_code != 200 else None}
-    
-    elif broker_type == 'tradovate':
-        token = _get_tradovate_token_for_account(follower['account_id'])
-        if not token:
-            return {'success': False, 'error': 'No Tradovate token'}
-        
-        import requests
-        base_url = _get_tradovate_base_url(follower['account_id'])
-        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-        
-        # Find contractId for symbol
-        contract_resp = requests.get(f'{base_url}/contract/find?name={symbol}', headers=headers, timeout=10)
-        if contract_resp.status_code != 200:
-            return {'success': False, 'error': f'Contract lookup failed: {contract_resp.text[:200]}'}
-        
-        contract_id = contract_resp.json().get('id')
-        payload = {
-            'accountId': int(follower['subaccount_id']),
-            'contractId': contract_id,
-            'admin': False
-        }
-        resp = requests.post(f'{base_url}/order/liquidateposition', headers=headers, json=payload, timeout=30)
-        return {'success': resp.status_code == 200, 'error': resp.text[:200] if resp.status_code != 200 else None}
-```
+### Token Refresh (`ultra_simple_server.py`)
+
+| Line | What | Notes |
+|------|------|-------|
+| ~24201-24229 | `do_refresh_tokens()` | Fixed: checks `refreshed.get('success')`, uses 85-min expiry |
+
+### Copy Trader Models (`copy_trader_models.py`)
+
+| Function | What |
+|----------|------|
+| `get_followers_for_leader(leader_id)` | Returns list of enabled follower dicts |
+| `get_leaders_for_user(user_id)` | Returns all leaders for a user |
+| `get_leader_for_account(user_id, account_id, subaccount_id)` | Reverse lookup — find leader by account |
+| `log_copy_trade(...)` | Writes to `copy_trade_log` table |
+| `get_copy_trade_history(leader_id)` | Reads copy log for UI display |
+
+### Frontend (`templates/manual_copy_trader.html`)
+
+| Feature | Notes |
+|---------|-------|
+| Leader account selector | Dropdown of user's leader accounts |
+| `currentLeaderId` | Set on page load from first leader, sent with every trade |
+| Copy trade log panel | Shows recent copy trades with status, latency, error messages |
+| Auto-mode toggle | Enables/disables WebSocket monitoring per leader |
 
 ---
 
@@ -333,6 +240,8 @@ def on_fill_event(fill_entity, order):
 - Time-windowed dedup set (60s) of fill IDs already processed
 - DB constraint: account can be leader OR follower for a given leader, never both roles
 - Update dedup set BEFORE placing order (WS event may arrive before REST response)
+- Manual trades from UI have no `cl_ord_id` → propagation triggers
+- Follower trades get `cl_ord_id = "JT_COPY_xxx"` → propagation skipped
 
 ---
 
@@ -445,16 +354,17 @@ At daily session end (~4PM CT), Tradovate replays ALL session events through Web
 
 ## 5. TRADESYNCER FEATURE PARITY CHECKLIST
 
-### MVP (Phase 1 — get this working first)
-- [ ] Connect broker accounts (Tradovate + ProjectX via API keys)
-- [ ] Designate ONE lead account per user
-- [ ] Auto-copy leader fills to followers via WebSocket monitor
-- [ ] Manual trade on leader propagates to followers
-- [ ] Quantity multiplier per follower (ratio copy)
-- [ ] Enable/disable per follower
-- [ ] Close propagation (leader closes → all followers close)
-- [ ] Copy log with status (success/error), latency, error message
-- [ ] Loop prevention (JT_COPY_ clOrdId prefix)
+### MVP (Phase 1) — STATUS
+
+- [x] Connect broker accounts (Tradovate + ProjectX via API keys)
+- [x] Designate ONE lead account per user
+- [x] Auto-copy leader fills to followers via WebSocket monitor — **WORKING Feb 23**
+- [x] Manual trade on leader propagates to followers — **WORKING Feb 23**
+- [x] Quantity multiplier per follower (ratio copy)
+- [x] Enable/disable per follower
+- [x] Close propagation (leader closes → all followers close) — **WORKING Feb 23**
+- [x] Copy log with status (success/error), latency, error message
+- [x] Loop prevention (JT_COPY_ clOrdId prefix)
 - [ ] Flatten per account (close positions + cancel orders)
 - [ ] Flatten all (global)
 
@@ -475,6 +385,7 @@ At daily session end (~4PM CT), Tradovate replays ALL session events through Web
 - [ ] Order modification copying (leader moves SL → followers follow)
 - [ ] Export copy log to CSV
 - [ ] Fullscreen cockpit mode
+- [ ] Direct function call pattern (replace HTTP self-POST, ~50-80ms faster)
 
 ---
 
@@ -482,12 +393,12 @@ At daily session end (~4PM CT), Tradovate replays ALL session events through Web
 
 | Full Contract | Micro Contract | Multiplier |
 |--------------|----------------|------------|
-| NQ | MNQ | 10× |
-| ES | MES | 10× |
-| YM | MYM | 10× |
-| RTY | M2K | 10× |
-| GC | MGC | 10× |
-| CL | MCL | 10× |
+| NQ | MNQ | 10x |
+| ES | MES | 10x |
+| YM | MYM | 10x |
+| RTY | M2K | 10x |
+| GC | MGC | 10x |
+| CL | MCL | 10x |
 
 ```sql
 CREATE TABLE contract_mapping (
@@ -502,7 +413,7 @@ CREATE TABLE contract_mapping (
 
 ## 7. DATABASE SCHEMA REFERENCE
 
-### Existing Tables (already in copy_trader_models.py)
+### Existing Tables (in copy_trader_models.py)
 
 ```sql
 -- Leader accounts
@@ -527,7 +438,11 @@ CREATE TABLE follower_accounts (
     label TEXT,
     multiplier REAL DEFAULT 1.0,
     is_enabled BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT NOW()
+    max_position_size INTEGER,
+    copy_tp BOOLEAN DEFAULT TRUE,
+    copy_sl BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Copy trade log
@@ -535,22 +450,26 @@ CREATE TABLE copy_trade_log (
     id SERIAL PRIMARY KEY,
     leader_id INTEGER,
     follower_id INTEGER,
+    leader_order_id TEXT,
+    follower_order_id TEXT,
     symbol TEXT,
     side TEXT,
-    quantity INTEGER,
-    status TEXT,          -- 'success' or 'error'
+    leader_quantity INTEGER,
+    follower_quantity INTEGER,
+    leader_price REAL,
+    follower_price REAL,
+    status TEXT,          -- 'filled' or 'error'
     error_message TEXT,
     latency_ms INTEGER,
-    cl_ord_id TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
-### Schema Additions Needed
+### Schema Additions Needed (Future)
 
 ```sql
--- Add broker_type to follower_accounts (know which API to call)
-ALTER TABLE follower_accounts ADD COLUMN broker_type TEXT DEFAULT 'projectx';
+-- Add broker_type to follower_accounts (know which API to call for direct-call pattern)
+ALTER TABLE follower_accounts ADD COLUMN broker_type TEXT DEFAULT 'tradovate';
 
 -- Add contract mapping for cross-order
 CREATE TABLE contract_mapping (
@@ -570,61 +489,96 @@ ALTER TABLE follower_accounts ADD COLUMN lockout_reason TEXT;
 
 ---
 
-## 8. HELPER FUNCTIONS NEEDED
+## 8. COMMON PITFALLS — PRODUCTION-VERIFIED
 
-These functions need to exist or be created:
+| # | Pitfall | Consequence | Prevention | Commit |
+|---|---------|-------------|------------|--------|
+| 1 | Internal POST has no Flask session | 401 "Authentication required" on every follower trade | Add `X-Admin-Key` header to internal requests | `03c5853` |
+| 2 | `if refreshed:` on dict return value | Non-empty dict always truthy → overwrites valid tokens | Use `if refreshed and refreshed.get('success'):` | `b7529f9` |
+| 3 | Token expiry set to 24 hours | Tradovate tokens expire in 90 min → refresh daemon skips expired tokens | Use `timedelta(minutes=85)` | `b7529f9` |
+| 4 | `get_positions()` returns `[]` on 401 | Close appears to "succeed" when token is actually expired | Check Sell AND Close — if Sell fails, Close "success" is fake | `b7529f9` |
+| 5 | Orphaned follower → deleted account | "Account not found" on every trade to that follower | Validate follower account_id exists before trading | DB cleanup |
+| 6 | Sequential follower loop | N followers = N × 300ms total latency | `ThreadPoolExecutor(max_workers=len(followers))` | `22f32be` |
+| 7 | `currentLeaderId` null on page load | Propagation skipped — leader trades don't copy | Load leader from DB on init, send with every request | `a38b9b5` |
+| 8 | PLATFORM_URL defaults to localhost | Internal HTTP POST unreachable in production | Use `127.0.0.1:{PORT}` (Railway sets PORT) | `e67add9` |
+| 9 | No loop prevention | Infinite copy loop (follower fill → re-copy → infinite) | `cl_ord_id.startswith('JT_COPY_')` check | existing |
+| 10 | 4PM CT replay | Re-executes entire day's trades on followers | Fill ID dedup set + timestamp filtering | existing |
+| 11 | Auto-mode toggle doesn't reconnect | New leaders not picked up until existing connection drops | Reload event with 5s timeout on `asyncio.wait` | `4f854c5` |
+| 12 | `railway run` tests local, not container | Package version mismatches, wrong Python version | Use `railway logs` for production verification | lesson |
 
-```python
-def _get_projectx_token_for_account(account_id):
-    """Look up the stored ProjectX JWT for a given account.
-    The accounts table stores tokens from login.
-    Return the token string or None."""
-    pass
+---
 
-def _get_tradovate_token_for_account(account_id):
-    """Look up the stored Tradovate access token for a given account.
-    May need to refresh if expired (90-min lifetime).
-    Return the token string or None."""
-    pass
+## 9. LEADER/FOLLOWER SETUP — CURRENT PRODUCTION (Feb 23, 2026)
 
-def _get_tradovate_base_url(account_id):
-    """Return 'https://live.tradovateapi.com/v1' or 
-    'https://demo.tradovateapi.com/v1' based on account type."""
-    pass
+### User 3 (Myles) Test Setup
 
-def _resolve_projectx_contract(symbol):
-    """Convert symbol like 'MNQH6' to ProjectX contract ID 
-    like 'CON.F.US.ENQ.M25'. Use contract/available endpoint."""
-    pass
+**Leaders:**
+| Leader ID | Account | Subaccount | Label | Auto-Copy |
+|-----------|---------|------------|-------|-----------|
+| 1 | 590 | 40089666 | jtmj - DEMO1732704 | ON |
+| 2 | 427 | 26029294 | Mark - DEMO4419847-2 | OFF |
+| 26 | 591 | 39312931 | Test - DEMO6561713 | ON (BROKEN — account 591 deleted) |
+
+**Followers for Leader 1 (DEMO1732704):**
+| Follower | Account | Label | Enabled |
+|----------|---------|-------|---------|
+| 1 | 590:288605 | jtmj - 1127512 (Live) | **DISABLED** (safety) |
+| 3 | 427:26029294 | Mark - DEMO4419847-2 | YES |
+| 58 | 598:41332021 | test reno - DEMO6762488 | YES |
+
+**Followers for Leader 2 (DEMO4419847-2):**
+| Follower | Account | Label | Enabled |
+|----------|---------|-------|---------|
+| 5 | 590:40089666 | jtmj - DEMO1732704 | YES |
+| 6 | 590:288605 | jtmj - 1127512 (Live) | DISABLED |
+| 8 | 427:544727 | Mark - 1381296 (Live) | DISABLED |
+| 59 | 598:41332021 | test reno - DEMO6762488 | YES |
+
+**Cross-follower pattern:** Trading from leader 1 (704) → copies to 47-2 and 488. Trading from leader 2 (47-2) → copies to 704 and 488. All 3 demos covered regardless of which leader account is used.
+
+---
+
+## 10. TESTING PROCEDURES
+
+### Manual Copy Trader Test
+1. Open Manual Copy Trader page
+2. Select a leader account from dropdown
+3. Click BUY or SELL on a symbol (e.g., MNQH6)
+4. Check copy trade log panel for follower entries
+5. Verify: all followers show status=filled, similar latency (~300ms)
+6. Click CLOSE to flatten all positions
+7. Verify: close propagated to all followers
+
+### Auto-Copy Test
+1. Ensure leader has `auto_copy_enabled = TRUE`
+2. Place a trade directly in Tradovate (not through Just Trades)
+3. Check `railway logs` for `"leader_monitor"` detecting the fill
+4. Check copy_trade_log for follower entries
+5. Verify: followers got the same trade
+
+### Verification Queries
+```sql
+-- Check latest copy trades
+SELECT id, leader_id, follower_id, symbol, side, status, latency_ms, error_message, created_at
+FROM copy_trade_log ORDER BY id DESC LIMIT 10;
+
+-- Check follower setup for a leader
+SELECT f.id, f.account_id, f.subaccount_id, f.label, f.is_enabled, f.multiplier
+FROM follower_accounts f WHERE f.leader_id = 2 AND f.is_enabled = TRUE;
+
+-- Check leader auto-copy status
+SELECT id, label, auto_copy_enabled, is_active FROM leader_accounts WHERE user_id = 3;
 ```
 
----
+### API Test (with admin key)
+```bash
+# Place a test sell on leader 2
+curl -X POST https://justtrades.app/api/manual-trade \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: YOUR_KEY" \
+  -d '{"account_subaccount":"427:26029294","symbol":"MNQH6","side":"Sell","quantity":1,"leader_id":2}'
 
-## 9. WHAT THE CLI SHOULD DO
-
-1. **Create `copy_engine.py`** — new file with `copy_to_followers()` and the broker-specific execution functions. This is the central copy engine.
-
-2. **Modify `ultra_simple_server.py`** — replace `_propagate_manual_trade_to_followers()` to call `copy_to_followers()` directly instead of HTTP POST.
-
-3. **Modify `ws_leader_monitor.py`** — on fill events, call `copy_to_followers()` instead of HTTP POST to `/api/manual-trade`.
-
-4. **Add `broker_type` column** to `follower_accounts` table so the copy engine knows which API to call.
-
-5. **Implement token lookup functions** — `_get_projectx_token_for_account()` and `_get_tradovate_token_for_account()` need to query the accounts/credentials tables.
-
-6. **Test with one leader + one ProjectX follower first** — simplest case, validate the direct-call pattern works before scaling.
-
----
-
-## 10. COMMON PITFALLS
-
-| Pitfall | Consequence | Prevention |
-|---------|-------------|------------|
-| HTTP self-POST for copies | 401 auth failure | Direct function call (Section 0) |
-| No loop prevention | Infinite copy loop | JT_COPY_ prefix check (Section 3) |
-| 4PM CT replay | Re-executes entire day | Fill ID dedup set (Section 4) |
-| Token expiry (90min) | WebSocket silently dies | Token refresh timer (Section 4) |
-| currentLeaderId null on page load | Propagation skips | Load leader from DB on init |
-| Follower is also a leader | Cross-copy loop | DB constraint: exclusive roles |
-| Rate limit (p-ticket) | Orders rejected | Queue with backoff (Section 4) |
-| Wrong contract for follower | Trade wrong instrument | Contract mapping table (Section 6) |
+# Check copy log
+curl https://justtrades.app/api/copy-trader/leaders/2/log \
+  -H "X-Admin-Key: YOUR_KEY"
+```

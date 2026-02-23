@@ -570,9 +570,12 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Pro Copy Trader pricing card + sidebar gating + route locks | `99f990c` | Feb 22 | Working |
 | TOS + Risk Disclosure updated with Goldman-reviewed legal language | `993d8b5` | Feb 22 | Working |
 | Forgot password system (Brevo email + token reset, 1hr expiry) | `bd95145`..`9f8a7e1` | Feb 22 | **Needs verification** |
-| Pro Copy Trader: PLATFORM_URL fix (localhost→127.0.0.1:PORT) | `e67add9` | Feb 22 | **Needs verification** |
-| Pro Copy Trader: Manual trade follower propagation (BUY/SELL/CLOSE) | `aa176a4` | Feb 22 | **Needs verification** |
-| Pro Copy Trader: Auto-mode toggle reload signal (5s pickup) | `4f854c5` | Feb 22 | **Needs verification** |
+| Pro Copy Trader: PLATFORM_URL fix (localhost→127.0.0.1:PORT) | `e67add9` | Feb 22 | Working |
+| Pro Copy Trader: Manual trade follower propagation (BUY/SELL/CLOSE) | `aa176a4` | Feb 22 | **Confirmed working** |
+| Pro Copy Trader: Auto-mode toggle reload signal (5s pickup) | `4f854c5` | Feb 22 | Working |
+| Pro Copy Trader: Auth gate bypass (X-Admin-Key for internal requests) | `03c5853` | Feb 23 | **Confirmed working** |
+| Pro Copy Trader: Token refresh truthy dict fix + 85-min expiry | `b7529f9` | Feb 23 | **Confirmed working** |
+| Pro Copy Trader: Parallel follower propagation (ThreadPoolExecutor) | `22f32be` | Feb 23 | **Confirmed working** |
 
 ---
 
@@ -787,6 +790,37 @@ When adding ANY new feature to the platform, complete ALL of these documentation
 7. **Document settings** — If the feature adds new settings (DB columns, env vars, config fields), add them to DATABASE_SCHEMA.md and the enabled_accounts checklist (Rule 6)
 
 **This checklist prevents documentation drift** — the #1 cause of "rebuild difficulty" in this project.
+
+---
+
+## RULE 32: INTERNAL HTTP REQUESTS MUST INCLUDE ADMIN KEY (Feb 23, 2026)
+
+When the server makes HTTP requests to its own `/api/` endpoints (e.g., copy trader propagation POSTing to `/api/manual-trade`), the `_global_api_auth_gate()` at line ~3700 will block with 401 because internal `requests.post()` calls have no Flask session cookies.
+
+**What broke:** ALL 16 copy trader follower trades returned `{"error":"Authentication required"}`. The propagation function (`_propagate_manual_trade_to_followers`) POSTed to `/api/manual-trade` without any auth — the `before_request` handler rejected every one.
+
+**Fix:** Include `X-Admin-Key` header with value from `ADMIN_API_KEY` env var:
+```python
+_headers = {}
+_admin_key = os.environ.get('ADMIN_API_KEY')
+if _admin_key:
+    _headers['X-Admin-Key'] = _admin_key
+resp = requests.post(url, json=payload, headers=_headers, timeout=30)
+```
+
+**Applies to:**
+- `_propagate_manual_trade_to_followers()` in `ultra_simple_server.py` (manual copy)
+- `_execute_follower_entry()` in `ws_leader_monitor.py` (auto-copy)
+- `_execute_follower_close()` in `ws_leader_monitor.py` (auto-copy close)
+- ANY future code that makes internal HTTP requests to `/api/` routes
+
+**Also beware: truthy dict check on token refresh results.**
+`refresh_access_token()` returns `{'success': False, 'error': '...'}` on failure. Checking `if refreshed:` is ALWAYS True because non-empty dicts are truthy. Must use `if refreshed and refreshed.get('success'):`. This is a variant of Rule 17 (dict.get default ignored).
+
+**NEVER:**
+- Make internal `/api/` requests without `X-Admin-Key` header
+- Use `if result:` to check success of a function that returns a dict — always check `.get('success')`
+- Set Tradovate token expiry to 24 hours — they expire in 90 minutes. Use `timedelta(minutes=85)`
 
 ---
 
@@ -1490,8 +1524,11 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 | 22 | Feb 20, 2026 | Trader 1359 got 0 accounts → 0 trades silently | `env` variable only defined in else-branch, crash caught by except → enabled_accounts parse failed | Rule 25 | Hours |
 | 23 | Feb 19, 2026 | Admin user delete failed — FK constraint | `DELETE FROM users` without cascading child records first | Rule 26 | Hours |
 | 24 | Feb 20-21, 2026 | **ALL activation emails failed for 2 days** — 3 users stuck, 8800+ orphaned tokens | `brevo-python` unpinned → Docker cache bust pulled v4.0.5 → `brevo_python.rest` module removed in v4 → `ImportError` logged as "not installed" (misleading). 4 failed fix attempts before finding root cause. `railway run` tested LOCAL Mac, not container. | Rule 29 | **Hours (multi-attempt)** |
+| 25 | Feb 22-23, 2026 | Copy trader: ALL 16 follower trades returned "Authentication required" | Internal `requests.post()` to `/api/manual-trade` had no Flask session → `_global_api_auth_gate()` blocked with 401. Fix: `X-Admin-Key` header. | Rule 32 | Hours |
+| 26 | Feb 23, 2026 | Copy trader: Token refresh overwrites valid tokens with expired ones | `if refreshed:` checks dict truthiness — non-empty `{'success': False}` is always True. Also set 24hr expiry (should be 85min). | Rule 17, 32 | Hours |
+| 27 | Feb 23, 2026 | Copy trader: Follower trades executed sequentially (~600ms for 2 followers) | Simple `for follower in followers:` loop — each waited for previous to complete | `22f32be` | Minutes |
 
-**Pattern:** 23 disasters in ~2.5 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, or (d) field name mismatches between frontend and backend.
+**Pattern:** 27 disasters in ~2.5 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, or (e) auth/session assumptions for internal requests.
 
 ---
 
