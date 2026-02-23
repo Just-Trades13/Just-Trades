@@ -756,6 +756,65 @@
     @keyframes spin {
         to { transform: rotate(360deg); }
     }
+
+    /* Live P&L Card Styles */
+    .account-pnl-card {
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(59,130,246,0.25);
+        border-radius: 14px;
+        padding: 1rem;
+    }
+    .account-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(148,163,184,0.15);
+    }
+    .account-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #e2e8f0;
+    }
+    .account-type-badge {
+        padding: 0.2rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.65rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+    .account-type-badge.demo {
+        background: rgba(251,191,36,0.2);
+        color: #fcd34d;
+    }
+    .account-type-badge.live {
+        background: rgba(16,185,129,0.2);
+        color: #6ee7b7;
+    }
+    .pnl-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.35rem 0;
+    }
+    .pnl-label {
+        color: rgba(148,163,184,0.9);
+        font-size: 0.8rem;
+    }
+    .pnl-value {
+        font-weight: 600;
+        font-size: 0.95rem;
+    }
+    .pnl-value.positive { color: #10b981; }
+    .pnl-value.negative { color: #f87171; }
+    .pnl-row.net-liq {
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid rgba(148,163,184,0.15);
+    }
+    .pnl-row.net-liq .pnl-value { color: #38bdf8; }
 </style>
 {% endblock %}
 
@@ -1058,6 +1117,10 @@
             <button class="details-tab" data-tab="trades">
                 <span class="material-icons">candlestick_chart</span>
                 Trades <span class="count" id="tradesCount">0</span>
+            </button>
+            <button class="details-tab" data-tab="live_pnl">
+                <span class="material-icons">trending_up</span>
+                Live P&L <span class="count" id="pnlCount">0</span>
             </button>
         </div>
         
@@ -1469,6 +1532,7 @@ function viewUserDetails(userId, userName) {
     document.getElementById('recordersCount').textContent = '...';
     document.getElementById('tradersCount').textContent = '...';
     document.getElementById('tradesCount').textContent = '...';
+    document.getElementById('pnlCount').textContent = '...';
     
     // Activate first tab
     document.querySelectorAll('.details-tab').forEach(t => t.classList.remove('active'));
@@ -1490,6 +1554,7 @@ function viewUserDetails(userId, userName) {
                 document.getElementById('recordersCount').textContent = data.recorders_count;
                 document.getElementById('tradersCount').textContent = data.traders_count || 0;
                 document.getElementById('tradesCount').textContent = data.trades.length;
+                document.getElementById('pnlCount').textContent = data.accounts_count;
                 
                 // Show accounts tab by default
                 showDetailsTab('accounts');
@@ -1521,6 +1586,8 @@ function showDetailsTab(tabName) {
         content.innerHTML = renderTradersTab(currentUserDetails.traders);
     } else if (tabName === 'trades') {
         content.innerHTML = renderTradesTab(currentUserDetails.trades, currentUserDetails.trade_stats);
+    } else if (tabName === 'live_pnl') {
+        renderLivePnlTab();
     }
 }
 
@@ -1865,6 +1932,84 @@ function deleteUserTrader(traderId, strategyName, accountName) {
     })
     .catch(error => {
         alert('Error deleting trader: ' + error);
+    });
+}
+
+// ============================================
+// Live P&L Tab — Socket.IO + Render
+// ============================================
+
+let adminPnlCache = {};
+
+function renderLivePnlTab() {
+    const accounts = currentUserDetails.accounts || [];
+    const content = document.getElementById('detailsContent');
+
+    if (accounts.length === 0) {
+        content.innerHTML = '<div class="empty-details"><span class="material-icons">account_balance_wallet</span><p>No accounts connected</p></div>';
+        return;
+    }
+
+    const userAccountIds = new Set(accounts.map(a => a.id));
+
+    let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; padding: 16px;">';
+
+    accounts.forEach(acc => {
+        const pnl = adminPnlCache[acc.id] || {};
+        const openPnl = pnl.open_pnl || 0;
+        const realizedPnl = pnl.realized_pnl || 0;
+        const netLiq = pnl.net_liq || 0;
+        const pnlClass = openPnl >= 0 ? 'positive' : 'negative';
+        const pnlSign = openPnl >= 0 ? '+' : '';
+        const envLabel = acc.environment === 'live' ? '(Live)' : '(Demo)';
+        const envClass = acc.environment === 'live' ? 'live' : 'demo';
+
+        html += `<div class="account-pnl-card">
+            <div class="account-header">
+                <span class="account-name">${acc.name || 'Account ' + acc.id}</span>
+                <span class="account-type-badge ${envClass}">${envLabel}</span>
+            </div>
+            <div class="pnl-row">
+                <span class="pnl-label">Unrealized P&L:</span>
+                <span class="pnl-value ${pnlClass}">${pnlSign}$${openPnl.toFixed(2)}</span>
+            </div>
+            <div class="pnl-row">
+                <span class="pnl-label">Today's Realized:</span>
+                <span class="pnl-value ${realizedPnl >= 0 ? 'positive' : 'negative'}">${realizedPnl >= 0 ? '+' : ''}$${realizedPnl.toFixed(2)}</span>
+            </div>
+            <div class="pnl-row net-liq">
+                <span class="pnl-label">Net Liq:</span>
+                <span class="pnl-value">$${netLiq.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            </div>
+        </div>`;
+    });
+
+    html += '</div>';
+    content.innerHTML = html;
+}
+
+// Socket.IO listener for real-time PnL updates
+if (typeof io !== 'undefined') {
+    const adminPnlSocket = io();
+
+    adminPnlSocket.on('pnl_update', function(data) {
+        if (data.pnl_data) {
+            Object.assign(adminPnlCache, data.pnl_data);
+        }
+        const activeTab = document.querySelector('.details-tab.active');
+        if (activeTab && activeTab.dataset.tab === 'live_pnl') {
+            renderLivePnlTab();
+        }
+    });
+
+    adminPnlSocket.on('position_update', function(data) {
+        if (data.pnl_data) {
+            Object.assign(adminPnlCache, data.pnl_data);
+        }
+        const activeTab = document.querySelector('.details-tab.active');
+        if (activeTab && activeTab.dataset.tab === 'live_pnl') {
+            renderLivePnlTab();
+        }
     });
 }
 
