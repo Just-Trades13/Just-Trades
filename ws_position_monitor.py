@@ -27,6 +27,8 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Optional, Any, List
 
+from ws_connection_manager import get_connection_manager, Listener
+
 logger = logging.getLogger('position_monitor')
 
 # Try to import websockets
@@ -105,6 +107,7 @@ _monitor_running = False
 _monitor_thread = None
 _token_connections: Dict[str, Any] = {}  # token_hash -> AccountGroupConnection
 _sub_to_recorders: Dict[int, List[int]] = {}  # subaccount_id -> [recorder_ids]
+_position_listeners: Dict[str, Any] = {}  # token_key -> PositionMonitorListener
 
 
 class AccountGroupConnection:
@@ -154,6 +157,11 @@ class AccountGroupConnection:
         self._ORPHAN_CHECK_DELAY = 5.0       # 5s delay avoids false positives during DCA cancel-replace (Rule 8)
         self._PERIODIC_SWEEP_INTERVAL = 60.0
         self._ORDERS_CACHE_TTL = 30.0
+
+        # P&L monitoring (Feb 23, 2026)
+        self._position_state: Dict[int, Dict] = {}  # subaccount_id -> {symbol, side, qty, entry_price, ...}
+        self._pnl_check_interval = 30  # seconds between P&L evaluations
+        self._last_pnl_check: float = 0
 
     def _next_request_id(self) -> int:
         self._request_id += 1
@@ -310,6 +318,9 @@ class AccountGroupConnection:
                     self._last_periodic_sweep = now_sweep
                     if _is_futures_market_likely_open():
                         await self._periodic_orphan_sweep()
+
+                # P&L monitoring — check max daily loss limits every 30s
+                await self._check_pnl_limits()
 
                 # Receive messages
                 try:
@@ -473,6 +484,19 @@ class AccountGroupConnection:
             conn.close()
         except Exception as e:
             logger.error(f"[{self.token_key}] Position DB update error: {e}")
+
+        # Update in-memory position state for P&L monitoring
+        if net_pos != 0:
+            self._position_state[account_id] = {
+                'symbol': symbol,
+                'symbol_root': symbol_root,
+                'side': 'LONG' if net_pos > 0 else 'SHORT',
+                'qty': abs(net_pos),
+                'entry_price': net_price,
+                'recorder_ids': recorder_ids,
+            }
+        else:
+            self._position_state.pop(account_id, None)
 
     async def _handle_fill_event(self, entity: dict):
         """Detect TP/SL fills and close recorded_trades accordingly."""
@@ -1006,6 +1030,118 @@ class AccountGroupConnection:
         except Exception as e:
             logger.error(f"[{self.token_key}] Orphan check error for recorder {recorder_id}: {e}")
             return False
+
+    # ====================================================================
+    # P&L MONITORING — Continuous max daily loss enforcement (Feb 23, 2026)
+    # ====================================================================
+
+    async def _check_pnl_limits(self):
+        """Check all positions against max_daily_loss limits. Called every 30s."""
+        now = time.time()
+        if now - self._last_pnl_check < self._pnl_check_interval:
+            return
+        self._last_pnl_check = now
+
+        if not self._position_state:
+            return
+
+        try:
+            conn = _get_pg_connection()
+            if not conn:
+                return
+            cursor = conn.cursor()
+
+            for account_id, pos in list(self._position_state.items()):
+                for recorder_id in pos['recorder_ids']:
+                    # Get max_daily_loss setting for this recorder
+                    cursor.execute('''
+                        SELECT r.max_daily_loss FROM recorders r
+                        WHERE r.id = %s AND r.max_daily_loss > 0
+                    ''', (recorder_id,))
+                    row = cursor.fetchone()
+                    if not row:
+                        continue
+                    max_loss = float(row[0])
+
+                    # Get realized P&L for today
+                    cursor.execute('''
+                        SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                        WHERE recorder_id = %s AND DATE(exit_time) = CURRENT_DATE AND status = 'closed'
+                    ''', (recorder_id,))
+                    realized = float(cursor.fetchone()[0] or 0)
+
+                    # Calculate unrealized from in-memory position + market data cache
+                    unrealized = 0.0
+                    live_price = self._get_market_price(pos['symbol_root'])
+                    if live_price and pos['entry_price']:
+                        unrealized = self._calc_unrealized(
+                            pos['symbol_root'], pos['side'],
+                            pos['qty'], float(pos['entry_price']), float(live_price)
+                        )
+
+                    combined = realized + unrealized
+                    if combined <= -max_loss:
+                        logger.warning(f"🚨 [{self.token_key}] MAX DAILY LOSS BREACHED: "
+                                       f"account={account_id} recorder={recorder_id} "
+                                       f"realized=${realized:.2f} + unrealized=${unrealized:.2f} "
+                                       f"= ${combined:.2f} (limit: -${max_loss})")
+                        await self._auto_flatten(account_id, pos)
+
+            conn.close()
+        except Exception as e:
+            logger.error(f"[{self.token_key}] P&L check error: {e}")
+
+    def _get_market_price(self, symbol_root: str) -> float:
+        """Get live price from ultra_simple_server's market data cache."""
+        try:
+            from ultra_simple_server import _get_live_price_for_symbol
+            return _get_live_price_for_symbol(symbol_root)
+        except Exception:
+            return None
+
+    def _calc_unrealized(self, symbol_root: str, side: str, qty: float,
+                         entry_price: float, live_price: float) -> float:
+        """Calculate unrealized P&L using FUTURES_SPECS point values."""
+        try:
+            from tv_price_service import FUTURES_SPECS
+            spec = FUTURES_SPECS.get(symbol_root, {'point_value': 1.0})
+            pv = spec['point_value']
+            if side == 'LONG':
+                return (live_price - entry_price) * pv * qty
+            else:
+                return (entry_price - live_price) * pv * qty
+        except Exception:
+            return 0.0
+
+    async def _auto_flatten(self, account_id: int, pos: dict):
+        """Flatten position via REST API when max daily loss breached."""
+        try:
+            from phantom_scraper.tradovate_integration import TradovateIntegration
+
+            tradovate = TradovateIntegration(demo=self.is_demo)
+            await tradovate.__aenter__()
+            tradovate.access_token = self.access_token
+
+            # Resolve contract_id from _contract_cache (populated by position events)
+            contract_id = None
+            for cid, sym in self._contract_cache.items():
+                if sym == pos['symbol']:
+                    contract_id = cid
+                    break
+
+            if contract_id:
+                result = await tradovate.liquidate_position(
+                    account_id=account_id,
+                    contract_id=contract_id
+                )
+                logger.warning(f"🔴 [{self.token_key}] AUTO-FLATTEN sent for account {account_id}: "
+                               f"liquidate {pos['qty']} {pos['symbol']} — result: {result}")
+            else:
+                logger.error(f"[{self.token_key}] Cannot auto-flatten: no contract_id for {pos['symbol']}")
+
+            await tradovate.__aexit__(None, None, None)
+        except Exception as e:
+            logger.error(f"[{self.token_key}] Auto-flatten error for account {account_id}: {e}")
 
     async def close(self):
         """Close the WebSocket connection."""
