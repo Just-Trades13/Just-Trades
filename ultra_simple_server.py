@@ -25210,6 +25210,7 @@ def admin_copy_trader_toggle():
     if not user_id:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
     try:
+        from user_auth import get_user_by_id
         user = get_user_by_id(user_id)
         if not user or not getattr(user, 'is_admin', False):
             return jsonify({'success': False, 'error': 'Admin required'}), 403
