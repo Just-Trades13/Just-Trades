@@ -273,6 +273,11 @@
                 </label>
                 <span class="master-status" id="masterStatus" style="font-size:0.8rem;margin-left:0.4rem;font-weight:600;color:#ef4444;">Disabled</span>
             </div>
+            <div style="margin-top:0.4rem;padding:0.5rem 0.75rem;background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.25);border-radius:0.5rem;">
+                <span style="font-size:0.72rem;color:rgba(234,179,8,0.85);line-height:1.4;">
+                    Do not run the Copy Trader while a webhook strategy is active on the same follower account. Running both simultaneously can cause duplicate or conflicting orders.
+                </span>
+            </div>
             {% endif %}
             <div class="pro-copy-mode-toggle">
                 <span class="mode-label" id="modeManualLabel">Manual</span>
