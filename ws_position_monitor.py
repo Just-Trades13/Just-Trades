@@ -146,6 +146,15 @@ class AccountGroupConnection:
         # Max connection: 70 min (before 85-min token expiry)
         self._max_connection_seconds = 4200
 
+        # TP Orphan detection state
+        self._pending_orphan_checks: Dict[int, float] = {}   # recorder_id -> check_time
+        self._last_periodic_sweep: float = 0.0
+        self._orders_cache: Dict[int, tuple] = {}             # subaccount_id -> (orders_list, fetch_time)
+        self._recorder_tp_config: Dict[int, dict] = {}        # recorder_id -> {tp_ticks, ...}
+        self._ORPHAN_CHECK_DELAY = 5.0       # 5s delay avoids false positives during DCA cancel-replace (Rule 8)
+        self._PERIODIC_SWEEP_INTERVAL = 60.0
+        self._ORDERS_CACHE_TTL = 30.0
+
     def _next_request_id(self) -> int:
         self._request_id += 1
         return self._request_id
@@ -656,6 +665,70 @@ class AccountGroupConnection:
                 conn.close()
             except Exception as e:
                 logger.error(f"[{self.token_key}] Order cancel tracking error: {e}")
+
+    # ====================================================================
+    # TP ORPHAN DETECTION — Helpers
+    # ====================================================================
+
+    def _calculate_tp_price(self, recorder_id: int, side: str, broker_avg: float, ticker: str) -> Optional[float]:
+        """Calculate TP price from recorder settings + broker avg entry.
+
+        Pattern: recorder_service.py lines 6246-6276.
+        Returns None if no TP configured or tp_ticks=0.
+        """
+        # Get TP config from cache or DB
+        if recorder_id not in self._recorder_tp_config:
+            try:
+                conn = _get_pg_connection()
+                if not conn:
+                    return None
+                cursor = conn.cursor()
+                cursor.execute('SELECT tp_targets FROM recorders WHERE id = %s', (recorder_id,))
+                row = cursor.fetchone()
+                conn.close()
+
+                tp_ticks = 0
+                if row and row[0]:
+                    tp_config = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                    if isinstance(tp_config, list) and len(tp_config) > 0:
+                        tp_ticks = tp_config[0].get('ticks', 0) or 0
+                    elif isinstance(tp_config, dict):
+                        tp_ticks = tp_config.get('ticks', 0) or 0
+                self._recorder_tp_config[recorder_id] = {'tp_ticks': tp_ticks}
+            except Exception as e:
+                logger.warning(f"[{self.token_key}] Failed to load TP config for recorder {recorder_id}: {e}")
+                return None
+
+        tp_ticks = self._recorder_tp_config.get(recorder_id, {}).get('tp_ticks', 0)
+        if not tp_ticks or tp_ticks <= 0:
+            return None
+
+        tick_size = _get_tick_size(ticker)
+        is_long = side.upper() == 'LONG'
+
+        if is_long:
+            raw_price = broker_avg + (tp_ticks * tick_size)
+        else:
+            raw_price = broker_avg - (tp_ticks * tick_size)
+
+        # Rule 3: ALWAYS round to tick size
+        return round(round(raw_price / tick_size) * tick_size, 10)
+
+    def _orders_match_tp(self, orders: list, symbol_root: str, tp_action: str) -> bool:
+        """Check if any working limit order matches a TP for given symbol/direction."""
+        for order in orders:
+            o_symbol = order.get('symbol', '') or order.get('contractMaturity', '') or ''
+            o_root = _get_symbol_root(o_symbol) if o_symbol else ''
+            o_action = order.get('action', '')
+            o_status = order.get('ordStatus', '') or ''
+            o_type = order.get('ordType', '') or order.get('orderType', '') or ''
+
+            if (o_root == symbol_root and
+                    o_action == tp_action and
+                    'limit' in o_type.lower() and
+                    o_status in ['Working', 'New', 'Accepted', 'PendingNew', 'PartiallyFilled']):
+                return True
+        return False
 
     async def close(self):
         """Close the WebSocket connection."""
