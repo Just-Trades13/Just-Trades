@@ -343,6 +343,48 @@ def delete_leader(leader_id: int) -> bool:
 # ============================================================================
 # FOLLOWER ACCOUNT CRUD
 # ============================================================================
+def check_circular_follower(leader_id: int, account_id: int, subaccount_id: str) -> Optional[str]:
+    """Check if adding this follower would create a circular leader-follower loop.
+    Returns an error message if circular, or None if safe."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+    enabled_val = 'TRUE' if db_type == 'postgresql' else '1'
+
+    try:
+        # Get the leader's subaccount_id
+        cursor.execute(f'SELECT subaccount_id FROM leader_accounts WHERE id = {ph}', (leader_id,))
+        leader_row = cursor.fetchone()
+        if not leader_row:
+            return None  # Leader not found — let create_follower handle that
+
+        leader_sub = str(leader_row['subaccount_id'] if isinstance(leader_row, dict) else leader_row[0])
+
+        # Check: is the proposed follower account ALSO a leader that has the current leader's
+        # account as a follower? If so, A→B and B→A = circular loop.
+        cursor.execute(f'''
+            SELECT la.id, la.label FROM leader_accounts la
+            JOIN follower_accounts fa ON fa.leader_id = la.id
+            WHERE la.subaccount_id = {ph}
+            AND la.is_active = {enabled_val}
+            AND fa.subaccount_id = {ph}
+            AND fa.is_enabled = {enabled_val}
+        ''', (str(subaccount_id), leader_sub))
+        conflict = cursor.fetchone()
+        if conflict:
+            conflict_dict = dict(conflict) if hasattr(conflict, 'keys') else {'id': conflict[0], 'label': conflict[1]}
+            return (f"Circular loop detected: this account is leader '{conflict_dict.get('label', conflict_dict['id'])}' "
+                    f"which already copies TO the leader you're adding it as a follower of. "
+                    f"This would create an infinite copy loop (A→B→A).")
+        return None
+    except Exception as e:
+        logger.error(f"Error checking circular follower: {e}")
+        return None  # Don't block creation on check failure
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def create_follower(leader_id: int, user_id: int, account_id: int,
                     subaccount_id: str, label: str = None,
                     multiplier: float = 1.0) -> Optional[int]:

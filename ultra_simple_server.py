@@ -24948,10 +24948,15 @@ def copy_trader_add_follower(leader_id):
         if not account_id or not subaccount_id:
             return jsonify({'success': False, 'error': 'account_id and subaccount_id required'}), 400
 
-        from copy_trader_models import get_leader_by_id, create_follower
+        from copy_trader_models import get_leader_by_id, create_follower, check_circular_follower
         leader = get_leader_by_id(leader_id)
         if not leader or leader.get('user_id') != user_id:
             return jsonify({'success': False, 'error': 'Leader not found'}), 404
+
+        # Prevent circular leader-follower loops (A→B and B→A)
+        circular_err = check_circular_follower(leader_id, int(account_id), subaccount_id)
+        if circular_err:
+            return jsonify({'success': False, 'error': circular_err}), 400
 
         follower_id = create_follower(leader_id, user_id, int(account_id),
                                        subaccount_id, label, multiplier)
