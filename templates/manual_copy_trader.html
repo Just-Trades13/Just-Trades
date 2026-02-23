@@ -1385,11 +1385,9 @@
             });
         }
 
-        // Populate leader dropdown from existing accounts
-        loadLeaderAccountOptions();
-
-        // Load existing leader from DB (so currentLeaderId is set on page load)
-        loadExistingLeader();
+        // First populate leader dropdown, THEN load existing leader
+        // (must be sequential — loadExistingLeader needs dropdown options to exist)
+        loadLeaderAccountOptions().then(() => loadExistingLeader());
 
         // Set Leader button
         const setLeaderBtn = document.getElementById('setLeaderBtn');
@@ -1407,7 +1405,11 @@
         const refreshBtn = document.getElementById('refreshFollowersBtn');
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => {
-                if (currentLeaderId) loadFollowerAccounts(currentLeaderId);
+                if (currentLeaderId) {
+                    loadFollowerAccounts(currentLeaderId);
+                } else {
+                    showToast('Set a leader account first', 'error');
+                }
             });
         }
 
@@ -1467,7 +1469,30 @@
                 updateLeaderStatus('connected', `Leader: ${leader.label || leader.subaccount_id}`);
                 loadFollowerAccounts(currentLeaderId);
                 loadCopyTradeLog(currentLeaderId);
-                console.log('Loaded existing leader:', currentLeaderId);
+
+                // Select the matching option in the leader dropdown
+                const leaderSelect = document.getElementById('leaderAccountSelect');
+                if (leaderSelect && leader.account_id && leader.subaccount_id) {
+                    const targetVal = `${leader.account_id}:${leader.subaccount_id}`;
+                    for (const opt of leaderSelect.options) {
+                        if (opt.value === targetVal) {
+                            leaderSelect.value = targetVal;
+                            break;
+                        }
+                    }
+                }
+
+                // Sync auto-copy toggle if leader has auto_copy_enabled
+                const autoCopyToggle = document.getElementById('autoCopyMode');
+                if (autoCopyToggle && leader.auto_copy_enabled) {
+                    autoCopyToggle.checked = true;
+                    document.getElementById('modeManualLabel')?.classList.remove('active');
+                    document.getElementById('modeAutoLabel')?.classList.add('active');
+                    startPositionPolling();
+                }
+
+                console.log('Loaded existing leader:', currentLeaderId,
+                            'auto_copy:', leader.auto_copy_enabled);
             }
         } catch (error) {
             console.error('Error loading existing leader:', error);

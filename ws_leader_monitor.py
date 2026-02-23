@@ -139,6 +139,12 @@ class LeaderConnection:
         # fill event AND orderStrategy event containing the same fill
         self._processed_fill_ids: Set[int] = set()
 
+        # Dead-subscription detection: consecutive 30s stat windows with 0 data messages
+        self._zero_data_windows = 0
+
+        # Max connection lifetime: 70 minutes (before 85-min token expiry)
+        self._max_connection_seconds = 4200
+
     def _next_request_id(self) -> int:
         self._request_id += 1
         return self._request_id
@@ -267,11 +273,32 @@ class LeaderConnection:
                     self.connected = False
                     break
 
+                # Proactive reconnect before token expiry (70 min < 85 min expiry)
+                if self._connection_time:
+                    age_seconds = (datetime.now(timezone.utc) - self._connection_time).total_seconds()
+                    if age_seconds > self._max_connection_seconds:
+                        logger.info(f"Leader {self.leader_id} — proactive reconnect "
+                                    f"(connection age {int(age_seconds)}s > {self._max_connection_seconds}s)")
+                        self.connected = False
+                        break
+
                 # Log WebSocket stats every 30 seconds
                 if now - self._last_stats_log > 30.0:
                     logger.info(f"Leader {self.leader_id} WebSocket: {self._msg_count} msgs "
                                 f"({self._data_msg_count} data) in last 30s, "
                                 f"positions={dict(self._positions)}")
+
+                    # Dead-subscription detection: 3 consecutive windows with 0 data msgs = 90s silence
+                    if self._data_msg_count == 0:
+                        self._zero_data_windows += 1
+                        if self._zero_data_windows >= 3:
+                            logger.warning(f"Leader {self.leader_id} — no data msgs for "
+                                           f"{self._zero_data_windows * 30}s, forcing reconnect")
+                            self.connected = False
+                            break
+                    else:
+                        self._zero_data_windows = 0
+
                     self._msg_count = 0
                     self._data_msg_count = 0
                     self._last_stats_log = now
@@ -1542,9 +1569,18 @@ async def _monitor_leader(conn: LeaderConnection):
 
     while _monitor_running:
         try:
+            # Re-read fresh token from DB before each connection attempt
+            # (main app's refresh daemon updates tokens every ~60 min)
+            fresh_token = _get_fresh_token(conn.account_id)
+            if fresh_token:
+                if fresh_token != conn.access_token:
+                    logger.info(f"Leader {conn.leader_id} — refreshed token before connect")
+                conn.access_token = fresh_token
+
             success = await conn.connect()
             if success:
                 backoff = 1  # Reset on successful connection
+                conn._zero_data_windows = 0  # Reset dead-subscription counter
                 await conn.run(fill_callback=_copy_fill_to_followers,
                                order_callback=_mirror_order_to_followers)
 
