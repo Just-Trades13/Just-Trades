@@ -5917,6 +5917,7 @@ def reconcile_positions_with_broker():
         # Get all open positions from database - CRITICAL: Include environment for demo/live detection
         is_postgres = is_using_postgres()
         enabled_val = 'true' if is_postgres else '1'
+        ph = '%s' if is_postgres else '?'
         cursor.execute(f'''
             SELECT rp.*, r.name as recorder_name, t.subaccount_id, t.is_demo,
                    a.tradovate_token, a.username, a.password, a.id as account_id, a.environment
@@ -5993,9 +5994,9 @@ def reconcile_positions_with_broker():
                             # Don't close trades that were recently updated (broker API can be slow)
                             conn_check = get_db_connection()
                             cursor_check = conn_check.cursor()
-                            cursor_check.execute('''
-                                SELECT updated_at, entry_time FROM recorded_trades 
-                                WHERE recorder_id = ? AND status = 'open'
+                            cursor_check.execute(f'''
+                                SELECT updated_at, entry_time FROM recorded_trades
+                                WHERE recorder_id = {ph} AND status = 'open'
                                 ORDER BY entry_time DESC LIMIT 1
                             ''', (recorder_id,))
                             trade_check = cursor_check.fetchone()
@@ -6062,10 +6063,10 @@ def reconcile_positions_with_broker():
                             ''', (recorder_id,))
                             
                             # Clear recorder_positions
-                            cursor_fix.execute('''
+                            cursor_fix.execute(f'''
                                 UPDATE recorder_positions
                                 SET total_quantity = 0, avg_entry_price = NULL, status = 'closed'
-                                WHERE recorder_id = ?
+                                WHERE recorder_id = {ph}
                             ''', (recorder_id,))
                             
                             conn_fix.commit()
@@ -6097,10 +6098,10 @@ def reconcile_positions_with_broker():
                                 WHERE recorder_id = {placeholder} AND status = 'open'
                             ''', (abs(broker_qty), recorder_id))
                             
-                            cursor_fix.execute('''
-                                UPDATE recorder_positions 
-                                SET total_quantity = ?
-                                WHERE recorder_id = ?
+                            cursor_fix.execute(f'''
+                                UPDATE recorder_positions
+                                SET total_quantity = {ph}
+                                WHERE recorder_id = {ph}
                             ''', (abs(broker_qty), recorder_id))
                             
                             conn_fix.commit()
@@ -6123,10 +6124,10 @@ def reconcile_positions_with_broker():
                                 WHERE recorder_id = {placeholder} AND status = 'open'
                             ''', (broker_avg, recorder_id))
                             
-                            cursor_fix.execute('''
-                                UPDATE recorder_positions 
-                                SET avg_entry_price = ?
-                                WHERE recorder_id = ?
+                            cursor_fix.execute(f'''
+                                UPDATE recorder_positions
+                                SET avg_entry_price = {ph}
+                                WHERE recorder_id = {ph}
                             ''', (broker_avg, recorder_id))
                             
                             conn_fix.commit()
@@ -6151,10 +6152,10 @@ def reconcile_positions_with_broker():
                             # Get DB trade to check if TP should exist
                             conn2 = get_db_connection()
                             cursor2 = conn2.cursor()
-                            cursor2.execute('''
+                            cursor2.execute(f'''
                                 SELECT tp_price, side, quantity
                                 FROM recorded_trades
-                                WHERE recorder_id = ? AND status = 'open'
+                                WHERE recorder_id = {ph} AND status = 'open'
                                 ORDER BY id DESC LIMIT 1
                             ''', (recorder_id,))
                             db_trade = cursor2.fetchone()
@@ -6196,7 +6197,7 @@ def reconcile_positions_with_broker():
                                         # Get TP ticks from recorder settings
                                         conn_tp = get_db_connection()
                                         cursor_tp = conn_tp.cursor()
-                                        cursor_tp.execute('SELECT tp_targets FROM recorders WHERE id = ?', (recorder_id,))
+                                        cursor_tp.execute(f'SELECT tp_targets FROM recorders WHERE id = {ph}', (recorder_id,))
                                         rec_row = cursor_tp.fetchone()
                                         conn_tp.close()
 
