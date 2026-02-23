@@ -748,11 +748,15 @@ class LeaderConnection:
         logger.info(f"FILL detected on leader {self.leader_id}: "
                     f"{action} {qty} {symbol} @ {price} — type={fill_type}")
 
+        # Capture leader's position BEFORE and AFTER the fill (for formula-based sync)
+        prev_pos = dict(self._positions.get(symbol, {'side': '', 'qty': 0}))
+
         # Update position state
         self._update_position(symbol, action, qty, fill_type)
+        new_pos = dict(self._positions.get(symbol, {'side': '', 'qty': 0}))
         logger.debug(f"Leader {self.leader_id} positions: {self._positions}")
 
-        # Pass to callback with fill_type
+        # Pass to callback with fill_type + position state for formula-based sync
         if fill_callback:
             try:
                 await fill_callback(
@@ -767,6 +771,8 @@ class LeaderConnection:
                         'price': price,
                         'timestamp': timestamp_str,
                         'fill_type': fill_type,
+                        'leader_prev_position': prev_pos,
+                        'leader_position': new_pos,
                     }
                 )
             except Exception as e:
@@ -838,44 +844,56 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
             price = fill_data.get('price', 0)
             fill_type = fill_data.get('fill_type', 'entry')
 
-            # For entries, get leader's TP/SL as risk_config
+            # Formula-based position sync: use leader's resulting position
+            leader_pos = fill_data.get('leader_position', {'side': '', 'qty': 0})
+            leader_prev = fill_data.get('leader_prev_position', {'side': '', 'qty': 0})
+            leader_target_qty = leader_pos.get('qty', 0)
+            leader_target_side = leader_pos.get('side', '')
+            leader_was_flat = leader_prev.get('qty', 0) == 0
+
+            # For entries (leader was flat → now has position), get leader's TP/SL as risk_config
             risk_config = {}
-            if fill_type == 'entry':
+            if leader_was_flat and leader_target_qty > 0:
                 leader_conn = _leader_connections.get(leader_id)
                 if leader_conn and price > 0:
                     risk_config = await leader_conn._get_leader_risk_config(symbol, price)
 
-            logger.info(f"Copying {fill_type} {action} {qty} {symbol} from leader {leader_id} "
-                        f"to {len(followers)} followers (risk={bool(risk_config)})")
+            prev_desc = 'flat' if leader_was_flat else f"{leader_prev.get('side', '')} {leader_prev.get('qty', 0)}"
+            logger.info(f"Position sync: leader {leader_id} now {leader_target_side} {leader_target_qty} {symbol} "
+                        f"(was {prev_desc}) — syncing {len(followers)} followers (risk={bool(risk_config)})")
 
             for follower in followers:
                 follower_id = follower['id']
                 multiplier = follower.get('multiplier', 1.0) or 1.0
                 max_pos = follower.get('max_position_size', 0) or 0
-                follower_qty = max(1, int(round(qty * multiplier)))
+
+                # === FORMULA-BASED POSITION SYNC ===
+                # Target = leader's resulting position * multiplier
+                # Instead of interpreting fill types, just match the leader's position.
+                follower_target_qty = max(1, int(round(leader_target_qty * multiplier))) if leader_target_qty > 0 else 0
+                follower_target_side = leader_target_side
+                follower_target_action = 'Buy' if follower_target_side == 'Long' else 'Sell'
 
                 # --- FILL-PATH DEDUP: skip if follower has mirrored limit order ---
-                # If we already placed a limit/stop order on this follower for the
-                # same symbol+side, let it fill naturally instead of sending a market order.
-                if fill_type == 'entry':
+                if leader_was_flat and leader_target_qty > 0:
                     try:
                         from copy_trader_models import get_active_mirror_for_follower, update_mirrored_order
-                        active_mirror = get_active_mirror_for_follower(follower_id, symbol, action)
+                        active_mirror = get_active_mirror_for_follower(follower_id, symbol, follower_target_action)
                         if active_mirror:
-                            logger.info(f"  Follower {follower_id} has mirrored {action} {symbol} order "
+                            logger.info(f"  Follower {follower_id} has mirrored {follower_target_action} {symbol} order "
                                         f"(mirror {active_mirror['id']}) — will fill naturally, skipping market order")
                             update_mirrored_order(active_mirror['id'], status='filled')
                             continue
                     except Exception as dedup_err:
                         logger.warning(f"  Mirror dedup check error for follower {follower_id}: {dedup_err}")
 
-                # Apply max_position_size cap (Step 5)
-                if max_pos and max_pos > 0 and fill_type == 'entry':
-                    follower_qty = min(follower_qty, max_pos)
+                # Apply max_position_size cap
+                if max_pos and max_pos > 0 and follower_target_qty > 0:
+                    follower_target_qty = min(follower_target_qty, max_pos)
 
                 # Determine follower risk — respect copy_tp / copy_sl toggles
                 follower_risk = {}
-                if risk_config and fill_type == 'entry':
+                if risk_config and leader_was_flat and leader_target_qty > 0:
                     copy_tp = follower.get('copy_tp', True)
                     copy_sl = follower.get('copy_sl', True)
                     if copy_tp and 'take_profit' in risk_config:
@@ -884,14 +902,19 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                         follower_risk['stop_loss'] = risk_config['stop_loss']
 
                 # Log the pending copy
-                log_side = 'close' if fill_type in ('full_exit', 'reversal') else action
+                if follower_target_qty == 0:
+                    log_desc = 'close (flat)'
+                elif leader_was_flat:
+                    log_desc = f'{follower_target_action} (entry)'
+                else:
+                    log_desc = f'{follower_target_action} (sync)'
                 log_id = log_copy_trade(
                     leader_id=leader_id,
                     follower_id=follower_id,
                     symbol=symbol,
-                    side=f"{log_side} ({fill_type})",
-                    leader_quantity=qty,
-                    follower_quantity=follower_qty,
+                    side=log_desc,
+                    leader_quantity=leader_target_qty,
+                    follower_quantity=follower_target_qty,
                     leader_price=price,
                     status='pending'
                 )
@@ -903,45 +926,36 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
 
                     # Record this copy in dedup map — if this follower account is
                     # ALSO a leader, its monitor will see the fill and skip it.
-                    # Uses str(subaccount_id) to match the key format in _process_fill.
                     follower_sub_id = str(follower.get('subaccount_id', ''))
-                    copy_action = action.lower()
-                    _recent_copy_fills[(follower_sub_id, symbol, copy_action)] = time.time()
-                    if fill_type in ('full_exit', 'partial_exit'):
-                        # Close/exit: the follower gets an opposite-side market order
-                        opp_action = 'sell' if action.lower() == 'buy' else 'buy'
-                        _recent_copy_fills[(follower_sub_id, symbol, opp_action)] = time.time()
-                    logger.debug(f"Dedup recorded: ({follower_sub_id}, {symbol}, {copy_action})")
+                    if follower_target_qty > 0:
+                        copy_action = follower_target_action.lower()
+                        _recent_copy_fills[(follower_sub_id, symbol, copy_action)] = time.time()
+                    else:
+                        # Close: record both sides to prevent re-copy of the close fill
+                        _recent_copy_fills[(follower_sub_id, symbol, 'buy')] = time.time()
+                        _recent_copy_fills[(follower_sub_id, symbol, 'sell')] = time.time()
+                    logger.debug(f"Dedup recorded: ({follower_sub_id}, {symbol})")
 
-                    if fill_type == 'entry':
-                        result = await _execute_follower_entry(
-                            account_subaccount, symbol, action, follower_qty,
-                            risk_config=follower_risk
-                        )
-                    elif fill_type == 'partial_exit':
-                        # Trim: opposite-side market order, no risk
-                        opposite_side = 'Sell' if action.lower() == 'buy' else 'Buy'
-                        result = await _execute_follower_entry(
-                            account_subaccount, symbol, opposite_side, follower_qty,
-                            risk_config={}
-                        )
-                    elif fill_type == 'full_exit':
+                    # === FORMULA EXECUTION ===
+                    if follower_target_qty == 0:
+                        # Leader is flat → close follower
                         result = await _execute_follower_close(account_subaccount, symbol)
-                    elif fill_type == 'reversal':
-                        # Close first, then open new entry
-                        close_result = await _execute_follower_close(account_subaccount, symbol)
-                        if close_result and close_result.get('success'):
-                            logger.info(f"  Reversal close done for follower {follower_id}, now entering")
-                        # New entry in opposite direction
+                    elif leader_was_flat:
+                        # Leader entered from flat → fresh entry on follower (no close needed)
                         result = await _execute_follower_entry(
-                            account_subaccount, symbol, action, follower_qty,
-                            risk_config=follower_risk
+                            account_subaccount, symbol, follower_target_action,
+                            follower_target_qty, risk_config=follower_risk
                         )
                     else:
-                        # Unknown fill type — fall back to naked entry
+                        # Leader changed position (reversal, add, trim) →
+                        # Close follower first (cancels resting orders), then enter target
+                        close_result = await _execute_follower_close(account_subaccount, symbol)
+                        if close_result:
+                            logger.info(f"  Position sync close done for follower {follower_id}, "
+                                        f"entering target {follower_target_side} {follower_target_qty}")
                         result = await _execute_follower_entry(
-                            account_subaccount, symbol, action, follower_qty,
-                            risk_config={}
+                            account_subaccount, symbol, follower_target_action,
+                            follower_target_qty, risk_config=follower_risk
                         )
 
                     latency_ms = int((time.time() - start_time) * 1000)
@@ -960,8 +974,8 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                                 follower_order_id=result.get('order_id'),
                                 latency_ms=latency_ms
                             )
-                        logger.info(f"  Copied {fill_type} to follower {follower_id}: "
-                                    f"{action} {follower_qty} {symbol}{risk_desc} ({latency_ms}ms)")
+                        logger.info(f"  Synced follower {follower_id} → "
+                                    f"{follower_target_action} {follower_target_qty} {symbol}{risk_desc} ({latency_ms}ms)")
                     else:
                         error_msg = (result.get('error') or 'Unknown error') if result else 'No result'
                         if log_id:
@@ -970,7 +984,7 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                                 error_message=error_msg,
                                 latency_ms=latency_ms
                             )
-                        logger.warning(f"  Failed {fill_type} for follower {follower_id}: {error_msg}")
+                        logger.warning(f"  Failed sync for follower {follower_id}: {error_msg}")
 
                 except Exception as e:
                     latency_ms = int((time.time() - start_time) * 1000)

@@ -103,7 +103,7 @@ def init_copy_trader_tables():
                     leader_order_id VARCHAR(100),
                     follower_order_id VARCHAR(100),
                     symbol VARCHAR(50) NOT NULL,
-                    side VARCHAR(10) NOT NULL,
+                    side VARCHAR(50) NOT NULL,
                     leader_quantity INTEGER NOT NULL,
                     follower_quantity INTEGER NOT NULL,
                     leader_price REAL,
@@ -114,6 +114,8 @@ def init_copy_trader_tables():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            # Migrations — widen varchar columns that were too narrow
+            cursor.execute('ALTER TABLE copy_trade_log ALTER COLUMN side TYPE VARCHAR(50)')
             # Indexes
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_leader_accounts_user ON leader_accounts(user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_follower_accounts_leader ON follower_accounts(leader_id)')
@@ -411,6 +413,11 @@ def check_circular_follower(leader_id: int, account_id: int, subaccount_id: str)
             return None  # Leader not found — let create_follower handle that
 
         leader_sub = str(leader_row['subaccount_id'] if isinstance(leader_row, dict) else leader_row[0])
+
+        # Self-follow prevention: leader's own account cannot be a follower of itself
+        if str(subaccount_id) == leader_sub:
+            return ("Cannot add the leader's own account as a follower. "
+                    "The leader account and follower account must be different Tradovate accounts.")
 
         # Check: is the proposed follower account ALSO a leader that has the current leader's
         # account as a follower? If so, A→B and B→A = circular loop.
