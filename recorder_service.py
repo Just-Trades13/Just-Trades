@@ -6192,13 +6192,29 @@ def reconcile_positions_with_broker():
                                                 has_tp_order = True
                                                 existing_tp_orders.append(order)
                                                 logger.debug(f"✅ TP order found for {ticker}: {order_action} @ {order.get('price')} (order {order.get('id', order.get('orderId', '?'))})")
-                                    
+
+
+                                    # Duplicate TP cleanup: if more than 1 TP found, cancel extras (zero new API calls for detection)
+                                    if len(existing_tp_orders) > 1:
+                                        logger.warning(f"⚠️ DUPLICATE TPs: Found {len(existing_tp_orders)} TP orders for {ticker} — cancelling extras")
+                                        for extra_tp in existing_tp_orders[1:]:  # Keep the first, cancel the rest
+                                            extra_tp_id = extra_tp.get('id') or extra_tp.get('orderId')
+                                            if extra_tp_id:
+                                                try:
+                                                    await tradovate.cancel_order(order_id=str(extra_tp_id))
+                                                    logger.info(f"🗑️ Cancelled duplicate TP order {extra_tp_id} for {ticker}")
+                                                    await asyncio.sleep(0.2)  # 200ms between cancels for broker processing
+                                                except Exception as cancel_err:
+                                                    logger.warning(f"Could not cancel duplicate TP {extra_tp_id}: {cancel_err}")
+
                                     if not has_tp_order:
                                         logger.warning(f"🔄 SYNC FIX: MISSING TP ORDER for {ticker} - PLACING NOW")
-                                        
+
                                         # Calculate correct TP based on broker avg price
                                         is_long = db_side == 'LONG'
-                                        tick_size = 0.25  # MNQ tick size
+                                        # Rule 15: Look up tick size by symbol root (handles 2-letter roots GC, CL, SI)
+                                        ticker_root_ts = extract_symbol_root(ticker)
+                                        tick_size = TICK_SIZES.get(ticker_root_ts, TICK_SIZES.get(ticker_root_ts[:2], 0.25)) if ticker_root_ts else 0.25
                                         tp_ticks = 0  # No TP by default - let strategy handle it
 
                                         # Get TP ticks from recorder settings
@@ -6230,6 +6246,26 @@ def reconcile_positions_with_broker():
                                                 tp_action = 'Buy'
                                             # Round to nearest valid tick increment
                                             new_tp_price = round(round(new_tp_price_raw / tick_size) * tick_size, 10)
+
+                                            # Cancel ALL existing TPs before placing new (uses orders already fetched — zero extra API calls)
+                                            tp_direction = 'Sell' if is_long else 'Buy'
+                                            for existing_order in orders:
+                                                eo_symbol = existing_order.get('symbol', '')
+                                                eo_root = extract_symbol_root(eo_symbol)
+                                                eo_action = existing_order.get('action', '')
+                                                eo_status = existing_order.get('ordStatus', '') or ''
+                                                eo_type = existing_order.get('orderType', '') or ''
+                                                if eo_root == ticker_root and eo_action == tp_direction and \
+                                                   'limit' in eo_type.lower() and \
+                                                   eo_status in ['New', 'Working', 'PartiallyFilled', 'PendingNew', 'Accepted']:
+                                                    eo_id = existing_order.get('id') or existing_order.get('orderId')
+                                                    if eo_id:
+                                                        try:
+                                                            await tradovate.cancel_order(order_id=str(eo_id))
+                                                            logger.info(f"🗑️ Cancelled existing TP {eo_id} before re-placing for {ticker}")
+                                                            await asyncio.sleep(0.2)
+                                                        except Exception as cancel_err:
+                                                            logger.warning(f"Could not cancel TP {eo_id}: {cancel_err}")
 
                                             # Place the TP order
                                             try:
