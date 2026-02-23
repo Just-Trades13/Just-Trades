@@ -283,6 +283,19 @@ def create_leader(user_id: int, account_id: int, subaccount_id: str,
     ph = _ph(db_type)
 
     try:
+        # Deactivate all other leaders for this user (single active leader model)
+        # This prevents circular follower checks from blocking when switching leaders
+        if db_type == 'postgresql':
+            cursor.execute(f'''
+                UPDATE leader_accounts SET is_active = FALSE, auto_copy_enabled = FALSE, updated_at = NOW()
+                WHERE user_id = {ph} AND NOT (account_id = {ph} AND subaccount_id = {ph})
+            ''', (user_id, account_id, subaccount_id))
+        else:
+            cursor.execute(f'''
+                UPDATE leader_accounts SET is_active = 0, auto_copy_enabled = 0, updated_at = datetime('now')
+                WHERE user_id = {ph} AND NOT (account_id = {ph} AND subaccount_id = {ph})
+            ''', (user_id, account_id, subaccount_id))
+
         if db_type == 'postgresql':
             cursor.execute(f'''
                 INSERT INTO leader_accounts (user_id, account_id, subaccount_id, label)
