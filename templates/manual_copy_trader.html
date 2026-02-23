@@ -1685,6 +1685,7 @@
                             ${latency}
                             <span class="log-time">${time}</span>
                         </div>
+                        ${entry.error_message ? `<div style="color:#ef4444;font-size:0.75rem;padding:2px 8px;opacity:0.8">${entry.error_message.substring(0, 100)}</div>` : ''}
                     </div>
                 `;
             });

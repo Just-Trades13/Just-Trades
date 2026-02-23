@@ -24033,9 +24033,16 @@ def _propagate_manual_trade_to_followers(leader_id, symbol, side, quantity, risk
                 }
 
                 start_ms = time.time() * 1000
-                resp = _requests.post(url, json=payload, timeout=30)
+                _headers = {}
+                _admin_key = os.environ.get('ADMIN_API_KEY')
+                if _admin_key:
+                    _headers['X-Admin-Key'] = _admin_key
+                resp = _requests.post(url, json=payload, headers=_headers, timeout=30)
                 latency_ms = int(time.time() * 1000 - start_ms)
-                result = resp.json() if resp.status_code == 200 else {'success': False, 'error': resp.text}
+                try:
+                    result = resp.json()
+                except Exception:
+                    result = {'success': False, 'error': f'HTTP {resp.status_code}: {resp.text[:200]}'}
 
                 status = 'filled' if result.get('success') else 'error'
                 log_copy_trade(

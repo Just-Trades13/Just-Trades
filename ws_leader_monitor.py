@@ -711,7 +711,11 @@ async def _execute_follower_entry(account_subaccount: str, symbol: str,
     }
 
     try:
-        async with aiohttp.ClientSession() as http_session:
+        _headers = {}
+        _admin_key = os.environ.get('ADMIN_API_KEY')
+        if _admin_key:
+            _headers['X-Admin-Key'] = _admin_key
+        async with aiohttp.ClientSession(headers=_headers) as http_session:
             async with http_session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 result = await resp.json()
                 return result
@@ -739,7 +743,11 @@ async def _execute_follower_close(account_subaccount: str, symbol: str) -> dict:
     }
 
     try:
-        async with aiohttp.ClientSession() as http_session:
+        _headers = {}
+        _admin_key = os.environ.get('ADMIN_API_KEY')
+        if _admin_key:
+            _headers['X-Admin-Key'] = _admin_key
+        async with aiohttp.ClientSession(headers=_headers) as http_session:
             async with http_session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 result = await resp.json()
                 return result
