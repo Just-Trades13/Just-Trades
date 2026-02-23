@@ -719,7 +719,7 @@ def _load_account_groups() -> List[Dict]:
         cursor.execute('''
             SELECT DISTINCT
                 a.id as account_id,
-                a.subaccount_id,
+                t.subaccount_id,
                 a.tradovate_token,
                 a.environment
             FROM traders t
@@ -727,7 +727,7 @@ def _load_account_groups() -> List[Dict]:
             WHERE t.enabled = TRUE
               AND a.tradovate_token IS NOT NULL
               AND a.tradovate_token != ''
-              AND a.subaccount_id IS NOT NULL
+              AND t.subaccount_id IS NOT NULL
               AND a.broker IN ('tradovate', 'ninjatrader')
         ''')
 
