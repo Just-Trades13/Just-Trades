@@ -34000,6 +34000,14 @@ if __name__ == '__main__':
     except Exception as e:
         logger.warning(f"Leader monitor failed to start (non-fatal): {e}")
 
+    # Start WebSocket position monitor (real-time broker sync)
+    try:
+        from ws_position_monitor import start_position_monitor
+        start_position_monitor()
+        logger.info("✅ Position WebSocket monitor started (real-time broker sync)")
+    except Exception as e:
+        logger.warning(f"Position WebSocket monitor failed to start: {e} — reconciliation daemon is safety net")
+
     # Start fast webhook workers (MUST be after app is created)
     try:
         start_fast_webhook_workers()
