@@ -1364,9 +1364,13 @@
                     }
                 })
                 .catch(() => {});
-            // Toggle handler
+            // Toggle handler — optimistic update (show new state immediately)
             masterToggle.addEventListener('change', function() {
                 const enabled = this.checked;
+                if (masterStatus) {
+                    masterStatus.textContent = enabled ? 'Active' : 'Disabled';
+                    masterStatus.style.color = enabled ? '#22c55e' : '#ef4444';
+                }
                 fetch('/api/admin/copy-trader-toggle', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -1374,14 +1378,22 @@
                 })
                 .then(r => r.json())
                 .then(data => {
-                    if (data.success) {
+                    if (!data.success) {
+                        // Revert on failure
+                        masterToggle.checked = !enabled;
                         if (masterStatus) {
-                            masterStatus.textContent = enabled ? 'Active' : 'Disabled';
-                            masterStatus.style.color = enabled ? '#22c55e' : '#ef4444';
+                            masterStatus.textContent = !enabled ? 'Active' : 'Disabled';
+                            masterStatus.style.color = !enabled ? '#22c55e' : '#ef4444';
                         }
                     }
                 })
-                .catch(() => {});
+                .catch(() => {
+                    masterToggle.checked = !enabled;
+                    if (masterStatus) {
+                        masterStatus.textContent = !enabled ? 'Active' : 'Disabled';
+                        masterStatus.style.color = !enabled ? '#22c55e' : '#ef4444';
+                    }
+                });
             });
         }
 
