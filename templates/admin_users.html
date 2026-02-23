@@ -1942,31 +1942,28 @@ function deleteUserTrader(traderId, strategyName, accountName) {
 let adminPnlCache = {};
 
 function renderLivePnlTab() {
-    const accounts = currentUserDetails.accounts || [];
     const content = document.getElementById('detailsContent');
+    const userId = currentUserDetails.user_id;
 
-    if (accounts.length === 0) {
-        content.innerHTML = '<div class="empty-details"><span class="material-icons">account_balance_wallet</span><p>No accounts connected</p></div>';
-        return;
-    }
-
-    const userAccountIds = new Set(accounts.map(a => a.id));
-
+    // Filter adminPnlCache by user_id (pnl_data is keyed by Tradovate subaccount ID, not accounts.id)
+    let cardCount = 0;
     let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; padding: 16px;">';
 
-    accounts.forEach(acc => {
-        const pnl = adminPnlCache[acc.id] || {};
-        const openPnl = pnl.open_pnl || 0;
-        const realizedPnl = pnl.realized_pnl || 0;
-        const netLiq = pnl.net_liq || 0;
+    for (const [accId, acc] of Object.entries(adminPnlCache)) {
+        if (acc.user_id !== userId) continue;
+        cardCount++;
+
+        const openPnl = acc.open_pnl || 0;
+        const realizedPnl = acc.realized_pnl || 0;
+        const netLiq = acc.net_liq || 0;
         const pnlClass = openPnl >= 0 ? 'positive' : 'negative';
         const pnlSign = openPnl >= 0 ? '+' : '';
-        const envLabel = acc.environment === 'live' ? '(Live)' : '(Demo)';
-        const envClass = acc.environment === 'live' ? 'live' : 'demo';
+        const envLabel = acc.is_demo ? '(Demo)' : '(Live)';
+        const envClass = acc.is_demo ? 'demo' : 'live';
 
         html += `<div class="account-pnl-card">
             <div class="account-header">
-                <span class="account-name">${acc.name || 'Account ' + acc.id}</span>
+                <span class="account-name">${acc.account_name || accId}</span>
                 <span class="account-type-badge ${envClass}">${envLabel}</span>
             </div>
             <div class="pnl-row">
@@ -1982,9 +1979,15 @@ function renderLivePnlTab() {
                 <span class="pnl-value">$${netLiq.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
             </div>
         </div>`;
-    });
+    }
 
     html += '</div>';
+
+    if (cardCount === 0) {
+        html = '<div class="empty-details"><span class="material-icons">account_balance_wallet</span><p>Waiting for P&L data... (updates every ~5 seconds)</p></div>';
+    }
+
+    document.getElementById('pnlCount').textContent = cardCount;
     content.innerHTML = html;
 }
 
@@ -1992,17 +1995,8 @@ function renderLivePnlTab() {
 if (typeof io !== 'undefined') {
     const adminPnlSocket = io();
 
-    adminPnlSocket.on('pnl_update', function(data) {
-        if (data.pnl_data) {
-            Object.assign(adminPnlCache, data.pnl_data);
-        }
-        const activeTab = document.querySelector('.details-tab.active');
-        if (activeTab && activeTab.dataset.tab === 'live_pnl') {
-            renderLivePnlTab();
-        }
-    });
-
     adminPnlSocket.on('position_update', function(data) {
+        // pnl_data is only in position_update, NOT in pnl_update
         if (data.pnl_data) {
             Object.assign(adminPnlCache, data.pnl_data);
         }
