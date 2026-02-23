@@ -1303,7 +1303,366 @@ def _get_fresh_token(account_id: int) -> Optional[str]:
 
 
 # ============================================================================
-# MAIN ASYNC LOOP
+# POSITION MONITOR LISTENER — Shared Connection Manager adapter
+# ============================================================================
+
+class PositionMonitorListener(Listener):
+    """Listener that syncs broker positions/fills/orders to the database.
+
+    Receives pre-parsed WebSocket messages from the SharedConnection
+    and dispatches to the same event handlers as the legacy AccountGroupConnection.
+    All DB write logic is identical — only the message delivery path changed.
+    """
+
+    def __init__(self, token_key: str, access_token: str, is_demo: bool,
+                 subaccount_ids: List[int], db_account_ids: List[int]):
+        self._token_key = token_key
+        self.access_token = access_token
+        self.is_demo = is_demo
+        self.subaccount_ids = subaccount_ids
+        self.db_account_ids = db_account_ids
+
+        # Contract ID cache (contractId -> symbol name)
+        self._contract_cache: Dict[int, str] = {}
+
+        # TP Orphan detection state
+        self._pending_orphan_checks: Dict[int, float] = {}
+        self._last_periodic_sweep: float = 0.0
+        self._orders_cache: Dict[int, tuple] = {}
+        self._recorder_tp_config: Dict[int, dict] = {}
+        self._ORPHAN_CHECK_DELAY = 5.0
+        self._PERIODIC_SWEEP_INTERVAL = 60.0
+        self._ORDERS_CACHE_TTL = 30.0
+
+    @property
+    def listener_id(self) -> str:
+        return f'position-monitor-{self._token_key}'
+
+    async def on_connected(self, token_key: str):
+        """Refresh sub_to_recorders map and access token on (re)connect."""
+        _build_sub_to_recorders_map()
+        # Refresh access token from DB for REST API calls (symbol resolution)
+        if self.db_account_ids:
+            fresh_token = _get_fresh_token(self.db_account_ids[0])
+            if fresh_token:
+                self.access_token = fresh_token
+        logger.info(f"[{self._token_key}] Position monitor listener connected")
+
+    async def on_disconnected(self, token_key: str):
+        logger.info(f"[{self._token_key}] Position monitor listener disconnected")
+
+    async def on_message(self, items: list, raw_message: str):
+        """Process pre-parsed items for position/fill/order events.
+
+        Same dispatch logic as AccountGroupConnection._handle_message(),
+        but items are already parsed by SharedConnection._dispatch_message().
+        """
+        for data in items:
+            # Props event: {e: "props", d: {entityType: "...", entity: {...}}}
+            if data.get('e') == 'props':
+                d = data.get('d', {})
+                entity_type = d.get('entityType')
+                entity = d.get('entity') or d
+
+                if entity_type == 'position' and isinstance(entity, dict):
+                    await self._handle_position_event(entity)
+                elif entity_type == 'fill' and isinstance(entity, dict):
+                    if d.get('eventType') == 'Created':
+                        await self._handle_fill_event(entity)
+                elif entity_type == 'order' and isinstance(entity, dict):
+                    await self._handle_order_event(entity)
+
+            # Bulk sync response
+            if 'd' in data:
+                d = data['d']
+                if isinstance(d, dict):
+                    for pos in d.get('positions', []):
+                        if isinstance(pos, dict):
+                            await self._handle_position_event(pos)
+                    for fill in d.get('fills', []):
+                        if isinstance(fill, dict):
+                            await self._handle_fill_event(fill)
+                    for order in d.get('orders', []):
+                        if isinstance(order, dict):
+                            await self._handle_order_event(order)
+
+    async def _resolve_symbol(self, contract_id: int) -> str:
+        """Resolve contractId to symbol name via REST API with caching."""
+        if not contract_id:
+            return ''
+        if contract_id in self._contract_cache:
+            return self._contract_cache[contract_id]
+        try:
+            import aiohttp
+            base_url = ("https://demo.tradovateapi.com/v1" if self.is_demo
+                        else "https://live.tradovateapi.com/v1")
+            headers = {'Authorization': f'Bearer {self.access_token}',
+                       'Content-Type': 'application/json'}
+            async with aiohttp.ClientSession() as http:
+                async with http.get(f"{base_url}/contract/item",
+                                    params={'id': contract_id},
+                                    headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        symbol = data.get('name', '') or ''
+                        if symbol:
+                            self._contract_cache[contract_id] = symbol
+                            logger.debug(f"Resolved contractId {contract_id} -> {symbol}")
+                        return symbol
+        except Exception as e:
+            logger.warning(f"Failed to resolve contractId {contract_id}: {e}")
+        return ''
+
+    # ========================================================================
+    # EVENT HANDLERS — Identical to AccountGroupConnection (copy-paste)
+    # DB writes are idempotent (safe to receive same event twice)
+    # ========================================================================
+
+    async def _handle_position_event(self, entity: dict):
+        """Sync position netPos/netPrice with recorder_positions table."""
+        account_id = entity.get('accountId')
+        if not account_id:
+            return
+
+        net_pos = entity.get('netPos', 0)
+        net_price = entity.get('netPrice')
+        contract_id = entity.get('contractId')
+
+        if not contract_id:
+            return
+
+        symbol = await self._resolve_symbol(contract_id)
+        if not symbol:
+            return
+
+        symbol_root = _get_symbol_root(symbol)
+        recorder_ids = _get_recorder_ids_for_subaccount(account_id)
+        if not recorder_ids:
+            return
+
+        logger.info(f"[{self._token_key}] Position event: account={account_id} "
+                     f"symbol={symbol} netPos={net_pos} netPrice={net_price}")
+
+        try:
+            conn = _get_pg_connection()
+            if not conn:
+                return
+            cursor = conn.cursor()
+
+            for recorder_id in recorder_ids:
+                if net_pos == 0:
+                    cursor.execute('''
+                        UPDATE recorder_positions
+                        SET total_quantity = 0, avg_entry_price = NULL, status = 'closed'
+                        WHERE recorder_id = %s AND status = 'open'
+                    ''', (recorder_id,))
+                else:
+                    cursor.execute('''
+                        UPDATE recorder_positions
+                        SET total_quantity = %s, avg_entry_price = %s
+                        WHERE recorder_id = %s AND status = 'open'
+                    ''', (abs(net_pos), net_price, recorder_id))
+
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"[{self._token_key}] Position DB update error: {e}")
+
+    async def _handle_fill_event(self, entity: dict):
+        """Detect TP/SL fills and close recorded_trades accordingly."""
+        account_id = entity.get('accountId')
+        if not account_id:
+            return
+
+        contract_id = entity.get('contractId')
+        action = entity.get('action', '')
+        qty = entity.get('qty', 0)
+        price = entity.get('price', 0)
+        order_id = entity.get('orderId')
+
+        symbol = await self._resolve_symbol(contract_id) if contract_id else ''
+        symbol_root = _get_symbol_root(symbol) if symbol else ''
+
+        recorder_ids = _get_recorder_ids_for_subaccount(account_id)
+        if not recorder_ids:
+            return
+
+        logger.info(f"[{self._token_key}] Fill event: account={account_id} "
+                     f"symbol={symbol} action={action} qty={qty} price={price} "
+                     f"orderId={order_id}")
+
+        try:
+            conn = _get_pg_connection()
+            if not conn:
+                return
+            cursor = conn.cursor()
+
+            for recorder_id in recorder_ids:
+                cursor.execute('''
+                    SELECT id, side, tp_order_id, tp_price, quantity
+                    FROM recorded_trades
+                    WHERE recorder_id = %s AND status = 'open'
+                    ORDER BY id DESC LIMIT 1
+                ''', (recorder_id,))
+                trade = cursor.fetchone()
+                if not trade:
+                    continue
+
+                trade_id = trade[0]
+                trade_side = trade[1]
+                tp_order_id = trade[2]
+                tp_price = trade[3]
+                trade_qty = trade[4]
+
+                is_tp_fill = False
+                if trade_side == 'LONG' and action == 'Sell':
+                    is_tp_fill = True
+                elif trade_side == 'SHORT' and action == 'Buy':
+                    is_tp_fill = True
+
+                if is_tp_fill:
+                    is_tp_order_match = False
+                    if tp_order_id and order_id and str(tp_order_id) == str(order_id):
+                        is_tp_order_match = True
+
+                    if tp_price and price:
+                        tick = _get_tick_size(symbol)
+                        if abs(float(price) - float(tp_price)) <= tick * 2:
+                            is_tp_order_match = True
+
+                    if is_tp_order_match:
+                        exit_reason = 'tp_filled_ws'
+                    else:
+                        exit_reason = 'sl_filled_ws'
+
+                    if qty >= trade_qty:
+                        cursor.execute('''
+                            UPDATE recorded_trades
+                            SET status = 'closed', exit_reason = %s,
+                                exit_price = %s, exit_time = NOW(), updated_at = NOW()
+                            WHERE id = %s AND status = 'open'
+                        ''', (exit_reason, price, trade_id))
+
+                        cursor.execute('''
+                            UPDATE recorder_positions
+                            SET total_quantity = 0, avg_entry_price = NULL, status = 'closed'
+                            WHERE recorder_id = %s AND status = 'open'
+                        ''', (recorder_id,))
+
+                        logger.info(f"[{self._token_key}] Closed trade {trade_id}: "
+                                     f"{exit_reason} @ {price}")
+                    else:
+                        new_qty = trade_qty - qty
+                        cursor.execute('''
+                            UPDATE recorded_trades
+                            SET quantity = %s, updated_at = NOW()
+                            WHERE id = %s AND status = 'open'
+                        ''', (new_qty, trade_id))
+
+                        cursor.execute('''
+                            UPDATE recorder_positions
+                            SET total_quantity = %s
+                            WHERE recorder_id = %s AND status = 'open'
+                        ''', (new_qty, recorder_id))
+
+                        logger.info(f"[{self._token_key}] Partial fill on trade {trade_id}: "
+                                     f"-{qty} -> {new_qty} remaining")
+
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"[{self._token_key}] Fill DB update error: {e}")
+
+    async def _handle_order_event(self, entity: dict):
+        """Track TP order IDs and detect cancellations."""
+        account_id = entity.get('accountId')
+        if not account_id:
+            return
+
+        order_id = entity.get('id') or entity.get('orderId')
+        order_status = entity.get('ordStatus', '') or ''
+        order_type = entity.get('ordType') or entity.get('orderType') or ''
+        order_action = entity.get('action', '')
+        order_price = entity.get('price')
+        contract_id = entity.get('contractId')
+
+        if 'limit' not in order_type.lower():
+            return
+
+        recorder_ids = _get_recorder_ids_for_subaccount(account_id)
+        if not recorder_ids:
+            return
+
+        if order_status in ['Working', 'New', 'Accepted'] and order_price and order_id:
+            try:
+                conn = _get_pg_connection()
+                if not conn:
+                    return
+                cursor = conn.cursor()
+
+                for recorder_id in recorder_ids:
+                    cursor.execute('''
+                        SELECT id, tp_price, side, tp_order_id
+                        FROM recorded_trades
+                        WHERE recorder_id = %s AND status = 'open'
+                        ORDER BY id DESC LIMIT 1
+                    ''', (recorder_id,))
+                    trade = cursor.fetchone()
+                    if not trade:
+                        continue
+
+                    trade_id = trade[0]
+                    tp_price = trade[1]
+                    trade_side = trade[2]
+                    existing_tp_id = trade[3]
+
+                    is_tp_match = False
+                    if tp_price and order_price:
+                        tick = _get_tick_size(str(contract_id))
+                        if abs(float(order_price) - float(tp_price)) <= tick * 2:
+                            if (trade_side == 'LONG' and order_action == 'Sell') or \
+                               (trade_side == 'SHORT' and order_action == 'Buy'):
+                                is_tp_match = True
+
+                    if is_tp_match and (not existing_tp_id or str(existing_tp_id) != str(order_id)):
+                        cursor.execute('''
+                            UPDATE recorded_trades
+                            SET tp_order_id = %s, updated_at = NOW()
+                            WHERE id = %s
+                        ''', (str(order_id), trade_id))
+                        logger.info(f"[{self._token_key}] Tracked TP order {order_id} "
+                                     f"for trade {trade_id}")
+
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.error(f"[{self._token_key}] Order tracking error: {e}")
+
+        elif order_status in ['Cancelled', 'Rejected', 'Expired'] and order_id:
+            try:
+                conn = _get_pg_connection()
+                if not conn:
+                    return
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    UPDATE recorded_trades
+                    SET tp_order_id = NULL, updated_at = NOW()
+                    WHERE tp_order_id = %s AND status = 'open'
+                ''', (str(order_id),))
+
+                if cursor.rowcount > 0:
+                    logger.info(f"[{self._token_key}] Cleared cancelled TP order {order_id}")
+
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.error(f"[{self._token_key}] Order cancel tracking error: {e}")
+
+
+# ============================================================================
+# MAIN ASYNC LOOP (LEGACY — kept for rollback, no longer started)
 # ============================================================================
 
 async def _run_position_monitor():
@@ -1410,51 +1769,103 @@ async def _monitor_group(conn: AccountGroupConnection):
 # ============================================================================
 
 def start_position_monitor():
-    """Start the position monitor in a background daemon thread."""
-    global _monitor_thread, _monitor_running
+    """Register position monitor listeners with the shared connection manager.
+
+    No longer spawns its own daemon thread — the connection manager runs
+    all WebSocket connections in its own thread. This function:
+    1. Builds the subaccount -> recorder mapping
+    2. Loads account groups (grouped by token)
+    3. Creates a PositionMonitorListener per token group
+    4. Registers each listener with the shared TradovateConnectionManager
+    """
+    global _monitor_running, _position_listeners
 
     if _monitor_running:
         logger.info("Position monitor already running")
         return
 
-    def _thread_target():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(_run_position_monitor())
-        except Exception as e:
-            logger.error(f"Position monitor thread error: {e}")
-        finally:
-            loop.close()
+    _monitor_running = True
 
-    _monitor_thread = threading.Thread(target=_thread_target, daemon=True,
-                                       name="position-ws-monitor")
-    _monitor_thread.start()
-    logger.info("Position WebSocket monitor daemon thread started")
+    # Build subaccount -> recorder mapping
+    _build_sub_to_recorders_map()
+
+    # Load account groups
+    groups = _load_account_groups()
+    if not groups:
+        logger.info("No active Tradovate accounts for position monitoring — "
+                     "will be picked up on next connection manager cycle")
+        return
+
+    logger.info(f"Position monitor: {len(groups)} token group(s), "
+                f"{sum(len(g['subaccount_ids']) for g in groups)} total accounts")
+
+    # Get the shared connection manager
+    manager = get_connection_manager()
+
+    for group in groups:
+        token_key = group['token_key']
+
+        listener = PositionMonitorListener(
+            token_key=token_key,
+            access_token=group['access_token'],
+            is_demo=group['is_demo'],
+            subaccount_ids=group['subaccount_ids'],
+            db_account_ids=group['account_db_ids'],
+        )
+        _position_listeners[token_key] = listener
+
+        manager.register_listener(
+            token=group['access_token'],
+            is_demo=group['is_demo'],
+            subaccount_ids=group['subaccount_ids'],
+            listener=listener,
+            db_account_ids=group['account_db_ids'],
+        )
+
+    logger.info(f"Position monitor: registered {len(_position_listeners)} listener(s) "
+                f"with shared connection manager")
 
 
 def stop_position_monitor():
-    """Stop the position monitor."""
-    global _monitor_running
+    """Unregister position monitor listeners from the shared connection manager."""
+    global _monitor_running, _position_listeners
     _monitor_running = False
+
+    manager = get_connection_manager()
+    for listener in _position_listeners.values():
+        manager.unregister_listener(listener.listener_id)
+    _position_listeners.clear()
+
     logger.info("Position monitor stopping...")
 
 
 def get_position_monitor_status() -> Dict:
     """Get the current status of the position monitor."""
+    manager = get_connection_manager()
+    manager_status = manager.get_status()
+
     status = {
         'running': _monitor_running,
         'connections': {},
         'subaccount_recorder_mappings': len(_sub_to_recorders),
     }
-    for key, conn in _token_connections.items():
-        status['connections'][key] = {
-            'connected': conn.connected,
-            'authenticated': conn.authenticated,
-            'is_demo': conn.is_demo,
-            'subaccount_ids': conn.subaccount_ids,
-            'num_accounts': len(conn.subaccount_ids),
-        }
+
+    # Build connections dict from shared manager status (backward compatible format)
+    for token_key, conn_status in manager_status.get('connections', {}).items():
+        # Only include connections that have a position monitor listener
+        has_pos_listener = any(
+            lid.startswith('position-monitor-')
+            for lid in conn_status.get('listeners', {}).keys()
+        )
+        if has_pos_listener:
+            status['connections'][token_key] = {
+                'connected': conn_status['connected'],
+                'authenticated': conn_status['authenticated'],
+                'is_demo': conn_status['is_demo'],
+                'subaccount_ids': conn_status['subscribed_accounts'],
+                'num_accounts': conn_status['num_accounts'],
+            }
+
     return status
 
 
@@ -1463,13 +1874,13 @@ def is_position_ws_connected(recorder_id: int) -> bool:
 
     Used by reconciliation daemon to skip auto-TP when WS is handling it.
     """
+    manager = get_connection_manager()
+
     # Find which subaccount this recorder maps to
     for sub_id, rec_ids in _sub_to_recorders.items():
         if recorder_id in rec_ids:
-            # Check if any connection covers this subaccount
-            for conn in _token_connections.values():
-                if sub_id in conn.subaccount_ids and conn.connected and conn.authenticated:
-                    return True
+            if manager.is_connected_for_account(sub_id):
+                return True
     return False
 
 
