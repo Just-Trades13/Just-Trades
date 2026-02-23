@@ -1466,7 +1466,6 @@
             if (data.success && data.leaders && data.leaders.length > 0) {
                 const leader = data.leaders[0]; // Use first active leader
                 currentLeaderId = leader.id;
-                updateLeaderStatus('connected', `Leader: ${leader.label || leader.subaccount_id}`);
                 loadFollowerAccounts(currentLeaderId);
                 loadCopyTradeLog(currentLeaderId);
 
@@ -1482,13 +1481,25 @@
                     }
                 }
 
-                // Sync auto-copy toggle if leader has auto_copy_enabled
+                // Sync auto-copy toggle and status to match DB state
                 const autoCopyToggle = document.getElementById('autoCopyMode');
-                if (autoCopyToggle && leader.auto_copy_enabled) {
-                    autoCopyToggle.checked = true;
-                    document.getElementById('modeManualLabel')?.classList.remove('active');
-                    document.getElementById('modeAutoLabel')?.classList.add('active');
+                if (leader.auto_copy_enabled) {
+                    // Auto-copy ON — green dot, toggle checked
+                    updateLeaderStatus('connected', `Auto-copy active: ${leader.label || leader.subaccount_id}`);
+                    if (autoCopyToggle) {
+                        autoCopyToggle.checked = true;
+                        document.getElementById('modeManualLabel')?.classList.remove('active');
+                        document.getElementById('modeAutoLabel')?.classList.add('active');
+                    }
                     startPositionPolling();
+                } else {
+                    // Auto-copy OFF — neutral status, toggle unchecked
+                    updateLeaderStatus('disconnected', `Manual mode: ${leader.label || leader.subaccount_id}`);
+                    if (autoCopyToggle) {
+                        autoCopyToggle.checked = false;
+                        document.getElementById('modeAutoLabel')?.classList.remove('active');
+                        document.getElementById('modeManualLabel')?.classList.add('active');
+                    }
                 }
 
                 console.log('Loaded existing leader:', currentLeaderId,
