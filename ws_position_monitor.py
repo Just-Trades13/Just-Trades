@@ -304,6 +304,13 @@ class AccountGroupConnection:
                 # Process pending orphan checks (event-driven, 5s delay)
                 await self._process_orphan_checks()
 
+                # Periodic orphan sweep (every 60s during market hours)
+                now_sweep = time.time()
+                if now_sweep - self._last_periodic_sweep > self._PERIODIC_SWEEP_INTERVAL:
+                    self._last_periodic_sweep = now_sweep
+                    if _is_futures_market_likely_open():
+                        await self._periodic_orphan_sweep()
+
                 # Receive messages
                 try:
                     message = await asyncio.wait_for(self.websocket.recv(), timeout=1.0)
@@ -753,6 +760,58 @@ class AccountGroupConnection:
                 await self._check_and_fix_orphan(rid)
             except Exception as e:
                 logger.error(f"[{self.token_key}] Orphan check failed for recorder {rid}: {e}")
+
+    async def _periodic_orphan_sweep(self):
+        """Scan all connected recorders for positions with missing TPs.
+
+        DB-first filtering: 0 API calls when no orphans exist.
+        2s gap between accounts respects rate limits (Rule 16).
+        """
+        try:
+            # Collect all recorder_ids this connection covers
+            all_recorder_ids = set()
+            for sub_id in self.subaccount_ids:
+                for rid in _sub_to_recorders.get(sub_id, []):
+                    all_recorder_ids.add(rid)
+
+            if not all_recorder_ids:
+                return
+
+            # Single DB query to find ALL orphans across our recorders
+            conn = _get_pg_connection()
+            if not conn:
+                return
+            cursor = conn.cursor()
+
+            placeholders = ','.join(['%s'] * len(all_recorder_ids))
+            cursor.execute(f'''
+                SELECT DISTINCT rt.recorder_id
+                FROM recorded_trades rt
+                WHERE rt.recorder_id IN ({placeholders})
+                  AND rt.status = 'open'
+                  AND rt.tp_order_id IS NULL
+            ''', tuple(all_recorder_ids))
+
+            orphan_recorders = [row[0] for row in cursor.fetchall()]
+            conn.close()
+
+            if not orphan_recorders:
+                return  # No orphans — 0 API calls total
+
+            logger.info(f"[{self.token_key}] Periodic sweep: {len(orphan_recorders)} "
+                        f"recorder(s) with potential orphans: {orphan_recorders}")
+
+            for rid in orphan_recorders:
+                try:
+                    await self._check_and_fix_orphan(rid)
+                except Exception as e:
+                    logger.error(f"[{self.token_key}] Sweep orphan check failed for recorder {rid}: {e}")
+                # 2s gap between accounts (Rule 16 — rate limits are per token)
+                if len(orphan_recorders) > 1:
+                    await asyncio.sleep(2.0)
+
+        except Exception as e:
+            logger.error(f"[{self.token_key}] Periodic orphan sweep error: {e}")
 
     # ====================================================================
     # TP ORPHAN DETECTION — Broker verification + TP placement
