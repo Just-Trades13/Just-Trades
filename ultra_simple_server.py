@@ -24015,28 +24015,28 @@ def _propagate_manual_trade_to_followers(leader_id, symbol, side, quantity, risk
 
         logger.info(f"Copy trader: propagating {side} {quantity} {symbol} to {len(followers)} followers")
 
-        for follower in followers:
+        _headers = {}
+        _admin_key = os.environ.get('ADMIN_API_KEY')
+        if _admin_key:
+            _headers['X-Admin-Key'] = _admin_key
+
+        def _copy_one_follower(follower):
             try:
                 f_account_sub = f"{follower['account_id']}:{follower['subaccount_id']}"
                 multiplier = float(follower.get('multiplier', 1.0) or 1.0)
                 f_qty = max(1, int(round(quantity * multiplier)))
-                f_side = side
 
                 cl_ord_id = f"JT_COPY_{uuid.uuid4().hex[:12]}"
                 payload = {
                     'account_subaccount': f_account_sub,
                     'symbol': symbol,
-                    'side': f_side,
+                    'side': side,
                     'quantity': f_qty,
                     'risk': risk_settings or {},
                     'cl_ord_id': cl_ord_id,
                 }
 
                 start_ms = time.time() * 1000
-                _headers = {}
-                _admin_key = os.environ.get('ADMIN_API_KEY')
-                if _admin_key:
-                    _headers['X-Admin-Key'] = _admin_key
                 resp = _requests.post(url, json=payload, headers=_headers, timeout=30)
                 latency_ms = int(time.time() * 1000 - start_ms)
                 try:
@@ -24065,6 +24065,10 @@ def _propagate_manual_trade_to_followers(leader_id, symbol, side, quantity, risk
 
             except Exception as fe:
                 logger.error(f"Copy trader follower error: {fe}")
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=len(followers)) as executor:
+            executor.map(_copy_one_follower, followers)
     except Exception as e:
         logger.error(f"Copy trader propagation error: {e}")
 
