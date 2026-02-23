@@ -8794,6 +8794,14 @@ def initialize():
     start_position_drawdown_polling()
     logger.info("✅ Position drawdown tracking active")
 
+    # Start WebSocket position monitor (real-time broker sync)
+    try:
+        from ws_position_monitor import start_position_monitor
+        start_position_monitor()
+        logger.info("✅ Position WebSocket monitor started (real-time broker sync)")
+    except Exception as e:
+        logger.warning(f"Position WebSocket monitor failed to start: {e} — reconciliation daemon is safety net")
+
     # Start bulletproof token refresh daemon (auto-refresh before expiry)
     start_token_refresh_daemon()
     logger.info("✅ Token refresh daemon active - will auto-refresh tokens before expiry")
