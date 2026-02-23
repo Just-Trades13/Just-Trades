@@ -131,6 +131,10 @@ class LeaderConnection:
         self._positions: Dict[str, dict] = {}  # symbol -> {side: 'Long'|'Short', qty: int}
         self._contract_cache: Dict[int, str] = {}  # contractId -> symbol name
 
+        # Order mirroring state
+        self._tracked_orders: Dict[int, dict] = {}  # order_id -> order snapshot
+        self._order_modify_debounce: Dict[int, float] = {}  # order_id -> last_modify_time
+
     def _next_request_id(self) -> int:
         self._request_id += 1
         return self._request_id
@@ -214,7 +218,7 @@ class LeaderConnection:
         except Exception as e:
             logger.error(f"Failed to subscribe sync for leader {self.leader_id}: {e}")
 
-    async def run(self, fill_callback):
+    async def run(self, fill_callback, order_callback=None):
         """Run the monitoring loop."""
         self._running = True
         self._last_server_msg = time.time()
@@ -237,7 +241,7 @@ class LeaderConnection:
                 try:
                     message = await asyncio.wait_for(self.websocket.recv(), timeout=1.0)
                     self._last_server_msg = time.time()
-                    await self._handle_message(message, fill_callback)
+                    await self._handle_message(message, fill_callback, order_callback)
                 except asyncio.TimeoutError:
                     continue
 
@@ -250,8 +254,8 @@ class LeaderConnection:
 
         self._running = False
 
-    async def _handle_message(self, raw_message: str, fill_callback):
-        """Handle incoming WebSocket message — look for fill events."""
+    async def _handle_message(self, raw_message: str, fill_callback, order_callback=None):
+        """Handle incoming WebSocket message — look for fill and order events."""
         if not raw_message or raw_message in ('o', 'h', '[]'):
             return
 
@@ -279,6 +283,8 @@ class LeaderConnection:
 
             for data in items:
                 await self._check_for_fills(data, fill_callback)
+                if order_callback:
+                    await self._check_for_orders(data, order_callback)
 
         except json.JSONDecodeError:
             pass
@@ -314,6 +320,207 @@ class LeaderConnection:
 
         for fill in fills:
             await self._process_fill(fill, fill_callback)
+
+    async def _check_for_orders(self, data: dict, order_callback):
+        """Check for order events in the WebSocket data (limit/stop place/modify/cancel)."""
+        orders = []
+
+        # Props event: {e: "props", d: {entityType: "order", entity: {...}, eventType: "Created|Updated|..."}}
+        if data.get('e') == 'props':
+            d = data.get('d', {})
+            if d.get('entityType') == 'order':
+                entity = d.get('entity') or d
+                if isinstance(entity, dict):
+                    orders.append(entity)
+
+        # Bulk sync response with orders array nested in 'd'
+        if 'd' in data and not orders:
+            d = data['d']
+            if isinstance(d, dict) and 'orders' in d:
+                for o in d.get('orders', []):
+                    if isinstance(o, dict):
+                        orders.append(o)
+
+        for order in orders:
+            await self._process_order_event(order, order_callback)
+
+    async def _process_order_event(self, order: dict, order_callback):
+        """Process a single order event — detect place/modify/cancel of pending orders."""
+        order_id = order.get('id') or order.get('orderId')
+        if not order_id:
+            return
+
+        # --- FILTER 1: Skip our own mirrored orders (loop prevention) ---
+        cl_ord_id = order.get('clOrdId', '') or ''
+        if cl_ord_id.startswith(COPY_ORDER_PREFIX):
+            return
+
+        # --- FILTER 2: Skip bracket TP/SL legs (not leader-placed pending orders) ---
+        if order.get('orderStrategyId'):
+            return
+
+        # --- FILTER 3: Skip market orders (fills handle these) ---
+        order_type = order.get('ordType') or order.get('orderType') or ''
+        if order_type == 'Market':
+            return
+
+        # --- FILTER 4: Only supported pending order types ---
+        supported_types = {'Limit', 'Stop', 'StopLimit', 'StopOrder', 'TrailingStop', 'TrailingStopOrder'}
+        if order_type not in supported_types:
+            return
+
+        # --- FILTER 5: Pre-connection replay filter ---
+        timestamp_str = order.get('timestamp', '') or ''
+        if timestamp_str and self._connection_time:
+            try:
+                order_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                if order_time < self._connection_time:
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        ord_status = order.get('ordStatus', '') or ''
+        contract_id = order.get('contractId')
+        action = order.get('action', '')
+        qty = order.get('orderQty', 0) or order.get('qty', 0) or 0
+        price = order.get('price')
+        stop_price = order.get('stopPrice')
+        peg_difference = order.get('pegDifference')
+        time_in_force = order.get('timeInForce', 'Day') or 'Day'
+
+        if not action:
+            return
+
+        # Resolve symbol
+        symbol = ''
+        if contract_id:
+            symbol = await self._resolve_symbol(contract_id)
+        if not symbol:
+            return
+
+        now = time.time()
+
+        if ord_status == 'Working':
+            # Check if this is a NEW order or a MODIFICATION of an existing one
+            prev = self._tracked_orders.get(order_id)
+
+            if prev is None:
+                # --- NEW WORKING ORDER ---
+                self._tracked_orders[order_id] = {
+                    'order_id': order_id,
+                    'symbol': symbol,
+                    'action': action,
+                    'qty': qty,
+                    'price': price,
+                    'stop_price': stop_price,
+                    'peg_difference': peg_difference,
+                    'order_type': order_type,
+                    'time_in_force': time_in_force,
+                    'contract_id': contract_id,
+                }
+                logger.info(f"ORDER detected on leader {self.leader_id}: NEW {order_type} "
+                            f"{action} {qty} {symbol} @ price={price} stop={stop_price}")
+                if order_callback:
+                    try:
+                        await order_callback(
+                            leader_id=self.leader_id,
+                            event_type='created',
+                            order_data={
+                                'order_id': order_id,
+                                'symbol': symbol,
+                                'action': action,
+                                'qty': qty,
+                                'price': price,
+                                'stop_price': stop_price,
+                                'peg_difference': peg_difference,
+                                'order_type': order_type,
+                                'time_in_force': time_in_force,
+                                'contract_id': contract_id,
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"Order callback error (created) for leader {self.leader_id}: {e}")
+            else:
+                # --- MODIFICATION of existing order ---
+                price_changed = (prev.get('price') != price or prev.get('stop_price') != stop_price)
+                qty_changed = (prev.get('qty') != qty)
+                if price_changed or qty_changed:
+                    # Debounce: skip if last modify was < 500ms ago
+                    last_modify = self._order_modify_debounce.get(order_id, 0)
+                    if now - last_modify < 0.5:
+                        return
+                    self._order_modify_debounce[order_id] = now
+
+                    # Update tracked snapshot
+                    self._tracked_orders[order_id].update({
+                        'qty': qty,
+                        'price': price,
+                        'stop_price': stop_price,
+                        'peg_difference': peg_difference,
+                    })
+                    logger.info(f"ORDER detected on leader {self.leader_id}: MODIFIED {order_type} "
+                                f"{action} {qty} {symbol} @ price={price} stop={stop_price}")
+                    if order_callback:
+                        try:
+                            await order_callback(
+                                leader_id=self.leader_id,
+                                event_type='modified',
+                                order_data={
+                                    'order_id': order_id,
+                                    'symbol': symbol,
+                                    'action': action,
+                                    'qty': qty,
+                                    'price': price,
+                                    'stop_price': stop_price,
+                                    'peg_difference': peg_difference,
+                                    'order_type': order_type,
+                                    'time_in_force': time_in_force,
+                                    'contract_id': contract_id,
+                                }
+                            )
+                        except Exception as e:
+                            logger.error(f"Order callback error (modified) for leader {self.leader_id}: {e}")
+
+        elif ord_status in ('Cancelled', 'Rejected', 'Expired'):
+            # --- CANCELLED/REJECTED/EXPIRED ---
+            if order_id in self._tracked_orders:
+                del self._tracked_orders[order_id]
+                self._order_modify_debounce.pop(order_id, None)
+                logger.info(f"ORDER detected on leader {self.leader_id}: {ord_status} {order_type} "
+                            f"{action} {qty} {symbol}")
+                if order_callback:
+                    try:
+                        await order_callback(
+                            leader_id=self.leader_id,
+                            event_type='cancelled',
+                            order_data={
+                                'order_id': order_id,
+                                'symbol': symbol,
+                                'action': action,
+                                'qty': qty,
+                                'price': price,
+                                'stop_price': stop_price,
+                                'order_type': order_type,
+                                'ord_status': ord_status,
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"Order callback error (cancelled) for leader {self.leader_id}: {e}")
+
+        elif ord_status == 'Filled':
+            # --- FILLED: mark mirrors as filled, fill callback handles propagation ---
+            if order_id in self._tracked_orders:
+                del self._tracked_orders[order_id]
+                self._order_modify_debounce.pop(order_id, None)
+                try:
+                    from copy_trader_models import get_mirrored_orders_by_leader_order, update_mirrored_order
+                    mirrors = get_mirrored_orders_by_leader_order(order_id)
+                    for mirror in mirrors:
+                        update_mirrored_order(mirror['id'], status='filled')
+                    if mirrors:
+                        logger.info(f"Marked {len(mirrors)} mirrors as filled for leader order {order_id}")
+                except Exception as e:
+                    logger.error(f"Error marking mirrors filled for order {order_id}: {e}")
 
     async def _resolve_symbol(self, contract_id: int) -> str:
         """Resolve contractId to symbol name via REST API with caching."""

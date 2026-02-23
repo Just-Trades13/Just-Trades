@@ -25130,6 +25130,183 @@ def copy_trader_leader_position(leader_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/mirror-order', methods=['POST'])
+def mirror_order():
+    """Internal endpoint for order mirroring — place/cancel/modify limit/stop orders on follower accounts.
+    Auth: X-Admin-Key header (same as /api/manual-trade internal calls, Rule 32).
+    """
+    try:
+        data = request.get_json() or {}
+        operation = data.get('operation', '').strip().lower()
+        account_subaccount = data.get('account_subaccount', '').strip()
+
+        if operation not in ('place', 'cancel', 'modify'):
+            return jsonify({'success': False, 'error': f'Invalid operation: {operation}'}), 400
+        if not account_subaccount:
+            return jsonify({'success': False, 'error': 'account_subaccount required'}), 400
+
+        parts = account_subaccount.split(':')
+        account_id = int(parts[0])
+        subaccount_id = parts[1] if len(parts) > 1 and parts[1] else None
+
+        # Look up account credentials (same pattern as manual_trade)
+        is_postgres = is_using_postgres()
+        placeholder = '%s' if is_postgres else '?'
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            SELECT name, tradovate_token, tradovate_refresh_token, md_access_token,
+                   token_expires_at, tradovate_accounts, environment
+            FROM accounts WHERE id = {placeholder}
+        """, (account_id,))
+        account = cursor.fetchone()
+        if not account:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Account not found'}), 400
+        if not account['tradovate_token']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Account not connected'}), 400
+
+        # Parse tradovate_accounts for subaccount lookup
+        tradovate_accounts = []
+        try:
+            if account['tradovate_accounts']:
+                tradovate_accounts = json.loads(account['tradovate_accounts'])
+        except Exception:
+            tradovate_accounts = []
+
+        selected_subaccount = None
+        if subaccount_id:
+            for ta in tradovate_accounts:
+                if str(ta.get('id')) == subaccount_id:
+                    selected_subaccount = ta
+                    break
+        if not selected_subaccount and tradovate_accounts:
+            selected_subaccount = tradovate_accounts[0]
+            subaccount_id = str(selected_subaccount.get('id'))
+
+        account_env = (account['environment'] or 'demo').lower()
+        demo = account_env != 'live'
+        account_spec = (selected_subaccount.get('name') if selected_subaccount else None) or account['name'] or str(account_id)
+        account_numeric_id = int(subaccount_id) if subaccount_id else account_id
+
+        access_token = account['tradovate_token']
+        conn.close()
+
+        def _run_async(coro):
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+
+        if operation == 'place':
+            symbol = data.get('symbol', '').strip()
+            action = data.get('action', '').strip()
+            quantity = int(data.get('quantity', 1))
+            order_type = data.get('order_type', 'Limit')
+            price = data.get('price')
+            stop_price = data.get('stop_price')
+            peg_difference = data.get('peg_difference')
+            time_in_force = data.get('time_in_force', 'Day')
+            cl_ord_id = data.get('cl_ord_id', '')
+
+            if not symbol or not action:
+                return jsonify({'success': False, 'error': 'symbol and action required for place'}), 400
+
+            async def _place():
+                from phantom_scraper.tradovate_integration import TradovateIntegration
+                async with TradovateIntegration(demo=demo) as integration:
+                    integration.access_token = access_token
+                    order_data = {
+                        'accountId': account_numeric_id,
+                        'accountSpec': account_spec,
+                        'action': action,
+                        'symbol': symbol,
+                        'orderQty': quantity,
+                        'orderType': order_type,
+                        'timeInForce': time_in_force,
+                        'isAutomated': True,
+                    }
+                    if cl_ord_id:
+                        order_data['clOrdId'] = cl_ord_id
+                    if price is not None:
+                        order_data['price'] = float(price)
+                    if stop_price is not None:
+                        order_data['stopPrice'] = float(stop_price)
+                    if peg_difference is not None:
+                        order_data['pegDifference'] = float(peg_difference)
+                    result = await integration.place_order(order_data)
+                    return result
+
+            result = _run_async(_place())
+            if result and result.get('success'):
+                order_id = result.get('orderId')
+                logger.info(f"Mirror order placed: {action} {quantity} {symbol} on {account_subaccount} → orderId={order_id}")
+                return jsonify({'success': True, 'orderId': order_id})
+            else:
+                error_msg = (result.get('error') or 'Unknown error') if result else 'No result'
+                logger.warning(f"Mirror order place failed on {account_subaccount}: {error_msg}")
+                return jsonify({'success': False, 'error': str(error_msg)}), 400
+
+        elif operation == 'cancel':
+            order_id = data.get('order_id')
+            if not order_id:
+                return jsonify({'success': False, 'error': 'order_id required for cancel'}), 400
+
+            async def _cancel():
+                from phantom_scraper.tradovate_integration import TradovateIntegration
+                async with TradovateIntegration(demo=demo) as integration:
+                    integration.access_token = access_token
+                    return await integration.cancel_order(int(order_id))
+
+            success = _run_async(_cancel())
+            if success:
+                logger.info(f"Mirror order cancelled: orderId={order_id} on {account_subaccount}")
+                return jsonify({'success': True})
+            else:
+                logger.warning(f"Mirror order cancel failed: orderId={order_id} on {account_subaccount}")
+                return jsonify({'success': False, 'error': f'Failed to cancel order {order_id}'}), 400
+
+        elif operation == 'modify':
+            order_id = data.get('order_id')
+            if not order_id:
+                return jsonify({'success': False, 'error': 'order_id required for modify'}), 400
+
+            new_price = data.get('price')
+            new_stop_price = data.get('stop_price')
+            new_qty = data.get('order_qty')
+            order_type = data.get('order_type', 'Limit')
+            time_in_force = data.get('time_in_force', 'Day')
+
+            async def _modify():
+                from phantom_scraper.tradovate_integration import TradovateIntegration
+                async with TradovateIntegration(demo=demo) as integration:
+                    integration.access_token = access_token
+                    return await integration.modify_order(
+                        order_id=int(order_id),
+                        new_price=float(new_price) if new_price is not None else None,
+                        new_qty=int(new_qty) if new_qty is not None else None,
+                        stop_price=float(new_stop_price) if new_stop_price is not None else None,
+                        order_type=order_type,
+                        time_in_force=time_in_force,
+                    )
+
+            result = _run_async(_modify())
+            if result and result.get('success'):
+                logger.info(f"Mirror order modified: orderId={order_id} on {account_subaccount}")
+                return jsonify({'success': True})
+            else:
+                error_msg = (result.get('error') or 'Unknown error') if result else 'No result'
+                logger.warning(f"Mirror order modify failed: orderId={order_id} on {account_subaccount}: {error_msg}")
+                return jsonify({'success': False, 'error': str(error_msg)}), 400
+
+    except Exception as e:
+        logger.error(f"Mirror order error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/settings')
 def settings():
     # Require login if auth is available
