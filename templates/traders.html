@@ -1244,136 +1244,157 @@
 
 /* ── MOBILE RESPONSIVE OVERRIDES ─────────────────────── */
 @media (max-width: 768px) {
+    /* Global containment — nothing exceeds viewport */
     .traders-wrapper {
-        max-width: 100%;
-        overflow-x: hidden;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
     }
+    .traders-wrapper * {
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* List header: stack vertically */
     .list-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.75rem;
-        padding: 0.75rem 1rem;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 0.75rem !important;
+        padding: 0.75rem 1rem !important;
     }
     .list-header input {
-        width: 100%;
+        width: 100% !important;
         min-width: 0 !important;
-        flex: none;
+        flex: none !important;
     }
     .filter-controls {
-        flex-direction: column;
-        gap: 0.5rem;
-        width: 100%;
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
     }
     .filter-controls select {
-        width: 100%;
+        width: 100% !important;
+        min-width: 0 !important;
     }
     .list-header .btn {
-        width: 100%;
-        text-align: center;
+        width: 100% !important;
+        text-align: center !important;
+    }
+
+    /* Strategy cards: contained width */
+    .strategy-card {
+        max-width: 100% !important;
+        overflow: hidden !important;
+        width: 100% !important;
     }
     .strategy-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.75rem;
-        padding: 1rem;
-    }
-    .strategy-card {
-        max-width: 100%;
-        overflow: hidden;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 0.75rem !important;
+        padding: 0.75rem 1rem !important;
     }
     .strategy-info {
-        width: 100%;
-        min-width: 0;
+        width: 100% !important;
+        min-width: 0 !important;
     }
     .strategy-name {
-        font-size: 0.95rem;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        font-size: 0.95rem !important;
+        word-break: break-word !important;
+        white-space: normal !important;
     }
     .strategy-actions {
-        width: 100%;
-        display: flex;
-        justify-content: flex-end;
-        gap: 0.5rem;
+        width: 100% !important;
+        display: flex !important;
+        justify-content: flex-start !important;
+        gap: 0.5rem !important;
     }
+
+    /* Accounts table: horizontal scroll */
     .strategy-accounts {
-        overflow-x: auto;
+        overflow-x: auto !important;
         -webkit-overflow-scrolling: touch;
-        max-width: 100%;
+        width: 100% !important;
     }
     .accounts-table {
-        min-width: 480px;
+        min-width: 480px !important;
     }
     .accounts-table thead th,
     .accounts-table tbody td {
-        padding: 0.5rem 0.65rem;
-        font-size: 0.8rem;
+        padding: 0.5rem 0.6rem !important;
+        font-size: 0.8rem !important;
     }
     .account-name-cell {
-        max-width: 120px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        max-width: 120px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+    .actions {
+        gap: 0.25rem !important;
+        flex-wrap: nowrap !important;
+    }
+    .action-btn {
+        padding: 0.3rem !important;
     }
 
     /* Edit form mobile */
     .builder-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 1rem;
-        padding: 1rem;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 1rem !important;
+        padding: 1rem !important;
     }
     .header-actions {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        width: 100%;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
     }
     .header-actions .btn {
-        width: 100%;
-        text-align: center;
+        width: 100% !important;
+        text-align: center !important;
     }
     .builder-form {
-        padding: 1rem;
+        padding: 1rem !important;
     }
     .form-two {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
     }
     .account-routing {
-        display: block;
-        overflow-x: auto;
+        display: block !important;
+        overflow-x: auto !important;
         -webkit-overflow-scrolling: touch;
     }
     .account-routing table {
-        min-width: 520px;
+        min-width: 520px !important;
     }
     .card-panel header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.5rem;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 0.5rem !important;
     }
     .time-filters {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
     }
     .tp-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
     }
 }
 
 @media (max-width: 480px) {
     .strategy-header {
-        padding: 0.75rem;
+        padding: 0.5rem 0.75rem !important;
     }
     .strategy-name {
-        font-size: 0.85rem;
+        font-size: 0.85rem !important;
     }
     .strategy-meta {
-        flex-wrap: wrap;
-        gap: 0.3rem;
+        flex-wrap: wrap !important;
+        gap: 0.3rem !important;
     }
     .accounts-table {
-        min-width: 420px;
+        min-width: 420px !important;
     }
 }
 </style>
