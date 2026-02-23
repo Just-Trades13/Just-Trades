@@ -730,6 +730,200 @@ class AccountGroupConnection:
                 return True
         return False
 
+    # ====================================================================
+    # TP ORPHAN DETECTION — Broker verification + TP placement
+    # ====================================================================
+
+    async def _broker_has_tp_order(self, subaccount_id: int, symbol_root: str, tp_action: str) -> bool:
+        """Check broker for working TP order via REST GET /order/list. 30s cache.
+
+        Returns True on error (conservative — never double-place).
+        """
+        now = time.time()
+
+        # Check cache
+        if subaccount_id in self._orders_cache:
+            cached_orders, fetch_time = self._orders_cache[subaccount_id]
+            if now - fetch_time < self._ORDERS_CACHE_TTL:
+                return self._orders_match_tp(cached_orders, symbol_root, tp_action)
+
+        # Fetch from broker via REST (Rule 10)
+        try:
+            import aiohttp
+            base_url = ("https://demo.tradovateapi.com/v1" if self.is_demo
+                        else "https://live.tradovateapi.com/v1")
+            headers = {'Authorization': f'Bearer {self.access_token}',
+                       'Content-Type': 'application/json'}
+
+            async with aiohttp.ClientSession() as http:
+                async with http.get(f"{base_url}/order/list",
+                                    headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        orders = await resp.json()
+                        # Filter to this subaccount
+                        acct_orders = [o for o in orders
+                                       if o.get('accountId') == subaccount_id]
+                        self._orders_cache[subaccount_id] = (acct_orders, now)
+                        return self._orders_match_tp(acct_orders, symbol_root, tp_action)
+                    else:
+                        logger.warning(f"[{self.token_key}] GET /order/list returned {resp.status}")
+                        return True  # Conservative: assume TP exists on error
+        except Exception as e:
+            logger.warning(f"[{self.token_key}] Broker order check failed: {e}")
+            return True  # Conservative: assume TP exists on error
+
+    async def _place_tp_order(self, subaccount_id: int, symbol: str, tp_action: str,
+                              quantity: int, tp_price: float, recorder_id: int) -> bool:
+        """Place a TP limit order via REST POST /order/placeorder.
+
+        Updates recorded_trades.tp_order_id on success. Invalidates orders cache.
+        Returns True on success.
+        """
+        try:
+            import aiohttp
+            base_url = ("https://demo.tradovateapi.com/v1" if self.is_demo
+                        else "https://live.tradovateapi.com/v1")
+            headers = {'Authorization': f'Bearer {self.access_token}',
+                       'Content-Type': 'application/json'}
+
+            payload = {
+                "accountSpec": str(subaccount_id),
+                "accountId": subaccount_id,
+                "action": tp_action,
+                "symbol": symbol,
+                "orderQty": quantity,
+                "orderType": "Limit",
+                "price": tp_price,
+                "timeInForce": "GTC",
+                "isAutomated": True
+            }
+
+            async with aiohttp.ClientSession() as http:
+                async with http.post(f"{base_url}/order/placeorder",
+                                     json=payload, headers=headers,
+                                     timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    result = await resp.json()
+
+                    if resp.status == 200 and result.get('orderId'):
+                        new_tp_id = str(result['orderId'])
+                        logger.info(f"[{self.token_key}] TP PLACED for recorder {recorder_id}: "
+                                    f"{tp_action} {quantity} {symbol} @ {tp_price} "
+                                    f"(order {new_tp_id})")
+
+                        # Update DB with new TP order ID
+                        try:
+                            conn = _get_pg_connection()
+                            if conn:
+                                cursor = conn.cursor()
+                                cursor.execute('''
+                                    UPDATE recorded_trades
+                                    SET tp_order_id = %s, updated_at = NOW()
+                                    WHERE recorder_id = %s AND status = 'open'
+                                      AND tp_order_id IS NULL
+                                    ORDER BY id DESC LIMIT 1
+                                ''', (new_tp_id, recorder_id))
+                                conn.commit()
+                                conn.close()
+                        except Exception as db_err:
+                            logger.warning(f"[{self.token_key}] Failed to update tp_order_id in DB: {db_err}")
+
+                        # Invalidate orders cache for this subaccount
+                        self._orders_cache.pop(subaccount_id, None)
+                        return True
+                    else:
+                        error_msg = result.get('errorText') or result.get('error') or 'Unknown error'
+                        logger.error(f"[{self.token_key}] TP placement FAILED for recorder {recorder_id}: "
+                                     f"{error_msg} (status {resp.status})")
+                        return False
+
+        except Exception as e:
+            logger.error(f"[{self.token_key}] TP placement error for recorder {recorder_id}: {e}")
+            return False
+
+    async def _check_and_fix_orphan(self, recorder_id: int) -> bool:
+        """Check if a recorder has an orphaned position (open trade, no TP) and fix it.
+
+        Flow: DB check (0 API calls) -> broker verification (1 GET, cached) -> place TP (1 POST).
+        Returns True if an orphan was found and fixed.
+        """
+        try:
+            conn = _get_pg_connection()
+            if not conn:
+                return False
+            cursor = conn.cursor()
+
+            # Step 1: DB check — find open trades with no TP order
+            cursor.execute('''
+                SELECT rt.id, rt.ticker, rt.side, rt.quantity, rt.entry_price,
+                       rp.avg_entry_price, rp.total_quantity
+                FROM recorded_trades rt
+                LEFT JOIN recorder_positions rp
+                    ON rp.recorder_id = rt.recorder_id AND rp.status = 'open'
+                WHERE rt.recorder_id = %s
+                  AND rt.status = 'open'
+                  AND rt.tp_order_id IS NULL
+                ORDER BY rt.id DESC LIMIT 1
+            ''', (recorder_id,))
+            orphan = cursor.fetchone()
+            conn.close()
+
+            if not orphan:
+                return False  # No orphan — most common path (0 API calls)
+
+            trade_id = orphan[0]
+            ticker = orphan[1]
+            side = orphan[2]
+            trade_qty = orphan[3] or 1
+            entry_price = orphan[4]
+            broker_avg = orphan[5] or entry_price  # Prefer broker avg from position table
+            position_qty = orphan[6] or trade_qty
+
+            if not ticker or not side:
+                return False
+
+            symbol_root = _get_symbol_root(ticker)
+            tp_action = 'Sell' if side.upper() == 'LONG' else 'Buy'
+
+            # Step 2: Find which subaccount this recorder maps to
+            target_sub = None
+            for sub_id, rec_ids in _sub_to_recorders.items():
+                if recorder_id in rec_ids:
+                    target_sub = sub_id
+                    break
+            if not target_sub:
+                logger.warning(f"[{self.token_key}] Orphan check: no subaccount for recorder {recorder_id}")
+                return False
+
+            # Step 3: Broker verification — does the broker actually have a TP? (cached, 1 GET max)
+            if await self._broker_has_tp_order(target_sub, symbol_root, tp_action):
+                # Broker has TP — DB is just behind. Update DB tp_order_id from cache.
+                logger.debug(f"[{self.token_key}] Recorder {recorder_id}: broker has TP, DB lagging — skip")
+                return False
+
+            # Step 4: Calculate TP price
+            tp_price = self._calculate_tp_price(recorder_id, side, float(broker_avg), ticker)
+            if not tp_price:
+                logger.debug(f"[{self.token_key}] Recorder {recorder_id}: no TP config (tp_ticks=0) — skip")
+                return False
+
+            # Step 5: Place the TP order
+            logger.warning(f"[{self.token_key}] ORPHAN DETECTED: recorder {recorder_id} "
+                           f"trade {trade_id} ({side} {position_qty} {ticker}) — placing TP @ {tp_price}")
+
+            return await self._place_tp_order(
+                subaccount_id=target_sub,
+                symbol=ticker,
+                tp_action=tp_action,
+                quantity=int(position_qty),
+                tp_price=tp_price,
+                recorder_id=recorder_id
+            )
+
+        except Exception as e:
+            logger.error(f"[{self.token_key}] Orphan check error for recorder {recorder_id}: {e}")
+            return False
+
     async def close(self):
         """Close the WebSocket connection."""
         self._running = False
