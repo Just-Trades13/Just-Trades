@@ -1063,14 +1063,42 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                             follower_target_qty, risk_config=follower_risk
                         )
                     else:
-                        close_result = await _execute_follower_close(account_subaccount, symbol)
-                        if close_result:
-                            logger.info(f"  Position sync close done for follower {follower_id}, "
-                                        f"entering target {follower_target_side} {follower_target_qty}")
-                        result = await _execute_follower_entry(
-                            account_subaccount, symbol, follower_target_action,
-                            follower_target_qty, risk_config=follower_risk
-                        )
+                        # Leader changed position while already in a trade
+                        leader_prev_side = leader_prev.get('side', '')
+                        leader_prev_qty = leader_prev.get('qty', 0)
+                        follower_prev_qty = max(1, int(round(leader_prev_qty * multiplier))) if leader_prev_qty > 0 else 0
+                        if max_pos and max_pos > 0 and follower_prev_qty > 0:
+                            follower_prev_qty = min(follower_prev_qty, max_pos)
+
+                        if leader_target_side == leader_prev_side and follower_target_qty > follower_prev_qty:
+                            # ADD: same side, higher qty — just add the difference
+                            add_qty = follower_target_qty - follower_prev_qty
+                            logger.info(f"  Follower {follower_id}: adding {add_qty} {follower_target_action} "
+                                        f"(prev={follower_prev_qty}, target={follower_target_qty})")
+                            result = await _execute_follower_entry(
+                                account_subaccount, symbol, follower_target_action,
+                                add_qty, risk_config={}
+                            )
+                        elif leader_target_side == leader_prev_side and follower_target_qty < follower_prev_qty:
+                            # TRIM: same side, lower qty — close the difference
+                            trim_qty = follower_prev_qty - follower_target_qty
+                            trim_action = 'Sell' if follower_target_action == 'Buy' else 'Buy'
+                            logger.info(f"  Follower {follower_id}: trimming {trim_qty} {trim_action} "
+                                        f"(prev={follower_prev_qty}, target={follower_target_qty})")
+                            result = await _execute_follower_entry(
+                                account_subaccount, symbol, trim_action,
+                                trim_qty, risk_config={}
+                            )
+                        else:
+                            # REVERSAL (side change) — close + re-enter
+                            close_result = await _execute_follower_close(account_subaccount, symbol)
+                            if close_result:
+                                logger.info(f"  Position sync close done for follower {follower_id}, "
+                                            f"entering target {follower_target_side} {follower_target_qty}")
+                            result = await _execute_follower_entry(
+                                account_subaccount, symbol, follower_target_action,
+                                follower_target_qty, risk_config=follower_risk
+                            )
 
                     latency_ms = int((time.time() - start_time) * 1000)
 
