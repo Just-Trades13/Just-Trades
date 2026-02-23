@@ -71,7 +71,7 @@ def init_copy_trader_tables():
                     subaccount_id VARCHAR(50) NOT NULL,
                     label VARCHAR(100),
                     is_active BOOLEAN DEFAULT TRUE,
-                    auto_copy_enabled BOOLEAN DEFAULT FALSE,
+                    auto_copy_enabled BOOLEAN DEFAULT TRUE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, account_id, subaccount_id)
@@ -116,6 +116,8 @@ def init_copy_trader_tables():
             ''')
             # Migrations — widen varchar columns that were too narrow
             cursor.execute('ALTER TABLE copy_trade_log ALTER COLUMN side TYPE VARCHAR(50)')
+            # Migration — enable auto_copy for all existing leaders (default changed to TRUE)
+            cursor.execute('UPDATE leader_accounts SET auto_copy_enabled = TRUE WHERE auto_copy_enabled = FALSE')
             # Indexes
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_leader_accounts_user ON leader_accounts(user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_follower_accounts_leader ON follower_accounts(leader_id)')
@@ -131,7 +133,7 @@ def init_copy_trader_tables():
                     subaccount_id TEXT NOT NULL,
                     label TEXT,
                     is_active INTEGER DEFAULT 1,
-                    auto_copy_enabled INTEGER DEFAULT 0,
+                    auto_copy_enabled INTEGER DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, account_id, subaccount_id)

@@ -24894,6 +24894,11 @@ def copy_trader_create_leader():
         from copy_trader_models import create_leader
         leader_id = create_leader(user_id, int(account_id), subaccount_id, label)
         if leader_id:
+            try:
+                from ws_leader_monitor import trigger_leader_reload
+                trigger_leader_reload()
+            except Exception:
+                pass
             return jsonify({'success': True, 'leader_id': leader_id})
         return jsonify({'success': False, 'error': 'Failed to create leader'}), 500
     except Exception as e:
