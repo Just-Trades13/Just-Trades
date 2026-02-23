@@ -848,6 +848,12 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
     """Copy a leader's fill to all enabled followers — smart routing by fill_type."""
     global _copy_locks
 
+    # Global kill switch — skip all auto-copy if disabled
+    from copy_trader_models import is_copy_trader_enabled
+    if not is_copy_trader_enabled():
+        logger.info(f"Copy trader globally disabled — skipping fill for leader {leader_id}")
+        return
+
     # Per-leader lock prevents duplicate copies
     if leader_id not in _copy_locks:
         _copy_locks[leader_id] = asyncio.Lock()
@@ -1112,6 +1118,12 @@ async def _execute_follower_close(account_subaccount: str, symbol: str) -> dict:
 async def _mirror_order_to_followers(leader_id: int, event_type: str, order_data: dict):
     """Mirror a leader's pending order event to all enabled followers."""
     global _copy_locks
+
+    # Global kill switch — skip all order mirroring if disabled
+    from copy_trader_models import is_copy_trader_enabled
+    if not is_copy_trader_enabled():
+        logger.info(f"Copy trader globally disabled — skipping order mirror for leader {leader_id}")
+        return
 
     if leader_id not in _copy_locks:
         _copy_locks[leader_id] = asyncio.Lock()

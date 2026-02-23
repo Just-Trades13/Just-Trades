@@ -181,6 +181,35 @@ def init_copy_trader_tables():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_trade_log_leader ON copy_trade_log(leader_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_copy_trade_log_created ON copy_trade_log(created_at)')
 
+        # --- platform_settings table (global toggles) ---
+        if db_type == 'postgresql':
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS platform_settings (
+                    id SERIAL PRIMARY KEY,
+                    key VARCHAR(100) UNIQUE NOT NULL,
+                    value TEXT NOT NULL DEFAULT 'true',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_by INTEGER
+                )
+            ''')
+            cursor.execute('''
+                INSERT INTO platform_settings (key, value) VALUES ('copy_trader_enabled', 'true')
+                ON CONFLICT (key) DO NOTHING
+            ''')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS platform_settings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT UNIQUE NOT NULL,
+                    value TEXT NOT NULL DEFAULT 'true',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_by INTEGER
+                )
+            ''')
+            cursor.execute('''
+                INSERT OR IGNORE INTO platform_settings (key, value) VALUES ('copy_trader_enabled', 'true')
+            ''')
+
         # --- mirrored_orders table (order mirroring) ---
         if db_type == 'postgresql':
             cursor.execute('''
@@ -990,6 +1019,81 @@ def cleanup_stale_mirrors(max_age_hours: int = 24) -> int:
     finally:
         cursor.close()
         conn.close()
+
+
+# ============================================================================
+# PLATFORM SETTINGS (Global Toggle)
+# ============================================================================
+_setting_cache: Dict[str, Any] = {}  # key -> {'value': str, 'ts': float}
+_SETTING_CACHE_TTL = 10.0  # seconds
+
+
+def get_platform_setting(key: str) -> Optional[str]:
+    """Get a platform setting value by key. Returns None if not found."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+
+    try:
+        cursor.execute(f'SELECT value FROM platform_settings WHERE key = {ph}', (key,))
+        row = cursor.fetchone()
+        if row:
+            return row['value'] if isinstance(row, dict) else row[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error reading platform setting '{key}': {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_platform_setting(key: str, value: str, user_id: int = None) -> bool:
+    """Upsert a platform setting. Returns True on success."""
+    conn, db_type = get_copy_trader_db_connection()
+    cursor = conn.cursor()
+    ph = _ph(db_type)
+
+    try:
+        if db_type == 'postgresql':
+            cursor.execute(f'''
+                INSERT INTO platform_settings (key, value, updated_by, updated_at)
+                VALUES ({ph}, {ph}, {ph}, NOW())
+                ON CONFLICT (key) DO UPDATE SET
+                    value = EXCLUDED.value,
+                    updated_by = EXCLUDED.updated_by,
+                    updated_at = NOW()
+            ''', (key, value, user_id))
+        else:
+            cursor.execute(f'''
+                INSERT OR REPLACE INTO platform_settings (key, value, updated_by, updated_at)
+                VALUES ({ph}, {ph}, {ph}, datetime('now'))
+            ''', (key, value, user_id))
+        conn.commit()
+        # Invalidate cache
+        _setting_cache.pop(key, None)
+        logger.info(f"Platform setting '{key}' set to '{value}' by user {user_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error setting platform setting '{key}': {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def is_copy_trader_enabled() -> bool:
+    """Check if copy trading is globally enabled. Caches result for 10 seconds."""
+    import time as _time
+    now = _time.time()
+    cached = _setting_cache.get('copy_trader_enabled')
+    if cached and (now - cached['ts']) < _SETTING_CACHE_TTL:
+        return cached['value'] != 'false'
+
+    value = get_platform_setting('copy_trader_enabled')
+    _setting_cache['copy_trader_enabled'] = {'value': value, 'ts': now}
+    return value != 'false'
 
 
 # ============================================================================

@@ -264,6 +264,16 @@
                 <h2>Pro Copy Trader</h2>
                 <p>Auto-copy trades from a leader account to followers via WebSocket</p>
             </div>
+            {% if current_user and current_user.is_admin %}
+            <div class="pro-copy-master-toggle" id="masterToggleContainer">
+                <span style="font-size:0.8rem;color:rgba(148,163,184,0.7);margin-right:0.5rem;">Copy Trading:</span>
+                <label class="copy-toggle">
+                    <input type="checkbox" id="masterCopyToggle" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="master-status" id="masterStatus" style="font-size:0.8rem;margin-left:0.4rem;font-weight:600;color:#22c55e;">Active</span>
+            </div>
+            {% endif %}
             <div class="pro-copy-mode-toggle">
                 <span class="mode-label" id="modeManualLabel">Manual</span>
                 <label class="copy-toggle">
@@ -1339,6 +1349,42 @@
 
     // Initialize Pro Copy Trader on page load
     document.addEventListener('DOMContentLoaded', function() {
+        // Master copy trader toggle (admin only)
+        const masterToggle = document.getElementById('masterCopyToggle');
+        const masterStatus = document.getElementById('masterStatus');
+        if (masterToggle) {
+            // Load current state
+            fetch('/api/admin/copy-trader-toggle')
+                .then(r => r.json())
+                .then(data => {
+                    masterToggle.checked = data.enabled !== false;
+                    if (masterStatus) {
+                        masterStatus.textContent = masterToggle.checked ? 'Active' : 'Disabled';
+                        masterStatus.style.color = masterToggle.checked ? '#22c55e' : '#ef4444';
+                    }
+                })
+                .catch(() => {});
+            // Toggle handler
+            masterToggle.addEventListener('change', function() {
+                const enabled = this.checked;
+                fetch('/api/admin/copy-trader-toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({enabled: enabled})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        if (masterStatus) {
+                            masterStatus.textContent = enabled ? 'Active' : 'Disabled';
+                            masterStatus.style.color = enabled ? '#22c55e' : '#ef4444';
+                        }
+                    }
+                })
+                .catch(() => {});
+            });
+        }
+
         // Populate leader dropdown from existing accounts
         loadLeaderAccountOptions();
 

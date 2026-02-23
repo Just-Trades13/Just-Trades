@@ -24044,6 +24044,11 @@ def get_open_trades():
 def _propagate_manual_trade_to_followers(leader_id, symbol, side, quantity, risk_settings):
     """Fire-and-forget: copy a manual trade to all enabled followers of a leader."""
     try:
+        from copy_trader_models import is_copy_trader_enabled
+        if not is_copy_trader_enabled():
+            logger.info("Copy trader globally disabled — skipping manual propagation")
+            return
+
         from copy_trader_models import get_followers_for_leader, log_copy_trade
         import requests as _requests
         import uuid
@@ -25177,6 +25182,37 @@ def copy_trader_leader_position(leader_id):
     except Exception as e:
         logger.error(f"Error getting leader position: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/copy-trader-toggle', methods=['POST'])
+def admin_copy_trader_toggle():
+    """Global master switch to enable/disable ALL copy trading."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    try:
+        user = get_user_by_id(user_id)
+        if not user or not getattr(user, 'is_admin', False):
+            return jsonify({'success': False, 'error': 'Admin required'}), 403
+        data = request.get_json() or {}
+        enabled = data.get('enabled', True)
+        from copy_trader_models import set_platform_setting
+        success = set_platform_setting('copy_trader_enabled', str(enabled).lower(), user_id)
+        return jsonify({'success': success, 'enabled': enabled})
+    except Exception as e:
+        logger.error(f"Error toggling copy trader: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/copy-trader-toggle', methods=['GET'])
+def admin_copy_trader_status():
+    """Check if copy trading is globally enabled."""
+    try:
+        from copy_trader_models import is_copy_trader_enabled
+        return jsonify({'enabled': is_copy_trader_enabled()})
+    except Exception as e:
+        logger.error(f"Error checking copy trader status: {e}")
+        return jsonify({'enabled': True})
 
 
 @app.route('/api/mirror-order', methods=['POST'])
