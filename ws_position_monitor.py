@@ -719,7 +719,7 @@ def _load_account_groups() -> List[Dict]:
         cursor.execute('''
             SELECT DISTINCT
                 a.id as account_id,
-                t.subaccount_id,
+                a.subaccount_id,
                 a.tradovate_token,
                 a.environment
             FROM traders t
@@ -727,7 +727,7 @@ def _load_account_groups() -> List[Dict]:
             WHERE t.enabled = TRUE
               AND a.tradovate_token IS NOT NULL
               AND a.tradovate_token != ''
-              AND t.subaccount_id IS NOT NULL
+              AND a.subaccount_id IS NOT NULL
               AND a.broker IN ('tradovate', 'ninjatrader')
         ''')
 
@@ -801,7 +801,7 @@ async def _run_position_monitor():
             groups = _load_account_groups()
 
             if not groups:
-                logger.debug("No active Tradovate accounts for position monitoring")
+                logger.info("No active Tradovate accounts for position monitoring — retrying in 30s")
                 await asyncio.sleep(30)
                 continue
 
