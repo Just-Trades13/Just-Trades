@@ -192,9 +192,12 @@ def init_copy_trader_tables():
                 )
             ''')
             cursor.execute('''
-                INSERT INTO platform_settings (key, value) VALUES ('copy_trader_enabled', 'true')
+                INSERT INTO platform_settings (key, value) VALUES ('copy_trader_enabled', 'false')
                 ON CONFLICT (key) DO NOTHING
             ''')
+            # One-time fix: if copy_trader_enabled was previously set to 'true', reset to 'false'
+            # Copy trading should default OFF to avoid interfering with webhook auto-traders
+            cursor.execute("UPDATE platform_settings SET value = 'false' WHERE key = 'copy_trader_enabled' AND value = 'true'")
         else:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS platform_settings (
@@ -206,8 +209,9 @@ def init_copy_trader_tables():
                 )
             ''')
             cursor.execute('''
-                INSERT OR IGNORE INTO platform_settings (key, value) VALUES ('copy_trader_enabled', 'true')
+                INSERT OR IGNORE INTO platform_settings (key, value) VALUES ('copy_trader_enabled', 'false')
             ''')
+            cursor.execute("UPDATE platform_settings SET value = 'false' WHERE key = 'copy_trader_enabled' AND value = 'true'")
 
         # --- mirrored_orders table (order mirroring) ---
         if db_type == 'postgresql':
@@ -259,6 +263,30 @@ def init_copy_trader_tables():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_mirrored_orders_leader_order ON mirrored_orders(leader_order_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_mirrored_orders_follower ON mirrored_orders(follower_id, status)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_mirrored_orders_leader ON mirrored_orders(leader_id, status)')
+
+        # Migration: deactivate stale leaders — keep only the most recent per user
+        # This prevents circular follower checks from blocking when switching leaders
+        if db_type == 'postgresql':
+            cursor.execute('''
+                UPDATE leader_accounts SET is_active = FALSE, auto_copy_enabled = FALSE
+                WHERE id NOT IN (
+                    SELECT DISTINCT ON (user_id) id FROM leader_accounts
+                    ORDER BY user_id, updated_at DESC
+                )
+                AND is_active = TRUE
+            ''')
+        else:
+            cursor.execute('''
+                UPDATE leader_accounts SET is_active = 0, auto_copy_enabled = 0
+                WHERE id NOT IN (
+                    SELECT id FROM leader_accounts la1
+                    WHERE updated_at = (
+                        SELECT MAX(updated_at) FROM leader_accounts la2
+                        WHERE la2.user_id = la1.user_id
+                    )
+                )
+                AND is_active = 1
+            ''')
 
         conn.commit()
         logger.info("Copy trader tables initialized successfully")
