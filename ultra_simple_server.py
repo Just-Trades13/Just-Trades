@@ -16998,13 +16998,48 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                     WHERE recorder_id = ? AND DATE(exit_time) = DATE('now') AND status = 'closed'
                 ''', (recorder_id,))
             daily_pnl = cursor.fetchone()[0] or 0
-            if daily_pnl <= -max_daily_loss:
-                _logger.warning(f"🚫 [{recorder_name}] Max daily loss BLOCKED: ${daily_pnl:.2f} (limit: -${max_daily_loss})")
-                track_signal_step(signal_id, 'STEP5_BLOCKED_MAX_DAILY_LOSS', {'daily_pnl': daily_pnl, 'limit': max_daily_loss})
-                complete_signal(signal_id, 'blocked', f'Max daily loss hit (${daily_pnl:.2f})')
+
+            # ENHANCED: Add unrealized P&L from open positions (Feb 23, 2026)
+            # Uses recorder_positions (WS-synced) + _market_data_cache (TradingView prices)
+            unrealized_total = 0
+            try:
+                if is_postgres:
+                    cursor.execute('''
+                        SELECT rp.side, rp.total_quantity, rp.avg_entry_price, rp.ticker
+                        FROM recorder_positions rp
+                        WHERE rp.recorder_id = %s AND rp.status = 'open' AND rp.total_quantity > 0
+                    ''', (recorder_id,))
+                else:
+                    cursor.execute('''
+                        SELECT rp.side, rp.total_quantity, rp.avg_entry_price, rp.ticker
+                        FROM recorder_positions rp
+                        WHERE rp.recorder_id = ? AND rp.status = 'open' AND rp.total_quantity > 0
+                    ''', (recorder_id,))
+                open_positions = cursor.fetchall()
+                for pos_row in open_positions:
+                    pos_side, pos_qty, pos_entry, pos_symbol = pos_row
+                    if pos_entry and pos_qty:
+                        live_price = _get_live_price_for_symbol(pos_symbol or ticker)
+                        if live_price:
+                            pos_upnl = _calculate_unrealized_pnl(
+                                pos_symbol or ticker, pos_side or 'LONG',
+                                float(pos_qty), float(pos_entry), float(live_price)
+                            )
+                            unrealized_total += pos_upnl
+            except Exception as upnl_err:
+                _logger.warning(f"⚠️ [{recorder_name}] Unrealized P&L check failed (proceeding with realized only): {upnl_err}")
+
+            combined_pnl = daily_pnl + unrealized_total
+            if unrealized_total != 0:
+                _logger.info(f"📊 [{recorder_name}] Daily P&L: realized=${daily_pnl:.2f} + unrealized=${unrealized_total:.2f} = ${combined_pnl:.2f}")
+
+            if combined_pnl <= -max_daily_loss:
+                _logger.warning(f"🚫 [{recorder_name}] Max daily loss BLOCKED: ${combined_pnl:.2f} (realized=${daily_pnl:.2f} + unrealized=${unrealized_total:.2f}, limit: -${max_daily_loss})")
+                track_signal_step(signal_id, 'STEP5_BLOCKED_MAX_DAILY_LOSS', {'daily_pnl': daily_pnl, 'unrealized': unrealized_total, 'combined': combined_pnl, 'limit': max_daily_loss})
+                complete_signal(signal_id, 'blocked', f'Max daily loss hit (${combined_pnl:.2f})')
                 conn.close()
-                return jsonify({'success': False, 'blocked': True, 'reason': f'Max daily loss hit (${daily_pnl:.2f})'}), 200
-            _logger.info(f"✅ Max daily loss passed: ${daily_pnl:.2f} / -${max_daily_loss}")
+                return jsonify({'success': False, 'blocked': True, 'reason': f'Max daily loss hit (${combined_pnl:.2f})'}), 200
+            _logger.info(f"✅ Max daily loss passed: ${combined_pnl:.2f} / -${max_daily_loss}")
         
         # --- FILTER 6: Max Contracts Per Trade ---
         max_contracts = int(recorder.get('max_contracts_per_trade', 0) or 0)
