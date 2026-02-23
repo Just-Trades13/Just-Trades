@@ -990,14 +990,12 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
             logger.info(f"Position sync: leader {leader_id} now {leader_target_side} {leader_target_qty} {symbol} "
                         f"(was {prev_desc}) — syncing {len(followers)} followers (risk={bool(risk_config)})")
 
-            for follower in followers:
+            # === PARALLEL follower execution (all followers fire simultaneously) ===
+            async def _copy_one_follower(follower):
                 follower_id = follower['id']
                 multiplier = follower.get('multiplier', 1.0) or 1.0
                 max_pos = follower.get('max_position_size', 0) or 0
 
-                # === FORMULA-BASED POSITION SYNC ===
-                # Target = leader's resulting position * multiplier
-                # Instead of interpreting fill types, just match the leader's position.
                 follower_target_qty = max(1, int(round(leader_target_qty * multiplier))) if leader_target_qty > 0 else 0
                 follower_target_side = leader_target_side
                 follower_target_action = 'Buy' if follower_target_side == 'Long' else 'Sell'
@@ -1011,15 +1009,13 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                             logger.info(f"  Follower {follower_id} has mirrored {follower_target_action} {symbol} order "
                                         f"(mirror {active_mirror['id']}) — will fill naturally, skipping market order")
                             update_mirrored_order(active_mirror['id'], status='filled')
-                            continue
+                            return
                     except Exception as dedup_err:
                         logger.warning(f"  Mirror dedup check error for follower {follower_id}: {dedup_err}")
 
-                # Apply max_position_size cap
                 if max_pos and max_pos > 0 and follower_target_qty > 0:
                     follower_target_qty = min(follower_target_qty, max_pos)
 
-                # Determine follower risk — respect copy_tp / copy_sl toggles
                 follower_risk = {}
                 if risk_config and leader_was_flat and leader_target_qty > 0:
                     copy_tp = follower.get('copy_tp', True)
@@ -1029,7 +1025,6 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                     if copy_sl and 'stop_loss' in risk_config:
                         follower_risk['stop_loss'] = risk_config['stop_loss']
 
-                # Log the pending copy
                 if follower_target_qty == 0:
                     log_desc = 'close (flat)'
                 elif leader_was_flat:
@@ -1052,31 +1047,22 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                 try:
                     account_subaccount = f"{follower['account_id']}:{follower['subaccount_id']}"
 
-                    # Record this copy in dedup map — if this follower account is
-                    # ALSO a leader, its monitor will see the fill and skip it.
                     follower_sub_id = str(follower.get('subaccount_id', ''))
                     if follower_target_qty > 0:
                         copy_action = follower_target_action.lower()
                         _recent_copy_fills[(follower_sub_id, symbol, copy_action)] = time.time()
                     else:
-                        # Close: record both sides to prevent re-copy of the close fill
                         _recent_copy_fills[(follower_sub_id, symbol, 'buy')] = time.time()
                         _recent_copy_fills[(follower_sub_id, symbol, 'sell')] = time.time()
-                    logger.debug(f"Dedup recorded: ({follower_sub_id}, {symbol})")
 
-                    # === FORMULA EXECUTION ===
                     if follower_target_qty == 0:
-                        # Leader is flat → close follower
                         result = await _execute_follower_close(account_subaccount, symbol)
                     elif leader_was_flat:
-                        # Leader entered from flat → fresh entry on follower (no close needed)
                         result = await _execute_follower_entry(
                             account_subaccount, symbol, follower_target_action,
                             follower_target_qty, risk_config=follower_risk
                         )
                     else:
-                        # Leader changed position (reversal, add, trim) →
-                        # Close follower first (cancels resting orders), then enter target
                         close_result = await _execute_follower_close(account_subaccount, symbol)
                         if close_result:
                             logger.info(f"  Position sync close done for follower {follower_id}, "
@@ -1123,6 +1109,9 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                             latency_ms=latency_ms
                         )
                     logger.error(f"  Error copying to follower {follower_id}: {e}")
+
+            # Fire all followers simultaneously — slowest one determines total time
+            await asyncio.gather(*[_copy_one_follower(f) for f in followers], return_exceptions=True)
 
         except Exception as e:
             logger.error(f"Error in copy_fill_to_followers for leader {leader_id}: {e}")
