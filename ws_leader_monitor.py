@@ -210,11 +210,26 @@ class LeaderConnection:
             return False
 
     async def _subscribe_sync(self):
-        """Subscribe to user/syncrequest for real-time fill events."""
+        """Subscribe to user/syncrequest for real-time fill/order/position events."""
         try:
-            sync_msg = f"user/syncrequest\n{self._next_request_id()}\n\n{{}}"
+            req_id = self._next_request_id()
+            # Must specify accounts array and entityTypes per Tradovate API spec
+            sync_body = json.dumps({
+                "accounts": [int(self.subaccount_id)],
+                "entityTypes": ["order", "fill", "position", "orderStrategy"]
+            })
+            sync_msg = f"user/syncrequest\n{req_id}\n\n{sync_body}"
             await self.websocket.send(sync_msg)
-            logger.info(f"Subscribed to sync updates for leader {self.leader_id}")
+            logger.info(f"Subscribed to sync updates for leader {self.leader_id} "
+                        f"(account {self.subaccount_id})")
+
+            # Wait for subscription response to confirm success
+            for _ in range(5):
+                response = await asyncio.wait_for(self.websocket.recv(), timeout=10)
+                if response and response not in ('o', 'h', '[]'):
+                    logger.info(f"Leader {self.leader_id} sync response: "
+                                f"{response[:500] if response else 'empty'}")
+                    break
         except Exception as e:
             logger.error(f"Failed to subscribe sync for leader {self.leader_id}: {e}")
 
