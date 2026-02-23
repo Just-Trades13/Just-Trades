@@ -1352,11 +1352,13 @@
         // Master copy trader toggle (admin only)
         const masterToggle = document.getElementById('masterCopyToggle');
         const masterStatus = document.getElementById('masterStatus');
+        let masterToggleUserChanged = false;
         if (masterToggle) {
-            // Load current state
+            // Load current state (GET) — ignored if user already clicked
             fetch('/api/admin/copy-trader-toggle')
                 .then(r => r.json())
                 .then(data => {
+                    if (masterToggleUserChanged) return; // User already clicked — don't overwrite
                     masterToggle.checked = data.enabled !== false;
                     if (masterStatus) {
                         masterStatus.textContent = masterToggle.checked ? 'Active' : 'Disabled';
@@ -1364,9 +1366,10 @@
                     }
                 })
                 .catch(() => {});
-            // Toggle handler — optimistic update (show new state immediately)
+            // Toggle handler — optimistic update, revert on failure
             masterToggle.addEventListener('change', function() {
-                const enabled = this.checked;
+                masterToggleUserChanged = true;
+                const enabled = masterToggle.checked;
                 if (masterStatus) {
                     masterStatus.textContent = enabled ? 'Active' : 'Disabled';
                     masterStatus.style.color = enabled ? '#22c55e' : '#ef4444';
@@ -1379,7 +1382,6 @@
                 .then(r => r.json())
                 .then(data => {
                     if (!data.success) {
-                        // Revert on failure
                         masterToggle.checked = !enabled;
                         if (masterStatus) {
                             masterStatus.textContent = !enabled ? 'Active' : 'Disabled';
