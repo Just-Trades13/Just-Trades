@@ -12,7 +12,7 @@
 **Each gate requires a specific formatted output block visible to the user.**
 **Skipping a gate = protocol violation. The user will reject edits that skip gates.**
 
-24+ production disasters happened because similar protocols were written as prose and skimmed past.
+30+ production disasters happened because similar protocols were written as prose and skimmed past.
 This gate system exists because prose doesn't work. Formatted proof-of-completion does.
 
 ---
@@ -48,6 +48,7 @@ Full function read: [Read tool lines X-Y / new file — N/A]
 | Testing signals, verifying trades | `docs/TESTING_PROCEDURES.md` |
 | Admin access, onboarding, permissions | `docs/ADMIN_ACCESS_POLICY.md` |
 | Copy trader, follower propagation, leader monitor, `ws_leader_monitor.py` | `docs/COPY_TRADER_ARCHITECTURE.md` |
+| Position monitor, `ws_position_monitor.py`, reconciliation sync | CLAUDE.md "WebSocket Position Monitor" section |
 
 - If task involves multiple areas, read ALL matching docs.
 - "Full function read" means the Read tool was used on the actual file. Not from memory. Not summarized.
@@ -578,6 +579,12 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Pro Copy Trader: Parallel follower propagation (ThreadPoolExecutor) | `22f32be` | Feb 23 | **Confirmed working** |
 | Pro Copy Trader: Cross-leader loop prevention (time-based dedup) | `e6fe62d` | Feb 23 | **CRITICAL FIX** |
 | Pro Copy Trader: Pipeline separation (skip followers with webhook traders) | `e46c4a4` | Feb 23 | Working |
+| TP Order Stacking Fix: SQL placeholders in reconciliation | Phase 1 | Feb 23 | **Confirmed working** |
+| TP Order Stacking Fix: Symbol matching + status list | Phase 1 | Feb 23 | **Confirmed working** |
+| TP Order Stacking Fix: Cancel-before-place + duplicate cleanup | Phase 1 | Feb 23 | **Confirmed working** |
+| WebSocket Position Monitor (`ws_position_monitor.py`) | `636ae87` | Feb 23 | **Confirmed working** |
+| WS Position Monitor startup integration | `fb4c67e` | Feb 23 | **Confirmed working** |
+| Reconciliation downgraded to 5-min safety net | Phase 2 | Feb 23 | Working |
 
 ---
 
@@ -935,7 +942,7 @@ recorder_positions (id, recorder_id, ticker, side, total_quantity, avg_entry_pri
 | Daemon | File | Line | Interval | Critical? | What It Does |
 |--------|------|------|----------|-----------|-------------|
 | **Token Refresh** | recorder_service.py | ~302 | 5 min | YES | Refreshes Tradovate OAuth tokens before expiry (30-min window) |
-| **Position Reconciliation** | recorder_service.py | ~6384 | 60 sec | **CRITICAL** | Syncs DB with broker, auto-places missing TPs, enforces auto-flat |
+| **Position Reconciliation** | recorder_service.py | ~6384 | 300 sec (5 min) | **CRITICAL** | Syncs DB with broker, auto-places missing TPs, enforces auto-flat |
 | **Daily State Reset** | recorder_service.py | ~6324 | 60 sec (checks) | YES | Clears stale positions/trades at market open (LIVE recorders only) |
 | **TP/SL Polling** | recorder_service.py | ~6138 | 1 sec / 10 sec | YES | Fallback price polling when WebSocket unavailable |
 | **Position Drawdown** | recorder_service.py | ~6513 | 1 sec / 5 sec | No | Tracks worst/best unrealized P&L for risk management |
@@ -943,6 +950,8 @@ recorder_positions (id, recorder_id, ticker, side, total_quantity, avg_entry_pri
 | **WebSocket Prewarm** | recorder_service.py | ~280 | Once (startup) | No | Pre-establishes Tradovate WebSocket connections |
 | **Bracket Fill Monitor** | recorder_service.py | ~6433 | 5-10 sec | No | Currently DISABLED — bracket fill detection handled by TP/SL polling |
 | **Whop Sync** | ultra_simple_server.py | ~9239 | 30 sec | No | Polls Whop API, creates accounts, sends activation emails |
+| **Position WS Monitor** | ws_position_monitor.py | — | Continuous | YES | Real-time position/fill/order sync via Tradovate WebSocket. One WS per token (Rule 16) |
+| **Leader WS Monitor** | ws_leader_monitor.py | — | Continuous | YES | Pro Copy Trader auto-copy — monitors leader fills via WebSocket |
 
 **All daemons are daemon threads** (`daemon=True`) — they terminate automatically when the main process exits. NEVER change them to non-daemon or synchronous (Bug #9: 100% outage from exactly this).
 
@@ -959,7 +968,7 @@ Checks every 5 minutes. Triggers refresh if token expires within 30 minutes. On 
 
 **DO NOT DISABLE.** This is the safety net for the entire trading system.
 
-What it does every 60 seconds:
+What it does every 5 minutes (safety net — WS position monitor is primary):
 1. `reconcile_positions_with_broker()` — Syncs DB quantity/avg price with broker
 2. `check_auto_flat_cutoff()` — Flattens positions after configured market hours
 3. **AUTO-PLACES missing TP orders** — If TP recorded in DB but not found on broker, places it
@@ -1005,6 +1014,56 @@ Email resend strategy:
 - If unactivated after 12 hours (`WHOP_RESEND_INTERVAL`): resends
 - Stops after 3 days (`WHOP_RESEND_MAX_DAYS`)
 - Tracks "stuck users" for admin review at `/api/admin/whop-sync-status`
+
+### WebSocket Position Monitor (ws_position_monitor.py)
+
+Real-time broker sync for ALL active Tradovate/NinjaTrader accounts. Keeps `recorder_positions` and `recorded_trades` in perfect sync with broker state, eliminating reliance on 5-minute reconciliation polling.
+
+**Architecture: One WebSocket per TOKEN (not per account)**
+- JADVIX has 7 accounts sharing ONE Tradovate token
+- `user/syncrequest` accepts an `accounts` array — subscribe to ALL accounts on ONE socket
+- Result: 1 connection instead of 7, minimal rate limit impact (Rule 16)
+
+**Wire Protocol (identical to ws_leader_monitor.py):**
+1. Connect to `wss://demo.tradovateapi.com/v1/websocket` (or live)
+2. Wait for `o` frame → send `authorize\n0\n\n{token}` → wait for `a[{"i":0,"s":200}]`
+3. Send `user/syncrequest\n1\n\n{"accounts":[IDs],"entityTypes":["order","fill","position"]}`
+4. Heartbeat `[]` every 2.5s, server timeout 10s
+5. Dead subscription detection: 3 x 30s windows with 0 data = reconnect
+6. Max connection: 70 min, exponential backoff: 1→2→4→8...60s
+7. Fresh token from DB before each reconnect
+
+**Three Event Handlers:**
+
+| Entity Type | Handler | DB Table Updated | What It Does |
+|-------------|---------|------------------|-------------|
+| `position` | `_handle_position_event()` | `recorder_positions` | Syncs `netPos`, `netPrice` with DB |
+| `fill` | `_handle_fill_event()` | `recorded_trades` | Detects TP/SL fills, closes trade records |
+| `order` | `_handle_order_event()` | `recorded_trades.tp_order_id` | Tracks TP order IDs, detects cancellations |
+
+**Public API:**
+```python
+start_position_monitor()                      # Start in daemon thread
+stop_position_monitor()                       # Stop all connections
+get_position_monitor_status() -> Dict         # Status dict for monitoring
+is_position_ws_connected(recorder_id) -> bool # Used by reconciliation to skip auto-TP
+```
+
+**Key Implementation Details:**
+- `_sub_to_recorders`: `Dict[int, List[int]]` — subaccount_id → [recorder_ids] (one-to-many mapping)
+- Symbol resolution: REST `contract/item` call with cache (same as `ws_leader_monitor.py`)
+- DB writes use `_get_pg_connection()` + `%s` placeholders (PostgreSQL only — production-only feature)
+- All DB updates are idempotent — safe to receive same event twice
+- SQL query uses `LOWER(a.broker)` for case-insensitive matching (broker column stores 'Tradovate' with capital T)
+- `subaccount_id` lives on `traders` table, NOT `accounts` table (despite `accounts` also having one)
+
+**Startup Location:** `ultra_simple_server.py` line ~34003 (NOT recorder_service.py — that file is imported as a module, `initialize()` only runs under `__main__` guard which never fires)
+
+**Relationship to Reconciliation:**
+- Position WS Monitor is the PRIMARY sync mechanism (real-time)
+- Reconciliation daemon (`start_position_reconciliation()`) is the SAFETY NET (every 5 minutes)
+- When WS monitor is connected for a recorder, reconciliation skips auto-TP placement for that recorder
+- If WS monitor is down, reconciliation auto-TP logic continues as before
 
 ---
 
@@ -1083,7 +1142,7 @@ TradingView alert fires → `POST /webhook/{webhook_token}`:
 6. First entry: bracket order (entry + TP + SL in one REST call)
 7. DCA entry: REST market order + separate cancel/replace TP
 
-**What can fail:** See the 23 past disasters table. Most common: tick rounding (Rule 3), SQL placeholders (Rule 4), field name mismatches (Rule 24).
+**What can fail:** See the 30 past disasters table. Most common: tick rounding (Rule 3), SQL placeholders (Rule 4), field name mismatches (Rule 24).
 
 ---
 
@@ -1416,7 +1475,7 @@ curl -s "https://justtrades.app/api/broker-execution/status"
 **Step 4: Post-Incident**
 - Check for missed signals during outage: `curl -s "https://justtrades.app/api/raw-webhooks?limit=50"`
 - Check for orphaned positions: `curl -s "https://justtrades.app/api/broker-execution/failures?limit=50"`
-- Position reconciliation daemon will auto-sync DB within 60 seconds
+- Position reconciliation daemon will auto-sync DB within 5 minutes (WS position monitor syncs in real-time)
 
 ### SEV-2: Degraded Performance
 
@@ -1457,10 +1516,11 @@ WHERE status = 'open' AND entry_time < NOW() - INTERVAL '24 hours';
 
 **Scenario: Orphaned TP Orders on Broker**
 ```sql
--- Position reconciliation (runs automatically every 60s) handles this
+-- Position reconciliation (runs automatically every 5 min) handles this
+-- WS position monitor handles this in real-time
 -- Manual trigger if needed:
 curl -s "https://justtrades.app/api/run-migrations"
--- Then wait 60s for reconciliation loop
+-- Then wait for next reconciliation cycle (5 min) or WS monitor (real-time)
 ```
 
 **Scenario: Whop Users Not Getting Emails**
@@ -1480,7 +1540,7 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 
 1. **Stale DB records**: Check and clean `recorded_trades` with `status='open'` that shouldn't be
 2. **Redis state**: `railway restart` clears in-memory state (signal tracking, dedup caches)
-3. **Broker positions**: Position reconciliation auto-syncs within 60 seconds
+3. **Broker positions**: WS position monitor syncs in real-time; reconciliation safety net runs every 5 minutes
 4. **Orphaned activation tokens**: Clean with `DELETE FROM activation_tokens WHERE expires_at < NOW()`
 
 ---
@@ -1530,8 +1590,10 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 | 26 | Feb 23, 2026 | Copy trader: Token refresh overwrites valid tokens with expired ones | `if refreshed:` checks dict truthiness — non-empty `{'success': False}` is always True. Also set 24hr expiry (should be 85min). | Rule 17, 32 | Hours |
 | 27 | Feb 23, 2026 | Copy trader: Follower trades executed sequentially (~600ms for 2 followers) | Simple `for follower in followers:` loop — each waited for previous to complete | `22f32be` | Minutes |
 | 28 | Feb 23, 2026 | **Copy trader: 46 FILLS PER ACCOUNT — infinite cross-leader loop** | Tradovate WebSocket fill events do NOT include `clOrdId` → `JT_COPY_` prefix check never fires → cross-linked leaders (A↔B both leader AND follower) cascade fills infinitely. 3 NQ signals → 46 fills each on 3 demo accounts. | `e6fe62d` | Minutes |
+| 29 | Feb 23, 2026 | TP orders stacking 5+ deep — burst fills on TP hit | Three compounding bugs: (1) SQL `?` silently fails on PostgreSQL, (2) hardcoded `'MNQ'` in symbol matching, (3) no cancel-before-place. Each 60s reconciliation cycle added another TP. | Phase 1 fixes | Hours |
+| 30 | Feb 23, 2026 | Position monitor never started — placed in wrong file | `ws_position_monitor` startup in `recorder_service.py` `initialize()` which only runs under `__name__=='__main__'` — but recorder_service.py is always imported as a module. Also: SQL referenced `a.subaccount_id` (doesn't exist on accounts table), and `broker IN ('tradovate')` was case-sensitive but DB stores `'Tradovate'`. | `fb4c67e`, `636ae87` | Hours |
 
-**Pattern:** 28 disasters in ~2.5 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, or (e) auth/session assumptions for internal requests.
+**Pattern:** 30 disasters in ~3 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, or (e) auth/session assumptions for internal requests.
 
 **Near-miss prevented:** Webhook + copy trader pipeline overlap (4 follower accounts had both active webhook traders AND copy follower links). Would have caused double-fills. Fixed proactively with pipeline separation (`e46c4a4`) before any incident occurred.
 
@@ -1787,7 +1849,7 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 ---
 
-*Last updated: Feb 22, 2026*
+*Last updated: Feb 23, 2026*
 *Production stable tag: WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET @ bb1a183 (+ brevo fix 5b6be75)*
-*Total rules: 31 | Total documented disasters: 24 | Paid users in production: YES*
+*Total rules: 31 | Total documented disasters: 30 | Paid users in production: YES*
 *Documentation: 11 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 7 files in ~/.claude/memory/*

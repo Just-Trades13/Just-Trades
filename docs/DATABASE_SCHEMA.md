@@ -3,7 +3,7 @@
 > **Dual-database**: SQLite (local dev) + PostgreSQL (Railway production)
 > **ALL SQL must work on BOTH** — use `'%s' if is_postgres else '?'` (Rule 4)
 > Schema defined in: recorder_service.py ~line 2869+
-> Last verified: Feb 18, 2026
+> Last verified: Feb 23, 2026
 
 ---
 
@@ -191,6 +191,11 @@ CREATE TABLE traders (
     signal_cooldown INTEGER,
     max_signals_per_session INTEGER,
     max_daily_loss REAL,
+    -- Broker Account Mapping (added via migration)
+    subaccount_id TEXT,                       -- Tradovate subaccount ID (numeric, from accounts table)
+    subaccount_name TEXT,                     -- Human-readable account name
+    is_demo INTEGER DEFAULT 1,               -- 0=live, 1=demo
+    enabled_accounts TEXT,                    -- JSON: per-account settings override
     -- State
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
@@ -200,6 +205,8 @@ CREATE TABLE traders (
 ```
 
 **Override chain:** Trader value > Recorder value > Default. NULL means "use recorder value."
+
+**Important:** `subaccount_id` exists on BOTH `accounts` and `traders` tables. When querying for WebSocket connections, use `t.subaccount_id` from traders (the proven pattern in recorder_service.py line 229 prewarm query).
 
 ---
 

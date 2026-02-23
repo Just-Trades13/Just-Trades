@@ -2,7 +2,7 @@
 
 > **Complete reference for all health, status, and monitoring endpoints.**
 > **Use this doc when building alerts, dashboards, or debugging production issues.**
-> **Last updated: Feb 21, 2026**
+> **Last updated: Feb 23, 2026**
 
 ---
 
@@ -29,6 +29,7 @@
 | `/api/paper-trades/service-status` | GET | None | Paper trading service status |
 | `/api/market-data/status` | GET | None | Market data and cached prices |
 | `/api/thread-health` | GET | Admin/API key | Background thread status |
+| *Position Monitor* | *Logs* | *N/A* | *`position_monitor` logger in Railway logs (no dedicated endpoint yet); thread visible via `/api/thread-health`* |
 | `/api/recorders/<id>/execution-status` | GET | None | Per-recorder execution capability |
 | `/api/traders/<id>/broker-state` | GET | None | Live broker state for a trader |
 | `/api/account/<id>/broker-state` | GET | None | Live broker state for an account |
@@ -485,6 +486,58 @@ Status of all background daemon threads.
 **Response:** JSON with status for each background thread (running/stopped/error).
 
 **Alert threshold:** Any expected thread showing "stopped" → restart service.
+
+---
+
+## WEBSOCKET POSITION MONITOR
+
+### Monitoring via Railway Logs
+
+The WebSocket Position Monitor logs to the `position_monitor` logger. Filter Railway logs:
+
+```bash
+railway logs -n 5000 --filter "position_monitor"
+```
+
+**Healthy startup sequence:**
+```
+position_monitor - INFO - Position WebSocket monitor daemon thread started
+position_monitor - INFO - Starting Position WebSocket Monitor...
+position_monitor - INFO - Built subaccount->recorder map: 18 subaccounts, 19 recorder mappings
+position_monitor - INFO - Account groups query returned 13 rows
+position_monitor - INFO - Position monitor: 12 token group(s), 13 total accounts
+position_monitor - INFO - [...tokenKey] Connecting to Tradovate (N accounts, demo/live)
+position_monitor - INFO - [...tokenKey] Authenticated
+position_monitor - INFO - [...tokenKey] Subscribed to sync for accounts [IDs]
+```
+
+**Healthy runtime messages (every 30s per connection):**
+```
+position_monitor - INFO - [...tokenKey] WS stats: 12 msgs (0 data) in 30s
+```
+
+**Event messages (real-time):**
+```
+position_monitor - INFO - [...tokenKey] Position event: account=26029294 symbol=MNQH6 netPos=1 netPrice=24893.0
+position_monitor - INFO - [...tokenKey] Fill event: account=26029294 ...
+```
+
+**Error indicators:**
+| Log Message | Meaning | Fix |
+|-------------|---------|-----|
+| `Error loading account groups: column X does not exist` | SQL query references wrong table/column | Fix SQL in ws_position_monitor.py |
+| `No active Tradovate accounts for position monitoring` | Query returned 0 rows — check broker filter, token validity | Verify accounts have `tradovate_token` set and `broker = 'Tradovate'` |
+| `Auth failed — no s:200 response` | Token expired or invalid | Token refresh daemon should handle, or user needs re-OAuth |
+| `No data for 3 consecutive windows` | Dead subscription | Auto-reconnects |
+| `Connection error: ...` | Network issue | Auto-reconnects with exponential backoff |
+| `Position WebSocket monitor failed to start` | Import or startup error | Check Railway build logs for missing dependencies |
+
+**Alert thresholds:**
+- No `position_monitor` log entries at all after deploy → Monitor didn't start (check startup location)
+- `Error loading account groups` repeating → SQL bug
+- `No active Tradovate accounts` repeating → No valid tokens or broker column mismatch
+- `Auth failed` across all connections → Token refresh daemon broken
+- `No data for 3 consecutive windows` on active account → Possible Tradovate API issue
 
 ---
 

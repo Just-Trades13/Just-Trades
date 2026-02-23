@@ -136,6 +136,55 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Verified** | Syntax verified. Awaiting live signal test. |
 | **NEVER** | Remove this safety net or bypass it. If broker says flat, quantity MUST be initial_position_size. Do NOT add new API calls here — uses existing `get_positions()` result from line 2181 |
 
+### SQL Placeholders in Reconciliation (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~5920 (ph definition), ~5997, ~6066, ~6101, ~6127, ~6155, ~6200 |
+| **Rule** | CLAUDE.md Rule 4 |
+| **Commit** | Phase 1 |
+| **What** | Added `ph = '%s' if is_postgres else '?'` and replaced all hardcoded `?` in `reconcile_positions_with_broker()` |
+| **Why** | Hardcoded `?` silently fails on PostgreSQL inside try/except — reconciliation queries returned nothing for every account |
+| **NEVER** | Revert to hardcoded `?` or skip the `ph` variable. Every SQL query in this function MUST use `{ph}` |
+
+### Symbol Matching in TP Detection (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~6172-6194 |
+| **Rule** | CLAUDE.md Rule 15 |
+| **Commit** | Phase 1 |
+| **What** | Replaced hardcoded `'MNQ' in order_symbol` with `extract_symbol_root()` matching (3-char then 2-char). Tracks ALL TPs in `existing_tp_orders` list. Added `'Accepted'` to status check |
+| **Why** | TP detection failed for EVERY non-MNQ symbol (GC, NQ, ES, etc.). Only MNQ accidentally matched because the hardcoded string was 'MNQ' |
+| **NEVER** | Hardcode symbol names in matching logic. Always use `extract_symbol_root()` with Rule 15 fallback |
+
+### Cancel-Before-Place + Duplicate TP Cleanup (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~6197-6268 |
+| **Rule** | CLAUDE.md Rule 8 (cancel+replace) |
+| **Commit** | Phase 1 |
+| **What** | (A) When `existing_tp_orders > 1`, cancels all but first (duplicate cleanup). (B) Before placing new TP, cancels ALL working limit orders matching TP direction + symbol. (C) Fixed `tick_size = 0.25` to use `TICK_SIZES.get()` with symbol root lookup |
+| **Why** | Each 60s reconciliation cycle added a new TP without removing old ones. After 5 minutes, 5+ TPs existed at same price. When price hit TP level, ALL filled simultaneously → burst of fills → wrong position state |
+| **NEVER** | Place a TP without first cancelling existing TPs. Never use hardcoded `tick_size = 0.25` |
+
+### Reconciliation Sleep Downgraded to 300s (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~6586, ~6589 |
+| **Rule** | Sacred function: `start_position_reconciliation()` — approved edit |
+| **Commit** | Phase 2 |
+| **What** | `time.sleep(60)` → `time.sleep(300)` in both try and except branches |
+| **Why** | WS Position Monitor is now the primary sync mechanism (real-time). Reconciliation is the safety net — 5-min interval reduces API calls by 5x while WS monitor handles real-time sync |
+| **NEVER** | Change back to 60s without confirming WS monitor is down. The aggressive polling was the ROOT CAUSE of TP stacking |
+
+### WS-Connected Skip in Reconciliation (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~6213-6222 (inside reconcile_positions_with_broker) |
+| **Commit** | Phase 2 |
+| **What** | Before auto-TP placement, checks `is_position_ws_connected(recorder_id)`. If connected, skips TP placement and logs "WS connected — skipping auto-TP" |
+| **Why** | When WS monitor handles real-time sync, reconciliation TP placement is redundant and was the source of TP stacking. Only falls back to REST TP placement when WS is disconnected |
+| **NEVER** | Remove this check. The WS monitor is the primary TP tracking mechanism. Reconciliation only places TPs when WS is down |
+
 ---
 
 ## ultra_simple_server.py — Protected Changes
@@ -256,6 +305,15 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | Whop webhook route is `/webhooks/whop` — without `/webhooks/` prefix, all Whop POSTs get 403'd |
 | **NEVER** | Remove `/webhooks/` from the exempt list or consolidate to just `/webhook/` |
 
+### Position WebSocket Monitor Startup (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~34003-34009 |
+| **Commit** | `fb4c67e` |
+| **What** | `from ws_position_monitor import start_position_monitor; start_position_monitor()` in try/except block, right after leader monitor startup |
+| **Why** | Position monitor MUST be started from ultra_simple_server.py (main process), NOT recorder_service.py. recorder_service.py's initialize() only runs under `if __name__=='__main__'` which never fires — it's always imported as a module |
+| **NEVER** | Move this startup to recorder_service.py. It will silently not execute. Must stay in ultra_simple_server.py alongside ws_leader_monitor startup |
+
 ---
 
 ## tradovate_integration.py — Protected Changes
@@ -326,3 +384,6 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | Risk Disclosure disclaimers | `risk_disclosure.html` Sections 11-17: platform overview, TradingView, hypothetical, testimonials, automation | Goldman-reviewed legal requirement | Missing legally required disclosures |
 | Contact email | `legal@justtrades.app` in both terms.html and risk_disclosure.html | Canonical legal contact | Users email non-existent address |
 | Multiplier on create | Read from request, not hardcoded 1.0 | Frontend sends multiplier per account | Users get 1x execution despite setting 5x at creation |
+| WS Position Monitor startup | ultra_simple_server.py, NOT recorder_service.py | recorder_service.py is imported, never __main__ | Monitor silently never starts |
+| Position WS Monitor | One WebSocket per token, LOWER() on broker match | Rule 16, broker column is 'Tradovate' (capital T) | Either rate limit hit or no connections found |
+| subaccount_id for traders | Use `t.subaccount_id` from traders table | Column exists on traders AND accounts with different meanings | SQL error, no accounts loaded |
