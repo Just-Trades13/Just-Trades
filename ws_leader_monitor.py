@@ -834,6 +834,21 @@ async def _copy_fill_to_followers(leader_id: int, fill_data: dict):
                 max_pos = follower.get('max_position_size', 0) or 0
                 follower_qty = max(1, int(round(qty * multiplier)))
 
+                # --- FILL-PATH DEDUP: skip if follower has mirrored limit order ---
+                # If we already placed a limit/stop order on this follower for the
+                # same symbol+side, let it fill naturally instead of sending a market order.
+                if fill_type == 'entry':
+                    try:
+                        from copy_trader_models import get_active_mirror_for_follower, update_mirrored_order
+                        active_mirror = get_active_mirror_for_follower(follower_id, symbol, action)
+                        if active_mirror:
+                            logger.info(f"  Follower {follower_id} has mirrored {action} {symbol} order "
+                                        f"(mirror {active_mirror['id']}) — will fill naturally, skipping market order")
+                            update_mirrored_order(active_mirror['id'], status='filled')
+                            continue
+                    except Exception as dedup_err:
+                        logger.warning(f"  Mirror dedup check error for follower {follower_id}: {dedup_err}")
+
                 # Apply max_position_size cap (Step 5)
                 if max_pos and max_pos > 0 and fill_type == 'entry':
                     follower_qty = min(follower_qty, max_pos)
@@ -1018,6 +1033,225 @@ async def _execute_follower_close(account_subaccount: str, symbol: str) -> dict:
 
 
 # ============================================================================
+# ORDER MIRROR CALLBACK — PLACE/MODIFY/CANCEL ON FOLLOWERS
+# ============================================================================
+async def _mirror_order_to_followers(leader_id: int, event_type: str, order_data: dict):
+    """Mirror a leader's pending order event to all enabled followers."""
+    global _copy_locks
+
+    if leader_id not in _copy_locks:
+        _copy_locks[leader_id] = asyncio.Lock()
+
+    async with _copy_locks[leader_id]:
+        try:
+            import aiohttp
+            import uuid
+
+            order_id = order_data.get('order_id')
+            symbol = order_data.get('symbol', '')
+            action = order_data.get('action', '')
+            qty = order_data.get('qty', 1)
+            price = order_data.get('price')
+            stop_price = order_data.get('stop_price')
+            peg_difference = order_data.get('peg_difference')
+            order_type = order_data.get('order_type', 'Limit')
+            time_in_force = order_data.get('time_in_force', 'Day')
+
+            platform_url = os.environ.get('PLATFORM_URL') or f"http://127.0.0.1:{os.environ.get('PORT', '5000')}"
+            mirror_url = f"{platform_url}/api/mirror-order"
+
+            _headers = {}
+            _admin_key = os.environ.get('ADMIN_API_KEY')
+            if _admin_key:
+                _headers['X-Admin-Key'] = _admin_key
+
+            if event_type == 'created':
+                # --- NEW ORDER: place on all followers ---
+                from copy_trader_models import (
+                    get_followers_for_leader, get_subaccounts_with_active_traders,
+                    create_mirrored_order, update_mirrored_order
+                )
+
+                followers = get_followers_for_leader(leader_id)
+                if not followers:
+                    return
+
+                # Pipeline separation: skip followers with active webhook traders
+                follower_sub_ids = [str(f.get('subaccount_id', '')) for f in followers]
+                subs_with_traders = get_subaccounts_with_active_traders(follower_sub_ids)
+                if subs_with_traders:
+                    followers = [f for f in followers if str(f.get('subaccount_id', '')) not in subs_with_traders]
+                    if not followers:
+                        return
+
+                # Circular follower check: skip followers whose subaccount is also a leader
+                # that has this leader as a follower (same dedup as fill path)
+                leader_conn = _leader_connections.get(leader_id)
+                leader_sub = str(leader_conn.subaccount_id) if leader_conn else ''
+
+                logger.info(f"Mirroring {order_type} {action} {qty} {symbol} from leader {leader_id} "
+                            f"to {len(followers)} followers")
+
+                for follower in followers:
+                    follower_id = follower['id']
+                    multiplier = follower.get('multiplier', 1.0) or 1.0
+                    follower_qty = max(1, int(round(qty * multiplier)))
+                    account_subaccount = f"{follower['account_id']}:{follower['subaccount_id']}"
+                    cl_ord_id = f"{COPY_ORDER_PREFIX}{uuid.uuid4().hex[:12]}"
+
+                    # Record in dedup map to prevent leader monitor from re-copying
+                    follower_sub_id = str(follower.get('subaccount_id', ''))
+                    _recent_copy_fills[(follower_sub_id, symbol, action.lower())] = time.time()
+
+                    # Create mirror record in DB
+                    mirror_id = create_mirrored_order(
+                        leader_id=leader_id, follower_id=follower_id,
+                        leader_order_id=order_id, symbol=symbol,
+                        action=action, order_type=order_type,
+                        leader_qty=qty, follower_qty=follower_qty,
+                        leader_price=price, stop_price=stop_price,
+                        time_in_force=time_in_force,
+                    )
+
+                    try:
+                        payload = {
+                            'operation': 'place',
+                            'account_subaccount': account_subaccount,
+                            'symbol': symbol,
+                            'action': action,
+                            'quantity': follower_qty,
+                            'order_type': order_type,
+                            'time_in_force': time_in_force,
+                            'cl_ord_id': cl_ord_id,
+                        }
+                        if price is not None:
+                            payload['price'] = price
+                        if stop_price is not None:
+                            payload['stop_price'] = stop_price
+                        if peg_difference is not None:
+                            payload['peg_difference'] = peg_difference
+
+                        async with aiohttp.ClientSession(headers=_headers) as http:
+                            async with http.post(mirror_url, json=payload,
+                                                 timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                                result = await resp.json()
+
+                        if result and result.get('success'):
+                            follower_order_id = result.get('orderId')
+                            if mirror_id:
+                                update_mirrored_order(mirror_id, status='working',
+                                                      follower_order_id=follower_order_id)
+                            logger.info(f"  Mirrored to follower {follower_id}: {order_type} {action} "
+                                        f"{follower_qty} {symbol} → orderId={follower_order_id}")
+                        else:
+                            error_msg = (result.get('error') or 'Unknown error') if result else 'No result'
+                            if mirror_id:
+                                update_mirrored_order(mirror_id, status='error',
+                                                      error_message=str(error_msg))
+                            logger.warning(f"  Mirror place failed for follower {follower_id}: {error_msg}")
+                    except Exception as e:
+                        if mirror_id:
+                            update_mirrored_order(mirror_id, status='error',
+                                                  error_message=str(e))
+                        logger.error(f"  Mirror place error for follower {follower_id}: {e}")
+
+            elif event_type == 'modified':
+                # --- MODIFIED ORDER: update price/qty on all working mirrors ---
+                from copy_trader_models import get_mirrored_orders_by_leader_order, update_mirrored_order
+
+                mirrors = get_mirrored_orders_by_leader_order(order_id)
+                if not mirrors:
+                    return
+
+                logger.info(f"Modifying {len(mirrors)} mirrored orders for leader order {order_id}")
+
+                for mirror in mirrors:
+                    follower_order_id = mirror.get('follower_order_id')
+                    if not follower_order_id:
+                        continue
+                    account_subaccount = f"{mirror['follower_account_id']}:{mirror['follower_subaccount_id']}"
+
+                    try:
+                        payload = {
+                            'operation': 'modify',
+                            'account_subaccount': account_subaccount,
+                            'order_id': follower_order_id,
+                            'order_type': order_type,
+                            'time_in_force': time_in_force,
+                        }
+                        if price is not None:
+                            payload['price'] = price
+                        if stop_price is not None:
+                            payload['stop_price'] = stop_price
+                        if qty:
+                            multiplier = mirror.get('follower_multiplier', 1.0) or 1.0
+                            payload['order_qty'] = max(1, int(round(qty * multiplier)))
+
+                        async with aiohttp.ClientSession(headers=_headers) as http:
+                            async with http.post(mirror_url, json=payload,
+                                                 timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                                result = await resp.json()
+
+                        if result and result.get('success'):
+                            # Update mirror record with new prices
+                            update_mirrored_order(mirror['id'], status='working',
+                                                  follower_price=price)
+                            logger.info(f"  Modified mirror {mirror['id']}: order {follower_order_id} "
+                                        f"price={price} stop={stop_price}")
+                        else:
+                            error_msg = (result.get('error') or 'Unknown error') if result else 'No result'
+                            logger.warning(f"  Mirror modify failed for order {follower_order_id}: {error_msg}")
+                    except Exception as e:
+                        logger.error(f"  Mirror modify error for order {follower_order_id}: {e}")
+
+            elif event_type == 'cancelled':
+                # --- CANCELLED ORDER: cancel all working mirrors ---
+                from copy_trader_models import get_mirrored_orders_by_leader_order, update_mirrored_order
+
+                mirrors = get_mirrored_orders_by_leader_order(order_id)
+                if not mirrors:
+                    return
+
+                logger.info(f"Cancelling {len(mirrors)} mirrored orders for leader order {order_id}")
+
+                for mirror in mirrors:
+                    follower_order_id = mirror.get('follower_order_id')
+                    if not follower_order_id:
+                        if mirror.get('id'):
+                            update_mirrored_order(mirror['id'], status='cancelled')
+                        continue
+                    account_subaccount = f"{mirror['follower_account_id']}:{mirror['follower_subaccount_id']}"
+
+                    try:
+                        payload = {
+                            'operation': 'cancel',
+                            'account_subaccount': account_subaccount,
+                            'order_id': follower_order_id,
+                        }
+
+                        async with aiohttp.ClientSession(headers=_headers) as http:
+                            async with http.post(mirror_url, json=payload,
+                                                 timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                                result = await resp.json()
+
+                        if result and result.get('success'):
+                            update_mirrored_order(mirror['id'], status='cancelled')
+                            logger.info(f"  Cancelled mirror {mirror['id']}: order {follower_order_id}")
+                        else:
+                            error_msg = (result.get('error') or 'Unknown error') if result else 'No result'
+                            update_mirrored_order(mirror['id'], status='cancelled',
+                                                  error_message=str(error_msg))
+                            logger.warning(f"  Mirror cancel failed for order {follower_order_id}: {error_msg}")
+                    except Exception as e:
+                        update_mirrored_order(mirror['id'], status='cancelled',
+                                              error_message=str(e))
+                        logger.error(f"  Mirror cancel error for order {follower_order_id}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error in mirror_order_to_followers for leader {leader_id}: {e}")
+
+
+# ============================================================================
 # LOAD ACTIVE LEADERS FROM DB
 # ============================================================================
 def _load_active_leaders() -> List[Dict]:
@@ -1178,7 +1412,8 @@ async def _monitor_leader(conn: LeaderConnection):
             success = await conn.connect()
             if success:
                 backoff = 1  # Reset on successful connection
-                await conn.run(fill_callback=_copy_fill_to_followers)
+                await conn.run(fill_callback=_copy_fill_to_followers,
+                               order_callback=_mirror_order_to_followers)
 
             # Connection lost or failed
             await conn.close()
