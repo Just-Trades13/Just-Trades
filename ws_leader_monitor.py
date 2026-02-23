@@ -24,7 +24,7 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any, List, Set
 
 logger = logging.getLogger('leader_monitor')
 
@@ -134,6 +134,10 @@ class LeaderConnection:
         # Order mirroring state
         self._tracked_orders: Dict[int, dict] = {}  # order_id -> order snapshot
         self._order_modify_debounce: Dict[int, float] = {}  # order_id -> last_modify_time
+
+        # Fill dedup — prevents double-processing if Tradovate sends both standalone
+        # fill event AND orderStrategy event containing the same fill
+        self._processed_fill_ids: Set[int] = set()
 
     def _next_request_id(self) -> int:
         self._request_id += 1
@@ -325,7 +329,7 @@ class LeaderConnection:
                 if data.get('e') == 'props':
                     entity_type = data.get('d', {}).get('entityType')
                     event_type = data.get('d', {}).get('eventType')
-                    if entity_type in ('fill', 'order', 'position'):
+                    if entity_type:
                         logger.info(f"Leader {self.leader_id} WS event: "
                                     f"entityType={entity_type}, eventType={event_type}, "
                                     f"raw={str(data)[:300]}")
@@ -365,6 +369,22 @@ class LeaderConnection:
             for f in data.get('fills', []):
                 if isinstance(f, dict):
                     fills.append(f)
+
+        # OrderStrategy event — ATM bracket orders send fills inside the strategy entity
+        if data.get('e') == 'props' and not fills:
+            d = data.get('d', {})
+            if d.get('entityType') == 'orderStrategy':
+                entity = d.get('entity') or {}
+                if isinstance(entity, dict):
+                    # Check for fills nested in the strategy entity
+                    strategy_fills = entity.get('fills', [])
+                    if isinstance(strategy_fills, list):
+                        for f in strategy_fills:
+                            if isinstance(f, dict):
+                                fills.append(f)
+                    # Fallback: entity itself has fill-like fields (action + qty)
+                    if not strategy_fills and entity.get('action') and entity.get('qty'):
+                        fills.append(entity)
 
         for fill in fills:
             await self._process_fill(fill, fill_callback)
@@ -732,6 +752,15 @@ class LeaderConnection:
         price = fill.get('price', 0)
         action = fill.get('action', '')  # Buy or Sell
         timestamp_str = fill.get('timestamp', '')
+
+        # --- FILL ID DEDUP ---
+        # Prevents double-processing if Tradovate sends both a standalone fill event
+        # AND an orderStrategy event containing the same fill
+        if fill_id and fill_id in self._processed_fill_ids:
+            logger.debug(f"Skipping already-processed fill {fill_id}")
+            return
+        if fill_id:
+            self._processed_fill_ids.add(fill_id)
 
         # --- LOOP PREVENTION (Layer 1: clOrdId check) ---
         # Check clOrdId for our copy prefix (works if Tradovate includes it on fill)
