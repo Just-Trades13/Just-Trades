@@ -1241,6 +1241,127 @@
         border-color: #10b981;
     }
 }
+
+/* ── MOBILE RESPONSIVE OVERRIDES ─────────────────────── */
+@media (max-width: 768px) {
+    .list-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+    }
+    .list-header input {
+        width: 100%;
+        min-width: 0;
+    }
+    .filter-controls {
+        flex-direction: column;
+        gap: 0.5rem;
+        width: 100%;
+    }
+    .filter-controls select {
+        width: 100%;
+    }
+    .list-header .btn {
+        width: 100%;
+        text-align: center;
+    }
+    .strategy-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 1rem;
+    }
+    .strategy-info {
+        width: 100%;
+    }
+    .strategy-name {
+        font-size: 0.95rem;
+    }
+    .strategy-actions {
+        width: 100%;
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+    .strategy-accounts {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .accounts-table {
+        min-width: 480px;
+    }
+    .accounts-table thead th,
+    .accounts-table tbody td {
+        padding: 0.5rem 0.65rem;
+        font-size: 0.8rem;
+    }
+    .account-name-cell {
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Edit form mobile */
+    .builder-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+        padding: 1rem;
+    }
+    .header-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        width: 100%;
+    }
+    .header-actions .btn {
+        width: 100%;
+        text-align: center;
+    }
+    .builder-form {
+        padding: 1rem;
+    }
+    .form-two {
+        grid-template-columns: 1fr;
+    }
+    .account-routing {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .account-routing table {
+        min-width: 520px;
+    }
+    .card-panel header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    .time-filters {
+        grid-template-columns: 1fr;
+    }
+    .tp-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .strategy-header {
+        padding: 0.75rem;
+    }
+    .strategy-name {
+        font-size: 0.85rem;
+    }
+    .strategy-meta {
+        flex-wrap: wrap;
+        gap: 0.3rem;
+    }
+    .accounts-table {
+        min-width: 420px;
+    }
+}
 </style>
 {% endblock %}
 {% block scripts %}

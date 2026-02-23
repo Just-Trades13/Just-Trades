@@ -481,6 +481,38 @@
         background: #e2e8f0 !important;
         color: #475569 !important;
     }
+
+    /* ── MOBILE RESPONSIVE ─────────────────────────────────── */
+    @media (max-width: 768px) {
+        .accounts-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 1rem;
+        }
+        .accounts-title h2 {
+            font-size: 1.5rem;
+        }
+        .accounts-actions {
+            flex-direction: column;
+            gap: 0.75rem;
+            width: 100%;
+        }
+        .search-bar {
+            width: 100%;
+        }
+        .btn-add {
+            width: 100%;
+            text-align: center;
+            padding: 12px 20px;
+        }
+        .accounts-grid {
+            grid-template-columns: 1fr;
+        }
+        .account-card-header {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+    }
 </style>
 {% endblock %}
 

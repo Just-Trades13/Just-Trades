@@ -1714,6 +1714,205 @@
                 font-size: 3rem;
             }
         }
+
+        /* ── MOBILE RESPONSIVE OVERRIDES ─────────────────────── */
+        @media (max-width: 900px) {
+            .header {
+                padding: 14px 20px;
+            }
+            .header.scrolled {
+                padding: 10px 20px;
+            }
+        }
+        @media (max-width: 768px) {
+            .header {
+                padding: 12px 16px;
+            }
+            .header.scrolled {
+                padding: 10px 16px;
+            }
+            .nav-links {
+                display: none;
+            }
+            .logo img {
+                width: 34px;
+                height: 34px;
+            }
+            .logo span {
+                font-size: 0.95rem;
+                letter-spacing: 0.08em;
+            }
+            .header-actions {
+                gap: 8px;
+            }
+            .header-actions .btn-login {
+                font-size: 0.8rem;
+                padding: 8px 14px;
+            }
+            .header-actions .btn-start {
+                font-size: 0.8rem;
+                padding: 8px 14px;
+            }
+            .hero {
+                padding: 100px 20px 60px;
+                min-height: auto;
+            }
+            .hero-content {
+                flex-direction: column;
+                gap: 40px;
+            }
+            .hero-text {
+                text-align: center;
+                align-items: center;
+            }
+            .hero h1 {
+                font-size: 2rem;
+            }
+            .hero p {
+                font-size: 0.95rem;
+            }
+            .hero-buttons {
+                flex-direction: column;
+                width: 100%;
+                gap: 12px;
+            }
+            .hero-buttons a {
+                width: 100%;
+                text-align: center;
+                justify-content: center;
+            }
+            .hero-visual {
+                display: none;
+            }
+            .features-section,
+            .how-section,
+            .pricing-section-wrapper,
+            .faq-section,
+            .final-cta {
+                padding: 60px 16px;
+            }
+            .section-header {
+                margin-bottom: 40px;
+            }
+            .section-header h2 {
+                font-size: 1.8rem;
+            }
+            .section-header p {
+                font-size: 0.95rem;
+            }
+            .pricing-grid.platform {
+                grid-template-columns: 1fr;
+                max-width: 100%;
+                padding: 0;
+            }
+            .pricing-grid.discord {
+                grid-template-columns: 1fr;
+                max-width: 100%;
+            }
+            .pricing-card {
+                padding: 28px 20px;
+                border-radius: 16px;
+            }
+            .pricing-card.featured {
+                transform: none;
+            }
+            .pricing-card.featured:hover {
+                transform: translateY(-5px);
+            }
+            .amount {
+                font-size: 2.5rem;
+            }
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+            .steps-grid {
+                grid-template-columns: 1fr;
+            }
+            .testimonials-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+            }
+            .stat-number {
+                font-size: 1.8rem;
+            }
+            .faq-question {
+                padding: 18px 16px;
+                font-size: 0.95rem;
+            }
+            .faq-item.open .faq-answer {
+                padding: 0 16px 18px;
+            }
+            .footer-content {
+                grid-template-columns: 1fr;
+                gap: 32px;
+                padding: 0 16px;
+            }
+            .section-tabs {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+                padding: 0 16px;
+            }
+            .section-tab {
+                width: 100%;
+                max-width: none;
+                text-align: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header {
+                padding: 10px 12px;
+            }
+            .logo img {
+                width: 30px;
+                height: 30px;
+            }
+            .logo span {
+                font-size: 0.85rem;
+            }
+            .header-actions {
+                gap: 6px;
+            }
+            .header-actions .btn-login,
+            .header-actions .btn-start {
+                font-size: 0.75rem;
+                padding: 6px 12px;
+                border-radius: 8px;
+            }
+            .hero h1 {
+                font-size: 1.7rem;
+            }
+            .pricing-card {
+                padding: 24px 16px;
+            }
+            .amount {
+                font-size: 2.2rem;
+            }
+            .section-header h2 {
+                font-size: 1.5rem;
+            }
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .logo span {
+                font-size: 0.75rem;
+                letter-spacing: 0.05em;
+            }
+            .header-actions .btn-login {
+                display: none;
+            }
+            .header-actions .btn-start {
+                font-size: 0.7rem;
+                padding: 6px 10px;
+            }
+        }
     </style>
     <link rel="stylesheet" href="/static/css/mobile.css">
 </head>
