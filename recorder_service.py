@@ -6170,21 +6170,28 @@ def reconcile_positions_with_broker():
                                     # Check if TP order exists on broker
                                     orders = await tradovate.get_orders(account_id=str(subaccount_id))
                                     has_tp_order = False
+                                    existing_tp_orders = []  # Track all matching TPs for duplicate cleanup
+                                    # Rule 15: extract symbol root for matching (handles 2-letter roots like GC, CL)
+                                    ticker_root = extract_symbol_root(ticker)
                                     for order in orders:
                                         order_symbol = order.get('symbol', '')
                                         order_type = order.get('orderType', '') or ''
                                         order_status = order.get('ordStatus', '') or ''
                                         order_action = order.get('action', '')
-                                        
-                                        if ('MNQ' in order_symbol or tradovate_symbol[:3] in order_symbol) and \
+
+                                        # Rule 15: match by symbol root (3-char then 2-char), not hardcoded 'MNQ'
+                                        order_root = extract_symbol_root(order_symbol)
+                                        symbol_matches = (order_root == ticker_root) if (order_root and ticker_root) else (tradovate_symbol[:3] in order_symbol)
+
+                                        if symbol_matches and \
                                            'limit' in order_type.lower() and \
-                                           order_status in ['New', 'Working', 'PartiallyFilled', 'PendingNew']:
+                                           order_status in ['New', 'Working', 'PartiallyFilled', 'PendingNew', 'Accepted']:
                                             # Check if action matches (SELL for LONG, BUY for SHORT)
                                             if (db_side == 'LONG' and order_action == 'Sell') or \
                                                (db_side == 'SHORT' and order_action == 'Buy'):
                                                 has_tp_order = True
-                                                logger.debug(f"✅ TP order found for {ticker}: {order_action} @ {order.get('price')}")
-                                                break
+                                                existing_tp_orders.append(order)
+                                                logger.debug(f"✅ TP order found for {ticker}: {order_action} @ {order.get('price')} (order {order.get('id', order.get('orderId', '?'))})")
                                     
                                     if not has_tp_order:
                                         logger.warning(f"🔄 SYNC FIX: MISSING TP ORDER for {ticker} - PLACING NOW")
