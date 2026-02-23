@@ -222,6 +222,7 @@ class LeaderConnection:
         """Run the monitoring loop."""
         self._running = True
         self._last_server_msg = time.time()
+        self._last_debounce_cleanup = time.time()
 
         while self._running and self.connected:
             try:
@@ -230,6 +231,13 @@ class LeaderConnection:
                 if now - self._last_heartbeat > 2.5:
                     await self.websocket.send("[]")
                     self._last_heartbeat = now
+
+                # Clean stale debounce entries every 60s
+                if now - self._last_debounce_cleanup > 60.0:
+                    stale_keys = [k for k, v in self._order_modify_debounce.items() if now - v > 5.0]
+                    for k in stale_keys:
+                        del self._order_modify_debounce[k]
+                    self._last_debounce_cleanup = now
 
                 # Server timeout: if no message in 10s, connection is dead
                 if now - self._last_server_msg > 10.0:
@@ -765,8 +773,20 @@ class LeaderConnection:
                 logger.error(f"Fill callback error for leader {self.leader_id}: {e}")
 
     async def close(self):
-        """Close the connection."""
+        """Close the connection and cancel all working mirrors for this leader."""
         self._running = False
+
+        # Cancel all working mirrored orders — we can no longer track the leader's orders
+        try:
+            from copy_trader_models import cancel_all_mirrors_for_leader
+            cancel_all_mirrors_for_leader(self.leader_id)
+        except Exception as e:
+            logger.warning(f"Error cancelling mirrors on disconnect for leader {self.leader_id}: {e}")
+
+        # Clear tracked order state
+        self._tracked_orders.clear()
+        self._order_modify_debounce.clear()
+
         if self.websocket:
             try:
                 await self.websocket.close()
