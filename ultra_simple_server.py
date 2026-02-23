@@ -24205,17 +24205,17 @@ def manual_trade():
                     tradovate.refresh_token = token_container['refresh_token']
                     tradovate.md_access_token = token_container.get('md_access_token')
                     refreshed = await tradovate.refresh_access_token()
-                    if refreshed:
+                    if refreshed and refreshed.get('success'):
                         token_container['access_token'] = tradovate.access_token
                         token_container['refresh_token'] = tradovate.refresh_token
                     return refreshed
             refreshed = _run_async(_refresh())
-            if refreshed:
+            if refreshed and refreshed.get('success'):
                 # Save new tokens to DB
                 try:
                     save_conn = get_db_connection()
                     save_cursor = save_conn.cursor()
-                    new_expiry = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+                    new_expiry = (datetime.utcnow() + timedelta(minutes=85)).isoformat()
                     save_cursor.execute(f"""
                         UPDATE accounts
                         SET tradovate_token = {placeholder}, tradovate_refresh_token = {placeholder}, token_expires_at = {placeholder}
