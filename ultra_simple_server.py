@@ -25212,7 +25212,7 @@ def admin_copy_trader_status():
         return jsonify({'enabled': is_copy_trader_enabled()})
     except Exception as e:
         logger.error(f"Error checking copy trader status: {e}")
-        return jsonify({'enabled': True})
+        return jsonify({'enabled': False})
 
 
 @app.route('/api/mirror-order', methods=['POST'])

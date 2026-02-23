@@ -268,10 +268,10 @@
             <div class="pro-copy-master-toggle" id="masterToggleContainer">
                 <span style="font-size:0.8rem;color:rgba(148,163,184,0.7);margin-right:0.5rem;">Copy Trading:</span>
                 <label class="copy-toggle">
-                    <input type="checkbox" id="masterCopyToggle" checked>
+                    <input type="checkbox" id="masterCopyToggle">
                     <span class="toggle-slider"></span>
                 </label>
-                <span class="master-status" id="masterStatus" style="font-size:0.8rem;margin-left:0.4rem;font-weight:600;color:#22c55e;">Active</span>
+                <span class="master-status" id="masterStatus" style="font-size:0.8rem;margin-left:0.4rem;font-weight:600;color:#ef4444;">Disabled</span>
             </div>
             {% endif %}
             <div class="pro-copy-mode-toggle">
@@ -1534,9 +1534,10 @@
             const data = await response.json();
             if (data.success) {
                 currentLeaderId = data.leader_id;
-                showToast('Leader account set', 'success');
+                showToast('Leader account set — adding follower accounts...', 'success');
                 updateLeaderStatus('disconnected', `Manual mode: ${label}`);
-                loadFollowerAccounts(currentLeaderId);
+                // Auto-add all other accounts as followers for the new leader
+                await addAllFollowerAccounts();
                 loadCopyTradeLog(currentLeaderId);
             } else {
                 showToast(`Error: ${data.error || 'Failed to set leader'}`, 'error');
