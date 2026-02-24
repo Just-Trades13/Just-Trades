@@ -428,6 +428,17 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Guard** | `not trailing_stop` check prevents combining with trailingStop (Tradovate rejects this combination) |
 | **NEVER** | Use negative/signed values for breakeven/breakevenPlus. NEVER send breakeven when trailingStop is true |
 
+### ALL _smart() Calls Forced REST-Only (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | 2427, 2454, 2502, 2761, 2970, 3011, 3038, 3106, 3827, 4667, 4687, 4934, 4965, 5144, 6402, 8492, 8508 |
+| **Rule** | CLAUDE.md Rule 10 |
+| **Commits** | `c9e49d5` + `a214126` |
+| **What** | All 17 `cancel_order_smart()` and `place_order_smart()` calls have `use_websocket=False` |
+| **Why** | Both default `use_websocket=True` → `_ensure_websocket_connected()` → `websockets.connect()` with NO timeout → hangs indefinitely → `run_async()` kills at 60s → "Async operation timed out after 60.0s" |
+| **Error if reverted** | ALL trades time out at exactly 60 seconds. Every code path affected: entry, DCA-off close, flip-close, TP placement, SL placement, DCA cancel/replace, manual close, reconciliation TP, re-auth retry |
+| **NEVER** | Remove `use_websocket=False` from ANY of these calls. If adding NEW _smart() calls, ALWAYS include `use_websocket=False`. Search: `grep -n '_smart(' recorder_service.py` to audit |
+
 ---
 
 ## projectx_integration.py — Protected Changes
@@ -483,6 +494,7 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | Position sizing: no falsy 0 | `is not None and int(x) > 0`, never `if x:` | 0 means "use webhook qty" | 0 falls back to 1, multiplier triples → wrong contract count |
 | DCA-off close-before-open | Cancel resting orders + market close before fresh bracket | Old position + TP/SL survive → stacking | Same-direction signals pile up (3+3+3=9 contracts) |
 | Webhook qty detection | `any(k in data for ...)`, never `quantity > 1` | qty=1 from webhook is valid, not "default" | Webhook quantity=1 treated as "no qty provided" → overridden by settings |
+| ALL _smart() calls REST-only | `use_websocket=False` on every call | WebSocket hangs indefinitely (no timeout on connect) | 60s timeout on ALL trade execution paths — total outage |
 
 ---
 
