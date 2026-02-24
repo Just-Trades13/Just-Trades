@@ -6078,6 +6078,40 @@ def risk_disclosure():
     return render_template('risk_disclosure.html')
 
 
+# ============================================================================
+# BLOG ROUTES
+# ============================================================================
+
+BLOG_SLUG_MAP = {
+    'tradingview-to-tradovate-automation': 'blog_post_tradingview.html',
+    'best-automation-apex-trader-funding-accounts': 'blog_post_apex.html',
+    'multi-account-futures-trading-complete-guide': 'blog_post_multi_account.html',
+}
+
+@app.route('/blog')
+def blog_index():
+    """Blog landing page."""
+    return render_template('blog_index.html')
+
+@app.route('/blog/<slug>')
+def blog_post(slug):
+    """Individual blog post by SEO slug."""
+    template = BLOG_SLUG_MAP.get(slug)
+    if template:
+        return render_template(template)
+    return redirect(url_for('blog_index'))
+
+@app.route('/sitemap.xml')
+def sitemap():
+    """Serve sitemap.xml for SEO."""
+    return send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'sitemap.xml', mimetype='application/xml')
+
+@app.route('/robots.txt')
+def robots():
+    """Serve robots.txt for crawlers."""
+    return send_from_directory(os.path.join(os.path.dirname(__file__), 'static'), 'robots.txt', mimetype='text/plain')
+
+
 @app.route('/api/public/stats')
 def public_stats():
     """
@@ -34141,6 +34175,15 @@ if __name__ == '__main__':
             logger.warning(f"⚠️ TradingView price service init failed: {e}")
     else:
         logger.info("ℹ️ TradingView price service not available")
+
+    # Start shared WebSocket connection manager (ONE connection per token)
+    try:
+        from ws_connection_manager import get_connection_manager
+        _ws_manager = get_connection_manager()
+        _ws_manager.start()
+        logger.info("✅ Shared WebSocket connection manager started")
+    except Exception as e:
+        logger.warning(f"⚠️ WebSocket connection manager failed to start: {e}")
 
     # Start live account max loss monitor (WebSocket-based)
     try:
