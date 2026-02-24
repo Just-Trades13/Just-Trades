@@ -136,6 +136,27 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Verified** | Syntax verified. Awaiting live signal test. |
 | **NEVER** | Remove this safety net or bypass it. If broker says flat, quantity MUST be initial_position_size. Do NOT add new API calls here — uses existing `get_positions()` result from line 2181 |
 
+### Broker Safety Net Falsy-0 Fix (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2368-2369 |
+| **Rule** | MEMORY.md Bug #41 |
+| **Commit** | `9f34b0e` |
+| **What** | `raw_init = trader.get('initial_position_size')` then `int(raw_init) if raw_init is not None and int(raw_init) > 0 else quantity` instead of `int(trader.get('initial_position_size') or quantity)` |
+| **Why** | `initial_position_size=0` means "use webhook quantity". `int(0 or quantity)` returns quantity (wrong) because `0 or X` = X in Python. The `or` operator treats 0 as falsy. |
+| **NEVER** | Use `int(x or default)` for numeric settings where 0 is a valid user choice. Always use explicit `is not None and > 0` check. |
+
+### DCA-Off Close-Before-Open (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2412-2461 |
+| **Rule** | MEMORY.md Bug #42 |
+| **Commit** | `78fc9fd` |
+| **What** | When DCA OFF + same-direction + broker has existing position: (1) Cancel all resting orders (TP/SL/OCO) matching symbol, (2) Unregister break-even monitor, (3) Place market order to close existing position, (4) Set `has_existing_position = False` for bracket gate |
+| **Why** | Previously only set `has_existing_position = False` without closing the broker position. Old position + old TP/SL survived → each same-direction signal stacked independently (3+3+3=9 contracts). Reuses flip-close cancel pattern from opposite-direction block at lines ~2443-2482. |
+| **Verified** | py_compile passed. Deployed. Awaiting live signal test. |
+| **NEVER** | Remove the cancel + close logic. Skip cancelling resting orders (old TP/SL would interfere with new bracket). Return to only setting `has_existing_position = False` without closing the position. |
+
 ### SQL Placeholders in Reconciliation (Feb 23, 2026)
 | Field | Value |
 |-------|-------|
@@ -188,6 +209,17 @@ for paying customers. These are NOT optional improvements — they are load-bear
 ---
 
 ## ultra_simple_server.py — Protected Changes
+
+### Position Sizing Falsy-0 Fix — webhook_provided_qty + Explicit Null Checks (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~17739-17740 (quantity_source), ~17768-17783 (initial_position_size), ~17800-17812 (add_position_size DCA) |
+| **Rule** | MEMORY.md Bug #41 |
+| **Commit** | `9f34b0e` |
+| **What** | (A) `webhook_provided_qty = any(k in data for k in ('quantity','qty','contracts','size'))` replaces `quantity > 1` for source detection. (B) `elif not webhook_provided_qty and not position_size:` replaces `elif quantity == 1 and not position_size:`. (C) `if trader_initial_size is not None and int(trader_initial_size) > 0:` replaces `if trader_initial_size:`. Same pattern for add_position_size. When value is 0, keeps webhook quantity unchanged. |
+| **Why** | `initial_position_size=0` means "TradingView controls qty via contracts field". But `if 0:` is False in Python → fell back to 1 → multiplier tripled it. `quantity > 1` misclassified webhook qty=1 as "DEFAULT". `quantity == 1` couldn't distinguish "webhook sent 1" from "no qty provided". |
+| **Verified** | py_compile passed. Deployed. Awaiting live signal test. |
+| **NEVER** | Use truthy check (`if value:`) for numeric settings where 0 is valid. Use `quantity > 1` or `quantity == 1` to detect webhook-provided quantity. Always check field presence in `data` dict instead. |
 
 ### DCA-Off Keeps initial_position_size (Feb 18, 2026)
 | Field | Value |
@@ -448,6 +480,9 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | subaccount_id for traders | Use `t.subaccount_id` from traders table | Column exists on traders AND accounts with different meanings | SQL error, no accounts loaded |
 | Shared WS Connection Manager | ONE WS per token, all monitors as listeners | Eliminates 429 rate limits from duplicate connections | 6-12 connections hit rate limits, leader monitor 429'd |
 | WS manager startup order | Manager starts BEFORE monitor services | Services need event loop ready for register_listener() | Listeners queued but never processed → no WS data |
+| Position sizing: no falsy 0 | `is not None and int(x) > 0`, never `if x:` | 0 means "use webhook qty" | 0 falls back to 1, multiplier triples → wrong contract count |
+| DCA-off close-before-open | Cancel resting orders + market close before fresh bracket | Old position + TP/SL survive → stacking | Same-direction signals pile up (3+3+3=9 contracts) |
+| Webhook qty detection | `any(k in data for ...)`, never `quantity > 1` | qty=1 from webhook is valid, not "default" | Webhook quantity=1 treated as "no qty provided" → overridden by settings |
 
 ---
 
