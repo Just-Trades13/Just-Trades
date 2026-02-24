@@ -506,6 +506,55 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | Without this, all monitors reconnect every 90 seconds during market-closed hours, generating 429 rate limit errors. |
 | **NEVER** | Remove the market-hours check. Change the reconnect logic to ignore this gate. |
 
+### WS Connection Manager 429 Storm Fix (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | `ws_connection_manager.py` lines ~372-382 (dead-sub threshold), ~655-658 (stagger), ~672-675 (backoff) |
+| **Rule** | MEMORY.md Bugs #37, #38 |
+| **Commit** | `79e3f7b` |
+| **What** | Three fixes: (1) Dead-subscription threshold 3→10 windows (90s→300s), (2) Initial stagger 0-10s→0-30s, (3) Dead-sub reconnect minimum backoff 30s + 0-15s jitter |
+| **Why** | 16+ WS connections (one per unique Tradovate token) all hit 90s dead-sub threshold during thin market hours (e.g., 1:40 AM ET). All reconnected simultaneously → Tradovate 429 rate limit. Exponential backoff reset to 1s after successful connect, so cycle repeated every 90s. |
+| **NEVER** | Reduce dead-sub threshold below 10 windows (300s). Reduce initial stagger below 30s. Reset backoff to 1 after dead-sub disconnects. These values exist because 16+ connections must spread their reconnects to avoid 429. |
+
+### WS Connection Semaphore — THE DEFINITIVE 429 FIX (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | `ws_connection_manager.py`: `__init__` (self._connect_semaphore), `_run_manager()` (Semaphore init), `_run_connection()` (async with self._connect_semaphore + 3s sleep) |
+| **Rule** | CLAUDE.md Rule 10b, MEMORY.md Bug #40 |
+| **Commit** | `84d5091` |
+| **What** | `asyncio.Semaphore(2)` wraps `conn.connect()` in `_run_connection()`. Only 2 WebSocket connections can attempt to connect simultaneously. 3-second `asyncio.sleep()` after each attempt before releasing the semaphore. `conn.run()` (the long-running receive loop) is OUTSIDE the semaphore — we don't hold it while running. |
+| **Why** | Bug #38 fix (thresholds alone) was INSUFFICIENT. When ALL 16+ connections hit dead-sub detection, `asyncio.create_task()` launches all reconnects at once. Without the semaphore, all 16 connections slam Tradovate's WS endpoint simultaneously → HTTP 429 rate limit → cycling storm. The semaphore ensures orderly reconnection: max 2 at a time, 3s apart. |
+| **Verified** | Post-deploy logs: 8 connections authenticated in 12 seconds, pairs ~3s apart, ZERO 429 errors. 20 total connections all healthy and heartbeating. |
+| **NEVER** | Remove the semaphore. Increase above 2. Remove the 3-second sleep. Move `conn.run()` inside the semaphore block (would block all other connections from connecting while one is running). |
+
+### WS Legacy Dead-Sub Thresholds Hardened (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | `ws_position_monitor.py` line ~297 (`_zero_data_windows >= 10`), `ws_leader_monitor.py` line ~845 (`_zero_data_windows >= 10`) |
+| **Rule** | CLAUDE.md Rule 10b, MEMORY.md Bug #40 |
+| **Commit** | `84d5091` |
+| **What** | Updated legacy standalone classes (`AccountGroupConnection`, `LeaderMonitor`) to use `>= 10` threshold instead of `>= 3`. Added DEPRECATED header to legacy section in ws_position_monitor.py. |
+| **Why** | Legacy classes are dead code (not called in production) but kept for emergency rollback. If accidentally activated with the old `>= 3` threshold, would immediately cause the same 429 storm. The `>= 10` threshold is now enforced in ALL 4 locations. |
+| **NEVER** | Reduce below 10 in ANY of the 4 locations. Activate the legacy standalone classes (use the shared manager listeners instead). |
+
+### Dead WebSocket Pool Disabled (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | `recorder_service.py` line ~170 (`get_pooled_connection()` → `return None`) |
+| **Rule** | CLAUDE.md Rule 10 |
+| **Commit** | `6efcbd5` |
+| **What** | `get_pooled_connection()` returns `None` immediately at the top of the function. |
+| **Why** | The WebSocket pool was NEVER functional (Rule 10). `_ensure_websocket_connected()` hung indefinitely, holding `_WS_POOL_LOCK` (asyncio.Lock), blocking ALL account coroutines in `asyncio.gather()`. Every trade hit 60-second timeout. |
+| **NEVER** | Re-enable the WebSocket pool. Remove the `return None`. The REST-only code path at line ~2324 creates a `TradovateIntegration` that works correctly without a WebSocket connection. |
+
+### MANDATORY REFERENCE: TRADESYNCER_PARITY_REFERENCE.md
+| Field | Value |
+|-------|-------|
+| **Path** | `docs/TRADESYNCER_PARITY_REFERENCE.md` |
+| **What** | Complete Tradovate WebSocket protocol reference: wire format, heartbeat timing (2.5s), server timeout (10s), reconnection strategy (exponential backoff), syncrequest conformance, copy trader architecture, loop prevention, rate limiting. |
+| **When** | **MUST READ** before touching ANY file that deals with WebSocket connections: `ws_connection_manager.py`, `ws_position_monitor.py`, `ws_leader_monitor.py`, `live_max_loss_monitor.py` |
+| **Why** | Bugs #34, #37, #38, #39, #40 ALL happened because this document wasn't consulted. Every WebSocket timing constant, reconnection strategy, and protocol requirement is documented there. |
+
 ---
 
 ## ultra_simple_server.py — Copy Trader Protected Changes

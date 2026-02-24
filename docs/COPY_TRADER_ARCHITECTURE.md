@@ -5,7 +5,7 @@
 > **Date**: February 2026
 > **Last Updated**: February 24, 2026
 > **Priority**: CRITICAL — this is the #1 product feature
-> **Status**: WORKING — Manual + Auto-copy confirmed working. Parallel execution + smart position sync (add/trim/reversal). Feb 23, 2026
+> **Status**: WORKING — Manual + Auto-copy confirmed working. Parallel execution + smart position sync (add/trim/reversal). WS connection stability confirmed with semaphore fix (20 connections, ZERO 429s). Feb 24, 2026
 
 ---
 
@@ -71,6 +71,11 @@ The HTTP self-POST pattern works because we added `X-Admin-Key` header bypass in
 | Auto-copy parallel (asyncio.gather) | `b26dc75` | Sequential for-loop → `asyncio.gather()` — all followers simultaneously |
 | Position add-not-close | `b97eb10` | Same-side adds use delta qty instead of close+re-enter |
 | Warning disclaimer | `24e1094` | Yellow warning box: don't mix copy trader with webhook strategies |
+| **WS Connection Semaphore** | **`84d5091`** | **asyncio.Semaphore(2) + 3s sleep gates concurrent WS connects. THE definitive 429 fix. 20 connections, ZERO 429s. NEVER REMOVE.** |
+| WS Legacy thresholds hardened | `84d5091` | All 4 dead-sub threshold locations updated to >= 10. DEPRECATED headers on legacy standalone classes. |
+| Token refresh daemon PostgreSQL fix | `d457d44` | Was using sqlite3 in PostgreSQL production — tokens never refreshed |
+| Unknown error diagnostic fix | `27c38c5` | run_async() exceptions now propagate real error messages instead of "Unknown error" |
+| max_contracts DEFAULT 10→0 | `adb859b` | Migration silently capped ALL traders at 10 contracts. Fixed 172 traders. |
 
 ### Debugging Lessons Learned
 
@@ -535,6 +540,10 @@ ALTER TABLE follower_accounts ADD COLUMN lockout_reason TEXT;
 | 20 | WS reconnect during market-closed hours | 429 rate limit errors from unnecessary reconnects | `_is_futures_market_likely_open()` check before reconnect | `2c53a6d` |
 | 21 | WS dead-sub threshold too aggressive (3×30s) | 16+ connections ALL reconnect simultaneously → Tradovate HTTP 429 storm cycling every 90s | Threshold: 10×30s (300s). Initial stagger: 0-30s. Dead-sub backoff: min 30s + 0-15s jitter. **NEVER reduce these values.** | `79e3f7b` |
 | 22 | Dead WebSocket pool blocks ALL trades | `get_pooled_connection()` tried `_ensure_websocket_connected()` (NEVER functional). `_WS_POOL_LOCK` blocked all coroutines → every trade hit 60s async timeout | `return None` at top of function → REST-only path | `6efcbd5` |
+| 23 | **16+ WS connections connect simultaneously** | `asyncio.create_task()` launches ALL reconnects at once → Tradovate HTTP 429 rate limit. Bug #38 fix (thresholds alone) was INSUFFICIENT. | **`asyncio.Semaphore(2)`** in `_run_connection()` wrapping `conn.connect()` + 3s `asyncio.sleep()`. Only 2 connections can attempt at any time. **NEVER REMOVE THIS SEMAPHORE.** | `84d5091` |
+| 24 | Token refresh daemon uses sqlite3 | Production uses PostgreSQL — `sqlite3.connect()` fails silently, tokens never refresh → expire → 401 on all API calls | Use PostgreSQL connection pool from existing `get_db_connection()` | `d457d44` |
+| 25 | "Unknown error" masks ALL failures | `run_async()` caught exceptions but returned generic error dict. Real errors invisible. | Propagate actual exception message to result dict | `27c38c5` |
+| 26 | `max_contracts` DEFAULT 10 silently caps traders | Migration added column with `DEFAULT 10` → ALL new traders limited to 10 contracts with no warning | Migration to reset to 0 (unlimited). Always check what DEFAULT you set on new columns. | `adb859b` |
 
 ---
 

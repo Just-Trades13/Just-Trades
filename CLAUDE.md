@@ -306,10 +306,50 @@ WebSocket pool was NEVER functional. ALL orders go through REST (`session.post`)
 
 ---
 
+## RULE 10b: WEBSOCKET CONNECTION STABILITY — READ BEFORE TOUCHING ANY WS CODE (Feb 24, 2026)
+
+**MANDATORY**: Before modifying ANY file that touches WebSocket connections, READ `docs/TRADESYNCER_PARITY_REFERENCE.md` first. This doc has the complete Tradovate WebSocket protocol (wire format, heartbeat timing, reconnection strategy, syncrequest conformance rules).
+
+**Files covered by this rule:**
+- `ws_connection_manager.py` — Shared connection manager (THE critical infrastructure)
+- `ws_position_monitor.py` — Position/fill/order sync
+- `ws_leader_monitor.py` — Copy trade fill/order detection
+- `live_max_loss_monitor.py` — Max loss cashBalance breach detection
+
+**Current protection stack (ALL of these exist for a reason — NEVER REMOVE ANY):**
+1. `asyncio.Semaphore(2)` in `_run_connection()` — limits concurrent WS connects to 2 (Bug #40)
+2. `await asyncio.sleep(3)` inside semaphore block — 3s spacing between connection attempts (Bug #40)
+3. Dead-sub threshold `>= 10` windows (300s) — prevents premature reconnect (Bug #38)
+4. `_is_futures_market_likely_open()` — suppresses reconnect during market-closed hours (Bug #37)
+5. Initial connection stagger 0-30s random delay — prevents simultaneous boot connections (Bug #38)
+6. Dead-sub reconnect minimum backoff 30s + 0-15s jitter — prevents rapid reconnect cycling (Bug #38)
+7. Heartbeat `[]` every 2.5s, server timeout 10s — per Tradovate protocol spec
+8. 70-min max connection lifetime (before 85-min token expiry) — prevents auth failures
+
+**What happened when these protections didn't exist (Feb 24, 2026 — 7 bugs in 12 hours):**
+- 16+ connections all reconnected simultaneously → Tradovate HTTP 429 rate limit storm
+- 429 storm cycled every 90 seconds for HOURS
+- ALL Pro Copy Trader functionality was DOWN (leader monitor couldn't receive fills)
+- ALL position monitors were DOWN (no real-time broker sync)
+- Recovery required adding the semaphore — the SINGLE MOST IMPORTANT LINE OF CODE in the WS system
+
+**Tradovate WebSocket protocol constants (from TRADESYNCER_PARITY_REFERENCE.md Part 3):**
+```
+HEARTBEAT_INTERVAL    = 2500ms  (client sends '[]')
+SERVER_TIMEOUT        = 10000ms (no server message = dead)
+TOKEN_REFRESH         = 85 min  (before 90min expiry)
+INITIAL_RECONNECT     = 1000ms  (first retry delay)
+MAX_RECONNECT_DELAY   = 60000ms (cap)
+BACKOFF_JITTER        = 0-10%   (avoid thundering herd)
+```
+
+---
+
 ## RULE 11: RECOVERY PROTOCOL
 
 ```bash
-git reset --hard WORKING_FEB23_2026_COPY_TRADER_STABLE     # CURRENT — copy trader fully working
+git reset --hard WORKING_FEB24_2026_WS_SEMAPHORE_STABLE     # CURRENT — WS semaphore + 7 critical fixes
+git reset --hard WORKING_FEB23_2026_COPY_TRADER_STABLE     # Pre-Feb24 fallback — copy trader working but no WS stability
 git reset --hard WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET  # Pre-copy-trader fallback (+ brevo fix 5b6be75)
 git reset --hard WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE   # Pre-safety-net fallback
 git reset --hard WORKING_FEB18_2026_DCA_SKIP_STABLE        # Pre-DCA-field-fix fallback
@@ -323,7 +363,8 @@ git push -f origin main  # CAUTION: force push — only if resetting
 
 | Tag | Commit | Description |
 |-----|--------|-------------|
-| `WORKING_FEB23_2026_COPY_TRADER_STABLE` | `98021d6` | **CURRENT** — Pro Copy Trader fully working (manual + auto, parallel, position sync) |
+| `WORKING_FEB24_2026_WS_SEMAPHORE_STABLE` | TBD | **CURRENT** — WS semaphore fix + 7 critical Feb 24 fixes (Bugs #34-40) |
+| `WORKING_FEB23_2026_COPY_TRADER_STABLE` | `98021d6` | Pre-Feb24 fallback — Copy Trader working but no WS stability fixes |
 | `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` | `bb1a183` | Broker-verified qty safety net + brevo pin (+ `5b6be75`) |
 | `WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE` | `656683a` | DCA field fix, env crash fix, JADVIX auto-enable, cascade delete |
 | `WORKING_FEB18_2026_DCA_SKIP_STABLE` | `c75d7d4` | DCA-off bracket fix + multiplier trim scaling |
@@ -600,6 +641,11 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Shared WS Connection Manager (1-2 connections instead of 6-12) | `f1795c3` | Feb 23 | **Confirmed working** |
 | WS Connection Manager: 429 storm fix (10x30s dead-sub, 30s stagger, 30s backoff) | `79e3f7b` | Feb 24 | **Confirmed working — ZERO 429s post-deploy** |
 | Dead WebSocket pool disabled (`get_pooled_connection()` returns None) | `6efcbd5` | Feb 24 | **CRITICAL — eliminates 60s trade timeouts** |
+| WS Connection Semaphore: asyncio.Semaphore(2) + 3s spacing on connects | `84d5091` | Feb 24 | **CRITICAL — stops 429 storm. NEVER REMOVE.** |
+| WS Legacy dead-sub thresholds hardened to >= 10 in ALL 4 locations | `84d5091` | Feb 24 | **Confirmed working** |
+| Token refresh daemon PostgreSQL fix (was sqlite3 in production) | `d457d44` | Feb 24 | **Confirmed working** |
+| Unknown error diagnostic fix (propagates run_async exceptions) | `27c38c5` | Feb 24 | **Confirmed working** |
+| max_contracts DEFAULT 10→0 migration (uncapped 172 traders) | `adb859b` | Feb 24 | **CRITICAL — silent trade cap removed** |
 
 ---
 
@@ -969,7 +1015,8 @@ REST API → Tradovate → Order filled → TP/SL placed
 - Signal tracking: **daemon thread, NEVER blocks broker pipeline**
 - WebSocket pool code DISABLED (`get_pooled_connection()` returns None, commit `6efcbd5`) — system uses REST API. NEVER re-enable.
 - TP operations: asyncio.Lock per account/symbol prevents race conditions
-- **Shared WS Connection Manager**: ONE WebSocket per Tradovate token, all monitors register as listeners. Messages parsed once, dispatched to all listeners. Listener errors isolated (try/except per listener).
+- **Shared WS Connection Manager**: ONE WebSocket per Tradovate token (~16-20 connections for 27 accounts), all monitors register as listeners. Messages parsed once, dispatched to all listeners. Listener errors isolated (try/except per listener). **Connection semaphore** (`asyncio.Semaphore(2)`) limits concurrent connects to 2 at a time with 3s spacing — NEVER REMOVE (Bug #40).
+- **REFERENCE DOC**: `docs/TRADESYNCER_PARITY_REFERENCE.md` has the COMPLETE Tradovate WebSocket protocol, timing constants, reconnection strategy, and copy trader architecture. READ IT before touching ANY WebSocket code.
 
 ### Critical Code Locations (recorder_service.py)
 
@@ -1101,11 +1148,15 @@ BEFORE: 6-12 WebSocket connections (caused HTTP 429 rate limits)
   ws_leader_monitor.py    → 1-3 connections (one per leader)
   live_max_loss_monitor.py → 3-7 connections (one per account)
 
-AFTER: 1-2 WebSocket connections (one per unique token)
+AFTER: ~20 WebSocket connections (one per unique Tradovate OAuth token)
   ws_connection_manager.py → SharedConnection per token
     → PositionMonitorListener (position/fill/order sync)
     → LeaderMonitorListener (copy trade fill/order detection)
     → MaxLossMonitorListener (cashBalance breach detection)
+
+NOTE: Each Tradovate account has its OWN unique OAuth token (token_key = last 8 chars).
+27 accounts across 16+ unique tokens = 16-20 connections. NOT "1-2" as originally planned.
+This is WHY the connection semaphore exists — see below.
 ```
 
 **Wire Protocol (in SharedConnection):**
@@ -1128,14 +1179,50 @@ AFTER: 1-2 WebSocket connections (one per unique token)
 - Thread-safe registration via `asyncio.run_coroutine_threadsafe()` from any thread
 - `get_connection_manager()` returns singleton `TradovateConnectionManager`
 
-**NEVER (429 Storm Prevention — Bug #38, Feb 24, 2026):**
+**Connection Semaphore (Bug #40, Feb 24, 2026) — THE MOST CRITICAL PROTECTION:**
+```python
+# In ws_connection_manager.py __init__:
+self._connect_semaphore = None  # initialized as asyncio.Semaphore(2) in _run_manager()
+
+# In _run_connection(), wraps conn.connect():
+async with self._connect_semaphore:
+    success = await conn.connect()
+    await asyncio.sleep(3)  # pause before releasing semaphore
+```
+- Limits concurrent Tradovate WebSocket connection attempts to 2 at a time
+- 16+ connections all connecting simultaneously overwhelms Tradovate rate limits (HTTP 429)
+- The semaphore ONLY gates the connect attempt — `conn.run()` (the long-running receive loop) is OUTSIDE the semaphore
+- 3-second sleep after each attempt ensures the next waiter doesn't immediately slam Tradovate
+- **CONFIRMED WORKING**: Post-deploy logs show 8 connections authenticating in 12 seconds, pairs ~3s apart, ZERO 429s
+- **NEVER remove the semaphore** — without it, 16+ simultaneous WebSocket connects = instant 429 storm
+- **NEVER increase semaphore above 2** — Tradovate rejects with HTTP 429 if too many connect at once
+- **NEVER remove the 3-second sleep** — it's the minimum spacing needed between connection attempts
+
+**NEVER (429 Storm Prevention — Bugs #38 + #40, Feb 24, 2026):**
 - NEVER reduce dead-subscription threshold below 10 windows (300s) — was 3 (90s), caused 16+ connections to all reconnect simultaneously → Tradovate HTTP 429 rate limit → cycling reconnect storm every 90s
 - NEVER reduce initial connection stagger below 30s — was 10s, too tight for 16+ connections
 - NEVER reset backoff to 1s after dead-subscription disconnect — use minimum 30s + 0-15s jitter
 - NEVER reduce reconnect jitter below 15s — was 5s, insufficient spread for 16+ simultaneous reconnects
+- NEVER remove `asyncio.Semaphore(2)` from `_run_connection()` — this is THE fix that prevents 429 storms (Bug #40, commit `84d5091`)
+- NEVER increase the semaphore value above 2 — Tradovate's rate limit can't handle more than 2 simultaneous WS connects
+- NEVER remove the `await asyncio.sleep(3)` inside the semaphore block — it spaces out connection attempts
 - Thin market hours (weekends, 5-6 PM ET) produce 0 data messages by design — this is NORMAL, not a dead subscription
 - NEVER use the legacy standalone classes (`AccountGroupConnection` in ws_position_monitor.py, `LeaderMonitor` in ws_leader_monitor.py) — they are DEPRECATED dead code kept only for emergency rollback. Production uses `PositionMonitorListener` and `LeaderMonitorListener` on the shared manager.
 - The `>= 10` threshold is enforced in ALL 4 locations: ws_connection_manager.py (lines 374, 679), ws_leader_monitor.py (line 846), ws_position_monitor.py (line 298). If you change ONE, change ALL FOUR.
+
+**WHY the WebSocket Connection Manager Keeps Breaking (LEARN THIS):**
+1. Each Tradovate account has a UNIQUE OAuth token → token_key = last 8 chars of token
+2. 27 accounts across 16+ unique tokens = 16-20 simultaneous WebSocket connections
+3. During thin market hours (late night, weekends) ALL connections get 0 data messages
+4. Dead-subscription detection fires on ALL connections within seconds of each other
+5. Without the semaphore, ALL 16+ connections try to reconnect at the SAME TIME
+6. Tradovate's WebSocket endpoint rate-limits with HTTP 429
+7. 429 rejection → exponential backoff → connections come back → 0 data again → repeat
+8. This creates a cycling 429 storm that can last HOURS
+9. The semaphore (max 2 concurrent + 3s spacing) ensures orderly reconnection
+10. The 300s dead-sub threshold (vs 90s) gives more time for thin-market data to arrive
+11. The 30-44s reconnect jitter spreads out reconnection attempts over ~15 seconds
+12. **Reference**: `docs/TRADESYNCER_PARITY_REFERENCE.md` Part 3 has the official Tradovate WS protocol timing constants
 
 **Public API:**
 ```python
@@ -1721,8 +1808,24 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 | 33 | Feb 23, 2026 | Auto-copy close+re-enter on position add — follower gets closed then reopened | Position sync `else` branch always closed follower then re-entered target qty. Leader Long 1→Long 2 = follower sells 1, buys 2 instead of just buying 1 more. | `b97eb10` | Minutes |
 | 34 | Feb 24, 2026 | **WS Connection Manager 429 storm — 16+ connections cycling every 90s** | Dead-subscription threshold too aggressive (3×30s=90s). During thin market hours, ALL connections hit 0 data → all reconnect simultaneously → Tradovate HTTP 429 → backoff → recover → 90s later repeat. Initial stagger (10s) too tight for 16 connections. Backoff reset to 1s after dead-sub disconnect. | `79e3f7b` | Hours |
 | 35 | Feb 24, 2026 | **ALL trades 60-second timeout — dead WebSocket pool blocks entire pipeline** | `get_pooled_connection()` in recorder_service.py called `_ensure_websocket_connected()` which was NEVER functional (Rule 10). `_WS_POOL_LOCK` (asyncio.Lock) held during hanging connection attempt, blocking ALL account coroutines in `asyncio.gather()`. Every trade hit 60s timeout in `async_utils.py`. | `6efcbd5` | Hours |
+| 36 | Feb 24, 2026 | **Token refresh daemon uses sqlite3 in PostgreSQL production** | `refresh_oauth_tokens()` used `sqlite3.connect()` instead of PostgreSQL connection pool. Tokens never refreshed → expired → 401s on all API calls. | `d457d44` | Hours |
+| 37 | Feb 24, 2026 | **max_contracts DEFAULT 10 silently caps ALL traders** | Migration added `max_contracts` column with `DEFAULT 10`. New traders silently capped at 10 contracts. 172 traders affected. | `adb859b` | Hours |
+| 38 | Feb 24, 2026 | **"Unknown error" masks EVERY failure — no diagnostics possible** | `run_async()` caught exceptions but returned generic `{'error': 'Unknown error'}`. Real errors (timeouts, 401s, connection failures) all looked identical. | `27c38c5` | Hours |
+| 39 | Feb 24, 2026 | **429 storm PERSISTS after Bug #34 fix — 16+ connections still connect simultaneously** | Bug #34 fix (thresholds + stagger + backoff) was insufficient alone. When ALL 16+ connections hit dead-sub detection and enter reconnect simultaneously, `asyncio.create_task()` launches all of them at once. The 0-30s startup stagger only applies on initial boot — reconnects have no stagger. Tradovate rejects with HTTP 429 → cycle repeats indefinitely. | `84d5091` | Hours |
+| 40 | Feb 24, 2026 | **COMPLETE FIX: asyncio.Semaphore(2) gates concurrent WS connection attempts** | Added `asyncio.Semaphore(2)` in `_run_connection()` wrapping `conn.connect()` + 3s sleep. Only 2 connections can attempt Tradovate WS connect at any time. Post-deploy: 8 connections authenticated in 12s, pairs ~3s apart, ZERO 429s. Also hardened legacy dead code thresholds (4 locations). THE definitive fix for the WS 429 storm. | `84d5091` | **Fix confirmed immediately** |
 
-**Pattern:** 35 disasters in ~3 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, (e) auth/session assumptions for internal requests, or (f) dead code that silently blocks live paths (#35).
+**Pattern:** 40 disasters in ~3 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, (e) auth/session assumptions for internal requests, (f) dead code that silently blocks live paths (#35), or (g) concurrent connection attempts without rate limiting (#39-40).
+
+**Feb 24 Session — THE WORST DAY (7 bugs in 12 hours):**
+Bugs #34-40 were all discovered and fixed in a single session. The cascading failures:
+1. Token refresh daemon was sqlite3 (never refreshed tokens in production)
+2. max_contracts DEFAULT 10 silently capped every trader
+3. "Unknown error" masked all diagnostics — couldn't see real errors
+4. Dead WebSocket pool blocked ALL trades with 60s timeouts
+5. WS connection manager 429 storm from aggressive dead-sub detection
+6. 429 storm PERSISTED because the initial fix (thresholds) wasn't enough without a semaphore
+7. Legacy dead code had old thresholds that could re-trigger the storm if accidentally activated
+**Lesson:** When multiple systems fail simultaneously, fix the DIAGNOSTIC infrastructure first (Bug #38 = error visibility), then work outward from the most critical path (Bug #35 = trade execution), then fix the auxiliary systems (Bugs #34, #39-40 = WS stability).
 
 **Near-miss prevented:** Webhook + copy trader pipeline overlap (4 follower accounts had both active webhook traders AND copy follower links). Would have caused double-fills. Fixed proactively with pipeline separation (`e46c4a4`) before any incident occurred.
 
@@ -1740,6 +1843,9 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 8. **"Let me extract a helper function"** → NO. Inline working code stays inline.
 9. **"I'll combine these two commits into one"** → NO. One commit = one concern. Always.
 10. **"I tested locally, should be fine in production"** → NO. PostgreSQL != SQLite. Railway != localhost.
+11. **"I'll change the WebSocket connection code without reading TRADESYNCER_PARITY_REFERENCE.md"** → ABSOLUTELY NOT. Read `docs/TRADESYNCER_PARITY_REFERENCE.md` first. Every time. This doc has the OFFICIAL Tradovate WS protocol. Bugs #34, #37, #38, #39, #40 ALL happened because this doc wasn't consulted. The semaphore, dead-sub thresholds, heartbeat timing, reconnection strategy — it's ALL documented there.
+12. **"The dead-sub threshold is too conservative, let me lower it"** → NO. 3 windows caused a 429 storm across 16+ connections. 10 windows is the MINIMUM. Read Bug #34 and #38.
+13. **"I'll connect all WebSockets at once for faster startup"** → NO. This is EXACTLY how Bug #39/#40 happened. The semaphore limits to 2 concurrent connects + 3s spacing. NEVER REMOVE IT.
 
 ---
 
@@ -1750,6 +1856,7 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 | Doc | Path | When to Read |
 |-----|------|-------------|
 | **Tradovate API** | `docs/TRADOVATE_API_REFERENCE.md` | Editing tradovate_integration.py, bracket orders, REST calls, tick sizes |
+| **TradeSyncer Parity (WS Protocol)** | `docs/TRADESYNCER_PARITY_REFERENCE.md` | **ANY WebSocket code**, ws_connection_manager.py, ws_leader_monitor.py, ws_position_monitor.py, copy trader, reconnection, heartbeat timing, syncrequest protocol. **MANDATORY READ before touching WS code.** |
 | **ProjectX API** | `docs/PROJECTX_API_REFERENCE.md` | Editing projectx_integration.py, order types, bracket format |
 | **Webull API** | `docs/WEBULL_API_REFERENCE.md` | Editing webull_integration.py, HMAC signing, order placement |
 | **TradingView Webhooks** | `docs/TRADINGVIEW_WEBHOOK_REFERENCE.md` | Webhook handler, alert format, placeholders, retry behavior |
