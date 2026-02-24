@@ -2085,7 +2085,7 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 ---
 
-*Last updated: Feb 23, 2026*
-*Production stable tag: WORKING_FEB23_2026_COPY_TRADER_STABLE @ 98021d6*
-*Total rules: 35 | Total documented disasters: 33 | Paid users in production: YES*
-*Documentation: 11 reference docs in /docs/ | CHANGELOG_RULES.md | Memory: 9 files in ~/.claude/memory/*
+*Last updated: Feb 24, 2026*
+*Production stable tag: WORKING_FEB24_2026_WS_SEMAPHORE_STABLE*
+*Total rules: 35 + Rule 10b (WS Stability) | Total documented disasters: 40 | Paid users in production: YES*
+*Documentation: 12 reference docs in /docs/ (including TRADESYNCER_PARITY_REFERENCE.md) | CHANGELOG_RULES.md | Memory: 9 files in ~/.claude/memory/*
