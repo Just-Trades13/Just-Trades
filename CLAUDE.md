@@ -1,6 +1,6 @@
 # Just Trades Platform — MASTER RULES & ARCHITECTURE
 
-> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB23_2026_COPY_TRADER_STABLE` @ commit `98021d6`
+> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB24_2026_WS_SEMAPHORE_STABLE` @ commit `39103a3`
 > **Pro Copy Trader FULLY WORKING — manual + auto-copy, parallel execution, position sync — Feb 23, 2026**
 > **PAID USERS IN PRODUCTION — EVERY BROKEN DEPLOY COSTS REAL MONEY**
 
@@ -646,6 +646,11 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Token refresh daemon PostgreSQL fix (was sqlite3 in production) | `d457d44` | Feb 24 | **Confirmed working** |
 | Unknown error diagnostic fix (propagates run_async exceptions) | `27c38c5` | Feb 24 | **Confirmed working** |
 | max_contracts DEFAULT 10→0 migration (uncapped 172 traders) | `adb859b` | Feb 24 | **CRITICAL — silent trade cap removed** |
+| Position sizing falsy-0 fix (4 locations: webhook qty detection, initial/add size, broker safety net) | `9f34b0e` | Feb 24 | **Confirmed working — py_compile passed** |
+| DCA-off close-before-open (cancel resting orders + close position before fresh bracket) | `78fc9fd` | Feb 24 | **Confirmed working — py_compile passed** |
+| Frontend: allow position sizes of 0 in trader form | `c5d72b4` | Feb 24 | Working |
+| ALL `_smart()` calls forced REST-only (`use_websocket=False` on 17 calls) | `c9e49d5`+`a214126` | Feb 24 | **CRITICAL — eliminates 60s trade timeouts on ALL code paths** |
+| WS crash loop fix: `max_size=10MB` + `splitResponses=true` on shared connection manager | `c3b4c5b` | Feb 24 | **Confirmed — ZERO crash loops post-deploy, all 19 listeners connected** |
 
 ---
 
@@ -949,6 +954,76 @@ Both copy trader propagation paths MUST execute all followers simultaneously, ne
 - Use a sequential `for` loop for follower execution — always parallel
 - Remove the per-leader asyncio.Lock entirely (it prevents dedup issues) — just make execution inside it fast
 - Add `await` calls inside a sequential loop for follower trades
+
+---
+
+## RULE 36: NEVER USE PYTHON FALSY CHECKS FOR NUMERIC SETTINGS WHERE 0 IS VALID (Feb 24, 2026)
+
+Python's `if 0:` is False. `0 or default` returns `default`. `int(0 or 1)` returns 1.
+
+When a user sets `initial_position_size = 0`, it means "TradingView controls quantity via the `contracts` field in the webhook." The system MUST NOT override this with a fallback.
+
+**What broke (Bug #41):** JT Scalper (recorder 77) placed 9 contracts when TradingView sent `contracts: 3`. The `initial_position_size=0` fell back to 1 (because `if 0:` is False), then `enabled_accounts` multiplier (3.0) tripled it to 3, and DCA-off stacking piled up 3+3+3=9.
+
+**Dangerous patterns — NEVER use these for numeric settings:**
+```python
+# WRONG — 0 falls back to default:
+quantity = int(value) if value else 1
+quantity = int(value or 1)
+if trader_initial_size:  # False when 0
+
+# RIGHT — explicit None check:
+if value is not None and int(value) > 0:
+    quantity = int(value)
+else:
+    # 0 or None means "use webhook quantity"
+```
+
+**Applies to:** `initial_position_size`, `add_position_size`, `multiplier`, `max_contracts`, `sl_amount`, `trail_trigger`, `trail_freq`, and ANY other numeric setting where 0 is a valid user choice.
+
+**Also applies to webhook quantity detection:**
+```python
+# WRONG — qty=1 from webhook looks like "no qty provided":
+quantity_source = "WEBHOOK" if quantity > 1 else "DEFAULT"
+
+# RIGHT — check if webhook actually sent a quantity field:
+webhook_provided_qty = any(k in data for k in ('quantity', 'qty', 'contracts', 'size'))
+quantity_source = "WEBHOOK" if webhook_provided_qty else "DEFAULT"
+```
+
+---
+
+## RULE 37: WEBSOCKET LIBRARY DEFAULTS — ALWAYS CHECK max_size AND SET splitResponses (Feb 24, 2026)
+
+The Python `websockets` library defaults `max_size` to **1 MB** (1,048,576 bytes). Tradovate's `user/syncrequest` response can exceed this for accounts with many open orders, positions, or historical fills.
+
+**What broke (Bug #44):** Token `...8vb2ZLAQ` (2 demo accounts) connected and subscribed, but the sync response exceeded 1 MB. The websockets library closed the connection with error code 1009 ("message too big"). This repeated every ~13 seconds — a crash loop that kept the position monitor down, causing users to report "flipping trades after TP" because TP fill detection was offline.
+
+**Required settings on ALL `websockets.connect()` calls to Tradovate:**
+```python
+websocket = await websockets.connect(
+    ws_url,
+    max_size=10 * 1024 * 1024,  # 10 MB — Tradovate sync responses can exceed 1 MB default
+    ping_interval=None,
+    ping_timeout=None,
+    close_timeout=5,
+)
+```
+
+**Required in ALL `user/syncrequest` bodies:**
+```python
+sync_body = json.dumps({
+    "accounts": [int(sid) for sid in account_ids],
+    "splitResponses": True,  # Break initial sync dump into smaller chunks
+})
+```
+
+Per Tradovate protocol (TRADESYNCER_PARITY_REFERENCE.md Part 4), `splitResponses: true` separates the initial state dump into smaller individual messages instead of one massive response.
+
+**NEVER:**
+- Use default `max_size` (1 MB) for Tradovate WebSocket connections
+- Omit `splitResponses: true` from syncrequest — it's in the official protocol spec
+- Assume WebSocket library defaults match production payload sizes — always verify
 
 ---
 
@@ -1813,11 +1888,15 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 | 38 | Feb 24, 2026 | **"Unknown error" masks EVERY failure — no diagnostics possible** | `run_async()` caught exceptions but returned generic `{'error': 'Unknown error'}`. Real errors (timeouts, 401s, connection failures) all looked identical. | `27c38c5` | Hours |
 | 39 | Feb 24, 2026 | **429 storm PERSISTS after Bug #34 fix — 16+ connections still connect simultaneously** | Bug #34 fix (thresholds + stagger + backoff) was insufficient alone. When ALL 16+ connections hit dead-sub detection and enter reconnect simultaneously, `asyncio.create_task()` launches all of them at once. The 0-30s startup stagger only applies on initial boot — reconnects have no stagger. Tradovate rejects with HTTP 429 → cycle repeats indefinitely. | `84d5091` | Hours |
 | 40 | Feb 24, 2026 | **COMPLETE FIX: asyncio.Semaphore(2) gates concurrent WS connection attempts** | Added `asyncio.Semaphore(2)` in `_run_connection()` wrapping `conn.connect()` + 3s sleep. Only 2 connections can attempt Tradovate WS connect at any time. Post-deploy: 8 connections authenticated in 12s, pairs ~3s apart, ZERO 429s. Also hardened legacy dead code thresholds (4 locations). THE definitive fix for the WS 429 storm. **OVERNIGHT HOLD CONFIRMED Feb 24→25**: survived thin-market hours (exact scenario that caused original cascade), zero 429s. | `84d5091` | **Fix confirmed — held overnight** |
+| 41 | Feb 24, 2026 | **Position sizing: `initial_position_size=0` treated as falsy → wrong contract count** | Python's `if 0:` is False. User sets 0 to mean "TradingView controls quantity via `contracts` field." System ignored 0, fell back to 1, then `enabled_accounts` multiplier (3.0) tripled it → 9 contracts instead of 3. Also `quantity > 1` misclassified webhook qty=1 as "DEFAULT", and `quantity == 1` couldn't distinguish real webhook qty from missing. Fixed in 4 locations (ultra_simple_server.py + recorder_service.py). | `9f34b0e` | Hours |
+| 42 | Feb 24, 2026 | **DCA-off same-direction signals stack independently — 3+3+3=9 contracts** | When DCA off, same-direction signals only set `has_existing_position=False` without actually closing the broker position. Old position + old TP/SL survived. Each signal fired a fresh bracket independently → positions piled up. Fix: cancel all resting orders + market close existing position before opening fresh bracket. | `78fc9fd` | Hours |
+| 43 | Feb 24, 2026 | **ALL trades 60s timeout — `_smart()` calls default to WebSocket which hangs indefinitely** | `cancel_order_smart()` and `place_order_smart()` in tradovate_integration.py default `use_websocket=True`. `_ensure_websocket_connected()` calls `websockets.connect()` with NO timeout at line 611 → hangs forever → `run_async()` kills at 60s. EVERY trade path affected (17 calls). First fix (2 calls in DCA-off block) was insufficient — flip-close path still timed out. Second fix caught all 15 remaining calls. | `c9e49d5`+`a214126` | Hours |
+| 44 | Feb 24, 2026 | **WS position monitor crash loop — "message too big" every 13 seconds** | Token `...8vb2ZLAQ` (2 demo accounts) connected to Tradovate WS, but `user/syncrequest` response exceeded websockets library's default 1MB `max_size`. Server sent 1009 "message too big" → disconnect → reconnect → 1009 again → cycling every 13 seconds. Position monitor down → no real-time TP fill detection → "flipping trades after TP". Fix: `max_size=10MB` on `websockets.connect()` + `splitResponses: true` in syncrequest body (per Tradovate protocol spec, breaks initial dump into smaller chunks). | `c3b4c5b` | Hours |
 
-**Pattern:** 40 disasters in ~3 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, (e) auth/session assumptions for internal requests, (f) dead code that silently blocks live paths (#35), or (g) concurrent connection attempts without rate limiting (#39-40).
+**Pattern:** 44 disasters in ~3 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, (e) auth/session assumptions for internal requests, (f) dead code that silently blocks live paths (#35), (g) concurrent connection attempts without rate limiting (#39-40), or (h) Python falsy semantics on numeric 0 (#41) and WebSocket library defaults not matching real-world payload sizes (#44).
 
-**Feb 24 Session — THE WORST DAY (7 bugs in 12 hours):**
-Bugs #34-40 were all discovered and fixed in a single session. The cascading failures:
+**Feb 24 Sessions — 11 BUGS IN 24 HOURS (Bugs #34-44):**
+Bugs #34-40 were discovered and fixed in the morning session. Bugs #41-44 were discovered and fixed in the evening session. The cascading failures:
 1. Token refresh daemon was sqlite3 (never refreshed tokens in production)
 2. max_contracts DEFAULT 10 silently capped every trader
 3. "Unknown error" masked all diagnostics — couldn't see real errors
@@ -1825,7 +1904,14 @@ Bugs #34-40 were all discovered and fixed in a single session. The cascading fai
 5. WS connection manager 429 storm from aggressive dead-sub detection
 6. 429 storm PERSISTED because the initial fix (thresholds) wasn't enough without a semaphore
 7. Legacy dead code had old thresholds that could re-trigger the storm if accidentally activated
-**Lesson:** When multiple systems fail simultaneously, fix the DIAGNOSTIC infrastructure first (Bug #38 = error visibility), then work outward from the most critical path (Bug #35 = trade execution), then fix the auxiliary systems (Bugs #34, #39-40 = WS stability).
+8. Position sizing falsy-0: `initial_position_size=0` fell back to 1, multiplier tripled it to 9 instead of 3
+9. DCA-off same-direction stacking: signals piled up (3+3+3=9) because old position wasn't closed
+10. ALL `_smart()` calls defaulted to WebSocket (which hangs indefinitely) — 17 calls, every trade path affected
+11. WS position monitor crash loop: Tradovate sync response exceeded 1MB default → 1009 every 13 seconds
+**Lesson 1:** When multiple systems fail simultaneously, fix the DIAGNOSTIC infrastructure first (Bug #38 = error visibility), then work outward from the most critical path (Bug #35 = trade execution), then fix the auxiliary systems (Bugs #34, #39-40 = WS stability).
+**Lesson 2:** NEVER trust Python falsy checks for numeric settings where 0 is a valid value. `if 0:` is False. Always use explicit `is not None and int(x) > 0` (Bug #41).
+**Lesson 3:** When fixing a call pattern (like `use_websocket=False`), grep for ALL instances — not just the one that triggered the current error. The first fix (2 calls) was insufficient; the second fix (15 more calls) was needed (Bug #43).
+**Lesson 4:** WebSocket library defaults (max_size=1MB) may not match real-world payloads. Always check library defaults against expected data sizes. Also use `splitResponses: true` per Tradovate protocol to chunk large sync responses (Bug #44).
 
 **Near-miss prevented:** Webhook + copy trader pipeline overlap (4 follower accounts had both active webhook traders AND copy follower links). Would have caused double-fills. Fixed proactively with pipeline separation (`e46c4a4`) before any incident occurred.
 
@@ -1846,6 +1932,10 @@ Bugs #34-40 were all discovered and fixed in a single session. The cascading fai
 11. **"I'll change the WebSocket connection code without reading TRADESYNCER_PARITY_REFERENCE.md"** → ABSOLUTELY NOT. Read `docs/TRADESYNCER_PARITY_REFERENCE.md` first. Every time. This doc has the OFFICIAL Tradovate WS protocol. Bugs #34, #37, #38, #39, #40 ALL happened because this doc wasn't consulted. The semaphore, dead-sub thresholds, heartbeat timing, reconnection strategy — it's ALL documented there.
 12. **"The dead-sub threshold is too conservative, let me lower it"** → NO. 3 windows caused a 429 storm across 16+ connections. 10 windows is the MINIMUM. Read Bug #34 and #38.
 13. **"I'll connect all WebSockets at once for faster startup"** → NO. This is EXACTLY how Bug #39/#40 happened. The semaphore limits to 2 concurrent connects + 3s spacing. NEVER REMOVE IT.
+14. **"This value is 0, so `if value:` will handle it"** → NO. `if 0:` is False in Python. Bug #41: `initial_position_size=0` fell back to 1, multiplier tripled it → 9 contracts instead of 3. ALWAYS use `is not None and int(x) > 0` for numeric settings.
+15. **"I only need to fix the 2 calls that are failing right now"** → NO. Bug #43: first fix (2 `_smart()` calls) left 15 more that also hung. `grep -n` ALL instances of the pattern and fix EVERY ONE.
+16. **"The default websockets max_size (1MB) should be fine"** → NO. Bug #44: Tradovate sync response exceeded 1MB, crashing the position monitor every 13 seconds. ALWAYS set `max_size=10*1024*1024` and `splitResponses: true`.
+17. **"I'll add `use_websocket=True` to this new _smart() call"** → ABSOLUTELY NOT. Rule 10: ALL Tradovate orders use REST. WebSocket order path hangs indefinitely (no timeout on connect). Every `_smart()` call MUST have `use_websocket=False`.
 
 ---
 
@@ -2085,7 +2175,7 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 ---
 
-*Last updated: Feb 24, 2026*
+*Last updated: Feb 24, 2026 (evening session)*
 *Production stable tag: WORKING_FEB24_2026_WS_SEMAPHORE_STABLE*
-*Total rules: 35 + Rule 10b (WS Stability) | Total documented disasters: 40 | Paid users in production: YES*
+*Total rules: 37 + Rule 10b (WS Stability) | Total documented disasters: 44 | Paid users in production: YES*
 *Documentation: 12 reference docs in /docs/ (including TRADESYNCER_PARITY_REFERENCE.md) | CHANGELOG_RULES.md | Memory: 9 files in ~/.claude/memory/*

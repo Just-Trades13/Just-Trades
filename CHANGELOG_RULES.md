@@ -495,6 +495,9 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | DCA-off close-before-open | Cancel resting orders + market close before fresh bracket | Old position + TP/SL survive → stacking | Same-direction signals pile up (3+3+3=9 contracts) |
 | Webhook qty detection | `any(k in data for ...)`, never `quantity > 1` | qty=1 from webhook is valid, not "default" | Webhook quantity=1 treated as "no qty provided" → overridden by settings |
 | ALL _smart() calls REST-only | `use_websocket=False` on every call | WebSocket hangs indefinitely (no timeout on connect) | 60s timeout on ALL trade execution paths — total outage |
+| Numeric 0 is NOT falsy for settings | `is not None and int(x) > 0`, never `if x:` | 0 means "use webhook qty" or "no override" | 0 falls back to 1, multiplier compounds the error |
+| WS max_size = 10 MB | `max_size=10*1024*1024` on `websockets.connect()` | Tradovate sync responses exceed default 1 MB | 1009 "message too big" crash loop every 13 seconds |
+| WS syncrequest splitResponses | `"splitResponses": True` in sync body | Per Tradovate protocol spec (Part 4) | Monolithic sync response may exceed any max_size |
 
 ---
 
@@ -593,6 +596,17 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **What** | `get_pooled_connection()` returns `None` immediately at the top of the function. |
 | **Why** | The WebSocket pool was NEVER functional (Rule 10). `_ensure_websocket_connected()` hung indefinitely, holding `_WS_POOL_LOCK` (asyncio.Lock), blocking ALL account coroutines in `asyncio.gather()`. Every trade hit 60-second timeout. |
 | **NEVER** | Re-enable the WebSocket pool. Remove the `return None`. The REST-only code path at line ~2324 creates a `TradovateIntegration` that works correctly without a WebSocket connection. |
+
+### WS Connection Manager max_size + splitResponses Fix (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | `ws_connection_manager.py` line ~234 (`websockets.connect`), line ~306 (sync_body) |
+| **Rule** | CLAUDE.md Rule 37 |
+| **Commit** | `c3b4c5b` |
+| **What** | (1) `max_size=10*1024*1024` (10 MB) on `websockets.connect()` — was using library default 1 MB. (2) `"splitResponses": True` in `user/syncrequest` body — breaks initial sync dump into smaller chunks per Tradovate protocol spec. |
+| **Why** | Token `...8vb2ZLAQ` (2 demo accounts) crashed every ~13 seconds: connect → authenticate → subscribe → server sends sync response > 1 MB → websockets library sends error code 1009 "message too big" → disconnect → reconnect → repeat. Position monitor was completely DOWN for this token group, causing "flipping trades after TP" because TP fill detection was offline. |
+| **Verified** | Post-deploy: ZERO "message too big" errors, ZERO "Failed to subscribe", all 19 position monitor listeners connected and stable. |
+| **NEVER** | Use default `max_size` (1 MB) for Tradovate WebSocket connections. Omit `splitResponses: true` from syncrequest. Assume library defaults match production payload sizes. |
 
 ### MANDATORY REFERENCE: TRADESYNCER_PARITY_REFERENCE.md
 | Field | Value |
