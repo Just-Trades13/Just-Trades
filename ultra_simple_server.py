@@ -711,9 +711,9 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                 same_dir = [r for r in all_open if r[1] == side]
                 opp_dir = [r for r in all_open if r[1] != side]
 
+                # ADDED: DCA-off check — close existing positions and clear lists so
+                # existing DCA block below naturally skips (Rule 12, add-only approach)
                 if same_dir:
-                    # Check if DCA is enabled: recorder avg_down_enabled OR trader dca_enabled
-                    # Matches real execution at recorder_service.py:2332-2333 (Rule 12)
                     cursor.execute(f'SELECT avg_down_enabled FROM recorders WHERE id = {ph}', (recorder_id,))
                     _dca_row = cursor.fetchone()
                     _is_dca_on = bool(_dca_row and _dca_row[0])
@@ -729,69 +729,66 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                                 _is_dca_on = True
                         except Exception:
                             pass
-
                     if not _is_dca_on:
-                        # DCA OFF: close all existing positions, fall through to open fresh entry
-                        # Matches recorder_service.py ~2338-2341: has_existing_position = False
-                        for pos in same_dir:
+                        for pos in same_dir + opp_dir:
                             _pos_pnl = _close_position(pos[0], pos[1], pos[2], pos[3], price, 'new_entry')
                             print(f"📝 DCA OFF: Closed {pos[1]} #{pos[0]}, P&L: ${_pos_pnl:.2f}", flush=True)
-                        for opp in opp_dir:
-                            _opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'new_entry')
-                            print(f"📝 DCA OFF: Closed stale {opp[1]} #{opp[0]}, P&L: ${_opp_pnl:.2f}", flush=True)
                         print(f"📝 DCA OFF: Closed {len(same_dir)+len(opp_dir)} positions, opening fresh {side}", flush=True)
-                        # Fall through to "Open new position" below
-                    else:
-                        # DCA ON: add to primary position (existing behavior)
-                        primary = same_dir[0]
-                        exist_id, exist_side, exist_qty, exist_entry = primary
+                        same_dir = []  # Clear so existing DCA block below skips
+                        opp_dir = []
 
-                        # Close duplicate same-direction positions (stacking bug cleanup)
-                        for dup in same_dir[1:]:
-                            dup_pnl = _close_position(dup[0], dup[1], dup[2], dup[3], price, 'dedup')
-                            print(f"📝 Closed duplicate {dup[1]} position #{dup[0]} (dedup), P&L: ${dup_pnl:.2f}", flush=True)
+                # EXISTING CODE BELOW — UNTOUCHED
+                if same_dir:
+                    # DCA into the FIRST same-direction position, close any extras as duplicates
+                    primary = same_dir[0]
+                    exist_id, exist_side, exist_qty, exist_entry = primary
 
-                        # Also close any opposite-direction positions (stale from before)
-                        for opp in opp_dir:
-                            opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'signal')
-                            print(f"📝 Closed stale opposite {opp[1]} position #{opp[0]}, P&L: ${opp_pnl:.2f}", flush=True)
+                    # Close duplicate same-direction positions (stacking bug cleanup)
+                    for dup in same_dir[1:]:
+                        dup_pnl = _close_position(dup[0], dup[1], dup[2], dup[3], price, 'dedup')
+                        print(f"📝 Closed duplicate {dup[1]} position #{dup[0]} (dedup), P&L: ${dup_pnl:.2f}", flush=True)
 
-                        # DCA: add to primary position (respect max_contracts_per_trade)
-                        max_contracts = None
-                        try:
-                            cursor.execute(f'SELECT max_contracts_per_trade FROM recorders WHERE id = {ph}', (recorder_id,))
-                            mc_row = cursor.fetchone()
-                            if mc_row and mc_row[0] and int(mc_row[0]) > 0:
-                                max_contracts = int(mc_row[0])
-                        except Exception:
-                            pass
+                    # Also close any opposite-direction positions (stale from before)
+                    for opp in opp_dir:
+                        opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'signal')
+                        print(f"📝 Closed stale opposite {opp[1]} position #{opp[0]}, P&L: ${opp_pnl:.2f}", flush=True)
 
-                        new_qty = exist_qty + quantity
-                        if max_contracts and new_qty > max_contracts:
-                            print(f"📝 DCA capped: {new_qty} would exceed max_contracts={max_contracts}, skipping add", flush=True)
-                            conn.commit()
-                            conn.close()
-                            return {'success': True, 'symbol': symbol, 'action': 'DCA_CAPPED', 'reason': f'qty {new_qty} exceeds max {max_contracts}'}
+                    # DCA: add to primary position (respect max_contracts_per_trade)
+                    max_contracts = None
+                    try:
+                        cursor.execute(f'SELECT max_contracts_per_trade FROM recorders WHERE id = {ph}', (recorder_id,))
+                        mc_row = cursor.fetchone()
+                        if mc_row and mc_row[0] and int(mc_row[0]) > 0:
+                            max_contracts = int(mc_row[0])
+                    except Exception:
+                        pass
 
-                        avg_entry = ((exist_entry * exist_qty) + (price * quantity)) / new_qty
-                        tp_price, sl_price, tp_legs_list = _calc_tp_sl(avg_entry, side, total_qty=new_qty, multiplier=_paper_mult)
-                        tp_legs_json = json.dumps(tp_legs_list) if tp_legs_list else None
-
-                        cursor.execute(f'''
-                            UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}, tp_legs = {ph}
-                            WHERE id = {ph}
-                        ''', (new_qty, avg_entry, tp_price, sl_price, tp_legs_json, exist_id))
-
-                        # Reset automatic DCA tracking so it recalculates from new avg entry
-                        global _paper_dca_next_price
-                        _paper_dca_next_price.pop(exist_id, None)
-
-                        tp_str = f"TP={tp_price:.2f}" if tp_price else "TP=None"
-                        sl_str = f"SL={sl_price:.2f}" if sl_price else "SL=None"
-                        print(f"📝 DCA: Added {quantity} to {side} position | New qty: {new_qty} | Avg entry: ${avg_entry:.2f} | {tp_str} | {sl_str}", flush=True)
-
+                    new_qty = exist_qty + quantity
+                    if max_contracts and new_qty > max_contracts:
+                        print(f"📝 DCA capped: {new_qty} would exceed max_contracts={max_contracts}, skipping add", flush=True)
                         conn.commit()
-                        return {'success': True, 'symbol': symbol, 'action': 'DCA', 'price': price, 'avg_entry': avg_entry, 'quantity': new_qty}
+                        conn.close()
+                        return {'success': True, 'symbol': symbol, 'action': 'DCA_CAPPED', 'reason': f'qty {new_qty} exceeds max {max_contracts}'}
+
+                    avg_entry = ((exist_entry * exist_qty) + (price * quantity)) / new_qty
+                    tp_price, sl_price, tp_legs_list = _calc_tp_sl(avg_entry, side, total_qty=new_qty, multiplier=_paper_mult)
+                    tp_legs_json = json.dumps(tp_legs_list) if tp_legs_list else None
+
+                    cursor.execute(f'''
+                        UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}, tp_legs = {ph}
+                        WHERE id = {ph}
+                    ''', (new_qty, avg_entry, tp_price, sl_price, tp_legs_json, exist_id))
+
+                    # Reset automatic DCA tracking so it recalculates from new avg entry
+                    global _paper_dca_next_price
+                    _paper_dca_next_price.pop(exist_id, None)
+
+                    tp_str = f"TP={tp_price:.2f}" if tp_price else "TP=None"
+                    sl_str = f"SL={sl_price:.2f}" if sl_price else "SL=None"
+                    print(f"📝 DCA: Added {quantity} to {side} position | New qty: {new_qty} | Avg entry: ${avg_entry:.2f} | {tp_str} | {sl_str}", flush=True)
+
+                    conn.commit()
+                    return {'success': True, 'symbol': symbol, 'action': 'DCA', 'price': price, 'avg_entry': avg_entry, 'quantity': new_qty}
 
                 else:
                     # Only opposite-direction positions exist
