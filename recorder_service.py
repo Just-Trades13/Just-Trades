@@ -3209,7 +3209,9 @@ def execute_trade_simple(
             logger.error(f"❌ Parallel execution error: {e}")
             import traceback
             traceback.print_exc()
-        
+            result['error'] = f"Parallel execution error: {e}"
+            failed_accounts.append({'acct_name': 'ALL', 'error': str(e), 'type': 'parallel_execution_error'})
+
         # Return aggregated result
         # CRITICAL FIX: Set success=True if ANY account traded successfully
         if accounts_traded > 0:
