@@ -317,132 +317,180 @@ def start_token_refresh_daemon():
         
         while _TOKEN_REFRESH_RUNNING:
             try:
-                conn = sqlite3.connect(DATABASE_PATH)
-                conn.row_factory = sqlite3.Row
+                # CRITICAL FIX: Use get_db_connection() for PostgreSQL support in production
+                # Previously used sqlite3.connect(DATABASE_PATH) which is WRONG in production
+                conn = get_db_connection()
                 cursor = conn.cursor()
-                
+                ph = '%s' if is_postgres else '?'
+
                 # Get all accounts with tokens
                 cursor.execute('''
-                    SELECT id, name, tradovate_token, tradovate_refresh_token, 
+                    SELECT id, name, tradovate_token, tradovate_refresh_token,
                            token_expires_at, environment, username, password
-                    FROM accounts 
+                    FROM accounts
                     WHERE tradovate_token IS NOT NULL AND tradovate_token != ''
                 ''')
-                accounts = cursor.fetchall()
-                
+                accounts_raw = cursor.fetchall()
+                # Normalize rows to dicts (works for both psycopg2 RealDictCursor and sqlite3.Row)
+                accounts = [dict(a) for a in accounts_raw]
+
                 now = datetime.utcnow()
-                
+
+                def _parse_token_expiry(expires_str):
+                    """Parse token expiry string into datetime."""
+                    if not expires_str:
+                        return None
+                    try:
+                        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z']:
+                            try:
+                                return datetime.strptime(str(expires_str).split('+')[0].split('Z')[0], fmt.replace('%z', ''))
+                            except:
+                                continue
+                    except:
+                        pass
+                    return None
+
+                # GROUP accounts by credential set (username + environment)
+                # TradeSyncer pattern: refresh ONCE per credential, write SAME token to ALL accounts
+                # This prevents token divergence that causes the 429 storm in ws_connection_manager
+                from collections import defaultdict
+                credential_groups = defaultdict(list)
                 for acct in accounts:
-                    acct_id = acct['id']
-                    acct_name = acct['name']
-                    refresh_token = acct['tradovate_refresh_token']
-                    expires_str = acct['token_expires_at']
-                    env = acct['environment'] or 'demo'
-                    username = acct['username']
-                    password = acct['password']
-                    
-                    # Parse expiry time
-                    expires = None
-                    if expires_str:
-                        try:
-                            # Try multiple formats
-                            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z']:
-                                try:
-                                    expires = datetime.strptime(expires_str.split('+')[0].split('Z')[0], fmt.replace('%z', ''))
-                                    break
-                                except:
-                                    continue
-                        except:
-                            pass
-                    
-                    if not expires:
+                    env = (acct.get('environment') or 'demo').lower()
+                    uname = (acct.get('username') or '').strip()
+                    group_key = (uname, env) if uname else (str(acct['id']), env)  # OAuth-only accounts get their own group
+                    credential_groups[group_key].append(acct)
+
+                logger.debug(f"🛡️ Token refresh: {len(accounts)} accounts in {len(credential_groups)} credential groups")
+
+                for group_key, group_accounts in credential_groups.items():
+                    # Find the first account in this group that needs refresh
+                    needs_refresh = False
+                    representative = None
+                    for acct in group_accounts:
+                        expires = _parse_token_expiry(acct.get('token_expires_at'))
+                        if not expires:
+                            continue
+                        time_until_expiry = expires - now
+                        if time_until_expiry < timedelta(minutes=30):
+                            needs_refresh = True
+                            representative = acct
+                            break
+
+                    # Also check for accounts that were re-authed (remove from reauth list)
+                    for acct in group_accounts:
+                        acct_id = acct['id']
+                        if acct_id in _ACCOUNTS_NEED_REAUTH:
+                            expires = _parse_token_expiry(acct.get('token_expires_at'))
+                            if expires and (expires - now) > timedelta(hours=1):
+                                _ACCOUNTS_NEED_REAUTH.discard(acct_id)
+                                logger.info(f"✅ [{acct.get('name')}] Token is valid again - removed from re-auth list")
+
+                    if not needs_refresh or not representative:
                         continue
-                    
-                    # Check if token expires within 30 minutes
-                    time_until_expiry = expires - now
-                    
-                    if time_until_expiry < timedelta(minutes=30):
-                        logger.info(f"🔄 [{acct_name}] Token expires in {time_until_expiry}, refreshing...")
-                        
-                        base_url = 'https://demo.tradovateapi.com/v1' if env == 'demo' else 'https://live.tradovateapi.com/v1'
-                        refreshed = False
-                        
-                        # METHOD 1: Try refresh token
-                        if refresh_token and not refreshed:
-                            try:
-                                response = requests.post(
-                                    f'{base_url}/auth/renewaccesstoken',
-                                    headers={'Authorization': f'Bearer {refresh_token}', 'Content-Type': 'application/json'},
-                                    timeout=10
-                                )
-                                if response.status_code == 200:
-                                    data = response.json()
-                                    new_token = data.get('accessToken')
-                                    new_expiry = data.get('expirationTime')
-                                    if new_token:
-                                        cursor.execute('''
-                                            UPDATE accounts 
-                                            SET tradovate_token = ?, token_expires_at = ?
-                                            WHERE id = ?
-                                        ''', (new_token, new_expiry, acct_id))
-                                        conn.commit()
-                                        # Update cache
-                                        try:
-                                            from dateutil.parser import parse as parse_date
-                                            cache_token(acct_id, new_token, parse_date(new_expiry))
-                                        except:
-                                            pass
-                                        logger.info(f"✅ [{acct_name}] Token refreshed via refresh_token! Expires: {new_expiry}")
-                                        refreshed = True
-                                        _ACCOUNTS_NEED_REAUTH.discard(acct_id)
-                            except Exception as e:
-                                logger.warning(f"⚠️ [{acct_name}] Refresh token failed: {e}")
-                        
-                        # METHOD 2: Try API Access with username/password
-                        if username and password and not refreshed:
-                            try:
-                                from tradovate_api_access import TradovateAPIAccess
-                                import asyncio
-                                
-                                async def do_api_access():
-                                    api = TradovateAPIAccess(demo=(env == 'demo'))
-                                    return await api.login(username, password, DATABASE_PATH, acct_id)
-                                
-                                # Run async in sync context
-                                loop = asyncio.new_event_loop()
-                                result = loop.run_until_complete(do_api_access())
-                                loop.close()
-                                
-                                if result.get('success'):
-                                    new_token = result.get('accessToken')
-                                    new_expiry = result.get('expirationTime')
-                                    # Token already saved by api.login()
+
+                    env = (representative.get('environment') or 'demo').lower()
+                    refresh_token = representative.get('tradovate_refresh_token')
+                    username = representative.get('username')
+                    password = representative.get('password')
+                    acct_name = representative.get('name')
+                    group_ids = [a['id'] for a in group_accounts]
+                    group_names = [a.get('name', '?') for a in group_accounts]
+
+                    logger.info(f"🔄 [{acct_name}] Token expires soon, refreshing for group of {len(group_accounts)} accounts: {group_names}")
+
+                    base_url = 'https://demo.tradovateapi.com/v1' if env == 'demo' else 'https://live.tradovateapi.com/v1'
+                    refreshed = False
+                    new_token = None
+                    new_expiry = None
+
+                    # METHOD 1: Try refresh token
+                    if refresh_token and not refreshed:
+                        try:
+                            response = requests.post(
+                                f'{base_url}/auth/renewaccesstoken',
+                                headers={'Authorization': f'Bearer {refresh_token}', 'Content-Type': 'application/json'},
+                                timeout=10
+                            )
+                            if response.status_code == 200:
+                                data = response.json()
+                                new_token = data.get('accessToken')
+                                new_expiry = data.get('expirationTime')
+                                if new_token:
+                                    # Write SAME token to ALL accounts in this credential group
+                                    for gid in group_ids:
+                                        cursor.execute(f'''
+                                            UPDATE accounts
+                                            SET tradovate_token = {ph}, token_expires_at = {ph}
+                                            WHERE id = {ph}
+                                        ''', (new_token, new_expiry, gid))
+                                    conn.commit()
+                                    # Update cache for all accounts in group
                                     try:
                                         from dateutil.parser import parse as parse_date
-                                        cache_token(acct_id, new_token, parse_date(new_expiry))
+                                        parsed_expiry = parse_date(new_expiry)
+                                        for gid in group_ids:
+                                            cache_token(gid, new_token, parsed_expiry)
                                     except:
                                         pass
-                                    logger.info(f"✅ [{acct_name}] Token refreshed via API Access!")
+                                    logger.info(f"✅ [{acct_name}] Token refreshed via refresh_token for {len(group_ids)} accounts! Expires: {new_expiry}")
                                     refreshed = True
-                                    _ACCOUNTS_NEED_REAUTH.discard(acct_id)
-                            except Exception as e:
-                                logger.warning(f"⚠️ [{acct_name}] API Access failed: {e}")
-                        
-                        # METHOD 3: Check if account has credentials (trading will still work)
-                        if not refreshed:
-                            if username and password:
-                                # Has credentials - trades will work via API Access during execution
-                                logger.warning(f"⚠️ [{acct_name}] Token refresh failed but has credentials - trades will work")
-                                _ACCOUNTS_NEED_REAUTH.discard(acct_id)  # Don't mark as needing reauth
-                            else:
-                                logger.error(f"❌ [{acct_name}] ALL REFRESH METHODS FAILED and no credentials - needs OAuth!")
-                                _ACCOUNTS_NEED_REAUTH.add(acct_id)
-                    
-                    elif acct_id in _ACCOUNTS_NEED_REAUTH and time_until_expiry > timedelta(hours=1):
-                        # Token was manually refreshed (OAuth re-done)
-                        _ACCOUNTS_NEED_REAUTH.discard(acct_id)
-                        logger.info(f"✅ [{acct_name}] Token is valid again - removed from re-auth list")
-                
+                                    for gid in group_ids:
+                                        _ACCOUNTS_NEED_REAUTH.discard(gid)
+                        except Exception as e:
+                            logger.warning(f"⚠️ [{acct_name}] Refresh token failed: {e}")
+
+                    # METHOD 2: Try API Access with username/password
+                    if username and password and not refreshed:
+                        try:
+                            from tradovate_api_access import TradovateAPIAccess
+                            import asyncio
+
+                            async def do_api_access():
+                                api = TradovateAPIAccess(demo=(env == 'demo'))
+                                return await api.login(username, password, DATABASE_PATH, representative['id'])
+
+                            # Run async in sync context
+                            loop = asyncio.new_event_loop()
+                            result = loop.run_until_complete(do_api_access())
+                            loop.close()
+
+                            if result.get('success'):
+                                new_token = result.get('accessToken')
+                                new_expiry = result.get('expirationTime')
+                                # Write SAME token to ALL accounts in group
+                                for gid in group_ids:
+                                    cursor.execute(f'''
+                                        UPDATE accounts
+                                        SET tradovate_token = {ph}, token_expires_at = {ph}
+                                        WHERE id = {ph}
+                                    ''', (new_token, new_expiry, gid))
+                                conn.commit()
+                                try:
+                                    from dateutil.parser import parse as parse_date
+                                    parsed_expiry = parse_date(new_expiry)
+                                    for gid in group_ids:
+                                        cache_token(gid, new_token, parsed_expiry)
+                                except:
+                                    pass
+                                logger.info(f"✅ [{acct_name}] Token refreshed via API Access for {len(group_ids)} accounts!")
+                                refreshed = True
+                                for gid in group_ids:
+                                    _ACCOUNTS_NEED_REAUTH.discard(gid)
+                        except Exception as e:
+                            logger.warning(f"⚠️ [{acct_name}] API Access failed: {e}")
+
+                    # METHOD 3: Check if account has credentials (trading will still work)
+                    if not refreshed:
+                        if username and password:
+                            logger.warning(f"⚠️ [{acct_name}] Token refresh failed but has credentials - trades will work")
+                            for gid in group_ids:
+                                _ACCOUNTS_NEED_REAUTH.discard(gid)
+                        else:
+                            logger.error(f"❌ [{acct_name}] ALL REFRESH METHODS FAILED and no credentials - needs OAuth!")
+                            for gid in group_ids:
+                                _ACCOUNTS_NEED_REAUTH.add(gid)
+
                 conn.close()
                 
             except Exception as e:
