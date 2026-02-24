@@ -2499,7 +2499,7 @@ def execute_trade_simple(
                                         if (local_symbol_root in fo_symbol and
                                             fo_status in ['WORKING', 'NEW', 'PENDINGNEW'] and fo_id):
                                             try:
-                                                await tradovate.cancel_order_smart(int(fo_id))
+                                                await tradovate.cancel_order_smart(int(fo_id), use_websocket=False)
                                                 cancelled_count += 1
                                                 # Clean up OCO pair if this order was registered
                                                 try:
@@ -2758,8 +2758,8 @@ def execute_trade_simple(
                     )
 
                     logger.info(f"📤 [{acct_name}] Placing {order_action} {adjusted_quantity} {local_tradovate_symbol}...")
-                    order_result = await tradovate.place_order_smart(order_data)
-                    
+                    order_result = await tradovate.place_order_smart(order_data, use_websocket=False)
+
                     if not order_result or not order_result.get('success'):
                         error = order_result.get('error', 'Order failed') if order_result else 'No response'
                         return {'success': False, 'error': error}
@@ -2967,7 +2967,7 @@ def execute_trade_simple(
                                 # DCA: Cancel existing TP and place fresh with new qty/price
                                 logger.info(f"🗑️ [{acct_name}] DCA: Cancelling old TP {existing_tp_id} to place fresh (per Tradovate best practice)")
                                 try:
-                                    await tradovate.cancel_order_smart(existing_tp_id)
+                                    await tradovate.cancel_order_smart(existing_tp_id, use_websocket=False)
                                     logger.info(f"✅ [{acct_name}] Old TP cancelled - will place fresh @ {tp_price} qty={broker_qty}")
                                 except Exception as cancel_err:
                                     logger.warning(f"⚠️ [{acct_name}] Could not cancel old TP: {cancel_err} - placing fresh anyway")
@@ -3008,7 +3008,7 @@ def execute_trade_simple(
                                 if order_status in ['WORKING', 'NEW', 'PENDINGNEW'] and order_action_check == tp_action and order_id_check:
                                     logger.info(f"🗑️ [{acct_name}] Cancelling existing TP {order_id_check} @ {order.get('price')} before placing new")
                                     try:
-                                        await tradovate.cancel_order_smart(int(order_id_check))
+                                        await tradovate.cancel_order_smart(int(order_id_check), use_websocket=False)
                                         await asyncio.sleep(0.1)
                                     except Exception as cancel_err:
                                         logger.warning(f"⚠️ [{acct_name}] Could not cancel order {order_id_check}: {cancel_err}")
@@ -3035,7 +3035,7 @@ def execute_trade_simple(
                         tp_placed = False
                         
                         for tp_attempt in range(max_attempts):
-                            tp_result = await tradovate.place_order_smart(tp_order_data)
+                            tp_result = await tradovate.place_order_smart(tp_order_data, use_websocket=False)
                             if tp_result and tp_result.get('success'):
                                 tp_order_id = tp_result.get('orderId') or tp_result.get('id')
                                 logger.info(f"✅ [{acct_name}] TP PLACED @ {tp_price} (order_id: {tp_order_id}) after {tp_attempt+1} attempt(s)")
@@ -3103,7 +3103,7 @@ def execute_trade_simple(
                                     "timeInForce": "GTC",
                                     "isAutomated": True
                                 }
-                                sl_result = await tradovate.place_order_smart(sl_order_data)
+                                sl_result = await tradovate.place_order_smart(sl_order_data, use_websocket=False)
                                 if sl_result and sl_result.get('success'):
                                     sl_order_id = sl_result.get('orderId') or sl_result.get('id')
                                     logger.info(f"✅ [{acct_name}] SL PLACED @ {sl_price}")
@@ -3824,7 +3824,7 @@ def cancel_old_tp_orders_for_symbol(recorder_id: int, ticker: str) -> None:
                             logger.info(f"🗑️ [CANCEL-OLD-TP] Found {len(tp_orders)} old TP order(s) for {ticker} ({tradovate_symbol}) - cancelling all")
                             for tp in tp_orders:
                                 try:
-                                    result = await tradovate.cancel_order_smart(tp['id'])
+                                    result = await tradovate.cancel_order_smart(tp['id'], use_websocket=False)
                                     if result and result.get('success'):
                                         logger.info(f"✅ [CANCEL-OLD-TP] Cancelled TP order {tp['id']}: {tp['action']} {tp['qty']} @ {tp['price']}")
                                     else:
@@ -4664,7 +4664,7 @@ def execute_live_trade_with_bracket(
                     )
                 
                     logger.info(f"📤 Placing {current_order_action} {trade_quantity} {tradovate_symbol} (existing broker pos: {existing_net_pos})")
-                    order_result = await tradovate.place_order_smart(order_data)
+                    order_result = await tradovate.place_order_smart(order_data, use_websocket=False)
                 
                     # If token expired, re-authenticate via REST API Access
                     if order_result and not order_result.get('success') and ('Expired Access Token' in str(order_result.get('error', '')) or '401' in str(order_result.get('error', ''))):
@@ -4684,7 +4684,7 @@ def execute_live_trade_with_bracket(
                                 tradovate.md_access_token = current_md_token
                             
                                 # Retry order with new token
-                                order_result = await tradovate.place_order_smart(order_data)
+                                order_result = await tradovate.place_order_smart(order_data, use_websocket=False)
                             else:
                                 logger.error(f"❌ REST API Access re-authentication failed: {login_result.get('error')}")
                 
@@ -4931,7 +4931,7 @@ def execute_live_trade_with_bracket(
                                     logger.error(f"❌ MODIFY FAILED: {error} - Cancelling and placing new")
                                     # Fallback: cancel failed order and place new
                                     try:
-                                        await tradovate.cancel_order_smart(int(existing_tp_id))
+                                        await tradovate.cancel_order_smart(int(existing_tp_id), use_websocket=False)
                                         await asyncio.sleep(0.2)
                                     except:
                                         pass
@@ -4962,7 +4962,7 @@ def execute_live_trade_with_bracket(
                                 max_attempts = 10
                                 
                                 for tp_attempt in range(max_attempts):
-                                    tp_result = await tradovate.place_order_smart(tp_order_data)
+                                    tp_result = await tradovate.place_order_smart(tp_order_data, use_websocket=False)
                                     if tp_result and tp_result.get('success'):
                                         tp_order_id = tp_result.get('orderId') or tp_result.get('id')
                                         logger.info(f"✅ TP PLACED: {tp_order_id} @ {tp_price} (qty: {tp_qty}) after {tp_attempt+1} attempt(s) - ONLY ONE TP ORDER")
@@ -5141,8 +5141,8 @@ async def ensure_single_tp_limit(
             "isAutomated": True
         }
         
-        tp_result = await tradovate.place_order_smart(tp_order)
-        
+        tp_result = await tradovate.place_order_smart(tp_order, use_websocket=False)
+
         if tp_result and tp_result.get('success'):
             order_id = tp_result.get('orderId') or tp_result.get('id')
             result['success'] = True
@@ -6406,7 +6406,8 @@ def reconcile_positions_with_broker():
                                                     quantity=abs(broker_qty),
                                                     order_type='Limit',
                                                     price=new_tp_price,
-                                                    time_in_force='GTC'
+                                                    time_in_force='GTC',
+                                                    use_websocket=False
                                                 )
 
                                                 if result and result.get('orderId'):
@@ -8488,7 +8489,7 @@ def receive_webhook(webhook_token):
                                             order_data = tradovate.create_market_order(
                                                 trader.get('subaccount_name'), tradovate_symbol, close_side, qty, int(tradovate_account_id)
                                             )
-                                            result = await tradovate.place_order_smart(order_data)
+                                            result = await tradovate.place_order_smart(order_data, use_websocket=False)
                                             if result and result.get('success'):
                                                 # Cancel all TP orders after manual close
                                                 all_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
@@ -8504,7 +8505,7 @@ def receive_webhook(webhook_token):
                                                         order_status in ['New', 'PartiallyFilled', 'Working', 'PendingNew', 'PendingReplace', 'PendingCancel', 'Accepted', ''] and
                                                         order_id):
                                                         try:
-                                                            cancel_result = await tradovate.cancel_order_smart(int(order_id))
+                                                            cancel_result = await tradovate.cancel_order_smart(int(order_id), use_websocket=False)
                                                             if cancel_result and cancel_result.get('success'):
                                                                 cancelled += 1
                                                         except:
