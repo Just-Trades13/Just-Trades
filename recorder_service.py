@@ -2365,7 +2365,8 @@ def execute_trade_simple(
                     # causing wrong DCA sizing (stale recorded_trades says "in position"
                     # but broker is actually flat → should use initial, not add size).
                     if not has_existing_position and action.upper() not in ('CLOSE', 'FLATTEN', 'EXIT', 'FLAT'):
-                        trader_initial = int(trader.get('initial_position_size') or quantity)
+                        raw_init = trader.get('initial_position_size')
+                        trader_initial = int(raw_init) if raw_init is not None and int(raw_init) > 0 else quantity
                         correct_adjusted = max(1, int(trader_initial * account_multiplier))
                         if max_contracts > 0 and correct_adjusted > max_contracts:
                             correct_adjusted = max_contracts

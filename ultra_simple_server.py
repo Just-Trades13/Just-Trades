@@ -17736,7 +17736,8 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         # RISK-BASED POSITION SIZING
         # Formula: quantity = risk_amount / (sl_ticks * tick_value)
         # ============================================================
-        quantity_source = "WEBHOOK" if quantity > 1 else "DEFAULT"
+        webhook_provided_qty = any(k in data for k in ('quantity', 'qty', 'contracts', 'size'))
+        quantity_source = "WEBHOOK" if webhook_provided_qty else "DEFAULT"
 
         if webhook_risk_dollars is not None and sl_ticks > 0:
             # Direct risk dollar amount
@@ -17764,18 +17765,22 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             except Exception as e:
                 _logger.warning(f"⚠️ Could not calculate risk-based quantity: {e}. Using webhook/settings quantity.")
 
-        elif quantity == 1 and not position_size:
+        elif not webhook_provided_qty and not position_size:
             # No webhook quantity specified - use trader/recorder settings
-            if trader_initial_size:
+            if trader_initial_size is not None and int(trader_initial_size) > 0:
                 quantity = int(trader_initial_size)
                 quantity_source = "TRADER (initial_position_size)"
                 _logger.info(f"📊 Using TRADER's initial_position_size: {quantity}")
             else:
                 # Fallback to recorder setting
-                recorder_initial_size = recorder.get('initial_position_size', 1)
-                quantity = int(recorder_initial_size) if recorder_initial_size else 1
-                quantity_source = "RECORDER (initial_position_size)"
-                _logger.info(f"📊 Using RECORDER's initial_position_size: {quantity}")
+                recorder_initial_size = recorder.get('initial_position_size', 0)
+                if recorder_initial_size is not None and int(recorder_initial_size) > 0:
+                    quantity = int(recorder_initial_size)
+                    quantity_source = "RECORDER (initial_position_size)"
+                    _logger.info(f"📊 Using RECORDER's initial_position_size: {quantity}")
+                else:
+                    quantity_source = "WEBHOOK (default — initial_position_size=0)"
+                    _logger.info(f"📊 initial_position_size=0, keeping webhook quantity: {quantity}")
 
         # ============================================================
         # DCA DETECTION - Only adjust quantity if DCA is actually enabled
@@ -17792,15 +17797,19 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                     is_dca = True
                     # Use add_position_size for DCA (unless risk-based sizing was used)
                     if 'RISK' not in quantity_source:
-                        if trader_add_size:
+                        if trader_add_size is not None and int(trader_add_size) > 0:
                             quantity = int(trader_add_size)
                             quantity_source = "TRADER (add_position_size - DCA)"
                             _logger.info(f"📈 DCA detected - Using TRADER's add_position_size: {quantity}")
                         else:
-                            recorder_add_size = recorder.get('add_position_size', 1)
-                            quantity = int(recorder_add_size) if recorder_add_size else 1
-                            quantity_source = "RECORDER (add_position_size - DCA)"
-                            _logger.info(f"📈 DCA detected - Using RECORDER's add_position_size: {quantity}")
+                            recorder_add_size = recorder.get('add_position_size', 0)
+                            if recorder_add_size is not None and int(recorder_add_size) > 0:
+                                quantity = int(recorder_add_size)
+                                quantity_source = "RECORDER (add_position_size - DCA)"
+                                _logger.info(f"📈 DCA detected - Using RECORDER's add_position_size: {quantity}")
+                            else:
+                                quantity_source = "WEBHOOK (default — add_position_size=0)"
+                                _logger.info(f"📈 DCA detected - add_position_size=0, keeping webhook quantity: {quantity}")
                     else:
                         _logger.info(f"📈 DCA detected - Keeping risk-based quantity: {quantity}")
                 else:
