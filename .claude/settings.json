@@ -1,28 +1,26 @@
 {
-  "systemPrompt": "MANDATORY RULES FOR THIS PROJECT — ENFORCED EVERY PROMPT:\n\n1. SACRED FUNCTIONS — Do NOT modify execute_trade_simple(), do_trade_for_account(), process_webhook_directly(), start_position_reconciliation(), or start_websocket_keepalive_daemon() without EXPLICIT user permission for the SPECIFIC change.\n\n2. TICK ROUNDING — ALL prices for Tradovate orders MUST use: round(round(price / tick_size) * tick_size, 10)\n\n3. SQL PLACEHOLDERS — NEVER hardcode '?' — always use '%s' if is_using_postgres() else '?'\n\n4. MULTI-ACCOUNT TP — NEVER trust recorded_trades.tp_order_id for multi-account recorders. Query the broker directly.\n\n5. enabled_accounts DICT — Must include ALL settings (position sizes, SL, TP, DCA, filters, trim_units). Missing = silent NULL fallback.\n\n6. ONE CHANGE AT A TIME — Make one edit, verify syntax, test, commit. Never bulk edit.\n\n7. NO REFACTORING — Never rename, reorganize, 'improve', or 'clean up' working code. ADD only, never restructure.\n\n8. ASYNC SCOPING — Use LOCAL variable copies in asyncio.gather() tasks. Never use nonlocal for shared state.\n\n9. DCA = CANCEL + REPLACE — Never use modifyOrder for bracket-managed TPs.\n\n10. BRACKET ORDERS — First entry only. DCA uses REST market + separate TP.\n\n11. RECOVERY — Production stable tag: WORKING_FEB7_2026_PRODUCTION_STABLE @ b475574\n\nRead CLAUDE.md for full details before ANY code changes.",
+  "systemPrompt": "MANDATORY RULES FOR THIS PROJECT — ENFORCED EVERY PROMPT:\n\nPRODUCTION STABLE: Tag WORKING_FEB24_2026_WS_SEMAPHORE_STABLE @ commit 39103a3\n\n1. ONE CHANGE AT A TIME — Make one edit, verify syntax, test, commit. Never bulk edit.\n2. NO REFACTORING — Never rename, reorganize, 'improve', or 'clean up' working code. ADD only.\n3. TICK ROUNDING — ALL prices: round(round(price / tick_size) * tick_size, 10)\n4. SQL PLACEHOLDERS — '%s' if is_using_postgres() else '?'. NEVER hardcode '?'.\n5. MULTI-ACCOUNT TP — NEVER trust recorded_trades.tp_order_id. Query broker directly.\n6. enabled_accounts DICT — Must include ALL settings. Missing = silent NULL fallback.\n7. ASYNC SCOPING — LOCAL variable copies in asyncio.gather(). Never nonlocal for shared state.\n8. DCA = CANCEL + REPLACE — Never use modifyOrder for bracket-managed TPs.\n9. BRACKET ORDERS — First entry only (when DCA on). DCA uses REST market + separate TP.\n10. REST ONLY — ALL Tradovate orders use REST. NEVER WebSocket. use_websocket=False on ALL _smart() calls.\n10b. WS STABILITY — Read docs/TRADESYNCER_PARITY_REFERENCE.md before ANY WebSocket code change. NEVER remove Semaphore(2), NEVER reduce dead-sub threshold below 10 windows, NEVER remove 3s sleep.\n11. RECOVERY — Current tag: WORKING_FEB24_2026_WS_SEMAPHORE_STABLE\n12. DCA OFF = ignore position state for same-direction signals.\n13. MULTIPLIER scales ALL quantities including trim legs.\n14. SIGNAL TRACKING respects DCA status. Close old records when DCA off.\n15. TICK SIZE — 2-letter roots (GC, CL). Try 3-char first, then 2-char.\n16. RATE LIMITS per token, not per account. Count calls × accounts before adding any.\n17. dict.get() — Use 'or' not default param when key might have None value.\n18. TEMPLATE/SERVER MATCH — Verify fetch() URLs match @app.route() after any restore.\n19. POSITION SIZE — Set explicit values. Never rely on NULL fallback chain.\n20. NO SIGNAL BLOCKING in webhook handler or broker worker.\n21. RAILWAY ENV VARS — Always verify with 'railway variables --kv' (full values).\n22. EXTERNAL APIs — Real curl first, check actual response structure before parsing code.\n23. CSRF EXEMPT — /webhook/, /webhooks/, /oauth/ must be in exempt list.\n24. DCA FIELD NAME — Frontend sends avg_down_enabled, backend reads dca_enabled.\n25. VARIABLE BRANCHES — Every variable used after if/elif/else must be defined in ALL branches.\n26. CASCADE DELETE — Delete/nullify all child records before parent.\n27. TRADINGVIEW COOKIES — Required for real-time prices. Silent fallback to delayed.\n28. BROKER QTY SAFETY NET — Verify with broker before execution. Zero new API calls.\n29. PIN PACKAGES — brevo-python<2.0.0. railway run is LOCAL not container.\n30. DIAGNOSE FIRST — Get exact error, verify real environment, check state, state diagnosis.\n31. DOC CHECKLIST — Update deployed features, docs, changelog, tags, memory.\n32. INTERNAL REQUESTS — X-Admin-Key header. Check .get('success') not truthiness.\n33. FLASK_SECRET_KEY — Permanent Railway env var. Sessions die without it.\n34. COPY SYNC — Add/trim use delta qty. Never close+re-enter for same-side.\n35. PARALLEL FOLLOWERS — asyncio.gather or ThreadPoolExecutor. Never sequential for loop.\n36. FALSY NUMERIC — if 0: is False. Use 'is not None and int(x) > 0' for position sizes.\n37. WS max_size — Always set max_size=10*1024*1024 and splitResponses=true.\n\nSACRED FILES: recorder_service.py, ultra_simple_server.py, tradovate_integration.py\nSACRED FUNCTIONS: execute_trade_simple(), do_trade_for_account(), process_webhook_directly(), start_position_reconciliation(), start_websocket_keepalive_daemon(), broker_execution_worker()\n\nGATES: Gate 1 (RECON) required for ALL edits. Gates 2-3 (INTENT/APPROVAL) for sacred files. Gate 4 (VERIFY + py_compile) after every edit. Gate 5 (CHECKPOINT) after every commit.\n\nRead CLAUDE.md for full details before ANY code changes.",
   "hooks": {
     "preToolUse": [
       {
         "matcher": {
-          "toolName": "Edit",
-          "filePaths": ["recorder_service.py", "ultra_simple_server.py", "tradovate_integration.py"]
+          "toolName": "Edit"
         },
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/mylesjadwin/just-trades-platform/.claude/hooks/guard-sacred-functions.sh"
+            "command": "/Users/mylesjadwin/just-trades-platform/.claude/hooks/pre-edit-checklist.sh"
           }
         ]
       },
       {
         "matcher": {
-          "toolName": "Write",
-          "filePaths": ["recorder_service.py", "ultra_simple_server.py", "tradovate_integration.py"]
+          "toolName": "Write"
         },
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/mylesjadwin/just-trades-platform/.claude/hooks/guard-sacred-functions.sh"
+            "command": "/Users/mylesjadwin/just-trades-platform/.claude/hooks/pre-edit-checklist.sh"
           }
         ]
       }

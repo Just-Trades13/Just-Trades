@@ -629,4 +629,70 @@ Run pending database migrations.
 
 ---
 
+## DAILY MONITORING CHECKLIST (Pre-Market)
+
+Run these checks before market open each trading day. Order matters — earlier checks catch issues that affect later ones.
+
+### 1. Service Health
+```bash
+curl -s "https://justtrades.app/health" | python3 -m json.tool
+```
+**Healthy:** `"status": "ok"`. **Unhealthy:** Connection refused or error → Railway service down. Fix: `railway restart` or check `railway logs --tail`.
+
+### 2. Broker Execution Workers
+```bash
+curl -s "https://justtrades.app/api/broker-execution/status" | python3 -m json.tool
+```
+**Healthy:** `broker_execution.workers_alive` = 10, `queue_size` = 0. **Unhealthy:** Workers < 10 or queue growing → restart service.
+
+### 3. Recent Failures
+```bash
+curl -s "https://justtrades.app/api/broker-execution/failures?limit=20" | python3 -m json.tool
+```
+**Healthy:** Empty or old failures only. **Unhealthy:** Recent `"token expired"` → check auth status. `"rate limit"` → too many accounts on one token (Rule 16).
+
+### 4. Tradovate Token Status
+```bash
+curl -s "https://justtrades.app/api/accounts/auth-status" | python3 -m json.tool
+```
+**Healthy:** `"all_accounts_valid": true`. **Unhealthy:** Accounts in `accounts_needing_reauth` → user needs re-OAuth.
+
+### 5. TradingView WebSocket (Real-Time Prices)
+```bash
+curl -s "https://justtrades.app/api/tradingview/status" | python3 -m json.tool
+```
+**Healthy:** `"websocket_connected": true`, `"jwt_token_valid": true`, recent timestamps. **Unhealthy:** `jwt_token_valid: false` → session cookies expired (Rule 27).
+
+### 6. Whop Sync Daemon
+```bash
+curl -s "https://justtrades.app/api/admin/whop-sync-status" | python3 -m json.tool
+```
+**Healthy:** `last_run` within 60 seconds, `stuck_users` = 0. **Unhealthy:** `last_run` > 5 minutes old → daemon stopped.
+
+### 7. Webhook Activity (Last 24h)
+```bash
+curl -s "https://justtrades.app/api/webhook-activity?limit=50" | python3 -m json.tool
+```
+**Healthy:** `success_rate` > 95%, recent timestamps. **Unhealthy:** No recent webhooks during market hours → check TradingView alerts.
+
+### 8. Thread Health
+```bash
+curl -s "https://justtrades.app/api/thread-health" | python3 -m json.tool
+```
+**Healthy:** All expected daemons running. **Unhealthy:** Missing threads → service needs restart.
+
+### 9. Railway Logs (Quick Scan)
+```bash
+railway logs --tail 2>/dev/null | head -50
+```
+**Healthy:** Normal trade execution logs, no tracebacks. **Unhealthy:** `NameError`, `ImportError`, `TypeError` → code bug deployed. Roll back immediately.
+
+### 10. Max Loss Monitor
+```bash
+curl -s "https://justtrades.app/api/admin/max-loss-monitor/status" | python3 -m json.tool
+```
+**Healthy:** No breaches. **Unhealthy:** `daily_loss_breach_count` > 0 → verify max loss is working correctly.
+
+---
+
 *Source: Production endpoint exploration of Just Trades platform. All endpoints verified against ultra_simple_server.py.*
