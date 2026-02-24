@@ -195,11 +195,11 @@
                 <div class="form-two">
                     <label class="form-field">
                         <span>Initial Position Size</span>
-                        <input type="number" id="initialPositionSize" name="initial_position_size" value="{{ trader.initial_position_size or 1 }}" min="1">
+                        <input type="number" id="initialPositionSize" name="initial_position_size" value="{{ trader.initial_position_size if trader.initial_position_size is not none else 1 }}" min="0">
                     </label>
                     <label class="form-field">
                         <span>Add Position Size</span>
-                        <input type="number" id="addPositionSize" name="add_position_size" value="{{ trader.add_position_size or 1 }}" min="1">
+                        <input type="number" id="addPositionSize" name="add_position_size" value="{{ trader.add_position_size if trader.add_position_size is not none else 1 }}" min="0">
                     </label>
                 </div>
             </div>
@@ -654,11 +654,11 @@
                 <div class="form-two">
                     <label class="form-field">
                         <span>Initial Position Size</span>
-                        <input type="number" id="createInitialPositionSize" name="initial_position_size" value="1" min="1">
+                        <input type="number" id="createInitialPositionSize" name="initial_position_size" value="1" min="0">
                     </label>
                     <label class="form-field">
                         <span>Add Position Size</span>
-                        <input type="number" id="createAddPositionSize" name="add_position_size" value="1" min="1">
+                        <input type="number" id="createAddPositionSize" name="add_position_size" value="1" min="0">
                     </label>
                 </div>
             </div>
@@ -2131,10 +2131,10 @@
             
             // Populate Position Settings
             const initialPositionSize = document.getElementById('createInitialPositionSize');
-            if (initialPositionSize) initialPositionSize.value = recorder.initial_position_size || 1;
-            
+            if (initialPositionSize) initialPositionSize.value = recorder.initial_position_size != null ? recorder.initial_position_size : 1;
+
             const addPositionSize = document.getElementById('createAddPositionSize');
-            if (addPositionSize) addPositionSize.value = recorder.add_position_size || 1;
+            if (addPositionSize) addPositionSize.value = recorder.add_position_size != null ? recorder.add_position_size : 1;
             
             // Populate TP Settings
             const tpUnits = document.getElementById('createTpUnits');
