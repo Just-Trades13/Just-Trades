@@ -1997,11 +1997,13 @@
                     enabled ? 'connecting' : 'connected',
                     enabled ? 'Connecting to leader WebSocket...' : 'Manual mode active'
                 );
-                // Start/stop position polling
+                // Start/stop position polling and log refresh
                 if (enabled) {
                     startPositionPolling();
+                    startLogRefresh();
                 } else {
                     stopPositionPolling();
+                    stopLogRefresh();
                 }
             } else {
                 showToast(`Error: ${data.error || 'Failed to toggle mode'}`, 'error');
@@ -2020,6 +2022,28 @@
             const response = await fetch(`/api/copy-trader/leaders/${leaderId}/log`);
             const data = await response.json();
 
+            // Update stats bar from data.stats (returned but previously ignored)
+            if (data.stats) {
+                const s = data.stats;
+                const totalEl = document.getElementById('statTotalCopies');
+                const rateEl = document.getElementById('statSuccessRate');
+                const latEl = document.getElementById('statAvgLatency');
+                if (totalEl) totalEl.textContent = s.total_copies || 0;
+                if (rateEl) {
+                    if (s.total_copies > 0) {
+                        rateEl.textContent = Math.round((s.successful / s.total_copies) * 100) + '%';
+                    } else {
+                        rateEl.textContent = 'N/A';
+                    }
+                }
+                if (latEl) latEl.textContent = s.avg_latency_ms ? (s.avg_latency_ms + 'ms') : '--';
+            }
+
+            // Update log count badge
+            const countBadge = document.getElementById('logCountBadge');
+            const logCount = (data.log && data.log.length) || 0;
+            if (countBadge) countBadge.textContent = logCount + ' trade' + (logCount !== 1 ? 's' : '');
+
             if (!data.success || !data.log || data.log.length === 0) {
                 container.innerHTML = `
                     <div class="log-placeholder">
@@ -2030,32 +2054,64 @@
                 return;
             }
 
-            let html = '';
+            let rows = '';
             data.log.forEach(entry => {
                 const rawSide = entry.side || '';
                 const sideClass = rawSide.toLowerCase().includes('buy') ? 'buy' : 'sell';
                 const time = new Date(entry.created_at).toLocaleTimeString();
-                const latency = entry.latency_ms ? `<span class="log-latency">${entry.latency_ms}ms</span>` : '';
-                html += `
-                    <div class="log-entry">
-                        <div>
-                            <span class="log-symbol">${entry.symbol}</span>
-                            <span class="log-side ${sideClass}">${rawSide}</span>
-                            <span style="color:rgba(148,163,184,0.6)">x${entry.follower_quantity}</span>
-                            <span style="color:rgba(148,163,184,0.5)">&rarr; ${entry.follower_label || 'Follower'}</span>
-                        </div>
-                        <div>
-                            <span class="log-status-badge ${entry.status}">${entry.status}</span>
-                            ${latency}
-                            <span class="log-time">${time}</span>
-                        </div>
-                        ${entry.error_message ? `<div style="color:#ef4444;font-size:0.75rem;padding:2px 8px;opacity:0.8">${entry.error_message.substring(0, 100)}</div>` : ''}
-                    </div>
+                const latency = entry.latency_ms || '--';
+                const errorRow = entry.error_message
+                    ? `<tr><td colspan="7" style="color:#ef4444;font-size:0.7rem;padding:2px 0.6rem;opacity:0.8">${entry.error_message.substring(0, 120)}</td></tr>`
+                    : '';
+                rows += `
+                    <tr>
+                        <td>${time}</td>
+                        <td><span class="log-symbol">${entry.symbol}</span></td>
+                        <td><span class="log-side ${sideClass}">${rawSide}</span></td>
+                        <td>x${entry.follower_quantity}</td>
+                        <td>${entry.follower_label || 'Follower'}</td>
+                        <td><span class="log-status-badge ${entry.status}">${entry.status}</span></td>
+                        <td class="col-latency">${latency}${typeof latency === 'number' ? 'ms' : ''}</td>
+                    </tr>
+                    ${errorRow}
                 `;
             });
-            container.innerHTML = html;
+
+            container.innerHTML = `
+                <table class="copy-log-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Follower</th>
+                            <th>Status</th>
+                            <th class="col-latency">Latency</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
         } catch (error) {
             console.error('Error loading copy log:', error);
+        }
+    }
+
+    // Log auto-refresh (10s interval when auto-copy active)
+    let _logRefreshInterval = null;
+
+    function startLogRefresh() {
+        stopLogRefresh();
+        if (currentLeaderId) {
+            _logRefreshInterval = setInterval(() => loadCopyTradeLog(currentLeaderId), 10000);
+        }
+    }
+
+    function stopLogRefresh() {
+        if (_logRefreshInterval) {
+            clearInterval(_logRefreshInterval);
+            _logRefreshInterval = null;
         }
     }
 
