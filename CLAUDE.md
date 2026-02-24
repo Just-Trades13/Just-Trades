@@ -595,6 +595,7 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Auto-copy: parallel follower execution (asyncio.gather) | `b26dc75` | Feb 23 | **Confirmed working** |
 | Auto-copy: add-to-position instead of close+re-enter | `b97eb10` | Feb 23 | **Confirmed working** |
 | Copy trader: warning disclaimer (don't mix with webhooks) | `24e1094` | Feb 23 | Working |
+| Paper trading accuracy: multiplier, DCA-off, trader overrides, trim scaling | `32ad0ab`..`a819a22` | Feb 23 | **Needs verification** |
 
 ---
 

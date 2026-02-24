@@ -200,6 +200,56 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Verified** | JADMGC: 3 contracts (initial) instead of 1 (add) |
 | **NEVER** | Remove the `effective_dca` check or unconditionally set `is_dca=True` |
 
+### Paper Trade Multiplier Applied to Quantity (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~17145-17178 (dispatch block in process_webhook_directly) |
+| **Rule** | CLAUDE.md Rule 13 |
+| **Commit** | `32ad0ab` |
+| **What** | Looks up first enabled trader's multiplier and applies to `paper_qty` before dispatching paper trade |
+| **Why** | Paper trades used raw `initial_position_size` / `add_position_size` without multiplier. A 30x trader on JADVIX got 1 contract in paper vs 30 in real → P&L off by 30x |
+| **NEVER** | Remove the multiplier lookup or use raw `paper_qty` without scaling |
+
+### Paper Trade DCA-Off Check (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~714-738 (added ABOVE existing DCA block in _record_paper_trade_direct_inner) |
+| **Rule** | CLAUDE.md Rule 12 |
+| **Commit** | `a819a22` |
+| **What** | When `avg_down_enabled=False` AND `trader.dca_enabled=False`, closes existing positions and clears `same_dir` list so existing DCA code naturally skips. Opens fresh entry. |
+| **Why** | JADNQ/JADMNQ (DCA off) were stacking positions in paper instead of resetting, producing wildly wrong P&L |
+| **Pattern** | Pure add-only — existing DCA block at lines ~741-791 is UNTOUCHED at original indentation |
+| **NEVER** | Restructure the existing DCA block below. The add-only pattern (clear lists + let existing code skip) must be preserved |
+
+### Paper Trade Trader Overrides for TP/SL (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~588-605 (inside _calc_tp_sl helper in _record_paper_trade_direct_inner) |
+| **Rule** | CLAUDE.md Rule 19 |
+| **Commit** | `32ad0ab` |
+| **What** | After fetching recorder TP/SL settings, overlays trader-level overrides (tp_targets, sl_enabled, sl_amount, sl_units) from first enabled trader |
+| **Why** | Paper TP/SL used recorder defaults only, ignoring trader overrides. If trader overrode TP to 300 ticks but recorder was 200, paper used 200. |
+| **NEVER** | Remove the trader overlay — recorder settings are defaults, trader settings are the actual execution values |
+
+### Paper Trade Trim Scaled by Multiplier (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~629 (inside _calc_tp_sl, Contracts trim branch) |
+| **Rule** | CLAUDE.md Rule 13 |
+| **Commit** | `32ad0ab` |
+| **What** | `leg_trim * multiplier` instead of raw `leg_trim` in Contracts mode |
+| **Why** | 3x multiplier with 3 TP legs at trim=1: real got 3,3,3 but paper got 1,1,1 |
+| **NEVER** | Use raw `leg_trim` without multiplier in Contracts mode |
+
+### Paper Trade Opposite-Direction Blocking with Trader DCA Check (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~799-810 (inside _record_paper_trade_direct_inner, opposite-direction branch) |
+| **Commit** | `32ad0ab` |
+| **What** | After checking recorder `avg_down_enabled`, also checks trader `dca_enabled` for opposite-direction blocking |
+| **Why** | Real execution at recorder_service.py:2346-2347 checks BOTH. Paper only checked recorder, letting opposite signals through when trader had DCA on |
+| **NEVER** | Remove the trader-level dca_enabled check — must match real execution's two-layer DCA detection |
+
 ### Paper Trades as Daemon Thread (Critical)
 | Field | Value |
 |-------|-------|
