@@ -1,0 +1,1089 @@
+/* ============================================================================
+   Affiliate Landing Page CSS
+   - 400+ lines of affiliate page styling
+   - All classes prefixed with `aff-`
+   - Responsive design (768px breakpoint)
+   - Uses platform CSS variables from layout.html
+   - Keyframe animation with staggered delays
+   ========================================================================== */
+
+/* ============================================================================
+   KEYFRAME ANIMATIONS
+   ========================================================================== */
+
+@keyframes aff-fadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes aff-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+@keyframes aff-shimmer {
+    0% {
+        background-position: -1000px 0;
+    }
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+/* ============================================================================
+   HERO SECTION
+   ========================================================================== */
+
+.aff-hero {
+    animation: aff-fadeUp 0.8s ease-out 0.1s both;
+    padding: 80px 20px;
+    text-align: center;
+    background: linear-gradient(135deg,
+        rgba(25, 184, 255, 0.05) 0%,
+        rgba(45, 212, 191, 0.05) 100%);
+    border-bottom: 1px solid var(--border-color);
+    position: relative;
+    overflow: hidden;
+}
+
+.aff-hero::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 30% 50%,
+        rgba(25, 184, 255, 0.1) 0%,
+        transparent 50%);
+    pointer-events: none;
+}
+
+.aff-hero-content {
+    position: relative;
+    z-index: 1;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.aff-hero-title {
+    font-size: 48px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    line-height: 1.2;
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.5px;
+}
+
+.aff-hero-subtitle {
+    font-size: 18px;
+    color: var(--text-muted);
+    margin-bottom: 40px;
+    line-height: 1.6;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.aff-hero-cta-group {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.aff-hero-cta-primary,
+.aff-hero-cta-secondary {
+    padding: 14px 32px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.aff-hero-cta-primary {
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+    color: var(--background-dark);
+    box-shadow: 0 8px 24px rgba(25, 184, 255, 0.3);
+}
+
+.aff-hero-cta-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(25, 184, 255, 0.4);
+}
+
+.aff-hero-cta-secondary {
+    background: transparent;
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+}
+
+.aff-hero-cta-secondary:hover {
+    background: rgba(25, 184, 255, 0.1);
+    border-color: var(--accent-teal);
+    color: var(--accent-teal);
+}
+
+/* ============================================================================
+   STATS SECTION
+   ========================================================================== */
+
+.aff-stats-row {
+    animation: aff-fadeUp 0.8s ease-out 0.2s both;
+    padding: 60px 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.aff-stat-card {
+    background: var(--background-light);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 32px 24px;
+    text-align: center;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.aff-stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent,
+        var(--primary-color),
+        transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.aff-stat-card:hover {
+    border-color: rgba(25, 184, 255, 0.3);
+    background: linear-gradient(135deg,
+        rgba(25, 184, 255, 0.05),
+        rgba(45, 212, 191, 0.05));
+    transform: translateY(-4px);
+}
+
+.aff-stat-card:hover::before {
+    opacity: 1;
+}
+
+.aff-stat-value {
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: 8px;
+    display: block;
+}
+
+.aff-stat-label {
+    font-size: 14px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+/* ============================================================================
+   HOW IT WORKS SECTION
+   ========================================================================== */
+
+.aff-how-it-works {
+    animation: aff-fadeUp 0.8s ease-out 0.3s both;
+    padding: 60px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.aff-section-title {
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--text-light);
+    text-align: center;
+    margin-bottom: 50px;
+    position: relative;
+}
+
+.aff-section-title::after {
+    content: '';
+    display: block;
+    width: 60px;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary-color), var(--accent-teal));
+    margin: 16px auto 0;
+    border-radius: 2px;
+}
+
+.aff-steps-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 32px;
+}
+
+.aff-step-card {
+    background: var(--background-light);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 40px 32px;
+    text-align: center;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.aff-step-card:hover {
+    border-color: rgba(25, 184, 255, 0.3);
+    background: linear-gradient(135deg,
+        rgba(25, 184, 255, 0.05),
+        rgba(45, 212, 191, 0.05));
+    transform: translateY(-8px);
+}
+
+.aff-step-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+    border-radius: 12px;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--background-dark);
+    margin: 0 auto 24px;
+    position: relative;
+    z-index: 1;
+}
+
+.aff-step-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-light);
+    margin-bottom: 12px;
+}
+
+.aff-step-description {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+
+/* Connecting lines between steps (desktop only) */
+.aff-steps-container::before {
+    content: '';
+    position: absolute;
+    top: 100px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg,
+        transparent,
+        var(--primary-color),
+        transparent);
+    pointer-events: none;
+}
+
+/* ============================================================================
+   COMMISSION TIERS SECTION
+   ========================================================================== */
+
+.aff-tiers {
+    animation: aff-fadeUp 0.8s ease-out 0.4s both;
+    padding: 60px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.aff-tiers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 24px;
+}
+
+.aff-tier-card {
+    background: var(--background-light);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 32px 24px;
+    position: relative;
+    transition: all 0.3s ease;
+    text-align: center;
+}
+
+.aff-tier-card.aff-tier-featured {
+    border: 2px solid var(--primary-color);
+    transform: scale(1.05);
+    background: linear-gradient(135deg,
+        rgba(25, 184, 255, 0.1),
+        rgba(45, 212, 191, 0.1));
+}
+
+.aff-tier-card:hover {
+    border-color: rgba(25, 184, 255, 0.3);
+    transform: translateY(-4px);
+}
+
+.aff-tier-card.aff-tier-featured:hover {
+    box-shadow: 0 24px 48px rgba(25, 184, 255, 0.2);
+    transform: scale(1.05) translateY(-4px);
+}
+
+.aff-tier-badge {
+    display: inline-block;
+    background: var(--primary-color);
+    color: var(--background-dark);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.aff-tier-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-light);
+    margin-bottom: 12px;
+}
+
+.aff-tier-commission {
+    font-size: 32px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 20px;
+}
+
+.aff-tier-description {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+    line-height: 1.6;
+}
+
+.aff-tier-feature {
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.aff-tier-feature:last-child {
+    border-bottom: none;
+}
+
+.aff-tier-feature::before {
+    content: '✓';
+    color: var(--green);
+    margin-right: 8px;
+    font-weight: 700;
+}
+
+/* ============================================================================
+   REFERRAL LINK BOX SECTION
+   ========================================================================== */
+
+.aff-link-box {
+    animation: aff-fadeUp 0.8s ease-out 0.5s both;
+    padding: 60px 20px;
+    max-width: 800px;
+    margin: 0 auto;
+    background: linear-gradient(135deg,
+        rgba(25, 184, 255, 0.05),
+        rgba(45, 212, 191, 0.05));
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+}
+
+.aff-link-box-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-light);
+    margin-bottom: 12px;
+}
+
+.aff-link-box-subtitle {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 32px;
+}
+
+.aff-link-input-wrapper {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 32px;
+}
+
+.aff-link-input {
+    flex: 1;
+    background: var(--background-light);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: var(--text-light);
+    font-size: 14px;
+    transition: all 0.3s ease;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.aff-link-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    background: rgba(25, 184, 255, 0.05);
+}
+
+.aff-link-copy-btn {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+    color: var(--background-dark);
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.aff-link-copy-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(25, 184, 255, 0.3);
+}
+
+.aff-link-copy-btn.aff-copied {
+    background: var(--green);
+    animation: aff-pulse 0.6s ease-out;
+}
+
+.aff-share-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+/* ============================================================================
+   SHARE BUTTONS
+   ========================================================================== */
+
+.aff-share-btn {
+    padding: 10px 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--background-light);
+    border-radius: 10px;
+    color: var(--text-light);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+}
+
+.aff-share-btn:hover {
+    border-color: var(--primary-color);
+    background: rgba(25, 184, 255, 0.1);
+    color: var(--primary-color);
+}
+
+.aff-share-x {
+    color: #000;
+}
+
+.aff-share-x:hover {
+    background: #000;
+    color: #fff;
+}
+
+.aff-share-email {
+    color: var(--primary-color);
+}
+
+.aff-share-email:hover {
+    background: rgba(25, 184, 255, 0.1);
+}
+
+.aff-share-icon {
+    font-size: 16px;
+    display: inline-block;
+}
+
+/* ============================================================================
+   REFERRALS TABLE SECTION
+   ========================================================================== */
+
+.aff-referrals-table-wrapper {
+    animation: aff-fadeUp 0.8s ease-out 0.6s both;
+    padding: 60px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+    overflow-x: auto;
+}
+
+.aff-referrals-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--background-light);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.aff-referrals-table thead {
+    background: linear-gradient(90deg,
+        rgba(25, 184, 255, 0.1),
+        rgba(45, 212, 191, 0.05));
+    border-bottom: 1px solid var(--border-color);
+}
+
+.aff-referrals-table th {
+    padding: 16px 20px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.aff-referrals-table tbody tr {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background-color 0.2s ease;
+}
+
+.aff-referrals-table tbody tr:hover {
+    background: rgba(25, 184, 255, 0.05);
+}
+
+.aff-referrals-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.aff-referrals-table td {
+    padding: 16px 20px;
+    font-size: 14px;
+    color: var(--text-light);
+}
+
+.aff-referral-status {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.aff-referral-status.aff-active {
+    background: rgba(45, 206, 137, 0.2);
+    color: var(--green);
+}
+
+.aff-referral-status.aff-pending {
+    background: rgba(255, 159, 64, 0.2);
+    color: #ffb347;
+}
+
+.aff-referral-earnings {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.aff-empty-state {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+/* ============================================================================
+   FAQ SECTION
+   ========================================================================== */
+
+.aff-faq {
+    animation: aff-fadeUp 0.8s ease-out 0.7s both;
+    padding: 60px 20px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.aff-faq-item {
+    margin-bottom: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    background: var(--background-light);
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.aff-faq-item:hover {
+    border-color: rgba(25, 184, 255, 0.2);
+    background: linear-gradient(135deg,
+        rgba(25, 184, 255, 0.03),
+        rgba(45, 212, 191, 0.03));
+}
+
+.aff-faq-toggle {
+    width: 100%;
+    padding: 20px;
+    background: transparent;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    transition: all 0.3s ease;
+}
+
+.aff-faq-toggle:hover {
+    color: var(--primary-color);
+}
+
+.aff-faq-question {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-light);
+    flex: 1;
+}
+
+.aff-faq-icon {
+    font-size: 20px;
+    color: var(--text-muted);
+    transition: transform 0.3s ease;
+    flex-shrink: 0;
+}
+
+.aff-faq-item.aff-open .aff-faq-icon {
+    transform: rotate(180deg);
+    color: var(--primary-color);
+}
+
+.aff-faq-answer {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.aff-faq-item.aff-open .aff-faq-answer {
+    max-height: 500px;
+}
+
+.aff-faq-content {
+    padding: 0 20px 20px;
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+
+/* ============================================================================
+   CTA FOOTER SECTION
+   ========================================================================== */
+
+.aff-cta-footer {
+    animation: aff-fadeUp 0.8s ease-out 0.8s both;
+    padding: 80px 20px;
+    text-align: center;
+    background: linear-gradient(135deg,
+        rgba(25, 184, 255, 0.08),
+        rgba(45, 212, 191, 0.08));
+    border-top: 1px solid var(--border-color);
+    position: relative;
+    overflow: hidden;
+}
+
+.aff-cta-footer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 50% 50%,
+        rgba(25, 184, 255, 0.1) 0%,
+        transparent 70%);
+    pointer-events: none;
+}
+
+.aff-cta-footer-content {
+    position: relative;
+    z-index: 1;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.aff-cta-footer-title {
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--text-light);
+    margin-bottom: 16px;
+}
+
+.aff-cta-footer-subtitle {
+    font-size: 16px;
+    color: var(--text-muted);
+    margin-bottom: 32px;
+    line-height: 1.6;
+}
+
+.aff-cta-footer-btn {
+    padding: 16px 48px;
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+    color: var(--background-dark);
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    display: inline-block;
+    box-shadow: 0 8px 24px rgba(25, 184, 255, 0.3);
+}
+
+.aff-cta-footer-btn:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(25, 184, 255, 0.4);
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN - TABLET & MOBILE
+   ========================================================================== */
+
+@media (max-width: 768px) {
+    .aff-hero {
+        padding: 50px 20px;
+    }
+
+    .aff-hero-title {
+        font-size: 32px;
+    }
+
+    .aff-hero-subtitle {
+        font-size: 16px;
+        margin-bottom: 32px;
+    }
+
+    .aff-hero-cta-group {
+        gap: 12px;
+    }
+
+    .aff-hero-cta-primary,
+    .aff-hero-cta-secondary {
+        padding: 12px 24px;
+        font-size: 14px;
+    }
+
+    .aff-stats-row {
+        padding: 40px 20px;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 16px;
+    }
+
+    .aff-stat-card {
+        padding: 24px 16px;
+    }
+
+    .aff-stat-value {
+        font-size: 28px;
+    }
+
+    .aff-how-it-works,
+    .aff-tiers,
+    .aff-link-box,
+    .aff-referrals-table-wrapper,
+    .aff-faq {
+        padding: 40px 20px;
+    }
+
+    .aff-section-title {
+        font-size: 26px;
+        margin-bottom: 32px;
+    }
+
+    .aff-steps-container,
+    .aff-tiers-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    .aff-tier-card.aff-tier-featured {
+        transform: scale(1);
+    }
+
+    .aff-tier-card.aff-tier-featured:hover {
+        transform: translateY(-4px);
+    }
+
+    .aff-step-card {
+        padding: 28px 20px;
+    }
+
+    .aff-link-input-wrapper {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .aff-link-copy-btn {
+        width: 100%;
+    }
+
+    .aff-share-row {
+        gap: 8px;
+    }
+
+    .aff-share-btn {
+        flex: 1;
+        min-width: 100px;
+        justify-content: center;
+        font-size: 12px;
+    }
+
+    .aff-referrals-table {
+        font-size: 12px;
+    }
+
+    .aff-referrals-table th,
+    .aff-referrals-table td {
+        padding: 12px;
+    }
+
+    .aff-faq-toggle {
+        padding: 16px;
+    }
+
+    .aff-faq-question {
+        font-size: 14px;
+    }
+
+    .aff-cta-footer {
+        padding: 50px 20px;
+    }
+
+    .aff-cta-footer-title {
+        font-size: 26px;
+    }
+
+    .aff-cta-footer-subtitle {
+        font-size: 14px;
+    }
+
+    .aff-cta-footer-btn {
+        padding: 12px 32px;
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 480px) {
+    .aff-hero {
+        padding: 40px 16px;
+    }
+
+    .aff-hero-title {
+        font-size: 24px;
+        margin-bottom: 16px;
+    }
+
+    .aff-hero-subtitle {
+        font-size: 14px;
+        margin-bottom: 24px;
+    }
+
+    .aff-hero-cta-group {
+        flex-direction: column;
+    }
+
+    .aff-hero-cta-primary,
+    .aff-hero-cta-secondary {
+        width: 100%;
+        padding: 12px 20px;
+    }
+
+    .aff-stats-row {
+        padding: 30px 16px;
+        grid-template-columns: 1fr;
+    }
+
+    .aff-stat-value {
+        font-size: 24px;
+    }
+
+    .aff-stat-label {
+        font-size: 12px;
+    }
+
+    .aff-section-title {
+        font-size: 20px;
+        margin-bottom: 24px;
+    }
+
+    .aff-link-box {
+        padding: 32px 16px;
+    }
+
+    .aff-link-box-title {
+        font-size: 18px;
+    }
+
+    .aff-share-btn {
+        flex: 0 1 auto;
+        padding: 8px 16px;
+    }
+
+    .aff-cta-footer {
+        padding: 40px 16px;
+    }
+
+    .aff-cta-footer-title {
+        font-size: 20px;
+    }
+
+    .aff-cta-footer-subtitle {
+        font-size: 13px;
+    }
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ========================================================================== */
+
+.aff-text-center {
+    text-align: center;
+}
+
+.aff-mt-sm {
+    margin-top: 16px;
+}
+
+.aff-mt-md {
+    margin-top: 24px;
+}
+
+.aff-mt-lg {
+    margin-top: 32px;
+}
+
+.aff-mb-sm {
+    margin-bottom: 16px;
+}
+
+.aff-mb-md {
+    margin-bottom: 24px;
+}
+
+.aff-mb-lg {
+    margin-bottom: 32px;
+}
+
+.aff-hidden {
+    display: none;
+}
+
+.aff-highlight {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.aff-gradient-text {
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* ============================================================================
+   ANIMATION DELAYS FOR STAGGERED FADE-UP
+   ========================================================================== */
+
+.aff-hero {
+    animation-delay: 0.1s;
+}
+
+.aff-stats-row {
+    animation-delay: 0.2s;
+}
+
+.aff-how-it-works {
+    animation-delay: 0.3s;
+}
+
+.aff-tiers {
+    animation-delay: 0.4s;
+}
+
+.aff-link-box {
+    animation-delay: 0.5s;
+}
+
+.aff-referrals-table-wrapper {
+    animation-delay: 0.6s;
+}
+
+.aff-faq {
+    animation-delay: 0.7s;
+}
+
+.aff-cta-footer {
+    animation-delay: 0.8s;
+}
+
+/* ============================================================================
+   PRINT STYLES
+   ========================================================================== */
+
+@media print {
+    .aff-hero-cta-group,
+    .aff-link-input-wrapper,
+    .aff-share-row,
+    .aff-cta-footer-btn {
+        display: none;
+    }
+
+    .aff-link-input {
+        border: 1px solid #000;
+    }
+
+    .aff-hero,
+    .aff-stats-row,
+    .aff-how-it-works,
+    .aff-tiers,
+    .aff-link-box,
+    .aff-referrals-table-wrapper,
+    .aff-faq,
+    .aff-cta-footer {
+        page-break-inside: avoid;
+    }
+}

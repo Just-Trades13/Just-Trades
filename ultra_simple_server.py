@@ -26209,7 +26209,25 @@ def api_user_theme():
 
 @app.route('/affiliate')
 def affiliate():
-    return render_template('affiliate.html')
+    affiliate_code = ''
+    referral_link = ''
+    if USER_AUTH_AVAILABLE and is_logged_in():
+        user = get_current_user()
+        if user:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                ph = '%s' if is_using_postgres() else '?'
+                cursor.execute(f'SELECT affiliate_code FROM users WHERE id = {ph}', (user.id,))
+                row = cursor.fetchone()
+                if row and row[0]:
+                    affiliate_code = row[0]
+                    referral_link = f'https://justtrades.app/pricing?ref={affiliate_code}'
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                logger.warning(f"Affiliate page code lookup: {e}")
+    return render_template('affiliate.html', affiliate_code=affiliate_code, referral_link=referral_link)
 
 
 # ============================================================
