@@ -43,80 +43,6 @@ img { max-width: 100%; height: auto; display: block; }
 ul, ol { list-style: none; }
 
 /* ============================================================
-   PASSWORD GATE
-   ============================================================ */
-.auth-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: var(--bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 24px;
-}
-.auth-overlay.hidden { display: none; }
-.auth-box {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  padding: 48px;
-  max-width: 420px;
-  width: 90%;
-  text-align: center;
-}
-.auth-box h2 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-.auth-box p {
-  color: var(--muted);
-  font-size: 0.9rem;
-  margin-bottom: 24px;
-}
-.auth-box input {
-  width: 100%;
-  padding: 14px 18px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 0.95rem;
-  outline: none;
-  transition: border-color 0.2s;
-  margin-bottom: 16px;
-}
-.auth-box input:focus {
-  border-color: var(--primary);
-}
-.auth-box button {
-  width: 100%;
-  padding: 14px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: #fff;
-  font-family: var(--font);
-  font-weight: 700;
-  font-size: 0.95rem;
-  border: none;
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-.auth-box button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px var(--primary-glow);
-}
-.auth-error {
-  color: #f5365c;
-  font-size: 0.8rem;
-  margin-top: 8px;
-  display: none;
-}
-
-/* ============================================================
    NAVIGATION
    ============================================================ */
 .nav {
@@ -143,11 +69,17 @@ ul, ol { list-style: none; }
   gap: 10px;
   text-decoration: none;
 }
+.nav-logo img {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgba(25, 184, 255, 0.2);
+}
 .nav-logo-text {
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.1em;
 }
 .nav-logo-dot {
   color: var(--primary);
@@ -719,6 +651,43 @@ ul, ol { list-style: none; }
   line-height: 1.6;
   margin-top: 12px;
   max-width: 280px;
+}
+.footer-social {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+.footer-social a {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: all 0.2s;
+}
+.footer-social a:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(25, 184, 255, 0.08);
+}
+.footer-social svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+.footer-risk {
+  max-width: var(--max-width);
+  margin: 24px auto 0;
+  padding: 20px 0 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.6;
+  text-align: center;
+  opacity: 0.7;
 }
 .footer-col h4 {
   color: var(--text);
