@@ -26211,6 +26211,10 @@ def api_user_theme():
 def affiliate():
     affiliate_code = ''
     referral_link = ''
+    is_affiliate = False
+    referral_count = 0
+    referred_users = []
+    affiliate_name = ''
     if USER_AUTH_AVAILABLE and is_logged_in():
         user = get_current_user()
         if user:
@@ -26218,16 +26222,39 @@ def affiliate():
                 conn = get_db_connection()
                 cursor = conn.cursor()
                 ph = '%s' if is_using_postgres() else '?'
-                cursor.execute(f'SELECT affiliate_code FROM users WHERE id = {ph}', (user.id,))
+                cursor.execute(f"SELECT affiliate_code, name FROM affiliate_applications WHERE email = {ph} AND status = 'approved'", (user.email,))
                 row = cursor.fetchone()
-                if row and row[0]:
-                    affiliate_code = row[0]
-                    referral_link = f'https://justtrades.app/pricing?ref={affiliate_code}'
+                if row:
+                    row_dict = dict(row)
+                    affiliate_code = row_dict.get('affiliate_code') or ''
+                    affiliate_name = row_dict.get('name') or ''
+                    if affiliate_code:
+                        is_affiliate = True
+                        referral_link = f'https://www.justtrades.app/register?ref={affiliate_code}'
+                        # Fetch dashboard data
+                        cursor.execute(f"SELECT COUNT(*) FROM users WHERE referred_by = {ph}", (affiliate_code,))
+                        count_row = cursor.fetchone()
+                        referral_count = count_row[0] if count_row else 0
+                        cursor.execute(f"SELECT username, display_name, created_at FROM users WHERE referred_by = {ph} ORDER BY created_at DESC", (affiliate_code,))
+                        referred_users = []
+                        for r in cursor.fetchall():
+                            r_dict = dict(r)
+                            referred_users.append({
+                                'username': r_dict['username'],
+                                'display_name': r_dict.get('display_name') or r_dict['username'],
+                                'joined': str(r_dict.get('created_at') or '')
+                            })
                 cursor.close()
                 conn.close()
             except Exception as e:
-                logger.warning(f"Affiliate page code lookup: {e}")
-    return render_template('affiliate.html', affiliate_code=affiliate_code, referral_link=referral_link)
+                logger.warning(f"Affiliate page data lookup: {e}")
+    return render_template('affiliate.html',
+                           affiliate_code=affiliate_code,
+                           referral_link=referral_link,
+                           is_affiliate=is_affiliate,
+                           referral_count=referral_count,
+                           referred_users=referred_users,
+                           affiliate_name=affiliate_name)
 
 
 # ============================================================

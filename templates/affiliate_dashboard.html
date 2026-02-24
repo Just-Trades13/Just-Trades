@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <h2 class="affd-apply-title">Become a Just.Trades Affiliate</h2>
                         <p class="affd-apply-text">
-                            Earn 25% recurring commission on every trader you refer.
+                            Earn 10% recurring commission on every trader you refer.
                             No cap on earnings, real-time tracking, monthly payouts.
                         </p>
                         <a href="/affiliate" class="affd-apply-btn">
@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="affd-apply-features">
                             <div class="affd-apply-feature">
                                 <i class="material-icons">check_circle</i>
-                                25% recurring commission
+                                10% recurring commission
                             </div>
                             <div class="affd-apply-feature">
                                 <i class="material-icons">check_circle</i>
@@ -93,7 +93,7 @@ function renderDashboard(data, container) {
         : `<div class="affd-empty-state">
                 <div class="affd-empty-icon"><i class="material-icons">people_outline</i></div>
                 <p class="affd-empty-title">No referrals yet</p>
-                <p class="affd-empty-text">Share your referral link to start earning 25% recurring commission on every trader you refer.</p>
+                <p class="affd-empty-text">Share your referral link to start earning 10% recurring commission on every trader you refer.</p>
            </div>`;
 
     container.innerHTML = `
@@ -121,7 +121,7 @@ function renderDashboard(data, container) {
             </div>
             <div class="affd-stat-card">
                 <div class="affd-stat-icon"><i class="material-icons">percent</i></div>
-                <div class="affd-stat-value">25%</div>
+                <div class="affd-stat-value">10%</div>
                 <div class="affd-stat-label">Commission Rate</div>
             </div>
             <div class="affd-stat-card">
@@ -136,7 +136,7 @@ function renderDashboard(data, container) {
                 <i class="material-icons">link</i>
                 <h3>Registration Referral Link</h3>
             </div>
-            <p class="affd-link-box-desc">Share this link to refer new users. Signups within 30 days earn you 25% recurring commission.</p>
+            <p class="affd-link-box-desc">Share this link to refer new users. Signups within 30 days earn you 10% recurring commission.</p>
             <div class="affd-link-row">
                 <input type="text" id="refLink" class="affd-link-input" value="${escapeHtml(data.referral_link)}" readonly>
                 <button class="affd-copy-btn" id="copyBtn" onclick="copyLink('refLink', 'copyBtn')">
