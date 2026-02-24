@@ -363,7 +363,7 @@ git push -f origin main  # CAUTION: force push — only if resetting
 
 | Tag | Commit | Description |
 |-----|--------|-------------|
-| `WORKING_FEB24_2026_WS_SEMAPHORE_STABLE` | TBD | **CURRENT** — WS semaphore fix + 7 critical Feb 24 fixes (Bugs #34-40) |
+| `WORKING_FEB24_2026_WS_SEMAPHORE_STABLE` | `39103a3` | **CURRENT** — WS semaphore fix + 7 critical Feb 24 fixes (Bugs #34-40) |
 | `WORKING_FEB23_2026_COPY_TRADER_STABLE` | `98021d6` | Pre-Feb24 fallback — Copy Trader working but no WS stability fixes |
 | `WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET` | `bb1a183` | Broker-verified qty safety net + brevo pin (+ `5b6be75`) |
 | `WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE` | `656683a` | DCA field fix, env crash fix, JADVIX auto-enable, cascade delete |
