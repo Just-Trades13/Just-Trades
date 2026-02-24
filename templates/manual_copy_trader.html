@@ -2117,6 +2117,7 @@
 
     // Poll leader position state every 3 seconds when auto-copy is active
     let _leaderPositionInterval = null;
+    let _lastLeaderPositions = {};
 
     async function pollLeaderPosition() {
         if (!currentLeaderId) return;
@@ -2129,6 +2130,7 @@
             if (!badge) return;
 
             const positions = data.positions || {};
+            _lastLeaderPositions = positions;
             const symbols = Object.keys(positions);
 
             if (symbols.length === 0) {
@@ -2157,6 +2159,7 @@
         if (_leaderPositionInterval) clearInterval(_leaderPositionInterval);
         pollLeaderPosition();
         _leaderPositionInterval = setInterval(pollLeaderPosition, 3000);
+        startCopyTraderStatusPolling();
     }
 
     function stopPositionPolling() {
@@ -2169,7 +2172,153 @@
             badge.className = 'position-badge flat';
             badge.textContent = 'FLAT';
         }
+        stopCopyTraderStatusPolling();
     }
+
+    // ============================================================================
+    // Live P&L Wiring — Update follower table from WebSocket pnlData
+    // ============================================================================
+    function updateFollowerPnlCells(pnlData) {
+        if (!pnlData) return;
+        const rows = document.querySelectorAll('.follower-row');
+        rows.forEach(row => {
+            const subId = row.dataset.subaccountId;
+            if (!subId) return;
+
+            const pnlCell = row.querySelector('.follower-pnl-cell');
+            const posCell = row.querySelector('.follower-pos-cell');
+            if (!pnlCell && !posCell) return;
+
+            // Find matching account in pnlData by subaccount_id
+            let matched = null;
+            for (const [accId, acc] of Object.entries(pnlData)) {
+                if (String(acc.subaccount_id) === String(subId) || String(accId) === String(subId)) {
+                    matched = acc;
+                    break;
+                }
+            }
+
+            if (matched) {
+                // Update P&L cell
+                if (pnlCell) {
+                    const openPnl = matched.open_pnl || 0;
+                    const sign = openPnl >= 0 ? '+' : '';
+                    const colorClass = openPnl >= 0 ? 'color:#10b981' : 'color:#f87171';
+                    pnlCell.innerHTML = `<span style="${colorClass};font-weight:600">${sign}$${openPnl.toFixed(2)}</span>`;
+                }
+                // Update position badge
+                if (posCell && matched.positions) {
+                    const posArr = Array.isArray(matched.positions) ? matched.positions : [];
+                    if (posArr.length === 0) {
+                        posCell.innerHTML = '<span class="position-badge flat" style="font-size:0.7rem">FLAT</span>';
+                    } else {
+                        const p = posArr[0];
+                        const side = (p.netPos || 0) > 0 ? 'long' : 'short';
+                        const qty = Math.abs(p.netPos || 0);
+                        posCell.innerHTML = `<span class="position-badge ${side}" style="font-size:0.7rem">${side.toUpperCase()} ${qty}</span>`;
+                    }
+                }
+            } else {
+                // No match — leave defaults
+                if (pnlCell && pnlCell.textContent === '--') { /* keep default */ }
+            }
+        });
+    }
+
+    // ============================================================================
+    // Copy Trader Status Polling — WS dot in stats bar
+    // ============================================================================
+    let _statusPollInterval = null;
+
+    async function pollCopyTraderStatus() {
+        try {
+            const response = await fetch('/api/copy-trader/status');
+            const data = await response.json();
+            if (!data.success) return;
+
+            const dot = document.getElementById('wsDot');
+            const text = document.getElementById('wsStatusText');
+            if (!dot || !text) return;
+
+            if (data.ws_connected && data.ws_authenticated) {
+                dot.className = 'stat-dot connected';
+                text.textContent = 'Auto (WS)';
+            } else if (data.ws_connected) {
+                dot.className = 'stat-dot connecting';
+                text.textContent = 'Connecting...';
+            } else if (data.auto_mode_enabled) {
+                dot.className = 'stat-dot disconnected';
+                text.textContent = 'Disconnected';
+            } else {
+                dot.className = 'stat-dot';
+                text.textContent = 'Manual';
+            }
+        } catch (error) {
+            // Silently fail — status polling is informational
+        }
+    }
+
+    function startCopyTraderStatusPolling() {
+        stopCopyTraderStatusPolling();
+        pollCopyTraderStatus();
+        _statusPollInterval = setInterval(pollCopyTraderStatus, 5000);
+    }
+
+    function stopCopyTraderStatusPolling() {
+        if (_statusPollInterval) {
+            clearInterval(_statusPollInterval);
+            _statusPollInterval = null;
+        }
+    }
+
+    // ============================================================================
+    // Flatten Button Handler — event delegation
+    // ============================================================================
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-flatten');
+        if (!btn) return;
+
+        const accountSub = btn.dataset.account;
+        if (!accountSub) return;
+        if (!confirm('Flatten all positions for this follower?')) return;
+
+        // Find first symbol from leader positions, or default
+        const symbols = Object.keys(_lastLeaderPositions);
+        const symbol = symbols.length > 0 ? symbols[0] : null;
+
+        if (!symbol) {
+            showToast('No leader position to reference — cannot determine symbol', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = '...';
+
+        fetch('/api/manual-trade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                account_subaccount: accountSub,
+                symbol: symbol,
+                side: 'Close',
+                quantity: 1,
+                leader_id: currentLeaderId || null
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Flatten order sent', 'success');
+            } else {
+                showToast('Flatten failed: ' + (data.error || 'Unknown error'), 'error');
+            }
+        })
+        .catch(() => showToast('Flatten request failed', 'error'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = 'Flatten';
+        });
+    });
 
 </script>
 <script>
@@ -2352,6 +2501,11 @@
                 
                 // Update the display with positions and PnL data
                 updatePositionsFromWebSocket(positions, pnlData);
+
+                // Also update follower P&L cells in copy trader table
+                if (typeof updateFollowerPnlCells === 'function') {
+                    updateFollowerPnlCells(pnlData);
+                }
             });
 
             // Trade executed - refresh positions
