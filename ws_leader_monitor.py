@@ -37,6 +37,14 @@ except ImportError:
     WEBSOCKETS_AVAILABLE = False
     logger.warning("websockets library not installed. pip install websockets")
 
+# Import shared connection manager
+try:
+    from ws_connection_manager import get_connection_manager, Listener
+    CONNECTION_MANAGER_AVAILABLE = True
+except ImportError:
+    CONNECTION_MANAGER_AVAILABLE = False
+    logger.warning("ws_connection_manager not available — falling back to standalone connections")
+
 # Tick sizes for TP/SL delta calculation (Rule 15: 2-letter symbols handled)
 TICK_SIZES = {
     'ES': 0.25, 'NQ': 0.25, 'RTY': 0.10, 'YM': 1.0,
@@ -125,6 +133,525 @@ def trigger_leader_reload():
     """Signal the leader monitor to reload active leaders from DB."""
     _leader_reload_event.set()
 
+
+# ============================================================================
+# LEADER MONITOR LISTENER — Uses shared connection manager
+# ============================================================================
+
+class LeaderMonitorListener:
+    """Listener for monitoring a single leader's fills/orders via shared WebSocket.
+
+    One listener per leader account. Contains all fill/order processing logic
+    from the legacy LeaderConnection class. Exposes .connected, .authenticated,
+    ._positions for backward compatibility with ultra_simple_server.py imports.
+    """
+
+    def __init__(self, leader_id: int, account_id: int, subaccount_id: str,
+                 access_token: str, is_demo: bool = True, user_id: int = None):
+        self.leader_id = leader_id
+        self.account_id = account_id
+        self.subaccount_id = subaccount_id
+        self.access_token = access_token
+        self.is_demo = is_demo
+        self.user_id = user_id
+
+        # Connection state (backward compat)
+        self.connected = False
+        self.authenticated = False
+        self._connection_time = None
+
+        # Position state tracking
+        self._positions: Dict[str, dict] = {}  # symbol -> {side: 'Long'|'Short', qty: int}
+        self._contract_cache: Dict[int, str] = {}  # contractId -> symbol name
+
+        # Order mirroring state
+        self._tracked_orders: Dict[int, dict] = {}  # order_id -> order snapshot
+        self._order_modify_debounce: Dict[int, float] = {}  # order_id -> last_modify_time
+        self._last_debounce_cleanup = time.time()
+
+        # Fill dedup
+        self._processed_fill_ids: Set[int] = set()
+
+    @property
+    def listener_id(self) -> str:
+        return f'leader-monitor-{self.leader_id}'
+
+    async def on_connected(self, token_key: str):
+        """Called when SharedConnection (re)connects."""
+        self.connected = True
+        self.authenticated = True
+        self._connection_time = get_connection_manager().get_connection_time(token_key)
+        self._processed_fill_ids.clear()
+        self._tracked_orders.clear()
+        self._order_modify_debounce.clear()
+        logger.info(f"Leader {self.leader_id} connected via shared connection {token_key}")
+
+    async def on_disconnected(self, token_key: str):
+        """Called when SharedConnection disconnects."""
+        self.connected = False
+        self.authenticated = False
+
+        # Cancel all working mirrors — we can no longer track the leader's orders
+        try:
+            from copy_trader_models import cancel_all_mirrors_for_leader
+            cancel_all_mirrors_for_leader(self.leader_id)
+        except Exception as e:
+            logger.warning(f"Error cancelling mirrors on disconnect for leader {self.leader_id}: {e}")
+
+        self._tracked_orders.clear()
+        self._order_modify_debounce.clear()
+        logger.info(f"Leader {self.leader_id} disconnected from shared connection {token_key}")
+
+    async def on_message(self, items: list, raw_message: str):
+        """Process pre-parsed message items for fill/order events."""
+        # Periodic debounce cleanup
+        now = time.time()
+        if now - self._last_debounce_cleanup > 60.0:
+            stale_keys = [k for k, v in self._order_modify_debounce.items() if now - v > 5.0]
+            for k in stale_keys:
+                del self._order_modify_debounce[k]
+            self._last_debounce_cleanup = now
+
+        for data in items:
+            try:
+                # Log entity type for visibility
+                if data.get('e') == 'props':
+                    entity_type = data.get('d', {}).get('entityType')
+                    event_type = data.get('d', {}).get('eventType')
+                    if entity_type:
+                        logger.info(f"Leader {self.leader_id} WS event: "
+                                    f"entityType={entity_type}, eventType={event_type}, "
+                                    f"raw={str(data)[:300]}")
+
+                await self._check_for_fills(data)
+                await self._check_for_orders(data)
+            except Exception as e:
+                logger.error(f"Leader {self.leader_id} message processing error: {e}")
+
+    # --- Fill detection (identical to LeaderConnection._check_for_fills) ---
+
+    async def _check_for_fills(self, data: dict):
+        """Check for fill events in the WebSocket data."""
+        fills = []
+
+        if data.get('e') == 'props':
+            d = data.get('d', {})
+            if d.get('entityType') == 'fill' and d.get('eventType') == 'Created':
+                entity = d.get('entity') or d
+                if isinstance(entity, dict):
+                    fills.append(entity)
+
+        if 'd' in data and not fills:
+            d = data['d']
+            if isinstance(d, dict) and 'fills' in d:
+                for f in d.get('fills', []):
+                    if isinstance(f, dict):
+                        fills.append(f)
+
+        if 'fills' in data and not fills:
+            for f in data.get('fills', []):
+                if isinstance(f, dict):
+                    fills.append(f)
+
+        if data.get('e') == 'props' and not fills:
+            d = data.get('d', {})
+            if d.get('entityType') == 'orderStrategy':
+                entity = d.get('entity') or {}
+                if isinstance(entity, dict):
+                    strategy_fills = entity.get('fills', [])
+                    if isinstance(strategy_fills, list):
+                        for f in strategy_fills:
+                            if isinstance(f, dict):
+                                fills.append(f)
+                    if not strategy_fills and entity.get('action') and entity.get('qty'):
+                        fills.append(entity)
+
+        for fill in fills:
+            await self._process_fill(fill)
+
+    async def _process_fill(self, fill: dict):
+        """Process a single fill event — classify and copy to followers."""
+        fill_id = fill.get('id')
+        order_id = fill.get('orderId')
+        contract_id = fill.get('contractId')
+        qty = fill.get('qty', 0)
+        price = fill.get('price', 0)
+        action = fill.get('action', '')
+        timestamp_str = fill.get('timestamp', '')
+
+        # --- FILL ID DEDUP ---
+        if fill_id and fill_id in self._processed_fill_ids:
+            logger.debug(f"Skipping already-processed fill {fill_id}")
+            return
+        if fill_id:
+            self._processed_fill_ids.add(fill_id)
+
+        # --- LOOP PREVENTION (Layer 1: clOrdId check) ---
+        cl_ord_id = fill.get('clOrdId', '') or ''
+        if cl_ord_id.startswith(COPY_ORDER_PREFIX):
+            logger.debug(f"Skipping copied order fill (clOrdId={cl_ord_id})")
+            return
+
+        # --- REPLAY FILTER ---
+        if timestamp_str and self._connection_time:
+            try:
+                fill_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                if fill_time < self._connection_time:
+                    logger.debug(f"Skipping pre-connection fill (fill_time={fill_time}, "
+                                 f"connected_at={self._connection_time})")
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        if not action or qty == 0:
+            return
+
+        symbol = fill.get('symbol', '') or ''
+        if not symbol and contract_id:
+            symbol = await self._resolve_symbol(contract_id)
+        if not symbol:
+            logger.warning(f"Cannot resolve symbol for fill (contractId={contract_id}), skipping")
+            return
+
+        qty = abs(qty)
+
+        # --- LOOP PREVENTION (Layer 2: cross-leader dedup) ---
+        dedup_key = (str(self.subaccount_id), symbol, action.lower())
+        now = time.time()
+        if dedup_key in _recent_copy_fills:
+            elapsed = now - _recent_copy_fills[dedup_key]
+            if elapsed < _COPY_DEDUP_WINDOW:
+                logger.info(f"Loop prevention: skipping fill on leader {self.leader_id} "
+                            f"(subaccount {self.subaccount_id}) — this account received a "
+                            f"copy trade for {action} {symbol} {elapsed:.1f}s ago")
+                return
+            else:
+                del _recent_copy_fills[dedup_key]
+
+        fill_type = self._classify_fill(symbol, action, qty)
+
+        logger.info(f"FILL detected on leader {self.leader_id}: "
+                    f"{action} {qty} {symbol} @ {price} — type={fill_type}")
+
+        prev_pos = dict(self._positions.get(symbol, {'side': '', 'qty': 0}))
+        self._update_position(symbol, action, qty, fill_type)
+        new_pos = dict(self._positions.get(symbol, {'side': '', 'qty': 0}))
+        logger.debug(f"Leader {self.leader_id} positions: {self._positions}")
+
+        try:
+            await _copy_fill_to_followers(
+                leader_id=self.leader_id,
+                fill_data={
+                    'fill_id': fill_id,
+                    'order_id': order_id,
+                    'contract_id': contract_id,
+                    'symbol': symbol,
+                    'action': action,
+                    'qty': qty,
+                    'price': price,
+                    'timestamp': timestamp_str,
+                    'fill_type': fill_type,
+                    'leader_prev_position': prev_pos,
+                    'leader_position': new_pos,
+                }
+            )
+        except Exception as e:
+            logger.error(f"Fill callback error for leader {self.leader_id}: {e}")
+
+    # --- Order detection (identical to LeaderConnection._check_for_orders) ---
+
+    async def _check_for_orders(self, data: dict):
+        """Check for order events in the WebSocket data."""
+        orders = []
+
+        if data.get('e') == 'props':
+            d = data.get('d', {})
+            if d.get('entityType') == 'order':
+                entity = d.get('entity') or d
+                if isinstance(entity, dict):
+                    orders.append(entity)
+
+        if 'd' in data and not orders:
+            d = data['d']
+            if isinstance(d, dict) and 'orders' in d:
+                for o in d.get('orders', []):
+                    if isinstance(o, dict):
+                        orders.append(o)
+
+        for order in orders:
+            await self._process_order_event(order)
+
+    async def _process_order_event(self, order: dict):
+        """Process a single order event — detect place/modify/cancel of pending orders."""
+        order_id = order.get('id') or order.get('orderId')
+        if not order_id:
+            return
+
+        cl_ord_id = order.get('clOrdId', '') or ''
+        if cl_ord_id.startswith(COPY_ORDER_PREFIX):
+            return
+
+        if order.get('orderStrategyId'):
+            return
+
+        order_type = order.get('ordType') or order.get('orderType') or ''
+        if order_type == 'Market':
+            return
+
+        supported_types = {'Limit', 'Stop', 'StopLimit', 'StopOrder', 'TrailingStop', 'TrailingStopOrder'}
+        if order_type not in supported_types:
+            return
+
+        timestamp_str = order.get('timestamp', '') or ''
+        if timestamp_str and self._connection_time:
+            try:
+                order_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                if order_time < self._connection_time:
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        ord_status = order.get('ordStatus', '') or ''
+        contract_id = order.get('contractId')
+        action = order.get('action', '')
+        qty = order.get('orderQty', 0) or order.get('qty', 0) or 0
+        price = order.get('price')
+        stop_price = order.get('stopPrice')
+        peg_difference = order.get('pegDifference')
+        time_in_force = order.get('timeInForce', 'Day') or 'Day'
+
+        if not action:
+            return
+
+        symbol = ''
+        if contract_id:
+            symbol = await self._resolve_symbol(contract_id)
+        if not symbol:
+            return
+
+        now = time.time()
+
+        if ord_status == 'Working':
+            prev = self._tracked_orders.get(order_id)
+
+            if prev is None:
+                self._tracked_orders[order_id] = {
+                    'order_id': order_id, 'symbol': symbol, 'action': action,
+                    'qty': qty, 'price': price, 'stop_price': stop_price,
+                    'peg_difference': peg_difference, 'order_type': order_type,
+                    'time_in_force': time_in_force, 'contract_id': contract_id,
+                }
+                logger.info(f"ORDER detected on leader {self.leader_id}: NEW {order_type} "
+                            f"{action} {qty} {symbol} @ price={price} stop={stop_price}")
+                try:
+                    await _mirror_order_to_followers(
+                        leader_id=self.leader_id, event_type='created',
+                        order_data={
+                            'order_id': order_id, 'symbol': symbol, 'action': action,
+                            'qty': qty, 'price': price, 'stop_price': stop_price,
+                            'peg_difference': peg_difference, 'order_type': order_type,
+                            'time_in_force': time_in_force, 'contract_id': contract_id,
+                        }
+                    )
+                except Exception as e:
+                    logger.error(f"Order callback error (created) for leader {self.leader_id}: {e}")
+            else:
+                price_changed = (prev.get('price') != price or prev.get('stop_price') != stop_price)
+                qty_changed = (prev.get('qty') != qty)
+                if price_changed or qty_changed:
+                    last_modify = self._order_modify_debounce.get(order_id, 0)
+                    if now - last_modify < 0.5:
+                        return
+                    self._order_modify_debounce[order_id] = now
+                    self._tracked_orders[order_id].update({
+                        'qty': qty, 'price': price,
+                        'stop_price': stop_price, 'peg_difference': peg_difference,
+                    })
+                    logger.info(f"ORDER detected on leader {self.leader_id}: MODIFIED {order_type} "
+                                f"{action} {qty} {symbol} @ price={price} stop={stop_price}")
+                    try:
+                        await _mirror_order_to_followers(
+                            leader_id=self.leader_id, event_type='modified',
+                            order_data={
+                                'order_id': order_id, 'symbol': symbol, 'action': action,
+                                'qty': qty, 'price': price, 'stop_price': stop_price,
+                                'peg_difference': peg_difference, 'order_type': order_type,
+                                'time_in_force': time_in_force, 'contract_id': contract_id,
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"Order callback error (modified) for leader {self.leader_id}: {e}")
+
+        elif ord_status in ('Cancelled', 'Rejected', 'Expired'):
+            if order_id in self._tracked_orders:
+                del self._tracked_orders[order_id]
+                self._order_modify_debounce.pop(order_id, None)
+                logger.info(f"ORDER detected on leader {self.leader_id}: {ord_status} {order_type} "
+                            f"{action} {qty} {symbol}")
+                try:
+                    await _mirror_order_to_followers(
+                        leader_id=self.leader_id, event_type='cancelled',
+                        order_data={
+                            'order_id': order_id, 'symbol': symbol, 'action': action,
+                            'qty': qty, 'price': price, 'stop_price': stop_price,
+                            'order_type': order_type, 'ord_status': ord_status,
+                        }
+                    )
+                except Exception as e:
+                    logger.error(f"Order callback error (cancelled) for leader {self.leader_id}: {e}")
+
+        elif ord_status == 'Filled':
+            if order_id in self._tracked_orders:
+                del self._tracked_orders[order_id]
+                self._order_modify_debounce.pop(order_id, None)
+                try:
+                    from copy_trader_models import get_mirrored_orders_by_leader_order, update_mirrored_order
+                    mirrors = get_mirrored_orders_by_leader_order(order_id)
+                    for mirror in mirrors:
+                        update_mirrored_order(mirror['id'], status='filled')
+                    if mirrors:
+                        logger.info(f"Marked {len(mirrors)} mirrors as filled for leader order {order_id}")
+                except Exception as e:
+                    logger.error(f"Error marking mirrors filled for order {order_id}: {e}")
+
+    # --- Helper methods (identical to LeaderConnection) ---
+
+    def _classify_fill(self, symbol: str, action: str, qty: int) -> str:
+        """Classify a fill based on current position state."""
+        pos = self._positions.get(symbol)
+        if not pos or pos.get('qty', 0) == 0:
+            return 'entry'
+        pos_side = pos.get('side', '')
+        pos_qty = pos.get('qty', 0)
+        fill_is_buy = action.lower() == 'buy'
+        same_direction = (fill_is_buy and pos_side == 'Long') or (not fill_is_buy and pos_side == 'Short')
+        if same_direction:
+            return 'entry'
+        if qty < pos_qty:
+            return 'partial_exit'
+        elif qty == pos_qty:
+            return 'full_exit'
+        else:
+            return 'reversal'
+
+    def _update_position(self, symbol: str, action: str, qty: int, fill_type: str):
+        """Update tracked position state after a classified fill."""
+        fill_is_buy = action.lower() == 'buy'
+        new_side = 'Long' if fill_is_buy else 'Short'
+        if fill_type == 'entry':
+            pos = self._positions.get(symbol, {'side': new_side, 'qty': 0})
+            pos['side'] = new_side
+            pos['qty'] = pos.get('qty', 0) + qty
+            self._positions[symbol] = pos
+        elif fill_type == 'partial_exit':
+            pos = self._positions.get(symbol)
+            if pos:
+                pos['qty'] = max(0, pos['qty'] - qty)
+                if pos['qty'] == 0:
+                    del self._positions[symbol]
+        elif fill_type == 'full_exit':
+            self._positions.pop(symbol, None)
+        elif fill_type == 'reversal':
+            pos = self._positions.get(symbol, {'side': '', 'qty': 0})
+            remainder = qty - pos.get('qty', 0)
+            self._positions[symbol] = {'side': new_side, 'qty': remainder}
+
+    async def _resolve_symbol(self, contract_id: int) -> str:
+        """Resolve contractId to symbol name via REST API with caching."""
+        if not contract_id:
+            return ''
+        if contract_id in self._contract_cache:
+            return self._contract_cache[contract_id]
+        try:
+            import aiohttp
+            base_url = ("https://demo.tradovateapi.com/v1" if self.is_demo
+                        else "https://live.tradovateapi.com/v1")
+            headers = {'Authorization': f'Bearer {self.access_token}',
+                       'Content-Type': 'application/json'}
+            async with aiohttp.ClientSession() as http:
+                async with http.get(f"{base_url}/contract/item",
+                                    params={'id': contract_id},
+                                    headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        symbol = data.get('name', '') or ''
+                        if symbol:
+                            self._contract_cache[contract_id] = symbol
+                            logger.debug(f"Resolved contractId {contract_id} → {symbol}")
+                        return symbol
+        except Exception as e:
+            logger.warning(f"Failed to resolve contractId {contract_id}: {e}")
+        return ''
+
+    async def _get_leader_risk_config(self, symbol: str, entry_price: float) -> dict:
+        """Extract TP/SL from leader's working orders after an entry fill."""
+        try:
+            import aiohttp
+            base_url = ("https://demo.tradovateapi.com/v1" if self.is_demo
+                        else "https://live.tradovateapi.com/v1")
+            headers = {'Authorization': f'Bearer {self.access_token}',
+                       'Content-Type': 'application/json'}
+
+            tick_size = _get_tick_size(symbol)
+            symbol_root = _get_symbol_root(symbol)
+            risk_config = {}
+
+            async with aiohttp.ClientSession() as http:
+                async with http.get(f"{base_url}/order/list",
+                                    headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"Leader order/list returned {resp.status}")
+                        return {}
+                    orders = await resp.json()
+
+            for order in orders:
+                ord_status = (order.get('ordStatus') or '').lower()
+                if ord_status not in ('working', 'accepted'):
+                    continue
+                ord_name = (order.get('contractName') or order.get('name') or '').upper()
+                if symbol_root not in ord_name and symbol.upper() not in ord_name:
+                    continue
+
+                ord_type = (order.get('ordType') or '').lower()
+                ord_price = order.get('price', 0)
+
+                if ord_type == 'limit' and ord_price > 0:
+                    tp_ticks = abs(ord_price - entry_price) / tick_size
+                    tp_ticks = round(tp_ticks)
+                    if tp_ticks > 0:
+                        risk_config['take_profit'] = [{'gain_ticks': tp_ticks, 'trim_percent': 100}]
+                        logger.info(f"Leader TP found: {ord_price} ({tp_ticks} ticks from {entry_price})")
+
+                elif ord_type in ('stop', 'stopmarket', 'stoplimit', 'stoporder') and ord_price > 0:
+                    sl_ticks = abs(entry_price - ord_price) / tick_size
+                    sl_ticks = round(sl_ticks)
+                    if sl_ticks > 0:
+                        risk_config['stop_loss'] = {'loss_ticks': sl_ticks, 'type': 'fixed'}
+                        logger.info(f"Leader SL found: {ord_price} ({sl_ticks} ticks from {entry_price})")
+
+                elif ord_type == 'trailingstoporder':
+                    trail_offset = order.get('trailPrice') or order.get('pegOffset')
+                    if trail_offset:
+                        trail_ticks = round(abs(trail_offset) / tick_size)
+                        if trail_ticks > 0:
+                            risk_config['stop_loss'] = {'loss_ticks': trail_ticks, 'type': 'fixed'}
+                            logger.info(f"Leader trailing SL found: offset={trail_offset} ({trail_ticks} ticks)")
+
+            if not risk_config:
+                logger.info(f"No TP/SL found on leader for {symbol} — followers get naked entry")
+
+            return risk_config
+
+        except Exception as e:
+            logger.error(f"Error getting leader risk config: {e}")
+            return {}
+
+
+# ============================================================================
+# LEGACY — LeaderConnection kept for rollback
+# ============================================================================
 
 class LeaderConnection:
     """WebSocket connection to Tradovate for monitoring a leader's fills."""
@@ -1662,32 +2189,108 @@ async def _monitor_leader(conn: LeaderConnection):
 # PUBLIC API
 # ============================================================================
 def start_leader_monitor():
-    """Start the leader monitor in a background daemon thread."""
-    global _monitor_thread, _monitor_running
+    """Start the leader monitor — register listeners with shared connection manager.
+
+    Each active leader gets a LeaderMonitorListener registered on the shared
+    connection manager. A separate daemon thread periodically checks for
+    leader additions/removals (via reload signal or 15s poll).
+    """
+    global _monitor_thread, _monitor_running, _leader_connections
 
     if _monitor_running:
         logger.info("Leader monitor already running")
         return
 
-    def _thread_target():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(_run_leader_monitor())
-        except Exception as e:
-            logger.error(f"Leader monitor thread error: {e}")
-        finally:
-            loop.close()
+    _monitor_running = True
 
-    _monitor_thread = threading.Thread(target=_thread_target, daemon=True, name="leader-monitor")
+    if not CONNECTION_MANAGER_AVAILABLE:
+        logger.warning("Connection manager not available — leader monitor disabled")
+        return
+
+    # Initial load + registration
+    _register_active_leaders()
+
+    # Start a background thread for leader reload polling
+    def _leader_reload_thread():
+        while _monitor_running:
+            try:
+                # Wait for reload signal or timeout (15s check interval)
+                triggered = _leader_reload_event.wait(timeout=15.0)
+                if not _monitor_running:
+                    break
+                if triggered:
+                    _leader_reload_event.clear()
+                    logger.info("Leader monitor: reload triggered, refreshing active leaders")
+                _register_active_leaders()
+            except Exception as e:
+                logger.error(f"Leader reload thread error: {e}")
+                time.sleep(10)
+
+    _monitor_thread = threading.Thread(
+        target=_leader_reload_thread, daemon=True, name="leader-monitor"
+    )
     _monitor_thread.start()
-    logger.info("Leader monitor daemon thread started")
+    logger.info("Leader monitor started (shared connection manager)")
+
+
+def _register_active_leaders():
+    """Load active leaders from DB and register/unregister listeners as needed."""
+    global _leader_connections
+
+    leaders = _load_active_leaders()
+    active_ids = {l['leader_id'] for l in leaders}
+
+    manager = get_connection_manager()
+
+    # Unregister leaders no longer active
+    for lid in list(_leader_connections.keys()):
+        if lid not in active_ids:
+            old_listener = _leader_connections.pop(lid)
+            manager.unregister_listener(old_listener.listener_id)
+            logger.info(f"Leader monitor: unregistered disabled leader {lid}")
+
+    # Register new leaders
+    for leader_info in leaders:
+        lid = leader_info['leader_id']
+        if lid in _leader_connections:
+            continue  # Already registered
+
+        listener = LeaderMonitorListener(
+            leader_id=lid,
+            account_id=leader_info['account_id'],
+            subaccount_id=leader_info['subaccount_id'],
+            access_token=leader_info['access_token'],
+            is_demo=leader_info['is_demo'],
+            user_id=leader_info['user_id'],
+        )
+
+        _leader_connections[lid] = listener
+
+        manager.register_listener(
+            token=leader_info['access_token'],
+            is_demo=leader_info['is_demo'],
+            subaccount_ids=[int(leader_info['subaccount_id'])],
+            listener=listener,
+            db_account_ids=[leader_info['account_id']],
+        )
+        logger.info(f"Leader monitor: registered leader {lid} "
+                     f"(subaccount {leader_info['subaccount_id']})")
+
+    if leaders:
+        logger.info(f"Leader monitor: {len(leaders)} active leader(s) registered")
 
 
 def stop_leader_monitor():
-    """Stop the leader monitor."""
-    global _monitor_running
+    """Stop the leader monitor — unregister all listeners."""
+    global _monitor_running, _leader_connections
     _monitor_running = False
+
+    if CONNECTION_MANAGER_AVAILABLE and _leader_connections:
+        manager = get_connection_manager()
+        for lid, listener in list(_leader_connections.items()):
+            manager.unregister_listener(listener.listener_id)
+        _leader_connections.clear()
+
     logger.info("Leader monitor stopping...")
 
 
