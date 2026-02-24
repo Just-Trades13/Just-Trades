@@ -235,7 +235,8 @@ class SharedConnection:
                 self.ws_url,
                 ping_interval=None,
                 ping_timeout=None,
-                close_timeout=5
+                close_timeout=5,
+                max_size=10 * 1024 * 1024,  # 10 MB — Tradovate sync responses can exceed 1 MB default
             )
             self.connected = True
             self._connection_time = datetime.now(timezone.utc)
@@ -304,7 +305,8 @@ class SharedConnection:
         try:
             req_id = self._next_request_id()
             sync_body = json.dumps({
-                "accounts": [int(sid) for sid in account_ids]
+                "accounts": [int(sid) for sid in account_ids],
+                "splitResponses": True,  # Break initial sync dump into smaller chunks (per Tradovate protocol)
             })
             sync_msg = f"user/syncrequest\n{req_id}\n\n{sync_body}"
             await self.websocket.send(sync_msg)
