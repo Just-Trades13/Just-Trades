@@ -1837,52 +1837,67 @@
                 container.innerHTML = `
                     <div class="follower-placeholder">
                         <i class="material-icons">group_add</i>
-                        <p>No followers yet. Click "Add All Accounts" to add your accounts.</p>
+                        <p>No followers yet. Click "Add All" to add your accounts.</p>
                     </div>
                 `;
                 return;
             }
 
-            let html = '';
+            let rows = '';
             data.followers.forEach(f => {
                 const enabledClass = f.is_enabled ? '' : ' disabled';
-                const syncClass = f.is_enabled ? 'synced' : '';
-                html += `
-                    <div class="follower-card${enabledClass}" data-follower-id="${f.id}">
-                        <label class="copy-toggle" style="margin:0">
-                            <input type="checkbox" class="follower-enable-toggle"
-                                   data-id="${f.id}" ${f.is_enabled ? 'checked' : ''}>
-                            <span class="toggle-slider" style="width:36px;height:20px"></span>
-                        </label>
-                        <div class="follower-info">
-                            <span class="follower-name">${f.label || f.subaccount_id}</span>
-                            <div class="follower-meta">
-                                <span>Account ${f.account_id}:${f.subaccount_id}</span>
-                                <span class="follower-sync-dot ${syncClass}"></span>
-                            </div>
-                        </div>
-                        <div class="follower-controls">
-                            <div class="follower-multiplier">
-                                <span>Mult</span>
-                                <input type="number" class="follower-mult-input"
-                                       data-id="${f.id}" value="${f.multiplier || 1}"
-                                       min="0.1" max="100" step="0.1">
-                            </div>
-                        </div>
-                    </div>
+                rows += `
+                    <tr class="follower-row${enabledClass}" data-follower-id="${f.id}" data-subaccount-id="${f.subaccount_id}" data-account-sub="${f.account_id}:${f.subaccount_id}">
+                        <td>
+                            <label class="copy-toggle" style="margin:0">
+                                <input type="checkbox" class="follower-enable-toggle"
+                                       data-id="${f.id}" ${f.is_enabled ? 'checked' : ''}>
+                                <span class="toggle-slider" style="width:32px;height:18px"></span>
+                            </label>
+                        </td>
+                        <td>
+                            <span class="follower-name">${f.label || f.subaccount_id}</span><br>
+                            <span class="follower-sub">${f.account_id}:${f.subaccount_id}</span>
+                        </td>
+                        <td class="follower-pos-cell"><span class="position-badge flat" style="font-size:0.7rem">FLAT</span></td>
+                        <td class="follower-pnl-cell col-pnl">--</td>
+                        <td>
+                            <input type="number" class="follower-mult-input"
+                                   data-id="${f.id}" value="${f.multiplier || 1}"
+                                   min="0.1" max="100" step="0.1">
+                        </td>
+                        <td>
+                            <button type="button" class="btn-flatten" data-account="${f.account_id}:${f.subaccount_id}">Flatten</button>
+                        </td>
+                    </tr>
                 `;
             });
-            container.innerHTML = html;
+
+            container.innerHTML = `
+                <table class="followers-table">
+                    <thead>
+                        <tr>
+                            <th style="width:42px">ON</th>
+                            <th>Account</th>
+                            <th>Position</th>
+                            <th class="col-pnl">P&amp;L</th>
+                            <th style="width:60px">Mult</th>
+                            <th style="width:70px">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
 
             // Wire up enable toggles
             container.querySelectorAll('.follower-enable-toggle').forEach(toggle => {
                 toggle.addEventListener('change', function() {
                     updateFollowerSetting(this.dataset.id, { is_enabled: this.checked });
-                    this.closest('.follower-card')?.classList.toggle('disabled', !this.checked);
+                    this.closest('.follower-row')?.classList.toggle('disabled', !this.checked);
                 });
             });
 
-            // Wire up multiplier inputs (save on blur)
+            // Wire up multiplier inputs (save on change)
             container.querySelectorAll('.follower-mult-input').forEach(input => {
                 input.addEventListener('change', function() {
                     updateFollowerSetting(this.dataset.id, { multiplier: parseFloat(this.value) || 1.0 });
