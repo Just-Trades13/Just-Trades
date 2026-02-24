@@ -294,12 +294,13 @@ class AccountGroupConnection:
 
                     if self._data_msg_count == 0:
                         self._zero_data_windows += 1
-                        if self._zero_data_windows >= 3 and _is_futures_market_likely_open():
+                        # NEVER reduce below 10 — 3 windows caused 429 storms (Bug #38, Feb 24 2026)
+                        if self._zero_data_windows >= 10 and _is_futures_market_likely_open():
                             logger.warning(f"[{self.token_key}] No data for "
                                            f"{self._zero_data_windows * 30}s — forcing reconnect")
                             self.connected = False
                             break
-                        elif self._zero_data_windows == 3:
+                        elif self._zero_data_windows == 10:
                             # Market closed — 0 data is expected, stay connected
                             logger.info(f"[{self.token_key}] 0 data but market closed — staying connected")
                     else:
@@ -1662,7 +1663,12 @@ class PositionMonitorListener(Listener):
 
 
 # ============================================================================
-# MAIN ASYNC LOOP (LEGACY — kept for rollback, no longer started)
+# LEGACY CODE — DEPRECATED. DO NOT USE. DO NOT START.
+# Kept ONLY for emergency rollback if shared connection manager fails.
+# Production uses start_position_monitor() which registers listeners on
+# the shared TradovateConnectionManager (ws_connection_manager.py).
+# If you modify this legacy code, also update the shared manager.
+# NEVER reduce _zero_data_windows threshold below 10 (Bug #38, Feb 24 2026).
 # ============================================================================
 
 async def _run_position_monitor():

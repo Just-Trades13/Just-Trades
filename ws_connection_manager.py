@@ -489,6 +489,10 @@ class TradovateConnectionManager:
         self._loop = None
         self._running = False
         self._started = False
+        # Limit concurrent connection ATTEMPTS to 2 at a time.
+        # 16 connections all connecting simultaneously overwhelms Tradovate rate limits (Bug #38).
+        # NEVER increase above 2 — Tradovate rejects with HTTP 429 if too many connect at once.
+        self._connect_semaphore = None  # initialized as asyncio.Semaphore(2) in _run()
 
         # Map token_key -> (access_token, is_demo, db_account_ids)
         self._token_info: Dict[str, dict] = {}
@@ -604,6 +608,7 @@ class TradovateConnectionManager:
     async def _run_manager(self):
         """Main async loop — manages all SharedConnections."""
         logger.info("WebSocket connection manager starting...")
+        self._connect_semaphore = asyncio.Semaphore(2)
 
         # Process any pending registrations
         while self._pending_registrations:
@@ -667,7 +672,14 @@ class TradovateConnectionManager:
                         logger.info(f"[{token_key}] Refreshed token from DB")
                     conn.access_token = fresh_token
 
-                success = await conn.connect()
+                # Semaphore limits concurrent connection ATTEMPTS to 2.
+                # 16 connections all hitting Tradovate at once = 429 rate limit.
+                # NEVER remove this semaphore (Bug #38, Feb 24 2026).
+                async with self._connect_semaphore:
+                    success = await conn.connect()
+                    # Brief pause after each attempt so the next waiter doesn't
+                    # immediately slam Tradovate when the semaphore releases.
+                    await asyncio.sleep(3)
                 if success:
                     backoff = 1
                     conn._zero_data_windows = 0

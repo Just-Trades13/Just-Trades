@@ -839,15 +839,16 @@ class LeaderConnection:
                                 f"({self._data_msg_count} data) in last 30s, "
                                 f"positions={dict(self._positions)}")
 
-                    # Dead-subscription detection: 3 consecutive windows with 0 data msgs = 90s silence
+                    # Dead-subscription detection — NEVER reduce below 10 windows (Bug #38, Feb 24 2026)
+                    # 3 windows caused 429 storms across 16+ connections
                     if self._data_msg_count == 0:
                         self._zero_data_windows += 1
-                        if self._zero_data_windows >= 3 and _is_futures_market_likely_open():
+                        if self._zero_data_windows >= 10 and _is_futures_market_likely_open():
                             logger.warning(f"Leader {self.leader_id} — no data msgs for "
                                            f"{self._zero_data_windows * 30}s, forcing reconnect")
                             self.connected = False
                             break
-                        elif self._zero_data_windows == 3:
+                        elif self._zero_data_windows == 10:
                             logger.info(f"Leader {self.leader_id} — 0 data but market closed — staying connected")
                     else:
                         self._zero_data_windows = 0
