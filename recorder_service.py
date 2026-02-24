@@ -2424,7 +2424,7 @@ def execute_trade_simple(
                                         if (local_symbol_root in doo_symbol and
                                             doo_status in ['WORKING', 'NEW', 'PENDINGNEW'] and doo_id):
                                             try:
-                                                await tradovate.cancel_order_smart(int(doo_id))
+                                                await tradovate.cancel_order_smart(int(doo_id), use_websocket=False)
                                                 dca_off_cancelled += 1
                                                 try:
                                                     from ultra_simple_server import unregister_oco_pair
@@ -2451,7 +2451,7 @@ def execute_trade_simple(
                                     close_action, existing_position_qty, tradovate_account_id
                                 )
                                 logger.info(f"📤 [{acct_name}] DCA-off close: {close_action} {existing_position_qty} {local_tradovate_symbol}")
-                                close_result = await tradovate.place_order_smart(close_order_data)
+                                close_result = await tradovate.place_order_smart(close_order_data, use_websocket=False)
                                 if close_result and close_result.get('success'):
                                     logger.info(f"✅ [{acct_name}] DCA-off close filled — proceeding to fresh bracket entry")
                                 else:
