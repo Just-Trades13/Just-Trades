@@ -569,9 +569,23 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
 
         return cumulative, drawdown
 
+    # Look up first enabled trader's multiplier for this recorder (used by _calc_tp_sl and qty scaling)
+    _paper_mult = 1.0
+    try:
+        cursor.execute(f'''
+            SELECT multiplier FROM traders
+            WHERE recorder_id = {ph} AND enabled = {'TRUE' if use_postgres else '1'}
+            ORDER BY id LIMIT 1
+        ''', (recorder_id,))
+        _pm_row = cursor.fetchone()
+        if _pm_row and _pm_row[0]:
+            _paper_mult = float(_pm_row[0])
+    except Exception:
+        pass
+
     try:
         # Helper: fetch recorder TP/SL settings and calculate prices
-        def _calc_tp_sl(entry, direction, total_qty=None):
+        def _calc_tp_sl(entry, direction, total_qty=None, multiplier=1.0):
             _tp, _sl = None, None
             _tp_legs_list = None
             try:
@@ -579,6 +593,28 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                 rec_row = cursor.fetchone()
                 if rec_row:
                     tp_targets_raw, sl_en, sl_amt, sl_un, trim_un = rec_row
+
+                    # Overlay trader-level overrides (matches real execution at ~17216-17250)
+                    try:
+                        cursor.execute(f'''
+                            SELECT tp_targets, sl_enabled, sl_amount, sl_units
+                            FROM traders WHERE recorder_id = {ph} AND enabled = {'TRUE' if use_postgres else '1'}
+                            ORDER BY id LIMIT 1
+                        ''', (recorder_id,))
+                        _t_row = cursor.fetchone()
+                        if _t_row:
+                            _t_tp, _t_sl_en, _t_sl_amt, _t_sl_un = _t_row
+                            if _t_tp is not None:
+                                tp_targets_raw = _t_tp
+                            if _t_sl_en is not None:
+                                sl_en = _t_sl_en
+                            if _t_sl_amt is not None:
+                                sl_amt = _t_sl_amt
+                            if _t_sl_un is not None:
+                                sl_un = _t_sl_un
+                    except Exception:
+                        pass  # Fall back to recorder settings if trader lookup fails
+
                     from recorder_service import get_tick_size
                     tick_sz = get_tick_size(symbol)
                     if tp_targets_raw:
@@ -586,7 +622,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                         try:
                             tp_list = json.loads(tp_targets_raw) if isinstance(tp_targets_raw, str) else tp_targets_raw
                             if tp_list and len(tp_list) > 0:
-                                # First TP leg → backward-compatible tp_price
+                                # First TP leg -> backward-compatible tp_price
                                 first_tp = tp_list[0]
                                 tp_ticks = first_tp.get('ticks') or first_tp.get('value') or 0
                                 if tp_ticks and float(tp_ticks) > 0:
@@ -606,13 +642,13 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                                         leg_off = leg_ticks * tick_sz
                                         leg_price = entry + leg_off if direction == 'LONG' else entry - leg_off
                                         leg_price = round(round(leg_price / tick_sz) * tick_sz, 10)
-                                        # Calculate trim qty
+                                        # Calculate trim qty (Rule 13: Contracts mode scales by multiplier)
                                         if i == len(tp_list) - 1:
                                             leg_qty = remaining  # Last leg gets remainder
                                         elif trim_un == 'Percent':
                                             leg_qty = max(1, int(round(total_qty * (leg_trim / 100.0))))
-                                        else:  # Contracts — cap at remaining
-                                            leg_qty = max(1, int(round(leg_trim))) if leg_trim > 0 else 1
+                                        else:  # Contracts — scale by multiplier, cap at remaining
+                                            leg_qty = max(1, int(round(leg_trim * multiplier))) if leg_trim > 0 else 1
                                             leg_qty = min(leg_qty, remaining)
                                         if leg_qty <= 0:
                                             continue
@@ -676,62 +712,105 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                 opp_dir = [r for r in all_open if r[1] != side]
 
                 if same_dir:
-                    # DCA into the FIRST same-direction position, close any extras as duplicates
-                    primary = same_dir[0]
-                    exist_id, exist_side, exist_qty, exist_entry = primary
+                    # Check if DCA is enabled: recorder avg_down_enabled OR trader dca_enabled
+                    # Matches real execution at recorder_service.py:2332-2333 (Rule 12)
+                    cursor.execute(f'SELECT avg_down_enabled FROM recorders WHERE id = {ph}', (recorder_id,))
+                    _dca_row = cursor.fetchone()
+                    _is_dca_on = bool(_dca_row and _dca_row[0])
+                    if not _is_dca_on:
+                        try:
+                            cursor.execute(f'''
+                                SELECT dca_enabled FROM traders
+                                WHERE recorder_id = {ph} AND enabled = {'TRUE' if use_postgres else '1'}
+                                ORDER BY id LIMIT 1
+                            ''', (recorder_id,))
+                            _t_dca_check = cursor.fetchone()
+                            if _t_dca_check and _t_dca_check[0]:
+                                _is_dca_on = True
+                        except Exception:
+                            pass
 
-                    # Close duplicate same-direction positions (stacking bug cleanup)
-                    for dup in same_dir[1:]:
-                        dup_pnl = _close_position(dup[0], dup[1], dup[2], dup[3], price, 'dedup')
-                        print(f"📝 Closed duplicate {dup[1]} position #{dup[0]} (dedup), P&L: ${dup_pnl:.2f}", flush=True)
+                    if not _is_dca_on:
+                        # DCA OFF: close all existing positions, fall through to open fresh entry
+                        # Matches recorder_service.py ~2338-2341: has_existing_position = False
+                        for pos in same_dir:
+                            _pos_pnl = _close_position(pos[0], pos[1], pos[2], pos[3], price, 'new_entry')
+                            print(f"📝 DCA OFF: Closed {pos[1]} #{pos[0]}, P&L: ${_pos_pnl:.2f}", flush=True)
+                        for opp in opp_dir:
+                            _opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'new_entry')
+                            print(f"📝 DCA OFF: Closed stale {opp[1]} #{opp[0]}, P&L: ${_opp_pnl:.2f}", flush=True)
+                        print(f"📝 DCA OFF: Closed {len(same_dir)+len(opp_dir)} positions, opening fresh {side}", flush=True)
+                        # Fall through to "Open new position" below
+                    else:
+                        # DCA ON: add to primary position (existing behavior)
+                        primary = same_dir[0]
+                        exist_id, exist_side, exist_qty, exist_entry = primary
 
-                    # Also close any opposite-direction positions (stale from before)
-                    for opp in opp_dir:
-                        opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'signal')
-                        print(f"📝 Closed stale opposite {opp[1]} position #{opp[0]}, P&L: ${opp_pnl:.2f}", flush=True)
+                        # Close duplicate same-direction positions (stacking bug cleanup)
+                        for dup in same_dir[1:]:
+                            dup_pnl = _close_position(dup[0], dup[1], dup[2], dup[3], price, 'dedup')
+                            print(f"📝 Closed duplicate {dup[1]} position #{dup[0]} (dedup), P&L: ${dup_pnl:.2f}", flush=True)
 
-                    # DCA: add to primary position (respect max_contracts_per_trade)
-                    max_contracts = None
-                    try:
-                        cursor.execute(f'SELECT max_contracts_per_trade FROM recorders WHERE id = {ph}', (recorder_id,))
-                        mc_row = cursor.fetchone()
-                        if mc_row and mc_row[0] and int(mc_row[0]) > 0:
-                            max_contracts = int(mc_row[0])
-                    except Exception:
-                        pass
+                        # Also close any opposite-direction positions (stale from before)
+                        for opp in opp_dir:
+                            opp_pnl = _close_position(opp[0], opp[1], opp[2], opp[3], price, 'signal')
+                            print(f"📝 Closed stale opposite {opp[1]} position #{opp[0]}, P&L: ${opp_pnl:.2f}", flush=True)
 
-                    new_qty = exist_qty + quantity
-                    if max_contracts and new_qty > max_contracts:
-                        print(f"📝 DCA capped: {new_qty} would exceed max_contracts={max_contracts}, skipping add", flush=True)
+                        # DCA: add to primary position (respect max_contracts_per_trade)
+                        max_contracts = None
+                        try:
+                            cursor.execute(f'SELECT max_contracts_per_trade FROM recorders WHERE id = {ph}', (recorder_id,))
+                            mc_row = cursor.fetchone()
+                            if mc_row and mc_row[0] and int(mc_row[0]) > 0:
+                                max_contracts = int(mc_row[0])
+                        except Exception:
+                            pass
+
+                        new_qty = exist_qty + quantity
+                        if max_contracts and new_qty > max_contracts:
+                            print(f"📝 DCA capped: {new_qty} would exceed max_contracts={max_contracts}, skipping add", flush=True)
+                            conn.commit()
+                            conn.close()
+                            return {'success': True, 'symbol': symbol, 'action': 'DCA_CAPPED', 'reason': f'qty {new_qty} exceeds max {max_contracts}'}
+
+                        avg_entry = ((exist_entry * exist_qty) + (price * quantity)) / new_qty
+                        tp_price, sl_price, tp_legs_list = _calc_tp_sl(avg_entry, side, total_qty=new_qty, multiplier=_paper_mult)
+                        tp_legs_json = json.dumps(tp_legs_list) if tp_legs_list else None
+
+                        cursor.execute(f'''
+                            UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}, tp_legs = {ph}
+                            WHERE id = {ph}
+                        ''', (new_qty, avg_entry, tp_price, sl_price, tp_legs_json, exist_id))
+
+                        # Reset automatic DCA tracking so it recalculates from new avg entry
+                        global _paper_dca_next_price
+                        _paper_dca_next_price.pop(exist_id, None)
+
+                        tp_str = f"TP={tp_price:.2f}" if tp_price else "TP=None"
+                        sl_str = f"SL={sl_price:.2f}" if sl_price else "SL=None"
+                        print(f"📝 DCA: Added {quantity} to {side} position | New qty: {new_qty} | Avg entry: ${avg_entry:.2f} | {tp_str} | {sl_str}", flush=True)
+
                         conn.commit()
-                        conn.close()
-                        return {'success': True, 'symbol': symbol, 'action': 'DCA_CAPPED', 'reason': f'qty {new_qty} exceeds max {max_contracts}'}
-
-                    avg_entry = ((exist_entry * exist_qty) + (price * quantity)) / new_qty
-                    tp_price, sl_price, tp_legs_list = _calc_tp_sl(avg_entry, side, total_qty=new_qty)
-                    tp_legs_json = json.dumps(tp_legs_list) if tp_legs_list else None
-
-                    cursor.execute(f'''
-                        UPDATE paper_trades SET quantity = {ph}, entry_price = {ph}, tp_price = {ph}, sl_price = {ph}, tp_legs = {ph}
-                        WHERE id = {ph}
-                    ''', (new_qty, avg_entry, tp_price, sl_price, tp_legs_json, exist_id))
-
-                    # Reset automatic DCA tracking so it recalculates from new avg entry
-                    global _paper_dca_next_price
-                    _paper_dca_next_price.pop(exist_id, None)
-
-                    tp_str = f"TP={tp_price:.2f}" if tp_price else "TP=None"
-                    sl_str = f"SL={sl_price:.2f}" if sl_price else "SL=None"
-                    print(f"📝 DCA: Added {quantity} to {side} position | New qty: {new_qty} | Avg entry: ${avg_entry:.2f} | {tp_str} | {sl_str}", flush=True)
-
-                    conn.commit()
-                    return {'success': True, 'symbol': symbol, 'action': 'DCA', 'price': price, 'avg_entry': avg_entry, 'quantity': new_qty}
+                        return {'success': True, 'symbol': symbol, 'action': 'DCA', 'price': price, 'avg_entry': avg_entry, 'quantity': new_qty}
 
                 else:
                     # Only opposite-direction positions exist
                     cursor.execute(f'SELECT avg_down_enabled FROM recorders WHERE id = {ph}', (recorder_id,))
                     rec_check = cursor.fetchone()
                     is_dca_strategy = bool(rec_check and rec_check[0])
+                    # Also check trader-level dca_enabled (matches recorder_service.py:2346-2347)
+                    if not is_dca_strategy:
+                        try:
+                            cursor.execute(f'''
+                                SELECT dca_enabled FROM traders
+                                WHERE recorder_id = {ph} AND enabled = {'TRUE' if use_postgres else '1'}
+                                ORDER BY id LIMIT 1
+                            ''', (recorder_id,))
+                            _t_dca_row = cursor.fetchone()
+                            if _t_dca_row and _t_dca_row[0]:
+                                is_dca_strategy = True
+                        except Exception:
+                            pass
 
                     if is_dca_strategy:
                         # DCA strategies ignore opposite direction signals - wait for TP exit
@@ -746,7 +825,7 @@ def _record_paper_trade_direct_inner(recorder_id: int, symbol: str, action: str,
                         print(f"📝 Closed {opp[1]} position #{opp[0]} (signal), P&L: ${opp_pnl:.2f}", flush=True)
 
             # Open new position with TP/SL from recorder settings
-            tp_price, sl_price, tp_legs_list = _calc_tp_sl(price, side, total_qty=quantity)
+            tp_price, sl_price, tp_legs_list = _calc_tp_sl(price, side, total_qty=quantity, multiplier=_paper_mult)
             tp_legs_json = json.dumps(tp_legs_list) if tp_legs_list else None
 
             cursor.execute(f'''
@@ -17200,7 +17279,34 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
                         paper_qty = int(recorder.get('add_position_size') or 1)
                     else:
                         paper_qty = int(recorder.get('initial_position_size') or 1)
-                    _logger.info(f"📝 Paper qty: {paper_qty} ({'DCA add' if _paper_is_dca else 'initial'}, recorder settings)")
+                    # Apply trader multiplier to paper qty (matches real execution at recorder_service.py:2032)
+                    _paper_multiplier = 1.0
+                    try:
+                        _pp_m_db_url = os.environ.get('DATABASE_URL')
+                        if _pp_m_db_url:
+                            import psycopg2 as _pp_m_pg
+                            _pp_m_conn = _pp_m_pg.connect(_pp_m_db_url)
+                            _pp_m_ph = '%s'
+                        else:
+                            _pp_m_conn = sqlite3.connect('just_trades.db')
+                            _pp_m_ph = '?'
+                        try:
+                            _pp_m_cursor = _pp_m_conn.cursor()
+                            _pp_m_cursor.execute(f'''
+                                SELECT multiplier FROM traders
+                                WHERE recorder_id = {_pp_m_ph} AND enabled = {'TRUE' if is_postgres else '1'}
+                                ORDER BY id LIMIT 1
+                            ''', (recorder_id,))
+                            _pp_m_row = _pp_m_cursor.fetchone()
+                            if _pp_m_row and _pp_m_row[0]:
+                                _paper_multiplier = float(_pp_m_row[0])
+                        finally:
+                            _pp_m_conn.close()
+                    except Exception as _pp_m_err:
+                        _logger.debug(f"Paper multiplier lookup error: {_pp_m_err}")
+                    if _paper_multiplier != 1.0:
+                        paper_qty = max(1, int(paper_qty * _paper_multiplier))
+                    _logger.info(f"📝 Paper qty: {paper_qty} ({'DCA add' if _paper_is_dca else 'initial'}, multiplier={_paper_multiplier}x)")
 
                 paper_price = float(price) if price else None
                 import threading
