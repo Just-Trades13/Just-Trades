@@ -6582,6 +6582,44 @@ def start_daily_state_reset():
     _reset_thread.start()
 
 
+def check_max_daily_loss_safety():
+    """Safety net: Check all recorders with max_daily_loss against realized P&L.
+
+    Logging-only — alerts if webhook filter somehow missed a breach.
+    Auto-flatten is handled by WS P&L monitor (ws_position_monitor.py).
+    """
+    try:
+        is_postgres = is_using_postgres()
+        if not is_postgres:
+            return  # Production only (PostgreSQL)
+        conn = get_db_connection()
+        if not conn:
+            return
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT r.id, r.name, r.max_daily_loss
+            FROM recorders r
+            WHERE r.max_daily_loss > 0 AND r.recording_enabled = TRUE
+        ''')
+        recorders = cursor.fetchall()
+
+        for rec_id, rec_name, max_loss in recorders:
+            cursor.execute('''
+                SELECT COALESCE(SUM(pnl), 0) FROM recorded_trades
+                WHERE recorder_id = %s AND DATE(exit_time) = CURRENT_DATE AND status = 'closed'
+            ''', (rec_id,))
+            realized = float(cursor.fetchone()[0] or 0)
+
+            if realized <= -float(max_loss):
+                logger.warning(f"🚨 SAFETY NET: [{rec_name}] Realized P&L ${realized:.2f} "
+                               f"exceeds max daily loss -${max_loss} — should be blocked at webhook")
+
+        conn.close()
+    except Exception as e:
+        logger.error(f"Max daily loss safety net error: {e}")
+
+
 def start_position_reconciliation():
     """Start the position reconciliation thread (runs every 60 seconds)
 
@@ -6603,6 +6641,7 @@ def start_position_reconciliation():
             try:
                 reconcile_positions_with_broker()
                 check_auto_flat_cutoff()
+                check_max_daily_loss_safety()
                 time.sleep(300)  # Safety net: 5 min when WS position monitor is primary
             except Exception as e:
                 logger.error(f"Error in position reconciliation loop: {e}")
