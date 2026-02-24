@@ -873,7 +873,7 @@
                             </ul>
                         </div>
                     </li>
-                    <li class="{{ 'active' if 'affiliate/dashboard' in request.path else '' }}"><a href="/affiliate/dashboard"><i class="material-icons">group_add</i><p>AFFILIATE</p></a></li>
+                    <li class="{{ 'active' if '/affiliate' in request.path else '' }}"><a href="/affiliate"><i class="material-icons">group_add</i><p>AFFILIATE</p></a></li>
                     <li class="{{ 'active' if 'settings' in request.path else '' }}"><a href="/settings"><i class="material-icons">settings</i><p>SETTINGS</p></a></li>
                     <li class="{{ 'active' if 'chat' in request.path else '' }}"><a href="/chat"><i class="material-icons">forum</i><p>CHAT</p></a></li>
                 </ul>

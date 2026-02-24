@@ -1,379 +1,2480 @@
-{% extends "layout.html" %}
-{% block title %}Affiliate Program - Just.Trades.{% endblock %}
-{% block page_title %}AFFILIATE PROGRAM{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-YVLCTLC5PQ"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-YVLCTLC5PQ');
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Affiliate Program - Just.Trades. | Earn 25% Recurring Commission</title>
+    <meta name="description" content="Earn 25% recurring commission for every trader you refer to Just.Trades. No cap on earnings, 30-day cookie, monthly payouts.">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #19b8ff;
+            --primary-color-dark: #0c6bbd;
+            --accent-teal: #2dd4bf;
+            --green: #2dce89;
+            --red: #f5365c;
+            --orange: #fb923c;
+            --purple: #a855f7;
+            --gold: #fbbf24;
+            --background-dark: #0b1221;
+            --background-light: #111a2f;
+            --background-card: #0f172a;
+            --border-color: rgba(148, 163, 184, 0.12);
+            --text-light: #f8fafc;
+            --text-muted: #7f8db2;
+            --glow-primary: rgba(25, 184, 255, 0.4);
+            --glow-teal: rgba(45, 212, 191, 0.4);
+        }
 
-{% block styles %}
-<link rel="stylesheet" href="/static/css/affiliate.css">
-{% endblock %}
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-{% block content %}
+        html {
+            scroll-behavior: smooth;
+        }
 
-<!-- Hero Section -->
-<section class="aff-hero aff-fadeUp" style="animation-delay: 0.1s">
-    <div class="aff-hero-inner">
-        <h1 class="aff-hero-heading">
-            Earn Recurring Commissions<br>with <span class="aff-gradient-text">Just.Trades.</span>
-        </h1>
-        <p class="aff-hero-subtitle">
-            Join our affiliate program and earn 25% recurring commission on every trader you refer.
-            Real payouts, real-time tracking, no limits.
-        </p>
-        <div class="aff-hero-cta">
-            <a href="#link-section" class="aff-btn aff-btn-primary">
-                <i class="material-icons">attach_money</i>
-                Start Earning
-            </a>
-            <a href="#how-it-works" class="aff-btn aff-btn-outline">
-                <i class="material-icons">play_circle_outline</i>
-                See How It Works
-            </a>
-        </div>
-    </div>
-</section>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: var(--background-dark);
+            color: var(--text-light);
+            overflow-x: hidden;
+        }
 
-<!-- Stats Row -->
-<section class="aff-stats-row aff-fadeUp" style="animation-delay: 0.2s">
-    <div class="aff-stat-card">
-        <div class="aff-stat-value">25%</div>
-        <div class="aff-stat-label">Recurring Commission</div>
-    </div>
-    <div class="aff-stat-card">
-        <div class="aff-stat-value">30 Days</div>
-        <div class="aff-stat-label">Cookie Duration</div>
-    </div>
-    <div class="aff-stat-card">
-        <div class="aff-stat-value">Monthly</div>
-        <div class="aff-stat-label">Payouts</div>
-    </div>
-    <div class="aff-stat-card">
-        <div class="aff-stat-value">Real-Time</div>
-        <div class="aff-stat-label">Tracking Dashboard</div>
-    </div>
-</section>
+        /* ============================================
+           HEADER / NAVIGATION
+           ============================================ */
+        .header {
+            padding: 20px 60px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: rgba(11, 18, 33, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
 
-<!-- How It Works -->
-<section class="aff-how-it-works aff-fadeUp" id="how-it-works" style="animation-delay: 0.3s">
-    <h2 class="aff-section-heading">How It Works</h2>
-    <div class="aff-steps-row">
-        <div class="aff-step-card">
-            <div class="aff-step-number">1</div>
-            <div class="aff-step-icon">
-                <i class="material-icons">person_add</i>
-            </div>
-            <h3 class="aff-step-title">Sign Up</h3>
-            <p class="aff-step-desc">Create your free affiliate account and get your unique referral link instantly.</p>
-        </div>
-        <div class="aff-step-connector">
-            <i class="material-icons">arrow_forward</i>
-        </div>
-        <div class="aff-step-card">
-            <div class="aff-step-number">2</div>
-            <div class="aff-step-icon">
-                <i class="material-icons">share</i>
-            </div>
-            <h3 class="aff-step-title">Share Your Link</h3>
-            <p class="aff-step-desc">Share your referral link with your audience — social media, YouTube, Discord, blog, email.</p>
-        </div>
-        <div class="aff-step-connector">
-            <i class="material-icons">arrow_forward</i>
-        </div>
-        <div class="aff-step-card">
-            <div class="aff-step-number">3</div>
-            <div class="aff-step-icon">
-                <i class="material-icons">payments</i>
-            </div>
-            <h3 class="aff-step-title">Get Paid</h3>
-            <p class="aff-step-desc">Earn 25% recurring commission every month for as long as your referrals stay subscribed.</p>
-        </div>
-    </div>
-</section>
+        .header.scrolled {
+            padding: 12px 60px;
+            background: rgba(11, 18, 33, 0.95);
+        }
 
-<!-- Commission Breakdown -->
-<section class="aff-tiers aff-fadeUp" style="animation-delay: 0.4s">
-    <h2 class="aff-section-heading">Commission Breakdown</h2>
-    <div class="aff-tiers-grid">
-        <div class="aff-tier-card">
-            <div class="aff-tier-badge">Basic+</div>
-            <div class="aff-tier-price">$200<span>/mo</span></div>
-            <div class="aff-tier-arrow">
-                <i class="material-icons">arrow_forward</i>
-            </div>
-            <div class="aff-tier-earn">
-                <span class="aff-tier-earn-label">You earn</span>
-                <span class="aff-tier-earn-amount">$50<span>/mo</span></span>
-                <span class="aff-tier-earn-sub">per referral</span>
-            </div>
-        </div>
-        <div class="aff-tier-card aff-tier-featured">
-            <div class="aff-tier-badge">Premium+</div>
-            <div class="aff-tier-price">$500<span>/mo</span></div>
-            <div class="aff-tier-arrow">
-                <i class="material-icons">arrow_forward</i>
-            </div>
-            <div class="aff-tier-earn">
-                <span class="aff-tier-earn-label">You earn</span>
-                <span class="aff-tier-earn-amount">$125<span>/mo</span></span>
-                <span class="aff-tier-earn-sub">per referral</span>
-            </div>
-        </div>
-        <div class="aff-tier-card">
-            <div class="aff-tier-badge">Elite+</div>
-            <div class="aff-tier-price">$1,000<span>/mo</span></div>
-            <div class="aff-tier-arrow">
-                <i class="material-icons">arrow_forward</i>
-            </div>
-            <div class="aff-tier-earn">
-                <span class="aff-tier-earn-label">You earn</span>
-                <span class="aff-tier-earn-amount">$250<span>/mo</span></span>
-                <span class="aff-tier-earn-sub">per referral</span>
-            </div>
-        </div>
-    </div>
-    <p class="aff-tiers-note">
-        <i class="material-icons">info_outline</i>
-        Commissions are recurring — you earn every month your referral stays active.
-    </p>
-</section>
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
 
-<!-- Referral Link Section -->
-<section class="aff-link-section aff-fadeUp" id="link-section" style="animation-delay: 0.5s">
-    {% if affiliate_code %}
-    <div class="aff-link-card">
-        <h2 class="aff-section-heading">Your Referral Link</h2>
-        <p class="aff-link-subtitle">Share this link to start earning. Every signup within 30 days earns you 25%.</p>
+        .logo img {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(25, 184, 255, 0.25);
+        }
 
-        <div class="aff-link-input-row">
-            <input
-                type="text"
-                id="referralLinkInput"
-                class="aff-link-input"
-                value="{{ referral_link }}"
-                readonly
-            >
-            <button class="aff-copy-btn" id="copyBtn" onclick="copyReferralLink()">
-                <i class="material-icons" id="copyIcon">content_copy</i>
-                <span id="copyLabel">Copy</span>
-            </button>
+        .logo span {
+            font-size: 1.2rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            color: var(--text-light);
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 40px;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s ease;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-light);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn-login {
+            padding: 10px 24px;
+            border-radius: 10px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-light);
+        }
+
+        .btn-login:hover {
+            background: rgba(148, 163, 184, 0.1);
+            border-color: var(--primary-color);
+        }
+
+        .btn-start {
+            padding: 10px 24px;
+            border-radius: 10px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+            color: white;
+            border: none;
+            box-shadow: 0 4px 20px var(--glow-primary);
+            transition: all 0.3s ease;
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px var(--glow-primary);
+        }
+
+        /* ============================================
+           HERO SECTION
+           ============================================ */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 120px 60px 80px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Animated background */
+        .hero-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 0;
+        }
+
+        .hero-bg::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 30%, rgba(25, 184, 255, 0.15), transparent 40%),
+                        radial-gradient(circle at 70% 70%, rgba(45, 212, 191, 0.1), transparent 40%),
+                        radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.05), transparent 50%);
+            animation: bgPulse 15s ease-in-out infinite;
+        }
+
+        @keyframes bgPulse {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(-5%, -5%) scale(1.1); }
+            66% { transform: translate(5%, 5%) scale(0.95); }
+        }
+
+        /* Floating orbs */
+        .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            opacity: 0.6;
+            animation: float 20s ease-in-out infinite;
+        }
+
+        .orb-1 {
+            width: 400px;
+            height: 400px;
+            background: var(--primary-color);
+            top: 10%;
+            left: 10%;
+            animation-delay: 0s;
+        }
+
+        .orb-2 {
+            width: 300px;
+            height: 300px;
+            background: var(--accent-teal);
+            top: 60%;
+            right: 10%;
+            animation-delay: -5s;
+        }
+
+        .orb-3 {
+            width: 200px;
+            height: 200px;
+            background: var(--purple);
+            bottom: 20%;
+            left: 30%;
+            animation-delay: -10s;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            25% { transform: translate(30px, -30px); }
+            50% { transform: translate(-20px, 20px); }
+            75% { transform: translate(20px, 30px); }
+        }
+
+        /* Grid lines */
+        .grid-lines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                linear-gradient(rgba(148, 163, 184, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            z-index: 1;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            max-width: 1400px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 80px;
+            align-items: center;
+        }
+
+        .hero-text {
+            animation: fadeInUp 1s ease forwards;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(45, 206, 137, 0.15);
+            border: 1px solid rgba(45, 206, 137, 0.3);
+            border-radius: 30px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--green);
+            margin-bottom: 24px;
+        }
+
+        .hero-badge .pulse {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.5); }
+        }
+
+        .hero h1 {
+            font-size: 4rem;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 24px;
+        }
+
+        .hero h1 .gradient-text {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-teal) 50%, var(--green) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+            margin-bottom: 40px;
+            max-width: 540px;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary-large {
+            padding: 18px 36px;
+            border-radius: 14px;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 700;
+            text-decoration: none;
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+            color: white;
+            border: none;
+            box-shadow: 0 8px 30px var(--glow-primary);
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+
+        .btn-primary-large:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 40px var(--glow-primary);
+        }
+
+        .btn-secondary-large {
+            padding: 18px 36px;
+            border-radius: 14px;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            background: transparent;
+            color: var(--text-light);
+            border: 2px solid var(--border-color);
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-secondary-large:hover {
+            border-color: var(--primary-color);
+            background: rgba(25, 184, 255, 0.1);
+        }
+
+        /* Hero Visual — Earnings Chart */
+        .hero-visual {
+            position: relative;
+            animation: fadeInUp 1s ease 0.3s forwards;
+            opacity: 0;
+            overflow: visible;
+            padding: 30px 70px 30px 70px;
+        }
+
+        .dashboard-preview {
+            position: relative;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 40px 100px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-color);
+        }
+
+        .dashboard-preview::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            background: var(--background-card);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 2;
+        }
+
+        .dashboard-preview::after {
+            content: '\25CF \25CF \25CF';
+            position: absolute;
+            top: 12px;
+            left: 16px;
+            font-size: 10px;
+            letter-spacing: 4px;
+            color: var(--text-muted);
+            z-index: 3;
+        }
+
+        .dashboard-mockup {
+            width: 100%;
+            background: var(--background-light);
+            padding: 60px 20px 20px;
+            min-height: 400px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .mockup-chart {
+            height: 200px;
+            background: linear-gradient(180deg, rgba(45, 206, 137, 0.05), transparent);
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 20px;
+            padding: 20px;
+        }
+
+        .chart-svg {
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+
+        .chart-area {
+            fill: url(#earningsGradient);
+            opacity: 0.3;
+        }
+
+        .chart-line-path {
+            fill: none;
+            stroke: url(#earningsLineGradient);
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 8px rgba(45, 206, 137, 0.5));
+        }
+
+        .chart-dot {
+            fill: var(--green);
+            filter: drop-shadow(0 0 6px rgba(45, 206, 137, 0.8));
+        }
+
+        .chart-dot-pulse {
+            fill: var(--green);
+            animation: dotPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes dotPulse {
+            0%, 100% { opacity: 0.3; r: 8; }
+            50% { opacity: 0.6; r: 12; }
+        }
+
+        .chart-grid-line {
+            stroke: var(--border-color);
+            stroke-width: 1;
+            stroke-dasharray: 4 4;
+        }
+
+        .earnings-label {
+            position: absolute;
+            right: 25px;
+            top: 30px;
+            background: var(--green);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            animation: earningsBounce 3s ease-in-out infinite;
+            box-shadow: 0 4px 15px rgba(45, 206, 137, 0.4);
+        }
+
+        @keyframes earningsBounce {
+            0%, 100% { transform: translateY(0); }
+            25% { transform: translateY(-6px); }
+            50% { transform: translateY(-2px); }
+            75% { transform: translateY(-10px); }
+        }
+
+        .live-indicator {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: liveBlink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes liveBlink {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(45, 206, 137, 0.7); }
+            50% { opacity: 0.5; box-shadow: 0 0 0 6px rgba(45, 206, 137, 0); }
+        }
+
+        /* Month labels on chart */
+        .chart-month-labels {
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            margin-top: -10px;
+            margin-bottom: 10px;
+        }
+
+        .chart-month-labels span {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .mockup-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .mockup-stat {
+            background: var(--background-card);
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+            position: relative;
+            z-index: 2;
+        }
+
+        .mockup-stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--green);
+            display: block;
+        }
+
+        .mockup-stat-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            display: block;
+            margin-top: 4px;
+        }
+
+        /* Floating cards around preview */
+        .floating-card {
+            position: absolute;
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+            animation: floatCard 6s ease-in-out infinite;
+            z-index: 10;
+        }
+
+        .floating-card-1 {
+            top: 10px;
+            right: 0;
+            animation-delay: 0s;
+        }
+
+        .floating-card-2 {
+            bottom: 60px;
+            left: 0;
+            animation-delay: -2s;
+        }
+
+        @keyframes floatCard {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-15px); }
+        }
+
+        .floating-card .card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+
+        .floating-card .card-icon.green {
+            background: linear-gradient(135deg, var(--green), var(--accent-teal));
+        }
+
+        .floating-card .card-icon.blue {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+        }
+
+        .floating-card .card-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .floating-card .card-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* ============================================
+           STATS BAR
+           ============================================ */
+        .stats-bar {
+            background: var(--background-card);
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+            padding: 40px 60px;
+        }
+
+        .stats-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 40px;
+            text-align: center;
+        }
+
+        .stat-item {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s ease;
+        }
+
+        .stat-item.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* ============================================
+           HOW IT WORKS
+           ============================================ */
+        .how-it-works {
+            padding: 120px 60px;
+            background: linear-gradient(180deg, var(--background-dark) 0%, var(--background-light) 50%, var(--background-dark) 100%);
+        }
+
+        .section-header {
+            text-align: center;
+            max-width: 700px;
+            margin: 0 auto 80px;
+        }
+
+        .section-label {
+            display: inline-block;
+            padding: 8px 20px;
+            background: rgba(25, 184, 255, 0.1);
+            border: 1px solid rgba(25, 184, 255, 0.2);
+            border-radius: 30px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 20px;
+        }
+
+        .section-header h2 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 20px;
+            line-height: 1.2;
+        }
+
+        .section-header p {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        .steps-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        /* Connection line */
+        .steps-container::before {
+            content: '';
+            position: absolute;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: calc(100% - 120px);
+            background: linear-gradient(180deg, var(--primary-color), var(--accent-teal), var(--green));
+            border-radius: 2px;
+            opacity: 0.3;
+        }
+
+        .step {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 40px;
+            align-items: center;
+            margin-bottom: 60px;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.6s ease;
+        }
+
+        .step.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .step:nth-child(even) .step-content {
+            order: 3;
+            text-align: left;
+        }
+
+        .step:nth-child(even) .step-visual {
+            order: 1;
+        }
+
+        .step-number {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: var(--background-card);
+            border: 4px solid var(--primary-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--primary-color);
+            position: relative;
+            z-index: 2;
+            box-shadow: 0 0 30px var(--glow-primary);
+        }
+
+        .step-content {
+            text-align: right;
+        }
+
+        .step-content h3 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .step-content p {
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        .step-visual {
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 120px;
+        }
+
+        .step-visual .material-icons {
+            font-size: 48px;
+            color: var(--primary-color);
+        }
+
+        /* ============================================
+           COMMISSION TIERS
+           ============================================ */
+        .pricing-section-wrapper {
+            padding: 120px 60px;
+            background: radial-gradient(circle at 50% 0%, rgba(25, 184, 255, 0.08), transparent 50%);
+        }
+
+        .pricing-container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 28px;
+            justify-content: center;
+        }
+
+        .pricing-card {
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 40px;
+            position: relative;
+            transition: all 0.4s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .pricing-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
+            border-color: rgba(148, 163, 184, 0.25);
+        }
+
+        .pricing-card.featured {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 50px rgba(25, 184, 255, 0.15);
+            transform: scale(1.02);
+        }
+
+        .pricing-card.featured:hover {
+            transform: scale(1.02) translateY(-10px);
+        }
+
+        .pricing-card.featured::before {
+            content: 'MOST POPULAR';
+            position: absolute;
+            top: -14px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+            color: white;
+            padding: 8px 24px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            box-shadow: 0 4px 20px var(--glow-primary);
+        }
+
+        .pricing-card.elite {
+            border-color: var(--gold);
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.08), transparent);
+        }
+
+        .pricing-card.elite::before {
+            content: 'HIGHEST PAYOUT';
+            position: absolute;
+            top: -14px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, var(--gold), var(--orange));
+            color: #1a1a1a;
+            padding: 8px 24px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            box-shadow: 0 4px 20px rgba(251, 191, 36, 0.4);
+        }
+
+        .card-icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            font-size: 32px;
+        }
+
+        .card-icon.basic {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+        }
+
+        .card-icon.premium {
+            background: linear-gradient(135deg, var(--accent-teal), var(--green));
+        }
+
+        .card-icon.elite-icon {
+            background: linear-gradient(135deg, var(--gold), var(--orange));
+        }
+
+        .plan-name {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: 0.02em;
+        }
+
+        .plan-price {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .plan-price strong {
+            color: var(--text-light);
+            font-size: 1.3rem;
+        }
+
+        .tier-arrow {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(25, 184, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 16px auto;
+        }
+
+        .tier-arrow .material-icons {
+            color: var(--primary-color);
+            font-size: 28px;
+        }
+
+        .commission-amount {
+            font-size: 3rem;
+            font-weight: 800;
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .commission-amount.basic-color {
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .commission-amount.premium-color {
+            background: linear-gradient(135deg, var(--accent-teal), var(--green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .commission-amount.elite-color {
+            background: linear-gradient(135deg, var(--gold), var(--orange));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .commission-period {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .tier-note {
+            max-width: 800px;
+            margin: 40px auto 0;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            padding: 16px 24px;
+            background: rgba(45, 206, 137, 0.08);
+            border: 1px solid rgba(45, 206, 137, 0.2);
+            border-radius: 12px;
+        }
+
+        .tier-note .material-icons {
+            color: var(--green);
+            font-size: 20px;
+        }
+
+        /* ============================================
+           REFERRAL LINK SECTION
+           ============================================ */
+        .link-section {
+            padding: 120px 60px;
+            background: linear-gradient(180deg, var(--background-dark) 0%, var(--background-light) 50%, var(--background-dark) 100%);
+        }
+
+        .link-card {
+            max-width: 700px;
+            margin: 0 auto;
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 48px;
+            text-align: center;
+        }
+
+        .link-card h2 {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 12px;
+        }
+
+        .link-card .subtitle {
+            color: var(--text-muted);
+            font-size: 1rem;
+            margin-bottom: 32px;
+            line-height: 1.6;
+        }
+
+        .link-input-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .link-input {
+            flex: 1;
+            padding: 16px 20px;
+            border-radius: 12px;
+            background: var(--background-dark);
+            border: 1px solid var(--border-color);
+            color: var(--text-light);
+            font-family: 'Poppins', monospace;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .link-input:focus {
+            border-color: var(--primary-color);
+        }
+
+        .copy-btn {
+            padding: 16px 24px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+            color: white;
+            border: none;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .copy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--glow-primary);
+        }
+
+        .copy-btn.success {
+            background: linear-gradient(135deg, var(--green), var(--accent-teal));
+        }
+
+        .share-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .share-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .share-btn {
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-light);
+        }
+
+        .share-btn:hover {
+            border-color: var(--primary-color);
+            background: rgba(25, 184, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .share-btn .material-icons {
+            font-size: 18px;
+        }
+
+        .x-icon {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
+
+        /* Apply form */
+        .apply-card {
+            max-width: 700px;
+            margin: 0 auto;
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 48px;
+            text-align: center;
+        }
+
+        .apply-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 30px var(--glow-primary);
+        }
+
+        .apply-icon .material-icons {
+            font-size: 36px;
+            color: white;
+        }
+
+        .apply-card h2 {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 12px;
+        }
+
+        .apply-card .subtitle {
+            color: var(--text-muted);
+            font-size: 1rem;
+            margin-bottom: 32px;
+            line-height: 1.6;
+        }
+
+        .apply-form {
+            text-align: left;
+        }
+
+        .field-group {
+            margin-bottom: 20px;
+        }
+
+        .field-group label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-light);
+            margin-bottom: 8px;
+        }
+
+        .field-group input,
+        .field-group textarea {
+            width: 100%;
+            padding: 14px 18px;
+            border-radius: 12px;
+            background: var(--background-dark);
+            border: 1px solid var(--border-color);
+            color: var(--text-light);
+            font-family: inherit;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s ease;
+            resize: vertical;
+        }
+
+        .field-group input::placeholder,
+        .field-group textarea::placeholder {
+            color: var(--text-muted);
+            opacity: 0.6;
+        }
+
+        .field-group input:focus,
+        .field-group textarea:focus {
+            border-color: var(--primary-color);
+        }
+
+        .apply-submit {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 18px;
+            border-radius: 14px;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+            color: white;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 8px 30px var(--glow-primary);
+            transition: all 0.3s ease;
+            margin-top: 8px;
+        }
+
+        .apply-submit:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 40px var(--glow-primary);
+        }
+
+        .apply-submit:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .apply-success {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        .apply-success .material-icons {
+            font-size: 56px;
+            color: var(--green);
+        }
+
+        .apply-success strong {
+            font-size: 1.3rem;
+        }
+
+        .apply-success p {
+            color: var(--text-muted);
+            font-size: 1rem;
+        }
+
+        /* ============================================
+           FAQ SECTION
+           ============================================ */
+        .faq-section {
+            padding: 120px 60px;
+        }
+
+        .faq-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .faq-item {
+            background: var(--background-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            margin-bottom: 16px;
+            overflow: hidden;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.4s ease;
+        }
+
+        .faq-item.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .faq-question {
+            width: 100%;
+            padding: 24px 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: transparent;
+            border: none;
+            color: var(--text-light);
+            font-family: inherit;
+            font-size: 1.05rem;
+            font-weight: 600;
+            text-align: left;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .faq-question:hover {
+            background: rgba(148, 163, 184, 0.05);
+        }
+
+        .faq-question .material-icons {
+            transition: transform 0.3s ease;
+            color: var(--primary-color);
+        }
+
+        .faq-item.open .faq-question .material-icons {
+            transform: rotate(180deg);
+        }
+
+        .faq-answer {
+            padding: 0 28px;
+            max-height: 0;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .faq-item.open .faq-answer {
+            padding: 0 28px 24px;
+            max-height: 500px;
+        }
+
+        .faq-answer p {
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        /* ============================================
+           CTA SECTION
+           ============================================ */
+        .cta-section {
+            padding: 120px 60px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta-section::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(25, 184, 255, 0.15), transparent 60%);
+            z-index: 0;
+        }
+
+        .cta-content {
+            position: relative;
+            z-index: 1;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .cta-content h2 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 20px;
+        }
+
+        .cta-content p {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+            margin-bottom: 40px;
+        }
+
+        /* ============================================
+           FOOTER
+           ============================================ */
+        .footer {
+            padding: 60px;
+            border-top: 1px solid var(--border-color);
+            background: var(--background-card);
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 60px;
+        }
+
+        .footer-brand .logo {
+            margin-bottom: 20px;
+        }
+
+        .footer-brand p {
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .footer-social {
+            display: flex;
+            gap: 12px;
+        }
+
+        .footer-social a {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: rgba(148, 163, 184, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            transition: all 0.2s ease;
+        }
+
+        .footer-social a:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .footer-links h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 20px;
+            color: var(--text-light);
+        }
+
+        .footer-links ul {
+            list-style: none;
+        }
+
+        .footer-links li {
+            margin-bottom: 12px;
+        }
+
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s ease;
+        }
+
+        .footer-links a:hover {
+            color: var(--primary-color);
+        }
+
+        .footer-bottom {
+            max-width: 1200px;
+            margin: 40px auto 0;
+            padding-top: 30px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .footer-bottom a {
+            color: var(--text-muted);
+            text-decoration: none;
+        }
+
+        .footer-bottom a:hover {
+            color: var(--primary-color);
+        }
+
+        /* ============================================
+           RESPONSIVE
+           ============================================ */
+        @media (max-width: 1200px) {
+            .hero-content {
+                grid-template-columns: 1fr;
+                text-align: center;
+                gap: 60px;
+            }
+
+            .hero-text {
+                order: 1;
+            }
+
+            .hero-visual {
+                order: 2;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px 50px;
+            }
+
+            .floating-card {
+                display: none;
+            }
+
+            .hero p {
+                margin-left: auto;
+                margin-right: auto;
+            }
+
+            .hero-buttons {
+                justify-content: center;
+            }
+
+            .pricing-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .footer-content {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 900px) {
+            .header {
+                padding: 14px 20px;
+            }
+
+            .header.scrolled {
+                padding: 10px 20px;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .hero {
+                padding: 100px 24px 60px;
+            }
+
+            .hero h1 {
+                font-size: 2.8rem;
+            }
+
+            .stats-container {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .how-it-works,
+            .pricing-section-wrapper,
+            .link-section,
+            .faq-section,
+            .cta-section {
+                padding: 80px 24px;
+            }
+
+            .section-header h2 {
+                font-size: 2.2rem;
+            }
+
+            .pricing-grid {
+                grid-template-columns: 1fr;
+                max-width: 420px;
+                margin: 0 auto;
+            }
+
+            .step {
+                grid-template-columns: 1fr;
+                text-align: center;
+                gap: 20px;
+            }
+
+            .step-content,
+            .step:nth-child(even) .step-content {
+                text-align: center;
+                order: 2;
+            }
+
+            .step-number {
+                order: 1;
+                margin: 0 auto;
+            }
+
+            .step-visual {
+                order: 3;
+            }
+
+            .steps-container::before {
+                display: none;
+            }
+
+            .footer-content {
+                grid-template-columns: 1fr;
+                text-align: center;
+            }
+
+            .footer-social {
+                justify-content: center;
+            }
+
+            .footer-bottom {
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .link-card,
+            .apply-card {
+                padding: 32px 24px;
+            }
+
+            .link-input-row {
+                flex-direction: column;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 12px 16px;
+            }
+            .header.scrolled {
+                padding: 10px 16px;
+            }
+            .nav-links {
+                display: none;
+            }
+            .logo img {
+                width: 34px;
+                height: 34px;
+            }
+            .logo span {
+                font-size: 0.95rem;
+                letter-spacing: 0.08em;
+            }
+            .header-actions {
+                gap: 8px;
+            }
+            .header-actions .btn-login {
+                font-size: 0.8rem;
+                padding: 8px 14px;
+            }
+            .header-actions .btn-start {
+                font-size: 0.8rem;
+                padding: 8px 14px;
+            }
+            .hero {
+                padding: 100px 20px 60px;
+                min-height: auto;
+            }
+            .hero-content {
+                flex-direction: column;
+                gap: 40px;
+            }
+            .hero-text {
+                text-align: center;
+                align-items: center;
+            }
+            .hero h1 {
+                font-size: 2rem;
+            }
+            .hero p {
+                font-size: 0.95rem;
+            }
+            .hero-buttons {
+                flex-direction: column;
+                width: 100%;
+                gap: 12px;
+            }
+            .hero-buttons a {
+                width: 100%;
+                text-align: center;
+                justify-content: center;
+            }
+            .hero-visual {
+                display: none;
+            }
+            .how-it-works,
+            .pricing-section-wrapper,
+            .link-section,
+            .faq-section,
+            .cta-section {
+                padding: 60px 16px;
+            }
+            .section-header {
+                margin-bottom: 40px;
+            }
+            .section-header h2 {
+                font-size: 1.8rem;
+            }
+            .section-header p {
+                font-size: 0.95rem;
+            }
+            .pricing-grid {
+                grid-template-columns: 1fr;
+                max-width: 100%;
+                padding: 0;
+            }
+            .pricing-card {
+                padding: 28px 20px;
+                border-radius: 16px;
+            }
+            .pricing-card.featured {
+                transform: none;
+            }
+            .pricing-card.featured:hover {
+                transform: translateY(-5px);
+            }
+            .commission-amount {
+                font-size: 2.5rem;
+            }
+            .stats-container {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+            }
+            .stat-number {
+                font-size: 1.8rem;
+            }
+            .faq-question {
+                padding: 18px 16px;
+                font-size: 0.95rem;
+            }
+            .faq-item.open .faq-answer {
+                padding: 0 16px 18px;
+            }
+            .footer-content {
+                grid-template-columns: 1fr;
+                gap: 32px;
+                padding: 0 16px;
+            }
+            .share-row {
+                flex-direction: column;
+            }
+            .share-btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header {
+                padding: 10px 12px;
+            }
+            .logo img {
+                width: 30px;
+                height: 30px;
+            }
+            .logo span {
+                font-size: 0.85rem;
+            }
+            .header-actions {
+                gap: 6px;
+            }
+            .header-actions .btn-login,
+            .header-actions .btn-start {
+                font-size: 0.75rem;
+                padding: 6px 12px;
+                border-radius: 8px;
+            }
+            .hero h1 {
+                font-size: 1.7rem;
+            }
+            .pricing-card {
+                padding: 24px 16px;
+            }
+            .commission-amount {
+                font-size: 2.2rem;
+            }
+            .section-header h2 {
+                font-size: 1.5rem;
+            }
+            .stats-container {
+                grid-template-columns: 1fr;
+            }
+            .link-card,
+            .apply-card {
+                padding: 24px 16px;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .logo span {
+                font-size: 0.75rem;
+                letter-spacing: 0.05em;
+            }
+            .header-actions .btn-login {
+                display: none;
+            }
+            .header-actions .btn-start {
+                font-size: 0.7rem;
+                padding: 6px 10px;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="/static/css/mobile.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header" id="header">
+        <a href="/" class="logo">
+            <img src="{{ url_for('static', filename='img/just_trades_logo.png') }}" alt="Just.Trades.">
+            <span>JUST.TRADES.</span>
+        </a>
+        <nav class="nav-links">
+            <a href="#how-it-works">How It Works</a>
+            <a href="#pricing">Commission</a>
+            <a href="#link-section">Your Link</a>
+            <a href="#faq">FAQ</a>
+        </nav>
+        <div class="header-actions">
+            {% if current_user and current_user.is_authenticated %}
+                <a href="/dashboard" class="btn-start">Go to Dashboard</a>
+            {% else %}
+                <a href="{{ url_for('login') }}" class="btn-login">Sign In</a>
+                <a href="#link-section" class="btn-start">Start Earning</a>
+            {% endif %}
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-bg">
+            <div class="orb orb-1"></div>
+            <div class="orb orb-2"></div>
+            <div class="orb orb-3"></div>
+            <div class="grid-lines"></div>
         </div>
 
-        <div class="aff-share-row">
-            <span class="aff-share-label">Share on:</span>
-            <button class="aff-share-btn aff-share-x" onclick="shareOnX()">
-                <svg class="aff-x-icon" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.631 5.905-5.631zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                </svg>
-                Share on X
-            </button>
-            <button class="aff-share-btn aff-share-email" onclick="shareViaEmail()">
-                <i class="material-icons">email</i>
-                Share via Email
-            </button>
+        <div class="hero-content">
+            <div class="hero-text">
+                <div class="hero-badge">
+                    <span class="pulse"></span>
+                    Affiliate Program
+                </div>
+                <h1>
+                    Earn Recurring Commissions with<br>
+                    <span class="gradient-text">Just.Trades.</span>
+                </h1>
+                <p>
+                    Refer traders and earn 25% recurring commission every month.
+                    No cap on earnings, 30-day cookie duration, monthly payouts.
+                </p>
+                <div class="hero-buttons">
+                    <a href="#link-section" class="btn-primary-large">
+                        Start Earning
+                        <span class="material-icons">attach_money</span>
+                    </a>
+                    <a href="#how-it-works" class="btn-secondary-large">
+                        <span class="material-icons">play_circle</span>
+                        See How It Works
+                    </a>
+                </div>
+            </div>
+
+            <div class="hero-visual">
+                <div class="dashboard-preview">
+                    <div class="dashboard-mockup">
+                        <div class="mockup-chart">
+                            <div class="live-indicator">
+                                <div class="live-dot"></div>
+                                <span>Earnings</span>
+                            </div>
+                            <div class="earnings-label">$1,250/mo</div>
+                            <svg class="chart-svg" viewBox="0 0 400 160" preserveAspectRatio="none">
+                                <defs>
+                                    <linearGradient id="earningsGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                        <stop offset="0%" style="stop-color: #2dce89; stop-opacity: 0.4" />
+                                        <stop offset="100%" style="stop-color: #2dce89; stop-opacity: 0" />
+                                    </linearGradient>
+                                    <linearGradient id="earningsLineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" style="stop-color: #19b8ff" />
+                                        <stop offset="50%" style="stop-color: #2dce89" />
+                                        <stop offset="100%" style="stop-color: #2dd4bf" />
+                                    </linearGradient>
+                                </defs>
+
+                                <!-- Grid lines -->
+                                <line class="chart-grid-line" x1="0" y1="30" x2="400" y2="30" />
+                                <line class="chart-grid-line" x1="0" y1="60" x2="400" y2="60" />
+                                <line class="chart-grid-line" x1="0" y1="90" x2="400" y2="90" />
+                                <line class="chart-grid-line" x1="0" y1="120" x2="400" y2="120" />
+
+                                <!-- Y-axis labels -->
+                                <text x="5" y="28" fill="#7f8db2" font-size="8" font-family="Poppins">$1,250</text>
+                                <text x="5" y="58" fill="#7f8db2" font-size="8" font-family="Poppins">$1,000</text>
+                                <text x="5" y="88" fill="#7f8db2" font-size="8" font-family="Poppins">$750</text>
+                                <text x="5" y="118" fill="#7f8db2" font-size="8" font-family="Poppins">$500</text>
+
+                                <!-- Earnings area fill -->
+                                <path class="chart-area" d="M 50 140 L 50 130 L 100 118 L 150 100 L 200 85 L 250 65 L 300 48 L 350 32 L 380 28 L 380 140 Z" />
+
+                                <!-- Earnings line -->
+                                <path class="chart-line-path" d="M 50 130 Q 75 125, 100 118 T 150 100 T 200 85 T 250 65 T 300 48 T 350 32 L 380 28">
+                                    <animate attributeName="d"
+                                        values="M 50 130 Q 75 125, 100 118 T 150 100 T 200 85 T 250 65 T 300 48 T 350 32 L 380 28;
+                                                M 50 130 Q 75 122, 100 115 T 150 96 T 200 80 T 250 60 T 300 44 T 350 28 L 380 24;
+                                                M 50 130 Q 75 125, 100 118 T 150 100 T 200 85 T 250 65 T 300 48 T 350 32 L 380 28"
+                                        dur="4s" repeatCount="indefinite" />
+                                </path>
+
+                                <!-- Data points -->
+                                <circle fill="#19b8ff" cx="50" cy="130" r="3" opacity="0.6" />
+                                <circle fill="#19b8ff" cx="100" cy="118" r="3" opacity="0.6" />
+                                <circle fill="#2dce89" cx="150" cy="100" r="3" opacity="0.7" />
+                                <circle fill="#2dce89" cx="200" cy="85" r="3" opacity="0.7" />
+                                <circle fill="#2dce89" cx="250" cy="65" r="4" opacity="0.8" />
+                                <circle fill="#2dd4bf" cx="300" cy="48" r="4" opacity="0.8" />
+                                <circle fill="#2dd4bf" cx="350" cy="32" r="4" opacity="0.9" />
+
+                                <!-- Current value dot with pulse -->
+                                <circle class="chart-dot-pulse" cx="380" cy="28" r="10">
+                                    <animate attributeName="cy" values="28;24;28" dur="4s" repeatCount="indefinite" />
+                                </circle>
+                                <circle class="chart-dot" cx="380" cy="28" r="5">
+                                    <animate attributeName="cy" values="28;24;28" dur="4s" repeatCount="indefinite" />
+                                </circle>
+                            </svg>
+                        </div>
+                        <div class="chart-month-labels">
+                            <span>Jan</span>
+                            <span>Feb</span>
+                            <span>Mar</span>
+                            <span>Apr</span>
+                            <span>May</span>
+                            <span>Jun</span>
+                            <span>Jul</span>
+                        </div>
+                        <div class="mockup-stats">
+                            <div class="mockup-stat">
+                                <div class="mockup-stat-value">$1,250</div>
+                                <div class="mockup-stat-label">Monthly</div>
+                            </div>
+                            <div class="mockup-stat">
+                                <div class="mockup-stat-value">10</div>
+                                <div class="mockup-stat-label">Referrals</div>
+                            </div>
+                            <div class="mockup-stat">
+                                <div class="mockup-stat-value">$7,500</div>
+                                <div class="mockup-stat-label">Total Earned</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="floating-card floating-card-1">
+                    <div class="card-icon green">
+                        <span class="material-icons" style="color: white;">trending_up</span>
+                    </div>
+                    <div class="card-value" style="color: var(--green);">$1,250/mo</div>
+                    <div class="card-label">Commission</div>
+                </div>
+
+                <div class="floating-card floating-card-2">
+                    <div class="card-icon blue">
+                        <span class="material-icons" style="color: white;">group</span>
+                    </div>
+                    <div class="card-value">10 Active</div>
+                    <div class="card-label">Referrals</div>
+                </div>
+            </div>
         </div>
-    </div>
-    {% else %}
-    <div class="aff-apply-card">
-        <div class="aff-apply-icon">
-            <i class="material-icons">rocket_launch</i>
+    </section>
+
+    <!-- Stats Bar -->
+    <section class="stats-bar">
+        <div class="stats-container">
+            <div class="stat-item">
+                <div class="stat-number">25%</div>
+                <div class="stat-label">Recurring Commission</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">30 Days</div>
+                <div class="stat-label">Cookie Duration</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">$250</div>
+                <div class="stat-label">Max Per Referral/Mo</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">No Cap</div>
+                <div class="stat-label">On Earnings</div>
+            </div>
         </div>
-        <h2 class="aff-section-heading">Ready to Start Earning?</h2>
-        <p class="aff-apply-subtitle">
-            Apply to the Just.Trades affiliate program. It's free, instant, and there's no cap on earnings.
-        </p>
-        <form class="aff-apply-form" id="affiliateApplyForm">
-            <div class="aff-apply-fields">
-                <div class="aff-field-group">
+    </section>
+
+    <!-- How It Works -->
+    <section class="how-it-works" id="how-it-works">
+        <div class="section-header">
+            <span class="section-label">Simple Process</span>
+            <h2>Start Earning in 3 Steps</h2>
+            <p>Sign up, share your unique link, and earn 25% recurring commission on every referral.</p>
+        </div>
+
+        <div class="steps-container">
+            <div class="step">
+                <div class="step-content">
+                    <h3>Sign Up</h3>
+                    <p>Apply for the affiliate program and get your unique referral link. It takes less than a minute and it is completely free.</p>
+                </div>
+                <div class="step-number">1</div>
+                <div class="step-visual">
+                    <span class="material-icons">person_add</span>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-content">
+                    <h3>Share Your Link</h3>
+                    <p>Share your referral link with your audience on social media, YouTube, Discord, your blog, email newsletter, or anywhere else.</p>
+                </div>
+                <div class="step-number">2</div>
+                <div class="step-visual">
+                    <span class="material-icons">share</span>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-content">
+                    <h3>Get Paid</h3>
+                    <p>Earn 25% recurring commission every month for as long as your referrals remain active subscribers. Payouts are monthly with no cap.</p>
+                </div>
+                <div class="step-number">3</div>
+                <div class="step-visual">
+                    <span class="material-icons">payments</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Commission Tiers -->
+    <section class="pricing-section-wrapper" id="pricing">
+        <div class="section-header">
+            <span class="section-label">Commission Tiers</span>
+            <h2>Earn on Every Plan</h2>
+            <p>Your commission is 25% of whatever plan your referral subscribes to. Here is the breakdown.</p>
+        </div>
+
+        <div class="pricing-container">
+            <div class="pricing-grid">
+                <!-- Basic+ -->
+                <div class="pricing-card">
+                    <div class="card-icon basic">
+                        <span class="material-icons" style="color: white;">speed</span>
+                    </div>
+                    <h3 class="plan-name">Basic+</h3>
+                    <div class="plan-price">Plan price: <strong>$200/mo</strong></div>
+                    <div class="tier-arrow">
+                        <span class="material-icons">south</span>
+                    </div>
+                    <div class="commission-amount basic-color">$50</div>
+                    <div class="commission-period">per referral, every month</div>
+                </div>
+
+                <!-- Premium+ -->
+                <div class="pricing-card featured">
+                    <div class="card-icon premium">
+                        <span class="material-icons" style="color: white;">rocket_launch</span>
+                    </div>
+                    <h3 class="plan-name">Premium+</h3>
+                    <div class="plan-price">Plan price: <strong>$500/mo</strong></div>
+                    <div class="tier-arrow">
+                        <span class="material-icons">south</span>
+                    </div>
+                    <div class="commission-amount premium-color">$125</div>
+                    <div class="commission-period">per referral, every month</div>
+                </div>
+
+                <!-- Elite+ -->
+                <div class="pricing-card elite">
+                    <div class="card-icon elite-icon">
+                        <span class="material-icons" style="color: white;">diamond</span>
+                    </div>
+                    <h3 class="plan-name">Elite+</h3>
+                    <div class="plan-price">Plan price: <strong>$1,000/mo</strong></div>
+                    <div class="tier-arrow">
+                        <span class="material-icons">south</span>
+                    </div>
+                    <div class="commission-amount elite-color">$250</div>
+                    <div class="commission-period">per referral, every month</div>
+                </div>
+            </div>
+
+            <div class="tier-note">
+                <span class="material-icons">autorenew</span>
+                Commissions are recurring -- you earn every month your referral stays subscribed. No cap on total earnings.
+            </div>
+        </div>
+    </section>
+
+    <!-- Referral Link Section -->
+    <section class="link-section" id="link-section">
+        {% if affiliate_code %}
+        <div class="section-header">
+            <span class="section-label">Your Link</span>
+            <h2>Your Referral Link</h2>
+            <p>Share this link to start earning. Every signup within 30 days earns you 25% recurring commission.</p>
+        </div>
+        <div class="link-card">
+            <div class="link-input-row">
+                <input
+                    type="text"
+                    id="referralLinkInput"
+                    class="link-input"
+                    value="{{ referral_link }}"
+                    readonly
+                >
+                <button class="copy-btn" id="copyBtn" onclick="copyReferralLink()">
+                    <span class="material-icons" id="copyIcon">content_copy</span>
+                    <span id="copyLabel">Copy</span>
+                </button>
+            </div>
+
+            <div class="share-row">
+                <span class="share-label">Share on:</span>
+                <button class="share-btn" onclick="shareOnX()">
+                    <svg class="x-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.631 5.905-5.631zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                    Share on X
+                </button>
+                <button class="share-btn" onclick="shareViaEmail()">
+                    <span class="material-icons">email</span>
+                    Share via Email
+                </button>
+            </div>
+        </div>
+        {% else %}
+        <div class="section-header">
+            <span class="section-label">Get Started</span>
+            <h2>Apply to the Affiliate Program</h2>
+            <p>It is free, instant, and there is no cap on earnings.</p>
+        </div>
+        <div class="apply-card">
+            <div class="apply-icon">
+                <span class="material-icons">rocket_launch</span>
+            </div>
+            <h2>Ready to Start Earning?</h2>
+            <p class="subtitle">
+                Apply to the Just.Trades affiliate program. Get your unique referral link and start earning 25% recurring commission.
+            </p>
+            <form class="apply-form" id="affiliateApplyForm">
+                <div class="field-group">
                     <label for="applyName">Full Name *</label>
                     <input type="text" id="applyName" name="name" required placeholder="Your full name">
                 </div>
-                <div class="aff-field-group">
+                <div class="field-group">
                     <label for="applyEmail">Email Address *</label>
                     <input type="email" id="applyEmail" name="email" required placeholder="your@email.com">
                 </div>
-                <div class="aff-field-group">
+                <div class="field-group">
                     <label for="applyAudience">How will you promote Just.Trades? *</label>
                     <textarea id="applyAudience" name="audience" rows="3" required placeholder="Social media, YouTube, Discord, blog, email newsletter..."></textarea>
                 </div>
-            </div>
-            <button type="submit" class="aff-btn aff-btn-primary aff-apply-submit" id="applySubmitBtn">
-                <i class="material-icons">send</i>
-                Apply Now
-            </button>
-        </form>
-    </div>
-    {% endif %}
-</section>
-
-<!-- FAQ Section -->
-<section class="aff-faq aff-fadeUp" style="animation-delay: 0.6s">
-    <h2 class="aff-section-heading">Frequently Asked Questions</h2>
-    <div class="aff-faq-grid">
-        <div class="aff-faq-card">
-            <div class="aff-faq-q">
-                <i class="material-icons">help_outline</i>
-                How much can I earn?
-            </div>
-            <p class="aff-faq-a">You earn 25% recurring commission. Refer 10 Premium+ users = $1,250/month, every month.</p>
+                <button type="submit" class="apply-submit" id="applySubmitBtn">
+                    <span class="material-icons">send</span>
+                    Apply Now
+                </button>
+            </form>
         </div>
-        <div class="aff-faq-card">
-            <div class="aff-faq-q">
-                <i class="material-icons">help_outline</i>
-                How do I get paid?
-            </div>
-            <p class="aff-faq-a">Commissions are paid monthly via the payment method on your account.</p>
+        {% endif %}
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq-section" id="faq">
+        <div class="section-header">
+            <span class="section-label">FAQ</span>
+            <h2>Frequently Asked Questions</h2>
         </div>
-        <div class="aff-faq-card">
-            <div class="aff-faq-q">
-                <i class="material-icons">help_outline</i>
-                How long does the cookie last?
+
+        <div class="faq-container">
+            <div class="faq-item">
+                <button class="faq-question">
+                    How much can I earn?
+                    <span class="material-icons">expand_more</span>
+                </button>
+                <div class="faq-answer">
+                    <p>You earn 25% recurring commission on every referral. For example, refer 10 Premium+ users ($500/mo plan) and you earn $1,250 every single month. There is no cap on total earnings -- the more you refer, the more you earn.</p>
+                </div>
             </div>
-            <p class="aff-faq-a">30 days. If someone clicks your link and signs up within 30 days, you get credit.</p>
-        </div>
-        <div class="aff-faq-card">
-            <div class="aff-faq-q">
-                <i class="material-icons">help_outline</i>
-                Do I need a website?
+
+            <div class="faq-item">
+                <button class="faq-question">
+                    How do I get paid?
+                    <span class="material-icons">expand_more</span>
+                </button>
+                <div class="faq-answer">
+                    <p>Commissions are paid monthly via the payment method on your account. Once your referrals complete their first billing cycle, your commission is calculated and queued for payout.</p>
+                </div>
             </div>
-            <p class="aff-faq-a">No. Share on social media, Discord, YouTube, email — whatever works for your audience.</p>
-        </div>
-        <div class="aff-faq-card">
-            <div class="aff-faq-q">
-                <i class="material-icons">help_outline</i>
-                When do I start earning?
+
+            <div class="faq-item">
+                <button class="faq-question">
+                    How long does the cookie last?
+                    <span class="material-icons">expand_more</span>
+                </button>
+                <div class="faq-answer">
+                    <p>30 days. If someone clicks your referral link and signs up anytime within 30 days, you get credit for that referral and earn commission on their subscription.</p>
+                </div>
             </div>
-            <p class="aff-faq-a">Immediately. As soon as your referral subscribes to a paid plan, your commission starts.</p>
-        </div>
-        <div class="aff-faq-card">
-            <div class="aff-faq-q">
-                <i class="material-icons">help_outline</i>
-                Is there a limit?
+
+            <div class="faq-item">
+                <button class="faq-question">
+                    Do I need a website?
+                    <span class="material-icons">expand_more</span>
+                </button>
+                <div class="faq-answer">
+                    <p>No. You can share your referral link on social media (X, Instagram, TikTok), Discord servers, YouTube videos, email newsletters, or anywhere else your audience is. A website helps, but it is not required.</p>
+                </div>
             </div>
-            <p class="aff-faq-a">No cap on earnings. The more you refer, the more you earn.</p>
+
+            <div class="faq-item">
+                <button class="faq-question">
+                    When do I start earning?
+                    <span class="material-icons">expand_more</span>
+                </button>
+                <div class="faq-answer">
+                    <p>Immediately. As soon as someone signs up using your referral link and subscribes to a paid plan, your commission starts accruing. You earn for every billing cycle they remain subscribed.</p>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <button class="faq-question">
+                    Is there a limit on how many people I can refer?
+                    <span class="material-icons">expand_more</span>
+                </button>
+                <div class="faq-answer">
+                    <p>No cap on earnings or referrals. Refer 1 person or 1,000 -- you earn 25% recurring commission on every single one. The program is designed to reward top promoters with uncapped income.</p>
+                </div>
+            </div>
         </div>
-    </div>
-</section>
+    </section>
 
-<!-- CTA Footer -->
-<section class="aff-cta-footer aff-fadeUp" style="animation-delay: 0.7s">
-    <div class="aff-cta-inner">
-        <h2 class="aff-cta-heading">Ready to Start Earning?</h2>
-        <p class="aff-cta-sub">Join hundreds of affiliates already earning with Just.Trades.</p>
-        <a href="#link-section" class="aff-btn aff-btn-primary aff-btn-lg">
-            <i class="material-icons">attach_money</i>
-            Get Your Referral Link
-        </a>
-    </div>
-</section>
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <div class="cta-content">
+            <h2>Ready to Start Earning?</h2>
+            <p>Join the Just.Trades affiliate program and earn 25% recurring commission on every referral you send.</p>
+            <a href="#link-section" class="btn-primary-large">
+                Get Your Referral Link
+                <span class="material-icons">arrow_forward</span>
+            </a>
+        </div>
+    </section>
 
-{% endblock %}
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <a href="/" class="logo">
+                    <img src="{{ url_for('static', filename='img/just_trades_logo.png') }}" alt="Just.Trades.">
+                    <span>JUST.TRADES.</span>
+                </a>
+                <p>Professional automated trading platform. Trade smarter, not harder.</p>
+                <div class="footer-social">
+                    <a href="#"><span class="material-icons">discord</span></a>
+                    <a href="#"><span class="material-icons">telegram</span></a>
+                    <a href="#"><span class="material-icons">chat</span></a>
+                </div>
+            </div>
 
-{% block scripts %}
-<script>
-    function copyReferralLink() {
-        const input = document.getElementById('referralLinkInput');
-        const btn = document.getElementById('copyBtn');
-        const icon = document.getElementById('copyIcon');
-        const label = document.getElementById('copyLabel');
+            <div class="footer-links">
+                <h4>Product</h4>
+                <ul>
+                    <li><a href="/pricing#features">Features</a></li>
+                    <li><a href="/pricing#pricing">Pricing</a></li>
+                    <li><a href="/pricing#faq">FAQ</a></li>
+                </ul>
+            </div>
 
-        input.select();
-        input.setSelectionRange(0, 99999);
+            <div class="footer-links">
+                <h4>Company</h4>
+                <ul>
+                    <li><a href="#">About Us</a></li>
+                    <li><a href="#">Contact</a></li>
+                    <li><a href="/blog">Blog</a></li>
+                </ul>
+            </div>
 
-        navigator.clipboard.writeText(input.value).then(function() {
-            icon.textContent = 'check_circle';
-            label.textContent = 'Copied!';
-            btn.classList.add('aff-copy-btn--success');
+            <div class="footer-links">
+                <h4>Legal</h4>
+                <ul>
+                    <li><a href="/terms">Terms of Service</a></li>
+                    <li><a href="/privacy">Privacy Policy</a></li>
+                    <li><a href="/risk-disclosure">Risk Disclosure</a></li>
+                </ul>
+            </div>
+        </div>
 
-            setTimeout(function() {
-                icon.textContent = 'content_copy';
-                label.textContent = 'Copy';
-                btn.classList.remove('aff-copy-btn--success');
-            }, 2000);
-        }).catch(function() {
-            // Fallback for older browsers
-            document.execCommand('copy');
-            icon.textContent = 'check_circle';
-            label.textContent = 'Copied!';
-            btn.classList.add('aff-copy-btn--success');
+        <div class="footer-bottom">
+            <p>&copy; 2026 Just.Trades. All rights reserved.</p>
+            <p>Trading involves significant risk. Past performance is not indicative of future results. <a href="/risk-disclosure">Read full risk disclosure</a>.</p>
+        </div>
+    </footer>
 
-            setTimeout(function() {
-                icon.textContent = 'content_copy';
-                label.textContent = 'Copy';
-                btn.classList.remove('aff-copy-btn--success');
-            }, 2000);
-        });
-    }
-
-    function shareOnX() {
-        var referralLink = document.getElementById('referralLinkInput').value;
-        var text = encodeURIComponent(
-            'Check out @JustTrades — automated futures trading execution. Use my link: ' + referralLink
-        );
-        var url = 'https://twitter.com/intent/tweet?text=' + text;
-        window.open(url, '_blank', 'width=600,height=400');
-    }
-
-    function shareViaEmail() {
-        var referralLink = document.getElementById('referralLinkInput').value;
-        var subject = encodeURIComponent('Check out Just.Trades — Automated Futures Trading');
-        var body = encodeURIComponent(
-            'Hey,\n\nI\'ve been using Just.Trades for automated futures trading and thought you might find it useful.\n\n' +
-            'It automates trade execution from TradingView alerts directly to your broker — no manual entry needed.\n\n' +
-            'Sign up using my referral link and get started:\n' + referralLink + '\n\nCheers'
-        );
-        window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
-    }
-
-    {% if not affiliate_code %}
-    document.addEventListener('DOMContentLoaded', function() {
-        var form = document.getElementById('affiliateApplyForm');
-        if (!form) return;
-
-        form.addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            var name = document.getElementById('applyName').value.trim();
-            var email = document.getElementById('applyEmail').value.trim();
-            var audience = document.getElementById('applyAudience').value.trim();
-
-            if (!name || !email || !audience) {
-                alert('Please fill in all required fields.');
-                return;
+    <script>
+        // Header scroll effect
+        const header = document.getElementById('header');
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 50) {
+                header.classList.add('scrolled');
+            } else {
+                header.classList.remove('scrolled');
             }
+        });
 
-            var btn = document.getElementById('applySubmitBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Submitting...';
+        // FAQ accordion
+        document.querySelectorAll('.faq-question').forEach(question => {
+            question.addEventListener('click', function() {
+                const item = this.parentElement;
+                const wasOpen = item.classList.contains('open');
 
-            fetch('/api/affiliate/apply', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: name,
-                    email: email,
-                    audience: audience
-                })
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(result) {
-                if (result.success) {
-                    form.innerHTML =
-                        '<div class="aff-apply-success">' +
-                        '<i class="material-icons">check_circle</i>' +
-                        '<strong>Application submitted!</strong>' +
-                        '<p>We\'ll review your application and get back to you soon.</p>' +
-                        '</div>';
-                } else {
-                    alert(result.error || 'Failed to submit application. Please try again.');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="material-icons">send</i> Apply Now';
+                document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+
+                if (!wasOpen) {
+                    item.classList.add('open');
                 }
-            })
-            .catch(function() {
-                alert('Network error. Please try again.');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="material-icons">send</i> Apply Now';
             });
         });
-    });
-    {% endif %}
-</script>
-{% endblock %}
+
+        // Intersection Observer for scroll-triggered animations
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry, index) => {
+                if (entry.isIntersecting) {
+                    setTimeout(() => {
+                        entry.target.classList.add('visible');
+                    }, index * 100);
+                }
+            });
+        }, observerOptions);
+
+        // Observe elements for scroll animations
+        document.querySelectorAll('.stat-item, .step, .faq-item').forEach(el => {
+            observer.observe(el);
+        });
+
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Copy referral link
+        function copyReferralLink() {
+            const input = document.getElementById('referralLinkInput');
+            const btn = document.getElementById('copyBtn');
+            const icon = document.getElementById('copyIcon');
+            const label = document.getElementById('copyLabel');
+
+            if (!input) return;
+
+            input.select();
+            input.setSelectionRange(0, 99999);
+
+            navigator.clipboard.writeText(input.value).then(function() {
+                icon.textContent = 'check_circle';
+                label.textContent = 'Copied!';
+                btn.classList.add('success');
+
+                setTimeout(function() {
+                    icon.textContent = 'content_copy';
+                    label.textContent = 'Copy';
+                    btn.classList.remove('success');
+                }, 2000);
+            }).catch(function() {
+                document.execCommand('copy');
+                icon.textContent = 'check_circle';
+                label.textContent = 'Copied!';
+                btn.classList.add('success');
+
+                setTimeout(function() {
+                    icon.textContent = 'content_copy';
+                    label.textContent = 'Copy';
+                    btn.classList.remove('success');
+                }, 2000);
+            });
+        }
+
+        // Share on X (Twitter)
+        function shareOnX() {
+            var referralLink = document.getElementById('referralLinkInput').value;
+            var text = encodeURIComponent(
+                'Check out @JustTrades \u2014 automated futures trading execution. Use my link: ' + referralLink
+            );
+            var url = 'https://twitter.com/intent/tweet?text=' + text;
+            window.open(url, '_blank', 'width=600,height=400');
+        }
+
+        // Share via email
+        function shareViaEmail() {
+            var referralLink = document.getElementById('referralLinkInput').value;
+            var subject = encodeURIComponent('Check out Just.Trades \u2014 Automated Futures Trading');
+            var body = encodeURIComponent(
+                'Hey,\n\nI\'ve been using Just.Trades for automated futures trading and thought you might find it useful.\n\n' +
+                'It automates trade execution from TradingView alerts directly to your broker \u2014 no manual entry needed.\n\n' +
+                'Sign up using my referral link and get started:\n' + referralLink + '\n\nCheers'
+            );
+            window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
+        }
+
+        // Apply form submission
+        {% if not affiliate_code %}
+        document.addEventListener('DOMContentLoaded', function() {
+            var form = document.getElementById('affiliateApplyForm');
+            if (!form) return;
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                var name = document.getElementById('applyName').value.trim();
+                var email = document.getElementById('applyEmail').value.trim();
+                var audience = document.getElementById('applyAudience').value.trim();
+
+                if (!name || !email || !audience) {
+                    alert('Please fill in all required fields.');
+                    return;
+                }
+
+                var btn = document.getElementById('applySubmitBtn');
+                btn.disabled = true;
+                btn.innerHTML = '<span class="material-icons">hourglass_empty</span> Submitting...';
+
+                fetch('/api/affiliate/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        email: email,
+                        audience: audience
+                    })
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(result) {
+                    if (result.success) {
+                        form.innerHTML =
+                            '<div class="apply-success">' +
+                            '<span class="material-icons">check_circle</span>' +
+                            '<strong>Application submitted!</strong>' +
+                            '<p>We\'ll review your application and get back to you soon.</p>' +
+                            '</div>';
+                    } else {
+                        alert(result.error || 'Failed to submit application. Please try again.');
+                        btn.disabled = false;
+                        btn.innerHTML = '<span class="material-icons">send</span> Apply Now';
+                    }
+                })
+                .catch(function() {
+                    alert('Network error. Please try again.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span class="material-icons">send</span> Apply Now';
+                });
+            });
+        });
+        {% endif %}
+    </script>
+</body>
+</html>
