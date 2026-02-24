@@ -302,6 +302,7 @@ Tradovate's `modifyOrder` is unreliable for bracket-managed orders. DCA TP updat
 ## RULE 10: ALL TRADOVATE ORDERS USE REST, NEVER WEBSOCKET
 
 WebSocket pool was NEVER functional. ALL orders go through REST (`session.post`). NEVER add new WebSocket-based order functions.
+`get_pooled_connection()` in recorder_service.py now returns `None` immediately (commit `6efcbd5`). The dead pool code tried `_ensure_websocket_connected()` which hung indefinitely, held `_WS_POOL_LOCK`, and blocked ALL trades with 60-second timeouts (Bug #35). NEVER re-enable this function.
 
 ---
 
@@ -596,7 +597,9 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Auto-copy: add-to-position instead of close+re-enter | `b97eb10` | Feb 23 | **Confirmed working** |
 | Copy trader: warning disclaimer (don't mix with webhooks) | `24e1094` | Feb 23 | Working |
 | Paper trading accuracy: multiplier, DCA-off, trader overrides, trim scaling | `32ad0ab`..`a819a22` | Feb 23 | **Needs verification** |
-| Shared WS Connection Manager (1-2 connections instead of 6-12) | `f1795c3` | Feb 23 | **Needs verification** |
+| Shared WS Connection Manager (1-2 connections instead of 6-12) | `f1795c3` | Feb 23 | **Confirmed working** |
+| WS Connection Manager: 429 storm fix (10x30s dead-sub, 30s stagger, 30s backoff) | `79e3f7b` | Feb 24 | **Confirmed working — ZERO 429s post-deploy** |
+| Dead WebSocket pool disabled (`get_pooled_connection()` returns None) | `6efcbd5` | Feb 24 | **CRITICAL — eliminates 60s trade timeouts** |
 
 ---
 
@@ -964,7 +967,7 @@ REST API → Tradovate → Order filled → TP/SL placed
 - 10 fast webhook workers → broker_execution_queue → 10 broker workers
 - Paper trades: **daemon thread (fire-and-forget), NEVER blocks broker pipeline**
 - Signal tracking: **daemon thread, NEVER blocks broker pipeline**
-- WebSocket pool code exists but was NEVER functional — system uses REST API
+- WebSocket pool code DISABLED (`get_pooled_connection()` returns None, commit `6efcbd5`) — system uses REST API. NEVER re-enable.
 - TP operations: asyncio.Lock per account/symbol prevents race conditions
 - **Shared WS Connection Manager**: ONE WebSocket per Tradovate token, all monitors register as listeners. Messages parsed once, dispatched to all listeners. Listener errors isolated (try/except per listener).
 
@@ -1110,16 +1113,29 @@ AFTER: 1-2 WebSocket connections (one per unique token)
 2. Wait for `o` frame → send `authorize\n0\n\n{token}` → wait for `a[{"i":0,"s":200}]`
 3. Send `user/syncrequest` with UNION of all listener accounts (no entityTypes filter — all types sent)
 4. Heartbeat `[]` every 2.5s, server timeout 10s
-5. Dead subscription detection: 3 x 30s windows with 0 data during market hours = reconnect
-6. Max connection: 70 min (before 85-min token expiry), exponential backoff: 1→2→4→8...60s
-7. Fresh token from DB before each reconnect
-8. Dynamic subscription: new listener accounts trigger re-subscribe on next heartbeat
+5. Dead subscription detection: **10 x 30s windows (300s)** with 0 data during market hours = reconnect
+   - NEVER reduce below 10 windows — 3 windows caused 429 storms across 16+ connections (Bug #38)
+   - Dead-sub reconnect uses minimum 30s backoff + 0-15s jitter (NOT the normal 1s reset)
+6. Initial connection stagger: **0-30s random delay** per connection on startup (prevents simultaneous 429)
+   - NEVER reduce below 30s — 16+ connections need wide spread for Tradovate WS rate limits
+7. Max connection: 70 min (before 85-min token expiry), exponential backoff: 1→2→4→8...60s
+8. Fresh token from DB before each reconnect
+9. Dynamic subscription: new listener accounts trigger re-subscribe on next heartbeat
 
 **Key Design:**
 - Messages parsed ONCE in `SharedConnection._dispatch_message()`, pre-parsed items dispatched to all listeners
 - Each listener's `on_message()` wrapped in try/except — one crashing listener doesn't affect others
 - Thread-safe registration via `asyncio.run_coroutine_threadsafe()` from any thread
 - `get_connection_manager()` returns singleton `TradovateConnectionManager`
+
+**NEVER (429 Storm Prevention — Bug #38, Feb 24, 2026):**
+- NEVER reduce dead-subscription threshold below 10 windows (300s) — was 3 (90s), caused 16+ connections to all reconnect simultaneously → Tradovate HTTP 429 rate limit → cycling reconnect storm every 90s
+- NEVER reduce initial connection stagger below 30s — was 10s, too tight for 16+ connections
+- NEVER reset backoff to 1s after dead-subscription disconnect — use minimum 30s + 0-15s jitter
+- NEVER reduce reconnect jitter below 15s — was 5s, insufficient spread for 16+ simultaneous reconnects
+- Thin market hours (weekends, 5-6 PM ET) produce 0 data messages by design — this is NORMAL, not a dead subscription
+- NEVER use the legacy standalone classes (`AccountGroupConnection` in ws_position_monitor.py, `LeaderMonitor` in ws_leader_monitor.py) — they are DEPRECATED dead code kept only for emergency rollback. Production uses `PositionMonitorListener` and `LeaderMonitorListener` on the shared manager.
+- The `>= 10` threshold is enforced in ALL 4 locations: ws_connection_manager.py (lines 374, 679), ws_leader_monitor.py (line 846), ws_position_monitor.py (line 298). If you change ONE, change ALL FOUR.
 
 **Public API:**
 ```python
@@ -1703,8 +1719,10 @@ Sometimes the issue isn't just code — it's data state. After a code rollback:
 | 31 | Feb 23, 2026 | Copy trader toggle stuck "Disabled" — 4 compounding bugs | (1) `copy_trader_models.py` force-reset toggle OFF on every startup, (2) GET/POST race condition overwrites user click, (3) `get_user_by_id` not imported in toggle handler → 500, (4) `FLASK_SECRET_KEY` not set → sessions invalidated on every deploy | Rules 32, 33, 34 | Hours |
 | 32 | Feb 23, 2026 | Auto-copy followers sequential — rapid trades queue up | `for follower in followers:` in `_copy_fill_to_followers()` → each follower waited for previous HTTP round-trip. 5 followers × 3-5s = 15-25s per fill. | `b26dc75` | Minutes |
 | 33 | Feb 23, 2026 | Auto-copy close+re-enter on position add — follower gets closed then reopened | Position sync `else` branch always closed follower then re-entered target qty. Leader Long 1→Long 2 = follower sells 1, buys 2 instead of just buying 1 more. | `b97eb10` | Minutes |
+| 34 | Feb 24, 2026 | **WS Connection Manager 429 storm — 16+ connections cycling every 90s** | Dead-subscription threshold too aggressive (3×30s=90s). During thin market hours, ALL connections hit 0 data → all reconnect simultaneously → Tradovate HTTP 429 → backoff → recover → 90s later repeat. Initial stagger (10s) too tight for 16 connections. Backoff reset to 1s after dead-sub disconnect. | `79e3f7b` | Hours |
+| 35 | Feb 24, 2026 | **ALL trades 60-second timeout — dead WebSocket pool blocks entire pipeline** | `get_pooled_connection()` in recorder_service.py called `_ensure_websocket_connected()` which was NEVER functional (Rule 10). `_WS_POOL_LOCK` (asyncio.Lock) held during hanging connection attempt, blocking ALL account coroutines in `asyncio.gather()`. Every trade hit 60s timeout in `async_utils.py`. | `6efcbd5` | Hours |
 
-**Pattern:** 33 disasters in ~3 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, or (e) auth/session assumptions for internal requests.
+**Pattern:** 35 disasters in ~3 months. Average recovery: 2-4 hours each. Almost every one was caused by either (a) editing without reading, (b) batching changes, (c) restructuring working code, (d) field name mismatches between frontend and backend, (e) auth/session assumptions for internal requests, or (f) dead code that silently blocks live paths (#35).
 
 **Near-miss prevented:** Webhook + copy trader pipeline overlap (4 follower accounts had both active webhook traders AND copy follower links). Would have caused double-fills. Fixed proactively with pipeline separation (`e46c4a4`) before any incident occurred.
 

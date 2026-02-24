@@ -3,7 +3,7 @@
 > **For**: Claude Code CLI agent working on `just-trades-platform`
 > **Author**: Myles Jadwin (CEO, Just Trades Group) + Claude research
 > **Date**: February 2026
-> **Last Updated**: February 23, 2026
+> **Last Updated**: February 24, 2026
 > **Priority**: CRITICAL — this is the #1 product feature
 > **Status**: WORKING — Manual + Auto-copy confirmed working. Parallel execution + smart position sync (add/trim/reversal). Feb 23, 2026
 
@@ -61,6 +61,8 @@ The HTTP self-POST pattern works because we added `X-Admin-Key` header bypass in
 | Leader ID from frontend | `dd1cbea` | Frontend sends leader_id directly instead of fragile reverse-lookup |
 | Diagnostic logging | `5510b9f` | Added logging to trace propagation flow |
 | WS market-hours fix | `2c53a6d` | Dead-subscription reconnect skipped when futures market closed → no more 429 spam |
+| WS 429 storm fix (dead-sub threshold + stagger + backoff) | `79e3f7b` | 10×30s dead-sub, 30s stagger, 30s dead-sub backoff — NEVER reduce these |
+| Dead WS pool disabled (60s trade timeout fix) | `6efcbd5` | `get_pooled_connection()` returns None → REST-only path, no more lock contention |
 | Toggle startup reset removal | `ef813fe` | `copy_trader_models.py` force-reset toggle OFF on every startup |
 | Toggle optimistic UI | `d04ddbd` | Toggle text updates immediately instead of waiting for API response |
 | Toggle race condition fix | `39b8122` | `masterToggleUserChanged` flag prevents stale GET from overwriting user click |
@@ -531,6 +533,8 @@ ALTER TABLE follower_accounts ADD COLUMN lockout_reason TEXT;
 | 18 | Sequential auto-copy follower loop | Rapid leader trades queue up, followers fall behind | `asyncio.gather()` for parallel execution | `b26dc75` |
 | 19 | Close+re-enter on position add | Follower briefly has no position, extra commission | Detect same-side add/trim, use delta qty | `b97eb10` |
 | 20 | WS reconnect during market-closed hours | 429 rate limit errors from unnecessary reconnects | `_is_futures_market_likely_open()` check before reconnect | `2c53a6d` |
+| 21 | WS dead-sub threshold too aggressive (3×30s) | 16+ connections ALL reconnect simultaneously → Tradovate HTTP 429 storm cycling every 90s | Threshold: 10×30s (300s). Initial stagger: 0-30s. Dead-sub backoff: min 30s + 0-15s jitter. **NEVER reduce these values.** | `79e3f7b` |
+| 22 | Dead WebSocket pool blocks ALL trades | `get_pooled_connection()` tried `_ensure_websocket_connected()` (NEVER functional). `_WS_POOL_LOCK` blocked all coroutines → every trade hit 60s async timeout | `return None` at top of function → REST-only path | `6efcbd5` |
 
 ---
 
