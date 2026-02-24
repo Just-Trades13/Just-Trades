@@ -258,69 +258,88 @@
         </div>
     </section>
     {% else %}
-    <section class="pro-copy-trader" id="proCopyTraderSection">
-        <header>
-            <div>
-                <h2>Pro Copy Trader</h2>
-                <p>Auto-copy trades from a leader account to followers via WebSocket</p>
+    <section class="pro-copy-trader cockpit" id="proCopyTraderSection">
+        <!-- Cockpit Header -->
+        <header class="cockpit-header">
+            <div class="cockpit-title-row">
+                <div>
+                    <h2>Pro Copy Trader</h2>
+                    <p>Auto-copy trades from a leader account to followers via WebSocket</p>
+                </div>
+                <div class="cockpit-controls">
+                    {% if current_user and current_user.is_admin %}
+                    <div class="pro-copy-master-toggle" id="masterToggleContainer">
+                        <span style="font-size:0.8rem;color:rgba(148,163,184,0.7);margin-right:0.5rem;">Copy Trading:</span>
+                        <label class="copy-toggle">
+                            <input type="checkbox" id="masterCopyToggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="master-status" id="masterStatus" style="font-size:0.8rem;margin-left:0.4rem;font-weight:600;color:#22c55e;">Active</span>
+                    </div>
+                    {% endif %}
+                    <div class="pro-copy-mode-toggle">
+                        <span class="mode-label" id="modeManualLabel">Manual</span>
+                        <label class="copy-toggle">
+                            <input type="checkbox" id="autoCopyMode">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="mode-label" id="modeAutoLabel">Auto</span>
+                    </div>
+                </div>
             </div>
-            {% if current_user and current_user.is_admin %}
-            <div class="pro-copy-master-toggle" id="masterToggleContainer">
-                <span style="font-size:0.8rem;color:rgba(148,163,184,0.7);margin-right:0.5rem;">Copy Trading:</span>
-                <label class="copy-toggle">
-                    <input type="checkbox" id="masterCopyToggle">
-                    <span class="toggle-slider"></span>
-                </label>
-                <span class="master-status" id="masterStatus" style="font-size:0.8rem;margin-left:0.4rem;font-weight:600;color:#ef4444;">Disabled</span>
-            </div>
-            <div style="margin-top:0.4rem;padding:0.5rem 0.75rem;background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.25);border-radius:0.5rem;">
-                <span style="font-size:0.72rem;color:rgba(234,179,8,0.85);line-height:1.4;">
-                    Do not run the Copy Trader while a webhook strategy is active on the same follower account. Running both simultaneously can cause duplicate or conflicting orders.
-                </span>
-            </div>
-            {% endif %}
-            <div class="pro-copy-mode-toggle">
-                <span class="mode-label" id="modeManualLabel">Manual</span>
-                <label class="copy-toggle">
-                    <input type="checkbox" id="autoCopyMode">
-                    <span class="toggle-slider"></span>
-                </label>
-                <span class="mode-label" id="modeAutoLabel">Auto</span>
+            <div class="cockpit-stats-bar" id="cockpitStatsBar">
+                <div class="stat-pill" id="statStatus">
+                    <span class="stat-dot" id="wsDot"></span>
+                    <span class="stat-label">Status</span>
+                    <span class="stat-value" id="wsStatusText">Manual</span>
+                </div>
+                <div class="stat-pill">
+                    <span class="stat-label">Copies</span>
+                    <span class="stat-value" id="statTotalCopies">--</span>
+                </div>
+                <div class="stat-pill">
+                    <span class="stat-label">Success</span>
+                    <span class="stat-value" id="statSuccessRate">--</span>
+                </div>
+                <div class="stat-pill">
+                    <span class="stat-label">Avg Latency</span>
+                    <span class="stat-value" id="statAvgLatency">--</span>
+                </div>
+                <div class="stat-pill">
+                    <span class="stat-label">Leader</span>
+                    <span id="leaderPositionBadge" class="position-badge flat">FLAT</span>
+                </div>
             </div>
         </header>
 
-        <!-- Leader Account Selection -->
-        <div class="pro-copy-card">
-            <h3>Leader Account</h3>
-            <p class="card-desc">Select the account whose trades will be copied</p>
-            <div class="leader-select-row">
+        <!-- Compact Leader Strip -->
+        <div class="cockpit-leader-strip">
+            <div class="leader-avatar"><span class="material-icons">stars</span></div>
+            <div class="leader-select-row" style="flex:1">
                 <div class="select-shell" style="flex:1">
                     <select id="leaderAccountSelect">
-                        <option value="">Select leader account...</option>
+                        <option value="">Select leader...</option>
                     </select>
                     <span class="material-icons">expand_more</span>
                 </div>
                 <button type="button" class="btn-small" id="setLeaderBtn">Set Leader</button>
             </div>
-            <div id="leaderStatus" class="leader-status" style="display:none">
+            <div id="leaderStatus" class="leader-status-inline" style="display:none">
                 <span class="status-dot" id="leaderStatusDot"></span>
                 <span id="leaderStatusText">Not connected</span>
-            </div>
-            <div id="leaderPositionDisplay" class="leader-position-display" style="display:none">
-                <span class="position-label">Leader Position:</span>
-                <span id="leaderPositionBadge" class="position-badge flat">FLAT</span>
             </div>
         </div>
 
         <!-- Follower Accounts -->
-        <div class="pro-copy-card">
-            <h3>Follower Accounts</h3>
-            <p class="card-desc">Accounts that will receive copied trades</p>
-            <div class="follower-actions-row">
-                <button type="button" class="btn-small" id="addAllFollowersBtn">Add All Accounts</button>
-                <button type="button" class="btn-small btn-outline" id="refreshFollowersBtn">Refresh</button>
+        <div class="cockpit-followers-section">
+            <div class="section-header-row">
+                <h3>Follower Accounts</h3>
+                <div class="follower-actions-row">
+                    <button type="button" class="btn-small" id="addAllFollowersBtn">Add All</button>
+                    <button type="button" class="btn-small btn-outline" id="refreshFollowersBtn">Refresh</button>
+                </div>
             </div>
-            <div id="followerAccountsList" class="follower-accounts-list">
+            <div class="followers-table-wrapper" id="followerAccountsList">
                 <div class="follower-placeholder">
                     <i class="material-icons">group_add</i>
                     <p>Set a leader account first, then add follower accounts</p>
@@ -329,12 +348,17 @@
         </div>
 
         <!-- Copy Trade Log -->
-        <div class="pro-copy-card">
-            <h3>Recent Copy Activity</h3>
-            <div id="copyTradeLog" class="copy-trade-log">
-                <div class="log-placeholder">
-                    <i class="material-icons">history</i>
-                    <p>No copy trades yet</p>
+        <div class="cockpit-log-section">
+            <div class="section-header-row">
+                <h3>Copy Trade Log</h3>
+                <span class="log-count-badge" id="logCountBadge">0 trades</span>
+            </div>
+            <div class="copy-trade-log-wrapper">
+                <div id="copyTradeLog" class="copy-trade-log">
+                    <div class="log-placeholder">
+                        <i class="material-icons">history</i>
+                        <p>No copy trades yet</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1051,6 +1075,223 @@
     .log-risk { font-size: 0.7rem; color: rgba(168,85,247,0.7); margin-left: 0.25rem; }
     .log-latency { font-size: 0.7rem; color: rgba(148,163,184,0.5); margin-left: 0.35rem; }
 
+    /* ===== COCKPIT DASHBOARD STYLES ===== */
+    .pro-copy-trader.cockpit {
+        gap: 1rem;
+    }
+    .cockpit-header {
+        display: grid;
+        gap: 0.75rem;
+    }
+    .cockpit-title-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    .cockpit-controls {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .cockpit-stats-bar {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    .stat-pill {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.75rem;
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(168,85,247,0.2);
+        border-radius: 999px;
+        font-size: 0.8rem;
+    }
+    .stat-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #64748b;
+    }
+    .stat-dot.connected { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+    .stat-dot.disconnected { background: #f87171; }
+    .stat-dot.connecting { background: #fbbf24; animation: pulse-dot 1.5s ease infinite; }
+    .stat-label {
+        color: rgba(148,163,184,0.7);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+    .stat-value {
+        color: #e2e8f0;
+        font-weight: 600;
+    }
+    .cockpit-leader-strip {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(168,85,247,0.15);
+        border-radius: 12px;
+    }
+    .leader-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, rgba(168,85,247,0.3), rgba(99,102,241,0.2));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .leader-avatar .material-icons {
+        font-size: 18px;
+        color: #a855f7;
+    }
+    .leader-status-inline {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.8rem;
+        color: rgba(226,232,240,0.7);
+        margin-left: auto;
+    }
+    .cockpit-followers-section,
+    .cockpit-log-section {
+        display: grid;
+        gap: 0.5rem;
+    }
+    .section-header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .section-header-row h3 {
+        margin: 0;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(226,232,240,0.8);
+    }
+    .followers-table-wrapper {
+        max-height: 350px;
+        overflow-y: auto;
+    }
+    .followers-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .followers-table th {
+        padding: 0.5rem 0.6rem;
+        text-align: left;
+        color: rgba(148,163,184,0.6);
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-weight: 600;
+        border-bottom: 1px solid rgba(148,163,184,0.15);
+        white-space: nowrap;
+    }
+    .followers-table td {
+        padding: 0.5rem 0.6rem;
+        color: rgba(226,232,240,0.9);
+        font-size: 0.85rem;
+        border-bottom: 1px solid rgba(148,163,184,0.08);
+    }
+    .followers-table tr:hover td {
+        background: rgba(168,85,247,0.04);
+    }
+    .follower-row.disabled td {
+        opacity: 0.45;
+    }
+    .follower-row .follower-name {
+        font-weight: 500;
+        color: #e2e8f0;
+    }
+    .follower-row .follower-sub {
+        font-size: 0.7rem;
+        color: rgba(148,163,184,0.6);
+    }
+    .follower-row .follower-mult-input {
+        width: 52px;
+        padding: 0.25rem 0.35rem;
+        font-size: 0.8rem;
+        border-radius: 6px;
+        text-align: center;
+    }
+    .btn-flatten {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        border: 1px solid rgba(248,113,113,0.35);
+        border-radius: 6px;
+        background: rgba(248,113,113,0.1);
+        color: #fca5a5;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .btn-flatten:hover {
+        background: rgba(248,113,113,0.25);
+        border-color: rgba(248,113,113,0.5);
+    }
+    .copy-trade-log-wrapper {
+        max-height: 250px;
+        overflow-y: auto;
+    }
+    .copy-log-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .copy-log-table th {
+        padding: 0.4rem 0.6rem;
+        text-align: left;
+        color: rgba(148,163,184,0.6);
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-weight: 600;
+        border-bottom: 1px solid rgba(148,163,184,0.15);
+        white-space: nowrap;
+        position: sticky;
+        top: 0;
+        background: rgba(11,18,33,0.95);
+    }
+    .copy-log-table td {
+        padding: 0.4rem 0.6rem;
+        color: rgba(226,232,240,0.9);
+        font-size: 0.8rem;
+        border-bottom: 1px solid rgba(148,163,184,0.08);
+    }
+    .copy-log-table tr:hover td {
+        background: rgba(168,85,247,0.04);
+    }
+    .log-count-badge {
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(168,85,247,0.15);
+        color: rgba(168,85,247,0.9);
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+    }
+    @media (max-width: 768px) {
+        .cockpit-stats-bar { gap: 0.35rem; }
+        .stat-pill { padding: 0.3rem 0.5rem; font-size: 0.7rem; }
+        .cockpit-leader-strip { flex-wrap: wrap; }
+        .cockpit-controls { flex-direction: column; align-items: flex-start; }
+        .followers-table .col-pnl { display: none; }
+        .copy-log-table .col-latency { display: none; }
+    }
+
     /* Light mode overrides for pro copy trader */
     :root[data-theme="light"] .pro-copy-trader {
         background: #ffffff !important;
@@ -1071,6 +1312,48 @@
     }
     :root[data-theme="light"] .follower-name {
         color: #1e293b !important;
+    }
+    /* Light mode — cockpit overrides */
+    :root[data-theme="light"] .cockpit-stats-bar .stat-pill {
+        background: #f8fafc !important;
+        border-color: rgba(168,85,247,0.15) !important;
+    }
+    :root[data-theme="light"] .stat-label { color: #64748b !important; }
+    :root[data-theme="light"] .stat-value { color: #1e293b !important; }
+    :root[data-theme="light"] .cockpit-leader-strip {
+        background: #f8fafc !important;
+        border-color: rgba(168,85,247,0.12) !important;
+    }
+    :root[data-theme="light"] .leader-avatar {
+        background: linear-gradient(135deg, rgba(168,85,247,0.15), rgba(99,102,241,0.1)) !important;
+    }
+    :root[data-theme="light"] .section-header-row h3 { color: #1e293b !important; }
+    :root[data-theme="light"] .followers-table th,
+    :root[data-theme="light"] .copy-log-table th {
+        color: #64748b !important;
+        background: #ffffff !important;
+        border-color: rgba(148,163,184,0.15) !important;
+    }
+    :root[data-theme="light"] .followers-table td,
+    :root[data-theme="light"] .copy-log-table td {
+        color: #334155 !important;
+        border-color: rgba(148,163,184,0.1) !important;
+    }
+    :root[data-theme="light"] .followers-table tr:hover td,
+    :root[data-theme="light"] .copy-log-table tr:hover td {
+        background: rgba(168,85,247,0.03) !important;
+    }
+    :root[data-theme="light"] .btn-flatten {
+        background: rgba(239,68,68,0.08) !important;
+        border-color: rgba(239,68,68,0.25) !important;
+        color: #dc2626 !important;
+    }
+    :root[data-theme="light"] .log-count-badge {
+        background: rgba(168,85,247,0.1) !important;
+        color: #7c3aed !important;
+    }
+    :root[data-theme="light"] .leader-status-inline {
+        color: #475569 !important;
     }
 </style>
 {% endblock %}
@@ -1357,13 +1640,13 @@
         // Master copy trader toggle (admin only)
         const masterToggle = document.getElementById('masterCopyToggle');
         const masterStatus = document.getElementById('masterStatus');
-        let masterToggleUserChanged = false;
+        let masterToggleUserChanged = false; // so stale GET response doesn't overwrite after user click
         if (masterToggle) {
-            // Load current state (GET) — ignored if user already clicked
+            // Load current state (don't overwrite checkbox if user already toggled)
             fetch('/api/admin/copy-trader-toggle')
                 .then(r => r.json())
                 .then(data => {
-                    if (masterToggleUserChanged) return; // User already clicked — don't overwrite
+                    if (masterToggleUserChanged) return;
                     masterToggle.checked = data.enabled !== false;
                     if (masterStatus) {
                         masterStatus.textContent = masterToggle.checked ? 'Active' : 'Disabled';
@@ -1371,14 +1654,10 @@
                     }
                 })
                 .catch(() => {});
-            // Toggle handler — optimistic update, revert on failure
+            // Toggle handler
             masterToggle.addEventListener('change', function() {
                 masterToggleUserChanged = true;
                 const enabled = masterToggle.checked;
-                if (masterStatus) {
-                    masterStatus.textContent = enabled ? 'Active' : 'Disabled';
-                    masterStatus.style.color = enabled ? '#22c55e' : '#ef4444';
-                }
                 fetch('/api/admin/copy-trader-toggle', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -1386,27 +1665,34 @@
                 })
                 .then(r => r.json())
                 .then(data => {
-                    if (!data.success) {
+                    if (data.success) {
+                        if (masterStatus) {
+                            masterStatus.textContent = enabled ? 'Active' : 'Disabled';
+                            masterStatus.style.color = enabled ? '#22c55e' : '#ef4444';
+                        }
+                    } else {
                         masterToggle.checked = !enabled;
                         if (masterStatus) {
-                            masterStatus.textContent = !enabled ? 'Active' : 'Disabled';
-                            masterStatus.style.color = !enabled ? '#22c55e' : '#ef4444';
+                            masterStatus.textContent = masterToggle.checked ? 'Active' : 'Disabled';
+                            masterStatus.style.color = masterToggle.checked ? '#22c55e' : '#ef4444';
                         }
                     }
                 })
                 .catch(() => {
                     masterToggle.checked = !enabled;
                     if (masterStatus) {
-                        masterStatus.textContent = !enabled ? 'Active' : 'Disabled';
-                        masterStatus.style.color = !enabled ? '#22c55e' : '#ef4444';
+                        masterStatus.textContent = masterToggle.checked ? 'Active' : 'Disabled';
+                        masterStatus.style.color = masterToggle.checked ? '#22c55e' : '#ef4444';
                     }
                 });
             });
         }
 
-        // First populate leader dropdown, THEN load existing leader
-        // (must be sequential — loadExistingLeader needs dropdown options to exist)
-        loadLeaderAccountOptions().then(() => loadExistingLeader());
+        // Populate leader dropdown from existing accounts
+        loadLeaderAccountOptions();
+
+        // Load existing leader from DB (so currentLeaderId is set on page load)
+        loadExistingLeader();
 
         // Set Leader button
         const setLeaderBtn = document.getElementById('setLeaderBtn');
@@ -1424,11 +1710,7 @@
         const refreshBtn = document.getElementById('refreshFollowersBtn');
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => {
-                if (currentLeaderId) {
-                    loadFollowerAccounts(currentLeaderId);
-                } else {
-                    showToast('Set a leader account first', 'error');
-                }
+                if (currentLeaderId) loadFollowerAccounts(currentLeaderId);
             });
         }
 
@@ -1485,44 +1767,10 @@
             if (data.success && data.leaders && data.leaders.length > 0) {
                 const leader = data.leaders[0]; // Use first active leader
                 currentLeaderId = leader.id;
+                updateLeaderStatus('connected', `Leader: ${leader.label || leader.subaccount_id}`);
                 loadFollowerAccounts(currentLeaderId);
                 loadCopyTradeLog(currentLeaderId);
-
-                // Select the matching option in the leader dropdown
-                const leaderSelect = document.getElementById('leaderAccountSelect');
-                if (leaderSelect && leader.account_id && leader.subaccount_id) {
-                    const targetVal = `${leader.account_id}:${leader.subaccount_id}`;
-                    for (const opt of leaderSelect.options) {
-                        if (opt.value === targetVal) {
-                            leaderSelect.value = targetVal;
-                            break;
-                        }
-                    }
-                }
-
-                // Sync auto-copy toggle and status to match DB state
-                const autoCopyToggle = document.getElementById('autoCopyMode');
-                if (leader.auto_copy_enabled) {
-                    // Auto-copy ON — green dot, toggle checked
-                    updateLeaderStatus('connected', `Auto-copy active: ${leader.label || leader.subaccount_id}`);
-                    if (autoCopyToggle) {
-                        autoCopyToggle.checked = true;
-                        document.getElementById('modeManualLabel')?.classList.remove('active');
-                        document.getElementById('modeAutoLabel')?.classList.add('active');
-                    }
-                    startPositionPolling();
-                } else {
-                    // Auto-copy OFF — neutral status, toggle unchecked
-                    updateLeaderStatus('disconnected', `Manual mode: ${leader.label || leader.subaccount_id}`);
-                    if (autoCopyToggle) {
-                        autoCopyToggle.checked = false;
-                        document.getElementById('modeAutoLabel')?.classList.remove('active');
-                        document.getElementById('modeManualLabel')?.classList.add('active');
-                    }
-                }
-
-                console.log('Loaded existing leader:', currentLeaderId,
-                            'auto_copy:', leader.auto_copy_enabled);
+                console.log('Loaded existing leader:', currentLeaderId);
             }
         } catch (error) {
             console.error('Error loading existing leader:', error);
@@ -1553,10 +1801,9 @@
             const data = await response.json();
             if (data.success) {
                 currentLeaderId = data.leader_id;
-                showToast('Leader account set — adding follower accounts...', 'success');
-                updateLeaderStatus('disconnected', `Manual mode: ${label}`);
-                // Auto-add all other accounts as followers for the new leader
-                await addAllFollowerAccounts();
+                showToast('Leader account set', 'success');
+                updateLeaderStatus('connected', `Leader: ${label}`);
+                loadFollowerAccounts(currentLeaderId);
                 loadCopyTradeLog(currentLeaderId);
             } else {
                 showToast(`Error: ${data.error || 'Failed to set leader'}`, 'error');
@@ -1683,8 +1930,7 @@
                         });
                         const result = await resp.json();
                         if (result.success) added++;
-                        else if (result.error) console.warn(`Skipped ${label}: ${result.error}`);
-                    } catch (e) { console.warn(`Failed to add ${label}:`, e); }
+                    } catch (e) { /* individual failure OK */ }
                 }
             }
 
@@ -1733,7 +1979,7 @@
             if (data.success) {
                 showToast(enabled ? 'Auto copy mode enabled' : 'Auto copy mode disabled', 'success');
                 updateLeaderStatus(
-                    enabled ? 'connecting' : 'disconnected',
+                    enabled ? 'connecting' : 'connected',
                     enabled ? 'Connecting to leader WebSocket...' : 'Manual mode active'
                 );
                 // Start/stop position polling
@@ -1808,11 +2054,9 @@
             const data = await response.json();
             if (!data.success) return;
 
-            const posDisplay = document.getElementById('leaderPositionDisplay');
             const badge = document.getElementById('leaderPositionBadge');
-            if (!posDisplay || !badge) return;
+            if (!badge) return;
 
-            posDisplay.style.display = 'flex';
             const positions = data.positions || {};
             const symbols = Object.keys(positions);
 
@@ -1829,9 +2073,8 @@
                 badge.textContent = parts.join(', ');
             }
 
-            // Update WS connection status — only if auto-copy is actually enabled
-            const _autoCopyOn = document.getElementById('autoCopyMode')?.checked;
-            if (data.connected && _autoCopyOn) {
+            // Update WS connection status too
+            if (data.connected) {
                 updateLeaderStatus('connected', 'Auto-copy active');
             }
         } catch (error) {
@@ -1850,8 +2093,11 @@
             clearInterval(_leaderPositionInterval);
             _leaderPositionInterval = null;
         }
-        const posDisplay = document.getElementById('leaderPositionDisplay');
-        if (posDisplay) posDisplay.style.display = 'none';
+        const badge = document.getElementById('leaderPositionBadge');
+        if (badge) {
+            badge.className = 'position-badge flat';
+            badge.textContent = 'FLAT';
+        }
     }
 
 </script>
