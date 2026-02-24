@@ -3,137 +3,15 @@
 {% block page_title %}AFFILIATE DASHBOARD{% endblock %}
 
 {% block styles %}
-<style>
-    .aff-container { max-width: 900px; margin: 0 auto; padding: 2rem; }
-    .aff-header { margin-bottom: 2rem; }
-    .aff-header h1 { font-size: 1.8rem; font-weight: 700; margin: 0 0 0.5rem; }
-    .aff-header p { color: var(--text-muted); margin: 0; }
-
-    .aff-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem; margin-bottom: 2.5rem; }
-    .stat-card {
-        background: var(--background-light);
-        border: 1px solid rgba(255,255,255,0.05);
-        border-radius: 16px;
-        padding: 1.5rem;
-        text-align: center;
-    }
-    .stat-card .stat-value { font-size: 2.5rem; font-weight: 700; color: var(--primary-color); }
-    .stat-card .stat-label { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0.25rem; }
-
-    .referral-link-box {
-        background: var(--background-light);
-        border: 1px solid rgba(255,255,255,0.05);
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin-bottom: 2.5rem;
-    }
-    .referral-link-box h3 { font-size: 1rem; margin: 0 0 1rem; color: var(--text-light); }
-    .link-row { display: flex; gap: 0.75rem; align-items: center; }
-    .link-row input {
-        flex: 1;
-        background: rgba(148,163,184,0.08);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 8px;
-        padding: 0.75rem 1rem;
-        color: var(--text-light);
-        font-family: monospace;
-        font-size: 0.9rem;
-    }
-    .btn-copy {
-        background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
-        border: none;
-        border-radius: 8px;
-        color: white;
-        padding: 0.75rem 1.25rem;
-        font-weight: 600;
-        cursor: pointer;
-        white-space: nowrap;
-        transition: transform 0.2s;
-    }
-    .btn-copy:hover { transform: translateY(-2px); }
-    .btn-copy.copied { background: var(--green); }
-
-    .referred-section {
-        background: var(--background-light);
-        border: 1px solid rgba(255,255,255,0.05);
-        border-radius: 16px;
-        padding: 1.5rem;
-    }
-    .referred-section h3 { font-size: 1rem; margin: 0 0 1rem; color: var(--text-light); }
-    .referred-table { width: 100%; border-collapse: collapse; }
-    .referred-table th {
-        text-align: left;
-        padding: 0.75rem 1rem;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: var(--text-muted);
-        border-bottom: 1px solid rgba(255,255,255,0.05);
-    }
-    .referred-table td {
-        padding: 0.75rem 1rem;
-        font-size: 0.9rem;
-        border-bottom: 1px solid rgba(255,255,255,0.03);
-    }
-    .empty-state { text-align: center; padding: 3rem; color: var(--text-muted); }
-    .empty-state i { font-size: 3rem; margin-bottom: 1rem; display: block; opacity: 0.5; }
-
-    .loading-state { text-align: center; padding: 4rem; color: var(--text-muted); }
-    .error-state { text-align: center; padding: 3rem; color: var(--red); }
-    .aff-code { font-family: monospace; font-size: 1.25rem; color: var(--accent-teal); font-weight: 700; }
-
-    .whop-links-section {
-        background: var(--background-light);
-        border: 1px solid rgba(255,255,255,0.05);
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin-bottom: 2.5rem;
-    }
-    .whop-links-section h3 { font-size: 1rem; margin: 0 0 0.5rem; color: var(--text-light); }
-    .whop-links-section p.section-desc { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 1.25rem; }
-    .whop-field { margin-bottom: 1rem; }
-    .whop-field label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
-    .whop-field input {
-        width: 100%;
-        background: rgba(148,163,184,0.08);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 8px;
-        padding: 0.65rem 1rem;
-        color: var(--text-light);
-        font-size: 0.85rem;
-        font-family: monospace;
-        transition: border-color 0.2s;
-    }
-    .whop-field input:focus { outline: none; border-color: var(--primary-color); }
-    .whop-field input.invalid { border-color: var(--red); }
-    .btn-save-links {
-        background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
-        border: none;
-        border-radius: 8px;
-        color: white;
-        padding: 0.7rem 1.5rem;
-        font-weight: 600;
-        font-size: 0.85rem;
-        cursor: pointer;
-        transition: transform 0.2s, opacity 0.2s;
-    }
-    .btn-save-links:hover { transform: translateY(-2px); }
-    .btn-save-links:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-    .save-feedback { display: inline-block; margin-left: 0.75rem; font-size: 0.85rem; }
-</style>
+<link rel="stylesheet" href="/static/css/affiliate.css">
 {% endblock %}
 
 {% block content %}
-<div class="aff-container">
-    <div class="aff-header">
-        <h1>Affiliate Dashboard</h1>
-        <p>Track your referrals and share your link</p>
-    </div>
-
+<div class="affd-container">
     <div id="dashboardContent">
-        <div class="loading-state">
-            <i class="material-icons" style="font-size:2rem;animation:spin 1s linear infinite;">sync</i>
-            <p>Loading dashboard...</p>
+        <div class="affd-loading">
+            <i class="material-icons">sync</i>
+            <p>Loading your affiliate dashboard...</p>
         </div>
     </div>
 </div>
@@ -148,12 +26,37 @@ document.addEventListener('DOMContentLoaded', function() {
             const container = document.getElementById('dashboardContent');
             if (data.error) {
                 container.innerHTML = `
-                    <div class="error-state">
-                        <i class="material-icons" style="font-size:3rem;margin-bottom:1rem;display:block;">info</i>
-                        <p>${data.error}</p>
-                        <p style="margin-top:1rem;color:var(--text-muted);">
-                            <a href="/affiliate" style="color:var(--primary-color);">Apply to become an affiliate</a>
+                    <div class="affd-apply-state">
+                        <div class="affd-apply-icon">
+                            <i class="material-icons">rocket_launch</i>
+                        </div>
+                        <h2 class="affd-apply-title">Become a Just.Trades Affiliate</h2>
+                        <p class="affd-apply-text">
+                            Earn 25% recurring commission on every trader you refer.
+                            No cap on earnings, real-time tracking, monthly payouts.
                         </p>
+                        <a href="/affiliate" class="affd-apply-btn">
+                            <i class="material-icons">arrow_forward</i>
+                            Apply Now
+                        </a>
+                        <div class="affd-apply-features">
+                            <div class="affd-apply-feature">
+                                <i class="material-icons">check_circle</i>
+                                25% recurring commission
+                            </div>
+                            <div class="affd-apply-feature">
+                                <i class="material-icons">check_circle</i>
+                                30-day cookie duration
+                            </div>
+                            <div class="affd-apply-feature">
+                                <i class="material-icons">check_circle</i>
+                                Real-time tracking
+                            </div>
+                            <div class="affd-apply-feature">
+                                <i class="material-icons">check_circle</i>
+                                Monthly payouts
+                            </div>
+                        </div>
                     </div>`;
                 return;
             }
@@ -161,80 +64,150 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(() => {
             document.getElementById('dashboardContent').innerHTML =
-                '<div class="error-state"><p>Failed to load dashboard. Please try again.</p></div>';
+                '<div class="affd-error"><i class="material-icons">error_outline</i><p>Failed to load dashboard. Please refresh the page.</p></div>';
         });
 });
 
 function renderDashboard(data, container) {
     const usersHtml = data.referred_users.length > 0
-        ? `<table class="referred-table">
-            <thead><tr><th>User</th><th>Joined</th></tr></thead>
-            <tbody>${data.referred_users.map(u => `
-                <tr>
-                    <td>${escapeHtml(u.display_name || u.username)}</td>
-                    <td>${new Date(u.joined).toLocaleDateString()}</td>
-                </tr>`).join('')}
-            </tbody>
-           </table>`
-        : `<div class="empty-state">
-                <i class="material-icons">people_outline</i>
-                <p>No referrals yet. Share your link to get started!</p>
+        ? `<div class="affd-table-wrap">
+            <table class="affd-table">
+                <thead><tr><th>User</th><th>Joined</th></tr></thead>
+                <tbody>${data.referred_users.map(u => {
+                    const name = escapeHtml(u.display_name || u.username);
+                    const initials = name.substring(0, 2);
+                    const dateStr = new Date(u.joined).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    return `<tr>
+                        <td>
+                            <div class="affd-user-cell">
+                                <div class="affd-user-avatar">${initials}</div>
+                                <span>${name}</span>
+                            </div>
+                        </td>
+                        <td class="affd-date-cell">${dateStr}</td>
+                    </tr>`;
+                }).join('')}
+                </tbody>
+            </table>
+           </div>`
+        : `<div class="affd-empty-state">
+                <div class="affd-empty-icon"><i class="material-icons">people_outline</i></div>
+                <p class="affd-empty-title">No referrals yet</p>
+                <p class="affd-empty-text">Share your referral link to start earning 25% recurring commission on every trader you refer.</p>
            </div>`;
 
     container.innerHTML = `
-        <div class="aff-stats">
-            <div class="stat-card">
-                <div class="stat-value">${escapeHtml(data.affiliate_code)}</div>
-                <div class="stat-label">Your Code</div>
+        <div class="affd-header">
+            <div class="affd-header-left">
+                <h1>Affiliate Dashboard</h1>
+                <p>Track your referrals and manage your affiliate links</p>
             </div>
-            <div class="stat-card">
-                <div class="stat-value">${data.referral_count}</div>
-                <div class="stat-label">Total Referrals</div>
+            <div class="affd-header-badge">
+                <i class="material-icons">verified</i>
+                Active Affiliate
             </div>
         </div>
 
-        <div class="referral-link-box">
-            <h3>Your Referral Link (Registration)</h3>
-            <div class="link-row">
-                <input type="text" id="refLink" value="${escapeHtml(data.referral_link)}" readonly>
-                <button class="btn-copy" id="copyBtn" onclick="copyLink('refLink', 'copyBtn')">
-                    <i class="material-icons" style="font-size:18px;vertical-align:middle;">content_copy</i> Copy
+        <div class="affd-stats">
+            <div class="affd-stat-card">
+                <div class="affd-stat-icon"><i class="material-icons">tag</i></div>
+                <div class="affd-stat-value affd-code">${escapeHtml(data.affiliate_code)}</div>
+                <div class="affd-stat-label">Your Code</div>
+            </div>
+            <div class="affd-stat-card">
+                <div class="affd-stat-icon"><i class="material-icons">group_add</i></div>
+                <div class="affd-stat-value">${data.referral_count}</div>
+                <div class="affd-stat-label">Total Referrals</div>
+            </div>
+            <div class="affd-stat-card">
+                <div class="affd-stat-icon"><i class="material-icons">percent</i></div>
+                <div class="affd-stat-value">25%</div>
+                <div class="affd-stat-label">Commission Rate</div>
+            </div>
+            <div class="affd-stat-card">
+                <div class="affd-stat-icon"><i class="material-icons">schedule</i></div>
+                <div class="affd-stat-value">30d</div>
+                <div class="affd-stat-label">Cookie Duration</div>
+            </div>
+        </div>
+
+        <div class="affd-link-box">
+            <div class="affd-link-box-header">
+                <i class="material-icons">link</i>
+                <h3>Registration Referral Link</h3>
+            </div>
+            <p class="affd-link-box-desc">Share this link to refer new users. Signups within 30 days earn you 25% recurring commission.</p>
+            <div class="affd-link-row">
+                <input type="text" id="refLink" class="affd-link-input" value="${escapeHtml(data.referral_link)}" readonly>
+                <button class="affd-copy-btn" id="copyBtn" onclick="copyLink('refLink', 'copyBtn')">
+                    <i class="material-icons">content_copy</i>
+                    <span>Copy</span>
+                </button>
+            </div>
+            <div class="affd-share-row">
+                <button class="affd-share-btn" onclick="shareOnX('refLink')">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.631 5.905-5.631zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                    Share on X
+                </button>
+                <button class="affd-share-btn" onclick="shareViaEmail('refLink')">
+                    <i class="material-icons">email</i>
+                    Share via Email
                 </button>
             </div>
         </div>
 
-        <div class="referral-link-box">
-            <h3>Your Pricing Referral Link</h3>
-            <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.75rem;">Share this link to direct visitors to the pricing page with your custom Whop checkout links.</p>
-            <div class="link-row">
-                <input type="text" id="pricingLink" value="${escapeHtml(data.pricing_link || '')}" readonly>
-                <button class="btn-copy" id="copyPricingBtn" onclick="copyLink('pricingLink', 'copyPricingBtn')">
-                    <i class="material-icons" style="font-size:18px;vertical-align:middle;">content_copy</i> Copy
+        <div class="affd-link-box">
+            <div class="affd-link-box-header">
+                <i class="material-icons">storefront</i>
+                <h3>Pricing Referral Link</h3>
+            </div>
+            <p class="affd-link-box-desc">Direct visitors to the pricing page with your custom Whop checkout links pre-loaded.</p>
+            <div class="affd-link-row">
+                <input type="text" id="pricingLink" class="affd-link-input" value="${escapeHtml(data.pricing_link || '')}" readonly>
+                <button class="affd-copy-btn" id="copyPricingBtn" onclick="copyLink('pricingLink', 'copyPricingBtn')">
+                    <i class="material-icons">content_copy</i>
+                    <span>Copy</span>
                 </button>
             </div>
         </div>
 
-        <div class="whop-links-section">
-            <h3>Whop Checkout Links</h3>
-            <p class="section-desc">Paste your own Whop checkout links for each tier. When visitors use your pricing referral link, these links replace the default checkout buttons.</p>
-            <div class="whop-field">
-                <label>Basic+ ($200/mo)</label>
-                <input type="url" id="whop_link_platform_basic" value="${escapeHtml(data.whop_link_platform_basic || '')}" placeholder="https://whop.com/...">
+        <div class="affd-whop-section">
+            <div class="affd-whop-header">
+                <i class="material-icons">shopping_cart</i>
+                <h3>Whop Checkout Links</h3>
             </div>
-            <div class="whop-field">
-                <label>Premium+ ($500/mo)</label>
-                <input type="url" id="whop_link_platform_premium" value="${escapeHtml(data.whop_link_platform_premium || '')}" placeholder="https://whop.com/...">
+            <p class="affd-whop-desc">Paste your own Whop checkout links for each tier. When visitors use your pricing referral link, these replace the default checkout buttons.</p>
+            <div class="affd-whop-grid">
+                <div class="affd-whop-field">
+                    <label><span class="affd-tier-dot basic"></span> Basic+ ($200/mo)</label>
+                    <input type="url" id="whop_link_platform_basic" value="${escapeHtml(data.whop_link_platform_basic || '')}" placeholder="https://whop.com/...">
+                </div>
+                <div class="affd-whop-field">
+                    <label><span class="affd-tier-dot premium"></span> Premium+ ($500/mo)</label>
+                    <input type="url" id="whop_link_platform_premium" value="${escapeHtml(data.whop_link_platform_premium || '')}" placeholder="https://whop.com/...">
+                </div>
+                <div class="affd-whop-field">
+                    <label><span class="affd-tier-dot elite"></span> Elite+ ($1,000/mo)</label>
+                    <input type="url" id="whop_link_platform_elite" value="${escapeHtml(data.whop_link_platform_elite || '')}" placeholder="https://whop.com/...">
+                </div>
             </div>
-            <div class="whop-field">
-                <label>Elite+ ($1,000/mo)</label>
-                <input type="url" id="whop_link_platform_elite" value="${escapeHtml(data.whop_link_platform_elite || '')}" placeholder="https://whop.com/...">
+            <div class="affd-whop-actions">
+                <button class="affd-save-btn" id="saveLinksBtn" onclick="saveWhopLinks()">
+                    <i class="material-icons">save</i>
+                    Save Whop Links
+                </button>
+                <span class="affd-save-feedback" id="saveFeedback"></span>
             </div>
-            <button class="btn-save-links" id="saveLinksBtn" onclick="saveWhopLinks()">Save Whop Links</button>
-            <span class="save-feedback" id="saveFeedback"></span>
         </div>
 
-        <div class="referred-section">
-            <h3>Referred Users</h3>
+        <div class="affd-referred">
+            <div class="affd-referred-header">
+                <div class="affd-referred-header-left">
+                    <i class="material-icons">people</i>
+                    <h3>Referred Users</h3>
+                </div>
+                ${data.referred_users.length > 0 ? '<span class="affd-referred-count">' + data.referral_count + '</span>' : ''}
+            </div>
             ${usersHtml}
         </div>
     `;
@@ -244,13 +217,30 @@ function copyLink(inputId, btnId) {
     const input = document.getElementById(inputId);
     navigator.clipboard.writeText(input.value).then(() => {
         const btn = document.getElementById(btnId);
-        btn.classList.add('copied');
-        btn.innerHTML = '<i class="material-icons" style="font-size:18px;vertical-align:middle;">check</i> Copied!';
+        btn.classList.add('affd-copied');
+        btn.innerHTML = '<i class="material-icons">check_circle</i><span>Copied!</span>';
         setTimeout(() => {
-            btn.classList.remove('copied');
-            btn.innerHTML = '<i class="material-icons" style="font-size:18px;vertical-align:middle;">content_copy</i> Copy';
+            btn.classList.remove('affd-copied');
+            btn.innerHTML = '<i class="material-icons">content_copy</i><span>Copy</span>';
         }, 2000);
     });
+}
+
+function shareOnX(inputId) {
+    var link = document.getElementById(inputId).value;
+    var text = encodeURIComponent('Check out @JustTrades \u2014 automated futures trading execution. Use my link: ' + link);
+    window.open('https://twitter.com/intent/tweet?text=' + text, '_blank', 'width=600,height=400');
+}
+
+function shareViaEmail(inputId) {
+    var link = document.getElementById(inputId).value;
+    var subject = encodeURIComponent('Check out Just.Trades \u2014 Automated Futures Trading');
+    var body = encodeURIComponent(
+        'Hey,\n\nI\'ve been using Just.Trades for automated futures trading and thought you might find it useful.\n\n' +
+        'It automates trade execution from TradingView alerts directly to your broker \u2014 no manual entry needed.\n\n' +
+        'Sign up using my referral link and get started:\n' + link + '\n\nCheers'
+    );
+    window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
 }
 
 function saveWhopLinks() {
@@ -271,14 +261,14 @@ function saveWhopLinks() {
 
     const feedback = document.getElementById('saveFeedback');
     if (!valid) {
-        feedback.style.color = 'var(--red)';
+        feedback.style.color = '#ef4444';
         feedback.textContent = 'Links must start with https://whop.com/';
         return;
     }
 
     const btn = document.getElementById('saveLinksBtn');
     btn.disabled = true;
-    btn.textContent = 'Saving...';
+    btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Saving...';
     feedback.textContent = '';
 
     fetch('/api/affiliate/whop-links', {
@@ -289,20 +279,20 @@ function saveWhopLinks() {
     .then(r => r.json())
     .then(data => {
         btn.disabled = false;
-        btn.textContent = 'Save Whop Links';
+        btn.innerHTML = '<i class="material-icons">save</i> Save Whop Links';
         if (data.error) {
-            feedback.style.color = 'var(--red)';
+            feedback.style.color = '#ef4444';
             feedback.textContent = data.error;
         } else {
             feedback.style.color = 'var(--green)';
-            feedback.textContent = 'Saved!';
+            feedback.textContent = 'Saved successfully!';
             setTimeout(() => { feedback.textContent = ''; }, 3000);
         }
     })
     .catch(() => {
         btn.disabled = false;
-        btn.textContent = 'Save Whop Links';
-        feedback.style.color = 'var(--red)';
+        btn.innerHTML = '<i class="material-icons">save</i> Save Whop Links';
+        feedback.style.color = '#ef4444';
         feedback.textContent = 'Network error. Please try again.';
     });
 }
