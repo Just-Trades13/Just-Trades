@@ -2410,8 +2410,54 @@ def execute_trade_simple(
                                 logger.info(f"📈 [{acct_name}] DCA ADD - Adding to {existing_position_side} {existing_position_qty} (dca_enabled=ON)")
                                 is_dca_local = True  # PROTECTED: Triggers cancel+replace TP logic
                             else:
-                                # DCA MODE OFF: Ignore existing position, treat as fresh entry with bracket order
-                                logger.info(f"📊 [{acct_name}] DCA OFF - Ignoring existing {existing_position_side} {existing_position_qty}, treating as fresh bracket entry")
+                                # DCA MODE OFF: Close existing position first, then treat as fresh entry with bracket order
+                                logger.info(f"📊 [{acct_name}] DCA OFF - Closing existing {existing_position_side} {existing_position_qty} before fresh bracket entry")
+
+                                # Cancel all resting orders (TP/SL) for this account+symbol before close
+                                try:
+                                    dca_off_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                                    dca_off_cancelled = 0
+                                    for doo in (dca_off_orders or []):
+                                        doo_symbol = str(doo.get('symbol', '')).upper()
+                                        doo_status = str(doo.get('ordStatus', '')).upper()
+                                        doo_id = doo.get('id')
+                                        if (local_symbol_root in doo_symbol and
+                                            doo_status in ['WORKING', 'NEW', 'PENDINGNEW'] and doo_id):
+                                            try:
+                                                await tradovate.cancel_order_smart(int(doo_id))
+                                                dca_off_cancelled += 1
+                                                try:
+                                                    from ultra_simple_server import unregister_oco_pair
+                                                    unregister_oco_pair(int(doo_id))
+                                                except Exception:
+                                                    pass
+                                            except Exception as doo_cancel_err:
+                                                logger.warning(f"⚠️ [{acct_name}] DCA-off cancel order {doo_id}: {doo_cancel_err}")
+                                    if dca_off_cancelled > 0:
+                                        logger.info(f"🗑️ [{acct_name}] DCA-off: Cancelled {dca_off_cancelled} resting orders before close")
+                                    try:
+                                        from ultra_simple_server import unregister_break_even_monitor
+                                        be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
+                                        unregister_break_even_monitor(be_key)
+                                    except Exception:
+                                        pass
+                                except Exception as dca_off_cleanup_err:
+                                    logger.warning(f"⚠️ [{acct_name}] DCA-off order cleanup failed: {dca_off_cleanup_err}")
+
+                                # Place market order to close existing position
+                                close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
+                                close_order_data = tradovate.create_market_order(
+                                    tradovate_account_spec, local_tradovate_symbol,
+                                    close_action, existing_position_qty, tradovate_account_id
+                                )
+                                logger.info(f"📤 [{acct_name}] DCA-off close: {close_action} {existing_position_qty} {local_tradovate_symbol}")
+                                close_result = await tradovate.place_order_smart(close_order_data)
+                                if close_result and close_result.get('success'):
+                                    logger.info(f"✅ [{acct_name}] DCA-off close filled — proceeding to fresh bracket entry")
+                                else:
+                                    close_err = close_result.get('error') or 'Unknown error' if close_result else 'No response'
+                                    logger.warning(f"⚠️ [{acct_name}] DCA-off close may have failed: {close_err} — proceeding to bracket anyway")
+
                                 has_existing_position = False
                             # Continue to execute
                         else:
