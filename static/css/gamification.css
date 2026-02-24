@@ -1,0 +1,1117 @@
+/* ============================================================================
+   GAMIFICATION & ACHIEVEMENTS PANEL CSS
+   Just Trades Platform - Futures Trading Automation
+   ============================================================================ */
+
+/* ============================================================================
+   ANIMATIONS
+   ============================================================================ */
+
+@keyframes gam-slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes gam-slideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes gam-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes gam-shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes gam-toastIn {
+  from {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes gam-toastOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+}
+
+@keyframes gam-popBadge {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes gam-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+/* ============================================================================
+   FLOATING TRIGGER BUTTON
+   ============================================================================ */
+
+.gam-trigger-btn {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  z-index: 1050;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-teal) 100%);
+  box-shadow: 0 4px 20px rgba(25, 184, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-size: 28px;
+  color: white;
+  font-weight: bold;
+}
+
+.gam-trigger-btn:hover {
+  transform: scale(1.12);
+  box-shadow: 0 6px 30px rgba(25, 184, 255, 0.4);
+}
+
+.gam-trigger-btn:active {
+  transform: scale(0.95);
+}
+
+.gam-trigger-btn.pulse {
+  animation: gam-pulse 2s ease-in-out infinite;
+}
+
+.gam-trigger-btn.show-notification::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: white;
+  font-weight: bold;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+  animation: gam-bounce 1s ease-in-out infinite;
+}
+
+/* ============================================================================
+   OVERLAY
+   ============================================================================ */
+
+.gam-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1055;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+  display: none;
+}
+
+.gam-overlay.active {
+  opacity: 1;
+  visibility: visible;
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .gam-overlay {
+    display: block;
+  }
+}
+
+/* ============================================================================
+   MAIN PANEL
+   ============================================================================ */
+
+.gam-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 380px;
+  height: 100vh;
+  background: var(--background-dark);
+  border-left: 1px solid var(--border-color);
+  z-index: 1060;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.5);
+  transform: translateX(100%);
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: hidden;
+}
+
+.gam-panel.open {
+  transform: translateX(0);
+}
+
+.gam-panel.closing {
+  animation: gam-slideOut 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* ============================================================================
+   PANEL HEADER
+   ============================================================================ */
+
+.gam-panel-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(25, 184, 255, 0.05) 0%, rgba(12, 107, 189, 0.02) 100%);
+}
+
+.gam-panel-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-light);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gam-panel-title::before {
+  content: '🏆';
+  font-size: 24px;
+}
+
+.gam-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 24px;
+  color: var(--text-muted);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+}
+
+.gam-close-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-light);
+}
+
+/* ============================================================================
+   XP PROGRESS BAR
+   ============================================================================ */
+
+.gam-xp-section {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.gam-xp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.gam-level-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gam-level-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-teal) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  color: white;
+  box-shadow: 0 2px 8px rgba(25, 184, 255, 0.3);
+}
+
+.gam-level-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gam-level-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gam-level-name {
+  font-size: 14px;
+  color: var(--text-light);
+  font-weight: 600;
+}
+
+.gam-xp-value {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.gam-xp-bar-container {
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 8px;
+  height: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.gam-xp-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-color) 0%, var(--accent-teal) 100%);
+  border-radius: 8px;
+  transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  box-shadow: 0 0 12px rgba(25, 184, 255, 0.4), inset 0 0 4px rgba(255, 255, 255, 0.3);
+}
+
+.gam-xp-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: gam-shimmer 2s infinite;
+  background-size: 200% 100%;
+}
+
+/* ============================================================================
+   TABS
+   ============================================================================ */
+
+.gam-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+  flex-shrink: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.gam-tab {
+  background: none;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gam-tab:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--accent-teal);
+}
+
+.gam-tab.active {
+  background: linear-gradient(135deg, rgba(25, 184, 255, 0.15) 0%, rgba(45, 212, 191, 0.1) 100%);
+  color: var(--primary-color);
+  border-bottom: 2px solid var(--primary-color);
+}
+
+/* ============================================================================
+   CONTENT AREA
+   ============================================================================ */
+
+.gam-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gam-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.gam-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.gam-content::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.gam-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
+
+/* ============================================================================
+   EMPTY STATE
+   ============================================================================ */
+
+.gam-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.gam-empty-state-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
+
+.gam-empty-state-text {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ============================================================================
+   ACHIEVEMENT CARD
+   ============================================================================ */
+
+.gam-achievement {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(148, 163, 184, 0.05);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.gam-achievement::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, transparent 0%, rgba(25, 184, 255, 0.1) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.gam-achievement:hover {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(25, 184, 255, 0.3);
+  transform: translateX(4px);
+}
+
+.gam-achievement.unlocked {
+  opacity: 1;
+}
+
+.gam-achievement.unlocked:hover::before {
+  opacity: 1;
+}
+
+.gam-achievement.locked {
+  opacity: 0.5;
+  filter: grayscale(0.7);
+}
+
+.gam-achievement.locked:hover {
+  background: rgba(148, 163, 184, 0.05);
+  border-color: var(--border-color);
+  transform: none;
+}
+
+/* ============================================================================
+   ACHIEVEMENT ICON
+   ============================================================================ */
+
+.gam-achievement-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  background: rgba(25, 184, 255, 0.15);
+  border: 2px solid rgba(25, 184, 255, 0.3);
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.gam-achievement.unlocked .gam-achievement-icon {
+  background: linear-gradient(135deg, rgba(25, 184, 255, 0.3) 0%, rgba(45, 212, 191, 0.2) 100%);
+  border: 2px solid var(--primary-color);
+  box-shadow: 0 0 12px rgba(25, 184, 255, 0.3), inset 0 0 8px rgba(25, 184, 255, 0.2);
+}
+
+.gam-achievement.locked .gam-achievement-icon {
+  background: rgba(100, 100, 120, 0.2);
+  border: 2px solid rgba(100, 100, 120, 0.3);
+}
+
+/* ============================================================================
+   ACHIEVEMENT LOCK ICON (OVERLAY)
+   ============================================================================ */
+
+.gam-achievement.locked .gam-achievement-icon::after {
+  content: '🔒';
+  position: absolute;
+  font-size: 14px;
+}
+
+.gam-achievement.unlocked .gam-achievement-icon::after {
+  content: '✓';
+  position: absolute;
+  font-size: 16px;
+  color: var(--green);
+  font-weight: bold;
+  animation: gam-popBadge 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ============================================================================
+   ACHIEVEMENT INFO
+   ============================================================================ */
+
+.gam-achievement-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.gam-achievement-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-light);
+  margin: 0 0 4px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.gam-achievement-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ============================================================================
+   ACHIEVEMENT PROGRESS BAR
+   ============================================================================ */
+
+.gam-achievement-progress-container {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.gam-achievement-progress {
+  flex: 1;
+  height: 6px;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.gam-achievement-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-color), var(--accent-teal));
+  border-radius: 3px;
+  transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 0 6px rgba(25, 184, 255, 0.4);
+}
+
+.gam-achievement.locked .gam-achievement-progress-fill {
+  background: linear-gradient(90deg, rgba(100, 100, 120, 0.5), rgba(100, 100, 120, 0.3));
+}
+
+.gam-achievement-progress-text {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   ACHIEVEMENT BADGE
+   ============================================================================ */
+
+.gam-achievement-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gam-achievement.unlocked .gam-achievement-badge {
+  background: rgba(45, 206, 137, 0.15);
+  color: var(--green);
+  border: 1px solid rgba(45, 206, 137, 0.3);
+}
+
+.gam-achievement.locked .gam-achievement-badge {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-muted);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+/* ============================================================================
+   STREAK COUNTER
+   ============================================================================ */
+
+.gam-streak {
+  padding: 12px;
+  background: linear-gradient(135deg, rgba(255, 165, 0, 0.15) 0%, rgba(255, 107, 107, 0.1) 100%);
+  border: 1px solid rgba(255, 165, 0, 0.3);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.gam-streak-icon {
+  font-size: 28px;
+  animation: gam-bounce 1.5s ease-in-out infinite;
+}
+
+.gam-streak-content {
+  flex: 1;
+}
+
+.gam-streak-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 2px;
+}
+
+.gam-streak-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffa500;
+}
+
+.gam-streak-subtext {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ============================================================================
+   SECTION HEADER
+   ============================================================================ */
+
+.gam-section-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 0 4px 0;
+  margin-top: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.gam-section-header:first-of-type {
+  margin-top: 0;
+}
+
+/* ============================================================================
+   NOTIFICATION TOAST
+   ============================================================================ */
+
+.gam-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  max-width: 340px;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-teal) 100%);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(25, 184, 255, 0.3);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: gam-toastIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  color: white;
+  border: 1px solid rgba(45, 212, 191, 0.3);
+}
+
+.gam-toast.hiding {
+  animation: gam-toastOut 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.gam-toast-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+  animation: gam-popBadge 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.gam-toast-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.gam-toast-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 4px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.gam-toast-text {
+  font-size: 12px;
+  margin: 0;
+  opacity: 0.95;
+}
+
+.gam-toast-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.gam-toast-close:hover {
+  opacity: 1;
+}
+
+/* ============================================================================
+   SPECIAL ACHIEVEMENT (RARITY)
+   ============================================================================ */
+
+.gam-achievement.rarity-legendary {
+  border-color: rgba(255, 215, 0, 0.3);
+  background: rgba(255, 215, 0, 0.08);
+}
+
+.gam-achievement.rarity-legendary .gam-achievement-icon {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3) 0%, rgba(255, 165, 0, 0.2) 100%);
+  border-color: rgba(255, 215, 0, 0.5);
+  box-shadow: 0 0 16px rgba(255, 215, 0, 0.3), inset 0 0 8px rgba(255, 215, 0, 0.2);
+}
+
+.gam-achievement.rarity-epic {
+  border-color: rgba(147, 112, 219, 0.3);
+  background: rgba(147, 112, 219, 0.08);
+}
+
+.gam-achievement.rarity-epic .gam-achievement-icon {
+  background: linear-gradient(135deg, rgba(147, 112, 219, 0.3) 0%, rgba(186, 85, 211, 0.2) 100%);
+  border-color: rgba(147, 112, 219, 0.5);
+  box-shadow: 0 0 16px rgba(147, 112, 219, 0.3), inset 0 0 8px rgba(147, 112, 219, 0.2);
+}
+
+.gam-achievement.rarity-rare {
+  border-color: rgba(45, 184, 255, 0.3);
+  background: rgba(45, 184, 255, 0.08);
+}
+
+.gam-achievement.rarity-uncommon {
+  border-color: rgba(45, 206, 137, 0.3);
+  background: rgba(45, 206, 137, 0.08);
+}
+
+/* ============================================================================
+   LOADING STATE
+   ============================================================================ */
+
+.gam-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px 20px;
+}
+
+.gam-loader {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(25, 184, 255, 0.2);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============================================================================
+   PANEL FOOTER
+   ============================================================================ */
+
+.gam-panel-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.gam-footer-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  /* Panel full width on mobile */
+  .gam-panel {
+    width: 100%;
+  }
+
+  /* Overlay visible on mobile */
+  .gam-overlay {
+    display: block;
+  }
+
+  /* Smaller trigger button on mobile */
+  .gam-trigger-btn {
+    width: 48px;
+    height: 48px;
+    font-size: 22px;
+    bottom: 70px;
+    right: 16px;
+  }
+
+  /* Toast adjusted for mobile */
+  .gam-toast {
+    max-width: calc(100vw - 20px);
+    right: 10px;
+    top: 10px;
+  }
+
+  /* Compact achievement cards on mobile */
+  .gam-achievement {
+    gap: 10px;
+  }
+
+  .gam-achievement-icon {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+  }
+
+  /* Tighter spacing */
+  .gam-panel-header {
+    padding: 16px;
+  }
+
+  .gam-xp-section {
+    padding: 12px 16px;
+  }
+
+  .gam-tabs {
+    padding: 10px 16px;
+    gap: 6px;
+  }
+
+  .gam-tab {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .gam-content {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .gam-panel-footer {
+    padding: 10px 16px;
+  }
+
+  /* Reduce level badge size */
+  .gam-level-badge {
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+  }
+
+  /* Stack section on small screens */
+  .gam-xp-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .gam-xp-value {
+    align-self: flex-end;
+  }
+}
+
+/* Small devices (< 480px) */
+@media (max-width: 480px) {
+  .gam-trigger-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+    bottom: 66px;
+    right: 12px;
+  }
+
+  .gam-panel-header {
+    padding: 14px;
+  }
+
+  .gam-panel-title {
+    font-size: 18px;
+  }
+
+  .gam-panel-title::before {
+    font-size: 20px;
+  }
+
+  .gam-toast {
+    max-width: calc(100vw - 12px);
+    right: 6px;
+    top: 6px;
+  }
+
+  .gam-toast-content {
+    min-width: 0;
+  }
+
+  .gam-achievement {
+    flex-direction: column;
+    padding: 10px;
+  }
+
+  .gam-achievement-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+    align-self: flex-start;
+  }
+
+  .gam-achievement-title {
+    font-size: 12px;
+  }
+
+  .gam-achievement-desc {
+    font-size: 11px;
+  }
+}
+
+/* ============================================================================
+   ACCESSIBILITY
+   ============================================================================ */
+
+.gam-trigger-btn:focus,
+.gam-close-btn:focus,
+.gam-tab:focus {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* Dark mode support (already using CSS variables) */
+@media (prefers-color-scheme: dark) {
+  /* Inherits dark theme from CSS variables */
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .gam-trigger-btn,
+  .gam-xp-bar-fill,
+  .gam-achievement,
+  .gam-panel,
+  .gam-toast,
+  .gam-streak-icon,
+  .gam-achievement-icon::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .gam-xp-bar-fill::after {
+    animation: none !important;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: more) {
+  .gam-panel {
+    border-left-width: 2px;
+  }
+
+  .gam-achievement {
+    border-width: 2px;
+  }
+
+  .gam-tab.active {
+    border-bottom-width: 3px;
+  }
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+.gam-hidden {
+  display: none !important;
+}
+
+.gam-text-center {
+  text-align: center;
+}
+
+.gam-mt-8 {
+  margin-top: 8px;
+}
+
+.gam-mt-12 {
+  margin-top: 12px;
+}
+
+.gam-mb-8 {
+  margin-bottom: 8px;
+}
+
+.gam-mb-12 {
+  margin-bottom: 12px;
+}
+
+.gam-opacity-50 {
+  opacity: 0.5;
+}
+
+.gam-opacity-75 {
+  opacity: 0.75;
+}
+
+/* ============================================================================
+   STATE TRANSITIONS
+   ============================================================================ */
+
+.gam-panel-entering {
+  animation: gam-slideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.gam-panel-exiting {
+  animation: gam-slideOut 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Smooth color transitions */
+* {
+  transition-property: color, background-color, border-color, box-shadow;
+  transition-timing-function: ease;
+  transition-duration: 0.2s;
+}
+
+/* Exclude animation-heavy elements from transition smoothing */
+.gam-trigger-btn,
+.gam-panel,
+.gam-toast,
+.gam-xp-bar-fill,
+.gam-achievement-progress-fill {
+  transition-property: none;
+}
+
+/* ============================================================================
+   END OF GAMIFICATION CSS
+   ============================================================================ */

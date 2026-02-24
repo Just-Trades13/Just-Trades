@@ -798,6 +798,7 @@
         }
     </style>
     <link rel="stylesheet" href="/static/css/mobile.css?v=20260223b">
+    <link rel="stylesheet" href="/static/css/gamification.css">
     {% block styles %}{% endblock %}
 </head>
 <body data-user-logged-in="{{ 'true' if session.get('user_id') else 'false' }}"
@@ -2532,5 +2533,6 @@
             // Will be requested when needed
         }
     </script>
+    <script src="/static/js/gamification.js"></script>
 </body>
 </html>
