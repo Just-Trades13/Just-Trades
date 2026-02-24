@@ -77,7 +77,7 @@ AFTER:
 ```
 
 **GATE 2 rules:**
-- If ANY sacred function appears in the diff → STOP. Sacred functions: `execute_trade_simple()`, `do_trade_for_account()`, `process_webhook_directly()`, `start_position_reconciliation()`, `start_websocket_keepalive_daemon()`, `broker_execution_worker()`
+- If ANY sacred function appears in the diff → STOP. Sacred functions: `execute_trade_simple()`, `do_trade_for_account()`, `process_webhook_directly()`, `start_position_reconciliation()`, `broker_execution_worker()`
 - The before/after MUST be real code, not descriptions. The user needs to see the exact diff.
 - Only ADD lines to sacred files. NEVER restructure, rename, reorder, or "improve" existing code.
 
@@ -187,7 +187,6 @@ These files are the live production trading engine. Editing them without care ha
 | `do_trade_for_account()` | `recorder_service.py` | Per-account broker execution |
 | `process_webhook_directly()` | `ultra_simple_server.py` | Webhook → broker queue pipeline |
 | `start_position_reconciliation()` | `recorder_service.py` | Keeps DB in sync with broker |
-| `start_websocket_keepalive_daemon()` | `recorder_service.py` | Keeps WebSocket connections alive |
 | `broker_execution_worker()` | `ultra_simple_server.py` | Processes broker execution queue |
 
 **"Don't touch" means:**

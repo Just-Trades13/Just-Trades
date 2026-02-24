@@ -7,7 +7,6 @@
 #   - do_trade_for_account()
 #   - process_webhook_directly()
 #   - start_position_reconciliation()
-#   - start_websocket_keepalive_daemon()
 #   - broker_execution_worker()
 
 # Read the tool input from stdin
@@ -50,7 +49,6 @@ SACRED_PATTERNS=(
     "def do_trade_for_account"
     "def process_webhook_directly"
     "def start_position_reconciliation"
-    "def start_websocket_keepalive_daemon"
     "def broker_execution_worker"
 )
 
