@@ -2894,7 +2894,7 @@ def _init_sqlite_tables(conn):
             sl_units TEXT,
             max_daily_loss REAL,
             enabled_accounts TEXT,
-            max_contracts INTEGER DEFAULT 10,
+            max_contracts INTEGER DEFAULT 0,
             custom_ticker TEXT,
             multiplier REAL DEFAULT 1.0,
             risk_percent REAL,
@@ -3360,7 +3360,7 @@ def _init_postgres_tables():
             sl_units TEXT,
             max_daily_loss REAL,
             enabled_accounts TEXT,
-            max_contracts INTEGER DEFAULT 10,
+            max_contracts INTEGER DEFAULT 0,
             custom_ticker VARCHAR(50),
             multiplier REAL DEFAULT 1.0,
             risk_percent REAL,
@@ -5986,6 +5986,21 @@ def run_migrations():
     except Exception as e:
         conn.rollback()
         results.append(f"⚠️ JADVIX DCA fix failed: {str(e)[:100]}")
+
+    # Fix max_contracts DEFAULT 10 → 0 (unlimited) for all traders
+    # DEFAULT 10 was wrong — silently capped every trader at 10 contracts
+    # Users who never touched max_contracts got blocked on DCA past 10
+    try:
+        cursor.execute('UPDATE traders SET max_contracts = 0 WHERE max_contracts = 10')
+        mc_updated = cursor.rowcount
+        conn.commit()
+        if mc_updated > 0:
+            results.append(f"✅ max_contracts fix: set {mc_updated} traders from 10 → 0 (unlimited)")
+        else:
+            results.append(f"⏭️ max_contracts: no traders had the old default (10)")
+    except Exception as e:
+        conn.rollback()
+        results.append(f"⚠️ max_contracts fix failed: {str(e)[:100]}")
 
     conn.close()
     return jsonify({'success': True, 'migrations': results})
