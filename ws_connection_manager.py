@@ -43,6 +43,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import threading
 import time
 from datetime import datetime, timezone
@@ -176,8 +177,9 @@ class SharedConnection:
         # Dead-subscription detection
         self._zero_data_windows = 0
 
-        # Max connection: 70 min (before 85-min token expiry)
-        self._max_connection_seconds = 4200
+        # Max connection: 60-75 min (jittered, before 85-min token expiry)
+        # Jitter prevents all connections from reconnecting at the same time
+        self._max_connection_seconds = random.randint(3600, 4500)
 
         # Stats
         self._msg_count = 0
@@ -649,6 +651,12 @@ class TradovateConnectionManager:
         backoff = 1
         max_backoff = 60
 
+        # Stagger initial connection: random 0-10s delay to prevent 429 storms
+        # when all connections start simultaneously on deploy
+        initial_delay = random.uniform(0, 10)
+        logger.info(f"[{token_key}] Starting connection in {initial_delay:.1f}s (staggered)")
+        await asyncio.sleep(initial_delay)
+
         while self._running and conn._listeners:
             try:
                 # Refresh token from DB before each reconnect
@@ -673,13 +681,15 @@ class TradovateConnectionManager:
                     logger.info(f"[{token_key}] No listeners remaining — stopping reconnect")
                     break
 
-                logger.info(f"[{token_key}] Reconnecting in {backoff}s...")
-                await asyncio.sleep(backoff)
+                jittered_delay = backoff + random.uniform(0, 5)
+                logger.info(f"[{token_key}] Reconnecting in {jittered_delay:.1f}s...")
+                await asyncio.sleep(jittered_delay)
                 backoff = min(backoff * 2, max_backoff)
 
             except Exception as e:
                 logger.error(f"[{token_key}] Connection error: {e}")
-                await asyncio.sleep(backoff)
+                jittered_delay = backoff + random.uniform(0, 5)
+                await asyncio.sleep(jittered_delay)
                 backoff = min(backoff * 2, max_backoff)
 
     def _get_fresh_token(self, db_account_ids: List[int]) -> Optional[str]:
