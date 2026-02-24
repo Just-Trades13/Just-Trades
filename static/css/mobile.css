@@ -344,35 +344,62 @@ html, body {
         min-width: 0 !important;
     }
 
-    /* Accounts table inside strategy card: scroll wrapper */
+    /* Accounts table: stacked card layout (see traders.html inline for full rules) */
     .strategy-accounts {
-        overflow-x: auto !important;
-        -webkit-overflow-scrolling: touch;
+        overflow: hidden !important;
+        width: 100% !important;
     }
     .accounts-table {
-        min-width: 480px !important;
-        font-size: 0.78rem !important;
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
     }
-    .accounts-table th,
-    .accounts-table td {
-        padding: 0.5rem 0.6rem !important;
+    .accounts-table thead {
+        display: none !important;
     }
-
-    /* Trader table: same treatment */
-    .trader-table {
-        display: block;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    /* Actions cell: tighter on mobile */
-    .actions {
+    .accounts-table tbody {
         display: flex !important;
-        gap: 0.25rem !important;
-        flex-wrap: nowrap !important;
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+        padding: 0.5rem !important;
+    }
+    .accounts-table tbody tr {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: 0.5rem !important;
+        padding: 0.75rem !important;
+        background: rgba(15, 23, 42, 0.4) !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(148, 163, 184, 0.08) !important;
+        border-bottom: none !important;
+    }
+    .accounts-table tbody td {
+        display: inline-flex !important;
+        padding: 0 !important;
+        border: none !important;
+        font-size: 0.85rem !important;
+    }
+    .accounts-table tbody td.account-name-cell {
+        width: 100% !important;
+        font-weight: 600 !important;
+    }
+
+    /* Trader table: same stacked treatment */
+    .trader-table {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    /* Actions cell */
+    .actions {
+        margin-left: auto !important;
+        display: flex !important;
+        gap: 0.5rem !important;
     }
     .action-btn {
-        padding: 0.3rem !important;
+        padding: 0.35rem !important;
     }
 
     /* Toast: don't exceed viewport */
