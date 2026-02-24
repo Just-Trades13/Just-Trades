@@ -21,10 +21,18 @@ import logging
 import os
 import threading
 import time
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from datetime import datetime, date
 
 logger = logging.getLogger(__name__)
+
+# Import shared connection manager
+try:
+    from ws_connection_manager import get_connection_manager, Listener
+    CONNECTION_MANAGER_AVAILABLE = True
+except ImportError:
+    CONNECTION_MANAGER_AVAILABLE = False
+    logger.warning("ws_connection_manager not available — falling back to standalone connections")
 
 # Try to import websockets
 try:
@@ -43,7 +51,171 @@ _max_loss_settings: Dict[int, float] = {}  # account_id -> max_daily_loss
 _daily_realized_pnl: Dict[int, float] = {}  # account_id -> today's realized P&L
 _last_pnl_check: Dict[int, float] = {}  # account_id -> last openPnL value
 _breached_today: Dict[int, bool] = {}  # account_id -> already breached today
+_max_loss_listeners: Dict[str, Any] = {}  # token_key -> MaxLossMonitorListener
+_projectx_thread = None  # Separate thread for ProjectX REST polling
 
+
+# ============================================================================
+# MAX LOSS MONITOR LISTENER — Uses shared connection manager
+# ============================================================================
+
+class MaxLossMonitorListener:
+    """Listener for max daily loss monitoring via shared WebSocket connection.
+
+    One listener per token group — handles multiple accounts with different
+    max_daily_loss thresholds. Checks accountId on cashBalance entities to
+    route breach detection to the correct account config.
+    """
+
+    def __init__(self, token_key: str, access_token: str, is_demo: bool,
+                 accounts: List[dict]):
+        """
+        Args:
+            token_key: Short hash of token for logging
+            access_token: Tradovate access token
+            is_demo: Demo or live environment
+            accounts: List of account dicts with keys:
+                subaccount_id, max_daily_loss, trader_id, recorder_id, account_id, account_name
+        """
+        self._token_key = token_key
+        self.access_token = access_token
+        self.is_demo = is_demo
+        self.connected = False
+
+        # Map subaccount_id -> account config for breach routing
+        self._account_configs: Dict[int, dict] = {}
+        for acc in accounts:
+            sub_id = int(acc['subaccount_id'])
+            self._account_configs[sub_id] = {
+                'subaccount_id': sub_id,
+                'max_daily_loss': float(acc['max_daily_loss']),
+                'trader_id': acc.get('trader_id'),
+                'recorder_id': acc.get('recorder_id'),
+                'account_id': acc.get('account_id'),
+                'account_name': acc.get('account_name', f'Account-{sub_id}'),
+            }
+
+    @property
+    def listener_id(self) -> str:
+        return f'max-loss-monitor-{self._token_key}'
+
+    async def on_connected(self, token_key: str):
+        """Called when SharedConnection (re)connects."""
+        self.connected = True
+        sub_ids = list(self._account_configs.keys())
+        logger.info(f"[MaxLoss] Connected on {token_key} — monitoring {len(sub_ids)} accounts: {sub_ids}")
+
+    async def on_disconnected(self, token_key: str):
+        """Called when SharedConnection disconnects."""
+        self.connected = False
+        logger.info(f"[MaxLoss] Disconnected from {token_key}")
+
+    async def on_message(self, items: list, raw_message: str):
+        """Process pre-parsed message items from shared connection.
+
+        Filters for cashBalance entities and routes to correct account
+        based on accountId field.
+        """
+        for data in items:
+            try:
+                await self._check_pnl_from_item(data)
+            except Exception as e:
+                logger.error(f"[MaxLoss] Error processing message item: {e}")
+
+    async def _check_pnl_from_item(self, data: dict):
+        """Check a single parsed message item for cashBalance P&L data."""
+        global _breached_today
+
+        cash_balances = []
+
+        # Props event with cashBalance entity
+        if data.get('e') == 'props' and data.get('d'):
+            entity = data.get('d')
+            if isinstance(entity, dict) and entity.get('entityType') == 'cashBalance':
+                cb_data = entity.get('entity') or entity
+                cash_balances.append(cb_data)
+
+        # Sync response with cashBalances array
+        if 'd' in data and isinstance(data.get('d'), dict):
+            d = data['d']
+            if 'cashBalances' in d:
+                cash_balances.extend(d.get('cashBalances', []))
+
+        # Direct cashBalances in response
+        if 'cashBalances' in data:
+            cash_balances.extend(data.get('cashBalances', []))
+
+        for cb in cash_balances:
+            if not isinstance(cb, dict):
+                continue
+
+            # Route to correct account by accountId
+            cb_account_id = cb.get('accountId')
+            if cb_account_id is not None:
+                cb_account_id = int(cb_account_id)
+
+            # Find the matching account config
+            config = None
+            if cb_account_id and cb_account_id in self._account_configs:
+                config = self._account_configs[cb_account_id]
+            elif len(self._account_configs) == 1:
+                # Single account — always matches
+                config = list(self._account_configs.values())[0]
+            else:
+                # No accountId and multiple accounts — skip to avoid wrong routing
+                continue
+
+            if not config:
+                continue
+
+            account_id = config['subaccount_id']
+            max_daily_loss = config['max_daily_loss']
+            trader_id = config.get('trader_id')
+            recorder_id = config.get('recorder_id')
+
+            # Skip if already breached today
+            today = date.today().isoformat()
+            breach_key = f"{account_id}_{today}"
+            if _breached_today.get(breach_key):
+                continue
+
+            open_pnl = cb.get('openPnL', 0)
+            realized_pnl = cb.get('realizedPnL', 0)
+            total_pnl = open_pnl + realized_pnl
+
+            # Check against max daily loss
+            if max_daily_loss > 0 and total_pnl <= -max_daily_loss:
+                logger.warning(f"🚨 MAX DAILY LOSS BREACHED for account {account_id}!")
+                logger.warning(f"   Open P&L: ${open_pnl:.2f} | Realized: ${realized_pnl:.2f} | "
+                             f"Total: ${total_pnl:.2f} | Limit: -${max_daily_loss:.2f}")
+
+                _breached_today[breach_key] = True
+
+                try:
+                    await flatten_account_positions(account_id, trader_id, recorder_id, total_pnl)
+                except Exception as e:
+                    logger.error(f"Flatten callback error for account {account_id}: {e}")
+
+    def add_account(self, acc: dict):
+        """Add an account to monitor (for dynamic registration)."""
+        sub_id = int(acc['subaccount_id'])
+        self._account_configs[sub_id] = {
+            'subaccount_id': sub_id,
+            'max_daily_loss': float(acc['max_daily_loss']),
+            'trader_id': acc.get('trader_id'),
+            'recorder_id': acc.get('recorder_id'),
+            'account_id': acc.get('account_id'),
+            'account_name': acc.get('account_name', f'Account-{sub_id}'),
+        }
+
+    def get_subaccount_ids(self) -> List[int]:
+        """Get all monitored subaccount IDs."""
+        return list(self._account_configs.keys())
+
+
+# ============================================================================
+# LEGACY — TradovateMaxLossConnection kept for rollback
+# ============================================================================
 
 class TradovateMaxLossConnection:
     """WebSocket connection to Tradovate for max loss monitoring"""
@@ -628,46 +800,149 @@ async def flatten_projectx_positions(acc: dict, current_pnl: float = 0):
         logger.error(f"Error flattening ProjectX account: {e}")
 
 
-def start_live_max_loss_monitor():
-    """Start the live max loss monitor in a background thread"""
-    global _monitor_thread, _monitor_running
+async def _run_projectx_max_loss_monitor(projectx_accounts: list):
+    """Run REST polling loop for ProjectX accounts' max daily loss.
 
-    if _monitor_running or (_monitor_thread and _monitor_thread.is_alive()):
+    ProjectX uses REST (not Tradovate WebSocket), so it stays in its own thread.
+    """
+    global _monitor_running
+
+    logger.info(f"🛡️ ProjectX max loss REST polling started for {len(projectx_accounts)} accounts")
+
+    tasks = []
+    for acc in projectx_accounts:
+        tasks.append(asyncio.create_task(
+            _monitor_projectx_account(acc, flatten_projectx_positions)
+        ))
+
+    if tasks:
+        await asyncio.gather(*tasks)
+
+
+def start_live_max_loss_monitor():
+    """Start the live max loss monitor.
+
+    Tradovate accounts: registered as listeners on the shared connection manager.
+    ProjectX accounts: monitored via REST polling in a separate daemon thread.
+    """
+    global _monitor_thread, _monitor_running, _max_loss_listeners, _projectx_thread
+
+    if _monitor_running:
         logger.info("Live max loss monitor already running")
         return
 
-    def run_async_loop():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(_run_max_loss_monitor())
-        except Exception as e:
-            logger.error(f"Max loss monitor thread error: {e}")
-        finally:
-            loop.close()
+    _monitor_running = True
 
-    _monitor_thread = threading.Thread(target=run_async_loop, daemon=True, name="LiveMaxLossMonitor")
-    _monitor_thread.start()
-    logger.info("🛡️ Live max loss monitor thread started")
+    # Load accounts with max_daily_loss configured
+    accounts_by_broker = _load_max_loss_accounts()
+    tradovate_accounts = accounts_by_broker.get('tradovate', [])
+    projectx_accounts = accounts_by_broker.get('projectx', [])
+
+    total = len(tradovate_accounts) + len(projectx_accounts)
+    if total == 0:
+        logger.info("🛡️ No accounts with max_daily_loss configured — max loss monitor idle")
+        return
+
+    logger.info(f"🛡️ Starting live max loss monitor — "
+                f"Tradovate: {len(tradovate_accounts)}, ProjectX: {len(projectx_accounts)}")
+
+    # --- Tradovate: Register with shared connection manager ---
+    if tradovate_accounts and CONNECTION_MANAGER_AVAILABLE:
+        manager = get_connection_manager()
+
+        # Group accounts by token (same pattern as ws_position_monitor.py)
+        token_groups: Dict[str, dict] = {}
+        for acc in tradovate_accounts:
+            token = acc['access_token']
+            token_key = f"...{token[-8:]}" if len(token) > 8 else token
+
+            if token_key not in token_groups:
+                token_groups[token_key] = {
+                    'access_token': token,
+                    'is_demo': acc['is_demo'],
+                    'accounts': [],
+                    'subaccount_ids': [],
+                    'db_account_ids': [],
+                }
+            group = token_groups[token_key]
+            group['accounts'].append(acc)
+            group['subaccount_ids'].append(int(acc['subaccount_id']))
+            if acc['account_id'] not in group['db_account_ids']:
+                group['db_account_ids'].append(acc['account_id'])
+
+        for token_key, group in token_groups.items():
+            listener = MaxLossMonitorListener(
+                token_key=token_key,
+                access_token=group['access_token'],
+                is_demo=group['is_demo'],
+                accounts=group['accounts'],
+            )
+            _max_loss_listeners[token_key] = listener
+
+            manager.register_listener(
+                token=group['access_token'],
+                is_demo=group['is_demo'],
+                subaccount_ids=group['subaccount_ids'],
+                listener=listener,
+                db_account_ids=group['db_account_ids'],
+            )
+            logger.info(f"[MaxLoss] Registered listener for token {token_key} "
+                        f"with {len(group['accounts'])} accounts")
+
+    elif tradovate_accounts:
+        logger.warning("🛡️ Connection manager not available — Tradovate max loss monitoring disabled")
+
+    # --- ProjectX: REST polling in separate thread ---
+    if projectx_accounts:
+        def _run_projectx_polling():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(_run_projectx_max_loss_monitor(projectx_accounts))
+            except Exception as e:
+                logger.error(f"ProjectX max loss monitor thread error: {e}")
+            finally:
+                loop.close()
+
+        _projectx_thread = threading.Thread(
+            target=_run_projectx_polling, daemon=True, name="ProjectXMaxLossMonitor"
+        )
+        _projectx_thread.start()
+        logger.info(f"🛡️ ProjectX max loss monitor thread started "
+                    f"({len(projectx_accounts)} accounts)")
+
+    logger.info("🛡️ Live max loss monitor started")
 
 
 def stop_live_max_loss_monitor():
-    """Stop the live max loss monitor"""
-    global _monitor_running
+    """Stop the live max loss monitor — unregister all listeners."""
+    global _monitor_running, _max_loss_listeners
     _monitor_running = False
+
+    if CONNECTION_MANAGER_AVAILABLE and _max_loss_listeners:
+        manager = get_connection_manager()
+        for token_key, listener in list(_max_loss_listeners.items()):
+            manager.unregister_listener(listener.listener_id)
+        _max_loss_listeners.clear()
+
     logger.info("🛡️ Stopping live max loss monitor...")
 
 
 def get_max_loss_monitor_status() -> dict:
-    """Get current status of the max loss monitor"""
+    """Get current status of the max loss monitor."""
     tradovate_connected = 0
-    projectx_connected = 0
+    tradovate_total = 0
 
+    for token_key, listener in _max_loss_listeners.items():
+        account_count = len(listener.get_subaccount_ids())
+        tradovate_total += account_count
+        if listener.connected:
+            tradovate_connected += account_count
+
+    # ProjectX accounts from _account_connections (REST polling)
+    projectx_connected = 0
     for key, conn in _account_connections.items():
-        if key.startswith('tradovate_'):
-            if hasattr(conn, 'connected') and conn.connected:
-                tradovate_connected += 1
-        elif key.startswith('projectx_'):
+        if key.startswith('projectx_'):
             if isinstance(conn, dict) and conn.get('connected'):
                 projectx_connected += 1
 
@@ -675,7 +950,7 @@ def get_max_loss_monitor_status() -> dict:
         'running': _monitor_running,
         'tradovate_accounts': tradovate_connected,
         'projectx_accounts': projectx_connected,
-        'total_accounts': len(_account_connections),
+        'total_accounts': tradovate_total + projectx_connected,
         'breached_today': list(_breached_today.keys())
     }
 
