@@ -169,6 +169,11 @@ _WS_POOL_LOCK = asyncio.Lock()  # ASYNC lock - doesn't block event loop!
 
 async def get_pooled_connection(subaccount_id: int, is_demo: bool, access_token: str):
     """Get or create a pooled WebSocket connection for an account. INSTANT if pooled."""
+    # DISABLED: WebSocket pool was NEVER functional (CLAUDE.md Rule 10).
+    # All orders use REST API. This function tried _ensure_websocket_connected()
+    # which hangs indefinitely, blocking ALL trades via _WS_POOL_LOCK.
+    # Root cause of 60-second async timeouts on every trade (Feb 24, 2026).
+    return None
     from phantom_scraper.tradovate_integration import TradovateIntegration
 
     # Fast path - check without lock first (read is safe)
