@@ -371,12 +371,12 @@ class SharedConnection:
 
                     if self._data_msg_count == 0:
                         self._zero_data_windows += 1
-                        if self._zero_data_windows >= 3 and _is_futures_market_likely_open():
+                        if self._zero_data_windows >= 10 and _is_futures_market_likely_open():
                             logger.warning(f"[{self.token_key}] No data for "
                                            f"{self._zero_data_windows * 30}s — forcing reconnect")
                             self.connected = False
                             break
-                        elif self._zero_data_windows == 3:
+                        elif self._zero_data_windows == 10:
                             logger.info(f"[{self.token_key}] 0 data but market closed — staying connected")
                     else:
                         self._zero_data_windows = 0
@@ -651,9 +651,10 @@ class TradovateConnectionManager:
         backoff = 1
         max_backoff = 60
 
-        # Stagger initial connection: random 0-10s delay to prevent 429 storms
-        # when all connections start simultaneously on deploy
-        initial_delay = random.uniform(0, 10)
+        # Stagger initial connection: random 0-30s delay to prevent 429 storms
+        # when all connections start simultaneously on deploy.
+        # 16+ connections need wider spread to stay under Tradovate WS rate limit.
+        initial_delay = random.uniform(0, 30)
         logger.info(f"[{token_key}] Starting connection in {initial_delay:.1f}s (staggered)")
         await asyncio.sleep(initial_delay)
 
@@ -672,6 +673,12 @@ class TradovateConnectionManager:
                     conn._zero_data_windows = 0
                     await conn.run()
 
+                    # If disconnected due to dead-subscription (zero data windows hit limit),
+                    # use a longer backoff to prevent 429 storms from 16+ connections
+                    # all reconnecting at once during thin market hours.
+                    if conn._zero_data_windows >= 10:
+                        backoff = max(backoff, 30)
+
                 await conn.close()
 
                 if not self._running:
@@ -681,7 +688,7 @@ class TradovateConnectionManager:
                     logger.info(f"[{token_key}] No listeners remaining — stopping reconnect")
                     break
 
-                jittered_delay = backoff + random.uniform(0, 5)
+                jittered_delay = backoff + random.uniform(0, 15)
                 logger.info(f"[{token_key}] Reconnecting in {jittered_delay:.1f}s...")
                 await asyncio.sleep(jittered_delay)
                 backoff = min(backoff * 2, max_backoff)
