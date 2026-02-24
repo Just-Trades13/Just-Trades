@@ -364,6 +364,15 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | Position monitor MUST be started from ultra_simple_server.py (main process), NOT recorder_service.py. recorder_service.py's initialize() only runs under `if __name__=='__main__'` which never fires — it's always imported as a module |
 | **NEVER** | Move this startup to recorder_service.py. It will silently not execute. Must stay in ultra_simple_server.py alongside ws_leader_monitor startup |
 
+### Shared WebSocket Connection Manager Startup (Feb 23, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~34076-34082 (before max-loss/leader/position monitor startups) |
+| **Commit** | `f1795c3` |
+| **What** | `get_connection_manager().start()` — starts the shared WS connection manager daemon thread BEFORE the three monitor services register their listeners |
+| **Why** | All three WS monitors (position, leader, max-loss) now register as listeners on the shared manager instead of opening their own connections. The manager MUST be started first so the event loop is ready when services call `register_listener()`. Reduces 6-12 WS connections to 1-2 (one per unique Tradovate token), eliminating HTTP 429 rate limit errors. |
+| **NEVER** | Remove this startup. Move it AFTER the monitor startups (they need the manager running). Change the startup order of max-loss → leader → position monitors (they register listeners, order doesn't matter but should stay consistent). |
+
 ---
 
 ## tradovate_integration.py — Protected Changes
@@ -437,6 +446,8 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | WS Position Monitor startup | ultra_simple_server.py, NOT recorder_service.py | recorder_service.py is imported, never __main__ | Monitor silently never starts |
 | Position WS Monitor | One WebSocket per token, LOWER() on broker match | Rule 16, broker column is 'Tradovate' (capital T) | Either rate limit hit or no connections found |
 | subaccount_id for traders | Use `t.subaccount_id` from traders table | Column exists on traders AND accounts with different meanings | SQL error, no accounts loaded |
+| Shared WS Connection Manager | ONE WS per token, all monitors as listeners | Eliminates 429 rate limits from duplicate connections | 6-12 connections hit rate limits, leader monitor 429'd |
+| WS manager startup order | Manager starts BEFORE monitor services | Services need event loop ready for register_listener() | Listeners queued but never processed → no WS data |
 
 ---
 

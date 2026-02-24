@@ -596,6 +596,7 @@ support_tickets → recorders → strategies → push_subscriptions → accounts
 | Auto-copy: add-to-position instead of close+re-enter | `b97eb10` | Feb 23 | **Confirmed working** |
 | Copy trader: warning disclaimer (don't mix with webhooks) | `24e1094` | Feb 23 | Working |
 | Paper trading accuracy: multiplier, DCA-off, trader overrides, trim scaling | `32ad0ab`..`a819a22` | Feb 23 | **Needs verification** |
+| Shared WS Connection Manager (1-2 connections instead of 6-12) | `f1795c3` | Feb 23 | **Needs verification** |
 
 ---
 
@@ -965,6 +966,7 @@ REST API → Tradovate → Order filled → TP/SL placed
 - Signal tracking: **daemon thread, NEVER blocks broker pipeline**
 - WebSocket pool code exists but was NEVER functional — system uses REST API
 - TP operations: asyncio.Lock per account/symbol prevents race conditions
+- **Shared WS Connection Manager**: ONE WebSocket per Tradovate token, all monitors register as listeners. Messages parsed once, dispatched to all listeners. Listener errors isolated (try/except per listener).
 
 ### Critical Code Locations (recorder_service.py)
 
@@ -1019,8 +1021,10 @@ recorder_positions (id, recorder_id, ticker, side, total_quantity, avg_entry_pri
 | **WebSocket Prewarm** | recorder_service.py | ~280 | Once (startup) | No | Pre-establishes Tradovate WebSocket connections |
 | **Bracket Fill Monitor** | recorder_service.py | ~6433 | 5-10 sec | No | Currently DISABLED — bracket fill detection handled by TP/SL polling |
 | **Whop Sync** | ultra_simple_server.py | ~9239 | 30 sec | No | Polls Whop API, creates accounts, sends activation emails |
-| **Position WS Monitor** | ws_position_monitor.py | — | Continuous | YES | Real-time position/fill/order sync via Tradovate WebSocket. One WS per token (Rule 16) |
-| **Leader WS Monitor** | ws_leader_monitor.py | — | Continuous | YES | Pro Copy Trader auto-copy — monitors leader fills via WebSocket |
+| **Shared WS Manager** | ws_connection_manager.py | — | Continuous | **CRITICAL** | ONE WebSocket per token, shared by all monitors. Eliminates 429 rate limits (Rule 16) |
+| **Position WS Monitor** | ws_position_monitor.py | — | Continuous | YES | Real-time position/fill/order sync — listener on shared WS manager |
+| **Leader WS Monitor** | ws_leader_monitor.py | — | Continuous | YES | Pro Copy Trader auto-copy — listener on shared WS manager |
+| **Max Loss Monitor** | live_max_loss_monitor.py | — | Continuous | YES | Max daily loss breach detection — listener on shared WS manager (Tradovate) + REST polling (ProjectX) |
 
 **All daemons are daemon threads** (`daemon=True`) — they terminate automatically when the main process exits. NEVER change them to non-daemon or synchronous (Bug #9: 100% outage from exactly this).
 
@@ -1084,23 +1088,60 @@ Email resend strategy:
 - Stops after 3 days (`WHOP_RESEND_MAX_DAYS`)
 - Tracks "stuck users" for admin review at `/api/admin/whop-sync-status`
 
+### Shared WebSocket Connection Manager (ws_connection_manager.py)
+
+Consolidates ALL Tradovate WebSocket connections into ONE connection per unique token. Three services register as listeners on the shared connections:
+
+```
+BEFORE: 6-12 WebSocket connections (caused HTTP 429 rate limits)
+  ws_position_monitor.py  → 1-2 connections (one per token)
+  ws_leader_monitor.py    → 1-3 connections (one per leader)
+  live_max_loss_monitor.py → 3-7 connections (one per account)
+
+AFTER: 1-2 WebSocket connections (one per unique token)
+  ws_connection_manager.py → SharedConnection per token
+    → PositionMonitorListener (position/fill/order sync)
+    → LeaderMonitorListener (copy trade fill/order detection)
+    → MaxLossMonitorListener (cashBalance breach detection)
+```
+
+**Wire Protocol (in SharedConnection):**
+1. Connect to `wss://demo.tradovateapi.com/v1/websocket` (or live)
+2. Wait for `o` frame → send `authorize\n0\n\n{token}` → wait for `a[{"i":0,"s":200}]`
+3. Send `user/syncrequest` with UNION of all listener accounts (no entityTypes filter — all types sent)
+4. Heartbeat `[]` every 2.5s, server timeout 10s
+5. Dead subscription detection: 3 x 30s windows with 0 data during market hours = reconnect
+6. Max connection: 70 min (before 85-min token expiry), exponential backoff: 1→2→4→8...60s
+7. Fresh token from DB before each reconnect
+8. Dynamic subscription: new listener accounts trigger re-subscribe on next heartbeat
+
+**Key Design:**
+- Messages parsed ONCE in `SharedConnection._dispatch_message()`, pre-parsed items dispatched to all listeners
+- Each listener's `on_message()` wrapped in try/except — one crashing listener doesn't affect others
+- Thread-safe registration via `asyncio.run_coroutine_threadsafe()` from any thread
+- `get_connection_manager()` returns singleton `TradovateConnectionManager`
+
+**Public API:**
+```python
+manager = get_connection_manager()            # Singleton
+manager.start()                               # Start daemon thread (idempotent)
+manager.register_listener(token, is_demo, subaccount_ids, listener, db_account_ids)
+manager.unregister_listener(listener_id)
+manager.get_status() -> Dict                  # Status for monitoring endpoints
+manager.is_connected_for_account(sub_id) -> bool
+```
+
+**Startup Order** (in `ultra_simple_server.py`):
+1. `get_connection_manager().start()` — starts daemon thread with event loop
+2. `start_live_max_loss_monitor()` — registers MaxLossMonitorListener(s)
+3. `start_leader_monitor()` — registers LeaderMonitorListener(s)
+4. `start_position_monitor()` — registers PositionMonitorListener(s)
+
 ### WebSocket Position Monitor (ws_position_monitor.py)
 
 Real-time broker sync for ALL active Tradovate/NinjaTrader accounts. Keeps `recorder_positions` and `recorded_trades` in perfect sync with broker state, eliminating reliance on 5-minute reconciliation polling.
 
-**Architecture: One WebSocket per TOKEN (not per account)**
-- JADVIX has 7 accounts sharing ONE Tradovate token
-- `user/syncrequest` accepts an `accounts` array — subscribe to ALL accounts on ONE socket
-- Result: 1 connection instead of 7, minimal rate limit impact (Rule 16)
-
-**Wire Protocol (identical to ws_leader_monitor.py):**
-1. Connect to `wss://demo.tradovateapi.com/v1/websocket` (or live)
-2. Wait for `o` frame → send `authorize\n0\n\n{token}` → wait for `a[{"i":0,"s":200}]`
-3. Send `user/syncrequest\n1\n\n{"accounts":[IDs],"entityTypes":["order","fill","position"]}`
-4. Heartbeat `[]` every 2.5s, server timeout 10s
-5. Dead subscription detection: 3 x 30s windows with 0 data = reconnect
-6. Max connection: 70 min, exponential backoff: 1→2→4→8...60s
-7. Fresh token from DB before each reconnect
+**Architecture:** Registers `PositionMonitorListener` on the shared connection manager (one listener per token group). No standalone WebSocket connections.
 
 **Three Event Handlers:**
 
@@ -1112,8 +1153,8 @@ Real-time broker sync for ALL active Tradovate/NinjaTrader accounts. Keeps `reco
 
 **Public API:**
 ```python
-start_position_monitor()                      # Start in daemon thread
-stop_position_monitor()                       # Stop all connections
+start_position_monitor()                      # Register listeners with shared manager
+stop_position_monitor()                       # Unregister listeners
 get_position_monitor_status() -> Dict         # Status dict for monitoring
 is_position_ws_connected(recorder_id) -> bool # Used by reconciliation to skip auto-TP
 ```
@@ -1125,8 +1166,6 @@ is_position_ws_connected(recorder_id) -> bool # Used by reconciliation to skip a
 - All DB updates are idempotent — safe to receive same event twice
 - SQL query uses `LOWER(a.broker)` for case-insensitive matching (broker column stores 'Tradovate' with capital T)
 - `subaccount_id` lives on `traders` table, NOT `accounts` table (despite `accounts` also having one)
-
-**Startup Location:** `ultra_simple_server.py` line ~34003 (NOT recorder_service.py — that file is imported as a module, `initialize()` only runs under `__main__` guard which never fires)
 
 **Relationship to Reconciliation:**
 - Position WS Monitor is the PRIMARY sync mechanism (real-time)
