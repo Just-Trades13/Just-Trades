@@ -1,6 +1,6 @@
 # Past Disasters — Why Every Rule Exists
 
-> **44 production disasters in ~3 months. Every rule was written in blood (lost money, lost time, lost users).**
+> **46 production disasters in ~3 months. Every rule was written in blood (lost money, lost time, lost users).**
 > **Last updated: Feb 24, 2026**
 
 ---
@@ -53,6 +53,8 @@
 | 42 | Feb 24, 2026 | **DCA-off stacking: 3+3+3=9 contracts** | Old position not closed before new bracket | `78fc9fd` | Hours |
 | 43 | Feb 24, 2026 | **ALL trades 60s timeout — _smart() defaults to WS** | 17 calls with use_websocket=True default | `c9e49d5`+`a214126` | Hours |
 | 44 | Feb 24, 2026 | **WS crash loop — "message too big" every 13s** | websockets default max_size=1MB too small | `c3b4c5b` | Hours |
+| 45 | Feb 24, 2026 | **Reversal close-only, no re-enter** | Opposite-direction DCA-off set `adjusted_quantity` but never re-entered | `83d2733` | Hours |
+| 46 | Feb 24, 2026 | **CLOSE signal misrouted as SHORT** | `action='CLOSE'` → `signal_side='SHORT'` → DCA-off close+re-enter or wrong reversal | `13a217b` | Hours |
 
 ---
 

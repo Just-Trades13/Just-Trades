@@ -407,6 +407,41 @@ for paying customers. These are NOT optional improvements — they are load-bear
 
 ---
 
+## recorder_service.py — TradingView Strategy Mode Fixes (Feb 24, 2026)
+
+### CLOSE Signal Early-Exit Handler — Bug #46 (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2397-2467 (CLOSE handler block, BEFORE position direction logic at ~2469) |
+| **Rule** | Must run BEFORE `signal_side` assignment at ~2473 |
+| **Commit** | `13a217b` |
+| **What** | Detects `action.upper() in ('CLOSE', 'FLATTEN', 'EXIT', 'FLAT')` + `has_existing_position`. Cancels resting orders (non-strategy mode only), closes with correct opposite side (`Sell` for LONG, `Buy` for SHORT), returns early. Strategy mode (`tp_ticks=0, sl_ticks=0`) skips cancel loop for speed. |
+| **Why** | Without this, `action='CLOSE'` mapped to `order_action='Sell'` (line ~2341) and `signal_side='SHORT'` (line ~2473). For SHORT positions: same-direction DCA-off path → close+re-enter (position never actually closes). For LONG positions: opposite-direction reversal → close+open SHORT (wrong — should just close). |
+| **Verified** | CLOSE signal tested live: `✅ CLOSE filled - position closed`, `netPos=0`. Clean exit, no re-entry. |
+| **NEVER** | Move this handler AFTER the `signal_side` assignment at line ~2473. Remove the early `return`. Let CLOSE signals fall through to entry logic. |
+
+### Opposite-Direction Reversal — Bug #45 (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2551-2612 (inside `else` branch of opposite-direction check, when `should_block_opposite=False`) |
+| **Rule** | Follows DCA-off close+re-enter pattern from Bug #42 fix |
+| **Commit** | `83d2733` |
+| **What** | When signal is opposite direction + DCA OFF: (1) Cancel all resting exit orders, (2) Close existing position via market order, (3) Set `has_existing_position = False` so entry logic treats as fresh. |
+| **Why** | Old code set `adjusted_quantity = existing_position_qty` — close-only, never re-entered the new direction. TradingView strategy reversals (e.g., LONG→SHORT) need atomic close+re-enter. |
+| **Verified** | Code review confirmed correct. CLOSE handler (Bug #46) runs first, so only actual BUY/SELL signals reach this path. |
+| **NEVER** | Remove the `has_existing_position = False` reset after close. Remove the cancel-orders step (would leave orphaned TP/SL). Let this path fire for CLOSE/FLAT signals (Bug #46 handler must catch those first). |
+
+### Strategy Mode CLOSE Optimization (Feb 24, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2407 (conditional in CLOSE handler: `if tp_ticks > 0 or sl_ticks > 0`) |
+| **Commit** | `4b2c46c` |
+| **What** | Cancel loop in CLOSE handler wrapped with `if tp_ticks > 0 or sl_ticks > 0`. Strategy mode (`tp_ticks=0, sl_ticks=0`) skips `get_orders()` + cancel loop — goes straight to market close. |
+| **Why** | In strategy mode, TradingView handles all exits — no system-placed TP/SL orders to cancel. Skipping saves ~300-500ms (one `get_orders()` API call + iteration). |
+| **NEVER** | Remove this conditional — would re-add unnecessary API call for every strategy mode close. Change the condition to skip cancels in non-strategy mode. |
+
+---
+
 ## tradovate_integration.py — Protected Changes
 
 ### Symbol Root Extraction for Tick Size Lookup (Feb 18, 2026)
@@ -498,6 +533,9 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | Numeric 0 is NOT falsy for settings | `is not None and int(x) > 0`, never `if x:` | 0 means "use webhook qty" or "no override" | 0 falls back to 1, multiplier compounds the error |
 | WS max_size = 10 MB | `max_size=10*1024*1024` on `websockets.connect()` | Tradovate sync responses exceed default 1 MB | 1009 "message too big" crash loop every 13 seconds |
 | WS syncrequest splitResponses | `"splitResponses": True` in sync body | Per Tradovate protocol spec (Part 4) | Monolithic sync response may exceed any max_size |
+| CLOSE handler before signal_side | Lines ~2397-2467, before ~2473 | CLOSE maps to 'Sell'/'SHORT' without early exit | CLOSE misrouted: SHORT close+re-enter, LONG reversal |
+| Reversal close+re-enter | Lines ~2551-2612, `has_existing_position = False` | Old code was close-only, no re-enter | Strategy reversals (LONG→SHORT) only close, never re-enter |
+| Strategy mode skip cancel | `if tp_ticks > 0 or sl_ticks > 0` in CLOSE handler | TV handles exits, no system TP/SL to cancel | Extra 300-500ms API call on every strategy close |
 
 ---
 
