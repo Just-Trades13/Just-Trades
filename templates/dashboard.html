@@ -205,18 +205,22 @@
     <!-- Premium Strategies — TradingView Backtest Imports -->
     <section class="backtest-section">
         <header class="backtest-header">
-            <div>
-                <h2>Premium Strategies</h2>
-                <p class="backtest-sub">Verified backtest performance from TradingView Strategy Tester</p>
+            <div class="backtest-header-left">
+                <div class="backtest-icon-wrap"><span class="material-icons">verified</span></div>
+                <div>
+                    <h2>Premium Strategies</h2>
+                    <p class="backtest-sub">Verified backtest performance from TradingView Strategy Tester</p>
+                </div>
             </div>
-            <button class="btn btn-primary btn-sm" onclick="openBacktestModal()" id="btImportBtn">
-                <span class="material-icons" style="font-size:16px;vertical-align:middle;margin-right:4px">upload_file</span>Import CSV
+            <button class="bt-import-btn" onclick="openBacktestModal()" id="btImportBtn">
+                <span class="material-icons">add_circle_outline</span>Import
             </button>
         </header>
         <div class="backtest-grid" id="backtestGrid">
             <div class="backtest-empty" id="backtestEmpty">
-                <span class="material-icons" style="font-size:48px;color:var(--text-muted)">assessment</span>
-                <p style="color:var(--text-muted);margin-top:0.5rem">No backtests imported yet.</p>
+                <div class="backtest-empty-icon"><span class="material-icons">ssid_chart</span></div>
+                <p class="backtest-empty-title">No strategies imported yet</p>
+                <p class="backtest-empty-sub">Upload a TradingView Strategy Tester export to showcase performance</p>
             </div>
         </div>
     </section>
@@ -225,7 +229,7 @@
     <div class="bt-modal-overlay" id="backtestModalOverlay" onclick="closeBacktestModal(event)">
         <div class="bt-modal" onclick="event.stopPropagation()">
             <header class="bt-modal-header">
-                <h3>Import TradingView Backtest</h3>
+                <h3>Import Strategy Performance</h3>
                 <button class="bt-modal-close" onclick="closeBacktestModal()">&times;</button>
             </header>
             <form id="backtestUploadForm" onsubmit="submitBacktestUpload(event)">
@@ -3468,64 +3472,230 @@
     }
 
     /* ── Strategy Backtests ── */
+    /* ── Premium Strategies — Futuristic Cards ── */
     .backtest-section {
-        background: #1d2338;
-        border-radius: 14px;
-        border: 1px solid rgba(255,255,255,0.04);
-        padding: 1.5rem;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        background: linear-gradient(145deg, rgba(15, 23, 42, 0.95), rgba(20, 30, 55, 0.9));
+        border-radius: 20px;
+        border: 1px solid rgba(25, 184, 255, 0.12);
+        padding: 1.75rem;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        position: relative;
+        overflow: hidden;
+    }
+    .backtest-section::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(25, 184, 255, 0.4), transparent);
     }
     .backtest-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 1.25rem;
+        margin-bottom: 1.5rem;
     }
-    .backtest-header h2 { margin: 0; font-size: 1.15rem; }
-    .backtest-sub { color: var(--text-muted); font-size: 0.8rem; margin: 0.2rem 0 0; }
+    .backtest-header-left {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+    }
+    .backtest-icon-wrap {
+        width: 42px; height: 42px;
+        background: linear-gradient(135deg, rgba(25, 184, 255, 0.2), rgba(45, 212, 191, 0.1));
+        border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .backtest-icon-wrap .material-icons {
+        font-size: 22px;
+        color: #19b8ff;
+    }
+    .backtest-header h2 {
+        margin: 0;
+        font-size: 1.15rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #fff, #a0c4ff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .backtest-sub { color: var(--text-muted); font-size: 0.78rem; margin: 0.15rem 0 0; }
+    .bt-import-btn {
+        display: flex; align-items: center; gap: 6px;
+        background: linear-gradient(135deg, rgba(25, 184, 255, 0.15), rgba(25, 184, 255, 0.05));
+        border: 1px solid rgba(25, 184, 255, 0.3);
+        color: #19b8ff;
+        border-radius: 10px;
+        padding: 8px 16px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.25s;
+    }
+    .bt-import-btn .material-icons { font-size: 18px; }
+    .bt-import-btn:hover {
+        background: linear-gradient(135deg, rgba(25, 184, 255, 0.25), rgba(25, 184, 255, 0.1));
+        border-color: rgba(25, 184, 255, 0.6);
+        box-shadow: 0 0 20px rgba(25, 184, 255, 0.15);
+    }
     .backtest-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-        gap: 1rem;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 1.25rem;
     }
     .backtest-empty {
         grid-column: 1 / -1;
         text-align: center;
-        padding: 2.5rem 1rem;
+        padding: 3rem 1rem;
     }
+    .backtest-empty-icon {
+        width: 64px; height: 64px;
+        background: linear-gradient(135deg, rgba(25, 184, 255, 0.1), rgba(45, 212, 191, 0.05));
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 1rem;
+    }
+    .backtest-empty-icon .material-icons { font-size: 32px; color: rgba(25, 184, 255, 0.4); }
+    .backtest-empty-title { color: var(--text-light); font-weight: 600; font-size: 0.95rem; margin: 0 0 0.3rem; }
+    .backtest-empty-sub { color: var(--text-muted); font-size: 0.8rem; margin: 0; }
+
+    /* ── Strategy Card ── */
     .bt-card {
-        background: rgba(255,255,255,0.03);
-        border: 1px solid rgba(255,255,255,0.06);
-        border-radius: 12px;
-        padding: 1.1rem;
+        background: linear-gradient(160deg, rgba(25, 35, 60, 0.9), rgba(15, 23, 42, 0.95));
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 16px;
+        padding: 0;
         display: flex;
         flex-direction: column;
-        gap: 0.75rem;
-        transition: border-color 0.2s;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
     }
-    .bt-card:hover { border-color: var(--primary-color); }
+    .bt-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #19b8ff, #2dd4bf, #19b8ff);
+        opacity: 0.7;
+    }
+    .bt-card:hover {
+        border-color: rgba(25, 184, 255, 0.3);
+        box-shadow: 0 8px 32px rgba(25, 184, 255, 0.1), 0 0 0 1px rgba(25, 184, 255, 0.1);
+        transform: translateY(-2px);
+    }
     .bt-card-head {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
+        padding: 1.1rem 1.1rem 0;
     }
-    .bt-card-title { font-weight: 600; font-size: 0.95rem; margin: 0; }
-    .bt-card-subtitle { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+    .bt-card-name-wrap { flex: 1; min-width: 0; }
+    .bt-card-title {
+        font-weight: 700;
+        font-size: 1rem;
+        margin: 0;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .bt-card-symbol {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #19b8ff;
+        background: rgba(25, 184, 255, 0.1);
+        border: 1px solid rgba(25, 184, 255, 0.2);
+        border-radius: 6px;
+        padding: 2px 8px;
+        margin-top: 6px;
+    }
     .bt-card-del {
-        background: none; border: none; color: var(--text-muted); cursor: pointer;
-        font-size: 18px; line-height: 1; padding: 2px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 14px;
+        line-height: 1;
+        padding: 4px 6px;
+        border-radius: 6px;
+        transition: all 0.2s;
     }
-    .bt-card-del:hover { color: #f56565; }
+    .bt-card-del:hover {
+        color: #f56565;
+        background: rgba(245, 101, 101, 0.1);
+        border-color: rgba(245, 101, 101, 0.3);
+    }
+
+    /* ── Hero Metric (Net P&L) ── */
+    .bt-hero {
+        padding: 0.75rem 1.1rem;
+        display: flex;
+        align-items: baseline;
+        gap: 0.5rem;
+    }
+    .bt-hero-value {
+        font-size: 1.65rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1;
+    }
+    .bt-hero-value.positive { color: #2dd4bf; text-shadow: 0 0 20px rgba(45, 212, 191, 0.3); }
+    .bt-hero-value.negative { color: #f56565; text-shadow: 0 0 20px rgba(245, 101, 101, 0.3); }
+    .bt-hero-label {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+
+    /* ── Stats Grid ── */
     .bt-stats {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 0.5rem;
+        gap: 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
     }
-    .bt-stat-label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-    .bt-stat-value { font-size: 0.95rem; font-weight: 600; margin-top: 2px; }
-    .bt-stat-value.positive { color: var(--green); }
+    .bt-stat {
+        padding: 0.7rem 0.5rem;
+        text-align: center;
+        border-right: 1px solid rgba(255, 255, 255, 0.04);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .bt-stat:nth-child(4n) { border-right: none; }
+    .bt-stat:nth-child(n+5) { border-bottom: none; }
+    .bt-stat-label {
+        font-size: 0.6rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin: 0;
+    }
+    .bt-stat-value {
+        font-size: 0.92rem;
+        font-weight: 700;
+        margin-top: 3px;
+        font-variant-numeric: tabular-nums;
+    }
+    .bt-stat-value.positive { color: #2dd4bf; }
     .bt-stat-value.negative { color: #f56565; }
-    .bt-card-footer { font-size: 0.7rem; color: var(--text-muted); }
+    .bt-stat-value.accent { color: #19b8ff; }
+
+    /* ── Card Footer ── */
+    .bt-card-footer {
+        padding: 0.6rem 1.1rem;
+        font-size: 0.68rem;
+        color: var(--text-muted);
+        border-top: 1px solid rgba(255, 255, 255, 0.04);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .bt-card-footer .material-icons { font-size: 13px; opacity: 0.5; }
 
     /* ── Backtest Upload Modal ── */
     .bt-modal-overlay {
@@ -3597,6 +3767,11 @@
     }
     @media (max-width: 600px) {
         .bt-stats { grid-template-columns: repeat(2, 1fr); }
+        .bt-stat:nth-child(4n) { border-right: 1px solid rgba(255,255,255,0.04); }
+        .bt-stat:nth-child(2n) { border-right: none; }
+        .bt-stat:nth-child(n+7) { border-bottom: none; }
+        .bt-hero-value { font-size: 1.35rem; }
+        .backtest-grid { grid-template-columns: 1fr; }
     }
 </style>
 {% endblock %}
@@ -5780,30 +5955,38 @@
 
             data.imports.forEach(imp => {
                 const pnlClass = imp.net_pnl >= 0 ? 'positive' : 'negative';
-                const pnlSign = imp.net_pnl >= 0 ? '+' : '';
-                const ddSign = imp.max_drawdown > 0 ? '-' : '';
+                const pnlSign = imp.net_pnl >= 0 ? '+$' : '-$';
+                const ddSign = imp.max_drawdown > 0 ? '-$' : '$';
+                const avgSign = imp.avg_trade >= 0 ? '+$' : '-$';
+                const symbolTag = imp.symbol ? `<span class="bt-card-symbol">${btEsc(imp.symbol)}</span>` : '';
+                const wrClass = imp.win_rate >= 55 ? 'positive' : imp.win_rate >= 45 ? 'accent' : 'negative';
+                const pfClass = imp.profit_factor >= 1.5 ? 'positive' : imp.profit_factor >= 1.0 ? 'accent' : 'negative';
                 const card = document.createElement('div');
                 card.className = 'bt-card';
                 card.dataset.importId = imp.id;
                 card.innerHTML = `
                     <div class="bt-card-head">
-                        <div>
+                        <div class="bt-card-name-wrap">
                             <p class="bt-card-title">${btEsc(imp.name)}</p>
-                            <p class="bt-card-subtitle">${btEsc(imp.raw_filename || '')}</p>
+                            ${symbolTag}
                         </div>
-                        <button class="bt-card-del" title="Delete" onclick="deleteBacktest(${imp.id})">&times;</button>
+                        <button class="bt-card-del" title="Delete" onclick="deleteBacktest(${imp.id})"><span class="material-icons" style="font-size:14px">close</span></button>
+                    </div>
+                    <div class="bt-hero">
+                        <span class="bt-hero-value ${pnlClass}">${pnlSign}${Math.abs(imp.net_pnl).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                        <span class="bt-hero-label">Net P&L</span>
                     </div>
                     <div class="bt-stats">
-                        <div><p class="bt-stat-label">Win Rate</p><p class="bt-stat-value">${imp.win_rate.toFixed(1)}%</p></div>
-                        <div><p class="bt-stat-label">Profit Factor</p><p class="bt-stat-value">${imp.profit_factor.toFixed(2)}</p></div>
-                        <div><p class="bt-stat-label">Net P&L</p><p class="bt-stat-value ${pnlClass}">${pnlSign}$${Math.abs(imp.net_pnl).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
-                        <div><p class="bt-stat-label">Trades</p><p class="bt-stat-value">${imp.total_trades}</p></div>
-                        <div><p class="bt-stat-label">Wins</p><p class="bt-stat-value positive">${imp.wins}</p></div>
-                        <div><p class="bt-stat-label">Losses</p><p class="bt-stat-value negative">${imp.losses}</p></div>
-                        <div><p class="bt-stat-label">Max DD</p><p class="bt-stat-value negative">${ddSign}$${Math.abs(imp.max_drawdown).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
-                        <div><p class="bt-stat-label">Avg Trade</p><p class="bt-stat-value ${imp.avg_trade >= 0 ? 'positive' : 'negative'}">${imp.avg_trade >= 0 ? '+' : ''}$${Math.abs(imp.avg_trade).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+                        <div class="bt-stat"><p class="bt-stat-label">Win Rate</p><p class="bt-stat-value ${wrClass}">${imp.win_rate.toFixed(1)}%</p></div>
+                        <div class="bt-stat"><p class="bt-stat-label">Profit Factor</p><p class="bt-stat-value ${pfClass}">${imp.profit_factor.toFixed(2)}</p></div>
+                        <div class="bt-stat"><p class="bt-stat-label">Trades</p><p class="bt-stat-value accent">${imp.total_trades}</p></div>
+                        <div class="bt-stat"><p class="bt-stat-label">Avg Trade</p><p class="bt-stat-value ${imp.avg_trade >= 0 ? 'positive' : 'negative'}">${avgSign}${Math.abs(imp.avg_trade).toFixed(2)}</p></div>
+                        <div class="bt-stat"><p class="bt-stat-label">Wins</p><p class="bt-stat-value positive">${imp.wins}</p></div>
+                        <div class="bt-stat"><p class="bt-stat-label">Losses</p><p class="bt-stat-value negative">${imp.losses}</p></div>
+                        <div class="bt-stat"><p class="bt-stat-label">Max DD</p><p class="bt-stat-value negative">${ddSign}${Math.abs(imp.max_drawdown).toFixed(2)}</p></div>
+                        <div class="bt-stat"><p class="bt-stat-label">Long / Short</p><p class="bt-stat-value accent">${imp.long_trades} / ${imp.short_trades}</p></div>
                     </div>
-                    <div class="bt-card-footer">${btEsc(imp.start_date || '')} &mdash; ${btEsc(imp.end_date || '')}</div>
+                    <div class="bt-card-footer"><span class="material-icons">date_range</span>${btEsc(imp.start_date || '')} &mdash; ${btEsc(imp.end_date || '')}</div>
                 `;
                 grid.appendChild(card);
             });
