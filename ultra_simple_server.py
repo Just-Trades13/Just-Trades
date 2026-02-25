@@ -27861,6 +27861,7 @@ def _parse_xlsx_trades(raw_bytes):
 
 
 @app.route('/api/backtest/upload', methods=['POST'])
+@admin_required
 def api_backtest_upload():
     """Upload a TradingView Strategy Tester export (XLSX or CSV) and compute summary metrics."""
     try:
@@ -28126,6 +28127,7 @@ def api_backtest_list():
 
 
 @app.route('/api/backtest/<int:import_id>', methods=['DELETE'])
+@admin_required
 def api_backtest_delete(import_id):
     """Delete a backtest import and its trades."""
     try:

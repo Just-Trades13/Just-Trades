@@ -212,9 +212,11 @@
                     <p class="backtest-sub">Verified backtest performance from TradingView Strategy Tester</p>
                 </div>
             </div>
+            {% if is_admin %}
             <button class="bt-import-btn" onclick="openBacktestModal()" id="btImportBtn">
                 <span class="material-icons">add_circle_outline</span>Import
             </button>
+            {% endif %}
         </header>
         <div class="backtest-grid" id="backtestGrid">
             <div class="backtest-empty" id="backtestEmpty">
@@ -3541,7 +3543,7 @@
     }
     .backtest-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
         gap: 1.25rem;
     }
     .backtest-empty {
@@ -3639,7 +3641,7 @@
         gap: 0.5rem;
     }
     .bt-hero-value {
-        font-size: 1.65rem;
+        font-size: 1.9rem;
         font-weight: 800;
         letter-spacing: -0.02em;
         line-height: 1;
@@ -3661,7 +3663,7 @@
         border-top: 1px solid rgba(255, 255, 255, 0.05);
     }
     .bt-stat {
-        padding: 0.7rem 0.5rem;
+        padding: 0.85rem 0.6rem;
         text-align: center;
         border-right: 1px solid rgba(255, 255, 255, 0.04);
         border-bottom: 1px solid rgba(255, 255, 255, 0.04);
@@ -3676,9 +3678,9 @@
         margin: 0;
     }
     .bt-stat-value {
-        font-size: 0.92rem;
+        font-size: 1rem;
         font-weight: 700;
-        margin-top: 3px;
+        margin-top: 4px;
         font-variant-numeric: tabular-nums;
     }
     .bt-stat-value.positive { color: #2dd4bf; }
@@ -5939,6 +5941,7 @@
     });
 
     // ── Strategy Backtests ──
+    const _btIsAdmin = {{ 'true' if is_admin else 'false' }};
     async function loadBacktests() {
         try {
             const res = await fetch('/api/backtest/list');
@@ -5970,7 +5973,7 @@
                             <p class="bt-card-title">${btEsc(imp.name)}</p>
                             ${symbolTag}
                         </div>
-                        <button class="bt-card-del" title="Delete" onclick="deleteBacktest(${imp.id})"><span class="material-icons" style="font-size:14px">close</span></button>
+                        ${_btIsAdmin ? `<button class="bt-card-del" title="Delete" onclick="deleteBacktest(${imp.id})"><span class="material-icons" style="font-size:14px">close</span></button>` : ''}
                     </div>
                     <div class="bt-hero">
                         <span class="bt-hero-value ${pnlClass}">${pnlSign}${Math.abs(imp.net_pnl).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
