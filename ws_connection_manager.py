@@ -176,6 +176,8 @@ class SharedConnection:
 
         # Dead-subscription detection
         self._zero_data_windows = 0
+        # 429 rate-limit tracking (used by manager's shared cooldown)
+        self._last_429_time = 0
 
         # Max connection: 60-75 min (jittered, before 85-min token expiry)
         # Jitter prevents all connections from reconnecting at the same time
@@ -292,7 +294,10 @@ class SharedConnection:
                 return False
 
         except Exception as e:
+            error_str = str(e)
             logger.error(f"[{self.token_key}] Connection error: {e}")
+            if '429' in error_str:
+                self._last_429_time = time.time()
             return False
 
     async def _subscribe_sync(self, account_ids: List[int]):
@@ -495,6 +500,9 @@ class TradovateConnectionManager:
         # 16 connections all connecting simultaneously overwhelms Tradovate rate limits (Bug #38).
         # NEVER increase above 2 — Tradovate rejects with HTTP 429 if too many connect at once.
         self._connect_semaphore = None  # initialized as asyncio.Semaphore(2) in _run()
+        # Shared 429 cooldown: when ANY connection gets 429, ALL connections wait until this timestamp.
+        # Prevents reconnect storm where 15+ connections cycle through 429 individually (Bug #47).
+        self._rate_limit_until = 0
 
         # Map token_key -> (access_token, is_demo, db_account_ids)
         self._token_info: Dict[str, dict] = {}
@@ -657,6 +665,7 @@ class TradovateConnectionManager:
         """Run a single SharedConnection with reconnection and exponential backoff."""
         backoff = 1
         max_backoff = 60
+        max_backoff_429 = 180  # Longer ceiling for 429 rate-limit errors
 
         # Stagger initial connection: random 0-30s delay to prevent 429 storms
         # when all connections start simultaneously on deploy.
@@ -667,6 +676,14 @@ class TradovateConnectionManager:
 
         while self._running and conn._listeners:
             try:
+                # SHARED 429 COOLDOWN: If ANY connection recently got 429, ALL wait.
+                # This prevents 15+ connections from cycling through 429 individually (Bug #47).
+                now = time.time()
+                if now < self._rate_limit_until:
+                    wait_time = self._rate_limit_until - now
+                    logger.info(f"[{token_key}] 429 cooldown active — waiting {wait_time:.0f}s")
+                    await asyncio.sleep(wait_time)
+
                 # Refresh token from DB before each reconnect
                 fresh_token = self._get_fresh_token(conn.db_account_ids)
                 if fresh_token:
@@ -677,11 +694,26 @@ class TradovateConnectionManager:
                 # Semaphore limits concurrent connection ATTEMPTS to 2.
                 # 16 connections all hitting Tradovate at once = 429 rate limit.
                 # NEVER remove this semaphore (Bug #38, Feb 24 2026).
+                pre_connect_time = time.time()
                 async with self._connect_semaphore:
                     success = await conn.connect()
                     # Brief pause after each attempt so the next waiter doesn't
                     # immediately slam Tradovate when the semaphore releases.
                     await asyncio.sleep(3)
+
+                # Check if this connection hit 429 during connect()
+                if conn._last_429_time > pre_connect_time:
+                    # Set shared cooldown: ALL connections back off 120s + jitter
+                    cooldown = 120 + random.uniform(0, 30)
+                    self._rate_limit_until = max(
+                        self._rate_limit_until,
+                        time.time() + cooldown
+                    )
+                    logger.warning(f"[{token_key}] 429 rate-limited — ALL connections cooling down {cooldown:.0f}s")
+                    backoff = min(backoff * 2, max_backoff_429)
+                    await conn.close()
+                    continue
+
                 if success:
                     backoff = 1
                     conn._zero_data_windows = 0
