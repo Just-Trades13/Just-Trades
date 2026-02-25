@@ -2466,6 +2466,17 @@ def execute_trade_simple(
                             'closed_qty': existing_position_qty
                         }
 
+                    # CLOSE signal but NO position at broker — nothing to close, nothing to enter.
+                    # Without this, CLOSE falls through to entry logic: order_action='Sell' → opens SHORT (Bug #48).
+                    if is_close_signal and not has_existing_position:
+                        logger.info(f"📊 [{acct_name}] CLOSE signal but broker has no position — nothing to do")
+                        return {
+                            'success': True,
+                            'acct_name': acct_name,
+                            'method': 'CLOSE_NO_POSITION',
+                            'message': 'No position to close'
+                        }
+
                     # CRITICAL POSITION CHECKS - UNIVERSAL DCA LOGIC (Jan 27, 2026)
                     # Same direction = ALWAYS add to position (DCA)
                     # Opposite direction = CLOSE position (for strategy exits) OR BLOCK (if avg_down_enabled)
