@@ -2402,36 +2402,40 @@ def execute_trade_simple(
                     if is_close_signal and has_existing_position:
                         logger.info(f"🔄 [{acct_name}] CLOSE SIGNAL - Closing {existing_position_side} {existing_position_qty} {local_tradovate_symbol}")
 
-                        # Cancel all resting orders (TP/SL) before close
-                        try:
-                            close_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
-                            close_cancelled = 0
-                            for co in (close_orders or []):
-                                co_symbol = str(co.get('symbol', '')).upper()
-                                co_status = str(co.get('ordStatus', '')).upper()
-                                co_id = co.get('id')
-                                if (local_symbol_root in co_symbol and
-                                    co_status in ['WORKING', 'NEW', 'PENDINGNEW'] and co_id):
-                                    try:
-                                        await tradovate.cancel_order_smart(int(co_id), use_websocket=False)
-                                        close_cancelled += 1
-                                        try:
-                                            from ultra_simple_server import unregister_oco_pair
-                                            unregister_oco_pair(int(co_id))
-                                        except Exception:
-                                            pass
-                                    except Exception as co_cancel_err:
-                                        logger.warning(f"⚠️ [{acct_name}] Close cancel order {co_id}: {co_cancel_err}")
-                            if close_cancelled > 0:
-                                logger.info(f"🗑️ [{acct_name}] Cancelled {close_cancelled} resting orders before close")
+                        # Cancel resting orders only if system placed TP/SL (non-strategy mode)
+                        # Strategy mode (tp_ticks=0, sl_ticks=0): TV handles exits, no orders to cancel — skip for speed
+                        if tp_ticks > 0 or sl_ticks > 0:
                             try:
-                                from ultra_simple_server import unregister_break_even_monitor
-                                be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
-                                unregister_break_even_monitor(be_key)
-                            except Exception:
-                                pass
-                        except Exception as close_cleanup_err:
-                            logger.warning(f"⚠️ [{acct_name}] Close order cleanup failed: {close_cleanup_err}")
+                                close_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                                close_cancelled = 0
+                                for co in (close_orders or []):
+                                    co_symbol = str(co.get('symbol', '')).upper()
+                                    co_status = str(co.get('ordStatus', '')).upper()
+                                    co_id = co.get('id')
+                                    if (local_symbol_root in co_symbol and
+                                        co_status in ['WORKING', 'NEW', 'PENDINGNEW'] and co_id):
+                                        try:
+                                            await tradovate.cancel_order_smart(int(co_id), use_websocket=False)
+                                            close_cancelled += 1
+                                            try:
+                                                from ultra_simple_server import unregister_oco_pair
+                                                unregister_oco_pair(int(co_id))
+                                            except Exception:
+                                                pass
+                                        except Exception as co_cancel_err:
+                                            logger.warning(f"⚠️ [{acct_name}] Close cancel order {co_id}: {co_cancel_err}")
+                                if close_cancelled > 0:
+                                    logger.info(f"🗑️ [{acct_name}] Cancelled {close_cancelled} resting orders before close")
+                                try:
+                                    from ultra_simple_server import unregister_break_even_monitor
+                                    be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
+                                    unregister_break_even_monitor(be_key)
+                                except Exception:
+                                    pass
+                            except Exception as close_cleanup_err:
+                                logger.warning(f"⚠️ [{acct_name}] Close order cleanup failed: {close_cleanup_err}")
+                        else:
+                            logger.info(f"⚡ [{acct_name}] Strategy mode (no TP/SL) — skipping order cancel, direct close")
 
                         # Place market order to close — side is OPPOSITE of existing position
                         close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
