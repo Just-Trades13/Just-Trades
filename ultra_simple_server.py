@@ -5629,6 +5629,108 @@ def init_db():
     except:
         pass  # Column already exists
 
+    # TradingView Backtest Import tables (Feb 2026)
+    if is_postgres:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tv_backtest_imports (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id),
+                strategy_id INTEGER,
+                name VARCHAR(200) NOT NULL,
+                symbol VARCHAR(50),
+                strategy_name VARCHAR(200),
+                total_trades INTEGER DEFAULT 0,
+                wins INTEGER DEFAULT 0,
+                losses INTEGER DEFAULT 0,
+                win_rate REAL DEFAULT 0.0,
+                profit_factor REAL DEFAULT 0.0,
+                net_pnl REAL DEFAULT 0.0,
+                gross_profit REAL DEFAULT 0.0,
+                gross_loss REAL DEFAULT 0.0,
+                max_drawdown REAL DEFAULT 0.0,
+                avg_win REAL DEFAULT 0.0,
+                avg_loss REAL DEFAULT 0.0,
+                largest_win REAL DEFAULT 0.0,
+                largest_loss REAL DEFAULT 0.0,
+                avg_trade REAL DEFAULT 0.0,
+                long_trades INTEGER DEFAULT 0,
+                short_trades INTEGER DEFAULT 0,
+                start_date VARCHAR(50),
+                end_date VARCHAR(50),
+                raw_filename VARCHAR(500),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tv_backtest_trades (
+                id SERIAL PRIMARY KEY,
+                import_id INTEGER NOT NULL REFERENCES tv_backtest_imports(id) ON DELETE CASCADE,
+                trade_num INTEGER,
+                type VARCHAR(20),
+                signal VARCHAR(50),
+                date_time VARCHAR(50),
+                price REAL,
+                contracts REAL,
+                profit REAL,
+                cumulative_profit REAL,
+                run_up REAL,
+                drawdown REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_tv_backtest_trades_import ON tv_backtest_trades(import_id)')
+    else:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tv_backtest_imports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                strategy_id INTEGER,
+                name TEXT NOT NULL,
+                symbol TEXT,
+                strategy_name TEXT,
+                total_trades INTEGER DEFAULT 0,
+                wins INTEGER DEFAULT 0,
+                losses INTEGER DEFAULT 0,
+                win_rate REAL DEFAULT 0.0,
+                profit_factor REAL DEFAULT 0.0,
+                net_pnl REAL DEFAULT 0.0,
+                gross_profit REAL DEFAULT 0.0,
+                gross_loss REAL DEFAULT 0.0,
+                max_drawdown REAL DEFAULT 0.0,
+                avg_win REAL DEFAULT 0.0,
+                avg_loss REAL DEFAULT 0.0,
+                largest_win REAL DEFAULT 0.0,
+                largest_loss REAL DEFAULT 0.0,
+                avg_trade REAL DEFAULT 0.0,
+                long_trades INTEGER DEFAULT 0,
+                short_trades INTEGER DEFAULT 0,
+                start_date TEXT,
+                end_date TEXT,
+                raw_filename TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tv_backtest_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_id INTEGER NOT NULL REFERENCES tv_backtest_imports(id) ON DELETE CASCADE,
+                trade_num INTEGER,
+                type TEXT,
+                signal TEXT,
+                date_time TEXT,
+                price REAL,
+                contracts REAL,
+                profit REAL,
+                cumulative_profit REAL,
+                run_up REAL,
+                drawdown REAL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_tv_backtest_trades_import ON tv_backtest_trades(import_id)')
+
     conn.commit()
     conn.close()
 
