@@ -2477,18 +2477,14 @@ def execute_trade_simple(
                                     'skipped': True
                                 }
                             else:
-                                # CLOSE position - strategy is sending exit signal
-                                # Use existing position qty to prevent flip
-                                # Example: LONG 2, SELL signal with 10x multiplier would place SELL 10
-                                #          That closes 2 LONG and opens 8 SHORT - BAD!
-                                # Fix: Use existing_position_qty (2) so it only closes, doesn't flip
-                                logger.info(f"🔄 [{acct_name}] CLOSE SIGNAL - Opposite {signal_side} signal closes {existing_position_side} {existing_position_qty}")
-                                logger.info(f"   Adjusting quantity from {adjusted_quantity} to {existing_position_qty} (close exact position size)")
-                                adjusted_quantity = existing_position_qty
+                                # OPPOSITE DIRECTION REVERSAL (DCA OFF)
+                                # Strategy sends opposite signal = close current + re-enter new direction
+                                # Example: LONG 2, SELL 3 → close 2 LONG, then enter 3 SHORT
+                                # Step 1: Cancel resting orders, Step 2: Close position, Step 3: Reset for re-entry
+                                logger.info(f"🔄 [{acct_name}] REVERSAL - Closing {existing_position_side} {existing_position_qty}, then entering {signal_side} {adjusted_quantity}")
 
-                                # FLIP CLOSE: Cancel all resting exit orders before closing position
-                                # Without this, trailing stops / TPs from the old entry survive the close
-                                logger.info(f"🔄 [{acct_name}] FLIP CLOSE: Cancelling resting orders on {local_tradovate_symbol}...")
+                                # STEP 1: Cancel all resting exit orders before closing position
+                                logger.info(f"🔄 [{acct_name}] REVERSAL: Cancelling resting orders on {local_tradovate_symbol}...")
                                 try:
                                     flip_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
                                     cancelled_count = 0
@@ -2501,7 +2497,6 @@ def execute_trade_simple(
                                             try:
                                                 await tradovate.cancel_order_smart(int(fo_id), use_websocket=False)
                                                 cancelled_count += 1
-                                                # Clean up OCO pair if this order was registered
                                                 try:
                                                     from ultra_simple_server import unregister_oco_pair
                                                     unregister_oco_pair(int(fo_id))
@@ -2510,8 +2505,7 @@ def execute_trade_simple(
                                             except Exception as cancel_err:
                                                 logger.warning(f"⚠️ [{acct_name}] Could not cancel order {fo_id}: {cancel_err}")
                                     if cancelled_count > 0:
-                                        logger.info(f"🗑️ [{acct_name}] Cancelled {cancelled_count} resting orders before close")
-                                    # Unregister break-even monitor for this account+symbol
+                                        logger.info(f"🗑️ [{acct_name}] Cancelled {cancelled_count} resting orders before reversal close")
                                     try:
                                         from ultra_simple_server import unregister_break_even_monitor
                                         be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
@@ -2519,8 +2513,26 @@ def execute_trade_simple(
                                     except Exception:
                                         pass
                                 except Exception as cleanup_err:
-                                    logger.warning(f"⚠️ [{acct_name}] Flip close order cleanup failed: {cleanup_err}")
-                                # Signal blocking: clear on flip-close
+                                    logger.warning(f"⚠️ [{acct_name}] Reversal order cleanup failed: {cleanup_err}")
+
+                                # STEP 2: Close existing position with market order
+                                close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
+                                close_order_data = tradovate.create_market_order(
+                                    tradovate_account_spec, local_tradovate_symbol,
+                                    close_action, existing_position_qty, tradovate_account_id
+                                )
+                                logger.info(f"📤 [{acct_name}] Reversal close: {close_action} {existing_position_qty} {local_tradovate_symbol}")
+                                close_result = await tradovate.place_order_smart(close_order_data, use_websocket=False)
+                                if close_result and close_result.get('success'):
+                                    logger.info(f"✅ [{acct_name}] Reversal close filled — proceeding to {signal_side} entry")
+                                else:
+                                    close_err = close_result.get('error') or 'Unknown error' if close_result else 'No response'
+                                    logger.warning(f"⚠️ [{acct_name}] Reversal close may have failed: {close_err} — proceeding to entry anyway")
+
+                                # STEP 3: Reset position state so entry logic treats this as fresh
+                                has_existing_position = False
+
+                                # Signal blocking: clear on reversal close
                                 try:
                                     from ultra_simple_server import clear_signal_blocking_position, extract_symbol_root
                                     clear_signal_blocking_position(recorder_id, extract_symbol_root(local_tradovate_symbol))
