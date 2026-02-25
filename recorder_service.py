@@ -2394,6 +2394,74 @@ def execute_trade_simple(
                                             f"(existing {existing_position_qty} + {room} = {max_contracts} max)")
                                 adjusted_quantity = room
 
+                    # CLOSE SIGNAL HANDLER — close existing position and return early
+                    # CLOSE/FLATTEN/EXIT/FLAT must never fall through to entry logic
+                    # Without this, CLOSE maps to order_action='Sell'/signal_side='SHORT'
+                    # which causes close+re-enter (SHORT) or incorrect reversal (LONG)
+                    is_close_signal = action.upper() in ('CLOSE', 'FLATTEN', 'EXIT', 'FLAT')
+                    if is_close_signal and has_existing_position:
+                        logger.info(f"🔄 [{acct_name}] CLOSE SIGNAL - Closing {existing_position_side} {existing_position_qty} {local_tradovate_symbol}")
+
+                        # Cancel all resting orders (TP/SL) before close
+                        try:
+                            close_orders = await tradovate.get_orders(account_id=str(tradovate_account_id))
+                            close_cancelled = 0
+                            for co in (close_orders or []):
+                                co_symbol = str(co.get('symbol', '')).upper()
+                                co_status = str(co.get('ordStatus', '')).upper()
+                                co_id = co.get('id')
+                                if (local_symbol_root in co_symbol and
+                                    co_status in ['WORKING', 'NEW', 'PENDINGNEW'] and co_id):
+                                    try:
+                                        await tradovate.cancel_order_smart(int(co_id), use_websocket=False)
+                                        close_cancelled += 1
+                                        try:
+                                            from ultra_simple_server import unregister_oco_pair
+                                            unregister_oco_pair(int(co_id))
+                                        except Exception:
+                                            pass
+                                    except Exception as co_cancel_err:
+                                        logger.warning(f"⚠️ [{acct_name}] Close cancel order {co_id}: {co_cancel_err}")
+                            if close_cancelled > 0:
+                                logger.info(f"🗑️ [{acct_name}] Cancelled {close_cancelled} resting orders before close")
+                            try:
+                                from ultra_simple_server import unregister_break_even_monitor
+                                be_key = f"{tradovate_account_id}:{local_tradovate_symbol}"
+                                unregister_break_even_monitor(be_key)
+                            except Exception:
+                                pass
+                        except Exception as close_cleanup_err:
+                            logger.warning(f"⚠️ [{acct_name}] Close order cleanup failed: {close_cleanup_err}")
+
+                        # Place market order to close — side is OPPOSITE of existing position
+                        close_action = 'Sell' if existing_position_side == 'LONG' else 'Buy'
+                        close_order_data = tradovate.create_market_order(
+                            tradovate_account_spec, local_tradovate_symbol,
+                            close_action, existing_position_qty, tradovate_account_id
+                        )
+                        logger.info(f"📤 [{acct_name}] Close: {close_action} {existing_position_qty} {local_tradovate_symbol}")
+                        close_result = await tradovate.place_order_smart(close_order_data, use_websocket=False)
+                        if close_result and close_result.get('success'):
+                            logger.info(f"✅ [{acct_name}] CLOSE filled - position closed")
+                        else:
+                            close_err = close_result.get('error') or 'Unknown error' if close_result else 'No response'
+                            logger.warning(f"⚠️ [{acct_name}] CLOSE may have failed: {close_err}")
+
+                        # Signal blocking: clear on close
+                        try:
+                            from ultra_simple_server import clear_signal_blocking_position, extract_symbol_root
+                            clear_signal_blocking_position(recorder_id, extract_symbol_root(local_tradovate_symbol))
+                        except Exception:
+                            pass
+
+                        return {
+                            'success': True,
+                            'acct_name': acct_name,
+                            'method': 'CLOSE_SIGNAL',
+                            'closed_side': existing_position_side,
+                            'closed_qty': existing_position_qty
+                        }
+
                     # CRITICAL POSITION CHECKS - UNIVERSAL DCA LOGIC (Jan 27, 2026)
                     # Same direction = ALWAYS add to position (DCA)
                     # Opposite direction = CLOSE position (for strategy exits) OR BLOCK (if avg_down_enabled)
