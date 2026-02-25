@@ -11,8 +11,9 @@ echo "DATABASE_URL set: $(if [ -n "$DATABASE_URL" ]; then echo 'yes'; else echo 
 echo "EXTERNAL_TRADING_ENGINE: ${EXTERNAL_TRADING_ENGINE:-not set}"
 
 echo ""
-echo "Step 0: Ensure brevo-python is installed..."
+echo "Step 0: Ensure brevo-python and openpyxl are installed..."
 python -m pip install "brevo-python<2.0.0" || echo "⚠️ brevo-python install failed - activation emails may not work"
+python -m pip install "openpyxl>=3.1.0,<4.0.0" || echo "⚠️ openpyxl install failed - xlsx backtest import may not work"
 
 echo ""
 echo "Step 1: Initialize database (timeout 15s)..."

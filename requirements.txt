@@ -33,5 +33,8 @@ py-vapid==1.9.1
 # Email (Brevo transactional emails)
 brevo-python<2.0.0
 
+# TradingView Strategy Tester XLSX import
+openpyxl>=3.1.0,<4.0.0
+
 # Cache bust: 2026-02-21 — force pip reinstall to pick up brevo-python
 

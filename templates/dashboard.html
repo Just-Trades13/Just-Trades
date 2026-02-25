@@ -240,11 +240,11 @@
                     </select>
                 </div>
                 <div class="bt-form-group">
-                    <label>CSV File <span style="color:#f56565">*</span></label>
+                    <label>Strategy Export File <span style="color:#f56565">*</span></label>
                     <div class="bt-dropzone" id="btDropzone" onclick="document.getElementById('btFile').click()">
                         <span class="material-icons" style="font-size:32px;color:var(--text-muted)">cloud_upload</span>
-                        <p id="btDropzoneText" style="margin:0.5rem 0 0;color:var(--text-muted)">Click or drag CSV here (max 5 MB)</p>
-                        <input type="file" id="btFile" accept=".csv" style="display:none" onchange="btFileSelected(this)">
+                        <p id="btDropzoneText" style="margin:0.5rem 0 0;color:var(--text-muted)">Click or drag .xlsx or .csv here (max 10 MB)</p>
+                        <input type="file" id="btFile" accept=".xlsx,.csv" style="display:none" onchange="btFileSelected(this)">
                     </div>
                 </div>
                 <div class="bt-form-actions">

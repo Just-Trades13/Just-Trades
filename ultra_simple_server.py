@@ -27652,13 +27652,15 @@ def api_dashboard_calendar_data():
         return jsonify({'error': f'Failed to fetch calendar data: {str(e)}', 'calendar_data': {}}), 500
 
 # ============================================================================
-# TradingView Backtest CSV Import API
+# TradingView Backtest Import API (XLSX + CSV)
 # ============================================================================
 
 def _parse_tv_number(val):
-    """Strip $, commas, % from a string and return float (or 0.0)."""
+    """Strip $, commas, % from a string and return float (or 0.0). Handles native numerics from openpyxl."""
     if val is None:
         return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
     val = str(val).strip().replace('$', '').replace(',', '').replace('%', '')
     try:
         return float(val)
@@ -27667,29 +27669,98 @@ def _parse_tv_number(val):
 
 
 def _normalize_header(h):
-    """Lowercase + strip whitespace for flexible CSV header matching."""
+    """Lowercase + strip whitespace for flexible header matching."""
     return h.strip().lower().replace('.', '').replace('-', '').replace('_', ' ')
 
 
-# Column mapping: normalised header -> internal key
+# Column mapping: normalised header -> internal key (covers both CSV and XLSX exports)
 _TV_HEADER_MAP = {
     'trade #': 'trade_num', 'trade': 'trade_num', 'trade num': 'trade_num',
     'type': 'type',
     'signal': 'signal',
-    'date/time': 'date_time', 'datetime': 'date_time', 'date time': 'date_time', 'date': 'date_time',
-    'price': 'price',
+    'date/time': 'date_time', 'datetime': 'date_time', 'date time': 'date_time',
+    'date and time': 'date_time', 'date': 'date_time',
+    'price': 'price', 'price usd': 'price',
     'contracts': 'contracts', 'qty': 'contracts', 'quantity': 'contracts',
+    'position size (qty)': 'contracts', 'position size qty': 'contracts',
     'profit': 'profit', 'profit usd': 'profit',
+    'net p&l usd': 'profit', 'net p&l': 'profit', 'net pnl usd': 'profit',
     'cum profit': 'cumulative_profit', 'cumprofit': 'cumulative_profit',
     'cumulative profit': 'cumulative_profit', 'cum profit usd': 'cumulative_profit',
+    'cumulative p&l usd': 'cumulative_profit', 'cumulative p&l': 'cumulative_profit',
+    'cumulative pnl usd': 'cumulative_profit',
     'run up': 'run_up', 'runup': 'run_up', 'run up usd': 'run_up',
+    'favorable excursion usd': 'run_up', 'favorable excursion': 'run_up',
     'drawdown': 'drawdown', 'drawdown usd': 'drawdown', 'draw down': 'drawdown',
+    'adverse excursion usd': 'drawdown', 'adverse excursion': 'drawdown',
 }
+
+
+def _parse_xlsx_trades(raw_bytes):
+    """Parse 'List of trades' sheet from TradingView XLSX export. Returns (rows, symbol, strategy_name)."""
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True, data_only=True)
+
+    # --- Extract symbol and strategy name from Properties sheet ---
+    symbol = None
+    strategy_name = None
+    if 'Properties' in wb.sheetnames:
+        props_ws = wb['Properties']
+        for row in props_ws.iter_rows(min_row=1, max_col=2, values_only=True):
+            if row[0] is None:
+                continue
+            key = str(row[0]).strip().lower()
+            val = str(row[1]).strip() if row[1] is not None else ''
+            if key == 'symbol':
+                symbol = val
+            elif key in ('script name', 'strategy name'):
+                strategy_name = val
+
+    # --- Parse List of trades sheet ---
+    trades_sheet = None
+    for sn in wb.sheetnames:
+        if 'list of trades' in sn.lower():
+            trades_sheet = wb[sn]
+            break
+    if trades_sheet is None:
+        wb.close()
+        raise ValueError('XLSX has no "List of trades" sheet')
+
+    # Read headers from row 1
+    header_row = []
+    for cell in trades_sheet[1]:
+        header_row.append(str(cell.value).strip() if cell.value is not None else '')
+
+    col_map = {}
+    for idx, raw_h in enumerate(header_row):
+        norm = _normalize_header(raw_h)
+        if norm in _TV_HEADER_MAP:
+            col_map[idx] = _TV_HEADER_MAP[norm]
+
+    if not any(v == 'type' for v in col_map.values()):
+        wb.close()
+        raise ValueError('XLSX "List of trades" sheet missing required "Type" column')
+
+    rows = []
+    for row in trades_sheet.iter_rows(min_row=2, values_only=True):
+        if row[0] is None:
+            continue
+        mapped = {}
+        for idx, internal_key in col_map.items():
+            val = row[idx] if idx < len(row) else None
+            # Convert datetime objects to string
+            if hasattr(val, 'strftime'):
+                val = val.strftime('%Y-%m-%d %H:%M')
+            mapped[internal_key] = val
+        rows.append(mapped)
+
+    wb.close()
+    return rows, symbol, strategy_name
 
 
 @app.route('/api/backtest/upload', methods=['POST'])
 def api_backtest_upload():
-    """Upload a TradingView Strategy Tester CSV and compute summary metrics."""
+    """Upload a TradingView Strategy Tester export (XLSX or CSV) and compute summary metrics."""
     try:
         from app.database import SessionLocal
         from app.models import TVBacktestImport, TVBacktestTrade
@@ -27705,41 +27776,52 @@ def api_backtest_upload():
 
         file = request.files.get('file')
         if not file or file.filename == '':
-            return jsonify({'success': False, 'error': 'CSV file is required'}), 400
-        if not file.filename.lower().endswith('.csv'):
-            return jsonify({'success': False, 'error': 'File must be a .csv'}), 400
+            return jsonify({'success': False, 'error': 'File is required'}), 400
 
-        # Read into memory (max 5 MB)
-        raw = file.read(5 * 1024 * 1024 + 1)
-        if len(raw) > 5 * 1024 * 1024:
-            return jsonify({'success': False, 'error': 'File exceeds 5 MB limit'}), 400
+        fname_lower = file.filename.lower()
+        is_xlsx = fname_lower.endswith('.xlsx')
+        is_csv = fname_lower.endswith('.csv')
+        if not is_xlsx and not is_csv:
+            return jsonify({'success': False, 'error': 'File must be .xlsx or .csv'}), 400
 
-        text = raw.decode('utf-8-sig', errors='replace')
-        reader = csv.DictReader(io.StringIO(text))
+        # Read into memory (max 10 MB for xlsx)
+        max_size = 10 * 1024 * 1024
+        raw = file.read(max_size + 1)
+        if len(raw) > max_size:
+            return jsonify({'success': False, 'error': 'File exceeds 10 MB limit'}), 400
 
-        # Map raw headers to internal keys
-        if not reader.fieldnames:
-            return jsonify({'success': False, 'error': 'CSV has no headers'}), 400
+        # --- Parse based on file type ---
+        xlsx_symbol = None
+        xlsx_strategy_name = None
 
-        col_map = {}
-        for raw_h in reader.fieldnames:
-            norm = _normalize_header(raw_h)
-            if norm in _TV_HEADER_MAP:
-                col_map[raw_h] = _TV_HEADER_MAP[norm]
+        if is_xlsx:
+            rows, xlsx_symbol, xlsx_strategy_name = _parse_xlsx_trades(raw)
+        else:
+            text = raw.decode('utf-8-sig', errors='replace')
+            reader = csv.DictReader(io.StringIO(text))
 
-        if 'type' not in col_map.values():
-            return jsonify({'success': False, 'error': 'CSV missing required "Type" column'}), 400
+            # Map raw headers to internal keys
+            if not reader.fieldnames:
+                return jsonify({'success': False, 'error': 'CSV has no headers'}), 400
 
-        # --- Parse rows ---
-        rows = []
-        for row in reader:
-            mapped = {}
-            for raw_h, internal_key in col_map.items():
-                mapped[internal_key] = row.get(raw_h, '')
-            rows.append(mapped)
+            col_map = {}
+            for raw_h in reader.fieldnames:
+                norm = _normalize_header(raw_h)
+                if norm in _TV_HEADER_MAP:
+                    col_map[raw_h] = _TV_HEADER_MAP[norm]
+
+            if 'type' not in col_map.values():
+                return jsonify({'success': False, 'error': 'CSV missing required "Type" column'}), 400
+
+            rows = []
+            for row in reader:
+                mapped = {}
+                for raw_h, internal_key in col_map.items():
+                    mapped[internal_key] = row.get(raw_h, '')
+                rows.append(mapped)
 
         if not rows:
-            return jsonify({'success': False, 'error': 'CSV contains no data rows'}), 400
+            return jsonify({'success': False, 'error': 'File contains no data rows'}), 400
 
         # --- Compute summary metrics from Exit rows ---
         wins, losses = 0, 0
@@ -27750,14 +27832,20 @@ def api_backtest_upload():
         first_date, last_date = None, None
 
         for r in rows:
-            row_type = (r.get('type') or '').strip().lower()
-            if row_type != 'exit':
-                # Track entry signal for long/short counts
-                if row_type == 'entry':
-                    sig = (r.get('signal') or '').strip().lower()
-                    if 'long' in sig:
+            row_type = str(r.get('type') or '').strip().lower()
+            # XLSX uses "exit long"/"exit short"/"entry long"/"entry short"
+            # CSV uses plain "exit"/"entry"
+            is_exit = row_type.startswith('exit')
+            is_entry = row_type.startswith('entry')
+
+            if not is_exit:
+                # Track entry for long/short counts
+                if is_entry:
+                    sig = str(r.get('signal') or '').strip().lower()
+                    # XLSX: type="Entry long" or signal="L"; CSV: signal contains "long"/"short"
+                    if 'long' in row_type or 'long' in sig or sig == 'l':
                         long_count += 1
-                    elif 'short' in sig:
+                    elif 'short' in row_type or 'short' in sig or sig == 's':
                         short_count += 1
                 continue
 
@@ -27765,7 +27853,7 @@ def api_backtest_upload():
             cum_p = _parse_tv_number(r.get('cumulative_profit'))
             cum_profits.append(cum_p)
 
-            dt = (r.get('date_time') or '').strip()
+            dt = str(r.get('date_time') or '').strip()
             if dt:
                 if first_date is None:
                     first_date = dt
@@ -27800,11 +27888,9 @@ def api_backtest_upload():
             if dd > max_dd:
                 max_dd = dd
 
-        # Detect symbol from filename or first row
-        symbol = None
-        if rows and rows[0].get('signal'):
-            # TradingView sometimes puts symbol info elsewhere; fallback to user input
-            pass
+        # Use symbol/strategy extracted from XLSX Properties sheet (if available)
+        symbol = xlsx_symbol
+        strategy_name_val = xlsx_strategy_name
 
         # --- Store in database ---
         db = SessionLocal()
@@ -27814,7 +27900,7 @@ def api_backtest_upload():
                 strategy_id=strategy_id,
                 name=name,
                 symbol=symbol,
-                strategy_name=None,
+                strategy_name=strategy_name_val,
                 total_trades=total_trades,
                 wins=wins,
                 losses=losses,
@@ -27843,9 +27929,9 @@ def api_backtest_upload():
                 trade_objects.append(TVBacktestTrade(
                     import_id=imp.id,
                     trade_num=int(_parse_tv_number(r.get('trade_num'))) if r.get('trade_num') else None,
-                    type=(r.get('type') or '').strip(),
-                    signal=(r.get('signal') or '').strip(),
-                    date_time=(r.get('date_time') or '').strip(),
+                    type=str(r.get('type') or '').strip(),
+                    signal=str(r.get('signal') or '').strip(),
+                    date_time=str(r.get('date_time') or '').strip(),
                     price=_parse_tv_number(r.get('price')),
                     contracts=_parse_tv_number(r.get('contracts')),
                     profit=_parse_tv_number(r.get('profit')),
