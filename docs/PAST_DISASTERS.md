@@ -1,6 +1,6 @@
 # Past Disasters — Why Every Rule Exists
 
-> **46 production disasters in ~3 months. Every rule was written in blood (lost money, lost time, lost users).**
+> **48 production disasters in ~3 months. Every rule was written in blood (lost money, lost time, lost users).**
 > **Last updated: Feb 24, 2026**
 
 ---
@@ -55,6 +55,8 @@
 | 44 | Feb 24, 2026 | **WS crash loop — "message too big" every 13s** | websockets default max_size=1MB too small | `c3b4c5b` | Hours |
 | 45 | Feb 24, 2026 | **Reversal close-only, no re-enter** | Opposite-direction DCA-off set `adjusted_quantity` but never re-entered | `83d2733` | Hours |
 | 46 | Feb 24, 2026 | **CLOSE signal misrouted as SHORT** | `action='CLOSE'` → `signal_side='SHORT'` → DCA-off close+re-enter or wrong reversal | `13a217b` | Hours |
+| 47 | Feb 25, 2026 | **429 reconnect storm (15 demo connections cycling)** | Per-connection backoff, no shared cooldown across connections | `2447618` | Minutes |
+| 48 | Feb 25, 2026 | **CLOSE signal opens SHORT when broker flat** | Bug #46 handler requires has_existing_position=True; no-position path fell through to entry | `45d2f12` | Minutes |
 
 ---
 

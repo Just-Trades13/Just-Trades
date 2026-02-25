@@ -859,5 +859,5 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 *Last updated: Feb 24, 2026 (evening session)*
 *Production stable tag: WORKING_FEB24_2026_WS_SEMAPHORE_STABLE*
-*Total rules: 37 + Rule 10b (WS Stability) | Total documented disasters: 46 | Paid users in production: YES*
+*Total rules: 37 + Rule 10b (WS Stability) | Total documented disasters: 48 | Paid users in production: YES*
 *Reference docs: 20 in /docs/ | CHANGELOG_RULES.md | Memory: 9 files in ~/.claude/memory/*

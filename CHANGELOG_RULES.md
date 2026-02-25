@@ -440,6 +440,17 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | In strategy mode, TradingView handles all exits — no system-placed TP/SL orders to cancel. Skipping saves ~300-500ms (one `get_orders()` API call + iteration). |
 | **NEVER** | Remove this conditional — would re-add unnecessary API call for every strategy mode close. Change the condition to skip cancels in non-strategy mode. |
 
+### CLOSE-No-Position Early Return — Bug #48 (Feb 25, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~2469-2476 (immediately after Bug #46 CLOSE handler return at ~2467) |
+| **Rule** | Completes Bug #46 — covers the `has_existing_position=False` path |
+| **Commit** | `45d2f12` |
+| **What** | When `is_close_signal=True` and `has_existing_position=False`, returns early with `CLOSE_NO_POSITION`. Prevents CLOSE from reaching entry logic. |
+| **Why** | Bug #46 handler at line 2402 only fires when `has_existing_position=True`. When broker has no position (TP already filled, race condition), CLOSE signal fell through: `order_action='Sell'` (line 2341, because 'CLOSE' != 'BUY') → `signal_side='SHORT'` (line 2473) → no position check → entry logic → places SELL market order → opens SHORT. |
+| **Verified** | Code trace confirms: both `is_close_signal + has_position` and `is_close_signal + no_position` paths now return early. CLOSE can never reach entry logic. |
+| **NEVER** | Remove this early return. Move it after the position direction logic (line 2472+). Let CLOSE signals reach entry logic under any condition. |
+
 ---
 
 ## tradovate_integration.py — Protected Changes
@@ -536,6 +547,7 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | CLOSE handler before signal_side | Lines ~2397-2467, before ~2473 | CLOSE maps to 'Sell'/'SHORT' without early exit | CLOSE misrouted: SHORT close+re-enter, LONG reversal |
 | Reversal close+re-enter | Lines ~2551-2612, `has_existing_position = False` | Old code was close-only, no re-enter | Strategy reversals (LONG→SHORT) only close, never re-enter |
 | Strategy mode skip cancel | `if tp_ticks > 0 or sl_ticks > 0` in CLOSE handler | TV handles exits, no system TP/SL to cancel | Extra 300-500ms API call on every strategy close |
+| CLOSE + no position = return | Lines ~2469-2476, after Bug #46 handler | CLOSE must never reach entry logic | CLOSE opens SHORT when broker is flat |
 
 ---
 
