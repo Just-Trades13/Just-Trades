@@ -25,6 +25,8 @@ import json
 import re
 import time
 import threading
+import csv
+import io
 import secrets
 import requests
 from typing import Optional
@@ -27648,6 +27650,322 @@ def api_dashboard_calendar_data():
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Failed to fetch calendar data: {str(e)}', 'calendar_data': {}}), 500
+
+# ============================================================================
+# TradingView Backtest CSV Import API
+# ============================================================================
+
+def _parse_tv_number(val):
+    """Strip $, commas, % from a string and return float (or 0.0)."""
+    if val is None:
+        return 0.0
+    val = str(val).strip().replace('$', '').replace(',', '').replace('%', '')
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _normalize_header(h):
+    """Lowercase + strip whitespace for flexible CSV header matching."""
+    return h.strip().lower().replace('.', '').replace('-', '').replace('_', ' ')
+
+
+# Column mapping: normalised header -> internal key
+_TV_HEADER_MAP = {
+    'trade #': 'trade_num', 'trade': 'trade_num', 'trade num': 'trade_num',
+    'type': 'type',
+    'signal': 'signal',
+    'date/time': 'date_time', 'datetime': 'date_time', 'date time': 'date_time', 'date': 'date_time',
+    'price': 'price',
+    'contracts': 'contracts', 'qty': 'contracts', 'quantity': 'contracts',
+    'profit': 'profit', 'profit usd': 'profit',
+    'cum profit': 'cumulative_profit', 'cumprofit': 'cumulative_profit',
+    'cumulative profit': 'cumulative_profit', 'cum profit usd': 'cumulative_profit',
+    'run up': 'run_up', 'runup': 'run_up', 'run up usd': 'run_up',
+    'drawdown': 'drawdown', 'drawdown usd': 'drawdown', 'draw down': 'drawdown',
+}
+
+
+@app.route('/api/backtest/upload', methods=['POST'])
+def api_backtest_upload():
+    """Upload a TradingView Strategy Tester CSV and compute summary metrics."""
+    try:
+        from app.database import SessionLocal
+        from app.models import TVBacktestImport, TVBacktestTrade
+
+        # --- Validate inputs ---
+        name = request.form.get('name', '').strip()
+        if not name:
+            return jsonify({'success': False, 'error': 'Name is required'}), 400
+
+        strategy_id = request.form.get('strategy_id') or None
+        if strategy_id:
+            strategy_id = int(strategy_id)
+
+        file = request.files.get('file')
+        if not file or file.filename == '':
+            return jsonify({'success': False, 'error': 'CSV file is required'}), 400
+        if not file.filename.lower().endswith('.csv'):
+            return jsonify({'success': False, 'error': 'File must be a .csv'}), 400
+
+        # Read into memory (max 5 MB)
+        raw = file.read(5 * 1024 * 1024 + 1)
+        if len(raw) > 5 * 1024 * 1024:
+            return jsonify({'success': False, 'error': 'File exceeds 5 MB limit'}), 400
+
+        text = raw.decode('utf-8-sig', errors='replace')
+        reader = csv.DictReader(io.StringIO(text))
+
+        # Map raw headers to internal keys
+        if not reader.fieldnames:
+            return jsonify({'success': False, 'error': 'CSV has no headers'}), 400
+
+        col_map = {}
+        for raw_h in reader.fieldnames:
+            norm = _normalize_header(raw_h)
+            if norm in _TV_HEADER_MAP:
+                col_map[raw_h] = _TV_HEADER_MAP[norm]
+
+        if 'type' not in col_map.values():
+            return jsonify({'success': False, 'error': 'CSV missing required "Type" column'}), 400
+
+        # --- Parse rows ---
+        rows = []
+        for row in reader:
+            mapped = {}
+            for raw_h, internal_key in col_map.items():
+                mapped[internal_key] = row.get(raw_h, '')
+            rows.append(mapped)
+
+        if not rows:
+            return jsonify({'success': False, 'error': 'CSV contains no data rows'}), 400
+
+        # --- Compute summary metrics from Exit rows ---
+        wins, losses = 0, 0
+        gross_profit, gross_loss = 0.0, 0.0
+        win_profits, loss_profits = [], []
+        long_count, short_count = 0, 0
+        cum_profits = []
+        first_date, last_date = None, None
+
+        for r in rows:
+            row_type = (r.get('type') or '').strip().lower()
+            if row_type != 'exit':
+                # Track entry signal for long/short counts
+                if row_type == 'entry':
+                    sig = (r.get('signal') or '').strip().lower()
+                    if 'long' in sig:
+                        long_count += 1
+                    elif 'short' in sig:
+                        short_count += 1
+                continue
+
+            profit = _parse_tv_number(r.get('profit'))
+            cum_p = _parse_tv_number(r.get('cumulative_profit'))
+            cum_profits.append(cum_p)
+
+            dt = (r.get('date_time') or '').strip()
+            if dt:
+                if first_date is None:
+                    first_date = dt
+                last_date = dt
+
+            if profit >= 0:
+                wins += 1
+                gross_profit += profit
+                win_profits.append(profit)
+            else:
+                losses += 1
+                gross_loss += abs(profit)
+                loss_profits.append(profit)
+
+        total_trades = wins + losses
+        win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
+        net_pnl = gross_profit - gross_loss
+        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (999.99 if gross_profit > 0 else 0.0)
+        avg_win = (gross_profit / wins) if wins > 0 else 0.0
+        avg_loss = (gross_loss / losses) if losses > 0 else 0.0
+        largest_win = max(win_profits) if win_profits else 0.0
+        largest_loss = min(loss_profits) if loss_profits else 0.0
+        avg_trade = (net_pnl / total_trades) if total_trades > 0 else 0.0
+
+        # Max drawdown from cumulative profit peak-to-trough
+        max_dd = 0.0
+        peak = 0.0
+        for cp in cum_profits:
+            if cp > peak:
+                peak = cp
+            dd = peak - cp
+            if dd > max_dd:
+                max_dd = dd
+
+        # Detect symbol from filename or first row
+        symbol = None
+        if rows and rows[0].get('signal'):
+            # TradingView sometimes puts symbol info elsewhere; fallback to user input
+            pass
+
+        # --- Store in database ---
+        db = SessionLocal()
+        try:
+            imp = TVBacktestImport(
+                user_id=None,  # TODO: session-based auth
+                strategy_id=strategy_id,
+                name=name,
+                symbol=symbol,
+                strategy_name=None,
+                total_trades=total_trades,
+                wins=wins,
+                losses=losses,
+                win_rate=round(win_rate, 2),
+                profit_factor=round(profit_factor, 2),
+                net_pnl=round(net_pnl, 2),
+                gross_profit=round(gross_profit, 2),
+                gross_loss=round(gross_loss, 2),
+                max_drawdown=round(max_dd, 2),
+                avg_win=round(avg_win, 2),
+                avg_loss=round(avg_loss, 2),
+                largest_win=round(largest_win, 2),
+                largest_loss=round(largest_loss, 2),
+                avg_trade=round(avg_trade, 2),
+                long_trades=long_count,
+                short_trades=short_count,
+                start_date=first_date,
+                end_date=last_date,
+                raw_filename=file.filename,
+            )
+            db.add(imp)
+            db.flush()  # get imp.id
+
+            trade_objects = []
+            for r in rows:
+                trade_objects.append(TVBacktestTrade(
+                    import_id=imp.id,
+                    trade_num=int(_parse_tv_number(r.get('trade_num'))) if r.get('trade_num') else None,
+                    type=(r.get('type') or '').strip(),
+                    signal=(r.get('signal') or '').strip(),
+                    date_time=(r.get('date_time') or '').strip(),
+                    price=_parse_tv_number(r.get('price')),
+                    contracts=_parse_tv_number(r.get('contracts')),
+                    profit=_parse_tv_number(r.get('profit')),
+                    cumulative_profit=_parse_tv_number(r.get('cumulative_profit')),
+                    run_up=_parse_tv_number(r.get('run_up')),
+                    drawdown=_parse_tv_number(r.get('drawdown')),
+                ))
+            db.bulk_save_objects(trade_objects)
+            db.commit()
+
+            metrics = {
+                'import_id': imp.id,
+                'total_trades': total_trades,
+                'wins': wins,
+                'losses': losses,
+                'win_rate': round(win_rate, 2),
+                'profit_factor': round(profit_factor, 2),
+                'net_pnl': round(net_pnl, 2),
+                'max_drawdown': round(max_dd, 2),
+                'avg_trade': round(avg_trade, 2),
+            }
+
+            return jsonify({'success': True, 'import_id': imp.id, 'metrics': metrics})
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Backtest upload error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/backtest/list', methods=['GET'])
+def api_backtest_list():
+    """Return all backtest imports with summary metrics."""
+    try:
+        from app.database import SessionLocal
+        from app.models import TVBacktestImport
+
+        strategy_id = request.args.get('strategy_id')
+
+        db = SessionLocal()
+        try:
+            q = db.query(TVBacktestImport).order_by(TVBacktestImport.created_at.desc())
+            if strategy_id:
+                q = q.filter(TVBacktestImport.strategy_id == int(strategy_id))
+            imports = q.all()
+
+            results = []
+            for imp in imports:
+                results.append({
+                    'id': imp.id,
+                    'name': imp.name,
+                    'symbol': imp.symbol,
+                    'strategy_name': imp.strategy_name,
+                    'strategy_id': imp.strategy_id,
+                    'total_trades': imp.total_trades,
+                    'wins': imp.wins,
+                    'losses': imp.losses,
+                    'win_rate': imp.win_rate,
+                    'profit_factor': imp.profit_factor,
+                    'net_pnl': imp.net_pnl,
+                    'gross_profit': imp.gross_profit,
+                    'gross_loss': imp.gross_loss,
+                    'max_drawdown': imp.max_drawdown,
+                    'avg_win': imp.avg_win,
+                    'avg_loss': imp.avg_loss,
+                    'largest_win': imp.largest_win,
+                    'largest_loss': imp.largest_loss,
+                    'avg_trade': imp.avg_trade,
+                    'long_trades': imp.long_trades,
+                    'short_trades': imp.short_trades,
+                    'start_date': imp.start_date,
+                    'end_date': imp.end_date,
+                    'raw_filename': imp.raw_filename,
+                    'created_at': imp.created_at.isoformat() if imp.created_at else None,
+                })
+
+            return jsonify({'success': True, 'imports': results})
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Backtest list error: {e}")
+        return jsonify({'success': False, 'error': str(e), 'imports': []}), 500
+
+
+@app.route('/api/backtest/<int:import_id>', methods=['DELETE'])
+def api_backtest_delete(import_id):
+    """Delete a backtest import and its trades."""
+    try:
+        from app.database import SessionLocal
+        from app.models import TVBacktestImport, TVBacktestTrade
+
+        db = SessionLocal()
+        try:
+            imp = db.query(TVBacktestImport).filter(TVBacktestImport.id == import_id).first()
+            if not imp:
+                return jsonify({'success': False, 'error': 'Import not found'}), 404
+
+            # Delete trades first (SQLite compat), then the import
+            db.query(TVBacktestTrade).filter(TVBacktestTrade.import_id == import_id).delete()
+            db.delete(imp)
+            db.commit()
+
+            return jsonify({'success': True, 'message': f'Backtest "{imp.name}" deleted'})
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Backtest delete error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/news-feed', methods=['GET'])
 def api_news_feed():

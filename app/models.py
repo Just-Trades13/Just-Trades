@@ -304,3 +304,69 @@ class WebhookLog(Base):
     strategy = relationship("Strategy", foreign_keys=[strategy_id])
     trades = relationship("Trade", back_populates="webhook_log")
 
+
+class TVBacktestImport(Base):
+    """TradingView Strategy Tester CSV imports with pre-computed summary metrics"""
+    __tablename__ = 'tv_backtest_imports'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    strategy_id = Column(Integer, ForeignKey('strategies.id'), nullable=True)
+    name = Column(String(200), nullable=False)
+    symbol = Column(String(50), nullable=True)
+    strategy_name = Column(String(200), nullable=True)
+
+    # Pre-computed summary metrics
+    total_trades = Column(Integer, default=0)
+    wins = Column(Integer, default=0)
+    losses = Column(Integer, default=0)
+    win_rate = Column(Float, default=0.0)
+    profit_factor = Column(Float, default=0.0)
+    net_pnl = Column(Float, default=0.0)
+    gross_profit = Column(Float, default=0.0)
+    gross_loss = Column(Float, default=0.0)
+    max_drawdown = Column(Float, default=0.0)
+    avg_win = Column(Float, default=0.0)
+    avg_loss = Column(Float, default=0.0)
+    largest_win = Column(Float, default=0.0)
+    largest_loss = Column(Float, default=0.0)
+    avg_trade = Column(Float, default=0.0)
+    long_trades = Column(Integer, default=0)
+    short_trades = Column(Integer, default=0)
+
+    # Date range
+    start_date = Column(String(50), nullable=True)
+    end_date = Column(String(50), nullable=True)
+    raw_filename = Column(String(500), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    trades_list = relationship("TVBacktestTrade", back_populates="backtest_import", cascade="all, delete-orphan")
+
+
+class TVBacktestTrade(Base):
+    """Individual trade rows from a TradingView Strategy Tester CSV"""
+    __tablename__ = 'tv_backtest_trades'
+
+    id = Column(Integer, primary_key=True)
+    import_id = Column(Integer, ForeignKey('tv_backtest_imports.id', ondelete='CASCADE'), nullable=False, index=True)
+    trade_num = Column(Integer, nullable=True)
+    type = Column(String(20), nullable=True)       # Entry / Exit
+    signal = Column(String(50), nullable=True)      # e.g. Long, Short, Close
+    date_time = Column(String(50), nullable=True)
+    price = Column(Float, nullable=True)
+    contracts = Column(Float, nullable=True)
+    profit = Column(Float, nullable=True)
+    cumulative_profit = Column(Float, nullable=True)
+    run_up = Column(Float, nullable=True)
+    drawdown = Column(Float, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    backtest_import = relationship("TVBacktestImport", back_populates="trades_list")
+

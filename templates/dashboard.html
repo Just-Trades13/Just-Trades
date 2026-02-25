@@ -202,79 +202,58 @@
         </div>
     </div>
 
-    <!-- Premium Strategies Showcase -->
-    <section class="premium-showcase-section" id="premiumShowcaseSection">
-        <header class="premium-showcase-header">
-            <div class="premium-badge-wrapper">
-                <span class="premium-badge"><span class="material-icons">star</span> PREMIUM</span>
-                <h2>Just Trades Premium Monitor</h2>
-                <p class="premium-sub">Curated premium strategies performance</p>
+    <!-- Premium Strategies — TradingView Backtest Imports -->
+    <section class="backtest-section">
+        <header class="backtest-header">
+            <div>
+                <h2>Premium Strategies</h2>
+                <p class="backtest-sub">Verified backtest performance from TradingView Strategy Tester</p>
             </div>
-            <div class="premium-controls">
-                <div class="premium-live-indicator" id="premiumStatus">
-                    <span class="status-dot"></span>
-                    <span class="status-text">Live</span>
-                </div>
-                <button class="btn btn-sm btn-premium" onclick="refreshPremiumShowcase()">
-                    <span class="material-icons">refresh</span>
-                </button>
-            </div>
+            <button class="btn btn-primary btn-sm" onclick="openBacktestModal()" id="btImportBtn">
+                <span class="material-icons" style="font-size:16px;vertical-align:middle;margin-right:4px">upload_file</span>Import CSV
+            </button>
         </header>
-
-        <!-- Premium Stats Summary -->
-        <div class="premium-stats-bar">
-            <div class="premium-stat">
-                <span class="stat-label">Combined P&L</span>
-                <span class="stat-value positive" id="premiumTotalPnl">$0.00</span>
-            </div>
-            <div class="premium-stat">
-                <span class="stat-label">Win Rate</span>
-                <span class="stat-value" id="premiumWinRate">0%</span>
-            </div>
-            <div class="premium-stat">
-                <span class="stat-label">Profit Factor</span>
-                <span class="stat-value" id="premiumProfitFactor">0.00</span>
-            </div>
-            <div class="premium-stat">
-                <span class="stat-label">Total Trades</span>
-                <span class="stat-value" id="premiumTotalTrades">0</span>
-            </div>
-            <div class="premium-stat">
-                <span class="stat-label">Strategies</span>
-                <span class="stat-value" id="premiumStrategyCount">0</span>
-            </div>
-        </div>
-
-        <div class="premium-content-grid">
-            <!-- Premium Strategy Cards -->
-            <div class="premium-strategies-panel">
-                <div class="premium-strategies-list" id="premiumStrategiesList">
-                    <div class="premium-empty-state">
-                        <span class="material-icons">workspace_premium</span>
-                        <p>No premium strategies yet</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Mini Equity Curve + Recent Trades -->
-            <div class="premium-charts-panel">
-                <div class="premium-mini-chart">
-                    <div class="mini-chart-header">
-                        <span class="material-icons">trending_up</span> Equity Curve
-                    </div>
-                    <canvas id="premiumEquityChart" height="120"></canvas>
-                </div>
-                <div class="premium-recent-trades">
-                    <div class="recent-trades-header">
-                        <span class="material-icons">history</span> Recent Trades
-                    </div>
-                    <div class="recent-trades-list" id="premiumRecentTrades">
-                        <div class="no-trades-msg">No recent trades</div>
-                    </div>
-                </div>
+        <div class="backtest-grid" id="backtestGrid">
+            <div class="backtest-empty" id="backtestEmpty">
+                <span class="material-icons" style="font-size:48px;color:var(--text-muted)">assessment</span>
+                <p style="color:var(--text-muted);margin-top:0.5rem">No backtests imported yet.</p>
             </div>
         </div>
     </section>
+
+    <!-- Backtest Upload Modal -->
+    <div class="bt-modal-overlay" id="backtestModalOverlay" onclick="closeBacktestModal(event)">
+        <div class="bt-modal" onclick="event.stopPropagation()">
+            <header class="bt-modal-header">
+                <h3>Import TradingView Backtest</h3>
+                <button class="bt-modal-close" onclick="closeBacktestModal()">&times;</button>
+            </header>
+            <form id="backtestUploadForm" onsubmit="submitBacktestUpload(event)">
+                <div class="bt-form-group">
+                    <label for="btName">Name <span style="color:#f56565">*</span></label>
+                    <input type="text" id="btName" placeholder="e.g. ES 15m RSI Strategy" required>
+                </div>
+                <div class="bt-form-group">
+                    <label for="btStrategy">Link to Strategy (optional)</label>
+                    <select id="btStrategy">
+                        <option value="">None</option>
+                    </select>
+                </div>
+                <div class="bt-form-group">
+                    <label>CSV File <span style="color:#f56565">*</span></label>
+                    <div class="bt-dropzone" id="btDropzone" onclick="document.getElementById('btFile').click()">
+                        <span class="material-icons" style="font-size:32px;color:var(--text-muted)">cloud_upload</span>
+                        <p id="btDropzoneText" style="margin:0.5rem 0 0;color:var(--text-muted)">Click or drag CSV here (max 5 MB)</p>
+                        <input type="file" id="btFile" accept=".csv" style="display:none" onchange="btFileSelected(this)">
+                    </div>
+                </div>
+                <div class="bt-form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeBacktestModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btSubmitBtn">Upload &amp; Analyze</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Paper Trading Panel - Real-Time Strategy Performance -->
     <section class="paper-trading-section" id="paperTradingSection">
@@ -3487,6 +3466,138 @@
             justify-content: center;
         }
     }
+
+    /* ── Strategy Backtests ── */
+    .backtest-section {
+        background: #1d2338;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,0.04);
+        padding: 1.5rem;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .backtest-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.25rem;
+    }
+    .backtest-header h2 { margin: 0; font-size: 1.15rem; }
+    .backtest-sub { color: var(--text-muted); font-size: 0.8rem; margin: 0.2rem 0 0; }
+    .backtest-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 1rem;
+    }
+    .backtest-empty {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 2.5rem 1rem;
+    }
+    .bt-card {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        padding: 1.1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        transition: border-color 0.2s;
+    }
+    .bt-card:hover { border-color: var(--primary-color); }
+    .bt-card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+    .bt-card-title { font-weight: 600; font-size: 0.95rem; margin: 0; }
+    .bt-card-subtitle { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+    .bt-card-del {
+        background: none; border: none; color: var(--text-muted); cursor: pointer;
+        font-size: 18px; line-height: 1; padding: 2px;
+    }
+    .bt-card-del:hover { color: #f56565; }
+    .bt-stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.5rem;
+    }
+    .bt-stat-label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .bt-stat-value { font-size: 0.95rem; font-weight: 600; margin-top: 2px; }
+    .bt-stat-value.positive { color: var(--green); }
+    .bt-stat-value.negative { color: #f56565; }
+    .bt-card-footer { font-size: 0.7rem; color: var(--text-muted); }
+
+    /* ── Backtest Upload Modal ── */
+    .bt-modal-overlay {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.65);
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+    }
+    .bt-modal-overlay.open { display: flex; }
+    .bt-modal {
+        background: #1a2035;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 16px;
+        width: 480px;
+        max-width: 94vw;
+        padding: 1.75rem;
+    }
+    .bt-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.25rem;
+    }
+    .bt-modal-header h3 { margin: 0; font-size: 1.1rem; }
+    .bt-modal-close {
+        background: none; border: none; color: var(--text-muted);
+        font-size: 1.5rem; cursor: pointer; line-height: 1;
+    }
+    .bt-modal-close:hover { color: #fff; }
+    .bt-form-group { margin-bottom: 1rem; }
+    .bt-form-group label {
+        display: block;
+        font-size: 0.82rem;
+        color: #aab7d4;
+        margin-bottom: 0.35rem;
+    }
+    .bt-form-group input,
+    .bt-form-group select {
+        width: 100%;
+        padding: 0.6rem 0.75rem;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 8px;
+        color: #fff;
+        font-size: 0.9rem;
+    }
+    .bt-form-group input:focus,
+    .bt-form-group select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+    .bt-dropzone {
+        border: 2px dashed rgba(255,255,255,0.15);
+        border-radius: 10px;
+        padding: 1.5rem;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.2s;
+    }
+    .bt-dropzone:hover,
+    .bt-dropzone.dragover { border-color: var(--primary-color); }
+    .bt-form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        margin-top: 1.25rem;
+    }
+    @media (max-width: 600px) {
+        .bt-stats { grid-template-columns: repeat(2, 1fr); }
+    }
 </style>
 {% endblock %}
 {% block scripts %}
@@ -5651,5 +5762,155 @@
             });
         }
     });
+
+    // ── Strategy Backtests ──
+    async function loadBacktests() {
+        try {
+            const res = await fetch('/api/backtest/list');
+            const data = await res.json();
+            const grid = document.getElementById('backtestGrid');
+            const empty = document.getElementById('backtestEmpty');
+            if (!data.success || !data.imports || data.imports.length === 0) {
+                empty.style.display = '';
+                grid.querySelectorAll('.bt-card').forEach(c => c.remove());
+                return;
+            }
+            empty.style.display = 'none';
+            grid.querySelectorAll('.bt-card').forEach(c => c.remove());
+
+            data.imports.forEach(imp => {
+                const pnlClass = imp.net_pnl >= 0 ? 'positive' : 'negative';
+                const pnlSign = imp.net_pnl >= 0 ? '+' : '';
+                const ddSign = imp.max_drawdown > 0 ? '-' : '';
+                const card = document.createElement('div');
+                card.className = 'bt-card';
+                card.dataset.importId = imp.id;
+                card.innerHTML = `
+                    <div class="bt-card-head">
+                        <div>
+                            <p class="bt-card-title">${btEsc(imp.name)}</p>
+                            <p class="bt-card-subtitle">${btEsc(imp.raw_filename || '')}</p>
+                        </div>
+                        <button class="bt-card-del" title="Delete" onclick="deleteBacktest(${imp.id})">&times;</button>
+                    </div>
+                    <div class="bt-stats">
+                        <div><p class="bt-stat-label">Win Rate</p><p class="bt-stat-value">${imp.win_rate.toFixed(1)}%</p></div>
+                        <div><p class="bt-stat-label">Profit Factor</p><p class="bt-stat-value">${imp.profit_factor.toFixed(2)}</p></div>
+                        <div><p class="bt-stat-label">Net P&L</p><p class="bt-stat-value ${pnlClass}">${pnlSign}$${Math.abs(imp.net_pnl).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+                        <div><p class="bt-stat-label">Trades</p><p class="bt-stat-value">${imp.total_trades}</p></div>
+                        <div><p class="bt-stat-label">Wins</p><p class="bt-stat-value positive">${imp.wins}</p></div>
+                        <div><p class="bt-stat-label">Losses</p><p class="bt-stat-value negative">${imp.losses}</p></div>
+                        <div><p class="bt-stat-label">Max DD</p><p class="bt-stat-value negative">${ddSign}$${Math.abs(imp.max_drawdown).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+                        <div><p class="bt-stat-label">Avg Trade</p><p class="bt-stat-value ${imp.avg_trade >= 0 ? 'positive' : 'negative'}">${imp.avg_trade >= 0 ? '+' : ''}$${Math.abs(imp.avg_trade).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+                    </div>
+                    <div class="bt-card-footer">${btEsc(imp.start_date || '')} &mdash; ${btEsc(imp.end_date || '')}</div>
+                `;
+                grid.appendChild(card);
+            });
+        } catch (e) {
+            console.error('Failed to load backtests:', e);
+        }
+    }
+
+    function btEsc(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function openBacktestModal() {
+        document.getElementById('backtestModalOverlay').classList.add('open');
+        fetch('/api/dashboard/strategies').then(r => r.json()).then(data => {
+            const sel = document.getElementById('btStrategy');
+            sel.innerHTML = '<option value="">None</option>';
+            (data.strategies || []).forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = s.name;
+                sel.appendChild(opt);
+            });
+        }).catch(() => {});
+    }
+
+    function closeBacktestModal(e) {
+        if (e && e.target !== document.getElementById('backtestModalOverlay')) return;
+        document.getElementById('backtestModalOverlay').classList.remove('open');
+        document.getElementById('backtestUploadForm').reset();
+        document.getElementById('btDropzoneText').textContent = 'Click or drag CSV here (max 5 MB)';
+    }
+
+    function btFileSelected(input) {
+        if (input.files.length > 0) {
+            document.getElementById('btDropzoneText').textContent = input.files[0].name;
+        }
+    }
+
+    // Drag-and-drop support
+    (function() {
+        const dz = document.getElementById('btDropzone');
+        if (!dz) return;
+        dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+        dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+        dz.addEventListener('drop', e => {
+            e.preventDefault();
+            dz.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                document.getElementById('btFile').files = files;
+                document.getElementById('btDropzoneText').textContent = files[0].name;
+            }
+        });
+    })();
+
+    async function submitBacktestUpload(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btSubmitBtn');
+        const name = document.getElementById('btName').value.trim();
+        const file = document.getElementById('btFile').files[0];
+        if (!name || !file) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Uploading...';
+
+        const fd = new FormData();
+        fd.append('name', name);
+        fd.append('file', file);
+        const stratId = document.getElementById('btStrategy').value;
+        if (stratId) fd.append('strategy_id', stratId);
+
+        try {
+            const res = await fetch('/api/backtest/upload', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (data.success) {
+                closeBacktestModal();
+                loadBacktests();
+            } else {
+                alert('Upload failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (err) {
+            alert('Upload failed: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Upload & Analyze';
+        }
+    }
+
+    async function deleteBacktest(importId) {
+        if (!confirm('Delete this backtest?')) return;
+        try {
+            const res = await fetch('/api/backtest/' + importId, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                loadBacktests();
+            } else {
+                alert('Delete failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (err) {
+            alert('Delete failed: ' + err.message);
+        }
+    }
+
+    // Load backtests on page load
+    loadBacktests();
 </script>
 {% endblock %}
