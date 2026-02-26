@@ -27866,7 +27866,7 @@ def api_backtest_upload():
     """Upload a TradingView Strategy Tester export (XLSX or CSV) and compute summary metrics."""
     try:
         from app.database import SessionLocal
-        from app.models import TVBacktestImport, TVBacktestTrade
+        from app.models import TVBacktestImport
 
         # --- Validate inputs ---
         name = request.form.get('name', '').strip()
@@ -28026,23 +28026,9 @@ def api_backtest_upload():
             )
             db.add(imp)
             db.flush()  # get imp.id
-
-            trade_objects = []
-            for r in rows:
-                trade_objects.append(TVBacktestTrade(
-                    import_id=imp.id,
-                    trade_num=int(_parse_tv_number(r.get('trade_num'))) if r.get('trade_num') else None,
-                    type=str(r.get('type') or '').strip(),
-                    signal=str(r.get('signal') or '').strip(),
-                    date_time=str(r.get('date_time') or '').strip(),
-                    price=_parse_tv_number(r.get('price')),
-                    contracts=_parse_tv_number(r.get('contracts')),
-                    profit=_parse_tv_number(r.get('profit')),
-                    cumulative_profit=_parse_tv_number(r.get('cumulative_profit')),
-                    run_up=_parse_tv_number(r.get('run_up')),
-                    drawdown=_parse_tv_number(r.get('drawdown')),
-                ))
-            db.bulk_save_objects(trade_objects)
+            # Individual trade rows (tv_backtest_trades) skipped — summary metrics
+            # in tv_backtest_imports are all the dashboard needs. Saves ~5-10s on
+            # large xlsx files (1700+ rows x remote PostgreSQL round-trips).
             db.commit()
 
             metrics = {
@@ -28132,7 +28118,7 @@ def api_backtest_delete(import_id):
     """Delete a backtest import and its trades."""
     try:
         from app.database import SessionLocal
-        from app.models import TVBacktestImport, TVBacktestTrade
+        from app.models import TVBacktestImport
 
         db = SessionLocal()
         try:
@@ -28140,8 +28126,6 @@ def api_backtest_delete(import_id):
             if not imp:
                 return jsonify({'success': False, 'error': 'Import not found'}), 404
 
-            # Delete trades first (SQLite compat), then the import
-            db.query(TVBacktestTrade).filter(TVBacktestTrade.import_id == import_id).delete()
             db.delete(imp)
             db.commit()
 
