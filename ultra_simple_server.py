@@ -27865,6 +27865,8 @@ def _parse_xlsx_trades(raw_bytes):
 def api_backtest_upload():
     """Upload a TradingView Strategy Tester export (XLSX or CSV) and compute summary metrics."""
     try:
+        import time as _t
+        _t0 = _t.time()
         from app.database import SessionLocal
         from app.models import TVBacktestImport
 
@@ -27892,11 +27894,13 @@ def api_backtest_upload():
         raw = file.read(max_size + 1)
         if len(raw) > max_size:
             return jsonify({'success': False, 'error': 'File exceeds 10 MB limit'}), 400
+        logger.info(f"Backtest upload: file read {len(raw)/1024:.0f}KB in {_t.time()-_t0:.2f}s")
 
         # --- Parse based on file type ---
         xlsx_symbol = None
         xlsx_strategy_name = None
 
+        _t1 = _t.time()
         if is_xlsx:
             rows, xlsx_symbol, xlsx_strategy_name = _parse_xlsx_trades(raw)
         else:
@@ -27925,6 +27929,7 @@ def api_backtest_upload():
 
         if not rows:
             return jsonify({'success': False, 'error': 'File contains no data rows'}), 400
+        logger.info(f"Backtest upload: parsed {len(rows)} rows in {_t.time()-_t1:.2f}s")
 
         # --- Compute summary metrics from Exit rows ---
         wins, losses = 0, 0
@@ -28030,6 +28035,7 @@ def api_backtest_upload():
             # in tv_backtest_imports are all the dashboard needs. Saves ~5-10s on
             # large xlsx files (1700+ rows x remote PostgreSQL round-trips).
             db.commit()
+            logger.info(f"Backtest upload: DB commit done, total time {_t.time()-_t0:.2f}s")
 
             metrics = {
                 'import_id': imp.id,
