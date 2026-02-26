@@ -687,6 +687,30 @@ sync_body = json.dumps({
 
 ---
 
+## RULE 38: CURL WEBHOOK COMMANDS MUST USE SINGLE QUOTES — NEVER DOUBLE QUOTES (Feb 26, 2026)
+
+Zsh (macOS default shell) performs history expansion inside double-quoted strings. The `!` character in futures ticker symbols (`MNQ1!`, `NQ1!`, `ES1!`, `MGC1!`, `CL1!`, etc.) gets escaped to `\!`.
+
+**The resulting JSON is INVALID** — `json.loads()` fails on `\!`, the try/except catches it silently, `data` stays `{}`, and the webhook returns "No data received". **No error message indicates it was a JSON parse failure.**
+
+```bash
+# WRONG — zsh escapes ! to \! inside double quotes:
+curl -X POST "https://..." -d "{"ticker":"MNQ1!"}"
+# Body arrives as: {"ticker":"MNQ1\!"} → json.loads FAILS
+
+# RIGHT — single quotes prevent ALL shell expansion:
+curl -X POST 'https://...' -d '{"ticker":"MNQ1!"}'
+# Body arrives as: {"ticker":"MNQ1!"} → json.loads succeeds
+```
+
+**Also required for manual flatten signals:**
+- `contracts` must be `>= 1` (not 0) — the flat handler needs a nonzero quantity for the broker task
+- `price` should be a reasonable market price (not 0)
+
+**RULE:** When sending ANY webhook via CLI curl, **ALWAYS** use single-quoted `-d` payloads. This applies to ALL ticker symbols with `!` — which is every futures contract on TradingView.
+
+---
+
 ## WHOP INTEGRATION
 
 > **Full reference:** See `docs/WHOP_API_REFERENCE.md`
@@ -817,6 +841,7 @@ curl -s "https://justtrades.app/api/accounts/auth-status"
 15. **"I only need to fix the 2 calls that are failing right now"** → NO. Bug #43: first fix left 15 more. `grep -n` ALL instances.
 16. **"The default websockets max_size (1MB) should be fine"** → NO. Bug #44. Always set `max_size=10*1024*1024`.
 17. **"I'll add `use_websocket=True` to this new _smart() call"** → ABSOLUTELY NOT. Rule 10: ALL Tradovate orders use REST.
+18. **"I'll use double quotes for the curl -d payload"** → NO. Bug #49. Zsh escapes `!` to `\!` inside double quotes, corrupting ALL futures ticker symbols. ALWAYS use single-quoted `-d` payloads.
 
 ---
 
@@ -859,5 +884,5 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 *Last updated: Feb 24, 2026 (evening session)*
 *Production stable tag: WORKING_FEB24_2026_WS_SEMAPHORE_STABLE*
-*Total rules: 37 + Rule 10b (WS Stability) | Total documented disasters: 48 | Paid users in production: YES*
+*Total rules: 38 + Rule 10b (WS Stability) | Total documented disasters: 49 | Paid users in production: YES*
 *Reference docs: 20 in /docs/ | CHANGELOG_RULES.md | Memory: 9 files in ~/.claude/memory/*
