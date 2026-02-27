@@ -842,6 +842,8 @@ curl -s "https://justtrades.app/api/accounts/auth-status"
 16. **"The default websockets max_size (1MB) should be fine"** → NO. Bug #44. Always set `max_size=10*1024*1024`.
 17. **"I'll add `use_websocket=True` to this new _smart() call"** → ABSOLUTELY NOT. Rule 10: ALL Tradovate orders use REST.
 18. **"I'll use double quotes for the curl -d payload"** → NO. Bug #49. Zsh escapes `!` to `\!` inside double quotes, corrupting ALL futures ticker symbols. ALWAYS use single-quoted `-d` payloads.
+19. **"I'll add `from datetime import datetime` inside this function for convenience"** → NO. Bug #50. If it's inside a conditional block, Python treats `datetime` as local for the ENTIRE function. When the condition is false, ALL other `datetime` references throw `UnboundLocalError`. Use the module-level import.
+20. **"This query for open trades doesn't need a time limit"** → NO. Bug #50. Stale trade #15705 (3 days old, corrupted ticker) polluted live signal routing. ANY query for "current" open trades MUST have a staleness guard (24h cutoff).
 
 ---
 
@@ -882,7 +884,7 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 ---
 
-*Last updated: Feb 24, 2026 (evening session)*
+*Last updated: Feb 27, 2026*
 *Production stable tag: WORKING_FEB24_2026_WS_SEMAPHORE_STABLE*
-*Total rules: 38 + Rule 10b (WS Stability) | Total documented disasters: 49 | Paid users in production: YES*
+*Total rules: 38 + Rule 10b (WS Stability) | Total documented disasters: 50 | Paid users in production: YES*
 *Reference docs: 20 in /docs/ | CHANGELOG_RULES.md | Memory: 9 files in ~/.claude/memory/*
