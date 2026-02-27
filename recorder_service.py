@@ -1210,7 +1210,6 @@ def execute_trade_simple(
             has_trader_time_2 = trader_time_2_enabled and trader_time_2_start and trader_time_2_stop
 
             if not is_close_signal and (has_trader_time_1 or has_trader_time_2):
-                from datetime import datetime
                 try:
                     # Use THIS trader's user timezone, not the recorder owner's
                     _this_trader_user_id = trader_dict.get('user_id')
