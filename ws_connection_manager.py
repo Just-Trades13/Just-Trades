@@ -510,6 +510,8 @@ class TradovateConnectionManager:
         # Track pending registrations (before event loop is ready)
         self._pending_registrations: List[dict] = []
         self._loop_ready = threading.Event()
+        # Track active _run_connection tasks per token_key to prevent duplicate tasks (Bug #51)
+        self._active_connection_tasks: Dict[str, asyncio.Task] = {}
 
     def start(self):
         """Start the connection manager daemon thread. Idempotent."""
@@ -635,9 +637,16 @@ class TradovateConnectionManager:
                     if conn.connected:
                         continue  # Already running
 
-                    tasks.append(asyncio.create_task(
+                    # Prevent duplicate tasks — skip if a _run_connection task is already active (Bug #51)
+                    existing_task = self._active_connection_tasks.get(token_key)
+                    if existing_task and not existing_task.done():
+                        continue
+
+                    task = asyncio.create_task(
                         self._run_connection(token_key, conn)
-                    ))
+                    )
+                    self._active_connection_tasks[token_key] = task
+                    tasks.append(task)
 
                 if tasks:
                     # Wait for any connection to drop
