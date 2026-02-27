@@ -3248,7 +3248,11 @@ def execute_trade_simple(
                             tp_store_cursor.execute(f'''
                                 UPDATE recorded_trades
                                 SET tp_order_id = {tp_store_ph}, tp_price = {tp_store_ph}
-                                WHERE recorder_id = {tp_store_ph} AND status = 'open'
+                                WHERE id = (
+                                    SELECT id FROM recorded_trades
+                                    WHERE recorder_id = {tp_store_ph} AND status = 'open'
+                                    ORDER BY id DESC LIMIT 1
+                                )
                             ''', (str(tp_order_id), tp_price, recorder_id))
                             tp_store_conn.commit()
                             tp_store_conn.close()
@@ -6515,7 +6519,11 @@ def reconcile_positions_with_broker():
                                                     cursor_upd.execute(f'''
                                                         UPDATE recorded_trades
                                                         SET tp_order_id = {tp_upd_ph2}, tp_price = {tp_upd_ph2}
-                                                        WHERE recorder_id = {tp_upd_ph2} AND status = 'open'
+                                                        WHERE id = (
+                                                            SELECT id FROM recorded_trades
+                                                            WHERE recorder_id = {tp_upd_ph2} AND status = 'open'
+                                                            ORDER BY id DESC LIMIT 1
+                                                        )
                                                     ''', (str(new_tp_order_id), new_tp_price, recorder_id))
                                                     conn_upd.commit()
                                                     conn_upd.close()
