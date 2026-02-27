@@ -17925,12 +17925,15 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
         # ============================================================
         # STRATEGY MODE: Check for open position BEFORE broker execution
         # For TradingView Strategy: SELL closes LONG, BUY closes SHORT
+        # Staleness guard: ignore trades older than 24h (Bug #50 — stale trade #15705 polluted live signals)
         # ============================================================
+        from datetime import timedelta
+        staleness_cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
         cursor.execute(f'''
-            SELECT * FROM recorded_trades 
-            WHERE recorder_id = {placeholder} AND status = 'open' 
+            SELECT * FROM recorded_trades
+            WHERE recorder_id = {placeholder} AND status = 'open' AND entry_time > {placeholder}
             ORDER BY entry_time DESC LIMIT 1
-        ''', (recorder_id,))
+        ''', (recorder_id, staleness_cutoff))
         strategy_open_trade_row = cursor.fetchone()
         
         if strategy_open_trade_row:
