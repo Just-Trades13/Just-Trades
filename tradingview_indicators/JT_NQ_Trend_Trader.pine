@@ -1,0 +1,333 @@
+// Based on JADGC Indicator v2 (LTF Optimized) — Converted to Strategy
+//@version=5
+strategy("JustTrades NQ Trend Trader [Just Trades]", overlay=true,
+     initial_capital=50000,
+     default_qty_type=strategy.fixed,
+     default_qty_value=1,
+     pyramiding=0,
+     process_orders_on_close=false,
+     calc_on_every_tick=false,
+     commission_type=strategy.commission.cash_per_contract,
+     commission_value=0.62,
+     slippage=8,
+     fill_orders_on_standard_ohlc=true,
+     use_bar_magnifier=true)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════════════════════════
+groupCore = "Core Settings"
+trailType = input.string(defval="modified", options=["modified", "unmodified"], title="Trail Type", group=groupCore)
+movingAverageType = input.string(defval="hull", options=["simple", "exponential", "weighted", "modified", "hull"], title="Moving Average Type", group=groupCore)
+atrPeriod = input.int(defval=10, minval=1, title="ATR Period", group=groupCore)
+ATRFactor = input.float(defval=1.5, minval=0.1, step=0.1, title="ATR Factor", group=groupCore)
+Fib1Level = input.float(defval=38.2, minval=0.1, title="Fib 1 Level (%)", group=groupCore)
+
+// === MOMENTUM FILTER ===
+groupLTF = "LTF Optimization"
+useMomentumFilter = input.bool(defval=true, title="Use Momentum Filter", group=groupLTF)
+momentumLen = input.int(defval=18, minval=2, maxval=50, title="Momentum Lookback", group=groupLTF)
+momentumThresh = input.float(defval=1.95, minval=0.0, step=0.05, title="Momentum Threshold (ATR %)", group=groupLTF, tooltip="Minimum momentum as % of ATR to confirm direction shift. Higher = fewer signals but less whipsaw.")
+
+// === ADAPTIVE ATR ===
+useAdaptiveATR = input.bool(defval=true, title="Adaptive ATR Factor", group=groupLTF)
+atrTightFactor = input.float(defval=1.0, minval=0.1, step=0.1, title="ATR Factor (Trending)", group=groupLTF)
+atrWideFactor = input.float(defval=2.0, minval=0.1, step=0.1, title="ATR Factor (Choppy)", group=groupLTF)
+adxLen = input.int(defval=13, minval=2, title="ADX Length (Trend Strength)", group=groupLTF)
+adxThresh = input.float(defval=25.0, minval=5.0, title="ADX Threshold", group=groupLTF)
+
+// === VOLUME FILTER ===
+groupVol = "Volume Filter"
+useVolFilter = input.bool(defval=false, title="Require Volume Spike on Entry", group=groupVol)
+volMultiplier = input.float(defval=1.1, minval=1.0, step=0.1, title="Volume Spike Multiplier", group=groupVol)
+volAvgLen = input.int(defval=22, minval=5, title="Volume Average Length", group=groupVol)
+
+// === TIME FILTER (defaults: 7-9am CST = 8-10am ET morning session) ===
+groupTime = "Time Filter"
+timeFilterEnabled = input.bool(defval=true, title="Enable Time Filter", group=groupTime)
+startHour = input.int(defval=8, minval=0, maxval=23, title="Start Hour (Exchange Time)", group=groupTime, tooltip="NQ/MNQ exchange time is US Eastern. 8 ET = 7 CST.")
+startMinute = input.int(defval=0, minval=0, maxval=59, title="Start Minute", group=groupTime)
+endHour = input.int(defval=10, minval=0, maxval=23, title="End Hour (Exchange Time)", group=groupTime, tooltip="NQ/MNQ exchange time is US Eastern. 10 ET = 9 CST. Morning session only.")
+endMinute = input.int(defval=0, minval=0, maxval=59, title="End Minute", group=groupTime)
+
+// ═══ STABILITY TEST ═══
+grp_stab = "═══ STABILITY TEST ═══"
+runStabilityTest = input.bool(false, "Enable Stability Test", group=grp_stab,
+     tooltip="Override ONE parameter at a time with +/-20% variation. Record Net Profit, PF, WR, Max DD for each test case.")
+stabilityTestCase = input.string("Default", "Test Case", options=[
+     "Default",
+     "atrPeriod -20%", "atrPeriod +20%",
+     "ATRFactor -20%", "ATRFactor +20%",
+     "Fib1Level -20%", "Fib1Level +20%",
+     "momentumLen -20%", "momentumLen +20%",
+     "momentumThresh -20%", "momentumThresh +20%",
+     "atrTightFactor -20%", "atrTightFactor +20%",
+     "atrWideFactor -20%", "atrWideFactor +20%",
+     "adxThresh -20%", "adxThresh +20%"
+     ], group=grp_stab)
+
+// ── Stability Test Parameter Overrides ──
+_atrPeriod = runStabilityTest and stabilityTestCase == "atrPeriod -20%" ? 8 :
+             runStabilityTest and stabilityTestCase == "atrPeriod +20%" ? 12 : atrPeriod
+
+_ATRFactor = runStabilityTest and stabilityTestCase == "ATRFactor -20%" ? 1.2 :
+             runStabilityTest and stabilityTestCase == "ATRFactor +20%" ? 1.8 : ATRFactor
+
+_Fib1Level = runStabilityTest and stabilityTestCase == "Fib1Level -20%" ? 30.56 :
+             runStabilityTest and stabilityTestCase == "Fib1Level +20%" ? 45.84 : Fib1Level
+
+_momentumLen = runStabilityTest and stabilityTestCase == "momentumLen -20%" ? 14 :
+              runStabilityTest and stabilityTestCase == "momentumLen +20%" ? 22 : momentumLen
+
+_momentumThresh = runStabilityTest and stabilityTestCase == "momentumThresh -20%" ? 1.56 :
+                  runStabilityTest and stabilityTestCase == "momentumThresh +20%" ? 2.34 : momentumThresh
+
+_atrTightFactor = runStabilityTest and stabilityTestCase == "atrTightFactor -20%" ? 0.8 :
+                  runStabilityTest and stabilityTestCase == "atrTightFactor +20%" ? 1.2 : atrTightFactor
+
+_atrWideFactor = runStabilityTest and stabilityTestCase == "atrWideFactor -20%" ? 1.6 :
+                 runStabilityTest and stabilityTestCase == "atrWideFactor +20%" ? 2.4 : atrWideFactor
+
+_adxThresh = runStabilityTest and stabilityTestCase == "adxThresh -20%" ? 20.0 :
+             runStabilityTest and stabilityTestCase == "adxThresh +20%" ? 30.0 : adxThresh
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TIME FILTER LOGIC
+// ══════════════════════════════════════════════════════════════════════════════
+startTimeOfDay = startHour * 10000 + startMinute * 100
+endTimeOfDay = endHour * 10000 + endMinute * 100
+currentTimeOfDay = hour(time) * 10000 + minute(time) * 100
+timeInRange = timeFilterEnabled ? (currentTimeOfDay >= startTimeOfDay and currentTimeOfDay <= endTimeOfDay) : true
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PRICE DATA (real OHLC — accurate signals even on HA/Renko charts)
+// ══════════════════════════════════════════════════════════════════════════════
+op = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, open)
+hi = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, high)
+lo = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, low)
+cl = request.security(ticker.new(syminfo.prefix, syminfo.ticker), timeframe.period, close)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MOVING AVERAGE FUNCTIONS
+// ══════════════════════════════════════════════════════════════════════════════
+hma(src, length) =>
+    ta.wma(2 * ta.wma(src, length / 2) - ta.wma(src, length), math.round(math.sqrt(length)))
+
+getMA(type, src, length) =>
+    switch type
+        "simple" => ta.sma(src, length)
+        "exponential" => ta.ema(src, length)
+        "weighted" => ta.wma(src, length)
+        "modified" => ta.rma(src, length)
+        "hull" => hma(src, length)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ADX CALCULATION (for adaptive ATR)
+// ══════════════════════════════════════════════════════════════════════════════
+calcADX(len) =>
+    up_move = hi - hi[1]
+    down_move = lo[1] - lo
+    plusDM = (up_move > down_move and up_move > 0) ? up_move : 0.0
+    minusDM = (down_move > up_move and down_move > 0) ? down_move : 0.0
+    trur = ta.rma(ta.tr, len)
+    plusDI = 100 * ta.rma(plusDM, len) / trur
+    minusDI = 100 * ta.rma(minusDM, len) / trur
+    dx = 100 * math.abs(plusDI - minusDI) / (plusDI + minusDI)
+    ta.rma(dx, len)
+
+adxValue = calcADX(adxLen)
+isTrending = adxValue > _adxThresh
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ATR CALCULATIONS
+// ══════════════════════════════════════════════════════════════════════════════
+smaMA = ta.sma(hi - lo, _atrPeriod)
+HiLo = math.min((hi - lo), 1.5 * smaMA)
+HRef = lo <= hi[1] ? hi - cl[1] : (hi - cl[1]) - 0.5 * (lo - hi[1])
+LRef = hi >= lo[1] ? cl[1] - lo : (cl[1] - lo) - 0.5 * (lo[1] - hi)
+trueRange = trailType == "modified" ? math.max(HiLo, math.max(HRef, LRef)) : math.max(hi - lo, math.max(math.abs(hi - cl[1]), math.abs(lo - cl[1])))
+atrMA = getMA(movingAverageType, trueRange, _atrPeriod)
+
+// === ADAPTIVE ATR FACTOR ===
+effectiveATRFactor = useAdaptiveATR ? (isTrending ? _atrTightFactor : _atrWideFactor) : _ATRFactor
+
+loss = effectiveATRFactor * atrMA
+up = cl - loss
+down = cl + loss
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TREND CALCULATION
+// ══════════════════════════════════════════════════════════════════════════════
+var float trendUp = na
+var float trendDown = na
+var int trend = 1
+
+prevTrend = nz(trend[1], 1)
+prevTrendUp = nz(trendUp[1], up)
+prevTrendDown = nz(trendDown[1], down)
+
+trendUp := cl[1] > prevTrendUp ? math.max(up, prevTrendUp) : up
+trendDown := cl[1] < prevTrendDown ? math.min(down, prevTrendDown) : down
+trend := cl > prevTrendDown ? 1 : cl < prevTrendUp ? -1 : prevTrend
+trailStop = trend == 1 ? trendUp : trendDown
+
+rawTrendChange = trend != prevTrend
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MOMENTUM FILTER
+// ══════════════════════════════════════════════════════════════════════════════
+momentum = cl - cl[_momentumLen]
+momentumInATR = math.abs(momentum) / atrMA
+momentumConfirmed = not useMomentumFilter or (momentumInATR > _momentumThresh)
+momentumDirectionOk = not useMomentumFilter or (trend == 1 ? momentum > 0 : momentum < 0)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VOLUME FILTER
+// ══════════════════════════════════════════════════════════════════════════════
+avgVol = ta.sma(volume, volAvgLen)
+volSpike = volume > avgVol * volMultiplier
+volumeOk = not useVolFilter or volSpike or (volume == 0)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FILTERED TREND CHANGE
+// ══════════════════════════════════════════════════════════════════════════════
+trendChange = rawTrendChange and momentumConfirmed and momentumDirectionOk
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FIBONACCI CALCULATIONS
+// ══════════════════════════════════════════════════════════════════════════════
+var float ex = na
+prevEx = nz(ex[1], cl)
+ex := (trend > 0 and prevTrend < 0) ? hi :
+      (trend < 0 and prevTrend > 0) ? lo :
+      trend == 1 ? math.max(prevEx, hi) :
+      trend == -1 ? math.min(prevEx, lo) :
+      prevEx
+
+fib1 = ex + (trailStop - ex) * _Fib1Level / 100
+
+var float switchVal = na
+var float diff = na
+switchVal := rawTrendChange ? trailStop : nz(switchVal[1], cl)
+diff := rawTrendChange ? cl - switchVal : nz(diff[1], 0)
+fibTgt1 = switchVal + (diff * 1.618)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ENTRY SIGNALS
+// ══════════════════════════════════════════════════════════════════════════════
+longEntry = trendChange and trend == 1 and timeInRange and volumeOk
+shortEntry = trendChange and trend == -1 and timeInRange and volumeOk
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STRATEGY EXECUTION
+// ══════════════════════════════════════════════════════════════════════════════
+if longEntry
+    strategy.entry("Long", strategy.long, comment="Long")
+
+if shortEntry
+    strategy.entry("Short", strategy.short, comment="Short")
+
+// Trail stop + Fib TP exits (updated every bar with current levels)
+if strategy.position_size > 0
+    fibValid = trend == 1 and fibTgt1 > trailStop
+    strategy.exit("Long Exit", "Long", stop=trailStop, limit=fibValid ? fibTgt1 : na,
+         comment_profit="Fib TP", comment_loss="Trail Stop")
+
+if strategy.position_size < 0
+    fibValid = trend == -1 and fibTgt1 < trailStop
+    strategy.exit("Short Exit", "Short", stop=trailStop, limit=fibValid ? fibTgt1 : na,
+         comment_profit="Fib TP", comment_loss="Trail Stop")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PLOTTING
+// ══════════════════════════════════════════════════════════════════════════════
+trailColor = trend == 1 ? color.green : trend == -1 ? color.red : color.gray
+plot(trailStop, color=trailColor, linewidth=2, title="TrailStop")
+
+plot_fibTgt1 = ((trend == 1 and fibTgt1 > trailStop) or (trend == -1 and fibTgt1 < trailStop)) and not rawTrendChange ? fibTgt1 : na
+plot(plot_fibTgt1, color=color.white, linewidth=1, title="Fib Target 1")
+
+bgcolor(useAdaptiveATR and isTrending ? color.new(color.blue, 95) : na, title="Trending Background")
+
+plotshape(longEntry, title="Long Entry", location=location.belowbar, color=color.green, style=shape.triangleup, size=size.normal, text="LONG")
+plotshape(shortEntry, title="Short Entry", location=location.abovebar, color=color.red, style=shape.triangledown, size=size.normal, text="SHORT")
+
+filteredLong = rawTrendChange and trend == 1 and timeInRange and not trendChange
+filteredShort = rawTrendChange and trend == -1 and timeInRange and not trendChange
+plotshape(filteredLong, title="Filtered Long", location=location.belowbar, color=color.new(color.green, 80), style=shape.triangleup, size=size.tiny, text="x")
+plotshape(filteredShort, title="Filtered Short", location=location.abovebar, color=color.new(color.red, 80), style=shape.triangledown, size=size.tiny, text="x")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════════════════════
+if barstate.islast
+    var table dash = table.new(position.top_right, 2, 13, bgcolor=color.new(#1e1e1e, 10), border_width=1, border_color=color.new(#333333, 0))
+
+    _hdrBg = color.new(#00d4ff, 20)
+    _lblBg = color.new(#2a2a2a, 0)
+    _valBg = color.new(#1e1e1e, 0)
+    _tc    = color.white
+    _sz    = size.small
+
+    // Row 0 — Header
+    table.cell(dash, 0, 0, "NQ TREND", text_color=_tc, bgcolor=_hdrBg, text_size=_sz)
+    table.cell(dash, 1, 0, "TRADER", text_color=_tc, bgcolor=_hdrBg, text_size=_sz)
+
+    // Row 1 — Test Mode
+    _testText = runStabilityTest ? stabilityTestCase : "OFF"
+    _testCol  = runStabilityTest ? color.yellow : color.gray
+    table.cell(dash, 0, 1, "Test Mode", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 1, _testText, text_color=_testCol, bgcolor=_valBg, text_size=_sz)
+
+    // Row 2 — Trend
+    _trendText = trend == 1 ? "BULL" : "BEAR"
+    _trendCol  = trend == 1 ? color.lime : color.red
+    table.cell(dash, 0, 2, "Trend", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 2, _trendText, text_color=_trendCol, bgcolor=_valBg, text_size=_sz)
+
+    // Row 3 — ATR Factor
+    _atrLabel = useAdaptiveATR ? (isTrending ? " (T)" : " (C)") : ""
+    table.cell(dash, 0, 3, "ATR Factor", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 3, str.tostring(effectiveATRFactor, "#.##") + _atrLabel, text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 4 — ADX
+    table.cell(dash, 0, 4, "ADX", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 4, str.tostring(adxValue, "#.#"), text_color=isTrending ? color.lime : color.orange, bgcolor=_valBg, text_size=_sz)
+
+    // Row 5 — Momentum
+    table.cell(dash, 0, 5, "Momentum", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 5, str.tostring(momentumInATR, "#.##") + " ATR", text_color=momentumInATR > _momentumThresh ? color.lime : color.red, bgcolor=_valBg, text_size=_sz)
+
+    // Row 6 — Position
+    _posText = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    _posCol  = strategy.position_size > 0 ? color.lime : strategy.position_size < 0 ? color.red : color.gray
+    table.cell(dash, 0, 6, "Position", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 6, _posText, text_color=_posCol, bgcolor=_valBg, text_size=_sz)
+
+    // Row 7 — Trail Stop
+    table.cell(dash, 0, 7, "Trail Stop", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 7, str.tostring(trailStop, "#.##"), text_color=trailColor, bgcolor=_valBg, text_size=_sz)
+
+    // Row 8 — Fib Target
+    _fibText = not na(plot_fibTgt1) ? str.tostring(fibTgt1, "#.##") : "—"
+    table.cell(dash, 0, 8, "Fib Target", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 8, _fibText, text_color=color.white, bgcolor=_valBg, text_size=_sz)
+
+    // Row 9 — Time Filter
+    _timeText = not timeFilterEnabled ? "OFF" : timeInRange ? "IN SESSION" : "OUT"
+    _timeCol  = not timeFilterEnabled ? color.gray : timeInRange ? color.lime : color.red
+    table.cell(dash, 0, 9, "Session", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 9, _timeText, text_color=_timeCol, bgcolor=_valBg, text_size=_sz)
+
+    // Row 10 — ATR Value
+    table.cell(dash, 0, 10, "ATR", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 10, str.tostring(atrMA, "#.##"), text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 11 — Net Profit
+    _netProfit = strategy.netprofit
+    table.cell(dash, 0, 11, "Net P&L", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 11, "$" + str.tostring(_netProfit, "#,###.##"), text_color=_netProfit >= 0 ? color.lime : color.red, bgcolor=_valBg, text_size=_sz)
+
+    // Row 12 — Closed Trades
+    table.cell(dash, 0, 12, "Trades", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 12, str.tostring(strategy.closedtrades), text_color=_tc, bgcolor=_valBg, text_size=_sz)

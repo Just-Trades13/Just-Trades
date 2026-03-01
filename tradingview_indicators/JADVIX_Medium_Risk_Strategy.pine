@@ -1,0 +1,324 @@
+//// Based on JADVIX indicator by AlgoKevin 2026 — Converted to Strategy
+//@version=6
+strategy("JADVIX Medium Risk [Just Trades]", overlay=true,
+     initial_capital=50000,
+     default_qty_type=strategy.fixed,
+     default_qty_value=1,
+     pyramiding=100,
+     process_orders_on_close=false,
+     calc_on_every_tick=false,
+     commission_type=strategy.commission.cash_per_contract,
+     commission_value=0.62,
+     slippage=1,
+     fill_orders_on_standard_ohlc=true,
+     use_bar_magnifier=true)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════════════════════════
+groupDCA = "DCA Settings"
+lookbackPeriod = input.int(250, "Lookback Period for Key Levels", group=groupDCA)
+atrPeriod      = input.int(750, "ATR Period", group=groupDCA)
+tpTicks        = input.int(25, "Take Profit (ticks from avg entry)", group=groupDCA, tooltip="TP is placed 25 ticks from the current average entry price. Updates as DCA entries are added.")
+tickSz         = input.float(0.25, "Tick Size", group=groupDCA)
+cooldownBars   = input.int(15, "Cooldown Bars After Exit (0 = immediate)", group=groupDCA)
+tpDelay        = input.int(10, "TP Delay After Entry (bars)", minval=0, group=groupDCA, tooltip="After each DCA entry, the TP is cancelled and won't re-activate for this many bars. Gives time for DCA to stack before TP goes live. 0 = immediate TP.")
+dcaSpacing     = input.int(5, "Min Bars Between DCA Entries", minval=1, group=groupDCA, tooltip="Minimum bars between DCA entries. On 1-min chart, 5 = one 5-min bar equivalent. Prevents rapid-fire stacking on fast timeframes.")
+entryQty       = input.int(1, "Contracts per DCA Entry", minval=1, group=groupDCA)
+maxContracts   = input.int(10, "Max Contracts (DCA cap)", minval=1, maxval=100, group=groupDCA, tooltip="Maximum total contracts per position. Prevents over-leveraging on deep DCA stacks.")
+boxPercent     = input.float(0.5, "Box Alert %", step=0.01, group=groupDCA)
+
+groupVIX = "VIX Adaptive Settings"
+useVIXAdaptive       = input.bool(true, "Enable VIX-Based Adaptation", group=groupVIX)
+vixTicker            = input.string("VIX", "VIX Ticker Symbol", group=groupVIX)
+vixLowThreshold      = input.float(15.0, "VIX Low Threshold", step=0.5, group=groupVIX)
+vixMedThreshold      = input.float(20.0, "VIX Medium Threshold", step=0.5, group=groupVIX)
+vixHighThreshold     = input.float(30.0, "VIX High Threshold", step=0.5, group=groupVIX)
+vixLowLookbackMult   = input.float(0.8, "Low VIX: Lookback Multiplier", step=0.1, group=groupVIX, tooltip="< 15 VIX: More aggressive (shorter lookback)")
+vixMedLookbackMult   = input.float(1.0, "Med VIX: Lookback Multiplier", step=0.1, group=groupVIX, tooltip="15-20 VIX: Normal lookback")
+vixHighLookbackMult  = input.float(1.5, "High VIX: Lookback Multiplier", step=0.1, group=groupVIX, tooltip="20-30 VIX: More conservative (longer lookback)")
+vixCrisisLookbackMult = input.float(2.0, "Crisis VIX: Lookback Multiplier", step=0.1, group=groupVIX, tooltip="> 30 VIX: Very conservative (much longer lookback)")
+adjustCooldown       = input.bool(true, "Adjust Cooldown Bars", group=groupVIX, tooltip="Increase cooldown in high volatility")
+
+groupFilters = "Trade Filters"
+useVolumeFilter  = input.bool(true, "Use Volume Filter", group=groupFilters)
+volumeMultiplier = input.float(1.2, "Min Volume Multiple", step=0.1, group=groupFilters)
+useTimeFilter    = input.bool(false, "Use Time Filter", group=groupFilters)
+sessionStartHour = input.int(9, "Session Start Hour (24h)", minval=0, maxval=23, group=groupFilters)
+sessionStartMin  = input.int(30, "Session Start Minute", minval=0, maxval=59, group=groupFilters)
+sessionEndHour   = input.int(16, "Session End Hour (24h)", minval=0, maxval=23, group=groupFilters)
+sessionEndMin    = input.int(0, "Session End Minute", minval=0, maxval=59, group=groupFilters)
+
+groupVisuals = "Visuals"
+showDashboard    = input.bool(true, "Show Dashboard", group=groupVisuals)
+showEntryBoxes   = input.bool(true, "Show Entry Boxes", group=groupVisuals)
+showKeyLevels    = input.bool(true, "Show Key Level Lines", group=groupVisuals)
+showMidpointLine = input.bool(true, "Show Midpoint Hit Line", group=groupVisuals)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VIX ADAPTIVE LOGIC
+// ══════════════════════════════════════════════════════════════════════════════
+vixClose = request.security(vixTicker, timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+
+var string VIX_REGIME_LOW    = "LOW"
+var string VIX_REGIME_NORMAL = "NORMAL"
+var string VIX_REGIME_HIGH   = "HIGH"
+var string VIX_REGIME_CRISIS = "CRISIS"
+
+vixRegime = vixClose < vixLowThreshold  ? VIX_REGIME_LOW :
+            vixClose < vixMedThreshold  ? VIX_REGIME_NORMAL :
+            vixClose < vixHighThreshold ? VIX_REGIME_HIGH :
+            VIX_REGIME_CRISIS
+
+lookbackMultiplier = vixRegime == VIX_REGIME_LOW    ? vixLowLookbackMult :
+                     vixRegime == VIX_REGIME_NORMAL ? vixMedLookbackMult :
+                     vixRegime == VIX_REGIME_HIGH   ? vixHighLookbackMult :
+                     vixCrisisLookbackMult
+
+cooldownMultiplier = adjustCooldown and vixRegime == VIX_REGIME_HIGH   ? 1.5 :
+                     adjustCooldown and vixRegime == VIX_REGIME_CRISIS ? 2.0 :
+                     1.0
+
+dynamicLookback = useVIXAdaptive ? int(lookbackPeriod * lookbackMultiplier) : lookbackPeriod
+dynamicCooldown = useVIXAdaptive ? int(cooldownBars * cooldownMultiplier) : cooldownBars
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ATR + VOLUME + KEY LEVELS
+// ══════════════════════════════════════════════════════════════════════════════
+atr       = ta.atr(atrPeriod)
+volumeSMA = ta.sma(volume, atrPeriod)
+
+support       = ta.lowest(low, dynamicLookback)
+resistance    = ta.highest(high, dynamicLookback)
+supportBuffer = support - atr * 0.5
+resistanceBuffer = resistance + atr * 0.5
+
+upperATRBand = resistance + atr * 0.5
+lowerATRBand = support - atr * 0.5
+
+// ── Key Level Plots ──
+plot(showKeyLevels ? support : na, "Support Level", color=color.new(color.green, 50), linewidth=2, style=plot.style_line)
+plot(showKeyLevels ? resistance : na, "Resistance Level", color=color.new(color.red, 50), linewidth=2, style=plot.style_line)
+plot(showKeyLevels ? lowerATRBand : na, "Lower ATR Band", color=color.new(color.green, 30), linewidth=2, style=plot.style_line)
+plot(showKeyLevels ? upperATRBand : na, "Upper ATR Band", color=color.new(color.red, 30), linewidth=2, style=plot.style_line)
+
+p1 = plot(showKeyLevels ? support : na, display=display.none)
+p2 = plot(showKeyLevels ? lowerATRBand : na, display=display.none)
+fill(p1, p2, color=color.new(color.green, 90))
+p3 = plot(showKeyLevels ? resistance : na, display=display.none)
+p4 = plot(showKeyLevels ? upperATRBand : na, display=display.none)
+fill(p3, p4, color=color.new(color.red, 90))
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TRADE FILTERS
+// ══════════════════════════════════════════════════════════════════════════════
+sessionStart = timestamp(year, month, dayofmonth, sessionStartHour, sessionStartMin)
+sessionEnd   = timestamp(year, month, dayofmonth, sessionEndHour, sessionEndMin)
+inSession    = time >= sessionStart and time <= sessionEnd
+timeAllowed  = not useTimeFilter or inSession
+
+volumeRatio  = volume / volumeSMA
+volumeAllowed = not useVolumeFilter or (volumeRatio >= volumeMultiplier)
+
+filtersPass = timeAllowed and volumeAllowed
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ENTRY CONDITIONS
+// ══════════════════════════════════════════════════════════════════════════════
+isBullishEntry = (close > supportBuffer) and (low <= support) and (volume > volumeSMA)
+isBearishEntry = (close < resistanceBuffer) and (high >= resistance) and (volume > volumeSMA)
+
+// Position state from strategy engine
+inLong  = strategy.position_size > 0
+inShort = strategy.position_size < 0
+isFlat  = strategy.position_size == 0
+
+// Cooldown after exit
+var int lastExitBar = na
+if isFlat and not isFlat[1]
+    lastExitBar := bar_index
+
+canScale = na(lastExitBar) or (bar_index - lastExitBar >= dynamicCooldown)
+
+// DCA entry spacing — prevents rapid-fire stacking on fast timeframes
+var int lastDCABar = na
+dcaReady = isFlat or na(lastDCABar) or (bar_index - lastDCABar >= dcaSpacing)
+
+// Signal generation — also enforce max position cap
+atMaxLong  = strategy.position_size >= maxContracts
+atMaxShort = strategy.position_size <= -maxContracts
+
+longSignal  = isBullishEntry and not inShort and canScale and filtersPass and not atMaxLong and dcaReady
+shortSignal = isBearishEntry and not inLong  and canScale and filtersPass and not atMaxShort and dcaReady
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STRATEGY EXECUTION — DCA Entries + TP Management
+// ══════════════════════════════════════════════════════════════════════════════
+if longSignal
+    strategy.cancel("TP")
+    strategy.entry("DCA Long", strategy.long, qty=entryQty, comment="DCA Long")
+    lastDCABar := bar_index
+
+if shortSignal
+    strategy.cancel("TP")
+    strategy.entry("DCA Short", strategy.short, qty=entryQty, comment="DCA Short")
+    lastDCABar := bar_index
+
+// Reset on flat
+if isFlat
+    lastDCABar := na
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TP EXIT — Limit order via strategy.order() for exact fill prices
+// ══════════════════════════════════════════════════════════════════════════════
+// Uses strategy.order() instead of strategy.exit() so DCA pyramiding
+// isn't blocked. Limit order fills at EXACT TP price.
+// After each DCA entry, TP is cancelled for tpDelay bars to allow stacking.
+barsSinceLastDCA = not na(lastDCABar) ? bar_index - lastDCABar : 999
+tpReady = barsSinceLastDCA >= tpDelay
+
+if strategy.position_size > 0 and tpReady
+    _tpPrice = strategy.position_avg_price + tpTicks * tickSz
+    _posQty  = math.abs(strategy.position_size)
+    strategy.order("TP", strategy.short, qty=_posQty, limit=_tpPrice, comment="TP Hit")
+
+else if strategy.position_size < 0 and tpReady
+    _tpPrice = strategy.position_avg_price - tpTicks * tickSz
+    _posQty  = math.abs(strategy.position_size)
+    strategy.order("TP", strategy.long, qty=_posQty, limit=_tpPrice, comment="TP Hit")
+
+else if strategy.position_size != 0 and not tpReady
+    strategy.cancel("TP")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DCA ENTRY COUNTER
+// ══════════════════════════════════════════════════════════════════════════════
+var int dcaCount = 0
+if isFlat
+    dcaCount := 0
+if longSignal or shortSignal
+    dcaCount += 1
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MIDPOINT LOGIC (visual only — no exit effect)
+// ══════════════════════════════════════════════════════════════════════════════
+var float boxLowLocked  = na
+var float boxHighLocked = na
+var float midLocked     = na
+var int   entryBar      = na
+var bool  midFired      = false
+
+if longSignal and isFlat[1]
+    boxLowLocked  := support - atr * 0.5
+    boxHighLocked := support + atr * 0.5
+    midLocked     := boxLowLocked + (boxHighLocked - boxLowLocked) * boxPercent
+    entryBar      := bar_index
+    midFired      := false
+
+if shortSignal and isFlat[1]
+    boxLowLocked  := resistance - atr * 0.5
+    boxHighLocked := resistance + atr * 0.5
+    midLocked     := boxHighLocked - (boxHighLocked - boxLowLocked) * boxPercent
+    entryBar      := bar_index
+    midFired      := false
+
+if isFlat and not isFlat[1]
+    boxLowLocked  := na
+    boxHighLocked := na
+    midLocked     := na
+    entryBar      := na
+    midFired      := false
+
+midHit  = not na(midLocked) and ((inLong and high >= midLocked) or (inShort and low <= midLocked))
+midCond = midHit and not midFired
+
+if midCond
+    if showMidpointLine
+        line.new(bar_index, midLocked, bar_index + 1, midLocked,
+             color=inLong ? color.new(color.green, 0) : color.new(color.red, 0),
+             style=line.style_dashed, width=2)
+    midFired := true
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ENTRY BOX VISUALS
+// ══════════════════════════════════════════════════════════════════════════════
+if longSignal and showEntryBoxes
+    box.new(left=bar_index - 20, top=support + atr * 0.5, right=bar_index + 20,
+         bottom=support - atr * 0.5, border_color=color.green, bgcolor=color.new(color.green, 85))
+
+if shortSignal and showEntryBoxes
+    box.new(left=bar_index - 20, top=resistance + atr * 0.5, right=bar_index + 20,
+         bottom=resistance - atr * 0.5, border_color=color.red, bgcolor=color.new(color.red, 85))
+
+// ── Entry Markers ──
+plotshape(longSignal,  title="DCA Long",  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.small, text="DCA\nLONG")
+plotshape(shortSignal, title="DCA Short", style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small, text="DCA\nSHORT")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════════════════════
+if barstate.islast and showDashboard
+    var table dash = table.new(position.top_right, 2, 12, bgcolor=color.new(#1e1e1e, 10), border_width=1, border_color=color.new(#333333, 0))
+
+    _hdrBg = color.new(#00d4ff, 20)
+    _lblBg = color.new(#2a2a2a, 0)
+    _valBg = color.new(#1e1e1e, 0)
+    _tc    = color.white
+    _sz    = size.small
+
+    // Row 0 — Header
+    table.cell(dash, 0, 0, "JADVIX", text_color=_tc, bgcolor=_hdrBg, text_size=_sz)
+    table.cell(dash, 1, 0, "Med Risk", text_color=_tc, bgcolor=_hdrBg, text_size=_sz)
+
+    // Row 1 — VIX Regime
+    _vixCol = vixRegime == VIX_REGIME_LOW    ? color.lime :
+              vixRegime == VIX_REGIME_NORMAL ? color.yellow :
+              vixRegime == VIX_REGIME_HIGH   ? color.orange :
+              color.red
+    table.cell(dash, 0, 1, "VIX", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 1, useVIXAdaptive ? str.tostring(vixClose, "#.#") + " [" + vixRegime + "]" : "OFF", text_color=_vixCol, bgcolor=_valBg, text_size=_sz)
+
+    // Row 2 — Lookback
+    table.cell(dash, 0, 2, "Lookback", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 2, str.tostring(dynamicLookback) + " (" + str.tostring(lookbackMultiplier, "#.#") + "x)", text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 3 — Position
+    _posText = inLong ? "LONG ×" + str.tostring(math.abs(strategy.position_size)) : inShort ? "SHORT ×" + str.tostring(math.abs(strategy.position_size)) : "FLAT"
+    _posCol  = inLong ? color.lime : inShort ? color.red : color.gray
+    table.cell(dash, 0, 3, "Position", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 3, _posText, text_color=_posCol, bgcolor=_valBg, text_size=_sz)
+
+    // Row 4 — DCA Count
+    table.cell(dash, 0, 4, "DCA Entries", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 4, str.tostring(dcaCount), text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 5 — Avg Entry
+    table.cell(dash, 0, 5, "Avg Entry", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 5, not isFlat ? str.tostring(strategy.position_avg_price, "#.##") : "—", text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 6 — Current TP
+    _tpVal = inLong  ? strategy.position_avg_price + tpTicks * tickSz :
+             inShort ? strategy.position_avg_price - tpTicks * tickSz : na
+    table.cell(dash, 0, 6, "TP (" + str.tostring(tpTicks) + " tick)", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 6, not na(_tpVal) ? str.tostring(_tpVal, "#.##") : "—", text_color=color.green, bgcolor=_valBg, text_size=_sz)
+
+    // Row 7 — Entry Qty
+    table.cell(dash, 0, 7, "Qty/Entry", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 7, str.tostring(entryQty) + " ct", text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 8 — Cooldown + DCA Spacing
+    table.cell(dash, 0, 8, "Cooldown", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 8, str.tostring(dynamicCooldown) + " cd / " + str.tostring(dcaSpacing) + " dca", text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 9 — Filters
+    table.cell(dash, 0, 9, "Filters", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 9, filtersPass ? "PASS" : "FAIL", text_color=filtersPass ? color.lime : color.red, bgcolor=_valBg, text_size=_sz)
+
+    // Row 10 — Net Profit
+    _netProfit = strategy.netprofit
+    table.cell(dash, 0, 10, "Net P&L", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 10, "$" + str.tostring(_netProfit, "#,###.##"), text_color=_netProfit >= 0 ? color.lime : color.red, bgcolor=_valBg, text_size=_sz)
+
+    // Row 11 — Closed Trades
+    table.cell(dash, 0, 11, "Trades", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 11, str.tostring(strategy.closedtrades), text_color=_tc, bgcolor=_valBg, text_size=_sz)
