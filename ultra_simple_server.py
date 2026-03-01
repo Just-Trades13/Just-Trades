@@ -9775,11 +9775,18 @@ _whop_sync_stats = {
 }
 
 def _whop_membership_sync():
-    """Poll Whop for all active memberships and create missing platform accounts."""
+    """Poll Whop for all active memberships and create missing platform accounts.
+
+    Also reconciles cancelled memberships (backup for missed webhooks)
+    and guards against cross-tier trial abuse.
+    """
     from whop_integration import whop_api_request, WHOP_PRODUCT_MAP
     from user_auth import get_user_by_email
     from account_activation import auto_create_user_from_whop, generate_activation_token, send_activation_email
-    from subscription_models import create_subscription, get_user_subscription
+    from subscription_models import (
+        create_subscription, get_user_subscription, cancel_subscription,
+        has_user_had_any_trial, get_subscription_db_connection
+    )
 
     result = whop_api_request('GET', '/memberships?per=100')
     if not result:
@@ -9790,13 +9797,21 @@ def _whop_membership_sync():
     print(f"🔄 Whop sync: got {len(memberships)} memberships from Whop")
     synced_count = 0
     resent_count = 0
+    cancelled_count = 0
     stuck = []
     now = time.time()
 
+    # Collect invalid membership IDs for cancellation reconciliation (Step 6)
+    invalid_membership_ids = set()
+
     for membership in memberships:
         try:
-            # Only process active/trialing memberships
+            membership_id = membership.get('id')
+
+            # Collect invalid memberships for reconciliation
             if not membership.get('valid'):
+                if membership_id:
+                    invalid_membership_ids.add(membership_id)
                 continue
 
             # Get product ID — Whop returns product as string ID or dict
@@ -9818,8 +9833,16 @@ def _whop_membership_sync():
                 continue
 
             whop_user_id = user_field if isinstance(user_field, str) else (user_field.get('id') if isinstance(user_field, dict) else None)
-            membership_id = membership.get('id')
             is_trial = membership.get('status') == 'trialing'
+
+            # Cross-tier trial guard (Step 7): check before any create_subscription()
+            if is_trial:
+                try:
+                    if has_user_had_any_trial(email=user_email, whop_customer_id=whop_user_id):
+                        is_trial = False
+                        print(f"🚫 Whop sync: cross-tier trial blocked for {user_email} on {plan_slug} — converting to paid")
+                except Exception as e:
+                    print(f"⚠️ Whop sync: trial check error (failing open): {e}")
 
             # Check if user exists on our platform
             user = get_user_by_email(user_email)
@@ -9888,17 +9911,50 @@ def _whop_membership_sync():
             print(f"⚠️ Whop sync: error processing membership {membership.get('id', '?')}: {e}")
             continue
 
+    # Step 6: Cancellation reconciliation — cancel local subscriptions for memberships
+    # that Whop reports as invalid. This is the backup for missed cancellation webhooks.
+    if invalid_membership_ids:
+        try:
+            conn, db_type = get_subscription_db_connection()
+            cursor = conn.cursor()
+            try:
+                ph = '%s' if db_type == 'postgresql' else '?'
+                placeholders = ', '.join([ph] * len(invalid_membership_ids))
+                cursor.execute(
+                    f"SELECT whop_membership_id FROM user_subscriptions "
+                    f"WHERE whop_membership_id IN ({placeholders}) AND status IN ('active', 'trialing')",
+                    tuple(invalid_membership_ids)
+                )
+                stale_rows = cursor.fetchall()
+            finally:
+                cursor.close()
+                conn.close()
+
+            for row in stale_rows:
+                stale_id = dict(row).get('whop_membership_id')
+                if stale_id:
+                    try:
+                        cancel_subscription(whop_membership_id=stale_id)
+                        cancelled_count += 1
+                        print(f"🔄 Whop sync: reconciled cancellation for membership {stale_id}")
+                    except Exception as e:
+                        print(f"⚠️ Whop sync: failed to reconcile cancellation for {stale_id}: {e}")
+        except Exception as e:
+            print(f"⚠️ Whop sync: cancellation reconciliation error: {e}")
+
     # Update stats for admin visibility
     _whop_sync_stats['last_run'] = datetime.now().isoformat()
     _whop_sync_stats['last_synced'] = synced_count
     _whop_sync_stats['last_resent'] = resent_count
+    _whop_sync_stats['last_cancelled'] = cancelled_count
     _whop_sync_stats['total_synced'] += synced_count
     _whop_sync_stats['total_resent'] += resent_count
+    _whop_sync_stats['total_cancelled'] = _whop_sync_stats.get('total_cancelled', 0) + cancelled_count
     _whop_sync_stats['stuck_users'] = stuck
 
-    if synced_count > 0 or resent_count > 0 or stuck:
-        print(f"🔄 Whop sync complete: {synced_count} created, {resent_count} emails sent, {len(stuck)} stuck")
-        logger.info(f"🔄 Whop sync complete: {synced_count} created, {resent_count} emails sent, {len(stuck)} stuck")
+    if synced_count > 0 or resent_count > 0 or cancelled_count > 0 or stuck:
+        print(f"🔄 Whop sync complete: {synced_count} created, {resent_count} emails sent, {cancelled_count} cancelled, {len(stuck)} stuck")
+        logger.info(f"🔄 Whop sync complete: {synced_count} created, {resent_count} emails sent, {cancelled_count} cancelled, {len(stuck)} stuck")
 
 
 def _whop_sync_loop():

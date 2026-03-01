@@ -253,8 +253,17 @@ def process_webhook_event(event_type: str, data: Dict) -> Dict:
         cancel_subscription, get_subscription_by_whop_membership
     )
     
+    # Normalize v1 event names to v2/v5 names
+    V1_EVENT_MAP = {
+        'membership.activated': 'membership.went_valid',
+        'membership.deactivated': 'membership.went_invalid',
+        'membership.cancelled': 'membership.went_invalid',
+        'membership.expired': 'membership.went_invalid',
+    }
+    event_type = V1_EVENT_MAP.get(event_type, event_type)
+
     logger.info(f"📥 Processing Whop webhook: {event_type}")
-    
+
     membership_id = data.get('id') or data.get('membership_id')
     product_id = data.get('product', {}).get('id') if isinstance(data.get('product'), dict) else data.get('product_id')
     user_email = data.get('user', {}).get('email') if isinstance(data.get('user'), dict) else data.get('email')
@@ -304,13 +313,24 @@ def process_webhook_event(event_type: str, data: Dict) -> Dict:
                 )
 
                 if abuse_detected:
-                    logger.warning(f"🚨 Trial abuse detected at signup: {abuse_msg}")
-                    # We still create the subscription, but it will be blocked at platform level
+                    logger.warning(f"🚨 Trial abuse detected at signup (fingerprint): {abuse_msg}")
+                    is_trial = False  # Convert to paid — no free days
+                    logger.info(f"🚫 Trial converted to paid for {user_email} (fingerprint abuse on {plan_slug})")
 
             except ImportError:
                 logger.debug("Trial abuse protection not available")
             except Exception as e:
                 logger.error(f"Trial abuse tracking error: {e}")
+
+        # Cross-tier trial abuse check: has this user ever had ANY trial?
+        if is_trial:
+            try:
+                from subscription_models import has_user_had_any_trial
+                if has_user_had_any_trial(email=user_email, whop_customer_id=whop_user_id):
+                    is_trial = False  # Convert to paid — no free days
+                    logger.warning(f"🚫 Cross-tier trial blocked for {user_email} on {plan_slug} — prior trial exists, converting to paid")
+            except Exception as e:
+                logger.error(f"Cross-tier trial check error (failing open): {e}")
 
         # Try to find existing user by email
         from user_auth import get_user_by_email

@@ -471,6 +471,67 @@ def get_all_user_subscriptions(user_id: int) -> List[Dict]:
         conn.close()
 
 
+def has_user_had_any_trial(user_id: int = None, email: str = None,
+                           whop_customer_id: str = None) -> bool:
+    """Check if a user has ever had a trial on ANY plan tier.
+
+    Matches by user_id, email (via JOIN to users table), or whop_customer_id.
+    Used to prevent cross-tier trial abuse (e.g., Basic trial → Premium trial → Elite trial).
+
+    Returns True if any prior trial found, False otherwise.
+    Fails open (returns False) on DB errors to avoid blocking legitimate purchases.
+    """
+    conn, db_type = get_subscription_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        conditions = []
+        params = []
+        ph = '%s' if db_type == 'postgresql' else '?'
+
+        if user_id and user_id > 0:
+            conditions.append(f'us.user_id = {ph}')
+            params.append(user_id)
+
+        if whop_customer_id:
+            conditions.append(f'us.whop_customer_id = {ph}')
+            params.append(whop_customer_id)
+
+        if email:
+            # Join to users table to match by email
+            if db_type == 'postgresql':
+                conditions.append(f'EXISTS (SELECT 1 FROM users u WHERE u.id = us.user_id AND LOWER(u.email) = LOWER({ph}))')
+            else:
+                conditions.append(f'EXISTS (SELECT 1 FROM users u WHERE u.id = us.user_id AND LOWER(u.email) = LOWER({ph}))')
+            params.append(email)
+
+        if not conditions:
+            return False
+
+        where_clause = ' OR '.join(conditions)
+        query = f'''
+            SELECT 1 FROM user_subscriptions us
+            WHERE ({where_clause})
+              AND us.trial_ends_at IS NOT NULL
+            LIMIT 1
+        '''
+
+        cursor.execute(query, tuple(params))
+        result = cursor.fetchone()
+        had_trial = result is not None
+
+        if had_trial:
+            logger.info(f"🚨 Prior trial found: user_id={user_id}, email={email}, whop_customer_id={whop_customer_id}")
+
+        return had_trial
+    except Exception as e:
+        logger.error(f"❌ has_user_had_any_trial error (failing open): {e}")
+        return False  # Fail open — better one extra trial than blocking a $1000/mo purchase
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ============================================================================
 # SUBSCRIPTION MANAGEMENT
 # ============================================================================
@@ -645,41 +706,78 @@ def update_subscription_status(user_id: int = None, whop_membership_id: str = No
 
 
 def cancel_subscription(user_id: int = None, whop_membership_id: str = None) -> bool:
-    """Cancel a subscription (sets status to cancelled)."""
+    """Cancel a subscription (sets status to cancelled).
+
+    After cancelling, checks if the user has ANY remaining active/trialing subscriptions.
+    If zero remain, revokes login access via unapprove_user().
+    """
     conn, db_type = get_subscription_db_connection()
     cursor = conn.cursor()
-    
+    ph = '%s' if db_type == 'postgresql' else '?'
+
     try:
+        # Look up user_id before cancelling (needed for access revocation check)
+        resolved_user_id = user_id
+        if whop_membership_id and not resolved_user_id:
+            cursor.execute(
+                f'SELECT user_id FROM user_subscriptions WHERE whop_membership_id = {ph}',
+                (whop_membership_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                resolved_user_id = dict(row).get('user_id')
+
         if whop_membership_id:
             if db_type == 'postgresql':
                 cursor.execute('''
-                    UPDATE user_subscriptions 
+                    UPDATE user_subscriptions
                     SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
                     WHERE whop_membership_id = %s
                 ''', (whop_membership_id,))
             else:
                 cursor.execute('''
-                    UPDATE user_subscriptions 
+                    UPDATE user_subscriptions
                     SET status = 'cancelled', cancelled_at = datetime('now'), updated_at = datetime('now')
                     WHERE whop_membership_id = ?
                 ''', (whop_membership_id,))
         elif user_id:
             if db_type == 'postgresql':
                 cursor.execute('''
-                    UPDATE user_subscriptions 
+                    UPDATE user_subscriptions
                     SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
                     WHERE user_id = %s
                 ''', (user_id,))
             else:
                 cursor.execute('''
-                    UPDATE user_subscriptions 
+                    UPDATE user_subscriptions
                     SET status = 'cancelled', cancelled_at = datetime('now'), updated_at = datetime('now')
                     WHERE user_id = ?
                 ''', (user_id,))
-        
+
         conn.commit()
-        logger.info(f"✅ Subscription cancelled")
-        return cursor.rowcount > 0
+        cancelled = cursor.rowcount > 0
+        logger.info(f"✅ Subscription cancelled (user_id={resolved_user_id}, membership={whop_membership_id})")
+
+        # Check if user has ANY remaining active subscriptions — if not, revoke access
+        if cancelled and resolved_user_id and resolved_user_id > 0:
+            try:
+                cursor.execute(
+                    f"SELECT 1 FROM user_subscriptions WHERE user_id = {ph} AND status IN ('active', 'trialing') LIMIT 1",
+                    (resolved_user_id,)
+                )
+                has_remaining = cursor.fetchone() is not None
+
+                if not has_remaining:
+                    logger.info(f"🔒 No remaining active subscriptions for user {resolved_user_id} — revoking access")
+                    try:
+                        from user_auth import unapprove_user
+                        unapprove_user(resolved_user_id)
+                    except Exception as e:
+                        logger.error(f"❌ Failed to unapprove user {resolved_user_id}: {e}")
+            except Exception as e:
+                logger.error(f"❌ Error checking remaining subscriptions for user {resolved_user_id}: {e}")
+
+        return cancelled
     except Exception as e:
         logger.error(f"❌ Failed to cancel subscription: {e}")
         conn.rollback()

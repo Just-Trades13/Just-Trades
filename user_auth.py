@@ -604,6 +604,43 @@ def approve_user(user_id: int) -> bool:
         conn.close()
 
 
+def unapprove_user(user_id: int) -> bool:
+    """Revoke approval for a user account (sets is_approved=FALSE).
+
+    Admin accounts are protected — this will never unapprove an admin.
+    Called when all subscriptions are cancelled to revoke login access.
+    """
+    conn, db_type = get_auth_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        if db_type == 'postgresql':
+            cursor.execute(
+                'UPDATE users SET is_approved = FALSE WHERE id = %s AND is_admin = FALSE',
+                (user_id,)
+            )
+        else:
+            cursor.execute(
+                'UPDATE users SET is_approved = 0 WHERE id = ? AND is_admin = 0',
+                (user_id,)
+            )
+
+        conn.commit()
+        affected = cursor.rowcount
+        if affected > 0:
+            logger.info(f"🔒 User {user_id} unapproved (all subscriptions cancelled)")
+        else:
+            logger.info(f"ℹ️ User {user_id} not unapproved (admin or already unapproved)")
+        return affected > 0
+    except Exception as e:
+        logger.error(f"❌ Failed to unapprove user {user_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def reject_user(user_id: int) -> bool:
     """Reject (delete) a pending user account (admin function)."""
     conn, db_type = get_auth_db_connection()
