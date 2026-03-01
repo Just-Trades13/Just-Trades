@@ -117,18 +117,23 @@ def verify_membership(membership_id: str) -> Optional[Dict]:
     result = whop_api_request('GET', f'/memberships/{membership_id}')
     
     if result and result.get('valid'):
+        user_field = result.get('user')
+        product_field = result.get('product')
+        user_id = user_field.get('id') if isinstance(user_field, dict) else user_field
+        user_email = user_field.get('email') if isinstance(user_field, dict) else result.get('email')
+        product_id = product_field.get('id') if isinstance(product_field, dict) else product_field
         return {
             'membership_id': result.get('id'),
-            'user_id': result.get('user', {}).get('id'),
-            'user_email': result.get('user', {}).get('email'),
-            'product_id': result.get('product', {}).get('id'),
-            'plan_slug': WHOP_PRODUCT_MAP.get(result.get('product', {}).get('id')),
+            'user_id': user_id,
+            'user_email': user_email,
+            'product_id': product_id,
+            'plan_slug': WHOP_PRODUCT_MAP.get(product_id),
             'status': result.get('status'),
             'valid': result.get('valid'),
             'created_at': result.get('created_at'),
             'renewal_period_end': result.get('renewal_period_end'),
         }
-    
+
     return None
 
 
