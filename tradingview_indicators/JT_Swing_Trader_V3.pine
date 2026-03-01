@@ -1,0 +1,521 @@
+// This Pine Script™ is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © JustTrades Group, Inc.
+//
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  JustTrades Swing Trader V.3 — SuperTrend on Heikin Ashi              ║
+// ║                                                                        ║
+// ║  Run on 1-min HEIKIN ASHI chart.                                       ║
+// ║                                                                        ║
+// ║  CRITICAL: fill_orders_on_standard_ohlc = true                         ║
+// ║  Forces fills at REAL market prices, not synthetic HA prices.           ║
+// ║  HA open/close are smoothed averages — fills at HA prices are fake.    ║
+// ║                                                                        ║
+// ║  EXIT DECISION MATRIX (already correct in this strategy):              ║
+// ║  • TP / SL / Trail  → strategy.exit()  — intra-bar fill at exact $    ║
+// ║  • SuperTrend flip  → strategy.entry() — opposite entry flips pos     ║
+// ║  • EOD flatten      → strategy.close_all() — time-based exit          ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+//@version=5
+strategy("JustTrades Swing Trader V.3",
+     overlay              = true,
+     initial_capital      = 10000,
+     default_qty_type     = strategy.fixed,
+     default_qty_value    = 1,
+     commission_type      = strategy.commission.cash_per_contract,
+     commission_value     = 0.82,
+     slippage             = 8,
+     pyramiding           = 0,
+     calc_on_every_tick   = true,
+     process_orders_on_close = true,
+     fill_orders_on_standard_ohlc = true,
+     use_bar_magnifier    = true,
+     backtest_fill_limits_assumption = 2)
+
+// ═══════════════════════════════════════════════════════════════
+// REALISM CHANGES FROM ORIGINAL:
+// 1. fill_orders_on_standard_ohlc = true (was false)
+//    → Forces fills at REAL OHLC prices on HA charts
+//    → HA candles have synthetic smoothed prices that don't exist in the market
+//    → This single change is the biggest source of inflated HA backtest numbers
+//
+// 2. slippage = 8 (was 4)
+//    → 8 ticks = 2 pts on NQ/MNQ, covers webhook pipeline latency
+//    → TradingView alert → server → Tradovate → fill = 500ms-1.5s
+//
+// 3. Fill delay system added
+//    → Signal at bar N → entry delayed to bar N+1 → fills at N+2 open
+//    → Simulates webhook pipeline latency
+//    → Stale signal cancellation if conditions change during delay
+//
+// Exit logic was already correct — strategy.exit() for all price-level exits
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Realism Mode
+// ─────────────────────────────────────────────────────────────
+g_real = "Realism Mode"
+useRealism     = input.bool(true, "Enable Realism Mode", group=g_real, tooltip="Master switch. Applies fill delay for realistic webhook latency simulation. Turn OFF to see raw strategy edge (inflated on HA charts).")
+fillDelayBars  = input.int(2, "Fill Delay (bars)", minval=0, maxval=5, group=g_real, tooltip="Bars to wait after signal before entering. Simulates webhook pipeline latency. 2 = conservative for 1-min chart with calc_on_every_tick.")
+cancelStale    = input.bool(true, "Cancel Stale Signals", group=g_real, tooltip="Cancel pending entry if filters fail during delay (session ends, daily limit, trend filter fails).")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Core SuperTrend
+// ─────────────────────────────────────────────────────────────
+g_core = "Core SuperTrend"
+_inp_Periods = input.int(9, "ATR Period", minval=1, maxval=200, group=g_core,
+     tooltip="Lookback period for the ATR calculation driving the SuperTrend bands.")
+src        = input.source(hl2, "Price Source", group=g_core,
+     tooltip="Source price for SuperTrend. hl2 is standard. Try hlc3 or ohlc4 for smoother response.")
+_inp_Multiplier = input.float(2.6, "ATR Multiplier", minval=0.1, maxval=10.0, step=0.1, group=g_core,
+     tooltip="Distance of SuperTrend bands from price. Higher = wider bands, fewer signals, bigger swings.")
+changeATR  = input.bool(true, "Use True ATR (vs SMA of TR)", group=g_core,
+     tooltip="True ATR uses Wilder's smoothing (RMA). Off uses simple SMA of True Range.")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Execution Simulation (Broker Realism)
+// ─────────────────────────────────────────────────────────────
+g_exec = "Execution Simulation"
+execMode = input.string("Tradovate (Free)", "Broker Preset",
+     options=["Tradovate (Free)", "Tradovate (Member)", "ProjectX", "Custom"],
+     group=g_exec,
+     tooltip="Auto-sets commission and slippage estimates. 'Custom' lets you override everything.")
+customComm = input.float(0.82, "Custom Commission (per side)", minval=0.0, step=0.01, group=g_exec,
+     tooltip="Only used when Broker Preset = Custom. Per-contract per-side cost including exchange fees.")
+customSlip = input.int(4, "Custom Slippage (ticks)", minval=0, maxval=20, group=g_exec,
+     tooltip="Only used when Broker Preset = Custom. Round-trip slippage in ticks.")
+tickValue  = input.float(0.25, "Tick Size ($)", group=g_exec,
+     tooltip="Dollar value per tick for your instrument. MNQ=0.25, NQ=5.00, ES=12.50, MES=1.25")
+
+commPerSide = switch execMode
+    "Tradovate (Free)"   => 0.82
+    "Tradovate (Member)" => 0.62
+    "ProjectX"           => 0.52
+    "Custom"             => customComm
+
+slipTicks = switch execMode
+    "Tradovate (Free)"   => 4
+    "Tradovate (Member)" => 4
+    "ProjectX"           => 3
+    "Custom"             => customSlip
+
+rtCost = (commPerSide * 2) + (slipTicks * tickValue * 2)
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Risk Management
+// ─────────────────────────────────────────────────────────────
+g_risk = "Risk Management"
+exitMode = input.string("SuperTrend + Target", "Exit Method",
+     options=["SuperTrend Flip", "Fixed Target + Stop", "Trailing Stop", "SuperTrend + Target"],
+     group=g_risk,
+     tooltip="SuperTrend Flip: classic reverse-on-signal. Fixed: set TP/SL in ticks. Trailing: follow price. SuperTrend + Target: hold until TP hit or trend flips.")
+_inp_tpTicks   = input.int(400, "Take Profit (ticks)", minval=1, maxval=2000, group=g_risk,
+     tooltip="Fixed TP distance from entry. Used in 'Fixed Target + Stop' and 'SuperTrend + Target' modes.")
+_inp_slTicks   = input.int(40, "Stop Loss (ticks)", minval=1, maxval=2000, group=g_risk,
+     tooltip="Fixed SL distance from entry. Used in 'Fixed Target + Stop' mode only.")
+_inp_trailTicks = input.int(30, "Trail Offset (ticks)", minval=1, maxval=500, group=g_risk,
+     tooltip="Trailing stop distance behind price. Used in 'Trailing Stop' mode.")
+trailActTicks = input.int(20, "Trail Activation (ticks in profit)", minval=0, maxval=500, group=g_risk,
+     tooltip="Ticks of profit before trailing activates. 0 = immediate.")
+useBE        = input.bool(true, "Enable Breakeven Stop", group=g_risk,
+     tooltip="Moves stop to entry + offset once profit threshold reached. Works with all exit modes.")
+beTicks      = input.int(105, "BE Activation (ticks in profit)", minval=1, maxval=500, group=g_risk)
+beOffset     = input.int(50, "BE Offset (ticks past entry)", minval=0, maxval=50, group=g_risk,
+     tooltip="Lock in this many ticks of profit at breakeven.")
+maxDailyLoss = input.float(0, "Max Daily Loss ($, 0=off)", minval=0, step=50, group=g_risk,
+     tooltip="Kill switch: stops all trading for the day after this drawdown.")
+maxTrades    = input.int(0, "Max Trades Per Day (0=off)", minval=0, maxval=100, group=g_risk)
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Session Filter
+// ─────────────────────────────────────────────────────────────
+g_sess = "Session Filter"
+useSessFilter = input.bool(true, "Enable Session Filter", group=g_sess,
+     tooltip="Only allow entries during specified session window.")
+sessStart     = input.session("0700-1430", "Trading Session (Exchange TZ)", group=g_sess)
+sessTimezone  = input.string("America/Chicago", "Session Timezone",
+     options=["America/Chicago", "America/New_York", "America/Los_Angeles", "UTC"],
+     group=g_sess)
+noFridayPM    = input.bool(false, "No Entries Friday After 12:00", group=g_sess)
+closeEOD      = input.bool(false, "Flatten at Session Close", group=g_sess,
+     tooltip="Close any open position at the end of the trading session. Useful for day-only swing tests.")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Signal Filters
+// ─────────────────────────────────────────────────────────────
+g_filt = "Signal Filters"
+useVolFilter  = input.bool(false, "Volume Filter", group=g_filt,
+     tooltip="Only take entries when volume exceeds its moving average.")
+volMaLen      = input.int(20, "Volume MA Length", minval=5, maxval=200, group=g_filt)
+volMult       = input.float(1.0, "Volume Threshold (x MA)", minval=0.5, maxval=5.0, step=0.1, group=g_filt)
+useAtrFilter  = input.bool(false, "ATR Volatility Filter", group=g_filt,
+     tooltip="Skip entries when volatility is too low (choppy, dead markets).")
+atrFilterLen  = input.int(14, "ATR Filter Length", minval=5, maxval=100, group=g_filt)
+atrMinTicks   = input.float(5.0, "Min ATR (ticks)", minval=0.5, maxval=100, step=0.5, group=g_filt)
+useTrendFilter = input.bool(false, "EMA Trend Filter", group=g_filt,
+     tooltip="Only take longs above EMA / shorts below EMA. Aligns swings with higher-TF trend.")
+trendEmaLen   = input.int(200, "Trend EMA Length", minval=20, maxval=500, group=g_filt)
+cooldownBars  = input.int(0, "Cooldown After Exit (bars, 0=off)", minval=0, maxval=100, group=g_filt)
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Backtest Date Range
+// ─────────────────────────────────────────────────────────────
+g_date = "Backtest Date Range"
+useDateFilter = input.bool(false, "Enable Date Filter", group=g_date,
+     tooltip="Restrict strategy to a specific date range. Off = use all available data.")
+FromDate = input.time(timestamp("2024-01-01"), "Start Date", group=g_date)
+ToDate   = input.time(timestamp("2099-12-31"), "End Date", group=g_date)
+inDateRange = useDateFilter ? (time >= FromDate and time <= ToDate) : true
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Visuals
+// ─────────────────────────────────────────────────────────────
+g_vis = "Visuals"
+showSignals  = input.bool(true, "Show Buy/Sell Labels", group=g_vis)
+showBands    = input.bool(true, "Show SuperTrend Lines", group=g_vis)
+showFill     = input.bool(true, "Highlight Trend Zones", group=g_vis)
+barColoring  = input.bool(true, "Bar Coloring", group=g_vis)
+showTable    = input.bool(true, "Show Info Table", group=g_vis)
+upColor      = input.color(color.new(#26a69a, 0), "Uptrend Color", group=g_vis)
+dnColor      = input.color(color.new(#ef5350, 0), "Downtrend Color", group=g_vis)
+fillAlpha    = input.int(85, "Fill Transparency", minval=50, maxval=98, group=g_vis)
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Stability Test
+// ─────────────────────────────────────────────────────────────
+g_stab = "═══ STABILITY TEST ═══"
+runStabilityTest = input.bool(false, "Enable Stability Test", group=g_stab,
+     tooltip="Override ONE parameter at a time with +/-20% variation. Record Net Profit, PF, WR, Max DD for each test case. When OFF, strategy runs with normal values (zero change).")
+stabilityTestCase = input.string("Default", "Test Case", group=g_stab,
+     options=["Default",
+              "Periods -20%", "Periods +20%",
+              "Multiplier -20%", "Multiplier +20%",
+              "tpTicks -20%", "tpTicks +20%",
+              "slTicks -20%", "slTicks +20%",
+              "trailTicks -20%", "trailTicks +20%"])
+
+// Apply stability test overrides (values = +/-20% of tuned defaults)
+// Periods: 9 → 7 / 11  |  Multiplier: 2.6 → 2.08 / 3.12
+// tpTicks: 400 → 320 / 480  |  slTicks: 40 → 32 / 48  |  trailTicks: 30 → 24 / 36
+Periods    = runStabilityTest and stabilityTestCase == "Periods -20%"    ? 7    :
+             runStabilityTest and stabilityTestCase == "Periods +20%"    ? 11   : _inp_Periods
+
+Multiplier = runStabilityTest and stabilityTestCase == "Multiplier -20%" ? 2.08 :
+             runStabilityTest and stabilityTestCase == "Multiplier +20%" ? 3.12 : _inp_Multiplier
+
+tpTicks    = runStabilityTest and stabilityTestCase == "tpTicks -20%"    ? 320  :
+             runStabilityTest and stabilityTestCase == "tpTicks +20%"    ? 480  : _inp_tpTicks
+
+slTicks    = runStabilityTest and stabilityTestCase == "slTicks -20%"    ? 32   :
+             runStabilityTest and stabilityTestCase == "slTicks +20%"    ? 48   : _inp_slTicks
+
+trailTicks = runStabilityTest and stabilityTestCase == "trailTicks -20%" ? 24   :
+             runStabilityTest and stabilityTestCase == "trailTicks +20%" ? 36   : _inp_trailTicks
+
+// ─────────────────────────────────────────────────────────────
+// CORE SUPERTREND CALCULATION
+// ─────────────────────────────────────────────────────────────
+atr2 = ta.sma(ta.tr, Periods)
+atrVal = changeATR ? ta.atr(Periods) : atr2
+
+up = src - (Multiplier * atrVal)
+up1 = nz(up[1], up)
+up := close[1] > up1 ? math.max(up, up1) : up
+
+dn = src + (Multiplier * atrVal)
+dn1 = nz(dn[1], dn)
+dn := close[1] < dn1 ? math.min(dn, dn1) : dn
+
+var int trend = 1
+trend := trend == -1 and close > dn1 ? 1 : trend == 1 and close < up1 ? -1 : trend
+
+buySignal  = trend == 1 and trend[1] == -1
+sellSignal = trend == -1 and trend[1] == 1
+
+// ─────────────────────────────────────────────────────────────
+// SESSION & FILTER LOGIC
+// ─────────────────────────────────────────────────────────────
+inSession = useSessFilter ? not na(time(timeframe.period, sessStart, sessTimezone)) : true
+isFridayPM = noFridayPM and dayofweek == dayofweek.friday and hour >= 12
+sessionOK = inSession and not isFridayPM
+
+// Volume filter
+volMA = ta.sma(volume, volMaLen)
+volOK = useVolFilter ? (volume > volMA * volMult) : true
+
+// ATR filter
+atrFilterVal = ta.atr(atrFilterLen)
+atrOK = useAtrFilter ? (atrFilterVal >= atrMinTicks * syminfo.mintick) : true
+
+// EMA trend filter
+trendEma = ta.ema(close, trendEmaLen)
+trendLongOK  = useTrendFilter ? (close > trendEma) : true
+trendShortOK = useTrendFilter ? (close < trendEma) : true
+
+// Cooldown tracking
+var int barsSinceExit = 999
+if strategy.closedtrades > 0 and strategy.closedtrades != strategy.closedtrades[1]
+    barsSinceExit := 0
+else
+    barsSinceExit += 1
+cooldownOK = cooldownBars == 0 or barsSinceExit >= cooldownBars
+
+// Daily trade count
+var int dailyTrades = 0
+if ta.change(time("D"))
+    dailyTrades := 0
+if strategy.closedtrades > strategy.closedtrades[1]
+    dailyTrades += 1
+tradeCountOK = maxTrades == 0 or dailyTrades < maxTrades
+
+// Daily loss tracking
+var float dailyStartEquity = strategy.equity
+if ta.change(time("D"))
+    dailyStartEquity := strategy.equity
+dailyPnL = strategy.equity - dailyStartEquity
+dailyLossOK = maxDailyLoss == 0 or dailyPnL > -maxDailyLoss
+
+// Combined filters (trend filter applied per-direction below)
+baseFilters = sessionOK and volOK and atrOK and cooldownOK and tradeCountOK and dailyLossOK and inDateRange
+
+// ─────────────────────────────────────────────────────────────
+// ENTRY CONDITIONS (raw signals before fill delay)
+// ─────────────────────────────────────────────────────────────
+rawLongCond  = buySignal and baseFilters and trendLongOK
+rawShortCond = sellSignal and baseFilters and trendShortOK
+
+// ─────────────────────────────────────────────────────────────
+// FILL DELAY SYSTEM (Realism)
+//
+// Simulates webhook pipeline latency on a 1-min HA chart.
+// Signal at bar N → entry at bar N+fillDelay → fills after that.
+//
+// With calc_on_every_tick=true, signals detect mid-bar, so
+// fillDelay=1 is conservative (real latency is < 1 bar).
+//
+// For SuperTrend Flip mode, the delayed entry still flips the
+// position — the flip just happens 1 bar later (realistic).
+// ─────────────────────────────────────────────────────────────
+
+var bool pendingLong  = false
+var bool pendingShort = false
+var int  signalBar    = 0
+
+int effectiveDelay = useRealism ? fillDelayBars : 0
+
+// New signal — start pending (or enter immediately if no delay)
+if rawLongCond and not pendingLong
+    if effectiveDelay == 0
+        pendingLong := false
+    else
+        pendingLong  := true
+        pendingShort := false
+        signalBar    := bar_index
+
+if rawShortCond and not pendingShort
+    if effectiveDelay == 0
+        pendingShort := false
+    else
+        pendingShort := true
+        pendingLong  := false
+        signalBar    := bar_index
+
+// Cancel stale signals
+if cancelStale and useRealism
+    if pendingLong and (not sessionOK or not dailyLossOK or not tradeCountOK or not trendLongOK or not inDateRange)
+        pendingLong := false
+    if pendingShort and (not sessionOK or not dailyLossOK or not tradeCountOK or not trendShortOK or not inDateRange)
+        pendingShort := false
+
+// Check delay elapsed
+bool delayLong  = pendingLong and bar_index >= signalBar + effectiveDelay
+bool delayShort = pendingShort and bar_index >= signalBar + effectiveDelay
+
+// Final entry conditions
+bool longCond  = (rawLongCond and effectiveDelay == 0) or delayLong
+bool shortCond = (rawShortCond and effectiveDelay == 0) or delayShort
+
+// ─────────────────────────────────────────────────────────────
+// ORDER EXECUTION
+// ─────────────────────────────────────────────────────────────
+
+// --- Entries ---
+if longCond
+    strategy.entry("BUY", strategy.long)
+    pendingLong := false
+if shortCond
+    strategy.entry("SELL", strategy.short)
+    pendingShort := false
+
+// --- Exits by mode ---
+// Exit logic already uses strategy.exit() correctly for all price-level exits.
+// strategy.entry() opposite direction handles SuperTrend Flip (position reversal).
+// strategy.close_all() handles EOD flatten (time-based).
+
+if strategy.position_size > 0
+    entryPx   = strategy.position_avg_price
+    profitTks = (close - entryPx) / syminfo.mintick
+
+    if exitMode == "SuperTrend Flip"
+        if useBE and profitTks >= beTicks
+            beStop = entryPx + (beOffset * syminfo.mintick)
+            strategy.exit("BUY_BE", from_entry="BUY", stop=beStop)
+
+    else if exitMode == "Fixed Target + Stop"
+        tpPx = entryPx + (tpTicks * syminfo.mintick)
+        slPx = entryPx - (slTicks * syminfo.mintick)
+        if useBE and profitTks >= beTicks
+            slPx := entryPx + (beOffset * syminfo.mintick)
+        strategy.exit("BUY_X", from_entry="BUY", limit=tpPx, stop=slPx)
+
+    else if exitMode == "Trailing Stop"
+        if profitTks >= trailActTicks
+            strategy.exit("BUY_TR", from_entry="BUY", trail_points=trailActTicks, trail_offset=trailTicks)
+        else if useBE and profitTks >= beTicks
+            beStop = entryPx + (beOffset * syminfo.mintick)
+            strategy.exit("BUY_BE", from_entry="BUY", stop=beStop)
+
+    else if exitMode == "SuperTrend + Target"
+        tpPx = entryPx + (tpTicks * syminfo.mintick)
+        if useBE and profitTks >= beTicks
+            beStop = entryPx + (beOffset * syminfo.mintick)
+            strategy.exit("BUY_X", from_entry="BUY", limit=tpPx, stop=beStop)
+        else
+            strategy.exit("BUY_X", from_entry="BUY", limit=tpPx)
+
+if strategy.position_size < 0
+    entryPx   = strategy.position_avg_price
+    profitTks = (entryPx - close) / syminfo.mintick
+
+    if exitMode == "SuperTrend Flip"
+        if useBE and profitTks >= beTicks
+            beStop = entryPx - (beOffset * syminfo.mintick)
+            strategy.exit("SELL_BE", from_entry="SELL", stop=beStop)
+
+    else if exitMode == "Fixed Target + Stop"
+        tpPx = entryPx - (tpTicks * syminfo.mintick)
+        slPx = entryPx + (slTicks * syminfo.mintick)
+        if useBE and profitTks >= beTicks
+            slPx := entryPx - (beOffset * syminfo.mintick)
+        strategy.exit("SELL_X", from_entry="SELL", limit=tpPx, stop=slPx)
+
+    else if exitMode == "Trailing Stop"
+        if profitTks >= trailActTicks
+            strategy.exit("SELL_TR", from_entry="SELL", trail_points=trailActTicks, trail_offset=trailTicks)
+        else if useBE and profitTks >= beTicks
+            beStop = entryPx - (beOffset * syminfo.mintick)
+            strategy.exit("SELL_BE", from_entry="SELL", stop=beStop)
+
+    else if exitMode == "SuperTrend + Target"
+        tpPx = entryPx - (tpTicks * syminfo.mintick)
+        if useBE and profitTks >= beTicks
+            beStop = entryPx - (beOffset * syminfo.mintick)
+            strategy.exit("SELL_X", from_entry="SELL", limit=tpPx, stop=beStop)
+        else
+            strategy.exit("SELL_X", from_entry="SELL", limit=tpPx)
+
+// --- Flatten at session close ---
+if closeEOD and useSessFilter
+    if na(time(timeframe.period, sessStart, sessTimezone)) and not na(time(timeframe.period, sessStart, sessTimezone)[1])
+        strategy.close_all(comment="EOD Flat")
+
+// ─────────────────────────────────────────────────────────────
+// PLOTS
+// ─────────────────────────────────────────────────────────────
+upPlot = plot(showBands and trend == 1 ? up : na, "Up Trend", style=plot.style_linebr, linewidth=2, color=upColor)
+dnPlot = plot(showBands and trend == 1 ? na : dn, "Down Trend", style=plot.style_linebr, linewidth=2, color=dnColor)
+
+// Trend EMA reference line
+plot(useTrendFilter ? trendEma : na, "Trend EMA", color=color.new(color.orange, 50), linewidth=1)
+
+// Signal shapes — show raw signals (before delay)
+plotshape(buySignal and showBands ? up : na, "UpTrend Begins",
+     location=location.absolute, style=shape.circle, size=size.tiny, color=upColor)
+plotshape(buySignal and showSignals ? up : na, "Buy Signal",
+     text="Buy", location=location.absolute, style=shape.labelup, size=size.tiny,
+     color=upColor, textcolor=color.white)
+
+plotshape(sellSignal and showBands ? dn : na, "DownTrend Begins",
+     location=location.absolute, style=shape.circle, size=size.tiny, color=dnColor)
+plotshape(sellSignal and showSignals ? dn : na, "Sell Signal",
+     text="Sell", location=location.absolute, style=shape.labeldown, size=size.tiny,
+     color=dnColor, textcolor=color.white)
+
+// Delayed fill markers
+plotshape(delayLong, "Delayed Long Fill", shape.diamond, location.belowbar, color.new(upColor, 0), size=size.tiny, text="FILL")
+plotshape(delayShort, "Delayed Short Fill", shape.diamond, location.abovebar, color.new(dnColor, 0), size=size.tiny, text="FILL")
+
+// Pending signal markers
+plotshape(pendingLong, "Pending Long", shape.circle, location.belowbar, color.new(color.yellow, 50), size=size.tiny)
+plotshape(pendingShort, "Pending Short", shape.circle, location.abovebar, color.new(color.yellow, 50), size=size.tiny)
+
+// Fills
+mPlot = plot(ohlc4, title="", style=plot.style_circles, linewidth=0, display=display.none)
+longFillColor  = showFill and trend == 1 ? color.new(upColor, fillAlpha) : color.new(color.white, 100)
+shortFillColor = showFill and trend == -1 ? color.new(dnColor, fillAlpha) : color.new(color.white, 100)
+fill(mPlot, upPlot, title="UpTrend Fill", color=longFillColor)
+fill(mPlot, dnPlot, title="DownTrend Fill", color=shortFillColor)
+
+// Bar coloring
+buy1  = ta.barssince(buySignal)
+sell1 = ta.barssince(sellSignal)
+barColor = buy1[1] < sell1[1] ? upColor : buy1[1] > sell1[1] ? dnColor : na
+barcolor(barColoring ? barColor : na)
+
+// ─────────────────────────────────────────────────────────────
+// INFO TABLE
+// ─────────────────────────────────────────────────────────────
+if showTable and barstate.islast
+    var table infoTbl = table.new(position.top_right, 2, 13,
+         bgcolor=color.new(color.black, 80), border_color=color.new(color.gray, 60), border_width=1)
+
+    // Stability test row — bright highlight when active
+    table.cell(infoTbl, 0, 0, "Stability", text_color=color.gray, text_size=size.small)
+    string stabText = runStabilityTest ? stabilityTestCase : "OFF"
+    color stabColor = runStabilityTest and stabilityTestCase != "Default" ? #FF00FF : runStabilityTest ? color.yellow : color.gray
+    table.cell(infoTbl, 1, 0, stabText, text_color=stabColor, text_size=size.small,
+         bgcolor=runStabilityTest and stabilityTestCase != "Default" ? color.new(#FF00FF, 85) : na)
+
+    table.cell(infoTbl, 0, 1, "Realism", text_color=color.gray, text_size=size.small)
+    string realText = useRealism ? "ON (" + str.tostring(fillDelayBars) + "bar)" : "OFF (raw)"
+    table.cell(infoTbl, 1, 1, realText, text_color=useRealism ? color.yellow : color.gray, text_size=size.small)
+
+    table.cell(infoTbl, 0, 2, "Broker Preset", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 2, execMode, text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 3, "Comm/Side", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 3, "$" + str.tostring(commPerSide, "#.##"), text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 4, "Slippage", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 4, str.tostring(slipTicks) + " ticks", text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 5, "Est. RT Cost", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 5, "$" + str.tostring(rtCost, "#.##"),
+         text_color=rtCost > 5 ? color.orange : color.green, text_size=size.small)
+
+    table.cell(infoTbl, 0, 6, "Exit Mode", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 6, exitMode, text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 7, "Trend", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 7, trend == 1 ? "▲ LONG" : "▼ SHORT",
+         text_color=trend == 1 ? upColor : dnColor, text_size=size.small)
+
+    table.cell(infoTbl, 0, 8, "Daily P&L", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 8, "$" + str.tostring(dailyPnL, "#.##"),
+         text_color=dailyPnL >= 0 ? color.green : color.red, text_size=size.small)
+
+    table.cell(infoTbl, 0, 9, "Trades Today", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 9, str.tostring(dailyTrades), text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 10, "Session", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 10, sessionOK ? "ACTIVE" : "CLOSED",
+         text_color=sessionOK ? color.green : color.red, text_size=size.small)
+
+    table.cell(infoTbl, 0, 11, "Filters", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 11, baseFilters ? "PASS" : "BLOCKED",
+         text_color=baseFilters ? color.green : color.orange, text_size=size.small)
+
+    table.cell(infoTbl, 0, 12, "Pending", text_color=color.gray, text_size=size.small)
+    string pendText = pendingLong ? "LONG wait" : pendingShort ? "SHORT wait" : "---"
+    table.cell(infoTbl, 1, 12, pendText,
+         text_color=(pendingLong or pendingShort) ? color.yellow : color.gray, text_size=size.small)

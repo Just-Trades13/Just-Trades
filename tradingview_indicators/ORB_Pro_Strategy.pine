@@ -1,0 +1,335 @@
+//// Property of AlgoKevin 2026 — Reworked with Realism + Stability Test
+//@version=5
+strategy("ORB Pro+ Strategy [Just Trades]", overlay=true,
+     initial_capital=50000,
+     default_qty_type=strategy.fixed,
+     default_qty_value=1,
+     pyramiding=0,
+     process_orders_on_close=false,
+     calc_on_every_tick=false,
+     commission_type=strategy.commission.cash_per_contract,
+     commission_value=0.62,
+     slippage=1,
+     fill_orders_on_standard_ohlc=true,
+     use_bar_magnifier=true)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════════════════════════
+grpORB = "Opening Range"
+orbStartTime = input.string("0930", "Start Time (HHMM ET)", tooltip="Enter time in 24hr format. Examples: 0800, 0930, 1400", group=grpORB)
+orbDuration  = input.string("15 Min", "Duration", options=["5 Min", "15 Min", "30 Min", "1 Hour", "Custom"], group=grpORB)
+orbCustomEnd = input.string("0945", "Custom End (HHMM ET)", tooltip="Only used when Duration is 'Custom'", group=grpORB)
+
+grpSignals = "Trade Settings"
+i_orbEntryMode        = input.string("Breakout", "Entry Mode", options=["Breakout", "Retest Zone", "Retest Midpoint"], tooltip="Breakout: confirmed close through ORB level.\nRetest Zone: wick back to broken level, close outside.\nRetest Midpoint: wick back to ORB mid, close outside.", group=grpSignals)
+_inp_orbRetestTimeout = input.int(20, "Retest Timeout (bars)", minval=3, maxval=100, tooltip="Max bars to wait for retest. Only used in Retest modes.", group=grpSignals)
+i_orbSLMethod         = input.string("Opposite Side", "Stop Loss Method", options=["Midpoint", "Opposite Side", "Fixed Points"], tooltip="Midpoint: SL at ORB mid.\nOpposite Side: SL at ORB low (long) / high (short).\nFixed Points: user-defined distance.", group=grpSignals)
+i_orbSLPoints         = input.float(20.0, "SL Fixed Points", minval=0.25, step=0.25, tooltip="Only used when SL = Fixed Points.", group=grpSignals)
+i_direction           = input.string("Both", "Direction Filter", options=["Both", "Long Only", "Short Only"], group=grpSignals)
+
+grpTP = "Take Profit & Position Sizing"
+i_orbContracts = input.int(1, "Contracts", minval=1, maxval=1000, group=grpTP)
+_inp_orbTP1RR  = input.float(2.0, "TP1 R:R", minval=0.1, step=0.1, group=grpTP, inline="tp1")
+i_orbTP1Qty    = input.int(1, "Close Qty", minval=1, maxval=100, tooltip="Contracts to close at TP1.", group=grpTP, inline="tp1")
+_inp_orbTP2RR  = input.float(3.0, "TP2 R:R", minval=0.1, step=0.1, group=grpTP, inline="tp2")
+i_orbTP2Qty    = input.int(0, "Close Qty", minval=0, maxval=100, tooltip="Contracts to close at TP2. 0 = skip.", group=grpTP, inline="tp2")
+_inp_orbTP3RR  = input.float(4.0, "TP3 R:R", minval=0.1, step=0.1, group=grpTP, inline="tp3")
+i_orbTP3Qty    = input.int(0, "Close Qty", minval=0, maxval=100, tooltip="Contracts to close at TP3. 0 = close all remaining.", group=grpTP, inline="tp3")
+
+grpEOD = "End of Day"
+i_closeEOD = input.bool(true, "Close Position at EOD", tooltip="Flatten any open position before market close.", group=grpEOD, inline="eod")
+i_eodHour  = input.int(15, "Hour (ET)", minval=0, maxval=23, group=grpEOD, inline="eod")
+i_eodMin   = input.int(55, "Min", minval=0, maxval=59, group=grpEOD, inline="eod")
+
+// ── Visuals ──
+grpVis   = "Visuals"
+showDash = input.bool(true, "Show Dashboard", group=grpVis)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STABILITY TEST MODE
+// ══════════════════════════════════════════════════════════════════════════════
+grp_stab = "═══ STABILITY TEST ═══"
+runStabilityTest = input.bool(false, "Enable Stability Test", group=grp_stab,
+     tooltip="Override ONE parameter at a time with +/-20% variation.\nRecord Net Profit, PF, WR, Max DD for each test case.\nKeep OFF for normal trading.")
+stabilityTestCase = input.string("Default", "Test Case",
+     options=["Default",
+              "TP1 R:R -20%", "TP1 R:R +20%",
+              "TP2 R:R -20%", "TP2 R:R +20%",
+              "TP3 R:R -20%", "TP3 R:R +20%",
+              "Timeout -20%", "Timeout +20%"],
+     group=grp_stab)
+
+// Apply stability test overrides
+i_orbTP1RR = runStabilityTest and stabilityTestCase == "TP1 R:R -20%" ? 1.6 :
+             runStabilityTest and stabilityTestCase == "TP1 R:R +20%" ? 2.4 : _inp_orbTP1RR
+
+i_orbTP2RR = runStabilityTest and stabilityTestCase == "TP2 R:R -20%" ? 2.4 :
+             runStabilityTest and stabilityTestCase == "TP2 R:R +20%" ? 3.6 : _inp_orbTP2RR
+
+i_orbTP3RR = runStabilityTest and stabilityTestCase == "TP3 R:R -20%" ? 3.2 :
+             runStabilityTest and stabilityTestCase == "TP3 R:R +20%" ? 4.8 : _inp_orbTP3RR
+
+i_orbRetestTimeout = runStabilityTest and stabilityTestCase == "Timeout -20%" ? 16 :
+                     runStabilityTest and stabilityTestCase == "Timeout +20%" ? 24 : _inp_orbRetestTimeout
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TIME CALCULATION
+// ══════════════════════════════════════════════════════════════════════════════
+calcEndTime(simple string startTime, simple string duration) =>
+    startHour = math.floor(str.tonumber(str.substring(startTime, 0, 2)))
+    startMin  = math.floor(str.tonumber(str.substring(startTime, 2, 4)))
+    addMins = switch duration
+        "5 Min"  => 5
+        "15 Min" => 15
+        "30 Min" => 30
+        "1 Hour" => 60
+        => 0
+    totalMins  = startMin + addMins
+    endHour    = startHour + math.floor(totalMins / 60)
+    endMin     = totalMins % 60
+    endHourStr = endHour < 10 ? "0" + str.tostring(endHour) : str.tostring(endHour)
+    endMinStr  = endMin  < 10 ? "0" + str.tostring(endMin)  : str.tostring(endMin)
+    endHourStr + endMinStr
+
+orbEndTime = orbDuration == "Custom" ? orbCustomEnd : calcEndTime(orbStartTime, orbDuration)
+orbSession = orbStartTime + "-" + orbEndTime
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STATE VARIABLES
+// ══════════════════════════════════════════════════════════════════════════════
+var float currentORBHigh     = na
+var float currentORBLow      = na
+var float currentORBMid      = na
+var bool  orbBuilding        = false
+var bool  orbComplete        = false
+var bool  orbSignalFired     = false
+var bool  orbBreakoutPending = false
+var int   orbBreakoutDir     = 0
+var int   orbBreakoutBar     = 0
+var bool  eodClosedToday     = false
+var float activeSL           = na
+var float activeTP           = na
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TIME CHECKS
+// ══════════════════════════════════════════════════════════════════════════════
+newDay       = dayofweek != dayofweek[1]
+inORBSession = not na(time(timeframe.period, orbSession, "America/New_York"))
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DAILY RESET
+// ══════════════════════════════════════════════════════════════════════════════
+if newDay
+    currentORBHigh     := na
+    currentORBLow      := na
+    currentORBMid      := na
+    orbBuilding        := false
+    orbComplete        := false
+    orbSignalFired     := false
+    orbBreakoutPending := false
+    orbBreakoutDir     := 0
+    orbBreakoutBar     := 0
+    eodClosedToday     := false
+    activeSL           := na
+    activeTP           := na
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ORB TRACKING — Build the Opening Range
+// ══════════════════════════════════════════════════════════════════════════════
+if inORBSession and not orbComplete
+    if not orbBuilding
+        orbBuilding := true
+    if na(currentORBHigh) or high > currentORBHigh
+        currentORBHigh := high
+    if na(currentORBLow) or low < currentORBLow
+        currentORBLow := low
+
+if not inORBSession and orbBuilding and not orbComplete and not na(currentORBHigh)
+    orbComplete := true
+    currentORBMid := (currentORBHigh + currentORBLow) / 2
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SIGNAL DETECTION — Breakout / Retest Zone / Retest Midpoint
+// ══════════════════════════════════════════════════════════════════════════════
+orbHighBreak = orbComplete and ta.crossover(close, currentORBHigh)
+orbLowBreak  = orbComplete and ta.crossunder(close, currentORBLow)
+
+bool orbLongSignal  = false
+bool orbShortSignal = false
+
+// ── Phase 1: Retest validation / invalidation (runs FIRST so invalidation can re-detect) ──
+if orbBreakoutPending and bar_index > orbBreakoutBar and not orbSignalFired
+    _retestLvl = i_orbEntryMode == "Retest Midpoint" ? currentORBMid : (orbBreakoutDir == 1 ? currentORBHigh : currentORBLow)
+    if orbBreakoutDir == 1
+        if low <= _retestLvl and close > currentORBHigh
+            orbLongSignal      := true
+            orbBreakoutPending := false
+        else if close <= currentORBHigh
+            orbBreakoutPending := false
+    else if orbBreakoutDir == -1
+        if high >= _retestLvl and close < currentORBLow
+            orbShortSignal     := true
+            orbBreakoutPending := false
+        else if close >= currentORBLow
+            orbBreakoutPending := false
+    if orbBreakoutPending and bar_index - orbBreakoutBar >= i_orbRetestTimeout
+        orbBreakoutPending := false
+
+// ── Phase 2: Detect breakout candle close through level ──
+if orbComplete and not orbSignalFired
+    if i_orbEntryMode == "Breakout"
+        if barstate.isconfirmed and orbHighBreak
+            orbLongSignal := true
+        else if barstate.isconfirmed and orbLowBreak
+            orbShortSignal := true
+    else
+        if orbHighBreak and not orbBreakoutPending
+            orbBreakoutPending := true
+            orbBreakoutDir     := 1
+            orbBreakoutBar     := bar_index
+        else if orbLowBreak and not orbBreakoutPending
+            orbBreakoutPending := true
+            orbBreakoutDir     := -1
+            orbBreakoutBar     := bar_index
+
+// ── Direction filter ──
+if i_direction == "Long Only"
+    orbShortSignal := false
+if i_direction == "Short Only"
+    orbLongSignal := false
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STRATEGY EXECUTION — Entry + Exit (TP/SL)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Long Entry ──
+if orbLongSignal
+    orbSignalFired := true
+    _sl = switch i_orbSLMethod
+        "Midpoint"      => currentORBMid
+        "Opposite Side" => currentORBLow
+        => close - i_orbSLPoints
+    _risk = math.abs(close - _sl)
+    _tp1 = _risk > 0 ? close + _risk * i_orbTP1RR : na
+    _tp2 = _risk > 0 ? close + _risk * i_orbTP2RR : na
+    _tp3 = _risk > 0 ? close + _risk * i_orbTP3RR : na
+    strategy.entry("Long", strategy.long, qty=i_orbContracts, comment="ORB Long")
+    if _risk > 0
+        if i_orbTP1Qty > 0
+            strategy.exit("TP1", from_entry="Long", qty=i_orbTP1Qty, limit=_tp1, stop=_sl)
+        if i_orbTP2Qty > 0
+            strategy.exit("TP2", from_entry="Long", qty=i_orbTP2Qty, limit=_tp2, stop=_sl)
+        strategy.exit("TP3/SL", from_entry="Long", limit=_tp3, stop=_sl)
+    activeSL := _risk > 0 ? _sl  : na
+    activeTP := _risk > 0 ? _tp1 : na
+
+// ── Short Entry ──
+if orbShortSignal
+    orbSignalFired := true
+    _sl = switch i_orbSLMethod
+        "Midpoint"      => currentORBMid
+        "Opposite Side" => currentORBHigh
+        => close + i_orbSLPoints
+    _risk = math.abs(_sl - close)
+    _tp1 = _risk > 0 ? close - _risk * i_orbTP1RR : na
+    _tp2 = _risk > 0 ? close - _risk * i_orbTP2RR : na
+    _tp3 = _risk > 0 ? close - _risk * i_orbTP3RR : na
+    strategy.entry("Short", strategy.short, qty=i_orbContracts, comment="ORB Short")
+    if _risk > 0
+        if i_orbTP1Qty > 0
+            strategy.exit("TP1", from_entry="Short", qty=i_orbTP1Qty, limit=_tp1, stop=_sl)
+        if i_orbTP2Qty > 0
+            strategy.exit("TP2", from_entry="Short", qty=i_orbTP2Qty, limit=_tp2, stop=_sl)
+        strategy.exit("TP3/SL", from_entry="Short", limit=_tp3, stop=_sl)
+    activeSL := _risk > 0 ? _sl  : na
+    activeTP := _risk > 0 ? _tp1 : na
+
+// ══════════════════════════════════════════════════════════════════════════════
+// END OF DAY CLOSE
+// ══════════════════════════════════════════════════════════════════════════════
+if i_closeEOD and not eodClosedToday and strategy.position_size != 0
+    _nyTime  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+    _eodTime = i_eodHour * 60 + i_eodMin
+    if _nyTime >= _eodTime
+        strategy.close_all(comment="EOD Close")
+        eodClosedToday := true
+        activeSL := na
+        activeTP := na
+
+// Clear SL/TP plots when position closes (hit TP or SL)
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    activeSL := na
+    activeTP := na
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PLOTS — ORB Levels, SL/TP, Entry Markers
+// ══════════════════════════════════════════════════════════════════════════════
+plot(orbComplete ? currentORBHigh : na, "ORB High", color=#00d4ff, style=plot.style_linebr, linewidth=2)
+plot(orbComplete ? currentORBLow  : na, "ORB Low",  color=#00d4ff, style=plot.style_linebr, linewidth=2)
+plot(orbComplete ? currentORBMid  : na, "ORB Mid",  color=color.new(#00d4ff, 50), style=plot.style_linebr, linewidth=1)
+
+plot(activeSL, "Stop Loss",   color=color.new(color.red, 0),   style=plot.style_linebr, linewidth=1)
+plot(activeTP, "Take Profit", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=1)
+
+bgcolor(inORBSession and not orbComplete ? color.new(#00d4ff, 93) : na, title="ORB Building")
+
+plotshape(orbLongSignal,  title="ORB Long",  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.small, text="ORB LONG")
+plotshape(orbShortSignal, title="ORB Short", style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small, text="ORB SHORT")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════════════════════
+if barstate.islast and showDash
+    var table dash = table.new(position.top_right, 2, 12, bgcolor=color.new(#1e1e1e, 10), border_width=1, border_color=color.new(#333333, 0))
+
+    _hdrBg = color.new(#00d4ff, 20)
+    _lblBg = color.new(#2a2a2a, 0)
+    _valBg = color.new(#1e1e1e, 0)
+    _tc    = color.white
+    _sz    = size.small
+
+    // Row 0 — Header
+    table.cell(dash, 0, 0, "ORB Pro+", text_color=_tc, bgcolor=_hdrBg, text_size=_sz)
+    table.cell(dash, 1, 0, "v1.1",     text_color=_tc, bgcolor=_hdrBg, text_size=_sz)
+
+    // Row 1 — Stability Test
+    _stabActive = runStabilityTest and stabilityTestCase != "Default"
+    table.cell(dash, 0, 1, "Test Mode", text_color=_tc, bgcolor=_stabActive ? #FF00FF : _lblBg, text_size=_sz)
+    table.cell(dash, 1, 1, _stabActive ? stabilityTestCase : "OFF", text_color=_tc, bgcolor=_stabActive ? #FF00FF : _valBg, text_size=_sz)
+
+    // Row 2 — ORB Window
+    table.cell(dash, 0, 2, "ORB Window", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 2, orbStartTime + "-" + orbEndTime + " ET", text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 3 — Entry Mode
+    table.cell(dash, 0, 3, "Entry", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 3, i_orbEntryMode, text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 4 — Direction
+    table.cell(dash, 0, 4, "Direction", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 4, i_direction, text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 5 — Stop Loss
+    table.cell(dash, 0, 5, "Stop Loss", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 5, i_orbSLMethod == "Fixed Points" ? i_orbSLMethod + " (" + str.tostring(i_orbSLPoints) + ")" : i_orbSLMethod, text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 6 — Contracts
+    table.cell(dash, 0, 6, "Contracts", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 6, str.tostring(i_orbContracts), text_color=_tc, bgcolor=_valBg, text_size=_sz)
+
+    // Row 7 — TP1
+    table.cell(dash, 0, 7, "TP1", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 7, str.tostring(i_orbTP1RR, "#.#") + "R × " + str.tostring(i_orbTP1Qty) + " ct", text_color=color.green, bgcolor=_valBg, text_size=_sz)
+
+    // Row 8 — TP2
+    table.cell(dash, 0, 8, "TP2", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 8, i_orbTP2Qty > 0 ? str.tostring(i_orbTP2RR, "#.#") + "R × " + str.tostring(i_orbTP2Qty) + " ct" : "OFF", text_color=i_orbTP2Qty > 0 ? color.green : color.gray, bgcolor=_valBg, text_size=_sz)
+
+    // Row 9 — TP3
+    table.cell(dash, 0, 9, "TP3", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 9, str.tostring(i_orbTP3RR, "#.#") + "R × " + (i_orbTP3Qty > 0 ? str.tostring(i_orbTP3Qty) + " ct" : "ALL"), text_color=color.green, bgcolor=_valBg, text_size=_sz)
+
+    // Row 10 — EOD Close
+    table.cell(dash, 0, 10, "EOD Close", text_color=_tc, bgcolor=_lblBg, text_size=_sz)
+    table.cell(dash, 1, 10, i_closeEOD ? str.tostring(i_eodHour) + ":" + (i_eodMin < 10 ? "0" : "") + str.tostring(i_eodMin) + " ET" : "OFF", text_color=i_closeEOD ? _tc : color.gray, bgcolor=_valBg, text_size=_sz)

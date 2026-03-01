@@ -1,0 +1,761 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © JustTrades - JT Trend Pullback V5 — Synthetic Renko Engine
+//
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  V5: TREND PULLBACK ON SYNTHETIC RENKO                                ║
+// ║                                                                        ║
+// ║  Run on a REGULAR 1-minute chart. Renko bricks built internally.       ║
+// ║  All indicators from Renko data. Execution at REAL market prices.      ║
+// ║                                                                        ║
+// ║  STRATEGY:                                                             ║
+// ║  • Qline confirms trend direction (bull/bear)                          ║
+// ║  • Price pulls back to Qwave basis → ENTRY with trend                  ║
+// ║  • Price breaks basis against position → EXIT                          ║
+// ║  • Hard stop as safety net only                                        ║
+// ║                                                                        ║
+// ║  The basis IS the trailing stop. Simple, clean, trend-following.       ║
+// ║                                                                        ║
+// ║  EXIT DECISION MATRIX:                                                 ║
+// ║  • Hard stop    → strategy.exit(stop=)  — intra-bar fill at exact $    ║
+// ║  • Trail stop   → strategy.exit(stop=)  — intra-bar fill at exact $    ║
+// ║  • Basis break  → strategy.close()      — signal exit, fastest webhook ║
+// ║  • EOD / Limit  → strategy.close_all()  — flatten everything now       ║
+// ║                                                                        ║
+// ║  REALISM MODE (default ON):                                            ║
+// ║  • Fill delay simulates webhook pipeline latency (1-2 bar delay)       ║
+// ║  • Multi-brick filter rejects chase entries                            ║
+// ║  • Conservative slippage (8 ticks default)                             ║
+// ║  • Turn OFF realism to see raw strategy edge, ON for real expectations ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+//@version=6
+strategy("JT Trend Pullback V5 [Just Trades]", overlay=true, default_qty_type=strategy.fixed, default_qty_value=1,
+         initial_capital=50000, commission_type=strategy.commission.cash_per_contract, commission_value=0.62,
+         calc_on_every_tick=false, max_bars_back=500, pyramiding=0, slippage=8,
+         backtest_fill_limits_assumption=2)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ INPUTS ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Realism Mode ──
+// These settings simulate real-world webhook execution latency.
+// Turn OFF to see raw strategy edge. Turn ON for realistic P&L expectations.
+grp_realism = "═══ REALISM MODE ═══"
+useRealism     = input.bool(true, "Enable Realism Mode", group=grp_realism, tooltip="Master switch. When ON, applies fill delay + multi-brick filter + slippage for realistic backtest numbers. When OFF, raw strategy results (will be inflated).")
+fillDelayBars  = input.int(1, "Fill Delay (bars)", minval=0, maxval=5, group=grp_realism, tooltip="Bars to wait after signal before entering. Simulates: TradingView alert (100-500ms) + webhook to server (50-200ms) + server to Tradovate (200-500ms) + fill (50-100ms). 1 bar = 1 minute on 1-min chart. Conservative: use 2.")
+maxBricksPerBar = input.int(1, "Max Bricks Per Bar", minval=1, maxval=10, group=grp_realism, tooltip="Skip entry if more than this many bricks formed on the same bar. Multiple bricks = fast move = you'd be chasing in real-time. 1 = strictest (recommended).")
+cancelStaleSignal = input.bool(true, "Cancel Stale Signals", group=grp_realism, tooltip="If conditions change during fill delay (Qline flips, session ends, daily limit hit), cancel the pending entry. Realistic: ON.")
+
+// ── Renko Engine ──
+grp_renko = "═══ RENKO ENGINE ═══"
+_inp_brickSize = input.float(10.0, "Brick Size (points)", minval=1.0, maxval=100.0, step=1.0, group=grp_renko, tooltip="NQ/MNQ: 10-15, ES/MES: 3-5")
+brickCooldown = input.int(2, "Brick Cooldown", minval=0, maxval=20, group=grp_renko, tooltip="Minimum bricks between entries after an exit")
+showRenko     = input.bool(true, "Show Renko Level", group=grp_renko)
+
+// ── Trend & Entry ──
+grp_trend = "═══ TREND & ENTRY ═══"
+tradeDirection  = input.string("Both", "Trade Direction", options=["Long", "Short", "Both"], group=grp_trend)
+basisTouchDist  = input.float(0.3, "Basis Touch Distance (ATR)", minval=0.1, maxval=2.0, step=0.1, group=grp_trend, tooltip="How close price must get to basis to count as a pullback touch. Lower = stricter")
+requireBrickDir = input.bool(true, "Require Brick Direction Match", group=grp_trend, tooltip="Entry brick must match trend direction (first resumption brick)")
+minTrendBricks  = input.int(3, "Min Trend Bricks", minval=2, maxval=10, group=grp_trend, tooltip="Minimum consecutive same-direction bricks to confirm a trend before looking for pullbacks")
+showDashboard   = input.bool(true, "Show Dashboard", group=grp_trend)
+
+// ── Exit & Risk ──
+grp_exit = "═══ EXIT & RISK ═══"
+_inp_basisExitBars = input.int(3, "Bars Below Basis to Exit", minval=1, maxval=10, group=grp_exit, tooltip="How many 1-min bars price must stay wrong side of basis before closing. Prevents premature exits on wicks")
+_inp_hardStopMult  = input.float(3.0, "Hard Stop (ATR mult)", minval=1.0, maxval=10.0, step=0.5, group=grp_exit, tooltip="Emergency stop only. Basis exit handles normal closes")
+useTrailTighten = input.bool(true, "Tighten Trail in Profit", group=grp_exit, tooltip="Once in profit, trail tightens from basis to closer distance")
+trailTightenATR = input.float(0.5, "Tighten Distance (ATR)", minval=0.1, maxval=2.0, step=0.1, group=grp_exit)
+trailEngageMult = input.float(1.0, "Trail Engage Distance (ATR)", minval=0.25, maxval=5.0, step=0.25, group=grp_exit, tooltip="How far into profit before trail tightens")
+
+// ── Session ──
+grp_session = "═══ SESSION ═══"
+useSessionFilter = input.bool(true, "RTH Only", group=grp_session)
+sessionStart    = input.session("0930-1600", "Session Window", group=grp_session)
+
+// ── Daily Limits ──
+grp_limits = "═══ DAILY LIMITS ═══"
+useMaxLoss      = input.bool(true, "Enable Max Daily Loss", group=grp_limits)
+maxDailyLoss    = input.float(500.0, "Max Daily Loss ($)", minval=50.0, maxval=10000.0, step=50.0, group=grp_limits)
+useTradeLimit   = input.bool(true, "Enable Trade Limit", group=grp_limits)
+maxDailyTrades  = input.int(8, "Max Trades Per Day", minval=1, maxval=50, group=grp_limits)
+
+// ── Qwave Bands ──
+grp_qwave = "═══ QWAVE BANDS ═══"
+_inp_qwaveLen   = input.int(20, "Band Length", minval=5, maxval=100, group=grp_qwave)
+_inp_qwaveDev   = input.float(2.0, "Band Deviation", minval=0.5, maxval=5.0, step=0.1, group=grp_qwave)
+qwaveSmooth     = input.int(5, "APB Smoothing", minval=1, maxval=20, group=grp_qwave)
+showQwave       = input.bool(true, "Show Qwave", group=grp_qwave)
+
+// ── Qline ──
+grp_qline = "═══ QLINE TREND ═══"
+_inp_qlineLen   = input.int(10, "Length", minval=1, maxval=50, group=grp_qline)
+_inp_qlineMult  = input.float(3.0, "Multiplier", minval=0.5, maxval=10.0, step=0.1, group=grp_qline)
+qlineReact      = input.int(2, "Reactivity", minval=1, maxval=10, group=grp_qline)
+showQline       = input.bool(true, "Show Qline", group=grp_qline)
+
+// ── Stability Test Mode ──
+grp_stab = "═══ STABILITY TEST ═══"
+runStabilityTest = input.bool(false, "Enable Stability Test", group=grp_stab,
+     tooltip="Override ONE parameter at a time with +/-20% variation. Record Net Profit, PF, WR, Max DD for each test case. When OFF, strategy runs with normal values (zero change).")
+stabilityTestCase = input.string("Default", "Test Case", group=grp_stab,
+     options=["Default",
+              "brickSize -20%", "brickSize +20%",
+              "qwaveLen -20%", "qwaveLen +20%",
+              "qwaveDev -20%", "qwaveDev +20%",
+              "qlineLen -20%", "qlineLen +20%",
+              "qlineMult -20%", "qlineMult +20%",
+              "hardStopMult -20%", "hardStopMult +20%",
+              "basisExitBars -33%", "basisExitBars +33%"])
+
+// ── Apply stability test overrides ──
+brickSize    = runStabilityTest and stabilityTestCase == "brickSize -20%"    ? 8.0  :
+               runStabilityTest and stabilityTestCase == "brickSize +20%"    ? 12.0 : _inp_brickSize
+
+qwaveLen     = runStabilityTest and stabilityTestCase == "qwaveLen -20%"     ? 16   :
+               runStabilityTest and stabilityTestCase == "qwaveLen +20%"     ? 24   : _inp_qwaveLen
+
+qwaveDev     = runStabilityTest and stabilityTestCase == "qwaveDev -20%"    ? 1.6  :
+               runStabilityTest and stabilityTestCase == "qwaveDev +20%"    ? 2.4  : _inp_qwaveDev
+
+qlineLen     = runStabilityTest and stabilityTestCase == "qlineLen -20%"    ? 8    :
+               runStabilityTest and stabilityTestCase == "qlineLen +20%"    ? 12   : _inp_qlineLen
+
+qlineMult    = runStabilityTest and stabilityTestCase == "qlineMult -20%"   ? 2.4  :
+               runStabilityTest and stabilityTestCase == "qlineMult +20%"   ? 3.6  : _inp_qlineMult
+
+hardStopMult = runStabilityTest and stabilityTestCase == "hardStopMult -20%" ? 2.4  :
+               runStabilityTest and stabilityTestCase == "hardStopMult +20%" ? 3.6  : _inp_hardStopMult
+
+basisExitBars = runStabilityTest and stabilityTestCase == "basisExitBars -33%" ? 2   :
+                runStabilityTest and stabilityTestCase == "basisExitBars +33%" ? 4   : _inp_basisExitBars
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ CORE CALCULATIONS ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+realATR = ta.atr(14)
+inSession = not useSessionFilter or not na(time(timeframe.period, sessionStart))
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ SYNTHETIC RENKO ENGINE ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+MAX_BRICKS = 200
+
+var float renkoLevel = na
+var int   renkoDir = 0
+var int   totalBricks = 0
+
+var array<float> rO = array.new_float(0)
+var array<float> rH = array.new_float(0)
+var array<float> rL = array.new_float(0)
+var array<float> rC = array.new_float(0)
+var array<float> rV = array.new_float(0)
+
+var float accumVol = 0.0
+accumVol += nz(volume, 0)
+
+if na(renkoLevel)
+    renkoLevel := math.round(close / brickSize) * brickSize
+
+newBrick = false
+int bricksThisBar = 0
+
+while close >= renkoLevel + brickSize
+    float bO = renkoLevel
+    renkoLevel += brickSize
+    array.push(rO, bO)
+    array.push(rH, renkoLevel)
+    array.push(rL, bO)
+    array.push(rC, renkoLevel)
+    array.push(rV, accumVol)
+    accumVol := 0.0
+    renkoDir := 1
+    totalBricks += 1
+    newBrick := true
+    bricksThisBar += 1
+
+while close <= renkoLevel - brickSize
+    float bO = renkoLevel
+    renkoLevel -= brickSize
+    array.push(rO, bO)
+    array.push(rH, bO)
+    array.push(rL, renkoLevel)
+    array.push(rC, renkoLevel)
+    array.push(rV, accumVol)
+    accumVol := 0.0
+    renkoDir := -1
+    totalBricks += 1
+    newBrick := true
+    bricksThisBar += 1
+
+while array.size(rO) > MAX_BRICKS
+    array.shift(rO)
+    array.shift(rH)
+    array.shift(rL)
+    array.shift(rC)
+    array.shift(rV)
+
+int rSize = array.size(rC)
+
+// ── Brick Cooldown ──
+var int bricksSinceExit = 999
+if newBrick
+    bricksSinceExit += 1
+cooldownClear = bricksSinceExit >= brickCooldown
+
+// ── Multi-brick filter (Realism) ──
+// If multiple bricks formed on one bar, price moved fast — in real-time you'd be chasing
+bool notChasing = not useRealism or bricksThisBar <= maxBricksPerBar
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ ARRAY HELPERS ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+rGet(array<float> arr, int idx) =>
+    int sz = array.size(arr)
+    sz > idx ? array.get(arr, sz - 1 - idx) : na
+
+rSMA(array<float> arr, int len) =>
+    int sz = array.size(arr)
+    if sz < len or len < 1
+        na
+    else
+        float s = 0.0
+        for i = 0 to len - 1
+            s += array.get(arr, sz - 1 - i)
+        s / len
+
+rStdDev(array<float> arr, int len) =>
+    int sz = array.size(arr)
+    if sz < len or len < 2
+        na
+    else
+        float mn = 0.0
+        for i = 0 to len - 1
+            mn += array.get(arr, sz - 1 - i)
+        mn /= len
+        float ss = 0.0
+        for i = 0 to len - 1
+            float d = array.get(arr, sz - 1 - i) - mn
+            ss += d * d
+        math.sqrt(ss / len)
+
+rATR_calc(array<float> hArr, array<float> lArr, array<float> cArr, int len) =>
+    int sz = array.size(cArr)
+    if sz < len + 1
+        na
+    else
+        float s = 0.0
+        for i = 0 to len - 1
+            int idx = sz - 1 - i
+            float h = array.get(hArr, idx)
+            float l = array.get(lArr, idx)
+            float pc = idx > 0 ? array.get(cArr, idx - 1) : l
+            s += math.max(h - l, math.max(math.abs(h - pc), math.abs(l - pc)))
+        s / len
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ RENKO INDICATORS (updated on new brick only) ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Qwave
+var float ind_qwaveBasis = na
+var float ind_qwaveUpper = na
+var float ind_qwaveLower = na
+
+// Qline
+var float ind_qlineST = na
+var int   ind_qlineDir = 1
+var float[] _qlineEMA = array.new_float(10, na)
+
+// Renko ATR
+var float ind_renkoATR = na
+
+// Trend tracking — count consecutive same-direction bricks
+var int ind_trendLen = 0      // How many bricks in current trend direction
+var int ind_trendDir = 0      // 1 = up trend, -1 = down trend
+var int ind_pullbackLen = 0   // How many bricks in pullback
+var bool ind_inPullback = false
+var float ind_pullbackLow = na   // Lowest point of pullback (for longs)
+var float ind_pullbackHigh = na  // Highest point of pullback (for shorts)
+
+bool enoughBricks = rSize >= 50
+
+if newBrick and rSize >= 2
+
+    // ── Renko ATR ──
+    ind_renkoATR := rATR_calc(rH, rL, rC, math.min(14, rSize - 1))
+
+    // ── Qwave Bands ──
+    if rSize >= qwaveLen
+        var array<float> _hl2Arr = array.new_float(0)
+        array.clear(_hl2Arr)
+        int _len = math.min(qwaveLen, rSize)
+        for i = 0 to _len - 1
+            int _idx = rSize - 1 - i
+            float _h = array.get(rH, _idx)
+            float _l = array.get(rL, _idx)
+            array.push(_hl2Arr, (_h + _l) / 2.0)
+        ind_qwaveBasis := rSMA(_hl2Arr, _len)
+        ind_qwaveUpper := ind_qwaveBasis + qwaveDev * nz(rStdDev(_hl2Arr, _len), brickSize)
+        ind_qwaveLower := ind_qwaveBasis - qwaveDev * nz(rStdDev(_hl2Arr, _len), brickSize)
+
+    // ── Qline SuperTrend ──
+    if rSize >= qlineLen + 1
+        float _rawATR = rATR_calc(rH, rL, rC, math.min(qlineLen, rSize - 1))
+        float _alpha = 2.0 / (qlineLen + 1)
+        float _smoothed = nz(_rawATR, brickSize)
+        for p = 0 to math.min(qlineReact, 9) - 1
+            float _prev = nz(array.get(_qlineEMA, p), _smoothed)
+            _smoothed := _alpha * _smoothed + (1 - _alpha) * _prev
+            array.set(_qlineEMA, p, _smoothed)
+
+        float _hl2 = rGet(rC, 0)
+        float _upper = _hl2 + qlineMult * _smoothed
+        float _lower = _hl2 - qlineMult * _smoothed
+
+        float _prevST = nz(ind_qlineST, _hl2)
+        int _prevDir = ind_qlineDir
+
+        if _prevDir == 1
+            ind_qlineST := math.max(_lower, _prevST)
+            if rGet(rC, 0) < ind_qlineST
+                ind_qlineDir := -1
+                ind_qlineST := _upper
+            else
+                ind_qlineDir := 1
+        else
+            ind_qlineST := math.min(_upper, _prevST)
+            if rGet(rC, 0) > ind_qlineST
+                ind_qlineDir := 1
+                ind_qlineST := _lower
+            else
+                ind_qlineDir := -1
+
+    // ── Trend / Pullback State Machine ──
+    float _currC = rGet(rC, 0)
+    float _prevC = rGet(rC, 1)
+    int _brickDir = _currC > _prevC ? 1 : -1
+
+    if not ind_inPullback
+        if _brickDir == ind_trendDir
+            ind_trendLen += 1
+        else if ind_trendLen >= minTrendBricks
+            ind_inPullback := true
+            ind_pullbackLen := 1
+            ind_pullbackLow := rGet(rL, 0)
+            ind_pullbackHigh := rGet(rH, 0)
+        else
+            ind_trendDir := _brickDir
+            ind_trendLen := 1
+    else
+        if _brickDir != ind_trendDir
+            ind_pullbackLen += 1
+            if not na(rGet(rL, 0))
+                ind_pullbackLow := math.min(nz(ind_pullbackLow, rGet(rL, 0)), rGet(rL, 0))
+            if not na(rGet(rH, 0))
+                ind_pullbackHigh := math.max(nz(ind_pullbackHigh, rGet(rH, 0)), rGet(rH, 0))
+        else
+            ind_inPullback := false
+            ind_trendLen := 1
+            ind_trendDir := _brickDir
+
+    if ind_trendDir == 0
+        ind_trendDir := _brickDir
+        ind_trendLen := 1
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ SIGNAL DERIVATION ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+qlineBull = ind_qlineDir == 1
+qlineBear = ind_qlineDir == -1
+
+// Basis touch detection
+float touchZone = realATR * basisTouchDist
+bool basisTouchFromBelow = not na(ind_qwaveBasis) and low <= ind_qwaveBasis + touchZone and close >= ind_qwaveBasis
+bool basisTouchFromAbove = not na(ind_qwaveBasis) and high >= ind_qwaveBasis - touchZone and close <= ind_qwaveBasis
+
+// Basis break detection — for exits
+var int barsBelowBasis = 0
+var int barsAboveBasis = 0
+
+if not na(ind_qwaveBasis)
+    if close < ind_qwaveBasis
+        barsBelowBasis += 1
+        barsAboveBasis := 0
+    else if close > ind_qwaveBasis
+        barsAboveBasis += 1
+        barsBelowBasis := 0
+    else
+        barsBelowBasis := 0
+        barsAboveBasis := 0
+
+basisBreakDown = barsBelowBasis >= basisExitBars
+basisBreakUp   = barsAboveBasis >= basisExitBars
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ DAILY LIMITS ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+var float dailyPnL = 0.0
+var int   dailyTradeCount = 0
+var int   lastTradeDay = -1
+
+currentDay = dayofweek(time)
+isNewDay = currentDay != lastTradeDay
+
+if isNewDay
+    dailyPnL := 0.0
+    dailyTradeCount := 0
+    lastTradeDay := currentDay
+
+var int lastClosedCount = 0
+currentClosedCount = strategy.closedtrades
+
+if currentClosedCount > lastClosedCount
+    for idx = lastClosedCount to currentClosedCount - 1
+        dailyPnL += strategy.closedtrades.profit(idx)
+        dailyTradeCount += 1
+    lastClosedCount := currentClosedCount
+
+dailyLossHit   = useMaxLoss and dailyPnL <= -maxDailyLoss
+dailyTradesHit = useTradeLimit and dailyTradeCount >= maxDailyTrades
+dailyLimitHit  = dailyLossHit or dailyTradesHit
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ ENTRY CONDITIONS ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+canLong  = tradeDirection != "Short"
+canShort = tradeDirection != "Long"
+
+inLong  = strategy.position_size > 0
+inShort = strategy.position_size < 0
+flat    = strategy.position_size == 0
+
+// Reset cooldown on exit
+var bool wasFlatPrev = true
+if flat and not wasFlatPrev
+    bricksSinceExit := 0
+wasFlatPrev := flat
+
+// Entry gate
+bool ready = enoughBricks and newBrick and inSession and cooldownClear and not dailyLimitHit
+
+// ── RAW SIGNAL (before realism filters) ──
+bool rawLongSignal = ready and canLong and flat and
+                     qlineBull and
+                     basisTouchFromBelow and
+                     (not requireBrickDir or renkoDir == 1)
+
+bool rawShortSignal = ready and canShort and flat and
+                      qlineBear and
+                      basisTouchFromAbove and
+                      (not requireBrickDir or renkoDir == -1)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ FILL DELAY SYSTEM (Realism) ━━━
+//
+// Simulates the webhook execution pipeline latency:
+//   Bar N close: brick detected, signal fires, TradingView sends alert
+//   Bar N+1: webhook arrives at server, server processes, places order
+//   Bar N+1 close / N+2 open: order fills at Tradovate
+//
+// With fillDelayBars=1 (default):
+//   Signal at bar N → strategy.entry() called at bar N+1 → fills at bar N+2 open
+//   Total delay from signal: ~2 bars (2 minutes on 1-min chart)
+//
+// With fillDelayBars=0 (realism off or no delay):
+//   Signal at bar N → strategy.entry() called at bar N → fills at bar N+1 open
+//   This is already Pine's default behavior (next-bar fill)
+//
+// ══════════════════════════════════════════════════════════════════════════════
+
+var bool pendingLong  = false
+var bool pendingShort = false
+var int  signalBarIdx = 0
+var float signalATR   = na    // Capture ATR at signal time for stop calc
+var int  signalRenkoDir = 0   // Capture renko direction at signal time
+
+// Apply multi-brick filter to raw signals
+bool longSignal  = rawLongSignal and notChasing
+bool shortSignal = rawShortSignal and notChasing
+
+// Effective delay: 0 when realism off OR fillDelayBars=0
+int effectiveDelay = useRealism ? fillDelayBars : 0
+
+// New signal received — start pending
+if longSignal and not pendingLong and not pendingShort
+    if effectiveDelay == 0
+        // No delay — enter immediately (Pine fills at next bar open)
+        pendingLong := false
+    else
+        pendingLong := true
+        pendingShort := false
+        signalBarIdx := bar_index
+        signalATR := realATR
+        signalRenkoDir := renkoDir
+
+if shortSignal and not pendingShort and not pendingLong
+    if effectiveDelay == 0
+        pendingShort := false
+    else
+        pendingShort := true
+        pendingLong := false
+        signalBarIdx := bar_index
+        signalATR := realATR
+        signalRenkoDir := renkoDir
+
+// Cancel stale signals if conditions changed during delay
+if cancelStaleSignal and useRealism
+    if pendingLong
+        // Cancel if: Qline flipped, session ended, daily limit hit, no longer flat
+        if not qlineBull or not inSession or dailyLimitHit or not flat
+            pendingLong := false
+    if pendingShort
+        if not qlineBear or not inSession or dailyLimitHit or not flat
+            pendingShort := false
+
+// Check if delay period has elapsed
+bool delayElapsedLong  = pendingLong and bar_index >= signalBarIdx + effectiveDelay
+bool delayElapsedShort = pendingShort and bar_index >= signalBarIdx + effectiveDelay
+
+// Final entry signals — either immediate (no delay) or after delay elapsed
+bool longEntry  = (longSignal and effectiveDelay == 0) or delayElapsedLong
+bool shortEntry = (shortSignal and effectiveDelay == 0) or delayElapsedShort
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ TRADE EXECUTION ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+var float entryPrice = na
+var float stopLoss = na
+var float trailStop = na
+
+if longEntry and flat
+    entryPrice := close
+    // Use ATR from signal time if delayed, current if immediate
+    float stopATR = pendingLong and not na(signalATR) ? signalATR : realATR
+    stopLoss   := close - stopATR * hardStopMult
+    trailStop  := na
+    barsBelowBasis := 0
+    pendingLong := false
+    strategy.entry("Long", strategy.long, qty=1)
+
+if shortEntry and flat
+    entryPrice := close
+    float stopATR = pendingShort and not na(signalATR) ? signalATR : realATR
+    stopLoss   := close + stopATR * hardStopMult
+    trailStop  := na
+    barsAboveBasis := 0
+    pendingShort := false
+    strategy.entry("Short", strategy.short, qty=1)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ EXIT LOGIC ━━━
+//
+// EXIT DECISION MATRIX:
+// ┌─────────────┬────────────────────┬─────────────────────────────────────┐
+// │ Exit Type   │ Function           │ Why                                 │
+// ├─────────────┼────────────────────┼─────────────────────────────────────┤
+// │ Hard stop   │ strategy.exit()    │ Fills at EXACT price intra-bar      │
+// │ Trail stop  │ strategy.exit()    │ Fills at EXACT price intra-bar      │
+// │ Basis break │ strategy.close()   │ Signal exit — fastest webhook fire  │
+// │ EOD/Limit   │ strategy.close_all │ Flatten everything — no target $    │
+// └─────────────┴────────────────────┴─────────────────────────────────────┘
+//
+// effectiveStop pattern: hard stop + trail merged into ONE strategy.exit()
+// call using whichever level is tighter. Updated every bar.
+//
+// ══════════════════════════════════════════════════════════════════════════════
+
+if inLong
+    // ── effectiveStop: merge hard stop + trail into tightest level ──
+    float effectiveStop = stopLoss
+
+    // Trail tightening — ratchets up when trade moves into profit
+    if useTrailTighten and not na(entryPrice)
+        float profitDist = close - entryPrice
+        if profitDist >= realATR * trailEngageMult
+            float newTrail = close - realATR * trailTightenATR
+            if na(trailStop) or newTrail > trailStop
+                trailStop := newTrail
+
+    // Use whichever stop is tighter (higher for longs)
+    if not na(trailStop) and (na(effectiveStop) or trailStop > effectiveStop)
+        effectiveStop := trailStop
+
+    // Place/update stop exit — fills at exact price intra-bar
+    if not na(effectiveStop)
+        string stopComment = not na(trailStop) and not na(stopLoss) and trailStop > stopLoss ? "Trail" : "Hard Stop"
+        strategy.exit("XLong", from_entry="Long", stop=effectiveStop, comment=stopComment)
+
+    // Basis break — signal exit, strategy.close() for fastest webhook
+    if basisBreakDown
+        strategy.close("Long", comment="Basis Break")
+
+if inShort
+    // ── effectiveStop: merge hard stop + trail into tightest level ──
+    float effectiveStop = stopLoss
+
+    // Trail tightening — ratchets down when trade moves into profit
+    if useTrailTighten and not na(entryPrice)
+        float profitDist = entryPrice - close
+        if profitDist >= realATR * trailEngageMult
+            float newTrail = close + realATR * trailTightenATR
+            if na(trailStop) or newTrail < trailStop
+                trailStop := newTrail
+
+    // Use whichever stop is tighter (lower for shorts)
+    if not na(trailStop) and (na(effectiveStop) or trailStop < effectiveStop)
+        effectiveStop := trailStop
+
+    // Place/update stop exit — fills at exact price intra-bar
+    if not na(effectiveStop)
+        string stopComment = not na(trailStop) and not na(stopLoss) and trailStop < stopLoss ? "Trail" : "Hard Stop"
+        strategy.exit("XShort", from_entry="Short", stop=effectiveStop, comment=stopComment)
+
+    // Basis break — signal exit, strategy.close() for fastest webhook
+    if basisBreakUp
+        strategy.close("Short", comment="Basis Break")
+
+// Daily limit close — condition-based, strategy.close_all()
+if dailyLimitHit and not flat
+    strategy.close_all(comment="Daily Limit")
+
+// Session end close — time-based, strategy.close_all()
+if useSessionFilter and not inSession and not flat
+    strategy.close_all(comment="Session End")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ VISUALIZATION ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Renko level
+renkoColor = renkoDir == 1 ? color.new(#00E676, 50) : color.new(#FF5252, 50)
+plot(showRenko ? renkoLevel : na, "Renko Level", color=renkoColor, linewidth=2, style=plot.style_stepline)
+
+// Qwave bands
+plot(showQwave ? ind_qwaveUpper : na, "Upper", color=color.new(#FF1744, 40), linewidth=1)
+plot(showQwave ? ind_qwaveLower : na, "Lower", color=color.new(#00C853, 40), linewidth=1)
+basisColor = qlineBull ? color.new(#00E676, 10) : color.new(#FF5252, 10)
+plot(showQwave ? ind_qwaveBasis : na, "Basis", color=basisColor, linewidth=3, style=plot.style_stepline)
+
+// Qline
+qlineColor = qlineBull ? color.new(#00E676, 20) : color.new(#FF5252, 20)
+plot(showQline ? ind_qlineST : na, "Qline", color=qlineColor, linewidth=2, style=plot.style_steplinebr)
+
+// Entry signals — show raw signal (triangle) and actual fill (diamond if delayed)
+plotshape(rawLongSignal and flat and notChasing, "Long Signal", shape.triangleup, location.belowbar, color.new(#00E676, 0), size=size.normal, text="PB")
+plotshape(rawShortSignal and flat and notChasing, "Short Signal", shape.triangledown, location.abovebar, color.new(#FF5252, 0), size=size.normal, text="PB")
+
+// Show delayed fill markers (only when delay > 0)
+plotshape(delayElapsedLong and flat, "Delayed Long Fill", shape.diamond, location.belowbar, color.new(#00E676, 0), size=size.tiny, text="FILL")
+plotshape(delayElapsedShort and flat, "Delayed Short Fill", shape.diamond, location.abovebar, color.new(#FF5252, 0), size=size.tiny, text="FILL")
+
+// Pending signal marker
+plotshape(pendingLong, "Pending Long", shape.circle, location.belowbar, color.new(#FFD600, 50), size=size.tiny)
+plotshape(pendingShort, "Pending Short", shape.circle, location.abovebar, color.new(#FFD600, 50), size=size.tiny)
+
+// Stop / Trail visualization
+var float plotStop = na
+if inLong
+    plotStop := not na(trailStop) and not na(stopLoss) and trailStop > stopLoss ? trailStop : stopLoss
+else if inShort
+    plotStop := not na(trailStop) and not na(stopLoss) and trailStop < stopLoss ? trailStop : stopLoss
+else
+    plotStop := na
+
+plot(not flat and not na(plotStop) ? plotStop : na, "Effective Stop", color=color.new(#FF1744, 30), linewidth=1, style=plot.style_linebr)
+plot(not flat and not na(trailStop) ? trailStop : na, "Trail Level", color=color.new(#FFAB00, 50), linewidth=1, style=plot.style_steplinebr)
+
+// Basis as dynamic exit line (highlight when in trade)
+plot(not flat ? ind_qwaveBasis : na, "Exit Line", color=color.new(#FFD600, 30), linewidth=2, style=plot.style_stepline)
+
+// New brick markers
+plotshape(newBrick and renkoDir == 1, "Up Brick", shape.square, location.bottom, color.new(#00E676, 60), size=size.tiny)
+plotshape(newBrick and renkoDir == -1, "Dn Brick", shape.square, location.bottom, color.new(#FF5252, 60), size=size.tiny)
+
+// Multi-brick rejection markers (shows when a signal was killed by realism filter)
+plotshape(rawLongSignal and not notChasing, "Rejected Long (Chase)", shape.xcross, location.belowbar, color.new(#FF5252, 30), size=size.tiny, text="CHASE")
+plotshape(rawShortSignal and not notChasing, "Rejected Short (Chase)", shape.xcross, location.abovebar, color.new(#FF5252, 30), size=size.tiny, text="CHASE")
+
+// Trend state background
+bgcolor(enoughBricks and qlineBull and ind_trendLen >= minTrendBricks ? color.new(#00E676, 96) : na)
+bgcolor(enoughBricks and qlineBear and ind_trendLen >= minTrendBricks ? color.new(#FF5252, 96) : na)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ DASHBOARD ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+if showDashboard
+    var table dash = table.new(position.top_right, 2, 15, bgcolor=color.new(#1E1E1E, 10), frame_color=color.new(#333333, 0), frame_width=1, border_color=color.new(#333333, 0), border_width=1)
+
+    table.cell(dash, 0, 0, "JT Pullback V5", text_color=color.white, text_size=size.small, bgcolor=color.new(#0D47A1, 10))
+    table.cell(dash, 1, 0, str.tostring(brickSize, "#.0") + "pt Renko", text_color=#00E5FF, text_size=size.small, bgcolor=color.new(#0D47A1, 10))
+
+    // Stability test row — bright highlight when active
+    table.cell(dash, 0, 1, "Stability", text_color=color.gray, text_size=size.tiny)
+    string stabText = runStabilityTest ? stabilityTestCase : "OFF"
+    color stabColor = runStabilityTest and stabilityTestCase != "Default" ? #FF00FF : runStabilityTest ? #FFD600 : color.gray
+    table.cell(dash, 1, 1, stabText, text_color=stabColor, text_size=size.tiny, bgcolor=runStabilityTest and stabilityTestCase != "Default" ? color.new(#FF00FF, 85) : na)
+
+    table.cell(dash, 0, 2, "Realism", text_color=color.gray, text_size=size.tiny)
+    string realismText = useRealism ? "ON (" + str.tostring(fillDelayBars) + "bar/" + str.tostring(maxBricksPerBar) + "brk)" : "OFF (raw)"
+    table.cell(dash, 1, 2, realismText, text_color=useRealism ? #FFD600 : color.gray, text_size=size.tiny)
+
+    table.cell(dash, 0, 3, "Session", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 3, inSession ? "ACTIVE" : "CLOSED", text_color=inSession ? #00E676 : #FF5252, text_size=size.tiny)
+
+    table.cell(dash, 0, 4, "Qline", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 4, qlineBull ? "BULL ▲" : "BEAR ▼", text_color=qlineBull ? #00E676 : #FF5252, text_size=size.tiny)
+
+    table.cell(dash, 0, 5, "Trend", text_color=color.gray, text_size=size.tiny)
+    trendText = (ind_trendDir == 1 ? "UP " : "DN ") + str.tostring(ind_trendLen) + " bricks"
+    trendReady = ind_trendLen >= minTrendBricks
+    table.cell(dash, 1, 5, trendText, text_color=trendReady ? #00E5FF : color.gray, text_size=size.tiny)
+
+    table.cell(dash, 0, 6, "Pullback", text_color=color.gray, text_size=size.tiny)
+    pbText = ind_inPullback ? str.tostring(ind_pullbackLen) + " bricks" : "---"
+    table.cell(dash, 1, 6, pbText, text_color=ind_inPullback ? #FFD600 : color.gray, text_size=size.tiny)
+
+    table.cell(dash, 0, 7, "Position", text_color=color.gray, text_size=size.tiny)
+    posText = inLong ? "LONG" : inShort ? "SHORT" : "FLAT"
+    posColor = inLong ? #00E676 : inShort ? #FF5252 : color.gray
+    table.cell(dash, 1, 7, posText, text_color=posColor, text_size=size.tiny)
+
+    table.cell(dash, 0, 8, "Pending", text_color=color.gray, text_size=size.tiny)
+    string pendText = pendingLong ? "LONG wait" : pendingShort ? "SHORT wait" : "---"
+    color pendColor = (pendingLong or pendingShort) ? #FFD600 : color.gray
+    table.cell(dash, 1, 8, pendText, text_color=pendColor, text_size=size.tiny)
+
+    table.cell(dash, 0, 9, "Cooldown", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 9, cooldownClear ? "READY" : str.tostring(brickCooldown - bricksSinceExit) + " bricks", text_color=cooldownClear ? #00E676 : #FFD600, text_size=size.tiny)
+
+    table.cell(dash, 0, 10, "Basis", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 10, not na(ind_qwaveBasis) ? str.tostring(ind_qwaveBasis, "#.00") : "---", text_color=color.white, text_size=size.tiny)
+
+    table.cell(dash, 0, 11, "Real ATR", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 11, str.tostring(realATR, "#.00"), text_color=color.white, text_size=size.tiny)
+
+    table.cell(dash, 0, 12, "Bricks", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 12, str.tostring(totalBricks), text_color=#00E5FF, text_size=size.tiny)
+
+    table.cell(dash, 0, 13, "Day P&L", text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 13, "$" + str.tostring(dailyPnL, "#.00"), text_color=dailyPnL >= 0 ? #00E676 : #FF5252, text_size=size.tiny)
+
+    table.cell(dash, 0, 14, "Trades", text_color=color.gray, text_size=size.tiny)
+    limitText = str.tostring(dailyTradeCount) + (dailyLimitHit ? " LIMIT" : "")
+    table.cell(dash, 1, 14, limitText, text_color=dailyLimitHit ? #FF5252 : color.white, text_size=size.tiny)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ━━━ ALERTS ━━━
+// ══════════════════════════════════════════════════════════════════════════════
+
+alertcondition(longEntry and flat, "Pullback Long", "Trend pullback long entry")
+alertcondition(shortEntry and flat, "Pullback Short", "Trend pullback short entry")
+alertcondition(dailyLimitHit, "Daily Limit", "Daily limit reached")

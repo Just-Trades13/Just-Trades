@@ -1,0 +1,608 @@
+// This Pine Script™ is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © JustTrades Group, Inc.
+//
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  JustTrades Breakout V.1 — Fib-ATR Band Breakout                      ║
+// ║                                                                        ║
+// ║  Run on 1-min chart (regular or Heikin Ashi).                          ║
+// ║                                                                        ║
+// ║  CRITICAL: fill_orders_on_standard_ohlc = true                         ║
+// ║  Forces fills at REAL market prices if run on HA chart.                ║
+// ║  No effect on regular charts — safe either way.                        ║
+// ║                                                                        ║
+// ║  EXIT DECISION MATRIX (already correct in this strategy):              ║
+// ║  • TP / SL / Trail / BE → strategy.exit()  — intra-bar fill at exact $ ║
+// ║  • No signal-based exits — all exits are price-level                   ║
+// ║                                                                        ║
+// ║  REALISM MODE (default ON):                                            ║
+// ║  • Fill delay simulates webhook pipeline latency                       ║
+// ║  • Conservative slippage (8 ticks)                                     ║
+// ║  • Stale signal cancellation during delay                              ║
+// ║  • Turn OFF to see raw strategy edge, ON for real expectations         ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+//@version=5
+strategy("JustTrades Breakout V.1",
+     overlay              = true,
+     initial_capital      = 10000,
+     default_qty_type     = strategy.fixed,
+     default_qty_value    = 1,
+     commission_type      = strategy.commission.cash_per_contract,
+     commission_value     = 0.82,
+     slippage             = 8,
+     pyramiding           = 0,
+     calc_on_every_tick   = false,
+     process_orders_on_close = false,
+     fill_orders_on_standard_ohlc = true,
+     use_bar_magnifier    = true)
+
+// ═══════════════════════════════════════════════════════════════
+// REALISM CHANGES FROM ORIGINAL:
+// 1. fill_orders_on_standard_ohlc = true (was false)
+//    → Forces fills at REAL OHLC prices if run on HA charts
+//    → No effect on regular charts — safe either way
+//
+// 2. slippage = 8 (was 4)
+//    → 8 ticks = 2 pts on NQ/MNQ, covers webhook pipeline latency
+//    → TradingView alert → server → Tradovate → fill = 500ms-1.5s
+//
+// 3. use_bar_magnifier = true (was false)
+//    → Simulates intra-bar price movement for more accurate fills
+//
+// 4. Fill delay system added
+//    → Signal at bar N → entry delayed to bar N+1 → fills at N+2 open
+//    → Simulates webhook pipeline latency
+//    → Stale signal cancellation if conditions change during delay
+//
+// Exit logic was already correct — strategy.exit() for all price-level exits
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Realism Mode
+// ─────────────────────────────────────────────────────────────
+g_real = "Realism Mode"
+useRealism     = input.bool(true, "Enable Realism Mode", group=g_real, tooltip="Master switch. Applies fill delay for realistic webhook latency simulation. Turn OFF to see raw strategy edge.")
+fillDelayBars  = input.int(1, "Fill Delay (bars)", minval=0, maxval=5, group=g_real, tooltip="Bars to wait after signal before entering. Simulates webhook pipeline latency. 1 = conservative for 1-min chart.")
+cancelStale    = input.bool(true, "Cancel Stale Signals", group=g_real, tooltip="Cancel pending entry if filters fail during delay (session ends, daily limit, price falls back inside bands).")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Core Strategy
+// ─────────────────────────────────────────────────────────────
+g_core = "Core Strategy"
+period = input.int(33, "SMMA Period", minval=5, maxval=200, step=1, group=g_core,
+     tooltip="Period for the smoothed moving average centerline. Higher = smoother/slower bands.")
+width  = input.float(0.5, "Band Width Multiplier", minval=0.1, maxval=5.0, step=0.1, group=g_core,
+     tooltip="Global multiplier applied to all Fib-ATR bands. Lower = tighter bands, more signals.")
+src    = input.source(close, "Price Source", group=g_core,
+     tooltip="Price source for SMMA calculation. Use 'close' for standard, 'hl2' or 'hlc3' for smoother.")
+atrLen = input.int(200, "ATR Length", minval=10, maxval=500, step=10, group=g_core,
+     tooltip="Lookback for the raw ATR before SMMA smoothing.")
+atrSmooth = input.int(50, "ATR Smoothing", minval=5, maxval=200, step=5, group=g_core,
+     tooltip="SMMA period applied to ATR. Higher = slower-reacting bands.")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Fib Levels
+// ─────────────────────────────────────────────────────────────
+g_fib = "Fibonacci Band Levels"
+fib1 = input.float(1.618, "Fib Level 1 (pullback stop zone)", minval=0.1, step=0.1, group=g_fib,
+     tooltip="Inner band — used as the stop/invalidation level for breakout entries.")
+fib2 = input.float(2.618, "Fib Level 2 (breakout trigger)", minval=0.1, step=0.1, group=g_fib,
+     tooltip="Middle band — crossover/under triggers breakout entries.")
+fib3 = input.float(4.236, "Fib Level 3 (profit target)", minval=0.1, step=0.1, group=g_fib,
+     tooltip="Outer band — used as the take-profit target for breakout trades.")
+fib4 = input.float(6.854, "Fib Level 4 (extended target)", minval=0.1, step=0.1, group=g_fib,
+     tooltip="Extended outer band — optional aggressive TP target for runners.")
+showFib1   = input.bool(true, "Show Fib 1 Bands", inline="f1vis", group=g_fib)
+fib1Color  = input.color(color.new(color.gray, 70), "", inline="f1vis", group=g_fib)
+showFib4   = input.bool(true, "Show Fib 4 Bands (Extended)", inline="f4vis", group=g_fib)
+fib4Color  = input.color(color.new(color.orange, 60), "", inline="f4vis", group=g_fib)
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Execution Simulation (Broker Realism)
+// ─────────────────────────────────────────────────────────────
+g_exec = "Execution Simulation"
+execMode = input.string("Tradovate (Free)", "Broker Preset",
+     options=["Tradovate (Free)", "Tradovate (Member)", "ProjectX", "Custom"],
+     group=g_exec,
+     tooltip="Auto-sets commission and slippage estimates. 'Custom' lets you override everything.")
+customComm = input.float(0.82, "Custom Commission (per side)", minval=0.0, step=0.01, group=g_exec,
+     tooltip="Only used when Broker Preset = Custom. Per-contract per-side cost including exchange fees.")
+customSlip = input.int(4, "Custom Slippage (ticks)", minval=0, maxval=20, group=g_exec,
+     tooltip="Only used when Broker Preset = Custom. Round-trip slippage in ticks.")
+tickValue  = input.float(0.25, "Tick Size ($)", group=g_exec,
+     tooltip="Dollar value per tick for your instrument. MNQ=0.25, NQ=5.00, ES=12.50, MES=1.25")
+
+commPerSide = switch execMode
+    "Tradovate (Free)"   => 0.82
+    "Tradovate (Member)" => 0.62
+    "ProjectX"           => 0.52
+    "Custom"             => customComm
+
+slipTicks = switch execMode
+    "Tradovate (Free)"   => 4
+    "Tradovate (Member)" => 4
+    "ProjectX"           => 3
+    "Custom"             => customSlip
+
+rtCost = (commPerSide * 2) + (slipTicks * tickValue * 2)
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Entry Mode
+// ─────────────────────────────────────────────────────────────
+g_entry = "Entry Mode"
+entryTrigger = input.string("Fib 2 Breakout", "Entry Trigger",
+     options=["Fib 2 Breakout", "Fib 1 Breakout", "Mid Breakout"],
+     group=g_entry,
+     tooltip="Which band crossing triggers the entry. Fib2 is default (matches inverse of Scalper). Fib1 or Mid are earlier/more aggressive entries.")
+confirmBars = input.int(1, "Confirmation Bars (0=instant)", minval=0, maxval=5, group=g_entry,
+     tooltip="Require price to stay beyond the breakout band for N bars before entering. Reduces fakeouts. Data shows 1 bar cuts fakeouts without losing real breakouts.")
+useRetest   = input.bool(false, "Wait for Retest", group=g_entry,
+     tooltip="After breakout, wait for price to pull back and touch the breakout band before entering. Classic breakout-retest pattern.")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Exit Mode
+// ─────────────────────────────────────────────────────────────
+g_exit = "Exit Mode"
+exitTarget = input.string("Fixed Ticks", "Take Profit Target",
+     options=["Fib 3", "Fib 4 (Extended)", "Fixed Ticks", "None (Trail/BE Only)"],
+     group=g_exit,
+     tooltip="Fixed Ticks recommended. Fib-based TP moves with bands — unreliable on MNQ. 100 ticks = 25 pts, matches median winning excursion.")
+fixedTP    = input.int(100, "Fixed TP (ticks)", minval=1, maxval=2000, group=g_exit,
+     tooltip="100 ticks (25 pts MNQ) based on backtest: median winning fav excursion = 48 ticks, avg = 60. 100 captures the bigger movers while BE protects the rest.")
+exitStop   = input.string("Fixed Ticks", "Stop Loss Level",
+     options=["Fib 1", "Midline", "Fixed Ticks"],
+     group=g_exit,
+     tooltip="Fixed Ticks recommended. 60 ticks = 15 pts MNQ. Tighter than median losing adv excursion (68 ticks) — cuts losers before they get full-sized.")
+fixedSL    = input.int(60, "Fixed SL (ticks)", minval=1, maxval=2000, group=g_exit,
+     tooltip="60 ticks (15 pts MNQ). R:R = 100/60 = 1.67. Only needs 37.5% WR to breakeven before costs.")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Risk Management
+// ─────────────────────────────────────────────────────────────
+g_risk = "Risk Management"
+useTrailing   = input.bool(false, "Enable Trailing Stop", group=g_risk,
+     tooltip="Add a trailing stop that activates after reaching profit threshold.")
+trailTicks    = input.int(20, "Trail Offset (ticks)", minval=1, maxval=200, group=g_risk)
+trailActTicks = input.int(10, "Trail Activation (ticks in profit)", minval=0, maxval=200, group=g_risk)
+useBE         = input.bool(true, "Enable Breakeven Stop", group=g_risk,
+     tooltip="Moves stop to entry + offset once profit threshold reached. Data shows 28% of losing trades (102/359) saw 30+ tick profit before reversing — $9,919 in recoverable losses.")
+beTicks       = input.int(30, "BE Activation (ticks in profit)", minval=1, maxval=100, group=g_risk,
+     tooltip="30 ticks = 7.5 pts MNQ. Activates after trade has proven itself. Based on excursion analysis of 613 trades.")
+beOffset      = input.int(2, "BE Offset (ticks past entry)", minval=0, maxval=20, group=g_risk,
+     tooltip="Lock in 2 ticks ($1) profit when BE activates. Small but prevents scratch-to-loss reversals.")
+maxDailyLoss  = input.float(150, "Max Daily Loss ($, 0=off)", minval=0, step=50, group=g_risk,
+     tooltip="$150 kill switch. Backtest showed multiple -$200+ daily losses. Caps worst-case bleed.")
+maxTrades     = input.int(10, "Max Trades Per Day (0=off)", minval=0, maxval=100, group=g_risk,
+     tooltip="10 max. Backtest averaged 34/day = churning. 10 forces quality over quantity.")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Session Filter
+// ─────────────────────────────────────────────────────────────
+g_sess = "Session Filter"
+useSessFilter = input.bool(true, "Enable Session Filter", group=g_sess,
+     tooltip="ON by default. Backtest: overnight trades lost $9,989 (370 trades, -$27 avg). RTH-only cuts 60% of losing trades.")
+sessStart     = input.session("0800-1430", "Trading Session (Exchange TZ)", group=g_sess,
+     tooltip="08:00-14:30 CT. Includes pre-market momentum. Avoids 14:30+ close chop and overnight noise.")
+sessTimezone  = input.string("America/Chicago", "Session Timezone",
+     options=["America/Chicago", "America/New_York", "America/Los_Angeles", "UTC"],
+     group=g_sess)
+noFridayPM    = input.bool(true, "No Entries Friday After 12:00", group=g_sess,
+     tooltip="Avoid weekend gap risk. Friday PM volume drops and spreads widen.")
+closeEOD      = input.bool(true, "Flatten at Session Close", group=g_sess,
+     tooltip="Close any open position at session end. Prevents overnight hold risk.")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Signal Filters
+// ─────────────────────────────────────────────────────────────
+g_filt = "Signal Filters"
+useVolFilter = input.bool(false, "Volume Filter", group=g_filt,
+     tooltip="Only take breakouts when volume confirms the move.")
+volMaLen     = input.int(20, "Volume MA Length", minval=5, maxval=100, group=g_filt)
+volMult      = input.float(1.5, "Volume Threshold (x MA)", minval=0.5, maxval=5.0, step=0.1, group=g_filt,
+     tooltip="Default higher than Scalper — breakouts should have volume conviction.")
+useAtrFilter = input.bool(false, "ATR Volatility Filter", group=g_filt,
+     tooltip="Only take breakouts when volatility is expanding, not contracting.")
+atrFilterLen = input.int(14, "ATR Filter Length", minval=5, maxval=100, group=g_filt)
+atrMinTicks  = input.float(5.0, "Min ATR (ticks)", minval=0.5, maxval=50, step=0.5, group=g_filt)
+useMomentum  = input.bool(false, "Momentum Filter (RSI)", group=g_filt,
+     tooltip="Require RSI to confirm direction. Longs need RSI > threshold, shorts need RSI < threshold.")
+rsiLen       = input.int(14, "RSI Length", minval=5, maxval=50, group=g_filt)
+rsiLongMin   = input.float(55, "RSI Min for Longs", minval=30, maxval=80, group=g_filt)
+rsiShortMax  = input.float(45, "RSI Max for Shorts", minval=20, maxval=70, group=g_filt)
+cooldownBars = input.int(5, "Cooldown After Exit (bars, 0=off)", minval=0, maxval=50, group=g_filt,
+     tooltip="5 bars (5 min) between trades. Prevents re-entering choppy zones immediately after a stop-out. Backtest had 11 max consecutive losses from rapid re-entry.")
+
+// ─────────────────────────────────────────────────────────────
+// GROUP: Visuals
+// ─────────────────────────────────────────────────────────────
+g_vis = "Visuals"
+showMid    = input.bool(true, "Show Midline", group=g_vis)
+showBands  = input.bool(true, "Show Bands", group=g_vis)
+showFills  = input.bool(true, "Show Band Fill", group=g_vis)
+showLabels = input.bool(true, "Show Entry Labels", group=g_vis)
+showTable  = input.bool(true, "Show Info Table", group=g_vis)
+midColor   = input.color(color.new(color.yellow, 30), "Midline Color", group=g_vis)
+entryColor = input.color(color.new(color.blue, 30), "Entry Band Color", group=g_vis)
+targetColor = input.color(color.new(color.lime, 30), "Target Band Color", group=g_vis)
+stopBandColor = input.color(color.new(color.fuchsia, 30), "Stop Band Color", group=g_vis)
+longLblColor  = input.color(color.new(color.teal, 0), "Long Label Color", group=g_vis)
+shortLblColor = input.color(color.new(color.red, 0), "Short Label Color", group=g_vis)
+
+// ─────────────────────────────────────────────────────────────
+// CORE CALCULATIONS
+// ─────────────────────────────────────────────────────────────
+smma(source, length) =>
+    var float v = na
+    sma = ta.sma(source, length)
+    v := na(v[1]) ? sma : (v[1] * (length - 1) + source) / length
+    v
+
+atrSmoothed = smma(ta.atr(atrLen), atrSmooth)
+mid = smma(src, period)
+
+// Band calculations
+r1 = atrSmoothed * fib1 * width
+r2 = atrSmoothed * fib2 * width
+r3 = atrSmoothed * fib3 * width
+r4 = atrSmoothed * fib4 * width
+
+top1 = mid + r1
+top2 = mid + r2
+top3 = mid + r3
+top4 = mid + r4
+bot1 = mid - r1
+bot2 = mid - r2
+bot3 = mid - r3
+bot4 = mid - r4
+
+// ─────────────────────────────────────────────────────────────
+// SESSION & FILTER LOGIC
+// ─────────────────────────────────────────────────────────────
+inSession = useSessFilter ? not na(time(timeframe.period, sessStart, sessTimezone)) : true
+isFridayPM = noFridayPM and dayofweek == dayofweek.friday and hour >= 12
+sessionOK = inSession and not isFridayPM
+
+// Volume filter
+volMA = ta.sma(volume, volMaLen)
+volOK = useVolFilter ? (volume > volMA * volMult) : true
+
+// ATR filter
+atrFilter = ta.atr(atrFilterLen)
+atrOK = useAtrFilter ? (atrFilter >= atrMinTicks * syminfo.mintick) : true
+
+// Momentum filter
+rsiVal = ta.rsi(close, rsiLen)
+rsiLongOK  = useMomentum ? (rsiVal > rsiLongMin) : true
+rsiShortOK = useMomentum ? (rsiVal < rsiShortMax) : true
+
+// Cooldown tracking
+var int barsSinceExit = 999
+if strategy.closedtrades > 0 and strategy.closedtrades != strategy.closedtrades[1]
+    barsSinceExit := 0
+else
+    barsSinceExit += 1
+cooldownOK = cooldownBars == 0 or barsSinceExit >= cooldownBars
+
+// Daily trade count
+var int dailyTrades = 0
+if ta.change(time("D"))
+    dailyTrades := 0
+if strategy.closedtrades > strategy.closedtrades[1]
+    dailyTrades += 1
+tradeCountOK = maxTrades == 0 or dailyTrades < maxTrades
+
+// Daily loss tracking
+var float dailyStartEquity = strategy.equity
+if ta.change(time("D"))
+    dailyStartEquity := strategy.equity
+dailyPnL = strategy.equity - dailyStartEquity
+dailyLossOK = maxDailyLoss == 0 or dailyPnL > -maxDailyLoss
+
+// Base filters (directional filters applied per-side below)
+baseFilters = sessionOK and volOK and atrOK and cooldownOK and tradeCountOK and dailyLossOK
+
+// ─────────────────────────────────────────────────────────────
+// ENTRY TRIGGER SELECTION
+// ─────────────────────────────────────────────────────────────
+
+// Select which band to break out of
+triggerTopBand = switch entryTrigger
+    "Fib 2 Breakout" => top2
+    "Fib 1 Breakout" => top1
+    "Mid Breakout"   => mid
+
+triggerBotBand = switch entryTrigger
+    "Fib 2 Breakout" => bot2
+    "Fib 1 Breakout" => bot1
+    "Mid Breakout"   => mid
+
+// Raw crossover signals — INVERTED from Scalper
+// Scalper: long on cross BELOW bot2 (fade the drop)
+// Breakout: long on cross ABOVE top2 (ride the breakout)
+rawLongCross  = ta.crossover(close, triggerTopBand)
+rawShortCross = ta.crossunder(close, triggerBotBand)
+
+// Confirmation bars logic
+var int longConfCount  = 0
+var int shortConfCount = 0
+
+if rawLongCross
+    longConfCount := 1
+else if longConfCount > 0 and close > triggerTopBand
+    longConfCount += 1
+else
+    longConfCount := 0
+
+if rawShortCross
+    shortConfCount := 1
+else if shortConfCount > 0 and close < triggerBotBand
+    shortConfCount += 1
+else
+    shortConfCount := 0
+
+longConfirmed  = confirmBars == 0 ? rawLongCross : (longConfCount == confirmBars + 1)
+shortConfirmed = confirmBars == 0 ? rawShortCross : (shortConfCount == confirmBars + 1)
+
+// Retest logic
+var bool longBreakoutActive  = false
+var bool shortBreakoutActive = false
+var bool longRetestDone      = false
+var bool shortRetestDone     = false
+
+if rawLongCross and useRetest
+    longBreakoutActive := true
+    longRetestDone     := false
+if longBreakoutActive and low <= triggerTopBand and close > triggerTopBand
+    longRetestDone     := true
+    longBreakoutActive := false
+if close < mid  // invalidate if price falls back to midline
+    longBreakoutActive := false
+    longRetestDone     := false
+
+if rawShortCross and useRetest
+    shortBreakoutActive := true
+    shortRetestDone     := false
+if shortBreakoutActive and high >= triggerBotBand and close < triggerBotBand
+    shortRetestDone     := true
+    shortBreakoutActive := false
+if close > mid
+    shortBreakoutActive := false
+    shortRetestDone     := false
+
+// Final raw entry conditions (before fill delay)
+longEntry  = useRetest ? longRetestDone : longConfirmed
+shortEntry = useRetest ? shortRetestDone : shortConfirmed
+
+rawLongCond  = longEntry and baseFilters and rsiLongOK
+rawShortCond = shortEntry and baseFilters and rsiShortOK
+
+// Reset retest flags after raw signal
+if rawLongCond and useRetest
+    longRetestDone := false
+if rawShortCond and useRetest
+    shortRetestDone := false
+
+// ─────────────────────────────────────────────────────────────
+// FILL DELAY SYSTEM (Realism)
+//
+// Simulates webhook pipeline latency on a 1-min chart.
+// Signal at bar N → entry at bar N+fillDelay → fills after that.
+//
+// For breakout entries, the delayed entry still places the same
+// order — the fill just happens 1 bar later (realistic).
+//
+// Stale signal cancellation: if price falls back inside the
+// bands during the delay, the breakout was a fakeout and the
+// pending entry is cancelled.
+// ─────────────────────────────────────────────────────────────
+
+var bool pendingLong  = false
+var bool pendingShort = false
+var int  signalBar    = 0
+
+int effectiveDelay = useRealism ? fillDelayBars : 0
+
+// New signal — start pending (or enter immediately if no delay)
+if rawLongCond and not pendingLong
+    if effectiveDelay == 0
+        pendingLong := false
+    else
+        pendingLong  := true
+        pendingShort := false
+        signalBar    := bar_index
+
+if rawShortCond and not pendingShort
+    if effectiveDelay == 0
+        pendingShort := false
+    else
+        pendingShort := true
+        pendingLong  := false
+        signalBar    := bar_index
+
+// Cancel stale signals — price fell back inside bands or filters failed
+if cancelStale and useRealism
+    if pendingLong and (not sessionOK or not dailyLossOK or not tradeCountOK or not rsiLongOK or close < triggerTopBand)
+        pendingLong := false
+    if pendingShort and (not sessionOK or not dailyLossOK or not tradeCountOK or not rsiShortOK or close > triggerBotBand)
+        pendingShort := false
+
+// Check delay elapsed
+bool delayLong  = pendingLong and bar_index >= signalBar + effectiveDelay
+bool delayShort = pendingShort and bar_index >= signalBar + effectiveDelay
+
+// Final entry conditions
+bool longCond  = (rawLongCond and effectiveDelay == 0) or delayLong
+bool shortCond = (rawShortCond and effectiveDelay == 0) or delayShort
+
+// ─────────────────────────────────────────────────────────────
+// STOP & TARGET CALCULATION
+// ─────────────────────────────────────────────────────────────
+
+// Dynamic stop levels
+getLongStop() =>
+    switch exitStop
+        "Fib 1"       => top1    // breakout above top2, stop at top1 (band below entry)
+        "Midline"     => mid
+        "Fixed Ticks" => strategy.position_avg_price - (fixedSL * syminfo.mintick)
+
+getShortStop() =>
+    switch exitStop
+        "Fib 1"       => bot1
+        "Midline"     => mid
+        "Fixed Ticks" => strategy.position_avg_price + (fixedSL * syminfo.mintick)
+
+// Dynamic target levels
+getLongTarget() =>
+    switch exitTarget
+        "Fib 3"              => top3
+        "Fib 4 (Extended)"   => top4
+        "Fixed Ticks"        => strategy.position_avg_price + (fixedTP * syminfo.mintick)
+        "None (Trail/BE Only)" => na
+
+getShortTarget() =>
+    switch exitTarget
+        "Fib 3"              => bot3
+        "Fib 4 (Extended)"   => bot4
+        "Fixed Ticks"        => strategy.position_avg_price - (fixedTP * syminfo.mintick)
+        "None (Trail/BE Only)" => na
+
+// ─────────────────────────────────────────────────────────────
+// ORDER EXECUTION
+// ─────────────────────────────────────────────────────────────
+if longCond
+    strategy.entry("L", strategy.long)
+    pendingLong := false
+
+if shortCond
+    strategy.entry("S", strategy.short)
+    pendingShort := false
+
+// Exit logic — layered: trailing > breakeven > fixed
+// All exits use strategy.exit() — fills at exact price intra-bar
+if strategy.position_size > 0
+    entryPx   = strategy.position_avg_price
+    profitTks = (close - entryPx) / syminfo.mintick
+
+    stopPx  = getLongStop()
+    limitPx = getLongTarget()
+
+    if useTrailing and profitTks >= trailActTicks
+        strategy.exit("LX", from_entry="L", trail_points=trailActTicks, trail_offset=trailTicks,
+             limit=na(limitPx) ? na : limitPx)
+    else if useBE and profitTks >= beTicks
+        beStop = entryPx + (beOffset * syminfo.mintick)
+        strategy.exit("LX", from_entry="L", stop=beStop, limit=na(limitPx) ? na : limitPx)
+    else
+        strategy.exit("LX", from_entry="L", stop=stopPx, limit=na(limitPx) ? na : limitPx)
+
+if strategy.position_size < 0
+    entryPx   = strategy.position_avg_price
+    profitTks = (entryPx - close) / syminfo.mintick
+
+    stopPx  = getShortStop()
+    limitPx = getShortTarget()
+
+    if useTrailing and profitTks >= trailActTicks
+        strategy.exit("SX", from_entry="S", trail_points=trailActTicks, trail_offset=trailTicks,
+             limit=na(limitPx) ? na : limitPx)
+    else if useBE and profitTks >= beTicks
+        beStop = entryPx - (beOffset * syminfo.mintick)
+        strategy.exit("SX", from_entry="S", stop=beStop, limit=na(limitPx) ? na : limitPx)
+    else
+        strategy.exit("SX", from_entry="S", stop=stopPx, limit=na(limitPx) ? na : limitPx)
+
+// --- Flatten at session close ---
+if closeEOD and useSessFilter
+    if na(time(timeframe.period, sessStart, sessTimezone)) and not na(time(timeframe.period, sessStart, sessTimezone)[1])
+        strategy.close_all(comment="EOD Flat")
+
+// ─────────────────────────────────────────────────────────────
+// PLOTS
+// ─────────────────────────────────────────────────────────────
+pMid = plot(showMid ? mid : na, "Midline", midColor, 2)
+
+pTop1 = plot(showFib1 and showBands ? top1 : na, "Top Fib1 (Long Stop)", fib1Color, 1)
+pBot1 = plot(showFib1 and showBands ? bot1 : na, "Bot Fib1 (Short Stop)", fib1Color, 1)
+
+pTop2 = plot(showBands ? top2 : na, "Top Fib2 (Long Entry)", entryColor, 2)
+pBot2 = plot(showBands ? bot2 : na, "Bot Fib2 (Short Entry)", entryColor, 2)
+
+pTop3 = plot(showBands ? top3 : na, "Top Fib3 (Long TP)", targetColor, 2, style=plot.style_circles)
+pBot3 = plot(showBands ? bot3 : na, "Bot Fib3 (Short TP)", targetColor, 2, style=plot.style_circles)
+
+pTop4 = plot(showFib4 and showBands ? top4 : na, "Top Fib4 (Extended TP)", fib4Color, 1, style=plot.style_cross)
+pBot4 = plot(showFib4 and showBands ? bot4 : na, "Bot Fib4 (Extended TP)", fib4Color, 1, style=plot.style_cross)
+
+// Band fills — reversed shading: highlight the breakout/target zones
+fill(pTop2, pTop3, showFills ? color.new(color.teal, 88) : na, "Long Target Zone")
+fill(pBot2, pBot3, showFills ? color.new(color.red, 88) : na, "Short Target Zone")
+fill(pTop3, pTop4, showFills ? color.new(color.teal, 94) : na, "Long Extended Zone")
+fill(pBot3, pBot4, showFills ? color.new(color.red, 94) : na, "Short Extended Zone")
+fill(pMid, pTop1, showFills ? color.new(color.gray, 95) : na, "Upper Stop Zone")
+fill(pMid, pBot1, showFills ? color.new(color.gray, 95) : na, "Lower Stop Zone")
+
+// Entry labels — show raw signal (before delay)
+if showLabels and rawLongCond
+    label.new(bar_index, triggerTopBand, "▲ BRK", style=label.style_label_up,
+         color=longLblColor, textcolor=color.white, size=size.tiny)
+if showLabels and rawShortCond
+    label.new(bar_index, triggerBotBand, "▼ BRK", style=label.style_label_down,
+         color=shortLblColor, textcolor=color.white, size=size.tiny)
+
+// Delayed fill markers
+plotshape(delayLong, "Delayed Long Fill", shape.diamond, location.belowbar, color.new(color.teal, 0), size=size.tiny, text="FILL")
+plotshape(delayShort, "Delayed Short Fill", shape.diamond, location.abovebar, color.new(color.red, 0), size=size.tiny, text="FILL")
+
+// Pending signal markers
+plotshape(pendingLong, "Pending Long", shape.circle, location.belowbar, color.new(color.yellow, 50), size=size.tiny)
+plotshape(pendingShort, "Pending Short", shape.circle, location.abovebar, color.new(color.yellow, 50), size=size.tiny)
+
+// ─────────────────────────────────────────────────────────────
+// INFO TABLE
+// ─────────────────────────────────────────────────────────────
+if showTable and barstate.islast
+    var table infoTbl = table.new(position.top_right, 2, 12,
+         bgcolor=color.new(color.black, 80), border_color=color.new(color.gray, 60), border_width=1)
+
+    table.cell(infoTbl, 0, 0, "Realism", text_color=color.gray, text_size=size.small)
+    string realText = useRealism ? "ON (" + str.tostring(fillDelayBars) + "bar)" : "OFF (raw)"
+    table.cell(infoTbl, 1, 0, realText, text_color=useRealism ? color.yellow : color.gray, text_size=size.small)
+
+    table.cell(infoTbl, 0, 1, "Strategy", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 1, "BREAKOUT", text_color=color.blue, text_size=size.small)
+
+    table.cell(infoTbl, 0, 2, "Broker Preset", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 2, execMode, text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 3, "Comm/Side", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 3, "$" + str.tostring(commPerSide, "#.##"), text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 4, "Slippage", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 4, str.tostring(slipTicks) + " ticks", text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 5, "Est. RT Cost", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 5, "$" + str.tostring(rtCost, "#.##"),
+         text_color=rtCost > 5 ? color.orange : color.green, text_size=size.small)
+
+    table.cell(infoTbl, 0, 6, "Entry Mode", text_color=color.gray, text_size=size.small)
+    entryDesc = entryTrigger + (useRetest ? " + Retest" : "") + (confirmBars > 0 ? " +" + str.tostring(confirmBars) + "bar" : "")
+    table.cell(infoTbl, 1, 6, entryDesc, text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 7, "TP / SL", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 7, exitTarget + " / " + exitStop, text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 8, "Daily P&L", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 8, "$" + str.tostring(dailyPnL, "#.##"),
+         text_color=dailyPnL >= 0 ? color.green : color.red, text_size=size.small)
+
+    table.cell(infoTbl, 0, 9, "Trades Today", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 9, str.tostring(dailyTrades), text_color=color.white, text_size=size.small)
+
+    table.cell(infoTbl, 0, 10, "Session", text_color=color.gray, text_size=size.small)
+    table.cell(infoTbl, 1, 10, sessionOK ? "ACTIVE" : "CLOSED",
+         text_color=sessionOK ? color.green : color.red, text_size=size.small)
+
+    table.cell(infoTbl, 0, 11, "Pending", text_color=color.gray, text_size=size.small)
+    string pendText = pendingLong ? "LONG wait" : pendingShort ? "SHORT wait" : "---"
+    table.cell(infoTbl, 1, 11, pendText,
+         text_color=(pendingLong or pendingShort) ? color.yellow : color.gray, text_size=size.small)
