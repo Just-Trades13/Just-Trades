@@ -80,7 +80,8 @@ class TradovateIntegration:
             self.ws_url = "wss://api.tradovate.com/v1/websocket"
         
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=15)
+        self.session = aiohttp.ClientSession(timeout=timeout)
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
