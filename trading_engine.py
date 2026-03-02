@@ -86,6 +86,68 @@ class RedisQueue:
 broker_execution_queue = RedisQueue(redis_client, 'broker_tasks', maxsize=5000)
 
 # ============================================================================
+# STUB ultra_simple_server TO PREVENT 34K-LINE MODULE IMPORT
+# ============================================================================
+# recorder_service.py has 20+ lazy `from ultra_simple_server import ...` inside
+# do_trade_for_account(). Without this stub, the FIRST trade triggers a full
+# import of ultra_simple_server.py which:
+#   1) Starts 10+ background threads (OCO, break-even, cleanup, token refresh...)
+#   2) Opens a TradingView WebSocket connection
+#   3) Takes 20-40 seconds to complete
+# The stub provides no-op versions for monitor registration (web server handles
+# monitoring) and a working extract_symbol_root. apply_risk_orders raises to
+# trigger the existing manual TP/SL fallback path.
+import types
+import re as _re
+
+_uss_stub = types.ModuleType('ultra_simple_server')
+_uss_stub.__file__ = 'trading_engine.py (stub)'
+_uss_stub.__package__ = ''
+
+# --- extract_symbol_root: full working implementation ---
+_CONTRACT_ROOTS = [
+    'MNQ', 'NQ', 'MES', 'ES', 'MYM', 'YM', 'M2K', 'RTY',
+    'MGC', 'GC', 'MCL', 'CL', 'SI', 'HG', 'NG', 'ZB', 'ZN',
+    'ZC', 'ZS', 'ZW', '6E', '6J', '6B', '6A', '6C',
+]
+
+def _extract_symbol_root(ticker):
+    if not ticker:
+        return ''
+    if ':' in ticker:
+        ticker = ticker.split(':')[-1]
+    ticker = ticker.upper().replace('1!', '').replace('!', '')
+    for known in _CONTRACT_ROOTS:
+        if ticker.startswith(known):
+            return known
+    ticker = _re.sub(r'[0-9!]+', '', ticker)
+    ticker = _re.sub(r'[FGHJKMNQUVXZ]$', '', ticker)
+    return ticker
+
+_uss_stub.extract_symbol_root = _extract_symbol_root
+
+# --- apply_risk_orders: raise to trigger manual TP/SL fallback (line 2993) ---
+async def _apply_risk_orders(*args, **kwargs):
+    raise RuntimeError("Trading engine stub: falling back to manual TP/SL")
+_uss_stub.apply_risk_orders = _apply_risk_orders
+
+# --- Monitor registration: no-ops (web server handles monitoring) ---
+def _noop(*args, **kwargs):
+    pass
+
+for _fn_name in [
+    'register_oco_pair', 'unregister_oco_pair',
+    'register_break_even_monitor', 'unregister_break_even_monitor',
+    'register_projectx_break_even_monitor', 'register_projectx_trailing_monitor',
+    'clear_signal_blocking_position', 'set_signal_blocking_position',
+    'check_signal_blocking',
+]:
+    setattr(_uss_stub, _fn_name, _noop)
+
+sys.modules['ultra_simple_server'] = _uss_stub
+logger.info("ultra_simple_server stubbed out — monitor registration disabled in trading engine")
+
+# ============================================================================
 # IMPORTS FROM EXISTING MODULES
 # ============================================================================
 from recorder_service import get_db_connection
