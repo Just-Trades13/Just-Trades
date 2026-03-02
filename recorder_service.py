@@ -958,7 +958,8 @@ def execute_trade_simple(
     
     sl_info = f", SL: {sl_ticks} ticks" if sl_ticks > 0 else " (no SL)"
     logger.info(f"🎯 SIMPLE EXECUTE: {action} {quantity} {ticker} (TP: {tp_ticks} ticks{sl_info})")
-    
+    _exec_start = time.time()
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -2112,6 +2113,7 @@ def execute_trade_simple(
             # If ALL methods fail, auth logic will return the appropriate error
 
             logger.info(f"📤 [{trader_idx+1}/{len(traders)}] Trading on: {acct_name} (Broker: {broker_type}, Symbol: {local_tradovate_symbol})")
+            _acct_start = time.time()
             
             # ============================================================
             # BROKER ROUTING - ProjectX vs Tradovate (Added Jan 2026)
@@ -2307,7 +2309,9 @@ def execute_trade_simple(
                     error_msg = 'No OAuth token or credentials available - will retry with token refresh'
                     logger.error(f"❌ [{acct_name}] {error_msg}")
                     return {'success': False, 'error': error_msg, 'retry_recommended': True}
-                
+
+                logger.info(f"⏱️ [{acct_name}] Auth completed in {time.time() - _acct_start:.2f}s (method: {auth_method})")
+
                 # ============================================================
                 # 🚀 SCALABLE CONNECTIONS - Reuse WebSocket connections when possible
                 # ============================================================
@@ -2345,7 +2349,9 @@ def execute_trade_simple(
                         logger.info(f"📊 [{acct_name}] Applying multiplier: {quantity} × {account_multiplier} = {adjusted_quantity} contracts")
                     
                     # Check existing position first
+                    _pos_start = time.time()
                     existing_positions = await tradovate.get_positions(account_id=tradovate_account_id)
+                    logger.info(f"⏱️ [{acct_name}] get_positions took {time.time() - _pos_start:.2f}s ({len(existing_positions)} positions)")
                     has_existing_position = False
                     existing_position_side = None
                     existing_position_qty = 0
@@ -3326,6 +3332,7 @@ def execute_trade_simple(
         all_results = []
 
         try:
+            logger.info(f"⏱️ TIMING: Pre-async setup took {time.time() - _exec_start:.2f}s, submitting run_all_trades ({len(traders)} traders) to event loop...")
             all_results = run_async(run_all_trades())
 
             for acct_result in all_results:
