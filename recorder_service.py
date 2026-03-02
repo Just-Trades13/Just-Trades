@@ -7299,11 +7299,13 @@ def start_tradingview_websocket():
         return
     
     def run():
-        run_async(connect_tradingview_websocket())
-    
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(connect_tradingview_websocket())
+
     _tradingview_ws_thread = threading.Thread(target=run, daemon=True)
     _tradingview_ws_thread.start()
-    logger.info("✅ TradingView WebSocket thread started")
+    logger.info("✅ TradingView WebSocket thread started (isolated event loop)")
 
 
 # ============================================================================
