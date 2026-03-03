@@ -17082,12 +17082,28 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             except Exception as e:
                 _logger.warning(f"⚠️ Could not update trade record: {e}")
 
+            # Queue broker execution to actually close positions at the broker
+            try:
+                broker_task = {
+                    'recorder_id': recorder_id,
+                    'action': 'CLOSE',
+                    'ticker': ticker,
+                    'quantity': quantity,
+                    'tp_ticks': 0,
+                    'sl_ticks': 0,
+                    'retry_count': 0
+                }
+                broker_execution_queue.put_nowait(broker_task)
+                _logger.info(f"📤 Broker CLOSE queued: {quantity} {ticker} for recorder {recorder_name}")
+            except Exception as q_err:
+                _logger.warning(f"⚠️ Broker execution queue full on CLOSE: {q_err}")
+
             # Signal blocking: clear position on close signal
             if recorder.get('signal_blocking') and ticker:
                 clear_signal_blocking_position(recorder_id, extract_symbol_root(ticker))
 
             conn.close()
-            return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed'})
+            return jsonify({'success': True, 'action': 'close', 'message': 'Close signal processed', 'broker_queued': True})
         else:
             _logger.error(f"❌ UNKNOWN ACTION: '{action}' - not in buy/long/sell/short/close/flat/exit")
             track_signal_step(signal_id, 'STEP5_UNKNOWN_ACTION', {'action': action})
