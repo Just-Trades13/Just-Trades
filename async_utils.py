@@ -104,22 +104,19 @@ def run_async(coro: Coroutine[Any, Any, T], timeout: float = 60.0) -> T:
     if _shutdown:
         raise RuntimeError("Async executor is shutting down")
 
-    loop = _ensure_loop()
-
-    # Wrap with asyncio.wait_for so timeout CANCELS the task on the event loop
-    # (concurrent.futures.Future.cancel() does NOT cancel running asyncio tasks,
-    #  leaving zombie coroutines that accumulate and block the event loop)
-    async def _with_timeout():
-        return await asyncio.wait_for(coro, timeout=timeout)
-
-    future = asyncio.run_coroutine_threadsafe(_with_timeout(), loop)
-
+    # Per-call event loop: each broker worker gets its own loop,
+    # eliminating cross-signal contention on the shared loop.
+    # asyncio.gather() inside each signal still parallelizes all accounts.
+    loop = asyncio.new_event_loop()
     try:
-        # Sync timeout slightly longer so asyncio.wait_for fires first and cancels cleanly
-        return future.result(timeout=timeout + 5)
+        async def _with_timeout():
+            return await asyncio.wait_for(coro, timeout=timeout)
+
+        return loop.run_until_complete(_with_timeout())
     except (asyncio.TimeoutError, TimeoutError):
-        future.cancel()
         raise asyncio.TimeoutError(f"Async operation timed out after {timeout}s")
+    finally:
+        loop.close()
 
 
 def run_async_nowait(coro: Coroutine) -> asyncio.Future:
