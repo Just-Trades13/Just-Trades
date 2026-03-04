@@ -721,3 +721,14 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **Why** | Two CLOSE handlers in `process_webhook_directly()`: (1) strategy-format at ~16912 (`market_position=='flat'`) HAD broker execution, (2) action-format at ~17032 (`action=='close'`) only updated DB (recorded_trades + recorder_positions). TradingView alerts with `{"action":"CLOSE",...}` hit handler 2 → DB showed closed but Tradovate never received a close order. **Went WEEKS undetected.** |
 | **Verified** | First live CLOSE signal post-deploy: broker chart clean, `executed=5, failed=0`. |
 | **NEVER** | Remove the `broker_execution_queue.put_nowait()` from the action-based CLOSE handler. Assume DB updates alone close broker positions. Remove the broker_task dict or change its `action` key. |
+
+### FLAT Handler Action Fix — Bug #55 (Mar 4, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~16983 (broker_task dict inside FLAT handler at ~16912) |
+| **Rule** | MEMORY.md Bug #55 |
+| **Commit** | `dc4a598` |
+| **What** | Changed FLAT handler broker task from `'action': close_action` (raw BUY/SELL from TradingView) to `'action': 'CLOSE'`. |
+| **Why** | `close_action = action.upper()` produced 'SELL' for closing LONG. In `do_trade_for_account()`, `is_close_signal = 'SELL' in ('CLOSE',...)` → False. With DCA ON, SELL against LONG was blocked as "opposite direction blocked" (line 2557). DCA V.1 positions could NEVER close via TradingView flat signals when DCA enabled. Sending 'CLOSE' triggers the close handler (line 2406) which bypasses all filters, determines close side from broker position, and uses strategy mode fast path. |
+| **Verified** | Pending live test. |
+| **NEVER** | Change this back to `close_action` or any raw BUY/SELL value. The broker worker MUST receive 'CLOSE' for flat signals so the close handler catches it before the opposite-direction check. |
