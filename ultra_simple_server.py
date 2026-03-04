@@ -16980,7 +16980,7 @@ def process_webhook_directly(webhook_token, raw_body_override=None, signal_id=No
             try:
                 broker_task = {
                     'recorder_id': recorder_id,
-                    'action': close_action,
+                    'action': 'CLOSE',
                     'ticker': ticker,
                     'quantity': close_qty,
                     'tp_ticks': 0,  # No TP - this is a close
