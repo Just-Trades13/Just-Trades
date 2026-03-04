@@ -548,6 +548,8 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | Reversal close+re-enter | Lines ~2551-2612, `has_existing_position = False` | Old code was close-only, no re-enter | Strategy reversals (LONG→SHORT) only close, never re-enter |
 | Strategy mode skip cancel | `if tp_ticks > 0 or sl_ticks > 0` in CLOSE handler | TV handles exits, no system TP/SL to cancel | Extra 300-500ms API call on every strategy close |
 | CLOSE + no position = return | Lines ~2469-2476, after Bug #46 handler | CLOSE must never reach entry logic | CLOSE opens SHORT when broker is flat |
+| Action-based CLOSE queues broker | Lines ~17082-17098, `broker_execution_queue.put_nowait()` | DB update alone doesn't close broker position | CLOSE signals update DB but Tradovate position stays open (Bug #53) |
+| Per-call event loop in run_async() | `async_utils.py`, `asyncio.new_event_loop()` per call | Shared loop = cross-signal contention | 3-minute trade delays from shared event loop blocking (Bug #52) |
 
 ---
 
@@ -708,3 +710,14 @@ for paying customers. These are NOT optional improvements — they are load-bear
 | **What** | Added `get_user_by_id` import inside try block |
 | **Why** | `NameError: name 'get_user_by_id' is not defined` → caught by except → returned 500. Toggle completely non-functional. |
 | **NEVER** | Remove the import. Move it to a location where it might be accidentally deleted by a restructure. |
+
+### CLOSE Signal Broker Execution — Bug #53 (Mar 4, 2026)
+| Field | Value |
+|-------|-------|
+| **Lines** | ~17082-17098 (action-based CLOSE handler, after DB update, before signal blocking return) |
+| **Rule** | MEMORY.md Bug #53 |
+| **Commit** | `6699242` |
+| **What** | Added `broker_execution_queue.put_nowait(broker_task)` to the action-based CLOSE handler (`action == 'close'`). Task dict includes `action='CLOSE'`, `ticker`, `quantity`, `tp_ticks=0`, `sl_ticks=0`. Return updated to `'broker_queued': True`. |
+| **Why** | Two CLOSE handlers in `process_webhook_directly()`: (1) strategy-format at ~16912 (`market_position=='flat'`) HAD broker execution, (2) action-format at ~17032 (`action=='close'`) only updated DB (recorded_trades + recorder_positions). TradingView alerts with `{"action":"CLOSE",...}` hit handler 2 → DB showed closed but Tradovate never received a close order. **Went WEEKS undetected.** |
+| **Verified** | First live CLOSE signal post-deploy: broker chart clean, `executed=5, failed=0`. |
+| **NEVER** | Remove the `broker_execution_queue.put_nowait()` from the action-based CLOSE handler. Assume DB updates alone close broker positions. Remove the broker_task dict or change its `action` key. |

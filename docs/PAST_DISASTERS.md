@@ -57,12 +57,17 @@
 | 46 | Feb 24, 2026 | **CLOSE signal misrouted as SHORT** | `action='CLOSE'` → `signal_side='SHORT'` → DCA-off close+re-enter or wrong reversal | `13a217b` | Hours |
 | 47 | Feb 25, 2026 | **429 reconnect storm (15 demo connections cycling)** | Per-connection backoff, no shared cooldown across connections | `2447618` | Minutes |
 | 48 | Feb 25, 2026 | **CLOSE signal opens SHORT when broker flat** | Bug #46 handler requires has_existing_position=True; no-position path fell through to entry | `45d2f12` | Minutes |
+| 49 | Feb 26, 2026 | Flatten signals silently failed via CLI curl | Zsh `!` history expansion in double quotes corrupts ticker symbols | Rule 38 | Hours |
+| 50 | Feb 27, 2026 | Strategy signals misrouted — stale trade + datetime shadow | Conditional `from datetime import datetime` + no staleness guard on open trade query | Rules 25, 50 | Hours |
+| 51 | Feb 27, 2026 | WS duplicate task race — recv contention | `asyncio.wait(FIRST_COMPLETED)` loop created duplicate tasks per token | `002676e` | Hours |
+| 52 | Mar 3, 2026 | **3-MINUTE TRADE DELAYS — shared event loop contention** | All 10 broker workers shared ONE asyncio loop; blocking coroutine stalled ALL signals | `a1ed722` | **Weeks undetected** |
+| 53 | Mar 3-4, 2026 | **CLOSE signal never reached broker — DB updated but no order placed** | Two CLOSE handlers in process_webhook_directly(); action-based handler missing broker_execution_queue | `6699242` | **Weeks undetected** |
 
 ---
 
 ## Key Patterns
 
-**44 disasters in ~3 months. Average recovery: 2-4 hours each.**
+**53 disasters in ~3 months. Average recovery: 2-4 hours each. Bugs #52-53 went WEEKS undetected.**
 
 Almost every one was caused by:
 - (a) Editing without reading

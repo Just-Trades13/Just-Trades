@@ -1,7 +1,7 @@
 # Just Trades Platform — MASTER RULES & ARCHITECTURE
 
-> **PRODUCTION STABLE STATE**: Tag `WORKING_FEB24_2026_WS_SEMAPHORE_STABLE` @ commit `39103a3`
-> **Pro Copy Trader FULLY WORKING — manual + auto-copy, parallel execution, position sync — Feb 23, 2026**
+> **PRODUCTION STABLE STATE**: Tag `WORKING_MAR4_2026_INSTANT_EXECUTION_STABLE` @ commit `6699242`
+> **INSTANT EXECUTION: Per-call event loop + CLOSE handler broker fix — Mar 4, 2026**
 > **PAID USERS IN PRODUCTION — EVERY BROKEN DEPLOY COSTS REAL MONEY**
 
 ---
@@ -360,7 +360,9 @@ BACKOFF_JITTER        = 0-10%   (avoid thundering herd)
 ## RULE 11: RECOVERY PROTOCOL
 
 ```bash
-git reset --hard WORKING_FEB24_2026_WS_SEMAPHORE_STABLE     # CURRENT — WS semaphore + 7 critical fixes
+git reset --hard WORKING_MAR4_2026_INSTANT_EXECUTION_STABLE # CURRENT — Instant execution + CLOSE handler broker fix
+git reset --hard WORKING_MAR1_2026_WHOP_RECONCILIATION_STABLE  # Whop reconciliation + trial abuse block
+git reset --hard WORKING_FEB24_2026_WS_SEMAPHORE_STABLE     # WS semaphore + 7 critical fixes
 git reset --hard WORKING_FEB23_2026_COPY_TRADER_STABLE     # Pre-Feb24 fallback — copy trader working but no WS stability
 git reset --hard WORKING_FEB20_2026_BROKER_QTY_SAFETY_NET  # Pre-copy-trader fallback (+ brevo fix 5b6be75)
 git reset --hard WORKING_FEB20_2026_DCA_FIELD_FIX_STABLE   # Pre-safety-net fallback
@@ -845,6 +847,8 @@ curl -s "https://justtrades.app/api/accounts/auth-status"
 19. **"I'll add `from datetime import datetime` inside this function for convenience"** → NO. Bug #50. If it's inside a conditional block, Python treats `datetime` as local for the ENTIRE function. When the condition is false, ALL other `datetime` references throw `UnboundLocalError`. Use the module-level import.
 20. **"This query for open trades doesn't need a time limit"** → NO. Bug #50. Stale trade #15705 (3 days old, corrupted ticker) polluted live signal routing. ANY query for "current" open trades MUST have a staleness guard (24h cutoff).
 21. **"I don't need to track which asyncio tasks are already running"** → NO. Bug #51. `asyncio.wait(FIRST_COMPLETED)` in a loop left pending tasks running. Next iteration created duplicates for the same connection → two coroutines calling `recv()` on the same websocket. ALWAYS track active tasks per key when using `FIRST_COMPLETED` loops.
+22. **"I only need to update the DB record for CLOSE signals"** → NO. Bug #53. The action-based CLOSE handler only updated `recorded_trades` and `recorder_positions` — never queued broker execution. Position stayed open at Tradovate. **Went WEEKS undetected.** ALL CLOSE handlers MUST queue `broker_execution_queue.put_nowait()`.
+23. **"All broker workers can share one event loop"** → NO. Bug #52. `asyncio.run_coroutine_threadsafe()` on a shared loop means ANY blocking coroutine stalls ALL other workers. 3-minute trade delays. Fix: per-call `asyncio.new_event_loop()` in `run_async()`.
 
 ---
 
@@ -871,7 +875,7 @@ curl -s "https://justtrades.app/api/accounts/auth-status"
 | **Production Configs** | `docs/PRODUCTION_CONFIGS.md` | Strategy config snapshots, settings reference |
 | **Incident Response** | `docs/INCIDENT_RESPONSE.md` | SEV levels, rollback procedures |
 | **Recovery Reference** | `docs/RECOVERY_REFERENCE.md` | Env vars, DB backup, TradingView alerts, full rebuild |
-| **Past Disasters** | `docs/PAST_DISASTERS.md` | 44 disasters table, patterns, lessons |
+| **Past Disasters** | `docs/PAST_DISASTERS.md` | 53 disasters table, patterns, lessons |
 | **CHANGELOG_RULES.md** | `CHANGELOG_RULES.md` | **MANDATORY** — protected code registry (Gate 1) |
 
 ### Memory Files
@@ -885,7 +889,7 @@ Memory files (in `~/.claude/projects/-Users-mylesjadwin/memory/`):
 
 ---
 
-*Last updated: Feb 27, 2026*
-*Production stable tag: WORKING_FEB24_2026_WS_SEMAPHORE_STABLE*
-*Total rules: 38 + Rule 10b (WS Stability) | Total documented disasters: 51 | Paid users in production: YES*
+*Last updated: Mar 4, 2026*
+*Production stable tag: WORKING_MAR4_2026_INSTANT_EXECUTION_STABLE*
+*Total rules: 38 + Rule 10b (WS Stability) | Total documented disasters: 53 | Paid users in production: YES*
 *Reference docs: 20 in /docs/ | CHANGELOG_RULES.md | Memory: 9 files in ~/.claude/memory/*
