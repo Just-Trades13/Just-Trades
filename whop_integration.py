@@ -615,7 +615,7 @@ def subscription_required(plan_type: str = 'platform'):
             
             if not subscription:
                 flash('This feature requires an active subscription.', 'warning')
-                return redirect(url_for('pricing'))
+                return redirect(url_for('marketing.pricing'))
             
             return f(*args, **kwargs)
         return decorated_function
@@ -652,7 +652,7 @@ def feature_required(feature_name: str):
 
             if not check_feature_access(user_id, feature_name):
                 flash(f'This feature requires a higher subscription tier.', 'warning')
-                return redirect(url_for('pricing'))
+                return redirect(url_for('marketing.pricing'))
             
             return f(*args, **kwargs)
         return decorated_function
